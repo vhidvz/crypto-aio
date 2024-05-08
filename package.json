@@ -1,7 +1,7 @@
 {
-  "name": "vscode-typescript-library-boilerplate",
-  "version": "1.1.1",
-  "description": "VS-Code TypeScript library boilerplate with prettier, eslint, jest and the TypeDoc.",
+  "name": "crypto-aio",
+  "version": "1.0.0",
+  "description": "All-In-One Crypto-Currency",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -14,24 +14,28 @@
     "fresh": "npm run clean && npm run doc && npm run test",
     "format": "prettier --write \"(src|test)/**/*.(ts|js)\"",
     "start:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register src/index.ts",
-    "test": "jest && make-coverage-badge --report-path docs/coverage/coverage-summary.json --output-path coverage-badge.svg"
+    "test": "jest && make-coverage-badge --report-path docs/coverage/coverage-summary.json --output-path docs/coverage.svg"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vhidvz/vscode-typescript-library-boilerplate.git"
+    "url": "git+https://github.com/vhidvz/crypto-aio.git"
   },
-  "author": "Vahid V.",
+  "author": "Vahid V. <vhid.vz@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/vhidvz/vscode-typescript-library-boilerplate/issues"
+    "url": "https://github.com/vhidvz/crypto-aio/issues"
   },
   "keywords": [
-    "boilerplate",
-    "library",
-    "typescript",
-    "vscode"
+    "bitcoin",
+    "ethereum",
+    "solana",
+    "tron",
+    "ton"
   ],
-  "homepage": "https://github.com/vhidvz/vscode-typescript-library-boilerplate#readme",
+  "homepage": "https://github.com/vhidvz/crypto-aio#readme",
+  "dependencies": {
+    "debug": "^4.3.4"
+  },
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.12.11",
@@ -58,8 +62,5 @@
   },
   "files": [
     "/dist"
-  ],
-  "dependencies": {
-    "debug": "^4.3.4"
-  }
+  ]
 }
