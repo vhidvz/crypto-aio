@@ -2,8 +2,5 @@
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit"
   },
-  "cSpell.words": [
-    "solana",
-    "Vahid"
-  ]
+  "cSpell.words": ["bitcoinjs", "caio", "solana", "tonconnect", "tronweb", "Vahid"]
 }

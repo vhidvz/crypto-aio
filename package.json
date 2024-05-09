@@ -34,9 +34,12 @@
   ],
   "homepage": "https://github.com/vhidvz/crypto-aio#readme",
   "dependencies": {
-    "debug": "^4.3.4"
+    "debug": "^4.3.4",
+    "ethers": "^6.12.1",
+    "web3": "^4.8.0"
   },
   "devDependencies": {
+    "@types/debug": "^4.1.12",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.12.11",
     "@typescript-eslint/eslint-plugin": "^7.8.0",
