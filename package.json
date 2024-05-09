@@ -1,7 +1,7 @@
 {
   "name": "crypto-aio",
   "version": "0.0.1",
-  "description": "All-In-One Crypto-Currency",
+  "description": "All-In-One Crypto-Currency for Backend",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

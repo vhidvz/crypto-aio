@@ -26,6 +26,10 @@ export class EthereumAccount implements Account<EthereumOptions> {
     else throw new Error('unknown client');
   }
 
+  create(CommonOptions = defaultCommonOptions('ETH')): EthereumAccount {
+    return EthereumAccount.create(CommonOptions);
+  }
+
   static create(options: CommonOptions = defaultCommonOptions('ETH')): EthereumAccount {
     const wallet = ethers.Wallet.createRandom();
     const account: AccountOptions = {

@@ -3,7 +3,7 @@ import { Web3 } from 'web3';
 
 import { EthereumAccount } from './account';
 import { Crypto, CryptoOptions } from '../../type';
-import { defaultEthereumOptions, initEth } from '../../tool';
+import { defaultCommonOptions, defaultEthereumOptions, initEth } from '../../tool';
 
 export interface EthereumOptions extends CryptoOptions {
   lib?: 'web3' | 'ethers';
@@ -21,6 +21,10 @@ export class Ethereum implements Crypto<EthereumOptions> {
 
   get account(): EthereumAccount {
     return (this.#account = this.#account || new EthereumAccount(this.options));
+  }
+
+  createAccount(CommonOptions = defaultCommonOptions('ETH')): EthereumAccount {
+    return this.account.create(CommonOptions);
   }
 
   async getGasPrice(): Promise<bigint | null> {
