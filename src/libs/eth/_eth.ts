@@ -5,10 +5,6 @@ import { EthereumAccount } from './account';
 import { Crypto, CryptoOptions } from '../../type';
 import { defaultEthereumOptions, initEth } from '../../tool';
 
-export { EthereumAccount } from './account';
-export { EthereumContract } from './contract';
-export { EthereumTransact } from './transact';
-
 export interface EthereumOptions extends CryptoOptions {
   lib?: 'web3' | 'ethers';
   client?: Web3 | ethers.Provider;

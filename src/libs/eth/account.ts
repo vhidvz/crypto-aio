@@ -1,6 +1,6 @@
 import assert from 'node:assert';
-import ethers from 'ethers';
-import Web3 from 'web3';
+import { ethers } from 'ethers';
+import { Web3 } from 'web3';
 
 import {
   bt,

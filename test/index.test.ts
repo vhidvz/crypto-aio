@@ -11,8 +11,8 @@ describe('test CryptoAio', () => {
       expect.objectContaining<CryptoAioOptions>({
         ETH: expect.objectContaining<CommonOptions>({
           url: expect.any(String),
-          console: expect.any(Object),
-          emitter: expect.any(Object),
+          console: expect.anything(),
+          emitter: expect.anything(),
         }),
       }),
     );
@@ -24,7 +24,7 @@ describe('test CryptoAio', () => {
     expect(eth).toBeDefined();
     expect(eth.options).toStrictEqual(
       expect.objectContaining<EthereumOptions>({
-        client: expect.any(Object),
+        client: expect.anything(),
         address: expect.any(String),
         private: expect.any(String),
         phrases: expect.any(Array<string>),

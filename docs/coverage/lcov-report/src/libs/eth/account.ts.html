@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">47.72% </span>
+                <span class="strong">95.45% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>21/44</span>
+                <span class='fraction'>42/44</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">66.66% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>4/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
-                <span class="quiet">Branches</span>
-                <span class='fraction'>0/0</span>
-            </div>
-        
-            
-            <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/3</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">47.72% </span>
+                <span class="strong">95.45% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>21/44</span>
+                <span class='fraction'>42/44</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -123,37 +123,37 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import assert from 'node:assert';
-import ethers from 'ethers';
-import Web3 from 'web3';
+import { ethers } from 'ethers';
+import { Web3 } from 'web3';
 &nbsp;
 import {
   bt,
@@ -166,34 +166,34 @@ import { EthereumOptions } from './index';
 import { Account, AccountOptions, CommonOptions } from '../../type';
 &nbsp;
 export class EthereumAccount implements Account&lt;EthereumOptions&gt; {
-<span class="fstat-no" title="function not covered" >  constructor(readonly options: EthereumOptions = defaultEthereumOptions()) {</span>
-<span class="cstat-no" title="statement not covered" >    initEth(options);</span>
-<span class="cstat-no" title="statement not covered" >  }</span>
+  constructor(readonly options: EthereumOptions = defaultEthereumOptions()) {
+    initEth(options);
+  }
 &nbsp;
-  async <span class="fstat-no" title="function not covered" >getBalance(address = this.options.address): Promise&lt;bigint&gt; {</span>
-<span class="cstat-no" title="statement not covered" >    assert(address, 'address is required');</span>
-<span class="cstat-no" title="statement not covered" ></span>
-<span class="cstat-no" title="statement not covered" >    const { client } = this.options;</span>
-<span class="cstat-no" title="statement not covered" >    if (client instanceof Web3) return client.eth.getBalance(address);</span>
-<span class="cstat-no" title="statement not covered" >    else if (client instanceof ethers.JsonRpcProvider) return client.getBalance(address);</span>
+  async getBalance(address = this.options.address): Promise&lt;bigint&gt; {
+    assert(address, 'address is required');
+&nbsp;
+    const { client } = this.options;
+    if (client instanceof Web3) return client.eth.getBalance(address);
+<span class="cstat-no" title="statement not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >    else if (client instanceof ethers.JsonRpcProvider) return client.getBalance(address);</span></span>
 <span class="cstat-no" title="statement not covered" >    else throw new Error('unknown client');</span>
-<span class="cstat-no" title="statement not covered" >  }</span>
+  }
 &nbsp;
-  static <span class="fstat-no" title="function not covered" >create(options: CommonOptions = defaultCommonOptions('ETH')): EthereumAccount {</span>
-<span class="cstat-no" title="statement not covered" >    const wallet = ethers.Wallet.createRandom();</span>
-<span class="cstat-no" title="statement not covered" >    const account: AccountOptions = {</span>
-<span class="cstat-no" title="statement not covered" >      address: wallet.address,</span>
-<span class="cstat-no" title="statement not covered" >      private: wallet.privateKey,</span>
-<span class="cstat-no" title="statement not covered" >      phrases: wallet.mnemonic?.phrase.split(/ /),</span>
-<span class="cstat-no" title="statement not covered" >    };</span>
-<span class="cstat-no" title="statement not covered" ></span>
-<span class="cstat-no" title="statement not covered" >    const { address } = account;</span>
-<span class="cstat-no" title="statement not covered" >    const { console, emitter } = options;</span>
-<span class="cstat-no" title="statement not covered" >    if (emitter) emitter.emit(bt('ETH', 'account.create'), account);</span>
-<span class="cstat-no" title="statement not covered" >    if (console) console(info(`an account created with the ${address} address`));</span>
-<span class="cstat-no" title="statement not covered" ></span>
-<span class="cstat-no" title="statement not covered" >    return new EthereumAccount({ ...options, ...account });</span>
-<span class="cstat-no" title="statement not covered" >  }</span>
+  static create(options: CommonOptions = defaultCommonOptions('ETH')): EthereumAccount {
+    const wallet = ethers.Wallet.createRandom();
+    const account: AccountOptions = {
+      address: wallet.address,
+      private: wallet.privateKey,
+      phrases: wallet.mnemonic<span class="branch-0 cbranch-no" title="branch not covered" >?.p</span>hrase.split(/ /),
+    };
+&nbsp;
+    const { address } = account;
+    const { console, emitter } = options;
+    if (emitter) emitter.emit(bt('ETH', 'account.create'), account);
+    if (console) console(info(`an account created with the ${address} address`));
+&nbsp;
+    return new EthereumAccount({ ...options, ...account });
+  }
 }
 &nbsp;</pre></td></tr></table></pre>
 
@@ -202,7 +202,7 @@ export class EthereumAccount implements Account&lt;EthereumOptions&gt; {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2024-05-09T15:41:10.829Z
+                at 2024-05-09T16:43:14.887Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

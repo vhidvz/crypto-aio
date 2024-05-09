@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for src/libs/eth/index.ts</title>
+    <title>Code coverage report for src/libs/eth/_eth.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../../../prettify.css" />
     <link rel="stylesheet" href="../../../base.css" />
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/libs/eth</a> index.ts</h1>
+        <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/libs/eth</a> _eth.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">91.89% </span>
+                <span class="strong">75.75% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>34/37</span>
+                <span class='fraction'>25/33</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">80% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>4/5</span>
+                <span class='fraction'>1/1</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">66.66% </span>
+                <span class="strong">33.33% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>4/6</span>
+                <span class='fraction'>1/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">91.89% </span>
+                <span class="strong">75.75% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>34/37</span>
+                <span class='fraction'>25/33</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line medium'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -96,11 +96,7 @@
 <a name='L31'></a><a href='#L31'>31</a>
 <a name='L32'></a><a href='#L32'>32</a>
 <a name='L33'></a><a href='#L33'>33</a>
-<a name='L34'></a><a href='#L34'>34</a>
-<a name='L35'></a><a href='#L35'>35</a>
-<a name='L36'></a><a href='#L36'>36</a>
-<a name='L37'></a><a href='#L37'>37</a>
-<a name='L38'></a><a href='#L38'>38</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L34'></a><a href='#L34'>34</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -122,31 +118,23 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { ethers } from 'ethers';
-import { Web3 } from 'web3';
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import ethers from 'ethers';
+import Web3 from 'web3';
 &nbsp;
 import { EthereumAccount } from './account';
 import { Crypto, CryptoOptions } from '../../type';
 import { defaultEthereumOptions, initEth } from '../../tool';
-&nbsp;
-export { EthereumAccount } from './account';
-export { <span class="fstat-no" title="function not covered" >EthereumContract } from './contract';</span>
-export { <span class="fstat-no" title="function not covered" >EthereumTransact } from './transact';</span>
 &nbsp;
 export interface EthereumOptions extends CryptoOptions {
   lib?: 'web3' | 'ethers';
@@ -162,17 +150,17 @@ export class Ethereum implements Crypto&lt;EthereumOptions&gt; {
     initEth(options);
   }
 &nbsp;
-  get account(): EthereumAccount {
-    return (this.#account = this.#account || new EthereumAccount(this.options));
-  }
+<span class="fstat-no" title="function not covered" >  get account(): EthereumAccount {</span>
+<span class="cstat-no" title="statement not covered" >    return (this.#account = this.#account || new EthereumAccount(this.options));</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
 &nbsp;
-  async getGasPrice(): Promise&lt;bigint | null&gt; {
-    const { client } = this.options;
-    if (client instanceof Web3) return client.eth.getGasPrice();
-<span class="cstat-no" title="statement not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >    else if (client instanceof ethers.JsonRpcProvider)</span></span>
+  async <span class="fstat-no" title="function not covered" >getGasPrice(): Promise&lt;bigint | null&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    const { client } = this.options;</span>
+<span class="cstat-no" title="statement not covered" >    if (client instanceof Web3) return client.eth.getGasPrice();</span>
+<span class="cstat-no" title="statement not covered" >    else if (client instanceof ethers.JsonRpcProvider)</span>
 <span class="cstat-no" title="statement not covered" >      return (await client.getFeeData()).gasPrice;</span>
 <span class="cstat-no" title="statement not covered" >    else throw new Error('unknown client');</span>
-  }
+<span class="cstat-no" title="statement not covered" >  }</span>
 }
 &nbsp;</pre></td></tr></table></pre>
 
@@ -181,7 +169,7 @@ export class Ethereum implements Crypto&lt;EthereumOptions&gt; {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2024-05-09T16:43:14.887Z
+                at 2024-05-09T16:25:09.652Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
