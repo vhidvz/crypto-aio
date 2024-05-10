@@ -1,5 +1,5 @@
 import { Ethereum, EthereumOptions } from './libs';
-import { defaultEthereumOptions } from './tool';
+import { ethereumOptions } from './tool';
 
 export * from './libs';
 export * from './tool';
@@ -11,7 +11,7 @@ export interface CryptoAioOptions {
 
 export const cryptoAioOptions = (env?: string): CryptoAioOptions => {
   return {
-    ETH: defaultEthereumOptions(env),
+    ETH: ethereumOptions(env),
   };
 };
 

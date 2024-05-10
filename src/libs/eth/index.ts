@@ -3,7 +3,7 @@ import { Web3 } from 'web3';
 
 import { EthereumAccount } from './account';
 import { Crypto, CryptoOptions } from '../../type';
-import { defaultEthereumOptions, initEth } from '../../tool';
+import { bp, commonOptions, ethereumOptions, initEth } from '../../tool';
 
 export { EthereumAccount } from './account';
 export { EthereumContract } from './contract';
@@ -19,12 +19,19 @@ export class Ethereum implements Crypto<EthereumOptions> {
 
   public static readonly symbol = 'ETH';
 
-  constructor(readonly options: EthereumOptions = defaultEthereumOptions()) {
+  constructor(readonly options: EthereumOptions = ethereumOptions()) {
     initEth(options);
   }
 
   get account(): EthereumAccount {
     return (this.#account = this.#account || new EthereumAccount(this.options));
+  }
+
+  createAccount(
+    options = commonOptions('ETH'),
+    lib = bp<'web3' | 'ethers' | undefined>('ETH', 'LIB'),
+  ): EthereumAccount {
+    return this.account.create(options, lib);
   }
 
   async getGasPrice(): Promise<bigint | null> {

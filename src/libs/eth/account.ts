@@ -2,18 +2,12 @@ import assert from 'node:assert';
 import { ethers } from 'ethers';
 import { Web3 } from 'web3';
 
-import {
-  bt,
-  info,
-  initEth,
-  defaultCommonOptions,
-  defaultEthereumOptions,
-} from '../../tool';
 import { EthereumOptions } from './index';
-import { Account, AccountOptions, CommonOptions } from '../../type';
+import { Account, AccountOptions } from '../../type';
+import { bt, bp, info, initEth, commonOptions, ethereumOptions } from '../../tool';
 
 export class EthereumAccount implements Account<EthereumOptions> {
-  constructor(readonly options: EthereumOptions = defaultEthereumOptions()) {
+  constructor(readonly options: EthereumOptions = ethereumOptions()) {
     initEth(options);
   }
 
@@ -26,11 +20,17 @@ export class EthereumAccount implements Account<EthereumOptions> {
     else throw new Error('unknown client');
   }
 
-  create(CommonOptions = defaultCommonOptions('ETH')): EthereumAccount {
-    return EthereumAccount.create(CommonOptions);
+  create(
+    options = commonOptions('ETH'),
+    lib = bp<'web3' | 'ethers' | undefined>('ETH', 'LIB'),
+  ): EthereumAccount {
+    return EthereumAccount.create(options, lib);
   }
 
-  static create(options: CommonOptions = defaultCommonOptions('ETH')): EthereumAccount {
+  static create(
+    options = commonOptions('ETH'),
+    lib = bp<'web3' | 'ethers' | undefined>('ETH', 'LIB'),
+  ): EthereumAccount {
     const wallet = ethers.Wallet.createRandom();
     const account: AccountOptions = {
       address: wallet.address,
@@ -43,6 +43,6 @@ export class EthereumAccount implements Account<EthereumOptions> {
     if (emitter) emitter.emit(bt('ETH', 'account.create'), account);
     if (console) console(info(`an account created with the ${address} address`));
 
-    return new EthereumAccount({ ...options, ...account });
+    return new EthereumAccount({ lib, ...options, ...account });
   }
 }

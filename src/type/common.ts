@@ -13,6 +13,7 @@ export type LoggerOptions = {
   console?: ReturnType<typeof logger>;
 };
 
+export type EnvOptions = { env?: string };
 export type ProviderOptions = { url?: string };
 
-export type CommonOptions = ProviderOptions & EmitterOptions & LoggerOptions;
+export type CommonOptions = EnvOptions & ProviderOptions & EmitterOptions & LoggerOptions;

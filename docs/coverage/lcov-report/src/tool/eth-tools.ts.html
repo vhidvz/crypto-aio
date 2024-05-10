@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">80% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>28/28</span>
+                <span class='fraction'>24/30</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">50% </span>
+                <span class="strong">42.85% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>3/6</span>
+                <span class='fraction'>3/7</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">80% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>28/28</span>
+                <span class='fraction'>24/30</span>
             </div>
         
             
@@ -91,7 +91,9 @@
 <a name='L26'></a><a href='#L26'>26</a>
 <a name='L27'></a><a href='#L27'>27</a>
 <a name='L28'></a><a href='#L28'>28</a>
-<a name='L29'></a><a href='#L29'>29</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -101,50 +103,54 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import assert from 'node:assert';
 import { ethers } from 'ethers';
 import { Web3 } from 'web3';
 &nbsp;
 import { bp } from './common';
 import { warn } from './logging';
+import { cryptoOptions } from './options';
 import { EthereumOptions } from '../libs';
-import { defaultCryptoOptions } from './options';
 &nbsp;
-export const defaultEthereumOptions = (env?: string): EthereumOptions =&gt;
-  defaultCryptoOptions('ETH', env);
+export const ethereumOptions = (env?: string): EthereumOptions =&gt; ({
+  lib: bp('ETH', 'LIB', env),
+  ...cryptoOptions('ETH', env),
+});
 &nbsp;
-export const initEth = (options: EthereumOptions = defaultEthereumOptions()) =&gt; {
+export const initEth = (options: EthereumOptions = ethereumOptions()) =&gt; {
   const { client, url, lib } = options;
   if (!client) {
     assert(url, 'client or url option is required');
-    options.lib = lib || bp('ETH', 'LIB')<span class="branch-0 cbranch-no" title="branch not covered" > || 'ethers';</span>
+    options.lib = lib<span class="branch-0 cbranch-no" title="branch not covered" > || bp('ETH', 'LIB', options.env)<span class="branch-0 cbranch-no" title="branch not covered" > </span>|| 'ethers';</span>
 &nbsp;
     if (lib === 'web3') <span class="branch-0 cbranch-no" title="branch not covered" >options.client = new Web3(url);</span>
-    else if (lib === 'ethers') <span class="branch-0 cbranch-no" title="branch not covered" >options.client = new ethers.JsonRpcProvider(url);</span>
-    else {
-      options.client = new Web3(url);
-&nbsp;
-      const { console } = options;
-      if (console) console(warn('Unknown lib, Web3 used by default'));
-    }
+    else if (lib === 'ethers') options.client = new ethers.JsonRpcProvider(url);
+<span class="cstat-no" title="statement not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >    else {</span></span>
+<span class="cstat-no" title="statement not covered" >      options.client = new Web3(url);</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >      const { console } = options;</span>
+<span class="cstat-no" title="statement not covered" >      if (console) console(warn('Unknown lib, Web3 used by default'));</span>
+<span class="cstat-no" title="statement not covered" >    }</span>
   }
 };
 &nbsp;</pre></td></tr></table></pre>
@@ -154,7 +160,7 @@ export const initEth = (options: EthereumOptions = defaultEthereumOptions()) =&g
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2024-05-09T16:54:23.619Z
+                at 2024-05-10T15:10:49.009Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
