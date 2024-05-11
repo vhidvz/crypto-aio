@@ -1,8 +1,14 @@
 import EventEmitter from 'node:events';
 
+import {
+  Net,
+  CryptoOptions,
+  CommonOptions,
+  AccountOptions,
+  ContractOptions,
+} from '../type';
 import { bp } from './common';
 import { logger } from './logging';
-import { AccountOptions, CommonOptions, CryptoOptions, Net } from '../type';
 
 export const commonOptions = (net: Net, env?: string): CommonOptions => ({
   url: bp(net, 'URL', env),
@@ -17,7 +23,13 @@ export const accountOptions = (net: Net, env?: string): AccountOptions => ({
   phrases: bp(net, 'PHRASES', env).split(/,/),
 });
 
+export const contractOptions = (net: Net, env?: string): ContractOptions => ({
+  contract: bp(net, 'CONTRACT', env),
+  abi: JSON.parse(bp(net, 'ABI', env) || '[]'),
+});
+
 export const cryptoOptions = (net: Net, env?: string): CryptoOptions => ({
   ...commonOptions(net, env),
   ...accountOptions(net, env),
+  ...contractOptions(net, env),
 });

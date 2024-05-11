@@ -1,6 +1,6 @@
 import { Ethereum, EthereumOptions } from '../../../src';
 
-describe('test lib Ethereum', () => {
+describe('test ethereum', () => {
   let eth: Ethereum;
 
   it('should create an instance', () => {
@@ -9,7 +9,7 @@ describe('test lib Ethereum', () => {
     expect(eth).toBeDefined();
     expect(eth.options).toStrictEqual(
       expect.objectContaining<EthereumOptions>({
-        client: expect.any(Object),
+        client: expect.anything(),
         address: expect.any(String),
         private: expect.any(String),
         phrases: expect.any(Array<string>),

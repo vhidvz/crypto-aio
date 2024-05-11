@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">86.36% </span>
+                <span class="strong">80% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>38/44</span>
+                <span class='fraction'>40/50</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">66.66% </span>
+                <span class="strong">83.33% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>4/6</span>
+                <span class='fraction'>5/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">57.14% </span>
+                <span class="strong">62.5% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>4/7</span>
+                <span class='fraction'>5/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">86.36% </span>
+                <span class="strong">80% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>38/44</span>
+                <span class='fraction'>40/50</span>
             </div>
         
             
@@ -107,7 +107,15 @@
 <a name='L42'></a><a href='#L42'>42</a>
 <a name='L43'></a><a href='#L43'>43</a>
 <a name='L44'></a><a href='#L44'>44</a>
-<a name='L45'></a><a href='#L45'>45</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -139,15 +147,19 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -155,11 +167,12 @@
 import { Web3 } from 'web3';
 &nbsp;
 import { EthereumAccount } from './account';
+import { EthereumContract } from './contract';
 import { Crypto, CryptoOptions } from '../../type';
 import { bp, commonOptions, ethereumOptions, initEth } from '../../tool';
 &nbsp;
 export { EthereumAccount } from './account';
-export { <span class="fstat-no" title="function not covered" >EthereumContract } from './contract';</span>
+export { EthereumContract } from './contract';
 export { <span class="fstat-no" title="function not covered" >EthereumTransact } from './transact';</span>
 &nbsp;
 export interface EthereumOptions extends CryptoOptions {
@@ -169,6 +182,7 @@ export interface EthereumOptions extends CryptoOptions {
 &nbsp;
 export class Ethereum implements Crypto&lt;EthereumOptions&gt; {
   #account?: EthereumAccount;
+  #contract?: EthereumContract;
 &nbsp;
   public static readonly symbol = 'ETH';
 &nbsp;
@@ -180,6 +194,10 @@ export class Ethereum implements Crypto&lt;EthereumOptions&gt; {
     return (this.#account = this.#account || new EthereumAccount(this.options));
   }
 &nbsp;
+<span class="fstat-no" title="function not covered" >  get contract(): EthereumContract {</span>
+<span class="cstat-no" title="statement not covered" >    return (this.#contract = this.#contract || new EthereumContract(this.options));</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
+&nbsp;
 <span class="fstat-no" title="function not covered" >  createAccount(</span>
 <span class="cstat-no" title="statement not covered" >    options = commonOptions('ETH'),</span>
 <span class="cstat-no" title="statement not covered" >    lib = bp&lt;'web3' | 'ethers' | undefined&gt;('ETH', 'LIB'),</span>
@@ -189,10 +207,10 @@ export class Ethereum implements Crypto&lt;EthereumOptions&gt; {
 &nbsp;
   async getGasPrice(): Promise&lt;bigint | null&gt; {
     const { client } = this.options;
-    if (client instanceof Web3) <span class="branch-0 cbranch-no" title="branch not covered" >return client.eth.getGasPrice();</span>
-    else if (client instanceof ethers.JsonRpcProvider)
-      return (await client.getFeeData()).gasPrice;
-<span class="cstat-no" title="statement not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >    else throw new Error('unknown client');</span></span>
+    if (client instanceof Web3) return client.eth.getGasPrice();
+<span class="cstat-no" title="statement not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >    else if (client instanceof ethers.JsonRpcProvider)</span></span>
+<span class="cstat-no" title="statement not covered" >      return (await client.getFeeData()).gasPrice;</span>
+<span class="cstat-no" title="statement not covered" >    else throw new Error('unknown client');</span>
   }
 }
 &nbsp;</pre></td></tr></table></pre>
@@ -202,7 +220,7 @@ export class Ethereum implements Crypto&lt;EthereumOptions&gt; {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2024-05-10T15:12:43.940Z
+                at 2024-05-11T05:40:13.009Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

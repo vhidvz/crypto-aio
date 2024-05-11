@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for src/type/account.ts</title>
+    <title>Code coverage report for src/type/contract.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../../prettify.css" />
     <link rel="stylesheet" href="../../base.css" />
@@ -19,13 +19,13 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/type</a> account.ts</h1>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/type</a> contract.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>12/12</span>
+                <span class='fraction'>13/13</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>12/12</span>
+                <span class='fraction'>13/13</span>
             </div>
         
             
@@ -75,7 +75,8 @@
 <a name='L10'></a><a href='#L10'>10</a>
 <a name='L11'></a><a href='#L11'>11</a>
 <a name='L12'></a><a href='#L12'>12</a>
-<a name='L13'></a><a href='#L13'>13</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -87,17 +88,19 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">export type AccountOptions = {
-  private?: string;
-  address?: string;
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { InterfaceAbi } from 'ethers';
+import { ContractAbi } from 'web3';
 &nbsp;
-  phrases?: string[];
+export type ContractOptions = {
+  contract?: string;
+  abi?: ContractAbi | InterfaceAbi;
 };
 &nbsp;
-export interface Account&lt;Options extends AccountOptions&gt; {
+export interface Contract&lt;Options extends ContractOptions&gt; {
   readonly options: Options;
 &nbsp;
-  getBalance(address?: string): Promise&lt;bigint&gt;;
+  estimateGas(method?: string, options?: ContractOptions): Promise&lt;bigint&gt;;
 }
 &nbsp;</pre></td></tr></table></pre>
 
