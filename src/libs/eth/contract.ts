@@ -22,8 +22,7 @@ export class EthereumContract implements Contract<EthereumOptions> {
     if (client instanceof Web3) {
       return client.eth.estimateGas({ from: address, type: method });
     } else if (client instanceof ethers.JsonRpcProvider) {
-      const result = await client.estimateGas({ from: address, value: method });
-      return result;
+      return client.estimateGas({ from: address, value: method });
     } else throw new Error('unknown client');
   }
 }

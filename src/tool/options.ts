@@ -28,8 +28,14 @@ export const contractOptions = (net: Net, env?: string): ContractOptions => ({
   abi: JSON.parse(bp(net, 'ABI', env) || '[]'),
 });
 
+export const transactOptions = (net: Net, env?: string): ContractOptions => ({
+  contract: bp(net, 'CONTRACT', env),
+  abi: JSON.parse(bp(net, 'ABI', env) || '[]'),
+});
+
 export const cryptoOptions = (net: Net, env?: string): CryptoOptions => ({
   ...commonOptions(net, env),
   ...accountOptions(net, env),
   ...contractOptions(net, env),
+  ...transactOptions(net, env),
 });

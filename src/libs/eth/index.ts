@@ -3,6 +3,7 @@ import { Web3 } from 'web3';
 
 import { EthereumAccount } from './account';
 import { EthereumContract } from './contract';
+import { EthereumTransact } from './transact';
 import { Crypto, CryptoOptions } from '../../type';
 import { bp, commonOptions, ethereumOptions, initEth } from '../../tool';
 
@@ -18,6 +19,7 @@ export interface EthereumOptions extends CryptoOptions {
 export class Ethereum implements Crypto<EthereumOptions> {
   #account?: EthereumAccount;
   #contract?: EthereumContract;
+  #transact?: EthereumTransact;
 
   public static readonly symbol = 'ETH';
 
@@ -31,6 +33,10 @@ export class Ethereum implements Crypto<EthereumOptions> {
 
   get contract(): EthereumContract {
     return (this.#contract = this.#contract || new EthereumContract(this.options));
+  }
+
+  get transact(): EthereumTransact {
+    return (this.#transact = this.#transact || new EthereumTransact(this.options));
   }
 
   createAccount(
