@@ -1,9 +1,9 @@
 import EventEmitter from 'node:events';
 
 import { logger } from '../tool';
-import { Ethereum } from '../libs';
+import { Ethereum, Tronix } from '../libs';
 
-export type Net = typeof Ethereum.symbol;
+export type Net = typeof Ethereum.symbol | typeof Tronix.symbol;
 
 export type EmitterOptions = {
   emitter?: EventEmitter;

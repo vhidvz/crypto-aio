@@ -8,5 +8,5 @@ export type AccountOptions = {
 export interface Account<Options extends AccountOptions> {
   readonly options: Options;
 
-  getBalance(address?: string): Promise<bigint>;
+  getBalance(address?: string): Promise<bigint | number>;
 }
