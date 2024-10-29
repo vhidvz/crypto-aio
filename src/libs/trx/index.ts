@@ -42,8 +42,6 @@ export class Tronix implements Crypto<TronixOptions> {
   }
 
   async getGasPrice(): Promise<bigint | null> {
-    const { client } = this.options;
-    if (client) return client.trx.getGasPrice();
-    else throw new Error('unknown client');
+    throw new Error('unknown client');
   }
 }

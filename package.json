@@ -1,6 +1,6 @@
 {
   "name": "crypto-aio",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "All-In-One Crypto-Currency for Backend",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,10 +34,10 @@
   ],
   "homepage": "https://github.com/vhidvz/crypto-aio#readme",
   "dependencies": {
-    "debug": "^4.3.4",
-    "ethers": "^6.12.1",
-    "tronweb": "6.0.0-beta.3",
-    "web3": "^4.8.0"
+    "debug": "^4.3.7",
+    "ethers": "^6.13.4",
+    "tronweb": "^6.0.0",
+    "web3": "^4.14.0"
   },
   "devDependencies": {
     "@types/debug": "^4.1.12",

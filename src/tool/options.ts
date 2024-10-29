@@ -20,7 +20,7 @@ export const commonOptions = (net: Net, env?: string): CommonOptions => ({
 export const accountOptions = (net: Net, env?: string): AccountOptions => ({
   address: bp(net, 'ADDRESS', env),
   private: bp(net, 'PRIVATE', env),
-  phrases: bp(net, 'PHRASES', env).split(/,/),
+  phrases: bp(net, 'PHRASES', env)?.split(/,/),
 });
 
 export const contractOptions = (net: Net, env?: string): ContractOptions => ({

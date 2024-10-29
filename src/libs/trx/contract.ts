@@ -1,4 +1,4 @@
-import assert from 'node:assert';
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { TronixOptions } from './index';
 import { tronixOptions, initTrx } from '../../tool';
@@ -13,12 +13,6 @@ export class TronixContract implements Contract<TronixOptions> {
     method: string = 'transfer',
     options: ContractOptions = this.options,
   ): Promise<bigint> {
-    const { abi, contract: address } = options;
-    assert(abi?.length && address, 'abi and contract are required');
-
-    const { client } = this.options;
-    if (client) {
-      return client.trx.estimateGas({ from: address, type: method });
-    } else throw new Error('unknown client');
+    throw new Error('unknown client');
   }
 }
