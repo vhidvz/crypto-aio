@@ -1,7 +1,7 @@
 # Blockchain Adapter Layer — Design Spec
 
 - **Date:** 2026-09-23
-- **Status:** Approved in brainstorming (sections 1–4); pending written-spec review
+- **Status:** Approved (sections 1–4, written spec, review reconciliation)
 - **Target release:** `crypto-aio@0.1.0` (breaking)
 - **Runtime:** Node.js ≥ 20, backend only
 
@@ -148,10 +148,13 @@ All methods are async unless noted.
 | Area | Methods |
 |---|---|
 | Introspection (sync) | `chain`, `network`, `library`, `config` (frozen, redacted), `supports(cap)`, `capabilities` |
-| Addresses | `validateAddress(a)`, `normalizeAddress(a)` → `Address`, `addressFromPublicKey(pk, opts?)`, `deriveAddress(wallet, index)` (`hd-public-derivation`), `generateAccount()` → `{ address, publicKey, privateKey: Secret }` |
+| Addresses | `validateAddress(a)`, `normalizeAddress(a)` → `Address`, `addressFromPublicKey(pk, opts?)`, `walletAddress(wallet?)`, `deriveAddress(wallet, index)` (`hd-public-derivation`) |
 | Assets | `resolveAsset(ref)` → `AssetInfo`, `getBalance(address, asset?)` → `Balance`, `getBalances(address, assets)` |
 | Fees | `estimateFee(intent)` → `FeeEstimate` |
-| Write | `transfer(intent, opts?)` → `Submission`, `prepareTransfer(intent, opts?)` → `PreparedOperation`, `submitSignatures(opId, sigs)`, `abandon(opId)` (only before `signed`), `broadcast(raw)` (bare broadcast with no Operation), `replace(opId, {fee})`, `cancel(opId)`, `retry(opId)`, `getOperation(opId)` |
+| Write: new Operation | `transfer(intent, opts?)` → `Submission`, `prepareTransfer(intent, opts?)` → `PreparedOperation`, `submitSignatures(opId, sigs)`, `abandon(opId)` (only before `signed`), `getOperation(opId)` |
+| Write: same Attempt (`safe`) | `rebroadcast(opId)`: resends the stored raw of the active Attempt. It never builds or signs |
+| Write: new Attempt (`never-auto`) | `replace(opId, {fee})`, `cancel(opId)` (capability-gated), `rebuild(opId)` (only after the prior Attempts are **proven** dead) |
+| Write: bare | `broadcast(raw)`: broadcasts an externally signed transaction without an Operation |
 | Tx / status | `getTransaction(id)` → `Transaction \| null`, `getTransactionStatus(id)` → `TxStatus`, `waitForConfirmation(ref, opts?)`, `watch(ref)` → `AsyncIterable<TxStatusEvent>` |
 | Chain | `getBlockHeight()`, `getBlock(ref)`, `getNetworkStatus()` (heights, finalized height, endpoint health) |
 | Observation (capability) | `scanner(opts)` (`block-scan`), `history(address, opts)` (`address-history`) |
@@ -209,9 +212,10 @@ Calling an operation the resolved handle does not support throws `UnsupportedCap
 ### 5.5 Capabilities, extensions, escape hatch
 
 - `Capability` is a string-literal union that plugins can extend: `tokens`, `memo`, `batch-transfer`, `replace-fee`, `cancel`, `block-scan`, `address-history`, `finality-tag`, `hd-public-derivation`, `contract-read`, `fee-market-1559`, `expiry`.
-- Capabilities are computed from the manifest, the network registry and the **resolved providers**. For example, EVM has no `address-history` unless an indexer provider is configured.
+- Capabilities are computed from the manifest, the network registry, the **resolved providers** and, where relevant, the **resolved wallet**. For example, EVM has no `address-history` unless an indexer provider is configured. TON's `batch-transfer` limit comes from the wallet version (v4r2: 4 messages, v5r1: 255), not from the chain. `bc.limits()` reports such values (e.g. `maxOutputs`).
 - `ext.<family>` holds a small, stable, capability-gated API for real needs: `ext.evm.readContract`, `ext.evm.erc20(address)`, `ext.evm.getNonce`; `ext.utxo.listUnspent`, `ext.utxo.coinSelection`; `ext.tron.getResources`; `ext.solana.getTokenAccounts`; `ext.ton.getSeqno`, `ext.ton.jettonWallet`. `ext` is not meant to mirror the SDKs.
 - Escape hatch: `import { native } from 'crypto-aio/native'; native(bc, 'ethers')`. It returns the SDK client typed through the augmentable `NativeClientMap`, which each adapter subpath populates. It throws if the handle uses another library. It is documented as outside semver guarantees and never reachable from the handle itself.
+  - **Isolation:** `native()` never returns the pooled SDK instance that drivers use. Each handle lazily gets its **own** SDK client, cached per handle and wired to the same policy-wrapped transport. Callers may mutate it (listeners, polling, TronWeb `setAddress`) without affecting other handles or tenants. Native clients are closed with the container. The shared transport's rate limits and health state are shared on purpose; they are infrastructure, not tenant state.
 
 ### 5.6 Typing
 
@@ -237,7 +241,8 @@ Ext and fee detail types contain no SDK types, so they are always available. SDK
 ### 6.1 Registries
 
 - `ChainInfo { id, family, model: 'account' | 'utxo', nativeAsset, ordering: OrderingModel, schemes: SignatureSchemeId[], networks }`
-- `NetworkInfo { id, chainId?, genesisHash?, testnet, feeModel, finality: FinalityPolicy, defaultConfirmations, explorer?: { tx, address }, replacement?: { minBumpPercent }, capabilities?: { add?, remove? } }`
+- `NetworkInfo { id, chainId?, genesisHash?, testnet, feeModel, finality: FinalityPolicy, defaultConfirmations, reorgWindow, explorer?: { tx, address }, replacement?: { minBumpPercent }, capabilities?: { add?, remove? } }`
+  - `reorgWindow` is the number of recent blocks/slots the scanner retains for rollback detection. It is a configurable safety window and deliberately **independent of `FinalityPolicy`**, which may have no numeric depth.
 - `FinalityPolicy = { kind: 'confirmations', n } | { kind: 'tag', tag: 'finalized', fallbackConfirmations } | { kind: 'solidified' } | { kind: 'commitment', level: 'finalized' } | { kind: 'masterchain' }`
 - `AdapterManifest { family, library, chains: ChainId[], capabilities, requiresIndexer?: boolean, peerDependencies: { name, range }[], load(): Promise<DriverFactory> }`
 
@@ -320,12 +325,30 @@ Locators: EVM `native` or `log:<logIndex>`; UTXO `vout:<n>`; Tron `native` or `l
 ```ts
 type TxState = 'unknown' | 'pending' | 'mempool' | 'included' | 'final'
              | 'failed' | 'dropped' | 'replaced' | 'expired'
-             | 'rejected';   // Attempts only: every broadcast target definitively refused it
-type TxStatus = { state: TxState; confirmations: number; blockHash?: string; blockHeight?: bigint;
-                  finality: 'none' | 'probabilistic' | 'final'; reason?: string; replacedBy?: string };
+             | 'refused'     // Attempts only: providers refused it for a state-dependent reason
+             | 'rejected';   // Attempts only: permanently invalid by construction
+type TxStatus = { state: TxState; evidence: 'observed' | 'proven'; confirmations: number;
+                  blockHash?: string; blockHeight?: bigint; finality: 'none' | 'probabilistic' | 'final';
+                  reason?: string; replacedBy?: string };
 ```
 
 `reorged` is an **event** (`tx.reorged`), not a terminal state. A reorged transaction returns to `mempool` or `pending`.
+
+#### Evidence model
+
+Mempool visibility is local to each provider, and propagation is incomplete. **Absence is never proof.** Each status carries its evidence level:
+
+| State | `observed` means | `proven` requires |
+|---|---|---|
+| `dropped` | not seen by any healthy provider for ≥ `droppedGracePeriodMs` | never proven. `dropped` is always non-terminal, and the Attempt stays live |
+| `refused` | a broadcast target refused it for a state-dependent reason (insufficient funds, fee too low, nonce too low/high, input missing/spent, mempool full) | never proven. Such a transaction may become valid, or may already be included |
+| `rejected` | — | permanent invalidity by construction: malformed, bad signature, wrong chain id or network, exceeds protocol limits. Such raw bytes can never be included anywhere |
+| `replaced` | a conflicting transaction is seen in a mempool or an unfinalized block | the conflicting transaction (same nonce/seqno, or a shared input) is **final** |
+| `expired` | expiry passed by the latest (unfinalized) height or time | expiry passed per **finalized** chain state, and the Attempt is not in the canonical chain up to that point. Only `expiry` / `seqno`+expiry ordering models can reach this |
+| `failed` | reverted in an unfinalized block | reverted, and the including block is final |
+| `final` | — | the network's `FinalityPolicy` is satisfied |
+
+**Proof quorum.** A `proven` verdict uses finalized data from a healthy, identity-checked endpoint. By default it is cross-checked against a second healthy endpoint when one exists (`proof.quorum`, default `min(2, healthyEndpoints)`). If the endpoints disagree about finalized data, `provider.inconsistent` is emitted and **no terminal decision is made** until they agree.
 
 ## 7. Adapter contract
 
@@ -342,9 +365,14 @@ interface ChainDriver {
   readonly capabilities: ReadonlySet<Capability>;
   address: AddressCodec;                     // validate, normalize, fromPublicKey(pk, opts)
   reader: ChainReader;                       // balance, height, block, transaction, status, tokenMetadata
-  builder: TxBuilder;                        // estimateFee, build(intent, ctx) → UnsignedTx,
+  builder: TxBuilder;                        // estimateFee, checkFunds, build(intent, ctx) → UnsignedTx,
                                              // assemble(unsigned, signatures) → SignedTx { raw, ref }
-  broadcaster: Broadcaster;                  // broadcast(signed) → { accepted | alreadyKnown | rejected(reason) }
+  broadcaster: Broadcaster;                  // broadcast(signed) → accepted | alreadyKnown
+                                             //   | refused(code, reason)   (state-dependent; observed)
+                                             //   | rejected(code, reason)  (permanently invalid; proven)
+  proofs: ProofSource;                       // finalized-state checks used for 'proven' verdicts:
+                                             //   isOrderingSlotConsumed(ordering, excludeRef), isExpired(ordering),
+                                             //   finalizedHead()
   sequence?: SequenceSource;                 // pending nonce / seqno (nonce & seqno models)
   replacement?: ReplacementPolicy;           // buildReplacement / buildCancel; absent ⇒ not supported
   scanner?: BlockSource;                     // 'block-scan'
@@ -355,6 +383,7 @@ interface ChainDriver {
 }
 type UnsignedTx = {
   payload: RawTx;                            // serializable (EVM unsigned RLP, PSBT, Tron raw_data, Solana message, TON cell BOC)
+  expectedRef?: AttemptRef;                  // only when identity is fixed before signing (Tron; UTXO with witness-only inputs)
   signingRequests: SigningRequest[];
   ordering: OrderingData;                    // nonce / seqno / inputs / expiry
   fee: FeeEstimate; summary: IntentSummary;  // decoded outputs for signing context
@@ -369,9 +398,11 @@ Every port method is tagged, and the transport and Operation engine honour the t
 
 | Class | Methods | Behaviour |
 |---|---|---|
-| `safe` | reads; rebroadcast of stored raw | retried with backoff; failover allowed |
+| `safe` | reads; `rebroadcast` (the **same** immutable Attempt's stored raw) | retried with backoff; failover allowed |
 | `ambiguous-on-failure` | first broadcast of an Attempt | transport failure ⇒ the outcome is **ambiguous**; the Attempt is treated as possibly sent; never rebuilt |
-| `never-auto` | build+sign a new Attempt, replace, cancel, retry | never retried automatically; only an explicit API call triggers it |
+| `never-auto` | anything that creates a **new** Attempt: build+sign, `replace`, `cancel`, `rebuild` | never retried automatically; only an explicit API call triggers it |
+
+The engine keeps "retry the same Attempt" and "create a new Attempt" as separate code paths with separate public verbs. No code path converts one into the other.
 
 ## 8. Transaction lifecycle
 
@@ -379,7 +410,8 @@ Every port method is tagged, and the transport and Operation engine honour the t
 
 ```ts
 type OperationState = 'created' | 'prepared' | 'awaiting-signature' | 'signed' | 'submitted'
-                    | 'included' | 'final' | 'failed' | 'expired';
+                    | 'stalled'                          // non-terminal: needs an explicit action
+                    | 'included' | 'final' | 'failed' | 'expired' | 'abandoned';
 type OperationRecord = {
   id; namespace; idempotencyKey; intentHash;        // sha256 of the canonicalized intent
   context: ExecutionContext;                        // frozen: chain, network, library, providerSetId,
@@ -387,6 +419,8 @@ type OperationRecord = {
   kind: 'transfer';
   state: OperationState; outcome?: 'executed' | 'cancelled';
   unsigned?: UnsignedTx;                            // persisted at 'prepared' / 'awaiting-signature'
+  reservation?: OrderingData;                       // slot owned by this Operation (nonce / seqno / inputs)
+  signerTicket?: string;                            // for 'awaiting-signature'
   attempts: AttemptRecord[];                        // append-only
   activeAttemptId?: string;
   version: number; claim?: { workerId; token: bigint; until: number };
@@ -397,71 +431,78 @@ type AttemptRecord = {                              // IMMUTABLE after insertion
   purpose: 'original' | 'replacement' | 'cancel' | 'rebuild'; supersedes?: string; createdAt;
 };
 type AttemptObservation = {                         // mutable, versioned, stored separately per attempt
-  attemptId; state: TxState; txHash?; blockHash?; blockHeight?; confirmations; lastSeenAt; version;
+  attemptId; state: TxState; evidence: 'observed' | 'proven';
+  txHash?; blockHash?; blockHeight?; confirmations; lastSeenAt; version;
 };
 ```
+
+Terminal Operation states: `final` (with `outcome`), `failed`, `expired`, `abandoned`. An idempotent repeat of a terminal Operation returns it unchanged and never creates a new one.
 
 ### 8.2 Operation state machine
 
 ```
-created ─▶ prepared ─▶ awaiting-signature ─▶ signed ─▶ submitted ─▶ included ─▶ final (outcome)
-   │           │                │              │           │            │
-   └──▶ failed (definitive rejection before any Attempt exists)        └─▶ (reorg) submitted
-submitted/included ─▶ failed (reverted, proven) | expired (proven) | final(outcome=cancelled)
+created ─▶ prepared ─▶ awaiting-signature ─▶ signed ─▶ submitted ─▶ included ─▶ final(outcome)
+  │  │        │  │             │  │                      │  ▲          │
+  │  │        │  │             │  └─▶ abandoned          ▼  │          └─▶ (reorg) submitted
+  │  │        │  └─────────────┴────▶ abandoned        stalled ─(rebroadcast accepted / replace / cancel / rebuild)
+  │  └────────┴──▶ failed (pre-signing: validation, funds pre-check, policy veto — nothing signed)
+  └──▶ abandoned
+submitted | stalled | included ─▶ failed (proven) | expired (proven) | final(outcome = executed | cancelled)
 ```
 
 | Transition | Persisted atomically | Crash here ⇒ recovery does |
 |---|---|---|
 | → `created` | create-if-absent on (namespace, idempotencyKey) | resume from `created` |
-| → `prepared` | `unsigned` payload | rebuild is allowed (nothing signed yet) |
-| → `awaiting-signature` | `unsigned` + pending signer ticket | wait for `submitSignatures` |
+| → `prepared` | `unsigned` + `reservation` | resume signing with the stored unsigned payload (nothing signed yet) |
+| → `awaiting-signature` | `unsigned` + `reservation` + `signerTicket` | wait for `submitSignatures` or `abandon` |
 | → `signed` | `appendAttempt(op, attempt, {state: signed})` (single write) | **rebroadcast stored raw**; never re-sign |
-| → `submitted` | state only, after broadcast accepted / alreadyKnown / ambiguous | poll status; rebroadcast if absent |
-| → `included` / `final` | observation + state | continue monitoring |
+| → `submitted` | state, after broadcast accepted / alreadyKnown / ambiguous | poll status; rebroadcast while `dropped` |
+| → `stalled` | state + refusal reason (observed) | keep observing; wait for an explicit action |
+| → `included` / `final` / `failed` / `expired` | observation + state | continue monitoring (non-terminal) or stop (terminal) |
+| → `abandoned` | state; reservation released in the same logical step (§8.5) | nothing |
 
 Invariants:
 - Signed bytes are persisted before any broadcast. An Attempt is never re-signed.
-- A terminal state requires proof. Timeouts and "not found" are never terminal. Proof means one of:
-  - a reverted receipt or on-chain failure
-  - provable expiry
-  - a finality threshold
-  - a definitive rejection before any Attempt exists
-  - a **safe broadcast rejection** (below)
-- A **safe broadcast rejection** means every broadcast target definitively refused the Attempt, and a follow-up lookup of its `AttemptRef` finds it neither in the mempool nor on-chain. Only then is the Attempt marked `rejected` and its ordering slot released (§8.5), so any future transaction is mutually exclusive with it. The Operation then becomes `failed`, and its raw is never broadcast again.
-  - "Nonce too low" / "already spent" are **not** treated as rejections until the lookup rules out that this very Attempt was already accepted, which is possible after recovery or with fan-out.
+- **A terminal state after signing requires `proven` evidence** (§6.7): finality, a finalized revert, finalized expiry, or finalized consumption of the ordering slot by a *different* transaction. Timeouts, "not found", `dropped` and `refused` are never terminal.
+- Before signing, `failed` needs no chain proof, because no signed bytes exist.
+- **`rejected`** (permanently invalid by construction) is the only broadcast outcome that ends an Attempt without chain proof. The Operation becomes `failed` only if *every* Attempt of that Operation is `rejected` or otherwise proven dead.
+- A **`refused`** broadcast moves the Operation to `stalled`: `INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, `NONCE_TOO_HIGH`, and so on. Before that, "nonce too low" / "already spent" trigger a lookup of the Attempt's own ref, and if it is found the Operation is `submitted` or `included`, since it was ours all along.
+- A `stalled` Operation keeps its reservation. It is resolved only by an explicit `rebroadcast` of the same Attempt (e.g. after topping up funds), by a mutually exclusive new Attempt (`replace`, `cancel`, `rebuild`), or by the monitor reaching a proven verdict.
+- `abandon(opId)` is allowed only in `created`, `prepared` and `awaiting-signature`. It makes the Operation terminal (`abandoned`), releases its reservation, and calls `signer.cancelRequest?(ticket)`. `submitSignatures` on an abandoned Operation throws `INVALID_TRANSITION`. If a signer finishes a request after it was abandoned, the nonce may already be reused. At most one of those transactions can land, and the monitor reports the other Operation's Attempt as `replaced`. The guide documents this limit of async signers.
 - Operation state and Attempt observations recover independently. Recovery reconstructs the Operation's state from its Attempts' observations.
 
 ### 8.3 `transfer()` algorithm
 
 1. Resolve the asset, validate addresses and amounts, compute `intentHash`.
-2. `store.create(op)`. If the key already exists: same `intentHash` → return the existing Operation's `Submission` (kicking a rebroadcast if an Attempt is non-terminal); different hash → `IdempotencyConflictError`.
+2. `store.create(op)`. If the key already exists: same `intentHash` → return the existing Operation's `Submission`, and trigger a `rebroadcast` if its active Attempt is non-terminal. Different hash → `IdempotencyConflictError`.
 3. If the ordering model needs coordination, acquire the lease for `(namespace, chain, network, from)` and **allocate** an ordering slot (§8.5).
-4. Estimate the fee, then `builder.build(intent, { from, ordering, fee })` → `UnsignedTx`. Persist `prepared`. The unsigned payload records the reserved slot.
+4. Estimate the fee. Run `builder.checkFunds` (balance ≥ outputs + fee upper bound for the fee asset(s)). If it fails → `failed` (`INSUFFICIENT_FUNDS`, pre-signing) and the slot is released. Then `builder.build(intent, { from, ordering, fee })` → `UnsignedTx`. Persist `prepared` with the reservation.
 5. Run the `beforeSign` hooks (veto point). A veto → `failed` (`POLICY_REJECTED`) and the slot is released. Call the signer(s) (§9). If the result is `pending`, persist `awaiting-signature` (the reservation stays with the Operation), release the lease, and return.
-6. Verify every signature against its expected public key. Call `builder.assemble` → `SignedTx { raw, ref }`.
+6. Verify every signature against its expected public key. Call `builder.assemble` → `SignedTx { raw, ref }`. From here on, the reservation belongs to this Operation permanently (§8.5).
 7. `appendAttempt` → `signed` (atomic, fenced).
-8. Broadcast (`ambiguous-on-failure`).
-   - Accepted or `alreadyKnown` → `submitted`.
-   - Ambiguous → `submitted` with the `ambiguous` flag set; the returned error has `ambiguous: true`.
-   - Definitive refusal → apply the safe-broadcast-rejection check (§8.2). If it passes → Attempt `rejected`, slot released, Operation `failed` with the mapped code (`INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, `NONCE_CONFLICT`, …). If it does not pass → `submitted` (it was ours all along).
+8. Broadcast (`ambiguous-on-failure`):
+   - accepted / `alreadyKnown` → `submitted`
+   - transport failure → `submitted` with the `ambiguous` flag set; the returned error has `ambiguous: true`
+   - `refused` → the own-ref lookup (§8.2), then `stalled` with the mapped code
+   - `rejected` → Attempt `rejected` (proven), then the Operation `failed` per §8.2
 9. Release the lease. Return the `Submission`.
 
 ### 8.4 Idempotency
 
 - The key is unique per container namespace. The canonical intent hash covers the chain, network, asset id, outputs, memo, from and fee policy.
-- A repeated call returns the same Operation, whatever state it is in.
+- A repeated call returns the same Operation, whatever state it is in, terminal states included.
 - A broadcast of stored raw bytes may be repeated safely at any time. "Already known", "duplicate" or "transaction already in chain" responses are success.
 
 ### 8.5 Ordering models and coordination
 
-`OrderingModel` is chain-specific. The core only uses it for two questions: does this need the address lease, and is a new Attempt mutually exclusive with the earlier ones.
+`OrderingModel` is chain-specific. The core only uses it for three questions: does this need the address lease, is a new Attempt mutually exclusive with the earlier ones, and what counts as proof that an Attempt is dead.
 
-| Model | Chains | Lease | Exclusivity of a new Attempt |
-|---|---|---|---|
-| `nonce` | EVM | yes | same nonce |
-| `seqno` + expiry | TON | yes | same seqno, or all prior `valid_until` passed |
-| `inputs` | UTXO | yes (serializes coin selection) | spends ≥ 1 same input (RBF) |
-| `expiry` | Tron (`expiration`), Solana (`lastValidBlockHeight`) | no | all prior Attempts provably expired and not found |
+| Model | Chains | Lease | New Attempt is mutually exclusive when | Proof an Attempt is dead |
+|---|---|---|---|---|
+| `nonce` | EVM | yes | same nonce | the nonce is consumed by a different tx in a **final** block |
+| `seqno` + expiry | TON | yes | same seqno | `valid_until` < finalized masterchain time and not included, or the seqno is consumed by a different message at finality |
+| `inputs` | UTXO | yes (serializes coin selection) | spends ≥ 1 same input (RBF) | one of its inputs is spent by a different tx at final depth |
+| `expiry` | Tron (`expiration`), Solana (`lastValidBlockHeight`) | no | only after the prior Attempts are proven dead | expiry passed per finalized state and not in the canonical chain up to it |
 
 Ports:
 
@@ -480,35 +521,43 @@ interface SequenceStore {
 ```
 
 Nonce procedure (EVM), run under the lease. The core implements it as a `SequenceCoordinator` over the two ports:
-- **allocate:** `chainPending = sequence.pending(address)`. Drop released values below `chainPending`, since those were consumed. Pick the smallest remaining released value if there is one, else `max(next, chainPending)`, and advance `next` past it. Persist with the lease token. A reservation is thereby committed as soon as the unsigned payload is prepared. This keeps async (`awaiting-signature`) Operations from colliding with later ones.
-- **release(n):** add `n` to `released` (fenced). This happens on veto, on safe broadcast rejection, or on `abandon(opId)`, which is allowed only before `signed`.
-- A released nonce below outstanding ones leaves later transactions stuck. The monitor detects this gap (chain pending nonce < lowest outstanding reservation) and emits `nonce.gap`. The next allocation for that address fills it with that transfer. The library never invents a filler transaction.
+- **allocate:** `chainPending = sequence.pending(address)`. Drop released values below `chainPending`, since those were consumed. Pick the smallest remaining released value if there is one, else `max(next, chainPending)`, and advance `next` past it. Persist with the lease token. The reservation is recorded on the Operation, so async (`awaiting-signature`) Operations can't collide with later ones.
+- **release(n)** is allowed **only while no signed bytes exist** for `n`: on pre-signing `failed`, veto, or `abandon`. Once an Attempt is signed, its nonce belongs to that Operation permanently. The only ways to resolve it are a mutually exclusive Attempt of the *same* Operation (`replace`, `cancel`), a `rebroadcast`, or proof. A signed nonce is never handed to an unrelated Operation, and in particular never on the basis of mempool absence.
+- A reserved-but-unused nonce below outstanding ones (e.g. a `stalled` Operation) leaves later transactions queued. The monitor detects this gap (chain pending nonce < lowest outstanding reservation) and emits `nonce.gap` with the blocking Operation id. Resolving it (rebroadcast after top-up, replace, cancel) is an explicit application action. The library never invents a filler transaction.
 
-Seqno procedure (TON): an external message is valid only for the wallet's *current* seqno, so messages for the next seqno can't be pre-signed. Allocation succeeds only when no earlier Attempt of the wallet is still pending (it is included, rejected or expired). Otherwise it throws `SEQUENCE_BUSY` (retryable, category `state`). Throughput scales with batching (`batch-transfer`: v4r2 up to 4 outputs, v5r1 up to 255) or with more wallets.
+Seqno procedure (TON): an external message is valid only for the wallet's *current* seqno, so messages for the next seqno can't be pre-signed. Allocation succeeds only when every earlier Attempt of the wallet is included, or proven dead. Otherwise it throws `SEQUENCE_BUSY` (retryable, category `state`). Throughput scales with batching (the wallet version's `batch-transfer` limit) or with more wallets.
 
 Stale-worker protection: every store write that affects ordering or Operation state carries the lease or claim token. When a paused worker resumes after its lease expired and another worker took over, its writes fail with `FencingError`. The contract suites verify this.
 
-UTXO reservation: coin selection excludes inputs referenced by non-terminal Operations of the same wallet, meaning their unsigned payloads or non-terminal Attempts (read from the `OperationStore`). Combined with the lease, this prevents concurrent double selection. Inputs of a `rejected` Attempt or an abandoned Operation become selectable again.
+UTXO reservation: coin selection excludes inputs referenced by non-terminal Operations of the same wallet, meaning their reservation, unsigned payloads or live Attempts (read from the `OperationStore`). Combined with the lease, this prevents concurrent double selection. Inputs become selectable again only when the Operation is `abandoned`, pre-signing `failed`, or all its Attempts are `rejected`.
 
-### 8.6 Replace, cancel, retry
+### 8.6 Rebroadcast, replace, cancel, rebuild
 
-- `replace(opId, { fee })` and `cancel(opId)` require the `replace-fee` or `cancel` capability respectively (`driver.replacement`). Unsupported families throw `UnsupportedCapabilityError`.
-- EVM: replacement uses the same nonce with higher fees. `NetworkInfo.replacement.minBumpPercent` is a configurable default (10, matching common txpool rules) and is **not** a universal EVM rule. Cancel is a *conflicting* zero-value self-transfer with the same nonce. The Operation ends `final` with `outcome: 'cancelled'` only if the cancel Attempt finalizes. If the original lands instead, the outcome is `executed`.
-- UTXO: replacement is BIP125 RBF over the same inputs with a higher fee. Cancel is an RBF back to the wallet's own change address, with the same outcome semantics. Attempts signal RBF by default (configurable).
-- Tron, Solana, TON: there is no replace or cancel. When an Attempt provably expires, the Operation becomes `expired`. `retry(opId)` creates a `rebuild` Attempt only after re-verifying expiry. The library never retries on its own; that decision is application policy.
-- When one Attempt of an Operation finalizes, all sibling Attempts are marked `replaced` (`replacedBy`).
+- `rebroadcast(opId)` (`safe`) resends the active Attempt's stored raw. It is the normal action for `dropped` and for `stalled` after the cause is fixed (e.g. funds topped up).
+- `replace(opId, { fee })` and `cancel(opId)` require the `replace-fee` or `cancel` capability respectively (`driver.replacement`). Unsupported families throw `UnsupportedCapabilityError`. Each creates a new, mutually exclusive Attempt (`never-auto`).
+- **EVM:** replacement uses the same nonce with higher fees. `NetworkInfo.replacement.minBumpPercent` is a configurable driver constraint (default 10, matching common txpool rules) and is **not** a universal EVM rule. "Cancel" is **not** a protocol primitive. It is a conflicting zero-value self-transfer with the same nonce, and whichever Attempt reaches finality decides the outcome: `outcome: 'cancelled'` only if the cancel Attempt finalizes, `executed` if an original or replacement does.
+- **UTXO:** replacement is BIP125 RBF over the same inputs with a higher fee. Cancel is an RBF that spends the same inputs back to the wallet's change address, with the same outcome semantics. Attempts signal RBF by default (configurable).
+- **Tron, Solana, TON:** there is no replace or cancel. A proven expiry makes the Operation `expired` (terminal). `rebuild(opId)` is allowed only on `expired` Operations of `expiry` / `seqno` models. It re-verifies the proof, creates a `rebuild` Attempt, and reopens the Operation to `signed`. The library never does this on its own; it is application policy.
+- When one Attempt of an Operation finalizes, all sibling Attempts are marked `replaced` (proven, `replacedBy`).
 
 ### 8.7 Recovery
 
-`container.operations.recover({ signal })` claims non-terminal Operations and acts per §8.2: rebroadcast stored raw, poll status, resolve TON message hashes, re-check expiry. Recovery uses the Operation's frozen `ExecutionContext`. If the referenced provider set is gone, the current handle config for that chain and network is used for reads and broadcasts (these are safe). If the signer is needed and missing, the Operation stays put and an event is emitted.
+`container.operations.recover({ signal })` claims non-terminal Operations and acts per §8.2:
+- rebroadcast stored raw (`signed`, `submitted` + `dropped`)
+- poll status and evaluate proofs
+- resolve TON message hashes
+- leave `stalled` and `awaiting-signature` Operations for explicit action (and emit an event)
+
+Recovery uses the Operation's frozen `ExecutionContext`. If the referenced provider set is gone, the current handle config for that chain and network is used for reads and broadcasts (these are safe). Recovery never signs.
 
 ### 8.8 Monitoring, reorgs, drops
 
-- `waitForConfirmation(ref, { confirmations?, finality?: 'included' | 'final', timeoutMs?, signal? })` polls in-process. It writes observations when the ref belongs to an Operation. The default target is the network's `defaultConfirmations`. On timeout it throws `TimeoutError` (`ambiguous: false`, `retryable: true`); the transaction state is unchanged.
+- `waitForConfirmation(ref, { confirmations?, finality?: 'included' | 'final', timeoutMs?, signal? })` polls in-process. It writes observations when the ref belongs to an Operation. The default target is the network's `defaultConfirmations`. On timeout it throws `TimeoutError` (`ambiguous: false`, `retryable: true`); the transaction state is unchanged. A `proven` terminal verdict other than `final` rejects with the matching error (`TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED`).
 - `container.monitor.start({ workerId, signal, pollIntervalMs })` runs a background loop over `OperationStore.claimDue(workerId, now, leaseMs, limit)`. Several stateless workers can share the work. Claims are fenced by token.
-- **Reorgs:** an observation stores the `blockHash` of inclusion. If a later poll finds a different `blockHash`, or the transaction is missing while the chain height has moved past the inclusion height, the monitor emits `tx.reorged` and resets the observation to `mempool`/`pending`.
-- **Dropped:** a transaction not found after `droppedGracePeriodMs` **and** whose ordering slot is still free (nonce/seqno not consumed, inputs unspent) is marked `dropped`. The monitor then rebroadcasts the stored raw (`safe`). If the ordering slot was consumed by another transaction, the Attempt is `replaced` (external replacement), and the Operation is examined for which Attempt, if any, won.
-- **Height-monotonic guard:** observations come from endpoints whose height is ≥ the last observed height minus the tolerance. A lagging endpoint can never produce a false reorg, drop or expiry.
+- **Reorgs:** an observation stores the `blockHash` of inclusion. If a later poll finds a different `blockHash`, or the transaction is missing while the canonical chain at the inclusion height has a different hash, the monitor emits `tx.reorged` and resets the observation to `mempool`/`pending` (observed).
+- **Dropped (observed only):** not seen by any healthy provider for `droppedGracePeriodMs` → `dropped`. The monitor rebroadcasts the stored raw (`safe`, bounded by `rebroadcastIntervalMs`). It never releases the ordering slot and never makes the Operation terminal.
+- **Replaced:** a conflicting spend or nonce use by an unknown tx is `replaced` (observed) until that tx is final, then `replaced` (proven). The Operation then becomes `failed` (`TX_REPLACED`) unless one of its own Attempts won.
+- **Height-monotonic guard:** observations come from endpoints whose height is ≥ the last observed height minus the tolerance. A lagging endpoint can never produce a false reorg, drop or expiry. Proven verdicts additionally require the proof quorum (§6.7).
 - **Finality** follows the network's `FinalityPolicy`. `final` is reached only when the policy is satisfied. Exchanges should credit on `final`.
 
 ## 9. Signing
@@ -519,6 +568,7 @@ interface Signer {
   readonly schemes: readonly SignatureSchemeId[];
   getPublicKey(scheme: SignatureSchemeId, keyRef?: KeyRef): Promise<Uint8Array>;
   sign(requests: SigningRequest[], ctx: SigningContext): Promise<SigningResult>;
+  cancelRequest?(ticket: string): Promise<void>;   // best-effort, used by abandon()
 }
 type SigningRequest = { id: string; scheme: SignatureSchemeId; payload: Uint8Array;
                         payloadKind: 'digest' | 'message'; publicKey: Uint8Array; keyRef?: KeyRef;
@@ -534,12 +584,20 @@ type SigningContext = { operationId; namespace; chain; network; wallet; tier?; s
   type WalletConfig = { signer?: string; signers?: Record<string /* keyRef id */, string /* signer id */>;
     address?: string; xpub?: string; keyRef?: KeyRef; tier?: string; chains?: ChainId[];
     utxo?: { addressType?: 'p2wpkh' | 'p2sh-p2wpkh' | 'p2pkh' | 'p2tr'; changeAddress?: string };
-    ton?: { version: 'v4r2' | 'v5r1'; workchain?: 0 | -1 } };
+    ton?: TonWalletIdentity };
+  type TonWalletIdentity =
+    | { version: 'v4r2'; workchain?: 0 | -1; subwalletId?: number }            // default 698983191 + workchain
+    | { version: 'v5r1'; workchain?: 0 | -1; subwalletNumber?: number;         // default 0
+        networkGlobalId?: number };                                            // default from network: -239 mainnet, -3 testnet
   ```
+  Every field that determines an address is part of the wallet config and is recorded in the Operation's `ExecutionContext`. For TON that means version, workchain, subwallet id / number, and for V5 the network-specific wallet id. Addresses are derived as `f(publicKey, full identity)`. If a configured `address` doesn't match the derived one, that is a `ConfigError`.
   A wallet without a signer is watch-only: `transfer` → `SIGNER_UNAVAILABLE`, while `prepareTransfer` and `submitSignatures` still work (cold and offline flows).
 - **Scheme registry** (open, string ids): `secp256k1-ecdsa` (65-byte r‖s‖v), `secp256k1-schnorr` (BIP340, optional `tweak`), `ed25519`. Each scheme provides `verify()` and a public-key format. Drivers declare the schemes they need; signers declare the schemes they support; a mismatch is a `ConfigError`.
+- **Key custody:** private keys are created and held **only inside signers**. The domain model and the `Blockchain` handle never produce or carry private keys.
+  - `localSigner.generate({ schemes, exportable = false })` → `{ signer, publicKeys }`. The address comes from `bc.addressFromPublicKey(publicKey)` or by using the signer in a wallet.
+  - `signer.exportKey(scheme)` exists only when `exportable: true` was chosen at generation or import. It returns a `Secret`, and this is the single, explicit way key material leaves a signer.
 - **Built-in signers:**
-  - `localSigner({ secp256k1?: Secret, ed25519?: Secret })`.
+  - `localSigner({ secp256k1?: Secret, ed25519?: Secret, exportable?: boolean })`.
   - `localSigner.fromMnemonic(secret(phrase), opts)`. This uses BIP32 for secp256k1 and SLIP-10 for ed25519, via `@scure/bip32` / `@noble/hashes`. The derivation path comes from the wallet's `keyRef.path`, with chain defaults (60′, 195′, 84′, 501′, 607′).
   - `callbackSigner(fn)`, the base for remote, KMS, HSM and MPC integrations.
 - **Multiple and partial signatures:** requests are batched per signer. When requests route to several signers (keyRef → signer mapping on the wallet), results are merged. `submitSignatures(opId, sigs)` accepts partial sets; the Operation moves to `signed` only when every request has been satisfied.
@@ -567,8 +625,9 @@ for await (const ev of scanner) {           // at-least-once
 }
 ```
 
-- `CursorStore` persists `{ height, hash, recent: {height, hash}[] }`, where `recent` holds the last *N* blocks and N is the network's finality depth. On restart the scanner re-validates `recent` against the canonical chain and emits `rollback` for any divergence. This does not depend on earlier in-memory delivery.
-- `mode: 'final'` emits only finalized blocks, so no rollbacks happen. This is simplest for crediting. `mode: 'head'` emits unfinalized blocks and may roll back.
+- `CursorStore` persists `{ height, hash, recent: {height, hash}[] }`, where `recent` holds the last `reorgWindow` blocks. `reorgWindow` comes from the network registry and can be overridden per scanner; it is independent of `FinalityPolicy`. On restart the scanner re-validates `recent` against the canonical chain and emits `rollback` for any divergence. This does not depend on earlier in-memory delivery.
+- A divergence deeper than `reorgWindow` cannot be reconstructed safely. The scanner stops with `SCANNER_REORG_TOO_DEEP` (category `state`) instead of guessing, and resuming needs an explicit cursor reset.
+- `mode: 'final'` emits only blocks that the network's `FinalityPolicy` considers final (finalized tag, solidified block, `finalized` commitment, or N confirmations). Rollbacks can then only come from a provider inconsistency, which is handled as above. This mode is the simplest for crediting. `mode: 'head'` emits unfinalized blocks and may roll back within `reorgWindow`.
 - Transfer ids are deterministic (§6.6), so consumers can dedupe on them under at-least-once delivery.
 
 ## 11. Providers and transport
@@ -610,6 +669,17 @@ All stores are ports with in-memory defaults (`core/store/memory`). Contracts:
 
 `crypto-aio/testing` exports `describeOperationStoreContract(factory)`, `describeLockManagerContract(factory)`, `describeSequenceStoreContract(factory)` and `describeCursorStoreContract(factory)`. These are framework-agnostic test suites that take `describe`/`it`/`expect` adapters. They include stale-worker scenarios: a worker pauses, its lease expires, another worker takes over, and the stale write must fail. Redis and Postgres implementations are out of scope; the contracts define them.
 
+**Data classification.** The core never hands key material to any store. Everything it does persist is classified, and `DATA_CLASSIFICATION` (exported) maps each record field to a class, so backing stores can apply field-level encryption and retention:
+
+| Class | Fields | Notes |
+|---|---|---|
+| `secret` | — | never persisted by the core (keys live only in signers) |
+| `sensitive` | intent (addresses, amounts, memo), `unsigned` payload, signing context and summary, idempotency key, wallet name/tier, error details | business-confidential; encryption at rest recommended |
+| `sensitive-until-broadcast` | Attempt `raw`, `ref` | becomes public once broadcast, but before that it reveals pending treasury activity |
+| `operational` | ids, states, versions, claims, timestamps, observations | safe for telemetry |
+
+Encryption at rest, retention and deletion are responsibilities of the backing store and the deployment. The core never deletes records. `OperationStore.purge?(filter)` is optional, and when to call it is a deployment decision.
+
 ## 13. Errors
 
 `CryptoAioError extends Error { code; category; retryable; ambiguous; context; cause? }`
@@ -622,34 +692,35 @@ All stores are ports with in-memory defaults (`core/store/memory`). Contracts:
 | config | `CONFIG_INVALID`, `DEPENDENCY_MISSING` (with an install hint), `INCOMPATIBLE_SELECTION` |
 | unsupported | `UNSUPPORTED_CAPABILITY` |
 | validation | `INVALID_ADDRESS`, `INVALID_AMOUNT`, `ASSET_RESOLUTION`, `INVALID_INTENT` |
-| provider | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_MISCONFIGURED`, `RPC_ERROR` |
-| chain | `INSUFFICIENT_FUNDS`, `NONCE_CONFLICT`, `FEE_TOO_LOW`, `TX_REJECTED`, `TX_REVERTED`, `TX_EXPIRED` |
+| provider | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_MISCONFIGURED`, `PROVIDER_INCONSISTENT`, `RPC_ERROR` |
+| chain | `INSUFFICIENT_FUNDS`, `NONCE_CONFLICT`, `NONCE_TOO_HIGH`, `FEE_TOO_LOW`, `TX_REFUSED`, `TX_REJECTED`, `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` |
 | signing | `SIGNER_UNAVAILABLE`, `SIGNING_FAILED`, `SIGNATURE_MISMATCH`, `POLICY_REJECTED` |
-| state | `IDEMPOTENCY_CONFLICT`, `FENCING`, `VERSION_CONFLICT`, `INVALID_TRANSITION`, `NOT_FOUND`, `SEQUENCE_BUSY` |
+| state | `IDEMPOTENCY_CONFLICT`, `FENCING`, `VERSION_CONFLICT`, `INVALID_TRANSITION`, `NOT_FOUND`, `SEQUENCE_BUSY`, `SCANNER_REORG_TOO_DEEP` |
 | timeout | `TIMEOUT` |
 
 Drivers map SDK and RPC errors to these codes and keep the original as `cause`. `ambiguous: true` means the outcome is unknown; the caller retries with the **same** idempotency key.
 
 ## 14. Observability and secrets
 
-- **Typed events** via `container.on(...)`: `rpc.request`, `rpc.response`, `rpc.error` (method, endpoint id, latency, byte size; **no params or results**), `provider.health`, `provider.misconfigured`, `operation.state`, `attempt.state`, `tx.reorged`, `nonce.allocated`, `signer.requested`, `signer.completed`, `scanner.block`, `scanner.rollback`.
+- **Typed events** via `container.on(...)`: `rpc.request`, `rpc.response`, `rpc.error` (method, endpoint id, latency, byte size; **no params or results**), `provider.health`, `provider.misconfigured`, `provider.inconsistent`, `operation.state`, `operation.stalled`, `attempt.state`, `tx.reorged`, `nonce.allocated`, `nonce.gap`, `signer.requested`, `signer.completed`, `scanner.block`, `scanner.rollback`.
   - Every event carries `namespace`, `operationId` / `attemptId` where applicable, and a timestamp.
-  - Raw signed transactions, signatures and signing payloads are never emitted.
+  - Events carry only `operational`-class data (§12): ids, states, codes, timings and sizes. Raw transactions, signatures, signing payloads, addresses, amounts and memos are never emitted by default.
 - **Logger:** `Logger` port with a default `debug('crypto-aio:*')` implementation. OpenTelemetry integration goes through hooks, so there is no OTel dependency.
 - **`Secret<T>`:**
   - `secret(value)` returns an object whose `toString`, `toJSON` and `util.inspect.custom` produce `[REDACTED]`.
   - `reveal()` is explicit.
   - Provider URLs and headers containing secrets are redacted in errors, config snapshots and events via `redact()`.
-  - Private keys exist only inside `localSigner` closures. `generateAccount()` returns the key wrapped in `Secret`.
+  - Private keys exist only inside signers (§9 key custody). The only way out is `exportKey()` on a signer created as `exportable`, which returns a `Secret`.
 
 ## 15. Family specifics
 
 | | EVM (ethers \| web3) | UTXO / Bitcoin (bitcoinjs-lib + Esplora) | Tron (tronweb) | Solana (@solana/web3.js v1) | TON (@ton/ton) |
 |---|---|---|---|---|---|
 | Model / ordering | account / `nonce` | utxo / `inputs` | account / `expiry` | account / `expiry` | account / `seqno` + expiry |
+| Batch outputs | — | yes | — | — | wallet-version limit (v4r2: 4, v5r1: 255) |
 | Fee kind | `evm-1559` or `evm-legacy` per network; bound `upper` (max) with `expected` detail | `utxo` sat/vB × vsize; `exact` once built | `tron` bandwidth/energy; charge may be 0 TRX; `feeLimit` bounds TRC-20 | `solana` base + priority; **ATA rent** as a separate charge | `ton` forward+gas; jetton `attached` value with refunded excess → `upper` |
 | Signing requests | 1 × `secp256k1-ecdsa`, keccak digest | 1 per input: ecdsa (BIP143) or schnorr + tweak (p2tr); payload is a **PSBT** | 1 × `secp256k1-ecdsa` over txID | 1 per required signer, `ed25519` over message | 1 × `ed25519` over signing cell hash |
-| AttemptRef | `tx-hash` after signing (canonical) | `txid` before signing for segwit inputs (canonical) | `tx-hash` (txID) before signing (canonical) | `signature` after signing (canonical) | `message-hash` after signing (**not canonical**; tx hash resolved later) |
+| AttemptRef | `tx-hash` after signing (canonical) | `txid` (canonical). Known **before** signing only when every input is witness-type (p2wpkh, p2sh-p2wpkh, p2tr); otherwise after assembly | `tx-hash` (txID) before signing (canonical) | `signature` after signing (canonical) | `message-hash` after signing (**not canonical**; tx hash resolved later) |
 | Finality | `finalized` tag where supported, else N confirmations | N confirmations (probabilistic) | solidified block | `finalized` commitment | masterchain inclusion **and** completed message trace |
 | Replace / cancel | yes / yes | yes / yes (RBF) | no / no | no / no | no / no |
 | Block scan | yes (native + ERC-20 logs); contract execution ⇒ `partial` | yes (Esplora block txs) | yes | yes (by slot; skipped slots handled) | **no** (sharded) |
@@ -660,16 +731,16 @@ Drivers map SDK and RPC errors to these codes and keep the original as `cause`. 
 Per-family notes:
 
 - **EVM.** `EvmDriver` holds all EVM logic: intent → tx request, fee policy, ERC-20 encoding, receipt/log decoding, status mapping. It calls a narrow `EvmClient` strategy (`call`, `estimateGas`, `feeHistory`/`gasPrice`, `getTransactionCount`, `sendRawTransaction`, `getBlock`, `getTransaction`, `getReceipt`, `getLogs`, `serializeUnsigned`, `unsignedHash`, `serializeSigned`). `EthersClient` and `Web3Client` implement it, so both libraries share every behaviour and are tested with the same fixtures.
-- **UTXO.** Address types: p2wpkh (default), p2sh-p2wpkh, p2pkh, p2tr. Coin selection strategies: `accumulative` (default) and `all` (sweep); pluggable. Change goes to the wallet's change address (configurable). The ECC backend for bitcoinjs-lib is implemented over `@noble/curves` (no WASM). `prepareTransfer` exposes the PSBT (base64) for cold or hardware signing, and `submitSignatures` also accepts a signed PSBT. The indexer provider is **required**.
+- **UTXO.** Address types: p2wpkh (default), p2sh-p2wpkh, p2pkh, p2tr. Coin selection strategies: `accumulative` (default) and `all` (sweep); pluggable. Change goes to the wallet's change address (configurable). The ECC backend for bitcoinjs-lib is implemented over `@noble/curves` (no WASM). `prepareTransfer` exposes the PSBT (base64) for cold or hardware signing, and `submitSignatures` also accepts a signed PSBT. The indexer provider is **required**. The txid is exposed as `UnsignedTx.expectedRef` only when all inputs are witness-type. Legacy p2pkh inputs put signatures in the scriptSig, which is part of the txid serialization, so for those the id exists only after assembly.
 - **Tron.** The default expiration is 60 s, configurable. Energy for TRC-20 is estimated via `triggerConstantContract`. Finality compares the transaction's block with the latest solidified block. A TronGrid API key goes in the transport headers (Secret).
 - **Solana.** Transfers use SystemProgram and SPL `transferChecked`. `createAssociatedTokenAccountIdempotent` is added when the recipient's ATA is missing, and its rent is shown as a charge. These instructions are built without `@solana/spl-token`. Decoding uses `jsonParsed` including inner instructions, and the result is checked against pre/post balances: a mismatch ⇒ `partial`.
-- **TON.** Wallet contract version (`v4r2` | `v5r1`) and workchain are wallet config, because they determine the address. The first send from an uninitialized wallet includes `stateInit`. The Attempt id is the TEP-467 normalized external message hash. The canonical transaction hash is resolved through the indexer (message → transaction) and stored in the observation. Jetton transfers are `final` only when the trace completes without bounce; a bounce ⇒ `failed` with the reason.
+- **TON.** The wallet's full identity (§9 `TonWalletIdentity`: version, workchain, subwallet id / number, V5 network wallet id) is wallet config, because it determines the address. The first send from an uninitialized wallet includes `stateInit`. The Attempt id is the TEP-467 normalized external message hash. The canonical transaction hash is resolved through the indexer (message → transaction) and stored in the observation. Jetton transfers are `final` only when the trace completes without bounce; a bounce ⇒ `failed` with the reason.
 
 ## 16. Packaging and build
 
 - One package, `crypto-aio`. `exports`: `.`, `./evm`, `./utxo`, `./tron`, `./solana`, `./ton`, `./testing`, `./native` (CJS + `.d.ts`; `typesVersions` for older resolvers).
 - Hard `dependencies`: `@noble/curves`, `@noble/hashes`, `@scure/base`, `@scure/bip32`, `debug`.
-- Optional `peerDependencies` (`peerDependenciesMeta.*.optional = true`): `ethers@^6`, `web3@^4`, `tronweb@^6`, `bitcoinjs-lib@^6 || ^7`, `@solana/web3.js@^1.98`, `@ton/ton@^15`, `@ton/core`. Exact ranges are settled during implementation against current releases. All of them are also `devDependencies` for tests.
+- Optional `peerDependencies` (`peerDependenciesMeta.*.optional = true`): `ethers`, `web3`, `tronweb`, `bitcoinjs-lib`, `@solana/web3.js`, `@ton/ton`, `@ton/core`. **The ranges come from the versions actually installed and validated during implementation** (latest majors at that time, e.g. `@ton/ton` 16.x and `@solana/web3.js` 1.99.x at the time of writing), not from older generations. All of them are also `devDependencies`, pinned to those tested versions.
 - If a lazy load fails because the SDK is missing ⇒ `DEPENDENCY_MISSING` with the exact install command.
 - Build: `tsc` → CommonJS (the existing setup), `target` raised to ES2020 (bigint), `engines.node >= 20`. Typedoc output moves from `docs/` to `docs/api/`, so it no longer wipes `docs/guide` or `docs/superpowers`.
 
@@ -684,6 +755,8 @@ Per-family notes:
   - error mapping
   - transport (retry classes, backoff with a fake clock, `Retry-After`, circuit breaker, rate limiting, failover, identity mismatch, height-lag exclusion)
   - Operation engine with **crash injection** at every persistence boundary in §8.2, asserting recovery never re-signs and never loses a signed transaction
+  - **evidence model**: `dropped` / `refused` never become terminal and never release a signed nonce; `proven` verdicts need finalized data plus quorum; provider disagreement blocks terminal transitions; `stalled` → `rebroadcast` / `replace` / `cancel` resolution; `abandon` semantics and signer `cancelRequest`
+  - same-Attempt vs new-Attempt separation: no code path re-signs during retry, recovery or rebroadcast
   - idempotency conflict and replay
   - fencing, including the **stale worker** case
   - the monitor with a fake chain: reorg, drop → rebroadcast, external replacement, expiry, finality policies
@@ -710,10 +783,12 @@ Per-family notes:
 - **Typedoc** for the API reference (`docs/api/`).
 - **`CHANGELOG.md`** with 0.1.0 migration notes.
 
-## 19. Security cleanup
+## 19. Security advisory: committed `.env`
 
 - `.env` is tracked and pushed to the public repository with testnet private keys, mnemonics and a provider token. The following are done as part of this work: `git rm --cached .env`, add `.env` to `.gitignore`, add `.env.example` (new variable names, no values).
-- **Owner actions (not done by this work):** rotate the provider tokens; treat the keys and mnemonics as compromised; decide on a history rewrite. There will be no force-push.
+- This is treated as a **release-level security concern**, not only repository hygiene. The 0.1.0 CHANGELOG and release notes carry a security advisory stating that the credentials in git history are compromised. The published npm package is not affected, because `files: ["/dist"]` never shipped `.env`. This needs verifying against the registry tarball.
+- **Code changes (this work):** untrack the file, update `.gitignore`, add `.env.example`, remove every test and CI dependency on `.env`, and add a CI secret-scan step (e.g. gitleaks) so it can't happen again.
+- **Owner actions (kept separate from the code changes and never performed by this work):** rotate the provider tokens; treat the keys and mnemonics as compromised and move any funds; decide whether to rewrite history. There will be no force-push.
 
 ## 20. Out of scope
 
