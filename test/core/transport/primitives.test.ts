@@ -21,6 +21,46 @@ describe('backoff', () => {
     expect(parseRetryAfter('soon', now)).toBeUndefined();
     expect(parseRetryAfter(null, now)).toBeUndefined();
   });
+
+  it('rejects malformed Retry-After values strictly', () => {
+    const now = Date.parse('2026-09-23T00:00:00Z');
+    expect(parseRetryAfter('garbage-2030', now)).toBeUndefined();
+    expect(parseRetryAfter('-1', now)).toBeUndefined();
+    expect(parseRetryAfter('+2', now)).toBeUndefined();
+    expect(parseRetryAfter('1.5', now)).toBeUndefined();
+    expect(parseRetryAfter(' 5', now)).toBeUndefined();
+    expect(parseRetryAfter('99999999999', now)).toBeUndefined(); // 11 digits
+    expect(parseRetryAfter('2030-01-01', now)).toBeUndefined();
+    expect(parseRetryAfter('Wed, 21 Oct 2015 07:28:00 PST', now)).toBeUndefined();
+  });
+
+  it('parses valid delta-seconds including zero', () => {
+    const now = Date.parse('2026-09-23T00:00:00Z');
+    expect(parseRetryAfter('0', now)).toBe(0);
+    expect(parseRetryAfter('120', now)).toBe(120_000);
+  });
+
+  it('parses IMF-fixdate correctly', () => {
+    const dateStr = 'Wed, 21 Oct 2015 07:28:00 GMT';
+    const dateTimestamp = Date.parse(dateStr);
+    const fiveSecondsEarlier = dateTimestamp - 5_000;
+    expect(parseRetryAfter(dateStr, fiveSecondsEarlier)).toBe(5_000);
+    expect(parseRetryAfter(dateStr, dateTimestamp)).toBe(0);
+  });
+
+  it('backoff is safe from exponent overflow', () => {
+    const opts = { baseDelayMs: 0, maxDelayMs: 100 };
+    const result = backoffDelay(2_000, opts, () => 0.5);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(100);
+  });
+
+  it('backoff respects maxDelayMs with large exponents', () => {
+    const opts = { baseDelayMs: 10, maxDelayMs: 100 };
+    const result = backoffDelay(100, opts, () => 0.5);
+    expect(result).toBeLessThanOrEqual(100);
+  });
 });
 
 describe('TokenBucket', () => {
