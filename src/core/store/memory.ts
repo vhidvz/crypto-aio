@@ -1,13 +1,24 @@
 import { StateError } from '../errors/error';
 import { systemClock, type Clock } from '../util/clock';
 import { clone } from './clone';
+import { isTerminal } from './types';
 import type {
+  AttemptObservation,
+  AttemptRecord,
+  CreateResult,
   CursorStore,
+  Fence,
   Lease,
   LockManager,
+  NewOperation,
+  OperationFilter,
+  OperationPatch,
+  OperationRecord,
+  OperationStore,
   ScanCursor,
   SequenceState,
   SequenceStore,
+  Stores,
   StoredCursor,
 } from './types';
 
@@ -98,4 +109,268 @@ export class MemoryCursorStore implements CursorStore {
     this.#cursors.set(key, clone({ cursor, version }));
     return version;
   }
+}
+
+const compositeKey = (namespace: string, id: string): string => `${namespace}\u0000${id}`;
+
+function applyPatch(
+  current: OperationRecord,
+  patch: OperationPatch,
+  now: number,
+): OperationRecord {
+  const { clear, ...values } = patch;
+  const next: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) next[key] = clone(value);
+  }
+  for (const key of clear ?? []) delete next[key];
+  next.version = current.version + 1;
+  next.updatedAt = now;
+  return next as unknown as OperationRecord;
+}
+
+function matches(record: OperationRecord, filter: OperationFilter): boolean {
+  return (
+    record.namespace === filter.namespace &&
+    (filter.chain === undefined || record.context.chain === filter.chain) &&
+    (filter.network === undefined || record.context.network === filter.network) &&
+    (filter.from === undefined || record.intent.from === filter.from) &&
+    (filter.states === undefined || filter.states.includes(record.state))
+  );
+}
+
+export class MemoryOperationStore implements OperationStore {
+  readonly #records = new Map<string, OperationRecord>();
+  readonly #keys = new Map<string, string>();
+  readonly #observations = new Map<string, AttemptObservation>();
+  #claims = 0n;
+
+  constructor(private readonly clock: Clock = systemClock) {}
+
+  async create(operation: NewOperation): Promise<CreateResult> {
+    const keyIndex = compositeKey(operation.namespace, operation.idempotencyKey);
+    const existingId = this.#keys.get(keyIndex);
+    if (existingId) {
+      return {
+        created: false,
+        record: clone(this.#require(operation.namespace, existingId)),
+      };
+    }
+    const recordKey = compositeKey(operation.namespace, operation.id);
+    if (this.#records.has(recordKey)) {
+      throw new StateError(
+        'INVALID_TRANSITION',
+        `operation '${operation.id}' already exists`,
+      );
+    }
+    const now = this.clock.now();
+    const record = {
+      ...clone(operation),
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    } as OperationRecord;
+    this.#records.set(recordKey, record);
+    this.#keys.set(keyIndex, operation.id);
+    return { created: true, record: clone(record) };
+  }
+
+  async get(namespace: string, id: string): Promise<OperationRecord | null> {
+    const record = this.#records.get(compositeKey(namespace, id));
+    return record ? clone(record) : null;
+  }
+
+  async getByKey(
+    namespace: string,
+    idempotencyKey: string,
+  ): Promise<OperationRecord | null> {
+    const id = this.#keys.get(compositeKey(namespace, idempotencyKey));
+    return id ? this.get(namespace, id) : null;
+  }
+
+  async findByRef(
+    namespace: string,
+    refOrTxHash: string,
+  ): Promise<OperationRecord | null> {
+    for (const record of this.#records.values()) {
+      if (
+        record.namespace === namespace &&
+        record.attempts.some((a) => a.ref.id === refOrTxHash)
+      ) {
+        return clone(record);
+      }
+    }
+    for (const observation of this.#observations.values()) {
+      if (observation.txHash === refOrTxHash) {
+        const record = this.#records.get(
+          compositeKey(namespace, observation.operationId),
+        );
+        if (record) return clone(record);
+      }
+    }
+    return null;
+  }
+
+  async update(
+    namespace: string,
+    id: string,
+    patch: OperationPatch,
+    expectedVersion: number,
+    fence?: Fence,
+  ): Promise<OperationRecord> {
+    const current = this.#check(namespace, id, expectedVersion, fence);
+    const next = applyPatch(current, patch, this.clock.now());
+    this.#records.set(compositeKey(namespace, id), next);
+    return clone(next);
+  }
+
+  async appendAttempt(
+    namespace: string,
+    id: string,
+    attempt: AttemptRecord,
+    patch: OperationPatch,
+    expectedVersion: number,
+    fence?: Fence,
+  ): Promise<OperationRecord> {
+    const current = this.#check(namespace, id, expectedVersion, fence);
+    if (current.attempts.some((a) => a.id === attempt.id)) {
+      throw new StateError(
+        'INVALID_TRANSITION',
+        `attempt '${attempt.id}' already exists`,
+      );
+    }
+    const withAttempt: OperationRecord = {
+      ...current,
+      attempts: [...current.attempts, clone(attempt)],
+      activeAttemptId: attempt.id,
+    };
+    const next = applyPatch(withAttempt, patch, this.clock.now());
+    this.#records.set(compositeKey(namespace, id), next);
+    return clone(next);
+  }
+
+  async getObservation(attemptId: string): Promise<AttemptObservation | null> {
+    const observation = this.#observations.get(attemptId);
+    return observation ? clone(observation) : null;
+  }
+
+  async putObservation(
+    observation: Omit<AttemptObservation, 'version'>,
+    expectedVersion: number | null,
+  ): Promise<AttemptObservation> {
+    const current = this.#observations.get(observation.attemptId);
+    if ((current?.version ?? null) !== expectedVersion) {
+      throw new StateError(
+        'VERSION_CONFLICT',
+        `observation '${observation.attemptId}' was modified concurrently`,
+      );
+    }
+    const next: AttemptObservation = {
+      ...clone(observation),
+      version: (current?.version ?? 0) + 1,
+    };
+    this.#observations.set(observation.attemptId, next);
+    return clone(next);
+  }
+
+  async claimDue(
+    namespace: string,
+    workerId: string,
+    now: number,
+    leaseMs: number,
+    limit: number,
+  ): Promise<OperationRecord[]> {
+    const due = [...this.#records.values()]
+      .filter(
+        (r) =>
+          r.namespace === namespace &&
+          !isTerminal(r.state) &&
+          r.nextCheckAt !== undefined &&
+          r.nextCheckAt <= now &&
+          (!r.claim || r.claim.until <= now),
+      )
+      .sort(
+        (a, b) =>
+          (a.nextCheckAt as number) - (b.nextCheckAt as number) ||
+          a.createdAt - b.createdAt,
+      )
+      .slice(0, limit);
+    return due.map((record) => {
+      this.#claims += 1n;
+      const next: OperationRecord = {
+        ...record,
+        claim: { workerId, token: this.#claims.toString(), until: now + leaseMs },
+        version: record.version + 1,
+        updatedAt: this.clock.now(),
+      };
+      this.#records.set(compositeKey(namespace, record.id), next);
+      return clone(next);
+    });
+  }
+
+  async releaseClaim(namespace: string, id: string, fence: Fence): Promise<void> {
+    const current = this.#require(namespace, id);
+    if (current.claim?.token !== fence.claimToken) {
+      throw new StateError('FENCING', `claim on operation '${id}' is no longer held`);
+    }
+    const { claim: _claim, ...rest } = current;
+    this.#records.set(compositeKey(namespace, id), {
+      ...rest,
+      version: current.version + 1,
+      updatedAt: this.clock.now(),
+    });
+  }
+
+  async list(filter: OperationFilter): Promise<OperationRecord[]> {
+    const found = [...this.#records.values()]
+      .filter((r) => matches(r, filter))
+      .sort((a, b) => a.createdAt - b.createdAt);
+    return clone(filter.limit === undefined ? found : found.slice(0, filter.limit));
+  }
+
+  async purge(filter: OperationFilter): Promise<number> {
+    let removed = 0;
+    for (const [key, record] of this.#records) {
+      if (!matches(record, filter)) continue;
+      this.#records.delete(key);
+      this.#keys.delete(compositeKey(record.namespace, record.idempotencyKey));
+      for (const attempt of record.attempts) this.#observations.delete(attempt.id);
+      removed += 1;
+    }
+    return removed;
+  }
+
+  #require(namespace: string, id: string): OperationRecord {
+    const record = this.#records.get(compositeKey(namespace, id));
+    if (!record) throw new StateError('NOT_FOUND', `operation '${id}' not found`);
+    return record;
+  }
+
+  #check(
+    namespace: string,
+    id: string,
+    expectedVersion: number,
+    fence?: Fence,
+  ): OperationRecord {
+    const record = this.#require(namespace, id);
+    if (record.version !== expectedVersion) {
+      throw new StateError(
+        'VERSION_CONFLICT',
+        `operation '${id}' was modified concurrently (expected v${expectedVersion}, found v${record.version})`,
+      );
+    }
+    if (fence && record.claim?.token !== fence.claimToken) {
+      throw new StateError('FENCING', `claim on operation '${id}' is no longer held`);
+    }
+    return record;
+  }
+}
+
+export function createMemoryStores(clock: Clock = systemClock): Stores {
+  return {
+    operations: new MemoryOperationStore(clock),
+    locks: new MemoryLockManager(clock),
+    sequences: new MemorySequenceStore(),
+    cursors: new MemoryCursorStore(),
+  };
 }
