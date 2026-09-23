@@ -1,19 +1,21 @@
 {
   "compilerOptions": {
-    "target": "ES6",
-    "allowJs": true,
-    "sourceMap": true,
-    "baseUrl": "./src",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "isolatedModules": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
     "declaration": true,
-    "module": "CommonJS",
+    "sourceMap": true,
     "esModuleInterop": true,
-    "moduleResolution": "Node",
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "types": ["node", "jest"],
-    "removeComments": false,
-    "outDir": "./dist",
-    "strict": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "types": ["node", "jest"]
   },
-  "include": ["src/**/*"]
+  "include": ["src", "test"]
 }

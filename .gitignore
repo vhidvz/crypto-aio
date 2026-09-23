@@ -111,3 +111,12 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Local secrets (never commit)
+.env
+.env.*
+!.env.example
+docs/api/
+
+# Controller workspace for this run (not part of the package)
+.superpowers/
