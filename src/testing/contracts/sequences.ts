@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import type { SequenceStore } from '../../core/store/types';
+import { rejectsWithCode, type ContractTestApi } from './api';
+
+export interface SequenceHarness {
+  readonly sequences: SequenceStore;
+}
+
+export function describeSequenceStoreContract(
+  api: ContractTestApi,
+  create: () => SequenceHarness | Promise<SequenceHarness>,
+): void {
+  api.describe('SequenceStore contract', () => {
+    api.it('returns null for unknown keys', async () => {
+      const { sequences } = await create();
+      assert.equal(await sequences.get('nope'), null);
+    });
+
+    api.it('creates with expectedVersion null and increments versions', async () => {
+      const { sequences } = await create();
+      await sequences.put('k', { next: 5n, released: [2n], fence: 1n }, null);
+      const first = await sequences.get('k');
+      assert.deepEqual(first, { next: 5n, released: [2n], fence: 1n, version: 1 });
+      await sequences.put('k', { next: 6n, released: [], fence: 1n }, 1);
+      assert.equal((await sequences.get('k'))?.version, 2);
+    });
+
+    api.it('rejects stale versions', async () => {
+      const { sequences } = await create();
+      await sequences.put('k', { next: 1n, released: [], fence: 1n }, null);
+      await sequences.put('k', { next: 2n, released: [], fence: 1n }, 1);
+      await rejectsWithCode(
+        sequences.put('k', { next: 3n, released: [], fence: 1n }, 1),
+        'VERSION_CONFLICT',
+      );
+      await rejectsWithCode(
+        sequences.put('k', { next: 3n, released: [], fence: 1n }, null),
+        'VERSION_CONFLICT',
+      );
+    });
+
+    api.it('rejects writes from a stale fencing token', async () => {
+      const { sequences } = await create();
+      await sequences.put('k', { next: 1n, released: [], fence: 2n }, null);
+      await rejectsWithCode(
+        sequences.put('k', { next: 9n, released: [], fence: 1n }, 1),
+        'FENCING',
+      );
+      assert.equal((await sequences.get('k'))?.next, 1n);
+    });
+
+    api.it('round-trips large bigints exactly and isolates returned values', async () => {
+      const { sequences } = await create();
+      await sequences.put(
+        'k',
+        { next: 2n ** 70n, released: [2n ** 64n + 1n], fence: 3n },
+        null,
+      );
+      const state = await sequences.get('k');
+      assert.equal(state?.next, 2n ** 70n);
+      (state?.released as bigint[]).push(1n);
+      assert.deepEqual((await sequences.get('k'))?.released, [2n ** 64n + 1n]);
+    });
+  });
+}
