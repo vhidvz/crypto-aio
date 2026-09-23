@@ -3,7 +3,7 @@
 - **Date:** 2026-09-23
 - **Status:** Approved (sections 1–4, written spec, review reconciliation)
 - **Target release:** `crypto-aio@0.1.0` (breaking)
-- **Runtime:** Node.js ≥ 20, backend only
+- **Runtime:** Node.js ≥ 22, backend only (Node 20 reached end of life in April 2026)
 
 ## 1. Purpose
 
@@ -97,7 +97,7 @@ src/
 ```
 
 - `src/core/**` must not import `src/adapters/**` or `src/testing/**`, or any SDK. An ESLint `no-restricted-imports` rule and a test enforce this.
-- Adapters depend on core ports only. The composition root (`src/index.ts`) registers built-in **manifests**. A manifest is static metadata plus `load()`. Only `load()` pulls in the adapter module and, with it, the SDK.
+- Adapters depend on core ports only. Each family ships an SDK-free **plugin** module (`src/adapters/<family>/plugin.ts`) that contributes its chain and network data, native assets, well-known tokens, provider presets and adapter manifests. The core holds only the catalog mechanisms and no chain data. The composition root (`src/index.ts`) registers the built-in plugins. A manifest is static metadata plus `load()`. Only `load()` pulls in the adapter module and, with it, the SDK.
 
 ### Patterns
 
@@ -452,8 +452,8 @@ submitted | stalled | included ─▶ failed (proven) | expired (proven) | final
 
 | Transition | Persisted atomically | Crash here ⇒ recovery does |
 |---|---|---|
-| → `created` | create-if-absent on (namespace, idempotencyKey) | resume from `created` |
-| → `prepared` | `unsigned` + `reservation` | resume signing with the stored unsigned payload (nothing signed yet) |
+| → `created` | create-if-absent on (namespace, idempotencyKey) | resumed by the next `transfer()` call with the same idempotency key (recovery itself never builds or signs) |
+| → `prepared` | `unsigned` + `reservation` | resumed by the next `transfer()` call with the same key, which signs the stored unsigned payload. This is safe because nothing is broadcast before `appendAttempt`, so a signature lost in the crash never left the process. Recovery itself never signs |
 | → `awaiting-signature` | `unsigned` + `reservation` + `signerTicket` | wait for `submitSignatures` or `abandon` |
 | → `signed` | `appendAttempt(op, attempt, {state: signed})` (single write) | **rebroadcast stored raw**; never re-sign |
 | → `submitted` | state, after broadcast accepted / alreadyKnown / ambiguous | poll status; rebroadcast while `dropped` |
@@ -522,7 +522,7 @@ interface SequenceStore {
 
 Nonce procedure (EVM), run under the lease. The core implements it as a `SequenceCoordinator` over the two ports:
 - **allocate:** `chainPending = sequence.pending(address)`. Drop released values below `chainPending`, since those were consumed. Pick the smallest remaining released value if there is one, else `max(next, chainPending)`, and advance `next` past it. Persist with the lease token. The reservation is recorded on the Operation, so async (`awaiting-signature`) Operations can't collide with later ones.
-- **release(n)** is allowed **only while no signed bytes exist** for `n`: on pre-signing `failed`, veto, or `abandon`. Once an Attempt is signed, its nonce belongs to that Operation permanently. The only ways to resolve it are a mutually exclusive Attempt of the *same* Operation (`replace`, `cancel`), a `rebroadcast`, or proof. A signed nonce is never handed to an unrelated Operation, and in particular never on the basis of mempool absence.
+- **release(n)** is allowed **only while no valid signed bytes can exist** for `n`: on pre-signing `failed`, veto, `abandon`, or when every Attempt holding `n` is `rejected` (permanently invalid by construction). Once an Attempt is signed, its nonce belongs to that Operation permanently. The only ways to resolve it are a mutually exclusive Attempt of the *same* Operation (`replace`, `cancel`), a `rebroadcast`, or proof. A signed nonce is never handed to an unrelated Operation, and in particular never on the basis of mempool absence.
 - A reserved-but-unused nonce below outstanding ones (e.g. a `stalled` Operation) leaves later transactions queued. The monitor detects this gap (chain pending nonce < lowest outstanding reservation) and emits `nonce.gap` with the blocking Operation id. Resolving it (rebroadcast after top-up, replace, cancel) is an explicit application action. The library never invents a filler transaction.
 
 Seqno procedure (TON): an external message is valid only for the wallet's *current* seqno, so messages for the next seqno can't be pre-signed. Allocation succeeds only when every earlier Attempt of the wallet is included, or proven dead. Otherwise it throws `SEQUENCE_BUSY` (retryable, category `state`). Throughput scales with batching (the wallet version's `batch-transfer` limit) or with more wallets.
@@ -592,7 +592,7 @@ type SigningContext = { operationId; namespace; chain; network; wallet; tier?; s
   ```
   Every field that determines an address is part of the wallet config and is recorded in the Operation's `ExecutionContext`. For TON that means version, workchain, subwallet id / number, and for V5 the network-specific wallet id. Addresses are derived as `f(publicKey, full identity)`. If a configured `address` doesn't match the derived one, that is a `ConfigError`.
   A wallet without a signer is watch-only: `transfer` → `SIGNER_UNAVAILABLE`, while `prepareTransfer` and `submitSignatures` still work (cold and offline flows).
-- **Scheme registry** (open, string ids): `secp256k1-ecdsa` (65-byte r‖s‖v), `secp256k1-schnorr` (BIP340, optional `tweak`), `ed25519`. Each scheme provides `verify()` and a public-key format. Drivers declare the schemes they need; signers declare the schemes they support; a mismatch is a `ConfigError`.
+- **Scheme registry** (open, string ids): `secp256k1-ecdsa` (64-byte compact r‖s, low-s, plus `recovery` 0 | 1; drivers compose chain-specific v/yParity), `secp256k1-schnorr` (BIP340, optional `tweak`), `ed25519`. Each scheme provides `verify()` and a public-key format. Drivers declare the schemes they need; signers declare the schemes they support; a mismatch is a `ConfigError`.
 - **Key custody:** private keys are created and held **only inside signers**. The domain model and the `Blockchain` handle never produce or carry private keys.
   - `localSigner.generate({ schemes, exportable = false })` → `{ signer, publicKeys }`. The address comes from `bc.addressFromPublicKey(publicKey)` or by using the signer in a wallet.
   - `signer.exportKey(scheme)` exists only when `exportable: true` was chosen at generation or import. It returns a `Secret`, and this is the single, explicit way key material leaves a signer.
@@ -742,7 +742,7 @@ Per-family notes:
 - Hard `dependencies`: `@noble/curves`, `@noble/hashes`, `@scure/base`, `@scure/bip32`, `debug`.
 - Optional `peerDependencies` (`peerDependenciesMeta.*.optional = true`): `ethers`, `web3`, `tronweb`, `bitcoinjs-lib`, `@solana/web3.js`, `@ton/ton`, `@ton/core`. **The ranges come from the versions actually installed and validated during implementation** (latest majors at that time, e.g. `@ton/ton` 16.x and `@solana/web3.js` 1.99.x at the time of writing), not from older generations. All of them are also `devDependencies`, pinned to those tested versions.
 - If a lazy load fails because the SDK is missing ⇒ `DEPENDENCY_MISSING` with the exact install command.
-- Build: `tsc` → CommonJS (the existing setup), `target` raised to ES2020 (bigint), `engines.node >= 20`. Typedoc output moves from `docs/` to `docs/api/`, so it no longer wipes `docs/guide` or `docs/superpowers`.
+- Build: `tsc` → CommonJS (the existing setup) with `module`/`moduleResolution: node16`, `target: ES2022`, `isolatedModules`, `engines.node >= 22`. The toolchain is pinned to what the tooling supports: TypeScript 5.9 (ts-jest and typescript-eslint do not support TypeScript 7 yet), Jest 30 + ts-jest, and ESLint 9 flat config. The noble/scure libraries use their 1.x lines (`@noble/curves` 1.9, `@noble/hashes` 1.8, `@scure/base` 1.2, `@scure/bip32` 1.7, `@scure/bip39` 1.6), because their 2.x lines are ESM-only and 1.x are the same majors the SDKs use. Lazy loading uses `require()` inside `load()`, not `import()`, so it works under CommonJS and Jest. Typedoc output moves from `docs/` to `docs/api/`, so it no longer wipes `docs/guide` or `docs/superpowers`.
 
 ## 17. Testing
 
