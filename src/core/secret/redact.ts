@@ -29,7 +29,12 @@ export function redactUrl(url: string | Secret<string>): string {
 }
 
 export function redactText(text: string): string {
-  return text.replace(URL_IN_TEXT, (match) => redactUrl(match));
+  return text.replace(URL_IN_TEXT, (match) => {
+    const trailing = match.match(/[.,;:!?]+$/);
+    const trailingStr = trailing ? trailing[0] : '';
+    const url = trailing ? match.slice(0, -trailingStr.length) : match;
+    return redactUrl(url) + trailingStr;
+  });
 }
 
 export function redactHeaders(
@@ -61,8 +66,9 @@ function walk(value: unknown, depth: number, seen: WeakSet<object>): unknown {
   if (Array.isArray(value)) return value.map((item) => walk(item, depth - 1, seen));
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    const sensitive =
-      SENSITIVE_KEY.test(key) && (typeof item === 'string' || isSecret(item));
+    // Redact if key is sensitive and value is not a primitive (bool, number)
+    const isPrimitive = typeof item === 'boolean' || typeof item === 'number';
+    const sensitive = SENSITIVE_KEY.test(key) && !isPrimitive;
     out[key] = sensitive ? REDACTED : walk(item, depth - 1, seen);
   }
   return out;

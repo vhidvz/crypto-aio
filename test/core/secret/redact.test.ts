@@ -72,4 +72,45 @@ describe('redaction', () => {
     expect(clean.message).toBe('connect ECONNREFUSED https://x.io/[REDACTED]');
     expect(inspect(clean)).not.toContain('SECRETKEY');
   });
+
+  it('redacts URLs with trailing punctuation', () => {
+    expect(redactText('connect failed to https://x.io/SECRETKEY1234567890abc.')).toBe(
+      'connect failed to https://x.io/[REDACTED].',
+    );
+    expect(redactText('see https://x.io/SECRETKEY1234567890abc, details')).toBe(
+      'see https://x.io/[REDACTED], details',
+    );
+    expect(redactText('go to https://x.io/SECRETKEY1234567890abc;')).toBe(
+      'go to https://x.io/[REDACTED];',
+    );
+    expect(redactText('found https://x.io/SECRETKEY1234567890abc! problem')).toBe(
+      'found https://x.io/[REDACTED]! problem',
+    );
+    expect(redactText('ask https://x.io/SECRETKEY1234567890abc?')).toBe(
+      'ask https://x.io/[REDACTED]?',
+    );
+  });
+
+  it('redacts nested objects under sensitive keys', () => {
+    expect(
+      redactDeep({
+        privateKey: { d: 'ff00aabbccddeeff' },
+        keys: ['a', 'b'],
+        ok: { nested: 'fine' },
+        apiSecret: { token: 'xyz' },
+      }),
+    ).toEqual({
+      privateKey: '[REDACTED]',
+      keys: '[REDACTED]',
+      ok: { nested: 'fine' },
+      apiSecret: '[REDACTED]',
+    });
+  });
+
+  it('sanitizes error messages ending with punctuation', () => {
+    const err = new Error('connect ECONNREFUSED https://x.io/SECRETKEY1234567890abc.');
+    const clean = sanitizeError(err);
+    expect(clean.message).toBe('connect ECONNREFUSED https://x.io/[REDACTED].');
+    expect(inspect(clean)).not.toContain('SECRETKEY');
+  });
 });
