@@ -113,4 +113,33 @@ describe('redaction', () => {
     expect(clean.message).toBe('connect ECONNREFUSED https://x.io/[REDACTED].');
     expect(inspect(clean)).not.toContain('SECRETKEY');
   });
+
+  it('passes null and undefined through sensitive keys unchanged', () => {
+    expect(
+      redactDeep({
+        privateKey: null,
+        apiSecret: undefined,
+        ok: 'fine',
+      }),
+    ).toEqual({
+      privateKey: null,
+      apiSecret: undefined,
+      ok: 'fine',
+    });
+  });
+
+  it('redacts URLs followed by brackets', () => {
+    expect(redactText('see https://x.io/SECRETKEY1234567890abc] end')).toBe(
+      'see https://x.io/[REDACTED]] end',
+    );
+    expect(redactText('{"u":https://x.io/SECRETKEY1234567890abc}')).toBe(
+      '{"u":https://x.io/[REDACTED]}',
+    );
+  });
+
+  it('redacts URLs in parentheses with trailing punctuation', () => {
+    expect(redactText('(see https://x.io/SECRETKEY1234567890abc).')).toBe(
+      '(see https://x.io/[REDACTED]).',
+    );
+  });
 });
