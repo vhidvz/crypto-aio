@@ -1,5 +1,5 @@
 import createDebug from 'debug';
-import { redactDeep } from '../secret/redact';
+import { redactDeep, redactText } from '../secret/redact';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type LogFields = Readonly<Record<string, unknown>>;
@@ -41,7 +41,7 @@ export function createLogger(
     write(
       level,
       namespace,
-      message,
+      redactText(message),
       fields ? (redactDeep(fields) as Record<string, unknown>) : undefined,
     );
   return {

@@ -45,6 +45,45 @@ describe('EventBus', () => {
     expect(all).toEqual(['scanner.block']);
     expect(warnings).toEqual(['event handler threw']);
   });
+
+  it('tolerates a double unsubscribe and stops delivery after unsubscribing', () => {
+    const bus = new EventBus(new FakeClock(), noopLogger);
+    const seen: string[] = [];
+    const anySeen: string[] = [];
+    const off = bus.on('scanner.block', (e) => seen.push(e.height));
+    const offAny = bus.onAny((e) => anySeen.push(e.type));
+
+    off();
+    offAny();
+    expect(() => {
+      off();
+      offAny();
+    }).not.toThrow();
+
+    bus.emit('scanner.block', { namespace: 'ns', cursorKey: 'c', height: '1' });
+    expect(seen).toEqual([]);
+    expect(anySeen).toEqual([]);
+  });
+
+  it('lets a self-unsubscribing handler leave later handlers unaffected within the same emit', () => {
+    const bus = new EventBus(new FakeClock(), noopLogger);
+    const later: string[] = [];
+    let selfCalls = 0;
+
+    const off = bus.on('scanner.block', () => {
+      selfCalls++;
+      off();
+    });
+    bus.on('scanner.block', (e) => later.push(e.height));
+
+    bus.emit('scanner.block', { namespace: 'ns', cursorKey: 'c', height: '1' });
+    expect(selfCalls).toBe(1);
+    expect(later).toEqual(['1']);
+
+    bus.emit('scanner.block', { namespace: 'ns', cursorKey: 'c', height: '2' });
+    expect(selfCalls).toBe(1);
+    expect(later).toEqual(['1', '2']);
+  });
 });
 
 describe('createLogger', () => {
@@ -63,6 +102,15 @@ describe('createLogger', () => {
         'rpc failed',
         { apiKey: '[REDACTED]', url: 'https://h.io/[REDACTED]', token: '[REDACTED]' },
       ],
+    ]);
+  });
+
+  it('redacts the message string, not only fields', () => {
+    const lines: Parameters<LogWriter>[] = [];
+    const log = createLogger('crypto-aio', (...args) => lines.push(args));
+    log.warn('connect failed to https://h.io/AbCdEf0123456789XyZ', undefined);
+    expect(lines).toEqual([
+      ['warn', 'crypto-aio', 'connect failed to https://h.io/[REDACTED]', undefined],
     ]);
   });
 });
