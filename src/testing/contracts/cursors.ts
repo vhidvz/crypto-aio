@@ -21,9 +21,14 @@ export function describeCursorStoreContract(
       };
       assert.equal(await cursors.put('c', cursor, null), 1);
       assert.deepEqual(await cursors.get('c'), { cursor, version: 1 });
-      assert.equal(await cursors.put('c', { ...cursor, hash: 'h2' }, 1), 2);
+      const updated = { ...cursor, hash: 'h2' };
+      assert.equal(await cursors.put('c', updated, 1), 2);
+      const stored = { cursor: updated, version: 2 };
+      assert.deepEqual(await cursors.get('c'), stored);
       await rejectsWithCode(cursors.put('c', cursor, 1), 'VERSION_CONFLICT');
+      assert.deepEqual(await cursors.get('c'), stored);
       await rejectsWithCode(cursors.put('c', cursor, null), 'VERSION_CONFLICT');
+      assert.deepEqual(await cursors.get('c'), stored);
     });
   });
 }

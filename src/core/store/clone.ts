@@ -17,7 +17,10 @@
  * such as `Amount`/`Address`, a function, a symbol, or a typed array other than
  * `Uint8Array`) has no such encoding, so it is rejected loudly here rather than
  * silently corrupted (as a naive recursive clone would do to a `Uint8Array`, turning
- * its bytes into a `{0: ..., 1: ...}` object) or silently dropped.
+ * its bytes into a `{0: ..., 1: ...}` object) or silently dropped. This also covers
+ * symbol-keyed own properties on an otherwise plain object: `Object.entries` skips
+ * them silently, so they are rejected explicitly instead of being dropped without
+ * a trace.
  */
 export function clone<T>(value: T): T {
   if (value === null || value === undefined) return value;
@@ -30,13 +33,20 @@ export function clone<T>(value: T): T {
 
   // kind === 'object' from here on.
   if (Array.isArray(value)) {
-    return value.map((item: unknown) => clone(item)) as unknown as T;
+    // `Array.from` (called on this realm's own `Array`) always builds a this-realm
+    // array; `value.map(...)` would not — a foreign-realm array's inherited `.map`
+    // uses species-based construction and returns a result still rooted in the
+    // *foreign* `Array.prototype`, reintroducing the same realm mismatch this
+    // function exists to avoid.
+    return Array.from(value as unknown[], (item: unknown) => clone(item)) as unknown as T;
   }
   if (Object.prototype.toString.call(value) === '[object Uint8Array]') {
     return new Uint8Array(value as unknown as Uint8Array) as unknown as T;
   }
   if (isPlainObject(value as object)) {
-    const out: Record<string, unknown> = {};
+    if (Object.getOwnPropertySymbols(value as object).length > 0) return reject(value);
+    const out: Record<string, unknown> =
+      Object.getPrototypeOf(value as object) === null ? Object.create(null) : {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
       out[key] = clone(item);
     }

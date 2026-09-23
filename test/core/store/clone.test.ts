@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { clone } from '../../../src/core/store/clone';
 
 describe('clone', () => {
@@ -62,5 +64,25 @@ describe('clone', () => {
     const cloned = clone(original);
     expect(cloned).toEqual(original);
     expect(Object.isFrozen(cloned)).toBe(false);
+  });
+
+  it('clones an Object.create(null) record', () => {
+    const original: Record<string, unknown> = Object.create(null);
+    original.a = 1;
+    original.b = [1, 2n];
+    const cloned = clone(original);
+    expect(cloned).toStrictEqual(original);
+  });
+
+  it('clones a value from a different vm realm into this realm', () => {
+    const foreign = vm.runInNewContext('({ a: 1n, b: [1, { c: "x" }] })') as unknown;
+    const cloned = clone(foreign);
+    assert.deepStrictEqual(cloned, { a: 1n, b: [1, { c: 'x' }] });
+  });
+
+  it('rejects a symbol-keyed own property', () => {
+    const key = Symbol('k');
+    const withSymbol: Record<PropertyKey, unknown> = { a: 1, [key]: 2 };
+    expect(() => clone(withSymbol)).toThrow(TypeError);
   });
 });

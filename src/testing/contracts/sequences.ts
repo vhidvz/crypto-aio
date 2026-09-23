@@ -25,29 +25,36 @@ export function describeSequenceStoreContract(
       assert.equal((await sequences.get('k'))?.version, 2);
     });
 
-    api.it('rejects stale versions', async () => {
+    api.it('rejects stale versions and leaves stored state unchanged', async () => {
       const { sequences } = await create();
       await sequences.put('k', { next: 1n, released: [], fence: 1n }, null);
       await sequences.put('k', { next: 2n, released: [], fence: 1n }, 1);
+      const stored = { next: 2n, released: [], fence: 1n, version: 2 };
       await rejectsWithCode(
         sequences.put('k', { next: 3n, released: [], fence: 1n }, 1),
         'VERSION_CONFLICT',
       );
+      assert.deepEqual(await sequences.get('k'), stored);
       await rejectsWithCode(
         sequences.put('k', { next: 3n, released: [], fence: 1n }, null),
         'VERSION_CONFLICT',
       );
+      assert.deepEqual(await sequences.get('k'), stored);
     });
 
-    api.it('rejects writes from a stale fencing token', async () => {
-      const { sequences } = await create();
-      await sequences.put('k', { next: 1n, released: [], fence: 2n }, null);
-      await rejectsWithCode(
-        sequences.put('k', { next: 9n, released: [], fence: 1n }, 1),
-        'FENCING',
-      );
-      assert.equal((await sequences.get('k'))?.next, 1n);
-    });
+    api.it(
+      'rejects writes from a stale fencing token and leaves stored state unchanged',
+      async () => {
+        const { sequences } = await create();
+        await sequences.put('k', { next: 1n, released: [], fence: 2n }, null);
+        const stored = { next: 1n, released: [], fence: 2n, version: 1 };
+        await rejectsWithCode(
+          sequences.put('k', { next: 9n, released: [], fence: 1n }, 1),
+          'FENCING',
+        );
+        assert.deepEqual(await sequences.get('k'), stored);
+      },
+    );
 
     api.it('round-trips large bigints exactly and isolates returned values', async () => {
       const { sequences } = await create();
