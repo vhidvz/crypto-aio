@@ -1,6 +1,36 @@
 import assert from 'node:assert/strict';
-import type { AttemptRecord, NewOperation, OperationStore } from '../../core/store/types';
+import type {
+  AttemptRecord,
+  ClearableField,
+  NewOperation,
+  OperationPatch,
+  OperationStore,
+} from '../../core/store/types';
 import { rejectsWithCode, type ContractTestApi } from './api';
+
+/**
+ * Awaits `promise` and reports its outcome instead of rejecting, so a batch of
+ * promises that are expected to include failures can still be driven with a single
+ * `Promise.all` (a bare `Promise.all` would short-circuit on the first rejection and
+ * discard the others).
+ */
+type Settled<T> =
+  | { readonly status: 'fulfilled'; readonly value: T }
+  | { readonly status: 'rejected'; readonly reason: unknown };
+
+async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
+  try {
+    return { status: 'fulfilled', value: await promise };
+  } catch (reason) {
+    return { status: 'rejected', reason };
+  }
+}
+
+function isRejected<T>(
+  result: Settled<T>,
+): result is Extract<Settled<T>, { status: 'rejected' }> {
+  return result.status === 'rejected';
+}
 
 let counter = 0;
 
@@ -286,5 +316,465 @@ export function describeOperationStoreContract(
       assert.equal((await operations.list({ namespace: 'list' })).length, 3);
       assert.equal((await operations.list({ namespace: 'list', limit: 2 })).length, 2);
     });
+
+    api.it(
+      'rejects patch fields outside the writable whitelist, leaving the record unchanged',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const afterAppend = await operations.appendAttempt(
+          'ns',
+          created.record.id,
+          sampleAttempt('w1'),
+          { state: 'signed' },
+          1,
+        );
+        const snapshot = await operations.get('ns', created.record.id);
+        await rejectsWithCode(
+          operations.update(
+            'ns',
+            created.record.id,
+            { attempts: [] } as unknown as OperationPatch,
+            afterAppend.version,
+          ),
+          'INVALID_TRANSITION',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+        await rejectsWithCode(
+          operations.update(
+            'ns',
+            created.record.id,
+            {
+              claim: undefined,
+              state: 'submitted',
+              ...{ id: 'x' },
+            } as unknown as OperationPatch,
+            afterAppend.version,
+          ),
+          'INVALID_TRANSITION',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+        await rejectsWithCode(
+          operations.update(
+            'ns',
+            created.record.id,
+            { clear: ['attempts', 'claim'] as unknown as ClearableField[] },
+            afterAppend.version,
+          ),
+          'INVALID_TRANSITION',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+      },
+    );
+
+    api.it(
+      'rejects appendAttempt with a duplicate id even when the content differs, leaving the record unchanged',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const afterFirst = await operations.appendAttempt(
+          'ns',
+          created.record.id,
+          sampleAttempt('dup'),
+          { state: 'signed' },
+          1,
+        );
+        const snapshot = await operations.get('ns', created.record.id);
+        await rejectsWithCode(
+          operations.appendAttempt(
+            'ns',
+            created.record.id,
+            sampleAttempt('dup', {
+              purpose: 'replacement',
+              raw: { encoding: 'hex', data: 'ff' },
+            }),
+            { state: 'failed' },
+            afterFirst.version,
+          ),
+          'INVALID_TRANSITION',
+        );
+        const after = await operations.get('ns', created.record.id);
+        assert.deepEqual(after, snapshot);
+        assert.equal(after?.attempts.length, 1);
+        assert.equal(after?.version, afterFirst.version);
+        assert.equal(after?.state, 'signed');
+      },
+    );
+
+    api.it(
+      'rejects appendAttempt with a stale expectedVersion, leaving the record unchanged',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        await operations.appendAttempt(
+          'ns',
+          created.record.id,
+          sampleAttempt('s1'),
+          { state: 'signed' },
+          1,
+        );
+        const snapshot = await operations.get('ns', created.record.id);
+        await rejectsWithCode(
+          operations.appendAttempt(
+            'ns',
+            created.record.id,
+            sampleAttempt('s2'),
+            { state: 'submitted' },
+            1,
+          ),
+          'VERSION_CONFLICT',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+      },
+    );
+
+    api.it(
+      'rejects appendAttempt from a stale fencing token after a claim takeover, leaving the record unchanged',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(
+          sampleOperation({ state: 'submitted', nextCheckAt: 100 }),
+        );
+        const [stale] = await operations.claimDue('ns', 'w1', 1_000, 500, 10);
+        const [takeover] = await operations.claimDue('ns', 'w2', 1_600, 500, 10);
+        const snapshot = await operations.get('ns', created.record.id);
+        await rejectsWithCode(
+          operations.appendAttempt(
+            'ns',
+            created.record.id,
+            sampleAttempt('f1'),
+            { state: 'signed' },
+            takeover!.version,
+            { claimToken: stale!.claim!.token },
+          ),
+          'FENCING',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+      },
+    );
+
+    api.it(
+      "isolates a stored attempt from later mutation of the caller's input",
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const attempt = sampleAttempt('iso1');
+        await operations.appendAttempt(
+          'ns',
+          created.record.id,
+          attempt,
+          { state: 'signed' },
+          1,
+        );
+        attempt.unsigned.signingRequests[0]!.payload[0] = 99;
+        (attempt.raw as { data: string }).data = 'ff';
+        const stored = await operations.get('ns', created.record.id);
+        const storedAttempt = stored?.attempts[0];
+        assert.deepEqual(
+          storedAttempt?.unsigned.signingRequests[0]?.payload,
+          new Uint8Array([1, 2]),
+        );
+        assert.equal(storedAttempt?.raw.data, '00');
+      },
+    );
+
+    api.it('appends attempts in order without rewriting earlier ones', async () => {
+      const { operations } = await create();
+      const created = await operations.create(sampleOperation());
+      const afterFirst = await operations.appendAttempt(
+        'ns',
+        created.record.id,
+        sampleAttempt('a1'),
+        { state: 'signed' },
+        1,
+      );
+      const firstAttemptSnapshot = afterFirst.attempts[0];
+      const afterSecond = await operations.appendAttempt(
+        'ns',
+        created.record.id,
+        sampleAttempt('a2'),
+        { state: 'submitted' },
+        afterFirst.version,
+      );
+      assert.deepEqual(
+        afterSecond.attempts.map((a) => a.id),
+        ['a1', 'a2'],
+      );
+      assert.deepEqual(afterSecond.attempts[0], firstAttemptSnapshot);
+    });
+
+    api.it('resolves N concurrent creates on one key to exactly one winner', async () => {
+      const { operations } = await create();
+      const operation = sampleOperation({ idempotencyKey: 'race-create' });
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => operations.create(operation)),
+      );
+      assert.equal(results.filter((r) => r.created).length, 1);
+      assert.equal(new Set(results.map((r) => r.record.id)).size, 1);
+    });
+
+    api.it(
+      'resolves N concurrent updates with the same expectedVersion to exactly one winner',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const results = await Promise.all(
+          Array.from({ length: 5 }, () =>
+            settle(operations.update('ns', created.record.id, { state: 'prepared' }, 1)),
+          ),
+        );
+        assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+        const rejected = results.filter(isRejected);
+        assert.equal(rejected.length, 4);
+        for (const r of rejected) {
+          assert.equal((r.reason as { code?: unknown }).code, 'VERSION_CONFLICT');
+        }
+      },
+    );
+
+    api.it(
+      'resolves N concurrent appendAttempt calls with the same expectedVersion to exactly one winner',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const results = await Promise.all(
+          Array.from({ length: 5 }, (_, i) =>
+            settle(
+              operations.appendAttempt(
+                'ns',
+                created.record.id,
+                sampleAttempt(`c${i}`),
+                { state: 'signed' },
+                1,
+              ),
+            ),
+          ),
+        );
+        assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+        const rejected = results.filter(isRejected);
+        assert.equal(rejected.length, 4);
+        for (const r of rejected) {
+          assert.equal((r.reason as { code?: unknown }).code, 'VERSION_CONFLICT');
+        }
+        assert.equal((await operations.get('ns', created.record.id))?.attempts.length, 1);
+      },
+    );
+
+    api.it('returns disjoint id sets for two concurrent claimDue calls', async () => {
+      const { operations } = await create();
+      for (let i = 0; i < 4; i++) {
+        await operations.create(
+          sampleOperation({ state: 'submitted', nextCheckAt: 100 }),
+        );
+      }
+      const [first, second] = await Promise.all([
+        operations.claimDue('ns', 'w1', 1_000, 500, 2),
+        operations.claimDue('ns', 'w2', 1_000, 500, 2),
+      ]);
+      assert.equal(first.length + second.length, 4);
+      const firstIds = new Set(first.map((r) => r.id));
+      for (const record of second) assert.equal(firstIds.has(record.id), false);
+    });
+
+    api.it(
+      'returns the original record unchanged when a second create uses the same key but a different intentHash',
+      async () => {
+        const { operations } = await create();
+        const first = await operations.create(
+          sampleOperation({ idempotencyKey: 'conflict', intentHash: 'hash-a' }),
+        );
+        const second = await operations.create(
+          sampleOperation({ idempotencyKey: 'conflict', intentHash: 'hash-b' }),
+        );
+        assert.equal(second.created, false);
+        assert.deepEqual(second.record, first.record);
+        assert.equal(second.record.intentHash, 'hash-a');
+        assert.deepEqual(await operations.get('ns', first.record.id), first.record);
+      },
+    );
+
+    api.it(
+      'treats an explicit undefined patch value as a no-op for that field',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const withReservation = await operations.update(
+          'ns',
+          created.record.id,
+          { reservation: { kind: 'nonce', nonce: 5n } },
+          1,
+        );
+        const untouched = await operations.update(
+          'ns',
+          created.record.id,
+          { reservation: undefined },
+          withReservation.version,
+        );
+        assert.deepEqual(untouched.reservation, { kind: 'nonce', nonce: 5n });
+        assert.deepEqual((await operations.get('ns', created.record.id))?.reservation, {
+          kind: 'nonce',
+          nonce: 5n,
+        });
+      },
+    );
+
+    api.it(
+      'clear removes the field entirely, not just sets it to undefined',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const withReservation = await operations.update(
+          'ns',
+          created.record.id,
+          { reservation: { kind: 'nonce', nonce: 5n } },
+          1,
+        );
+        const cleared = await operations.update(
+          'ns',
+          created.record.id,
+          { clear: ['reservation'] },
+          withReservation.version,
+        );
+        assert.equal('reservation' in cleared, false);
+        const reread = await operations.get('ns', created.record.id);
+        assert.equal(reread !== null && 'reservation' in reread, false);
+      },
+    );
+
+    api.it('never returns claims from another namespace', async () => {
+      const { operations } = await create();
+      await operations.create(
+        sampleOperation({ namespace: 'other', state: 'submitted', nextCheckAt: 50 }),
+      );
+      await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 50 }));
+      const claimed = await operations.claimDue('ns', 'w1', 1_000, 500, 10);
+      assert.equal(claimed.length, 1);
+      assert.equal(
+        claimed.every((r) => r.namespace === 'ns'),
+        true,
+      );
+    });
+
+    api.it('orders claims by (nextCheckAt, createdAt)', async () => {
+      const { operations } = await create();
+      const c = (
+        await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 300 }))
+      ).record;
+      const a = (
+        await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 100 }))
+      ).record;
+      const b = (
+        await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 200 }))
+      ).record;
+      const claimed = await operations.claimDue('ns', 'w1', 1_000, 500, 10);
+      assert.deepEqual(
+        claimed.map((r) => r.id),
+        [a.id, b.id, c.id],
+      );
+    });
+
+    api.it('limit selects the earliest due records', async () => {
+      const { operations } = await create();
+      const a = (
+        await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 100 }))
+      ).record;
+      await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 200 }));
+      await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 300 }));
+      const claimed = await operations.claimDue('ns', 'w1', 1_000, 500, 1);
+      assert.deepEqual(
+        claimed.map((r) => r.id),
+        [a.id],
+      );
+    });
+
+    api.it('limit 0 returns no claims', async () => {
+      const { operations } = await create();
+      await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 100 }));
+      assert.deepEqual(await operations.claimDue('ns', 'w1', 1_000, 500, 0), []);
+    });
+
+    api.it('returns matching records in creation order', async () => {
+      const { operations } = await create();
+      const a = (await operations.create(sampleOperation({ namespace: 'order' }))).record;
+      const b = (await operations.create(sampleOperation({ namespace: 'order' }))).record;
+      const c = (await operations.create(sampleOperation({ namespace: 'order' }))).record;
+      const found = await operations.list({ namespace: 'order' });
+      assert.deepEqual(
+        found.map((r) => r.id),
+        [a.id, b.id, c.id],
+      );
+    });
+
+    api.it(
+      'putObservation never changes the Operation version, and rejects a stale expectedVersion',
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const afterAppend = await operations.appendAttempt(
+          'ns',
+          created.record.id,
+          sampleAttempt('obs1'),
+          { state: 'signed' },
+          1,
+        );
+        const base = {
+          attemptId: 'obs1',
+          operationId: created.record.id,
+          state: 'included' as const,
+          evidence: 'observed' as const,
+          confirmations: 1,
+        };
+        await operations.putObservation(base, null);
+        assert.equal(
+          (await operations.get('ns', created.record.id))?.version,
+          afterAppend.version,
+        );
+        await operations.putObservation({ ...base, confirmations: 2 }, 1);
+        assert.equal(
+          (await operations.get('ns', created.record.id))?.version,
+          afterAppend.version,
+        );
+        await rejectsWithCode(
+          operations.putObservation({ ...base, confirmations: 3 }, 1),
+          'VERSION_CONFLICT',
+        );
+      },
+    );
+
+    api.it(
+      'does not resolve a tx hash to an operation with the same id in a different namespace',
+      async () => {
+        const { operations } = await create();
+        const sharedId = 'op_shared_1';
+        await operations.create(
+          sampleOperation({ id: sharedId, namespace: 'ns-a', idempotencyKey: 'key-a' }),
+        );
+        await operations.create(
+          sampleOperation({ id: sharedId, namespace: 'ns-b', idempotencyKey: 'key-b' }),
+        );
+        await operations.appendAttempt(
+          'ns-a',
+          sharedId,
+          sampleAttempt('shared-attempt'),
+          { state: 'signed' },
+          1,
+        );
+        await operations.putObservation(
+          {
+            attemptId: 'shared-attempt',
+            operationId: sharedId,
+            state: 'included',
+            evidence: 'observed',
+            confirmations: 1,
+            txHash: 'shared-hash',
+          },
+          null,
+        );
+        const found = await operations.findByRef('ns-a', 'shared-hash');
+        assert.equal(found?.id, sharedId);
+        assert.equal(found?.namespace, 'ns-a');
+        assert.equal(await operations.findByRef('ns-b', 'shared-hash'), null);
+      },
+    );
   });
 }

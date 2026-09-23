@@ -128,16 +128,19 @@ export type NewOperation = Omit<
   'version' | 'createdAt' | 'updatedAt' | 'claim'
 >;
 
-export type ClearableField =
-  | 'outcome'
-  | 'unsigned'
-  | 'reservation'
-  | 'signerTicket'
-  | 'partialSignatures'
-  | 'activeAttemptId'
-  | 'ambiguous'
-  | 'error'
-  | 'nextCheckAt';
+export const CLEARABLE_FIELDS = [
+  'outcome',
+  'unsigned',
+  'reservation',
+  'signerTicket',
+  'partialSignatures',
+  'activeAttemptId',
+  'ambiguous',
+  'error',
+  'nextCheckAt',
+] as const;
+
+export type ClearableField = (typeof CLEARABLE_FIELDS)[number];
 
 export interface OperationPatch {
   readonly state?: OperationState;
@@ -153,6 +156,30 @@ export interface OperationPatch {
   /** Fields to delete; applied after the values above. */
   readonly clear?: readonly ClearableField[];
 }
+
+/** Runtime whitelist of writable `OperationPatch` fields (everything but `clear`). */
+export const OPERATION_PATCH_KEYS = [
+  'state',
+  'outcome',
+  'unsigned',
+  'reservation',
+  'signerTicket',
+  'partialSignatures',
+  'activeAttemptId',
+  'ambiguous',
+  'error',
+  'nextCheckAt',
+] as const;
+
+// Compile-time check, in both directions: OPERATION_PATCH_KEYS must list exactly the
+// writable (non-'clear') fields of OperationPatch, so a future field added to one but
+// not the other fails the build instead of silently opening a hole in `update`.
+type PatchFieldKeys = Exclude<keyof OperationPatch, 'clear'>;
+type ListedPatchKeys = (typeof OPERATION_PATCH_KEYS)[number];
+type AssertNoMissingPatchKeys = PatchFieldKeys extends ListedPatchKeys ? true : never;
+type AssertNoExtraPatchKeys = ListedPatchKeys extends PatchFieldKeys ? true : never;
+const _assertNoMissingPatchKeys: AssertNoMissingPatchKeys = true;
+const _assertNoExtraPatchKeys: AssertNoExtraPatchKeys = true;
 
 export interface Fence {
   readonly claimToken: string;

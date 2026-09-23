@@ -1,7 +1,7 @@
 import { StateError } from '../errors/error';
 import { systemClock, type Clock } from '../util/clock';
 import { clone } from './clone';
-import { isTerminal } from './types';
+import { CLEARABLE_FIELDS, isTerminal, OPERATION_PATCH_KEYS } from './types';
 import type {
   AttemptObservation,
   AttemptRecord,
@@ -113,11 +113,35 @@ export class MemoryCursorStore implements CursorStore {
 
 const compositeKey = (namespace: string, id: string): string => `${namespace}\u0000${id}`;
 
+const OPERATION_PATCH_KEY_SET: ReadonlySet<string> = new Set(OPERATION_PATCH_KEYS);
+const CLEARABLE_FIELD_SET: ReadonlySet<string> = new Set(CLEARABLE_FIELDS);
+
+/**
+ * Validates a patch's own keys before any mutation happens, so a spread-typed patch
+ * (e.g. `{ ...record, state }` forced through `as unknown as OperationPatch`) cannot
+ * write or clear a field outside the writable whitelist — `attempts`, `claim`, `id`,
+ * `namespace`, `idempotencyKey`, `intentHash`, `context`, `kind`, `version`,
+ * `createdAt` and `updatedAt` are never reachable through `update`/`appendAttempt`.
+ */
+function assertValidPatch(patch: OperationPatch): void {
+  for (const key of Object.keys(patch)) {
+    if (key !== 'clear' && !OPERATION_PATCH_KEY_SET.has(key)) {
+      throw new StateError('INVALID_TRANSITION', `unsupported patch field '${key}'`);
+    }
+  }
+  for (const key of patch.clear ?? []) {
+    if (!CLEARABLE_FIELD_SET.has(key)) {
+      throw new StateError('INVALID_TRANSITION', `unsupported patch field '${key}'`);
+    }
+  }
+}
+
 function applyPatch(
   current: OperationRecord,
   patch: OperationPatch,
   now: number,
 ): OperationRecord {
+  assertValidPatch(patch);
   const { clear, ...values } = patch;
   const next: Record<string, unknown> = { ...current };
   for (const [key, value] of Object.entries(values)) {
@@ -148,9 +172,17 @@ export class MemoryOperationStore implements OperationStore {
   constructor(private readonly clock: Clock = systemClock) {}
 
   async create(operation: NewOperation): Promise<CreateResult> {
+    for (const key of ['claim', 'version', 'createdAt', 'updatedAt']) {
+      if (Object.prototype.hasOwnProperty.call(operation, key)) {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          `unsupported operation field '${key}'`,
+        );
+      }
+    }
     const keyIndex = compositeKey(operation.namespace, operation.idempotencyKey);
     const existingId = this.#keys.get(keyIndex);
-    if (existingId) {
+    if (existingId !== undefined) {
       return {
         created: false,
         record: clone(this.#require(operation.namespace, existingId)),
@@ -185,7 +217,7 @@ export class MemoryOperationStore implements OperationStore {
     idempotencyKey: string,
   ): Promise<OperationRecord | null> {
     const id = this.#keys.get(compositeKey(namespace, idempotencyKey));
-    return id ? this.get(namespace, id) : null;
+    return id !== undefined ? this.get(namespace, id) : null;
   }
 
   async findByRef(
@@ -201,11 +233,12 @@ export class MemoryOperationStore implements OperationStore {
       }
     }
     for (const observation of this.#observations.values()) {
-      if (observation.txHash === refOrTxHash) {
-        const record = this.#records.get(
-          compositeKey(namespace, observation.operationId),
-        );
-        if (record) return clone(record);
+      if (observation.txHash !== refOrTxHash) continue;
+      const record = this.#records.get(compositeKey(namespace, observation.operationId));
+      // The observed attempt must actually belong to this record: two namespaces can
+      // otherwise share an operation id and resolve the tx hash to the wrong operation.
+      if (record && record.attempts.some((a) => a.id === observation.attemptId)) {
+        return clone(record);
       }
     }
     return null;
@@ -280,6 +313,7 @@ export class MemoryOperationStore implements OperationStore {
     leaseMs: number,
     limit: number,
   ): Promise<OperationRecord[]> {
+    if (limit <= 0) return [];
     const due = [...this.#records.values()]
       .filter(
         (r) =>
