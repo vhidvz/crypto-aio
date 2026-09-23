@@ -1,5 +1,6 @@
 import { StateError } from '../errors/error';
 import { systemClock, type Clock } from '../util/clock';
+import { clone } from './clone';
 import type {
   CursorStore,
   Lease,
@@ -9,27 +10,6 @@ import type {
   SequenceStore,
   StoredCursor,
 } from './types';
-
-/**
- * Deep-clones plain JSON-like data (objects, arrays, bigints and other primitives).
- *
- * Deliberately not `structuredClone`: under a sandboxed test runtime (e.g. Jest's
- * per-file VM context), `structuredClone` rebuilds objects against the host realm's
- * `Object`/`Array`, producing clones whose prototypes differ from the caller's ---
- * `assert.deepStrictEqual` then reports a spurious mismatch. Building clones with
- * literal `{}`/`[]` keeps them in the caller's own realm.
- */
-const clone = <T>(value: T): T => {
-  if (Array.isArray(value)) return value.map((item) => clone(item)) as unknown as T;
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = clone(item);
-    }
-    return out as T;
-  }
-  return value;
-};
 
 export class MemoryLockManager implements LockManager {
   readonly #held = new Map<string, Lease>();
