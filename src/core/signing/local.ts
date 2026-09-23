@@ -5,6 +5,7 @@ import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { ConfigError, SigningError } from '../errors/error';
 import { reveal, secret, type Secret } from '../secret/secret';
 import { equalBytes, fromHex } from '../util/bytes';
+import { deriveEd25519, deriveSecp256k1, mnemonicToSeed } from './hd';
 import type {
   KeyRef,
   SignatureBundle,
@@ -232,4 +233,46 @@ localSigner.generate = function generate(options: GenerateOptions): GeneratedSig
     signer: fromKeys(options.id ?? 'local', keys, options.exportable ?? false),
     publicKeys,
   };
+};
+
+export interface MnemonicSignerOptions {
+  readonly id?: string;
+  readonly passphrase?: Secret<string>;
+  readonly exportable?: boolean;
+  readonly curves?: readonly Curve[];
+}
+
+/** BIP39 mnemonic signer; keys are derived per request from `keyRef.path` and cached in memory. */
+localSigner.fromMnemonic = function fromMnemonic(
+  phrase: Secret<string>,
+  options: MnemonicSignerOptions = {},
+): Signer {
+  const seed = mnemonicToSeed(
+    reveal(phrase),
+    options.passphrase ? reveal(options.passphrase) : '',
+  );
+  const cache = new Map<string, Uint8Array>();
+  const source: KeySource = (curve, keyRef) => {
+    const path = keyRef?.path;
+    if (!path) {
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        'mnemonic signers need keyRef.path (set keyRef on the wallet)',
+      );
+    }
+    const cacheKey = `${curve}:${path}`;
+    let key = cache.get(cacheKey);
+    if (!key) {
+      key =
+        curve === 'secp256k1' ? deriveSecp256k1(seed, path) : deriveEd25519(seed, path);
+      cache.set(cacheKey, key);
+    }
+    return key;
+  };
+  return new LocalSigner(
+    options.id ?? 'mnemonic',
+    options.curves ?? ['secp256k1', 'ed25519'],
+    source,
+    options.exportable ?? false,
+  );
 };
