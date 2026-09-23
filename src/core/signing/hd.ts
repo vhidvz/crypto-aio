@@ -1,7 +1,7 @@
 import { hmac } from '@noble/hashes/hmac';
 import { sha512 } from '@noble/hashes/sha512';
 import { utf8ToBytes } from '@noble/hashes/utils';
-import { HDKey } from '@scure/bip32';
+import { HARDENED_OFFSET, HDKey } from '@scure/bip32';
 import { mnemonicToSeedSync, validateMnemonic } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english';
 import { ConfigError } from '../errors/error';
@@ -56,8 +56,20 @@ export function parsePath(path: string): PathSegment[] {
 }
 
 export function deriveSecp256k1(seed: Uint8Array, path: string): Uint8Array {
-  parsePath(path);
-  const key = HDKey.fromMasterSeed(seed).derive(path).privateKey;
+  const segments = parsePath(path);
+  let node = HDKey.fromMasterSeed(seed);
+  try {
+    for (const segment of segments) {
+      node = node.deriveChild(
+        segment.hardened ? segment.index + HARDENED_OFFSET : segment.index,
+      );
+    }
+  } catch (cause) {
+    throw new ConfigError('CONFIG_INVALID', `could not derive a private key at ${path}`, {
+      cause,
+    });
+  }
+  const key = node.privateKey;
   if (!key)
     throw new ConfigError('CONFIG_INVALID', `could not derive a private key at ${path}`);
   return key;
@@ -102,8 +114,8 @@ export function deriveXpubChild(
   let node: HDKey;
   try {
     node = HDKey.fromExtendedKey(xpub, selected);
-  } catch {
-    throw new ConfigError('CONFIG_INVALID', 'invalid extended public key');
+  } catch (cause) {
+    throw new ConfigError('CONFIG_INVALID', 'invalid extended public key', { cause });
   }
   if (node.privateKey) {
     throw new ConfigError(
@@ -115,10 +127,11 @@ export function deriveXpubChild(
   let child: HDKey;
   try {
     child = node.derive(path);
-  } catch {
+  } catch (cause) {
     throw new ConfigError(
       'CONFIG_INVALID',
       `cannot derive '${relativePath}' from an xpub (hardened segments need the private key)`,
+      { cause },
     );
   }
   if (!child.publicKey)

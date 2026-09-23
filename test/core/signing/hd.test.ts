@@ -41,6 +41,15 @@ describe('derivation', () => {
     );
   });
 
+  it('matches BIP32 test vector 1 via the h/H hardened markers and surrounding whitespace', () => {
+    expect(toHex(deriveSecp256k1(SEED_1, 'm/0h/1/2H/2/1000000000'))).toBe(
+      '471b76e389e528d6de6d816857e012c5455051cad6660850e58372a6c3e6e7c8',
+    );
+    expect(toHex(deriveSecp256k1(SEED_1, " m/0'/1/2'/2/1000000000 "))).toBe(
+      '471b76e389e528d6de6d816857e012c5455051cad6660850e58372a6c3e6e7c8',
+    );
+  });
+
   it('matches SLIP-10 ed25519 test vector 1', () => {
     expect(toHex(deriveEd25519(SEED_1, 'm'))).toBe(
       '2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7',
@@ -68,6 +77,9 @@ describe('derivation', () => {
     expect(thrown(() => parsePath('44/0'))).toMatchObject({ code: 'CONFIG_INVALID' });
     expect(thrown(() => parsePath('m/x'))).toMatchObject({ code: 'CONFIG_INVALID' });
     expect(thrown(() => parsePath(`m/${2 ** 31}`))).toMatchObject({
+      code: 'CONFIG_INVALID',
+    });
+    expect(thrown(() => parsePath(`m/${2 ** 31}'`))).toMatchObject({
       code: 'CONFIG_INVALID',
     });
   });
