@@ -9,26 +9,12 @@ import type {
 import { rejectsWithCode, type ContractTestApi } from './api';
 
 /**
- * Awaits `promise` and reports its outcome instead of rejecting, so a batch of
- * promises that are expected to include failures can still be driven with a single
- * `Promise.all` (a bare `Promise.all` would short-circuit on the first rejection and
- * discard the others).
+ * Narrows a `Promise.allSettled` result to its rejected variant, so a batch of
+ * promises that are expected to include failures can be driven with a single
+ * `Promise.allSettled` (a bare `Promise.all` would short-circuit on the first
+ * rejection and discard the others) and then inspected without repeated casts.
  */
-type Settled<T> =
-  | { readonly status: 'fulfilled'; readonly value: T }
-  | { readonly status: 'rejected'; readonly reason: unknown };
-
-async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
-  try {
-    return { status: 'fulfilled', value: await promise };
-  } catch (reason) {
-    return { status: 'rejected', reason };
-  }
-}
-
-function isRejected<T>(
-  result: Settled<T>,
-): result is Extract<Settled<T>, { status: 'rejected' }> {
+function isRejected<T>(result: PromiseSettledResult<T>): result is PromiseRejectedResult {
   return result.status === 'rejected';
 }
 
@@ -104,6 +90,8 @@ export function sampleAttempt(
 
 export interface OperationHarness {
   readonly operations: OperationStore;
+  /** Moves the store's notion of time forward (a fake clock, or a real sleep). */
+  advance(ms: number): Promise<void>;
 }
 
 export function describeOperationStoreContract(
@@ -127,6 +115,31 @@ export function describeOperationStoreContract(
       assert.equal(await operations.get('ns', 'missing'), null);
       assert.equal(await operations.getByKey('ns', 'missing'), null);
     });
+
+    api.it(
+      'rejects create when the runtime input carries a store-owned field, storing nothing',
+      async () => {
+        const { operations } = await create();
+        const forbidden: Record<string, unknown> = {
+          claim: { workerId: 'w', token: '1', until: 1 },
+          version: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        };
+        for (const key of Object.keys(forbidden)) {
+          const operation = {
+            ...sampleOperation(),
+            [key]: forbidden[key],
+          } as unknown as NewOperation;
+          await rejectsWithCode(operations.create(operation), 'INVALID_TRANSITION');
+          assert.equal(await operations.get(operation.namespace, operation.id), null);
+          assert.equal(
+            await operations.getByKey(operation.namespace, operation.idempotencyKey),
+            null,
+          );
+        }
+      },
+    );
 
     api.it('updates with compare-and-set versions and clears fields', async () => {
       const { operations } = await create();
@@ -368,6 +381,52 @@ export function describeOperationStoreContract(
     );
 
     api.it(
+      "rejects appendAttempt's patch fields outside the writable whitelist, leaving the record unchanged",
+      async () => {
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const snapshot = await operations.get('ns', created.record.id);
+        await rejectsWithCode(
+          operations.appendAttempt(
+            'ns',
+            created.record.id,
+            sampleAttempt('wl1'),
+            { attempts: [] } as unknown as OperationPatch,
+            1,
+          ),
+          'INVALID_TRANSITION',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+        await rejectsWithCode(
+          operations.appendAttempt(
+            'ns',
+            created.record.id,
+            sampleAttempt('wl2'),
+            {
+              claim: undefined,
+              state: 'submitted',
+              ...{ id: 'x' },
+            } as unknown as OperationPatch,
+            1,
+          ),
+          'INVALID_TRANSITION',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+        await rejectsWithCode(
+          operations.appendAttempt(
+            'ns',
+            created.record.id,
+            sampleAttempt('wl3'),
+            { clear: ['attempts', 'claim'] as unknown as ClearableField[] },
+            1,
+          ),
+          'INVALID_TRANSITION',
+        );
+        assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+      },
+    );
+
+    api.it(
       'rejects appendAttempt with a duplicate id even when the content differs, leaving the record unchanged',
       async () => {
         const { operations } = await create();
@@ -503,24 +562,35 @@ export function describeOperationStoreContract(
       assert.deepEqual(afterSecond.attempts[0], firstAttemptSnapshot);
     });
 
-    api.it('resolves N concurrent creates on one key to exactly one winner', async () => {
-      const { operations } = await create();
-      const operation = sampleOperation({ idempotencyKey: 'race-create' });
-      const results = await Promise.all(
-        Array.from({ length: 5 }, () => operations.create(operation)),
-      );
-      assert.equal(results.filter((r) => r.created).length, 1);
-      assert.equal(new Set(results.map((r) => r.record.id)).size, 1);
-    });
+    api.it(
+      'resolves N concurrent creates under one idempotency key, with distinct ids, to exactly one winner',
+      async () => {
+        const { operations } = await create();
+        const results = await Promise.all(
+          Array.from({ length: 5 }, () =>
+            operations.create(sampleOperation({ idempotencyKey: 'race-create' })),
+          ),
+        );
+        const winners = results.filter((r) => r.created);
+        assert.equal(winners.length, 1);
+        const winnerId = winners[0]!.record.id;
+        for (const r of results) assert.equal(r.record.id, winnerId);
+        const listed = (await operations.list({ namespace: 'ns' })).filter(
+          (r) => r.idempotencyKey === 'race-create',
+        );
+        assert.equal(listed.length, 1);
+        assert.equal((await operations.getByKey('ns', 'race-create'))?.id, winnerId);
+      },
+    );
 
     api.it(
       'resolves N concurrent updates with the same expectedVersion to exactly one winner',
       async () => {
         const { operations } = await create();
         const created = await operations.create(sampleOperation());
-        const results = await Promise.all(
+        const results = await Promise.allSettled(
           Array.from({ length: 5 }, () =>
-            settle(operations.update('ns', created.record.id, { state: 'prepared' }, 1)),
+            operations.update('ns', created.record.id, { state: 'prepared' }, 1),
           ),
         );
         assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
@@ -537,16 +607,14 @@ export function describeOperationStoreContract(
       async () => {
         const { operations } = await create();
         const created = await operations.create(sampleOperation());
-        const results = await Promise.all(
+        const results = await Promise.allSettled(
           Array.from({ length: 5 }, (_, i) =>
-            settle(
-              operations.appendAttempt(
-                'ns',
-                created.record.id,
-                sampleAttempt(`c${i}`),
-                { state: 'signed' },
-                1,
-              ),
+            operations.appendAttempt(
+              'ns',
+              created.record.id,
+              sampleAttempt(`c${i}`),
+              { state: 'signed' },
+              1,
             ),
           ),
         );
@@ -673,17 +741,78 @@ export function describeOperationStoreContract(
       );
     });
 
-    api.it('limit selects the earliest due records', async () => {
-      const { operations } = await create();
-      const a = (
+    api.it(
+      'limit picks the earliest due record after sorting, not by insertion order',
+      async () => {
+        const { operations } = await create();
+        // Created in descending nextCheckAt order, so a limit-before-sort bug (e.g.
+        // slicing then sorting, instead of sorting then slicing) would return the
+        // first-inserted (highest nextCheckAt) record instead of the earliest-due one.
+        await operations.create(
+          sampleOperation({ state: 'submitted', nextCheckAt: 300 }),
+        );
+        await operations.create(
+          sampleOperation({ state: 'submitted', nextCheckAt: 200 }),
+        );
+        const earliest = (
+          await operations.create(
+            sampleOperation({ state: 'submitted', nextCheckAt: 100 }),
+          )
+        ).record;
+        const claimed = await operations.claimDue('ns', 'w1', 1_000, 500, 1);
+        assert.deepEqual(
+          claimed.map((r) => r.id),
+          [earliest.id],
+        );
+      },
+    );
+
+    api.it(
+      'limit 2 returns the two earliest due records in order, on fresh records',
+      async () => {
+        const { operations } = await create();
+        await operations.create(
+          sampleOperation({ namespace: 'limit2', state: 'submitted', nextCheckAt: 300 }),
+        );
+        const second = (
+          await operations.create(
+            sampleOperation({
+              namespace: 'limit2',
+              state: 'submitted',
+              nextCheckAt: 200,
+            }),
+          )
+        ).record;
+        const first = (
+          await operations.create(
+            sampleOperation({
+              namespace: 'limit2',
+              state: 'submitted',
+              nextCheckAt: 100,
+            }),
+          )
+        ).record;
+        const claimed = await operations.claimDue('limit2', 'w1', 1_000, 500, 2);
+        assert.deepEqual(
+          claimed.map((r) => r.id),
+          [first.id, second.id],
+        );
+      },
+    );
+
+    api.it('breaks a nextCheckAt tie by createdAt, in creation order', async () => {
+      const { operations, advance } = await create();
+      const first = (
         await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 100 }))
       ).record;
-      await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 200 }));
-      await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 300 }));
-      const claimed = await operations.claimDue('ns', 'w1', 1_000, 500, 1);
+      await advance(10);
+      const second = (
+        await operations.create(sampleOperation({ state: 'submitted', nextCheckAt: 100 }))
+      ).record;
+      const claimed = await operations.claimDue('ns', 'w1', 1_000, 500, 10);
       assert.deepEqual(
         claimed.map((r) => r.id),
-        [a.id],
+        [first.id, second.id],
       );
     });
 

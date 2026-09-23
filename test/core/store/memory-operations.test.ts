@@ -11,7 +11,13 @@ const api: ContractTestApi = {
   it: (n, f) => it(n, f),
 };
 
-describeOperationStoreContract(api, () => ({ operations: new MemoryOperationStore() }));
+describeOperationStoreContract(api, () => {
+  const clock = new FakeClock();
+  return {
+    operations: new MemoryOperationStore(clock),
+    advance: (ms) => clock.advance(ms),
+  };
+});
 
 describe('createMemoryStores', () => {
   it('creates all four stores', () => {

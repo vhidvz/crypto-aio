@@ -117,19 +117,22 @@ const OPERATION_PATCH_KEY_SET: ReadonlySet<string> = new Set(OPERATION_PATCH_KEY
 const CLEARABLE_FIELD_SET: ReadonlySet<string> = new Set(CLEARABLE_FIELDS);
 
 /**
- * Validates a patch's own keys before any mutation happens, so a spread-typed patch
- * (e.g. `{ ...record, state }` forced through `as unknown as OperationPatch`) cannot
- * write or clear a field outside the writable whitelist — `attempts`, `claim`, `id`,
+ * Validates a pre-read snapshot of a patch's own keys, so a spread-typed patch (e.g.
+ * `{ ...record, state }` forced through `as unknown as OperationPatch`) cannot write
+ * or clear a field outside the writable whitelist — `attempts`, `claim`, `id`,
  * `namespace`, `idempotencyKey`, `intentHash`, `context`, `kind`, `version`,
  * `createdAt` and `updatedAt` are never reachable through `update`/`appendAttempt`.
  */
-function assertValidPatch(patch: OperationPatch): void {
-  for (const key of Object.keys(patch)) {
+function assertValidPatch(
+  entries: readonly (readonly [string, unknown])[],
+  clearList: readonly string[],
+): void {
+  for (const [key] of entries) {
     if (key !== 'clear' && !OPERATION_PATCH_KEY_SET.has(key)) {
       throw new StateError('INVALID_TRANSITION', `unsupported patch field '${key}'`);
     }
   }
-  for (const key of patch.clear ?? []) {
+  for (const key of clearList) {
     if (!CLEARABLE_FIELD_SET.has(key)) {
       throw new StateError('INVALID_TRANSITION', `unsupported patch field '${key}'`);
     }
@@ -141,13 +144,19 @@ function applyPatch(
   patch: OperationPatch,
   now: number,
 ): OperationRecord {
-  assertValidPatch(patch);
-  const { clear, ...values } = patch;
+  // Read the patch's own keys exactly once: the same snapshot is both validated and
+  // applied, so an accessor (a getter or Proxy trap) on the patch object can't change
+  // what keys are visible between validation and application.
+  const entries = Object.entries(patch) as readonly (readonly [string, unknown])[];
+  const clearList = (entries.find(([key]) => key === 'clear')?.[1] ??
+    []) as readonly string[];
+  assertValidPatch(entries, clearList);
   const next: Record<string, unknown> = { ...current };
-  for (const [key, value] of Object.entries(values)) {
+  for (const [key, value] of entries) {
+    if (key === 'clear') continue;
     if (value !== undefined) next[key] = clone(value);
   }
-  for (const key of clear ?? []) delete next[key];
+  for (const key of clearList) delete next[key];
   next.version = current.version + 1;
   next.updatedAt = now;
   return next as unknown as OperationRecord;

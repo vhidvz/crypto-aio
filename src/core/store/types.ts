@@ -181,6 +181,14 @@ type AssertNoExtraPatchKeys = ListedPatchKeys extends PatchFieldKeys ? true : ne
 const _assertNoMissingPatchKeys: AssertNoMissingPatchKeys = true;
 const _assertNoExtraPatchKeys: AssertNoExtraPatchKeys = true;
 
+// Compile-time check: every CLEARABLE_FIELDS entry must be a writable patch field
+// other than 'state' (which is written but never cleared). Fails the build if
+// 'attempts', 'claim', or any other non-writable field is ever added to
+// CLEARABLE_FIELDS, since that would let `clear` reach into store-owned state.
+type AssertClearableIsWritable =
+  ClearableField extends Exclude<ListedPatchKeys, 'state'> ? true : never;
+const _assertClearableIsWritable: AssertClearableIsWritable = true;
+
 export interface Fence {
   readonly claimToken: string;
 }
@@ -200,9 +208,28 @@ export interface CreateResult {
 }
 
 /**
- * Durable Operation storage. Required guarantees (verified by the contract suite):
- * create-if-absent on (namespace, idempotencyKey); version-checked updates; atomic
- * appendAttempt; claim tokens strictly increasing; fenced writes rejected after takeover.
+ * Durable Operation storage. Required guarantees (verified by the contract suite),
+ * binding on every implementation (memory, Redis, Postgres, ...):
+ * - `create` is create-if-absent on `(namespace, idempotencyKey)`: a second `create`
+ *   for an existing key returns the stored record unchanged, regardless of
+ *   `intentHash` — this store never performs the idempotency-conflict check itself;
+ *   the calling engine does.
+ * - `update`/`appendAttempt` are version-checked (compare-and-set on
+ *   `expectedVersion`) and optionally fenced by a claim token. Both are restricted to
+ *   the same runtime patch whitelist (`OPERATION_PATCH_KEYS`), and `clear` may only
+ *   name `CLEARABLE_FIELDS`; any other key anywhere in the patch rejects the whole
+ *   call with `INVALID_TRANSITION` before any mutation. An explicit `undefined` value
+ *   for a writable field is a no-op (the stored value survives); only `clear` removes
+ *   a field.
+ * - `appendAttempt` is atomic with its accompanying patch, never rewrites a
+ *   previously stored `AttemptRecord`, and rejects a duplicate attempt id. Attempt ids
+ *   are globally unique across every Operation and namespace (observations are keyed
+ *   by attempt id alone).
+ * - `claimDue` returns only non-terminal operations with `nextCheckAt` set and `<=
+ *   now`, ordered by `(nextCheckAt, createdAt)` with a stable tie-break for equal
+ *   values, and returns `[]` for `limit <= 0`. Claim tokens are strictly increasing
+ *   per store; fenced writes are rejected after a takeover.
+ * - `list` returns matches in creation order.
  */
 export interface OperationStore {
   create(operation: NewOperation): Promise<CreateResult>;
