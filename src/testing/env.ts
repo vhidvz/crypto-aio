@@ -262,13 +262,24 @@ function isAsyncMethod(prop: PropertyKey, fn: unknown): boolean {
  * through unfenced.
  */
 function generationProxy<T extends object>(target: T, generation: Generation): T {
-  return new Proxy(target, {
-    get(t, prop) {
+  // The Proxy wraps an empty, extensible stand-in, never `target` itself: a frozen target
+  // (e.g. a `callbackSigner`) has non-configurable read-only properties, and the Proxy
+  // invariants would then forbid returning the fenced wrapper instead of the real value.
+  // Every read is forwarded to the real object; descriptors are reported configurable.
+  return new Proxy({} as T, {
+    has: (_stand, prop) => Reflect.has(target, prop),
+    ownKeys: () => Reflect.ownKeys(target),
+    getPrototypeOf: () => Reflect.getPrototypeOf(target),
+    getOwnPropertyDescriptor: (_stand, prop) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, prop);
+      return descriptor ? { ...descriptor, configurable: true } : undefined;
+    },
+    get(_stand, prop) {
       // N4: no receiver, so a native/data getter runs with the real target as `this`.
-      const value: unknown = Reflect.get(t, prop);
+      const value: unknown = Reflect.get(target, prop);
       if (typeof value !== 'function') return value;
       const fn = value as (...args: unknown[]) => unknown;
-      if (PASSTHROUGH.has(prop)) return fn.bind(t);
+      if (PASSTHROUGH.has(prop)) return fn.bind(target);
       const isAsync = isAsyncMethod(prop, fn);
       return (...args: unknown[]) => {
         if (!generation.alive) {
@@ -281,7 +292,7 @@ function generationProxy<T extends object>(target: T, generation: Generation): T
             'crypto-aio/testing: this generation was killed by restart({ killPrevious: true })',
           );
         }
-        const result = fn.apply(t, args);
+        const result = fn.apply(target, args);
         const thenable =
           typeof result === 'object' &&
           result !== null &&

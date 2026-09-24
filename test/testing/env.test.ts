@@ -1,6 +1,7 @@
 import { inspect } from 'node:util';
 import { containerOf } from '../../src/core/container/internals';
 import { StateError } from '../../src/core/errors/error';
+import { callbackSigner } from '../../src/core/signing/callback';
 import { localSigner } from '../../src/core/signing/local';
 import { createMemoryStores } from '../../src/core/store/memory';
 import type { CursorStore } from '../../src/core/store/types';
@@ -342,5 +343,40 @@ describe('createFakeEnv restart()', () => {
     expect(runtime.clock).not.toBe(rogueClock);
     expect(runtime.stores.operations).not.toBe(rogueStores.operations);
     expect(runtime.stores.operations).toBe(env.stores.operations);
+  });
+
+  it('fences a frozen callbackSigner and a frozen store without breaking Proxy invariants', async () => {
+    const inner = localSigner.generate({ curves: ['secp256k1'], id: 'inner' }).signer;
+    const signer = callbackSigner({
+      id: 'custody',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
+      sign: (requests, ctx) => inner.sign(requests, ctx),
+    });
+    expect(Object.isFrozen(signer)).toBe(true);
+    const cursors = Object.freeze(createMemoryStores(new FakeClock()).cursors);
+    const env = await createFakeEnv({ signer, stores: { cursors } });
+    const fenced = containerOf(env.aio).effective().signers.custody;
+    if (!fenced) throw new Error('expected the fenced signer to be registered');
+    expect(fenced.id).toBe('custody');
+    expect(fenced.schemes).toEqual(['secp256k1-ecdsa']);
+    expect('getPublicKey' in fenced).toBe(true);
+    expect(Object.keys(fenced)).toEqual(Object.keys(signer));
+    expect(JSON.stringify(fenced)).toBe(JSON.stringify(signer));
+    const cursor = { height: 1n, hash: 'h1', recent: [] };
+    expect(await env.stores.cursors.put('k', cursor, null)).toBe(1);
+    expect((await env.stores.cursors.get('k'))?.cursor).toEqual(cursor);
+
+    await env.restart({ killPrevious: true });
+
+    let settled = false;
+    const settle = () => {
+      settled = true;
+    };
+    fenced.getPublicKey('secp256k1-ecdsa').then(settle, settle);
+    env.stores.cursors.get('k').then(settle, settle);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
   });
 });
