@@ -2,7 +2,7 @@ import { AssetService } from '../assets/service';
 import { Blockchain } from '../blockchain/handle';
 import type { HandleInternals } from '../blockchain/internal';
 import { readEnvChains } from '../config/env';
-import { mergeScopes } from '../config/merge';
+import { isPlainObject, mergeScopes } from '../config/merge';
 import { resolveSelection } from '../config/resolve';
 import type {
   AioOptions,
@@ -37,13 +37,32 @@ interface ScopeInit {
   readonly overrides: ScopeOptions;
 }
 
+/**
+ * Deep-clones plain objects/arrays into a frozen copy so a later mutation of the caller's
+ * own input can never reach a layer already captured by a container. Class instances
+ * (Signer, Secret, ...) are referenced, not cloned — they're already immutable.
+ */
+function cloneFrozen<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((item: unknown) => cloneFrozen(item))) as T;
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value)) out[key] = cloneFrozen(v);
+    return Object.freeze(out) as T;
+  }
+  return value;
+}
+
+/** M4: `chains`/`providers`/`wallets` are cloned and deep-frozen at construction, so mutating
+ * the caller's options object afterwards never affects handles already built from this layer. */
 function scopePart(options: ScopeOptions): ScopeOptions {
   const { chains, providers, signers, wallets, hooks, lifecycle } = options;
   return {
-    ...(chains ? { chains } : {}),
-    ...(providers ? { providers } : {}),
+    ...(chains ? { chains: cloneFrozen(chains) } : {}),
+    ...(providers ? { providers: cloneFrozen(providers) } : {}),
     ...(signers ? { signers } : {}),
-    ...(wallets ? { wallets } : {}),
+    ...(wallets ? { wallets: cloneFrozen(wallets) } : {}),
     ...(hooks ? { hooks } : {}),
     ...(lifecycle ? { lifecycle } : {}),
   };

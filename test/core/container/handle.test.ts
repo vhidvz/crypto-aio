@@ -397,6 +397,37 @@ describe('containers', () => {
     });
   });
 
+  it("clones and deep-freezes each layer's wallets/chains/providers so mutating the caller's options afterwards never reaches existing handles", async () => {
+    const env = await createFakeEnv();
+    const chains: Record<
+      string,
+      { provider: string; wallet: string; confirmations?: number }
+    > = {
+      fakechain: { provider: 'fake', wallet: 'main' },
+    };
+    const aio = new CryptoAio({
+      env: false,
+      logger: noopLogger,
+      clock: env.clock,
+      plugins: [fakePlugin()],
+      transport: { fetch: env.chain.fetch },
+      providers: { fake: { endpoints: [{ url: env.chain.endpoint('m4') }] } },
+      signers: { hot: env.signer },
+      wallets: { main: { signer: 'hot' } },
+      chains,
+    });
+    chains.fakechain = { provider: 'fake', wallet: 'main', confirmations: 99 };
+    expect(aio.blockchain({ chain: 'fakechain' }).config.confirmations).toBe(2);
+
+    const layer = containerOf(aio).layers[0];
+    if (!layer) throw new Error('expected a root layer');
+    expect(Object.isFrozen(layer.chains)).toBe(true);
+    expect(Object.isFrozen(layer.chains?.fakechain)).toBe(true);
+    expect(() => {
+      (layer.chains as Record<string, unknown>).fakechain = {};
+    }).toThrow();
+  });
+
   it('lets scopes override without mutating the parent and keeps plugins root-only', async () => {
     const env = await createFakeEnv();
     const scoped = env.aio.scope({ chains: { fakechain: { confirmations: 9 } } });
