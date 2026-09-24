@@ -18,6 +18,7 @@ import { toStoredIntent, type TransferIntent } from '../model/intent';
 import type { Block, RawTx, Transaction, TxStatus } from '../model/transaction';
 import {
   PRE_SIGNING_STATES,
+  withLifecycleDefaults,
   type OperationEngine,
   type OperationTarget,
   type ReadTarget,
@@ -37,6 +38,7 @@ import {
   type PreparedOperation,
   type Submission,
 } from '../lifecycle/views';
+import { Scanner, type ScannerOptions } from '../observe/scanner';
 import { deriveXpubChild } from '../signing/hd';
 import type { SignatureBundle } from '../signing/types';
 import { resolveWallet, walletOptionsOf } from '../signing/wallet';
@@ -347,6 +349,81 @@ export class Blockchain<C extends ChainId = ChainId> {
   async getBlock(ref: bigint | string): Promise<Block | null> {
     const block = await (await this.mapping()).driver.reader.getBlock(ref);
     return block ? toBlock(block) : null;
+  }
+
+  /**
+   * Reorg-aware, at-least-once block scanner (capability `block-scan`): `ack()` each event
+   * to commit the cursor before asking for the next. Invalid options throw `CONFIG_INVALID`.
+   */
+  scanner(options: ScannerOptions): Scanner {
+    if (!this.supports('block-scan')) {
+      throw new UnsupportedCapabilityError(
+        'UNSUPPORTED_CAPABILITY',
+        `${this.chain} does not support block scanning`,
+      );
+    }
+    const internals = internalsOf(this);
+    const container = containerOf(internals.container);
+    const { runtime } = container;
+    return new Scanner(
+      {
+        load: async () => {
+          const mapping = await this.mapping();
+          const blocks = mapping.driver.blocks;
+          if (!blocks)
+            throw new UnsupportedCapabilityError(
+              'UNSUPPORTED_CAPABILITY',
+              `${this.chain} driver has no block source`,
+            );
+          const { transport } = await internals.pooled();
+          return { mapping, blocks, transport };
+        },
+        cursors: runtime.stores.cursors,
+        events: runtime.events,
+        clock: runtime.clock,
+        namespace: runtime.namespace,
+        defaults: {
+          reorgWindow: internals.selection.network.reorgWindow,
+          pollIntervalMs: withLifecycleDefaults(container.effective().lifecycle)
+            .pollIntervalMs,
+        },
+      },
+      options,
+    );
+  }
+
+  /** Indexer-backed transaction history of an address (capability `address-history`). */
+  async history(
+    address: string,
+    options: { readonly cursor?: string; readonly limit?: number } = {},
+  ): Promise<{ readonly items: readonly Transaction[]; readonly next?: string }> {
+    if (!this.supports('address-history')) {
+      throw new UnsupportedCapabilityError(
+        'UNSUPPORTED_CAPABILITY',
+        `${this.chain} has no address history (configure an indexer)`,
+      );
+    }
+    const m = await this.mapping();
+    const source = m.driver.history;
+    if (!source)
+      throw new UnsupportedCapabilityError(
+        'UNSUPPORTED_CAPABILITY',
+        `${this.chain} driver has no history source`,
+      );
+    const page = await source.list(toAddress(m, address).canonical, {
+      ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
+      limit: options.limit ?? 50,
+    });
+    const [head, finalized] = await Promise.all([
+      m.driver.reader.getBlockHeight(),
+      m.driver.reader.getFinalizedHeight(),
+    ]);
+    return {
+      items: await Promise.all(
+        page.items.map((tx) => toTransaction(m, tx, head, finalized)),
+      ),
+      ...(page.next !== undefined ? { next: page.next } : {}),
+    };
   }
 
   async getNetworkStatus(): Promise<NetworkStatus> {
