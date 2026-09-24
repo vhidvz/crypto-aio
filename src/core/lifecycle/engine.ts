@@ -1503,6 +1503,8 @@ export class OperationEngine {
     lease: LeaseHandle | undefined,
   ): Promise<OperationRecord> {
     const fanout = this.deps.lifecycle().broadcastFanout;
+    // R25: read before the send, so no store failure can follow a delivery here.
+    const live = mayBeLive(await this.deps.stores.operations.getObservation(prior.id));
     let result: BroadcastResult;
     try {
       result = await target.pooled.driver.broadcaster.broadcast(
@@ -1515,14 +1517,24 @@ export class OperationEngine {
     if (result.kind === 'refused' || result.kind === 'rejected') {
       // Spec §8.2: its own ref is looked up first; seen means the node holds it after all.
       if (!(await this.seenOwnRef(target, op, prior, this.deps.clock.now()))) {
+        // R25: as on the active resend path, a rejection of bytes that may be live (a node
+        // once accepted them) is only a refusal.
+        const rejected = result.kind === 'rejected' && !live;
+        const refusedCode = result.kind === 'refused' ? result.code : 'TX_REFUSED';
         throw new ChainError(
-          result.kind === 'refused' ? result.code : 'TX_REJECTED',
-          `transaction ${result.kind}: ${result.reason}`,
+          rejected ? 'TX_REJECTED' : refusedCode,
+          `transaction ${rejected ? 'rejected' : 'refused'}: ${result.reason}`,
           { context: { operationId: op.id, attemptId: prior.id } },
         );
       }
     }
-    const current = await this.reactivate(op, prior, lease);
+    let current: OperationRecord;
+    try {
+      current = await this.reactivate(op, prior, lease);
+    } catch (error) {
+      // R27: the node holds the bytes, so a failure to record that is ambiguous.
+      throw this.ambiguousAfterBroadcast(op, prior, error);
+    }
     return this.applyBroadcastResult(
       target,
       current,

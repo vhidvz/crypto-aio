@@ -960,9 +960,10 @@ describe('replace, cancel and rebuild', () => {
       when: (args) =>
         (args[2] as OperationPatch | undefined)?.activeAttemptId === refused.id,
     });
+    // R3-1: the node accepted the resend, so the crash surfaces as ambiguous.
     await expect(
       env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
-    ).rejects.toBeInstanceOf(CrashError);
+    ).rejects.toMatchObject({ code: 'STATE_UNRECORDED', ambiguous: true });
     const restarted = await env.restart({ killPrevious: true });
     await restarted.run(restarted.aio.operations.recover());
     const op = await stored(restarted, sub.operationId);
@@ -970,6 +971,117 @@ describe('replace, cancel and rebuild', () => {
     expect(op.activeAttemptId).toBe(refused.id);
     expect(env.chain.inMempool(refused.ref.id)).toBe(true);
     expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(false);
+  });
+
+  // R3-1 (R27): once the node accepted a restored-away resend, a failure is ambiguous.
+  it('reports a failure after an accepted restored-away resend as STATE_UNRECORDED', async () => {
+    const { signer, calls } = countingSigner();
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    // The driver asks for a 10% bump; this node wants 50% at first.
+    const env = await createFakeEnv({
+      signer,
+      stores: { operations: faulty },
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const refused = (await stored(env, sub.operationId)).attempts[1] as AttemptRecord;
+    const signed = calls();
+    // The node relaxes; the store write that swaps the active Attempt fails once.
+    (env.chain as { bumpPercent: bigint }).bumpPercent = 10n;
+    faulty.crashOn({
+      method: 'update',
+      timing: 'before',
+      when: (args) =>
+        (args[2] as OperationPatch | undefined)?.activeAttemptId === refused.id,
+    });
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({
+      code: 'STATE_UNRECORDED',
+      ambiguous: true,
+      retryable: true,
+      details: { causeCode: 'UNKNOWN' },
+      context: { operationId: sub.operationId, attemptId: refused.id },
+    });
+    expect(env.chain.inMempool(refused.ref.id)).toBe(true);
+    const again = await env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } }));
+    expect(again.attempt?.id).toBe(refused.ref.id);
+    const op = await stored(env, sub.operationId);
+    expect(op.activeAttemptId).toBe(refused.id);
+    expect(op.attempts).toHaveLength(2);
+    expect(calls()).toBe(signed);
+  });
+
+  // R3-2 (R25): a rejected restored-away resend is a refusal once a node accepted the bytes.
+  it('reports a rejected restored-away resend as refused when a node once accepted it', async () => {
+    const env = await createFakeEnv({ chain: { minFee: 10n } });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    const replaced = await env.run(
+      env.bc.replace(sub.operationId, { fee: { fee: 12n } }),
+    );
+    const accepted = replaced.attempts[1] as AttemptRecord;
+    // The accepted replacement is dropped and its resend refused: it gives the role back.
+    await markObservation(env, accepted.id, 'refused');
+    env.chain.dropFromMempool(accepted.ref.id);
+    (env.chain as { minFee: bigint }).minFee = 20n;
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    expect((await stored(env, sub.operationId)).activeAttemptId).toBe(
+      replaced.attempts[0]?.id,
+    );
+    const { driver } = await internalsOf(env.bc).pooled();
+    const broadcast = driver.broadcaster.broadcast;
+    driver.broadcaster.broadcast = async () => ({
+      kind: 'rejected',
+      reason: 'invalid signature',
+    });
+    try {
+      await expect(
+        env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+      ).rejects.toMatchObject({ code: 'TX_REFUSED', ambiguous: false });
+    } finally {
+      driver.broadcaster.broadcast = broadcast;
+    }
+    const op = await stored(env, sub.operationId);
+    expect(op.activeAttemptId).toBe(op.attempts[0]?.id);
+    expect(op.attempts).toHaveLength(2);
+  });
+
+  // R3-2: bytes no node ever accepted keep the rejection's own code.
+  it('reports a rejected restored-away resend as rejected when no node accepted it', async () => {
+    // The driver asks for a 10% bump; this node wants 50%.
+    const env = await createFakeEnv({
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const { driver } = await internalsOf(env.bc).pooled();
+    const broadcast = driver.broadcaster.broadcast;
+    driver.broadcaster.broadcast = async () => ({
+      kind: 'rejected',
+      reason: 'invalid signature',
+    });
+    try {
+      await expect(
+        env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+      ).rejects.toMatchObject({ code: 'TX_REJECTED', ambiguous: false });
+    } finally {
+      driver.broadcaster.broadcast = broadcast;
+    }
+    const op = await stored(env, sub.operationId);
+    expect(op.activeAttemptId).toBe(op.attempts[0]?.id);
   });
 
   // I3 / R30: replace is idempotent per fee spec; another spec is another request.
