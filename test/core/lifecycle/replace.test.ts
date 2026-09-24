@@ -1017,6 +1017,48 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(signed);
   });
 
+  // R31 (R27): a failed own-ref lookup after a restored-away refusal is ambiguous.
+  it('reports a failed own-ref lookup after a restored-away refusal as STATE_UNRECORDED', async () => {
+    // The driver asks for a 10% bump; this node wants 50%.
+    const env = await createFakeEnv({
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const refused = (await stored(env, sub.operationId)).attempts[1] as AttemptRecord;
+    const { driver } = await internalsOf(env.bc).pooled();
+    const broadcast = driver.broadcaster.broadcast;
+    const observe = driver.reader.observe;
+    driver.broadcaster.broadcast = async () => ({
+      kind: 'refused',
+      code: 'FEE_TOO_LOW',
+      reason: 'replacement transaction underpriced',
+    });
+    driver.reader.observe = async () => {
+      throw new Error('lookup failed');
+    };
+    try {
+      await expect(
+        env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+      ).rejects.toMatchObject({
+        code: 'STATE_UNRECORDED',
+        ambiguous: true,
+        details: { causeCode: 'PROVIDER_UNAVAILABLE' },
+        context: { operationId: sub.operationId, attemptId: refused.id },
+      });
+    } finally {
+      driver.broadcaster.broadcast = broadcast;
+      driver.reader.observe = observe;
+    }
+    const op = await stored(env, sub.operationId);
+    expect(op.activeAttemptId).toBe(op.attempts[0]?.id);
+    expect(op.attempts).toHaveLength(2);
+  });
+
   // R3-2 (R25): a rejected restored-away resend is a refusal once a node accepted the bytes.
   it('reports a rejected restored-away resend as refused when a node once accepted it', async () => {
     const env = await createFakeEnv({ chain: { minFee: 10n } });

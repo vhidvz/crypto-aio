@@ -1516,7 +1516,14 @@ export class OperationEngine {
     }
     if (result.kind === 'refused' || result.kind === 'rejected') {
       // Spec §8.2: its own ref is looked up first; seen means the node holds it after all.
-      if (!(await this.seenOwnRef(target, op, prior, this.deps.clock.now()))) {
+      // R31: a failed lookup is ambiguous, as on the active resend path.
+      let seen: boolean;
+      try {
+        seen = await this.seenOwnRef(target, op, prior, this.deps.clock.now());
+      } catch (error) {
+        throw this.ambiguousAfterBroadcast(op, prior, error);
+      }
+      if (!seen) {
         // R25: as on the active resend path, a rejection of bytes that may be live (a node
         // once accepted them) is only a refusal.
         const rejected = result.kind === 'rejected' && !live;
