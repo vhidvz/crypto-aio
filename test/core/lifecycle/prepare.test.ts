@@ -1,18 +1,77 @@
+import { internalsOf } from '../../../src/core/blockchain/internal';
 import { containerOf } from '../../../src/core/container/internals';
 import { StateError } from '../../../src/core/errors/error';
 import { createLogger, type LogLevel } from '../../../src/core/events/logger';
-import { localSigner } from '../../../src/core/signing/local';
-import type { Signer } from '../../../src/core/signing/types';
 import type { AioEvent } from '../../../src/core/events/types';
-import { MemoryLockManager, MemoryOperationStore } from '../../../src/core/store/memory';
-import type { LockManager, OperationStore } from '../../../src/core/store/types';
-import { createFakeEnv } from '../../../src/testing/env';
+import { sequenceKey } from '../../../src/core/ordering/sequence';
+import { callbackSigner } from '../../../src/core/signing/callback';
+import { localSigner } from '../../../src/core/signing/local';
+import {
+  MemoryLockManager,
+  MemoryOperationStore,
+  MemorySequenceStore,
+} from '../../../src/core/store/memory';
+import type {
+  LockManager,
+  OperationStore,
+  SequenceState,
+  SequenceStore,
+} from '../../../src/core/store/types';
+import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
 import { FakeClock } from '../../../src/testing/fake-clock';
 
-const reservationOf = async (
-  env: Awaited<ReturnType<typeof createFakeEnv>>,
-  id: string,
-) => (await env.stores.operations.get('default', id))?.reservation;
+const reservationOf = async (env: FakeEnv, id: string) =>
+  (await env.stores.operations.get('default', id))?.reservation;
+
+const walletSequenceKey = (env: FakeEnv) =>
+  sequenceKey('default', 'fakechain', 'local', env.address);
+
+function captureLogs() {
+  const logs: { level: LogLevel; message: string; fields?: Record<string, unknown> }[] =
+    [];
+  const logger = createLogger('test', (level, _ns, message, fields) =>
+    logs.push({ level, message, ...(fields ? { fields } : {}) }),
+  );
+  return { logs, logger };
+}
+
+/** An operation store that commits the first `prepared` write, then loses its ack. */
+function lostAckOperations(): OperationStore {
+  const inner = new MemoryOperationStore(new FakeClock());
+  let dropAck = true;
+  return new Proxy(inner, {
+    get(target, prop) {
+      if (prop === 'update') {
+        return async (...args: Parameters<OperationStore['update']>) => {
+          const saved = await target.update(...args);
+          if (dropAck && args[2].state === 'prepared') {
+            dropAck = false;
+            throw new Error('connection reset after commit');
+          }
+          return saved;
+        };
+      }
+      const value: unknown = Reflect.get(target, prop);
+      return typeof value === 'function'
+        ? (value as (...a: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
+}
+
+/** A sequence store that runs `beforePut` (which may throw) ahead of every write. */
+function scriptedSequences(
+  beforePut: (state: Omit<SequenceState, 'version'>) => Promise<void> | void,
+): SequenceStore {
+  const inner = new MemorySequenceStore();
+  return {
+    get: (key) => inner.get(key),
+    put: async (key, state, expectedVersion) => {
+      await beforePut(state);
+      await inner.put(key, state, expectedVersion);
+    },
+  };
+}
 
 describe('prepareTransfer', () => {
   it('reserves a nonce and exposes the signing requests', async () => {
@@ -83,24 +142,98 @@ describe('prepareTransfer', () => {
     });
   });
 
-  // R22: every issued ticket is cancelled through the signer that issued it.
+  // I2 (P3): abandon waits for the address lease, so it cannot slip in between a resumed
+  // prepare's allocation and its persisted reservation.
+  it('never leaks the nonce when abandon races a resumed prepare', async () => {
+    let onAllocate: (() => Promise<void>) | undefined;
+    const sequences = scriptedSequences(async () => {
+      const hook = onAllocate;
+      onAllocate = undefined;
+      await hook?.();
+    });
+    const env = await createFakeEnv({ stores: { sequences } });
+    const intent = { to: env.stranger(), amount: 1n };
+    env.chain.configureEndpoint('main', { down: true });
+    await expect(
+      env.run(env.bc.prepareTransfer(intent, { idempotencyKey: 'race' })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    const created = await env.stores.operations.getByKey('default', 'race');
+    if (!created) throw new Error('unreachable');
+    env.chain.configureEndpoint('main', { down: false });
+    await env.clock.advance(30_000);
+    let abandoning: Promise<unknown> | undefined;
+    onAllocate = async () => {
+      abandoning = env.bc.abandon(created.id);
+      await env.clock.sleep(1_000);
+    };
+    await env.run(
+      Promise.allSettled([env.bc.prepareTransfer(intent, { idempotencyKey: 'race' })]),
+    );
+    await env.run(Promise.allSettled([abandoning]));
+    expect(abandoning).toBeDefined();
+    expect((await env.stores.operations.get('default', created.id))?.state).toBe(
+      'abandoned',
+    );
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(await reservationOf(env, next.operation.id)).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
+    });
+  });
+
+  // I2 (P4): lease contention fails abandon before any write, so a retry succeeds.
+  it('lets abandon be retried after it lost the address lease to contention', async () => {
+    const env = await createFakeEnv();
+    const prepared = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    const held = await env.stores.locks.acquire(
+      walletSequenceKey(env),
+      'intruder',
+      600_000,
+    );
+    if (!held) throw new Error('unreachable');
+    await expect(env.run(env.bc.abandon(prepared.operation.id))).rejects.toMatchObject({
+      code: 'SEQUENCE_BUSY',
+    });
+    expect(
+      (await env.stores.operations.get('default', prepared.operation.id))?.state,
+    ).toBe('prepared');
+    await env.stores.locks.release(held);
+    expect((await env.run(env.bc.abandon(prepared.operation.id))).state).toBe(
+      'abandoned',
+    );
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(await reservationOf(env, next.operation.id)).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
+    });
+  });
+
+  // R22: every issued ticket is cancelled through the signer that issued it (M4: failures
+  // and unresolvable signers are logged by code only).
   it('cancels each signer ticket through its issuer when abandoning', async () => {
     const cancelled: string[] = [];
     const inner = localSigner.generate({ curves: ['secp256k1'], id: 'inner' }).signer;
-    // A plain object: the fake env's generation proxy cannot wrap a frozen callbackSigner.
-    const custody = (id: string, failing: boolean): Signer => ({
-      id,
-      schemes: ['secp256k1-ecdsa'],
-      getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
-      sign: async () => ({ status: 'pending' }),
-      cancelRequest: async (ticket) => {
-        cancelled.push(`${id}:${ticket}`);
-        if (failing) throw new Error('custody backend unreachable');
-      },
-    });
+    const custody = (id: string, failing: boolean) =>
+      callbackSigner({
+        id,
+        schemes: ['secp256k1-ecdsa'],
+        getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
+        sign: async () => ({ status: 'pending' }),
+        cancelRequest: async (ticket) => {
+          cancelled.push(`${id}:${ticket}`);
+          if (failing) throw new Error(`custody backend for ${env.address} unreachable`);
+        },
+      });
+    const { logs, logger } = captureLogs();
     const env = await createFakeEnv({
       signer: custody('hot', true),
-      aio: { signers: { mpc: custody('mpc', false) } },
+      aio: { signers: { mpc: custody('mpc', false) }, logger },
     });
     const prepared = await env.run(
       env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
@@ -110,6 +243,7 @@ describe('prepareTransfer', () => {
     if (!record) throw new Error('unreachable');
     const signerTickets = [
       { signerId: 'hot', ticket: 't-1' },
+      { signerId: 'gone', ticket: 't-3' },
       { signerId: 'mpc', ticket: 't-2' },
     ];
     await env.stores.operations.update('default', id, { signerTickets }, record.version);
@@ -118,6 +252,20 @@ describe('prepareTransfer', () => {
     expect(
       (await env.stores.operations.get('default', id))?.signerTickets,
     ).toBeUndefined();
+    expect(
+      logs.filter((entry) => entry.message === 'signer cancelRequest failed'),
+    ).toEqual([
+      {
+        level: 'warn',
+        message: 'signer cancelRequest failed',
+        fields: { operationId: id, signerId: 'hot', code: 'UNKNOWN' },
+      },
+      {
+        level: 'warn',
+        message: 'signer cancelRequest failed',
+        fields: { operationId: id, signerId: 'gone', code: 'SIGNER_UNAVAILABLE' },
+      },
+    ]);
   });
 
   it('refuses to abandon an operation through a handle for another wallet', async () => {
@@ -249,27 +397,7 @@ describe('prepareTransfer', () => {
 
   // Crash consistency: the write may have landed, so its reservation must stay reserved.
   it('runs no compensation once the prepared write was attempted', async () => {
-    const inner = new MemoryOperationStore(new FakeClock());
-    let dropAck = true;
-    const operations = new Proxy(inner, {
-      get(target, prop) {
-        if (prop === 'update') {
-          return async (...args: Parameters<OperationStore['update']>) => {
-            const saved = await target.update(...args);
-            if (dropAck && args[2].state === 'prepared') {
-              dropAck = false;
-              throw new Error('connection reset after commit');
-            }
-            return saved;
-          };
-        }
-        const value: unknown = Reflect.get(target, prop);
-        return typeof value === 'function'
-          ? (value as (...a: unknown[]) => unknown).bind(target)
-          : value;
-      },
-    });
-    const env = await createFakeEnv({ stores: { operations } });
+    const env = await createFakeEnv({ stores: { operations: lostAckOperations() } });
     await expect(
       env.run(
         env.bc.prepareTransfer(
@@ -289,6 +417,112 @@ describe('prepareTransfer', () => {
     expect(await reservationOf(env, next.operation.id)).toEqual({
       kind: 'nonce',
       nonce: 1n,
+    });
+  });
+
+  // I1: a repeat of an Operation left `prepared` (lost ack) still runs the policy veto.
+  it('runs the veto again when repeating an operation left prepared', async () => {
+    let vetoing = true;
+    const env = await createFakeEnv({
+      stores: { operations: lostAckOperations() },
+      hooks: {
+        beforeSign: () => {
+          if (vetoing) throw new Error('frozen by compliance');
+        },
+      },
+    });
+    const intent = { to: env.stranger(), amount: 1n };
+    await expect(
+      env.run(env.bc.prepareTransfer(intent, { idempotencyKey: 'held' })),
+    ).rejects.toThrow('connection reset after commit');
+    expect((await env.stores.operations.getByKey('default', 'held'))?.state).toBe(
+      'prepared',
+    );
+    await expect(
+      env.run(env.bc.prepareTransfer(intent, { idempotencyKey: 'held' })),
+    ).rejects.toMatchObject({ code: 'POLICY_REJECTED' });
+    expect((await env.stores.operations.getByKey('default', 'held'))?.state).toBe(
+      'failed',
+    );
+    vetoing = false;
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(await reservationOf(env, next.operation.id)).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
+    });
+  });
+
+  // M2: a veto whose release fails still surfaces the veto; the release is logged by code.
+  it('surfaces the veto, not the release failure, when the nonce cannot be released', async () => {
+    const { logs, logger } = captureLogs();
+    const sequences = scriptedSequences((state) => {
+      if (state.released.length > 0) {
+        throw new StateError(
+          'VERSION_CONFLICT',
+          'the sequence was modified concurrently',
+        );
+      }
+    });
+    const env = await createFakeEnv({
+      stores: { sequences },
+      hooks: {
+        beforeSign: () => {
+          throw new Error('over the limit');
+        },
+      },
+      aio: { logger },
+    });
+    await expect(
+      env.run(
+        env.bc.prepareTransfer(
+          { to: env.stranger(), amount: 1n },
+          { idempotencyKey: 'veto' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'POLICY_REJECTED', message: 'over the limit' });
+    const record = await env.stores.operations.getByKey('default', 'veto');
+    expect(record?.state).toBe('failed');
+    expect(
+      logs.filter((entry) => entry.message === 'reservation release failed'),
+    ).toEqual([
+      {
+        level: 'warn',
+        message: 'reservation release failed',
+        fields: { operationId: record?.id, code: 'VERSION_CONFLICT' },
+      },
+    ]);
+  });
+
+  // M1: the persisted reservation must be the slot that was allocated.
+  it('fails and releases when the built transaction uses another nonce', async () => {
+    const env = await createFakeEnv();
+    const { driver } = await internalsOf(env.bc).pooled();
+    const build = driver.builder.build.bind(driver.builder);
+    const spy = jest
+      .spyOn(driver.builder, 'build')
+      .mockImplementationOnce((intent, fee, ctx) =>
+        build(intent, fee, { ...ctx, ordering: { kind: 'nonce', nonce: 7n } }),
+      );
+    await expect(
+      env.run(
+        env.bc.prepareTransfer(
+          { to: env.stranger(), amount: 1n },
+          { idempotencyKey: 'skewed' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'NONCE_CONFLICT' });
+    spy.mockRestore();
+    const record = await env.stores.operations.getByKey('default', 'skewed');
+    expect(record?.state).toBe('failed');
+    expect(record?.reservation).toBeUndefined();
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(await reservationOf(env, next.operation.id)).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
     });
   });
 

@@ -18,7 +18,7 @@ import {
   type StoredIntent,
   type TransferIntent,
 } from '../model/intent';
-import type { OrderingData } from '../model/ordering';
+import type { OrderingData, OrderingKind } from '../model/ordering';
 import type { UnsignedTx } from '../model/transaction';
 import { reservedInputs, seqnoHolder } from '../ordering/reservations';
 import {
@@ -28,7 +28,7 @@ import {
 } from '../ordering/sequence';
 import { sanitizeError } from '../secret/redact';
 import type { SigningOrchestrator } from '../signing/orchestrator';
-import type { SigningContext, SigningPurpose } from '../signing/types';
+import type { SignerTicket, SigningContext, SigningPurpose } from '../signing/types';
 import type { ResolvedWallet } from '../signing/wallet';
 import {
   isTerminal,
@@ -139,6 +139,36 @@ function isDefinitive(error: unknown): boolean {
   );
 }
 
+/**
+ * M1: the built transaction must use exactly the slot the engine reserved: the ordering
+ * kind of the driver, the allocated nonce or seqno, and no input held by another live
+ * Operation. Anything else would persist a reservation nobody allocated.
+ */
+function assertBuiltOrdering(
+  operationId: string,
+  kind: OrderingKind,
+  allocated: OrderingData | undefined,
+  excluded: readonly string[] | undefined,
+  built: OrderingData,
+): void {
+  const matches =
+    built.kind === kind &&
+    (built.kind === 'nonce'
+      ? allocated?.kind === 'nonce' && built.nonce === allocated.nonce
+      : built.kind === 'seqno'
+        ? allocated?.kind === 'seqno' && built.seqno === allocated.seqno
+        : built.kind === 'inputs'
+          ? !built.inputs.some((input) => excluded?.includes(input))
+          : true);
+  if (!matches) {
+    throw new ChainError(
+      'NONCE_CONFLICT',
+      'the built transaction does not use the ordering slot reserved for it',
+      { context: { operationId } },
+    );
+  }
+}
+
 export class OperationEngine {
   constructor(protected readonly deps: EngineDeps) {}
 
@@ -154,55 +184,84 @@ export class OperationEngine {
   ): Promise<OperationRecord> {
     const { record, stored } = await this.open(target, intent, options);
     let current = record;
-    if (current.state === 'created') {
+    if (current.state === 'created' || current.state === 'prepared') {
+      // R23: the policy check and its failure transition run under the address lease too,
+      // and a repeat of a `prepared` Operation (e.g. after a lost ack) is authorized again.
       current = await this.withAddressLease(
         target,
         async (lease) => {
-          const fresh = await this.require(record.id);
-          return fresh.state === 'created'
-            ? this.prepareStage(target, fresh, stored, lease, options.signal)
-            : fresh;
+          let fresh = await this.require(record.id);
+          if (fresh.state === 'created') {
+            fresh = await this.prepareStage(target, fresh, stored, lease, options.signal);
+          }
+          if (fresh.state === 'prepared') {
+            await this.authorizeOrFail(target, fresh, lease);
+          }
+          return fresh;
         },
         options.signal,
       );
-      if (current.state === 'prepared') await this.authorizeOrFail(target, current);
     }
     return this.settle(current);
   }
 
-  /** Only before any signed bytes exist; releases the reservation and cancels pending signer work. */
+  /**
+   * Only before any signed bytes exist. Under the address lease (R23): re-reads the
+   * Operation, marks it `abandoned` and releases its reservation. Pending signer tickets are
+   * cancelled after the lease is dropped, even when the release failed.
+   */
   async abandon(target: OperationTarget, operationId: string): Promise<OperationRecord> {
-    const op = await this.require(operationId);
-    this.assertOwnedBy(target, op);
-    if (!PRE_SIGNING_STATES.has(op.state)) {
-      throw new StateError(
-        'INVALID_TRANSITION',
-        `cannot abandon an operation in state '${op.state}'`,
-        { context: { operationId } },
-      );
-    }
-    const next = await this.update(op, {
-      state: 'abandoned',
-      clear: ['partialSignatures', 'signerTickets'],
-    });
+    let tickets: readonly SignerTicket[] = [];
     try {
-      // Release first: a signer's cancelRequest has no deadline and must not hold the slot.
-      await this.releaseReservation(target, op);
-    } finally {
-      // R22: cancel every issued ticket through the signer that issued it.
-      for (const { signerId, ticket } of op.signerTickets ?? []) {
-        try {
-          await target.wallet.signerById(signerId)?.signer.cancelRequest?.(ticket);
-        } catch (error) {
-          this.deps.log.warn('signer cancelRequest failed', {
-            operationId,
-            signerId,
-            code: errorCode(error),
-          });
+      return await this.withAddressLease(target, async (lease) => {
+        const op = await this.require(operationId);
+        this.assertOwnedBy(target, op);
+        if (!PRE_SIGNING_STATES.has(op.state)) {
+          throw new StateError(
+            'INVALID_TRANSITION',
+            `cannot abandon an operation in state '${op.state}'`,
+            { context: { operationId } },
+          );
         }
+        const next = await this.update(op, {
+          state: 'abandoned',
+          clear: ['partialSignatures', 'signerTickets'],
+        });
+        tickets = op.signerTickets ?? [];
+        await this.releaseReservation(target, op, lease);
+        return next;
+      });
+    } finally {
+      await this.cancelTickets(target, operationId, tickets);
+    }
+  }
+
+  /** R22: best effort, through the signer that issued each ticket; failures log codes only. */
+  protected async cancelTickets(
+    target: OperationTarget,
+    operationId: string,
+    tickets: readonly SignerTicket[],
+  ): Promise<void> {
+    for (const { signerId, ticket } of tickets) {
+      const issuer = target.wallet.signerById(signerId);
+      if (!issuer) {
+        this.deps.log.warn('signer cancelRequest failed', {
+          operationId,
+          signerId,
+          code: 'SIGNER_UNAVAILABLE',
+        });
+        continue;
+      }
+      try {
+        await issuer.signer.cancelRequest?.(ticket);
+      } catch (error) {
+        this.deps.log.warn('signer cancelRequest failed', {
+          operationId,
+          signerId,
+          code: errorCode(error),
+        });
       }
     }
-    return next;
   }
 
   get(operationId: string): Promise<OperationRecord | null> {
@@ -406,6 +465,13 @@ export class OperationEngine {
         );
       }
       const unsigned = await driver.builder.build(stored, fee, build);
+      assertBuiltOrdering(
+        op.id,
+        driver.ordering,
+        reservation,
+        excludeInputs,
+        unsigned.ordering,
+      );
       await lease?.renew();
       persisting = true;
       return await this.update(op, {
@@ -455,19 +521,37 @@ export class OperationEngine {
     }
   }
 
-  /** Terminal failure while no valid signed bytes exist: mark failed, then free the nonce. */
+  /**
+   * Terminal failure while no valid signed bytes exist: mark failed, then free the nonce,
+   * both under one address lease (R23). Callers already inside `withAddressLease` must pass
+   * their lease (it is not re-entrant). A failed release is logged by code and the original
+   * `error` is rethrown in its place.
+   */
   protected async failAfterPrepare(
     target: OperationTarget,
     op: OperationRecord,
     error: unknown,
     lease?: LeaseHandle,
   ): Promise<OperationRecord> {
+    if (!lease && LEASED_ORDERINGS.has(target.pooled.driver.ordering)) {
+      return this.withAddressLease(target, (held) =>
+        this.failAfterPrepare(target, op, error, held),
+      );
+    }
     const failed = await this.update(op, {
       state: 'failed',
       error: serializeError(error),
       clear: ['unsigned', 'partialSignatures', 'signerTickets'],
     });
-    await this.releaseReservation(target, op, lease);
+    try {
+      await this.releaseReservation(target, op, lease);
+    } catch (releaseError) {
+      this.deps.log.warn('reservation release failed', {
+        operationId: op.id,
+        code: errorCode(releaseError),
+      });
+      throw error;
+    }
     return failed;
   }
 
