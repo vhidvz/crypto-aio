@@ -61,6 +61,13 @@ export interface LifecycleOptions {
   readonly waitTimeoutMs?: number;
   readonly requireIdempotencyKey?: boolean;
   readonly broadcastFanout?: number;
+  /**
+   * How long `transfer` and `submitSignatures` wait for the `beforeSign` hook and the
+   * signer(s) (default 120 000 ms). The wallet's address lease is kept alive meanwhile. On
+   * timeout nothing is written: the Operation stays `prepared` with its reservation, and a
+   * repeat asks again. Signers that need longer should answer `pending` with a ticket.
+   */
+  readonly signTimeoutMs?: number;
 }
 
 export interface Hooks {
@@ -68,10 +75,11 @@ export interface Hooks {
    * Throw to veto signing (policy engines, approvals). Runs before every signing request.
    * It may run more than once per Operation: once per concurrent caller, and again when a
    * `prepared` Operation is repeated. Make it idempotent; `ctx.operationId` identifies the
-   * Operation. It runs while the wallet's address lease is held, so keep it short: a hook
-   * running longer than `lifecycle.leaseMs` can lose the lease to another transfer. A veto
-   * after that writes nothing; the Operation stays `prepared` and is vetoed again on its
-   * next repeat.
+   * Operation. It runs while the wallet's address lease is held, so keep it short. In
+   * `transfer` and `submitSignatures` the lease is kept alive for up to
+   * `lifecycle.signTimeoutMs`; in `prepareTransfer` a hook running longer than
+   * `lifecycle.leaseMs` can lose the lease to another transfer. A veto after that writes
+   * nothing; the Operation stays `prepared` and is vetoed again on its next repeat.
    */
   readonly beforeSign?: (ctx: SigningContext) => void | Promise<void>;
 }

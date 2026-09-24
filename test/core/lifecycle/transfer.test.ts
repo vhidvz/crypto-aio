@@ -1,11 +1,16 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
+import { createLogger, type LogLevel } from '../../../src/core/events/logger';
+import { withLifecycleDefaults } from '../../../src/core/lifecycle/engine';
 import { sequenceKey } from '../../../src/core/ordering/sequence';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
-import type { Signer } from '../../../src/core/signing/types';
+import type { Signer, SigningResult } from '../../../src/core/signing/types';
+import { MemoryLockManager } from '../../../src/core/store/memory';
+import type { LockManager } from '../../../src/core/store/types';
 import { toHex } from '../../../src/core/util/bytes';
 import { fakeAddress, signFake } from '../../../src/testing/fake-chain';
 import { createFakeEnv, type FakeEnvOptions } from '../../../src/testing/env';
+import { FakeClock, settle } from '../../../src/testing/fake-clock';
 import { ctx } from '../signing/fixtures';
 import { countingSigner } from './support';
 
@@ -13,6 +18,15 @@ const nonceOf = async (env: Awaited<ReturnType<typeof createFakeEnv>>, id: strin
   const reservation = (await env.stores.operations.get('default', id))?.reservation;
   return reservation?.kind === 'nonce' ? reservation.nonce : undefined;
 };
+
+function captureLogs() {
+  const logs: { level: LogLevel; message: string; fields?: Record<string, unknown> }[] =
+    [];
+  const logger = createLogger('test', (level, _ns, message, fields) =>
+    logs.push({ level, message, ...(fields ? { fields } : {}) }),
+  );
+  return { logs, logger };
+}
 
 /** An asynchronous (MPC-style) signer: every request answers `pending` with `ticket`. */
 function asyncSigner(ticket: string, cancelled: string[] = []) {
@@ -347,34 +361,164 @@ describe('transfer', () => {
 });
 
 describe('transfer: signing under the address lease', () => {
-  // Carry-forward (signer deadline): an answer after the lease expired could never be
-  // persisted (a lease cannot be renewed after expiry), so the wait is bounded by the lease.
-  it('stops waiting for a signer that never answers once the lease would expire', async () => {
-    const inner = localSigner.generate({ curves: ['secp256k1'], id: 'hung' }).signer;
-    const hung = callbackSigner({
+  /** A signer whose `sign` answers only when the test says so (or never). */
+  function manualSigner(cancelled: string[] = []) {
+    const inner = localSigner.generate({ curves: ['secp256k1'], id: 'slow' }).signer;
+    let answer: ((result: SigningResult) => void) | undefined;
+    const signer = callbackSigner({
       id: 'hot',
       schemes: ['secp256k1-ecdsa'],
       getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
-      sign: () => new Promise(() => undefined),
+      sign: () =>
+        new Promise<SigningResult>((resolve) => {
+          answer = resolve;
+        }),
+      cancelRequest: async (ticket) => {
+        cancelled.push(ticket);
+      },
     });
-    const env = await createFakeEnv({ signer: hung });
+    return { signer, answer: (result: SigningResult) => answer?.(result) };
+  }
+
+  // R24 (a): the wait is bounded by lifecycle.signTimeoutMs, not by the lease.
+  it('stops waiting for a signer after lifecycle.signTimeoutMs and writes nothing', async () => {
+    const { signer } = manualSigner();
+    const env = await createFakeEnv({ signer, lifecycle: { signTimeoutMs: 60_000 } });
     const intent = { to: env.stranger(), amount: 3n };
     const started = env.clock.now();
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'hung' }), 1_000),
     ).rejects.toMatchObject({ code: 'TIMEOUT', retryable: true });
-    expect(env.clock.now() - started).toBeLessThanOrEqual(31_000);
+    const waited = env.clock.now() - started;
+    expect(waited).toBeGreaterThanOrEqual(60_000);
+    expect(waited).toBeLessThanOrEqual(61_000);
     const op = await env.stores.operations.getByKey('default', 'hung');
     expect(op).toMatchObject({
       state: 'prepared',
       reservation: { kind: 'nonce', nonce: 0n },
     });
     expect(op?.attempts).toHaveLength(0);
+    expect(env.clock.pending).toBe(0);
     // The lease was given back: another transfer allocates the next nonce straight away.
     const other = await env.run(
       env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
     );
     expect(await nonceOf(env, other.operation.id)).toBe(1n);
+  });
+
+  it('keeps the lease alive for a signer slower than leaseMs', async () => {
+    const inner = localSigner.generate({ curves: ['secp256k1'], id: 'slow' }).signer;
+    const clock: { current?: FakeClock } = {};
+    const slow = callbackSigner({
+      id: 'hot',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
+      sign: async (requests, signingCtx) => {
+        await clock.current?.sleep(45_000);
+        return inner.sign(requests, signingCtx);
+      },
+    });
+    const env = await createFakeEnv({
+      signer: slow,
+      lifecycle: { leaseMs: 30_000, signTimeoutMs: 120_000 },
+    });
+    clock.current = env.clock;
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'slow' }),
+      1_000,
+    );
+    expect(sub.state).toBe('submitted');
+    expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(true);
+    expect(
+      (await env.stores.operations.get('default', sub.operationId))?.attempts,
+    ).toHaveLength(1);
+    expect(env.clock.pending).toBe(0);
+  });
+
+  it('gives up the wait and writes nothing when the lease is lost while the signer works', async () => {
+    const { logs, logger } = captureLogs();
+    const locks = new MemoryLockManager(new FakeClock());
+    let lose = false;
+    const flaky: LockManager = {
+      acquire: (key, owner, ttlMs) => locks.acquire(key, owner, ttlMs),
+      renew: async (lease, ttlMs) => (lose ? null : locks.renew(lease, ttlMs)),
+      release: (lease) => locks.release(lease),
+    };
+    const inner = localSigner.generate({ curves: ['secp256k1'], id: 'slow' }).signer;
+    const clock: { current?: FakeClock } = {};
+    const slow = callbackSigner({
+      id: 'hot',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
+      sign: async (requests, signingCtx) => {
+        lose = true; // another worker takes the address over while this signer works
+        await clock.current?.sleep(20_000);
+        return inner.sign(requests, signingCtx);
+      },
+    });
+    const env = await createFakeEnv({
+      signer: slow,
+      stores: { locks: flaky },
+      aio: { logger },
+    });
+    clock.current = env.clock;
+    await expect(
+      env.run(
+        env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'lost' }),
+        1_000,
+      ),
+    ).rejects.toMatchObject({ code: 'FENCING' });
+    const op = await env.stores.operations.getByKey('default', 'lost');
+    expect(op).toMatchObject({
+      state: 'prepared',
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+    expect(
+      logs.filter(
+        (entry) => entry.message === 'address lease lost while waiting for the signer',
+      ),
+    ).toEqual([
+      {
+        level: 'warn',
+        message: 'address lease lost while waiting for the signer',
+        fields: { operationId: op?.id, code: 'FENCING' },
+      },
+    ]);
+    // The signer's late answer is dropped: nothing is persisted from it.
+    await env.run(env.clock.sleep(20_000), 1_000);
+    expect(await env.stores.operations.getByKey('default', 'lost')).toMatchObject({
+      state: 'prepared',
+      attempts: [],
+    });
+  });
+
+  // R24 / R22: a pending answer that arrives after the deadline still has a live ticket.
+  it('cancels the ticket of a pending answer that arrives after the deadline', async () => {
+    const cancelled: string[] = [];
+    const { signer, answer } = manualSigner(cancelled);
+    const env = await createFakeEnv({ signer, lifecycle: { signTimeoutMs: 5_000 } });
+    await expect(
+      env.run(
+        env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'late' }),
+        1_000,
+      ),
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(cancelled).toEqual([]);
+    answer({ status: 'pending', ticket: 'job-1' });
+    await settle();
+    expect(cancelled).toEqual(['job-1']);
+    const op = await env.stores.operations.getByKey('default', 'late');
+    expect(op).toMatchObject({ state: 'prepared' });
+    expect(op?.signerTickets).toBeUndefined();
+  });
+
+  it('rejects an invalid lifecycle.signTimeoutMs', () => {
+    for (const signTimeoutMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => withLifecycleDefaults({ signTimeoutMs })).toThrow(
+        expect.objectContaining({ code: 'CONFIG_INVALID' }),
+      );
+    }
+    expect(withLifecycleDefaults({}).signTimeoutMs).toBe(120_000);
   });
 
   it('runs submitSignatures under the address lease', async () => {

@@ -4,6 +4,7 @@ import type { PooledDriver } from '../container/pool';
 import type { BroadcastResult, BuildContext } from '../driver/types';
 import {
   ChainError,
+  ConfigError,
   ProviderError,
   SigningError,
   StateError,
@@ -88,12 +89,24 @@ export const LIFECYCLE_DEFAULTS: ResolvedLifecycle = {
   waitTimeoutMs: 600_000,
   requireIdempotencyKey: false,
   broadcastFanout: 1,
+  signTimeoutMs: 120_000,
 };
 
 export function withLifecycleDefaults(options: LifecycleOptions): ResolvedLifecycle {
   const out: Record<string, unknown> = { ...LIFECYCLE_DEFAULTS };
   for (const [key, value] of Object.entries(options))
     if (value !== undefined) out[key] = value;
+  const { signTimeoutMs } = out as ResolvedLifecycle;
+  if (
+    typeof signTimeoutMs !== 'number' ||
+    !Number.isFinite(signTimeoutMs) ||
+    signTimeoutMs <= 0
+  ) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'lifecycle.signTimeoutMs must be a finite number greater than 0',
+    );
+  }
   return out as ResolvedLifecycle;
 }
 
@@ -726,15 +739,25 @@ export class OperationEngine {
     const existing = this.usablePartials(op, unsigned.signingRequests);
     let result: OrchestratedResult;
     try {
-      result = await this.signingDeadline(op, lease, signal, async () => {
-        await this.deps.orchestrator.authorize(ctx);
-        return this.deps.orchestrator.sign(
-          target.wallet,
-          unsigned.signingRequests,
-          ctx,
-          existing,
-        );
-      });
+      result = await this.signingDeadline(
+        op,
+        lease,
+        signal,
+        async () => {
+          await this.deps.orchestrator.authorize(ctx);
+          return this.deps.orchestrator.sign(
+            target.wallet,
+            unsigned.signingRequests,
+            ctx,
+            existing,
+          );
+        },
+        // R22: a pending answer after the deadline was never recorded; cancel its tickets.
+        async (late) => {
+          if (late.status === 'pending')
+            await this.cancelTickets(target, op.id, late.tickets);
+        },
+      );
     } catch (error) {
       if (
         isCryptoAioError(error, 'POLICY_REJECTED') ||
@@ -770,35 +793,34 @@ export class OperationEngine {
   }
 
   /**
-   * Bounds a signer or policy call (carry-forward: they have no deadline of their own).
-   * Under the address lease it gets at most `leaseMs` from a fresh renewal: a lease cannot
-   * be renewed once it has expired, so a later answer could never be persisted anyway. The
-   * caller's `signal` also ends the wait. On timeout or abort nothing is written: the
-   * Operation keeps its state and reservation (a late signature may still appear), and a
-   * repeat asks again. Without a lease (expiry ordering) nothing else waits on the signer.
+   * Bounds a signer or policy call (they have no deadline of their own) by
+   * `lifecycle.signTimeoutMs` and the caller's `signal`, and keeps the held lease alive
+   * meanwhile (R24: renewed every `leaseMs / 3`). On timeout, abort or a lost lease nothing
+   * is written: the Operation keeps its state and reservation (a late signature may still
+   * appear), and a repeat asks again. A lost lease is logged by code, like
+   * `failAfterPrepare`. A result that arrives after the wait ended goes to `late` (R22:
+   * a pending answer's tickets are cancelled there); otherwise it is dropped.
    */
   protected async signingDeadline<T>(
     op: OperationRecord,
     lease: LeaseHandle | undefined,
     signal: AbortSignal | undefined,
     work: () => Promise<T>,
+    late?: (result: T) => Promise<void>,
   ): Promise<T> {
     signal?.throwIfAborted();
-    if (!lease && !signal) return work();
     await lease?.renew();
     const done = new AbortController();
-    const limits: Promise<never>[] = [];
-    if (lease) {
-      limits.push(
-        this.deps.clock.sleep(this.deps.lifecycle().leaseMs, done.signal).then(() => {
-          throw new TimeoutError(
-            'TIMEOUT',
-            'the signer did not answer while the address lease was held',
-            { retryable: true, context: { operationId: op.id } },
-          );
-        }),
-      );
-    }
+    const limits: Promise<never>[] = [
+      this.deps.clock.sleep(this.deps.lifecycle().signTimeoutMs, done.signal).then(() => {
+        throw new TimeoutError(
+          'TIMEOUT',
+          'the signer did not answer within lifecycle.signTimeoutMs',
+          { retryable: true, context: { operationId: op.id } },
+        );
+      }),
+    ];
+    if (lease) limits.push(this.heartbeat(op, lease, done.signal));
     if (signal) {
       limits.push(
         new Promise<never>((_resolve, reject) => {
@@ -812,10 +834,52 @@ export class OperationEngine {
         }),
       );
     }
+    const running = work();
+    let delivered = false;
     try {
-      return await Promise.race([work(), ...limits]);
+      // The limits only ever reject, so resolving means `running` answered in time.
+      const result = await Promise.race([running, ...limits]);
+      delivered = true;
+      return result;
     } finally {
       done.abort();
+      if (!delivered && late) {
+        // A rejection of `running` itself already surfaced (or lost the race): ignore it.
+        running
+          .then(late, () => undefined)
+          .catch((error: unknown) =>
+            this.deps.log.warn('could not handle a late signer answer', {
+              operationId: op.id,
+              code: errorCode(error),
+            }),
+          );
+      }
+    }
+  }
+
+  /**
+   * Renews `lease` every `max(1, leaseMs / 3)` ms until `stop` aborts. Rejects (after a
+   * code-only log) when a renewal fails: the lease was lost to another worker.
+   */
+  protected async heartbeat(
+    op: OperationRecord,
+    lease: LeaseHandle,
+    stop: AbortSignal,
+  ): Promise<never> {
+    const every = Math.max(1, Math.floor(this.deps.lifecycle().leaseMs / 3));
+    for (;;) {
+      await this.deps.clock.sleep(every, stop);
+      try {
+        await lease.renew();
+      } catch (error) {
+        if (!stop.aborted) {
+          this.deps.log.warn('address lease lost while waiting for the signer', {
+            operationId: op.id,
+            code: errorCode(error),
+          });
+        }
+        throw error;
+      }
     }
   }
 
