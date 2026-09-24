@@ -700,3 +700,145 @@ describe('the all-rejected verdict runs under the address lease (R26.3)', () => 
     expect(warnings).toEqual([{ operationId: op.id, code: 'UNKNOWN' }]);
   });
 });
+
+describe('monitor: fix round 1 (I2, I3, M4)', () => {
+  it('keeps an ambiguous send live through a refusal, so a later rejection is not terminal', async () => {
+    const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
+    env.chain.configureEndpoint('main', { acceptThenFail: true });
+    const intent = { to: env.stranger(), amount: 3n };
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'p11' })),
+    ).rejects.toMatchObject({ ambiguous: true });
+    const op = await env.stores.operations.getByKey('default', 'p11');
+    if (!op) throw new Error('unreachable');
+    env.chain.dropFromMempool(op.attempts[0]?.ref.id ?? '');
+    env.chain.configureEndpoint('main', { refuseNext: 'insufficient funds' });
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'p11' })),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(env.run(env.bc.rebroadcast(op.id))).rejects.toMatchObject({
+      code: 'TX_REFUSED',
+    });
+    expect(await stored(env, op.id)).toMatchObject({
+      state: 'stalled',
+      error: { code: 'TX_REFUSED' },
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+  });
+
+  it('ends a watch over an unmanaged transaction that reverted and is final', async () => {
+    const env = await createFakeEnv();
+    const key = secp256k1.utils.randomPrivateKey();
+    const from = fakeAddress(secp256k1.getPublicKey(key, true));
+    env.chain.fund(from, 100n);
+    const id = env.chain.submit(
+      signFake(
+        {
+          chainId: 'fake-local',
+          from,
+          to: REVERT_ADDRESS,
+          amount: '1',
+          fee: '1',
+          nonce: '0',
+        },
+        key,
+      ),
+    );
+    const giveUp = new AbortController();
+    void env.clock.sleep(60_000).then(() => giveUp.abort());
+    const seen: string[] = [];
+    const consume = (async () => {
+      for await (const event of env.bc.watch(id, { signal: giveUp.signal }))
+        seen.push(`${event.status.state}/${event.status.finality}`);
+    })();
+    await mineWhile(env, consume);
+    expect(giveUp.signal.aborted).toBe(false);
+    expect(seen[seen.length - 1]).toBe('failed/final');
+  });
+
+  /** Counts (and optionally slows) the monitor's reads on a pending transfer. */
+  async function slowReads(env: FakeEnv, delayMs: number) {
+    const { monitor, target } = await monitorOf(env);
+    const { reader, proofs } = target.pooled.driver;
+    const calls = { observe: 0, slotConsumed: 0 };
+    const pause = () => (delayMs > 0 ? env.clock.sleep(delayMs) : Promise.resolve());
+    const slow: ReadTarget = {
+      ...target,
+      pooled: {
+        ...target.pooled,
+        driver: {
+          ...target.pooled.driver,
+          reader: {
+            ...reader,
+            observe: async (...args) => {
+              calls.observe += 1;
+              await pause();
+              return reader.observe(...args);
+            },
+          },
+          proofs: {
+            ...proofs,
+            slotConsumed: async (...args) => {
+              calls.slotConsumed += 1;
+              await pause();
+              return proofs.slotConsumed(...args);
+            },
+          },
+        },
+      },
+    };
+    return { monitor, target: slow, calls };
+  }
+
+  it('checks the timeout before each pass', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    const { monitor, target, calls } = await slowReads(env, 0);
+    await expect(
+      env.run(
+        monitor.waitFor(target, sub.operationId, {
+          timeoutMs: 3_000,
+          pollIntervalMs: 1_000,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(calls.observe).toBe(3);
+  });
+
+  it('stops a slow pass at the deadline after at most one in-flight read', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.dropFromMempool(sub.attempt?.id ?? '');
+    const { monitor, target, calls } = await slowReads(env, 2_000);
+    const started = env.clock.now();
+    let settledAt = 0;
+    const waiting = monitor
+      .waitFor(target, sub.operationId, { timeoutMs: 3_000 })
+      .finally(() => {
+        settledAt = env.clock.now();
+      });
+    await expect(env.run(waiting)).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(settledAt - started).toBeLessThanOrEqual(3_000 + 2_000);
+    expect(calls.slotConsumed).toBe(1);
+  });
+
+  it("aborts a pass with the caller's signal after at most one in-flight read", async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.dropFromMempool(sub.attempt?.id ?? '');
+    const { monitor, target, calls } = await slowReads(env, 2_000);
+    const ctl = new AbortController();
+    void env.clock.sleep(1_000).then(() => ctl.abort(new Error('stop')));
+    const started = env.clock.now();
+    let settledAt = 0;
+    const waiting = monitor
+      .waitFor(target, sub.operationId, { signal: ctl.signal })
+      .finally(() => {
+        settledAt = env.clock.now();
+      });
+    await expect(env.run(waiting)).rejects.toThrow('stop');
+    expect(settledAt - started).toBeLessThanOrEqual(2_000);
+    expect(calls.slotConsumed).toBe(0);
+  });
+});

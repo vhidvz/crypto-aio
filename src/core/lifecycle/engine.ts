@@ -183,10 +183,14 @@ const CHAIN_EVIDENCE_STATES: ReadonlySet<TxState> = new Set<TxState>([
 ]);
 
 /**
- * R25: a node once accepted these bytes (`firstSeenAt`: the broadcast path or the monitor
- * saw them held), or they may be live (a `pending`, `mempool` or `dropped` observation left
- * by an accepted or ambiguous send). A later rejection says nothing about bytes that may
- * still sit in a mempool, so it is only a refusal: never terminal, the nonce is kept.
+ * R25: a node once accepted these bytes, or they may be live. `firstSeenAt` is the durable
+ * marker: set when a node accepted them or the monitor saw them held, and kept by a refusal
+ * that found them possibly live (I2). A `pending`, `mempool` or `dropped` observation also
+ * counts: one left by an accepted or ambiguous send, and (M5) the `pending` the monitor
+ * writes for a signed Attempt that was never broadcast, which errs in the safe direction
+ * (a genuine rejection then stalls it and keeps its nonce instead of failing it). A later
+ * rejection says nothing about bytes that may still sit in a mempool, so it is only a
+ * refusal: never terminal, the nonce is kept.
  */
 function mayBeLive(observation: AttemptObservation | null): boolean {
   return (
@@ -1186,12 +1190,16 @@ export class OperationEngine {
       (current): ObservationPatch => {
         if (current && CHAIN_EVIDENCE_STATES.has(current.state))
           return { lastBroadcastAt: now };
-        const proven = result.kind === 'rejected' && !mayBeLive(current);
+        const live = mayBeLive(current);
+        const proven = result.kind === 'rejected' && !live;
         return {
           state: proven ? 'rejected' : 'refused',
           evidence: proven ? 'proven' : 'observed',
           reason: result.reason,
           lastBroadcastAt: now,
+          // I2: the `refused` state overwrites the live one, so the marker keeps a later
+          // rejection seeing these bytes as possibly live (e.g. after an ambiguous send).
+          ...(live ? { firstSeenAt: current?.firstSeenAt ?? now } : {}),
         };
       },
     );

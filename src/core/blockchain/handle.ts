@@ -298,9 +298,14 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   /**
-   * Resolves once `confirmations` (default: the handle's) are reached, or on proven finality with
-   * `finality: 'final'`. Rejects with the chain error when the Operation fails, expires or is
-   * replaced, and with `TIMEOUT` (retryable, state unchanged) when time runs out.
+   * Resolves once `confirmations` (default: the handle's) are reached. With
+   * `finality: 'final'`, a managed Operation (by id, Attempt ref or tx hash) resolves on
+   * **proven** finality (finalized data confirmed by quorum proof reads); a transaction the
+   * library does not manage resolves on **observed** finality (one endpoint's view of a
+   * block at or below the finalized height). Rejects with the chain error when the
+   * Operation fails, expires or is replaced (`TX_REVERTED` for an unmanaged transaction
+   * that reverted), with `TIMEOUT` (retryable, state unchanged) when time runs out, and
+   * with the reason of an aborted `signal`.
    */
   async waitForConfirmation(
     ref: string,
