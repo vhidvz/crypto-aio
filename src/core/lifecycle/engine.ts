@@ -264,14 +264,19 @@ function feeOf(attempt: AttemptRecord): bigint {
   return attempt.fee.charges.reduce((sum, charge) => sum + charge.amount, 0n);
 }
 
-/** N3: the earlier cancel paying the most; a new cancel is bumped from it, so bumps climb. */
-function highestFeeCancel(op: OperationRecord): AttemptRecord | undefined {
+/**
+ * N3/R2-1: the cancel a new cancel is bumped from: among the earlier cancels that superseded
+ * the active Attempt `previous` (refused ones gave it the active role back), the one paying
+ * the most, so repeated bumps climb; otherwise `previous` itself, so a cancel never starts
+ * below a newer, higher replacement. Fees are compared only between cancels.
+ */
+function cancelBase(op: OperationRecord, previous: AttemptRecord): AttemptRecord {
   let best: AttemptRecord | undefined;
   for (const attempt of op.attempts) {
-    if (attempt.purpose === 'cancel' && (!best || feeOf(attempt) > feeOf(best)))
-      best = attempt;
+    if (attempt.purpose !== 'cancel' || attempt.supersedes !== previous.id) continue;
+    if (!best || feeOf(attempt) > feeOf(best)) best = attempt;
   }
-  return best;
+  return best ?? previous;
 }
 
 /** R30: the same `FeeSpeed` name, or a canonically equal `FeeOverride`. */
@@ -298,6 +303,12 @@ interface RestorePoint {
   readonly error?: SerializedError;
   readonly ambiguous?: boolean;
 }
+
+/** R30.2: a node's refusal or rejection of these bytes; both are handled alike. */
+const NODE_REFUSED_STATES: ReadonlySet<TxState> = new Set<TxState>([
+  'refused',
+  'rejected',
+]);
 
 /** N2: observations under which a superseded Attempt may still be live on the network. */
 const LIVE_STATES: ReadonlySet<TxState> = new Set<TxState>([
@@ -1377,8 +1388,8 @@ export class OperationEngine {
         driver.ordering === 'inputs'
           ? reservedInputs(await this.walletOperations(op), op.id)
           : undefined;
-      // N3: a cancel is bumped from the highest-fee earlier cancel (never an identical one).
-      const base = purpose === 'cancel' ? (highestFeeCancel(op) ?? previous) : previous;
+      // N3/R2-1: a cancel climbs from the earlier cancels of this same Attempt (`cancelBase`).
+      const base = purpose === 'cancel' ? cancelBase(op, previous) : previous;
       const unsigned = await build(base.unsigned, {
         from: op.intent.from,
         keys: target.wallet.keys,
@@ -1452,12 +1463,13 @@ export class OperationEngine {
 
   /**
    * R30/N1: a repeat of the request `prior` was made for signs nothing. Its stored bytes are
-   * resent when their broadcast was never recorded, was ambiguous, or was refused (then
-   * `prior` is made active again first): the node's current answer decides, and a refusal
-   * restores the superseded Attempt and is thrown (`resendActive`), never reported as a
-   * success. An active `prior` the node holds, or one on chain, is returned as it is.
-   * `undefined` (a refused `prior` of an Operation that moved on): the caller goes on as for
-   * a new request.
+   * resent when their broadcast was never recorded, was ambiguous, or was refused or
+   * rejected (R30.2): the node's current answer decides, and a refusal restores the
+   * superseded Attempt and is thrown (`resendActive`), never reported as a success. A
+   * `prior` that already gave the active role back is resent first and made active again
+   * only once the node accepted it (`resendRestoredAway`). An active `prior` the node holds,
+   * or one on chain, is returned as it is. `undefined` (a refused `prior` of an Operation
+   * that moved on): the caller goes on as for a new request.
    */
   protected async repeatReplacement(
     target: OperationTarget,
@@ -1467,15 +1479,57 @@ export class OperationEngine {
   ): Promise<OperationRecord | undefined> {
     const isActive = prior.id === op.activeAttemptId;
     if (!RESUMABLE_STATES.has(op.state)) return isActive ? op : undefined;
+    if (!isActive) return this.resendRestoredAway(target, op, prior, lease);
     const observation = await this.deps.stores.operations.getObservation(prior.id);
     const resend =
-      !isActive ||
       awaitsBroadcast(op) ||
       observation?.lastBroadcastAt === undefined ||
-      observation.state === 'refused';
-    if (!resend) return op;
-    const current = isActive ? op : await this.reactivate(op, prior, lease);
-    return this.resendActive(target, current, undefined, lease);
+      NODE_REFUSED_STATES.has(observation.state);
+    return resend ? this.resendActive(target, op, undefined, lease) : op;
+  }
+
+  /**
+   * R2-2: resends the stored bytes of a replacement that gave the active role back after a
+   * refusal, while the Attempt it superseded stays active. Only once a node accepted them
+   * (or they are already seen) is it made active again (`reactivate`) and the acceptance
+   * recorded, so a crash in between leaves the superseded Attempt active and never an
+   * unaccepted one. A refusal or rejection is thrown and changes nothing; an ambiguous
+   * failure leaves the may-be-live marker (`recordAmbiguous`).
+   */
+  protected async resendRestoredAway(
+    target: OperationTarget,
+    op: OperationRecord,
+    prior: AttemptRecord,
+    lease: LeaseHandle | undefined,
+  ): Promise<OperationRecord> {
+    const fanout = this.deps.lifecycle().broadcastFanout;
+    let result: BroadcastResult;
+    try {
+      result = await target.pooled.driver.broadcaster.broadcast(
+        { raw: prior.raw, ref: prior.ref },
+        fanout > 1 ? { fanout } : {},
+      );
+    } catch (error) {
+      throw await this.recordAmbiguous(op, prior, error);
+    }
+    if (result.kind === 'refused' || result.kind === 'rejected') {
+      // Spec §8.2: its own ref is looked up first; seen means the node holds it after all.
+      if (!(await this.seenOwnRef(target, op, prior, this.deps.clock.now()))) {
+        throw new ChainError(
+          result.kind === 'refused' ? result.code : 'TX_REJECTED',
+          `transaction ${result.kind}: ${result.reason}`,
+          { context: { operationId: op.id, attemptId: prior.id } },
+        );
+      }
+    }
+    const current = await this.reactivate(op, prior, lease);
+    return this.applyBroadcastResult(
+      target,
+      current,
+      prior,
+      { kind: 'already-known' },
+      lease,
+    );
   }
 
   /**
@@ -1508,9 +1562,10 @@ export class OperationEngine {
    * their broadcast was never recorded or was ambiguous; it is returned unchanged while a
    * node holds it (`pending`, `mempool`) and once it is on chain (chain evidence), so
    * concurrent and retried cancels are idempotent. `undefined` asks the caller for a new,
-   * bumped cancel: only when the cancel is recorded `refused` or `dropped`, or for an
-   * explicit `fee` while it is not on chain. A refused one first gives the active role back
-   * to the Attempt it superseded (N1), so it is never reported as a success.
+   * bumped cancel: only when the cancel is recorded `refused`, `rejected` (R30.2) or
+   * `dropped`, or for an explicit `fee` while it is not on chain. A refused or rejected one
+   * first gives the active role back to the Attempt it superseded (N1), so it is never
+   * reported as a success.
    */
   protected async repeatCancel(
     target: OperationTarget,
@@ -1523,10 +1578,9 @@ export class OperationEngine {
     if (resumed) return resumed;
     const observation = await this.deps.stores.operations.getObservation(active.id);
     if (observation && CHAIN_EVIDENCE_STATES.has(observation.state)) return op;
-    const stuck = observation?.state === 'refused' || observation?.state === 'dropped';
-    if (!stuck && fee === undefined) return op;
-    if (observation?.state === 'refused')
-      await this.undoRefusedResend(op.id, active, lease);
+    const refused = observation !== null && NODE_REFUSED_STATES.has(observation.state);
+    if (!refused && observation?.state !== 'dropped' && fee === undefined) return op;
+    if (refused) await this.undoRefusedResend(op.id, active, lease);
     return undefined;
   }
 

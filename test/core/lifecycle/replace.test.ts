@@ -132,6 +132,24 @@ const expiryEnv = (options: Parameters<typeof createFakeEnv>[0] = {}) =>
     ...options,
   });
 
+/**
+ * Records `state` on an Attempt's observation, as if a resend's refusal or rejection had
+ * been written without the restore that follows it.
+ */
+async function markObservation(
+  env: FakeEnv,
+  attemptId: string,
+  state: 'refused' | 'rejected',
+): Promise<void> {
+  const observation = await env.stores.operations.getObservation(attemptId);
+  if (!observation) throw new Error(`attempt ${attemptId} was never observed`);
+  const { version, ...fields } = observation;
+  await env.stores.operations.putObservation(
+    { ...fields, state, evidence: state === 'rejected' ? 'proven' : 'observed' },
+    version,
+  );
+}
+
 /** The pooled driver's proofs; a test stubs one by assignment and restores it after. */
 async function proofsOf(env: FakeEnv): Promise<ProofSource> {
   return (await internalsOf(env.bc).pooled()).driver.proofs;
@@ -843,24 +861,115 @@ describe('replace, cancel and rebuild', () => {
   });
 
   // N1 / R30.1: an active cancel recorded as refused gives the active role back, then is bumped.
-  it('restores the superseded attempt before bumping an active cancel recorded as refused', async () => {
-    const env = await createFakeEnv();
+  // R30.2: a rejected active cancel is treated exactly like a refused one.
+  it.each(['refused', 'rejected'] as const)(
+    'restores the superseded attempt before bumping an active cancel recorded as %s',
+    async (state) => {
+      const env = await createFakeEnv();
+      const sub = await env.run(
+        env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+      );
+      const first = await env.run(env.bc.cancel(sub.operationId));
+      await markObservation(env, first.attempts[1]?.id ?? '', state);
+      const again = await env.run(env.bc.cancel(sub.operationId));
+      const op = await stored(env, sub.operationId);
+      expect(op.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel', 'cancel']);
+      expect(op.attempts[2]?.supersedes).toBe(op.attempts[0]?.id);
+      expect(env.chain.inMempool(again.attempt?.id ?? '')).toBe(true);
+    },
+  );
+
+  // R30.2: a rejected active replacement is resent like a refused one, never a success.
+  it('resends an active replacement recorded as rejected and reports the refusal', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createFakeEnv({ signer });
     const sub = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
     );
-    const first = await env.run(env.bc.cancel(sub.operationId));
-    // As if a resend's refusal had been recorded without its restore.
-    const observation = await env.stores.operations.getObservation(
-      first.attempts[1]?.id ?? '',
-    );
-    if (!observation) throw new Error('the cancel was observed when it was accepted');
-    const { version, ...fields } = observation;
-    await env.stores.operations.putObservation({ ...fields, state: 'refused' }, version);
-    const again = await env.run(env.bc.cancel(sub.operationId));
+    const replaced = await env.run(env.bc.replace(sub.operationId, { fee: 'fast' }));
+    await markObservation(env, replaced.attempts[1]?.id ?? '', 'rejected');
+    env.chain.dropFromMempool(replaced.attempt?.id ?? '');
+    const { driver } = await internalsOf(env.bc).pooled();
+    const broadcast = driver.broadcaster.broadcast;
+    driver.broadcaster.broadcast = async () => ({
+      kind: 'rejected',
+      reason: 'invalid signature',
+    });
+    try {
+      await expect(
+        env.run(env.bc.replace(sub.operationId, { fee: 'fast' })),
+      ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+    } finally {
+      driver.broadcaster.broadcast = broadcast;
+    }
     const op = await stored(env, sub.operationId);
-    expect(op.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel', 'cancel']);
-    expect(op.attempts[2]?.supersedes).toBe(op.attempts[0]?.id);
-    expect(env.chain.inMempool(again.attempt?.id ?? '')).toBe(true);
+    expect(op.attempts).toHaveLength(2);
+    expect(op.activeAttemptId).toBe(op.attempts[0]?.id);
+    expect(calls()).toBe(2);
+  });
+
+  // R2-1: a cancel after a newer, higher replacement is built from that replacement.
+  it('builds a cancel from a newer replacement that pays more than an earlier cancel', async () => {
+    const env = await createFakeEnv({ chain: { minFee: 10n } });
+    const recipient = env.stranger();
+    const sub = await env.run(
+      env.bc.transfer({ to: recipient, amount: 7n, fee: 'slow' }),
+    );
+    // The floor rises: the cancel (fee 11) is refused and the original stays active.
+    (env.chain as { minFee: bigint }).minFee = 20n;
+    await expect(env.run(env.bc.cancel(sub.operationId))).rejects.toMatchObject({
+      code: 'FEE_TOO_LOW',
+    });
+    (env.chain as { minFee: bigint }).minFee = 10n;
+    await env.run(env.bc.replace(sub.operationId, { fee: { fee: 100n } }));
+    const cancelled = await env.run(env.bc.cancel(sub.operationId));
+    const op = await stored(env, sub.operationId);
+    expect(op.attempts.map((a) => a.purpose)).toEqual([
+      'original',
+      'cancel',
+      'replacement',
+      'cancel',
+    ]);
+    expect(op.attempts[3]?.fee.charges[0]?.amount).toBe(110n);
+    expect(env.chain.inMempool(cancelled.attempt?.id ?? '')).toBe(true);
+    const final = await mineWhile(env, cancelled.wait({ finality: 'final' }));
+    expect(final.operation).toMatchObject({ state: 'final', outcome: 'cancelled' });
+    expect(env.chain.balance(recipient)).toBe(0n);
+  });
+
+  // R2-2: a refused replacement is made active again only after the node accepted it.
+  it('reactivates a refused replacement only after the node accepts its resend', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    // The driver asks for a 10% bump; this node wants 50% at first.
+    const env = await createFakeEnv({
+      stores: { operations: faulty },
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const refused = (await stored(env, sub.operationId)).attempts[1] as AttemptRecord;
+    // The node relaxes; the process dies right after making the replacement active again.
+    (env.chain as { bumpPercent: bigint }).bumpPercent = 10n;
+    faulty.crashOn({
+      method: 'update',
+      timing: 'after',
+      when: (args) =>
+        (args[2] as OperationPatch | undefined)?.activeAttemptId === refused.id,
+    });
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toBeInstanceOf(CrashError);
+    const restarted = await env.restart({ killPrevious: true });
+    await restarted.run(restarted.aio.operations.recover());
+    const op = await stored(restarted, sub.operationId);
+    // Active only once accepted: the replacement is live, and the original was evicted.
+    expect(op.activeAttemptId).toBe(refused.id);
+    expect(env.chain.inMempool(refused.ref.id)).toBe(true);
+    expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(false);
   });
 
   // I3 / R30: replace is idempotent per fee spec; another spec is another request.
