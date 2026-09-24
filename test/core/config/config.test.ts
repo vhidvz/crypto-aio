@@ -238,6 +238,49 @@ describe('resolveSelection', () => {
     expect(sel.providerNames[0]).toMatch(/^inline:[0-9a-f]{8}$/);
     expect(sel.providers[0]?.endpoints[0]?.name).toMatch(/^inline:[0-9a-f]{8}\/0$/);
   });
+
+  it('produces the same poolKey and configHash regardless of key insertion order', () => {
+    const layerA: ScopeOptions = {
+      ...root,
+      chains: { testchain: { options: { a: 1, b: 2 } } },
+    };
+    const layerB: ScopeOptions = {
+      ...root,
+      chains: { testchain: { options: { b: 2, a: 1 } } },
+    };
+    const selA = resolve({ chain: 'testchain', provider: 'acme' }, [layerA]);
+    const selB = resolve({ chain: 'testchain', provider: 'acme' }, [layerB]);
+    expect(selA.poolKey).toBe(selB.poolKey);
+    expect(selA.configHash).toBe(selB.configHash);
+  });
+
+  it('deep-freezes options, including nested objects, and the providers array', () => {
+    const sel = resolve({ chain: 'testchain', provider: 'acme' }, [
+      { ...root, chains: { testchain: { options: { nested: { x: 1 } } } } },
+    ]);
+    expect(Object.isFrozen(sel.options)).toBe(true);
+    expect(Object.isFrozen(sel.options.nested)).toBe(true);
+    expect(Object.isFrozen(sel.providers)).toBe(true);
+  });
+});
+
+describe('merge safety', () => {
+  it('does not alias nested option objects from input layers', () => {
+    const layer: ScopeOptions = { chains: { c: { options: { nested: { x: 1 } } } } };
+    const eff = mergeScopes([layer]);
+    const mergedNested = eff.chains.c?.options?.nested as { x: number } | undefined;
+    expect(mergedNested).toEqual({ x: 1 });
+    if (mergedNested) mergedNested.x = 42;
+    const inputNested = layer.chains?.c?.options?.nested as { x: number } | undefined;
+    expect(inputNested).toEqual({ x: 1 });
+  });
+
+  it('guards against __proto__ pollution of named maps', () => {
+    const layer = JSON.parse('{"providers":{"__proto__":{"evil":{"preset":"x"}}}}');
+    const eff = mergeScopes([layer]);
+    expect(eff.providers.evil).toBeUndefined();
+    expect(Object.getPrototypeOf(eff.providers)).toBe(Object.prototype);
+  });
 });
 
 describe('environment', () => {

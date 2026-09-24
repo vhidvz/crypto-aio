@@ -8,7 +8,7 @@ import { redactDeep, redactHeaders, redactUrl } from '../secret/redact';
 import { reveal } from '../secret/secret';
 import type { EndpointConfig } from '../transport/types';
 import { canonicalJson, sha256Hex } from '../util/json';
-import { mergeChainDefaults } from './merge';
+import { isPlainObject, mergeChainDefaults } from './merge';
 import type {
   EffectiveOptions,
   HandleOptions,
@@ -114,6 +114,19 @@ function resolveProviders(
       }),
     };
   });
+}
+
+/** Recursively freezes plain objects and arrays; leaves class instances (Signer, Secret, ...) untouched. */
+function deepFreeze<T>(value: T): T {
+  if (Array.isArray(value)) {
+    for (const item of value) deepFreeze(item);
+    return Object.freeze(value) as T;
+  }
+  if (isPlainObject(value)) {
+    for (const v of Object.values(value)) deepFreeze(v);
+    return Object.freeze(value) as T;
+  }
+  return value;
 }
 
 function fallbackToPublic(
@@ -251,7 +264,7 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
   if (!Number.isInteger(confirmations) || confirmations < 1) {
     throw new ConfigError('CONFIG_INVALID', 'confirmations must be a positive integer');
   }
-  const options = merged.options ?? {};
+  const options = deepFreeze(merged.options ?? {});
   const providerNames = providers.map((p) => p.name);
   const indexerNames = indexers.map((p) => p.name);
   const poolKey = sha256Hex(
@@ -282,8 +295,8 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
     network,
     library,
     manifest,
-    providers,
-    indexers,
+    providers: deepFreeze(providers),
+    indexers: deepFreeze(indexers),
     ...(wallet ? { wallet } : {}),
     ...(signer ? { signer } : {}),
     options,
