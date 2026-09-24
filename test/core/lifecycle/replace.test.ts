@@ -604,6 +604,114 @@ describe('replace, cancel and rebuild', () => {
     expect(op.error).toBeUndefined();
   });
 
+  // N1: a replacement refused on a resend (recovery) is never reported as a success.
+  it('restores and reports a replacement that recovery resent and the node refused', async () => {
+    const { signer, calls } = countingSigner();
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    // The driver asks for a 10% bump; this node wants 50%.
+    const env = await createFakeEnv({
+      signer,
+      stores: { operations: faulty },
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toBeInstanceOf(CrashError);
+    const restarted = await env.restart({ killPrevious: true });
+    await restarted.run(restarted.aio.operations.recover());
+    const recovered = await stored(restarted, sub.operationId);
+    expect(recovered.activeAttemptId).toBe(recovered.attempts[0]?.id);
+    await expect(
+      restarted.run(restarted.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const op = await stored(restarted, sub.operationId);
+    expect(op.attempts.map((a) => a.purpose)).toEqual(['original', 'replacement']);
+    expect(op.activeAttemptId).toBe(op.attempts[0]?.id);
+    expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(true);
+    // The same request is answered from its stored bytes: never signed twice.
+    expect(calls()).toBe(2);
+  });
+
+  it('restores the original when a same-key transfer resends a refused replacement', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({
+      stores: { operations: faulty },
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const intent = { to: env.stranger(), amount: 7n, fee: 'slow' as const };
+    const sub = await env.run(env.bc.transfer(intent, { idempotencyKey: 'k' }));
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toBeInstanceOf(CrashError);
+    const restarted = await env.restart({ killPrevious: true });
+    await expect(
+      restarted.run(restarted.bc.transfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const op = await stored(restarted, sub.operationId);
+    expect(op).toMatchObject({ state: 'submitted', activeAttemptId: op.attempts[0]?.id });
+  });
+
+  // N2: a refused resend keeps a refused original `stalled`, with its error.
+  it('keeps the operation stalled when the superseded original was itself refused', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({
+      stores: { operations: faulty },
+      chain: { minFee: 10n },
+    });
+    await expect(
+      env.run(
+        env.bc.transfer(
+          { to: env.stranger(), amount: 7n, fee: { fee: 1n } },
+          { idempotencyKey: 'cheap' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const id = (await env.stores.operations.getByKey('default', 'cheap'))?.id ?? '';
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    // Above the driver's 10% bump, below the node's minimum fee.
+    await expect(
+      env.run(env.bc.replace(id, { fee: { fee: 2n } })),
+    ).rejects.toBeInstanceOf(CrashError);
+    const restarted = await env.restart({ killPrevious: true });
+    await expect(
+      restarted.run(restarted.bc.replace(id, { fee: { fee: 2n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const op = await stored(restarted, id);
+    expect(op).toMatchObject({
+      state: 'stalled',
+      activeAttemptId: op.attempts[0]?.id,
+      error: expect.objectContaining({ code: 'FEE_TOO_LOW' }),
+    });
+  });
+
+  // M-b: a terminal Operation keeps its active Attempt.
+  it('leaves a terminal operation alone when a refusal arrives after it ended', async () => {
+    const store = new RacingStore();
+    const env = await createFakeEnv({
+      stores: { operations: store },
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    // The monitor records the original final just before the refusal is written.
+    store.raceBefore(
+      'update',
+      { state: 'final', outcome: 'executed', clear: ['nextCheckAt'] },
+      'stalled',
+    );
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const op = await stored(env, sub.operationId);
+    expect(op).toMatchObject({ state: 'final', activeAttemptId: op.attempts[1]?.id });
+  });
+
   it('never replaces a cancel, and returns a cancel already on chain on a repeat', async () => {
     const { signer, calls } = countingSigner();
     const env = await createFakeEnv({ signer });

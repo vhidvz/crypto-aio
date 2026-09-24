@@ -273,13 +273,23 @@ function sameFeeSpec(
   }
 }
 
-/** What `restoreAfterRefusal` puts back: the Operation as the refused Attempt found it. */
+/**
+ * What `restoreAfterRefusal` puts back: the Operation as the refused Attempt found it.
+ * Without `state`, only the active Attempt is swapped (state and error are kept).
+ */
 interface RestorePoint {
-  readonly state: OperationState;
+  readonly state?: OperationState;
   readonly activeAttemptId: string;
   readonly error?: SerializedError;
   readonly ambiguous?: boolean;
 }
+
+/** N2: observations under which a superseded Attempt may still be live on the network. */
+const LIVE_STATES: ReadonlySet<TxState> = new Set<TxState>([
+  'pending',
+  'mempool',
+  'included',
+]);
 
 /** Spec §8.6: the states in which a replacement or cancel may supersede the active Attempt. */
 const CONFLICTABLE_STATES: ReadonlySet<OperationState> = new Set<OperationState>([
@@ -463,7 +473,8 @@ export class OperationEngine {
 
   /**
    * Resends the SAME stored raw bytes of the active Attempt (never builds or signs), under
-   * the address lease (R23).
+   * the address lease (R23). N1: a refused replacement or cancel gives the active role back
+   * to the Attempt it superseded (`resendActive`).
    */
   async rebroadcast(
     target: OperationTarget,
@@ -483,7 +494,7 @@ export class OperationEngine {
           { context: { operationId } },
         );
       }
-      return this.broadcastActive(target, op, undefined, lease);
+      return this.resendActive(target, op, undefined, lease);
     });
   }
 
@@ -975,7 +986,7 @@ export class OperationEngine {
           fresh = await this.signStage(target, fresh, lease, signal);
         }
         if (awaitsBroadcast(fresh)) {
-          fresh = await this.broadcastActive(target, fresh, signal, lease);
+          fresh = await this.resendActive(target, fresh, signal, lease);
         }
         return fresh;
       },
@@ -1304,12 +1315,15 @@ export class OperationEngine {
       const op = await this.require(operationId);
       this.assertOwnedBy(target, op);
       const active = op.attempts.find((a) => a.id === op.activeAttemptId);
-      const repeat =
-        active?.purpose === purpose && (purpose === 'cancel' || sameFeeSpec(active, fee));
-      if (repeat) {
+      if (purpose === 'replacement') {
+        const prior = this.priorReplacement(op, fee);
+        const repeated =
+          prior && (await this.repeatReplacement(target, op, prior, lease));
+        if (repeated) return repeated;
+      } else if (active?.purpose === 'cancel') {
         const resumed = await this.resumeNewAttempt(target, op, purpose, lease);
         if (resumed) return resumed;
-        if (purpose === 'replacement' || (await this.onChain(active))) return op;
+        if (await this.onChain(active)) return op;
         // A sent cancel that is not on chain: a bumped cancel is built from it below.
       }
       if (!CONFLICTABLE_STATES.has(op.state)) {
@@ -1386,6 +1400,78 @@ export class OperationEngine {
     return this.settle(done);
   }
 
+  /**
+   * R30/N1: the replacement a repeat of this fee spec refers to: the active one made for it,
+   * or the latest Attempt when it was made for it and, refused, gave the active role back to
+   * the Attempt it superseded. `undefined`: a new request.
+   */
+  protected priorReplacement(
+    op: OperationRecord,
+    fee: FeeSpeed | FeeOverride | undefined,
+  ): AttemptRecord | undefined {
+    const active = op.attempts.find((a) => a.id === op.activeAttemptId);
+    if (active?.purpose === 'replacement' && sameFeeSpec(active, fee)) return active;
+    const last = op.attempts[op.attempts.length - 1];
+    return last?.purpose === 'replacement' &&
+      sameFeeSpec(last, fee) &&
+      last.supersedes === op.activeAttemptId
+      ? last
+      : undefined;
+  }
+
+  /**
+   * R30/N1: a repeat of the request `prior` was made for signs nothing. Its stored bytes are
+   * resent when their broadcast was never recorded, was ambiguous, or was refused (then
+   * `prior` is made active again first): the node's current answer decides, and a refusal
+   * restores the superseded Attempt and is thrown (`resendActive`), never reported as a
+   * success. An active `prior` the node holds, or one on chain, is returned as it is.
+   * `undefined` (a refused `prior` of an Operation that moved on): the caller goes on as for
+   * a new request.
+   */
+  protected async repeatReplacement(
+    target: OperationTarget,
+    op: OperationRecord,
+    prior: AttemptRecord,
+    lease: LeaseHandle | undefined,
+  ): Promise<OperationRecord | undefined> {
+    const isActive = prior.id === op.activeAttemptId;
+    if (!RESUMABLE_STATES.has(op.state)) return isActive ? op : undefined;
+    const observation = await this.deps.stores.operations.getObservation(prior.id);
+    const resend =
+      !isActive ||
+      awaitsBroadcast(op) ||
+      observation?.lastBroadcastAt === undefined ||
+      observation.state === 'refused';
+    if (!resend) return op;
+    const current = isActive ? op : await this.reactivate(op, prior, lease);
+    return this.resendActive(target, current, undefined, lease);
+  }
+
+  /**
+   * Makes a refused new Attempt active again, only while the Attempt it superseded is still
+   * the active one and nothing was appended since (compare-and-set, re-derived after a lost
+   * one). Otherwise VERSION_CONFLICT (retryable).
+   */
+  protected async reactivate(
+    op: OperationRecord,
+    attempt: AttemptRecord,
+    lease: LeaseHandle | undefined,
+  ): Promise<OperationRecord> {
+    await lease?.renew();
+    const next = await this.updateAfterBroadcast(op, (current) =>
+      current.activeAttemptId === attempt.supersedes &&
+      current.attempts.length === op.attempts.length
+        ? { activeAttemptId: attempt.id }
+        : undefined,
+    );
+    if (next.activeAttemptId !== attempt.id) {
+      throw new StateError('VERSION_CONFLICT', `operation '${op.id}' kept changing`, {
+        context: { operationId: op.id },
+      });
+    }
+    return next;
+  }
+
   /** R30: the Attempt's recorded observation holds chain evidence (mined, slot consumed). */
   protected async onChain(attempt: AttemptRecord): Promise<boolean> {
     const observation = await this.deps.stores.operations.getObservation(attempt.id);
@@ -1398,10 +1484,7 @@ export class OperationEngine {
    * (ambiguous): its stored bytes are resent, never signed again, so a retry creates no
    * second new Attempt. `undefined` when there is nothing to resume.
    *
-   * I2: when the node refuses a resent replacement or cancel, the Attempt it superseded is
-   * restored as the active one, as on the fresh path. The state it was appended over is not
-   * recorded, so `submitted` is restored (the superseded Attempt was live) and the monitor
-   * re-derives it. A refused rebuild stays `stalled` (see `rebuild`).
+   * The resend goes through `resendActive`: a refusal restores the superseded Attempt.
    */
   protected async resumeNewAttempt(
     target: OperationTarget,
@@ -1415,19 +1498,65 @@ export class OperationEngine {
       const observation = await this.deps.stores.operations.getObservation(active.id);
       if (observation?.lastBroadcastAt !== undefined) return undefined;
     }
+    return this.resendActive(target, op, undefined, lease);
+  }
+
+  /**
+   * Resends the active Attempt's stored bytes (`broadcastActive`) for every resend path:
+   * `rebroadcast` (and so recovery), a same-key `transfer` and a repeated replace, cancel or
+   * rebuild. I2/N1: when the node refuses a resent replacement or cancel, the Attempt it
+   * superseded becomes active again (`undoRefusedResend`) and the refusal is thrown, so it is
+   * never reported as a success. A refused rebuild stays `stalled` (see `rebuild`).
+   */
+  protected async resendActive(
+    target: OperationTarget,
+    op: OperationRecord,
+    signal: AbortSignal | undefined,
+    lease: LeaseHandle | undefined,
+  ): Promise<OperationRecord> {
     try {
-      return await this.broadcastActive(target, op, undefined, lease);
+      return await this.broadcastActive(target, op, signal, lease);
     } catch (error) {
-      if (isRefusal(error) && purpose !== 'rebuild' && active.supersedes !== undefined) {
-        await this.restoreAfterRefusal(
-          op.id,
-          active.id,
-          { state: 'submitted', activeAttemptId: active.supersedes },
-          lease,
-        );
-      }
+      const active = op.attempts.find((a) => a.id === op.activeAttemptId);
+      if (isRefusal(error) && active) await this.undoRefusedResend(op.id, active, lease);
       throw error;
     }
+  }
+
+  /**
+   * N2: after a resend of a replacement or cancel was refused, the Attempt it superseded
+   * becomes active again. The state it was appended over is not recorded, so it is derived
+   * from the superseded Attempt's observation: when that one may still be live (`pending`,
+   * `mempool`, `included`), the Operation returns to `submitted`; otherwise (e.g. the
+   * original was itself refused) only the active Attempt is swapped and the Operation keeps
+   * its `stalled` state and stored error. Nothing for an original or a rebuild.
+   */
+  protected async undoRefusedResend(
+    operationId: string,
+    refused: AttemptRecord,
+    lease: LeaseHandle | undefined,
+  ): Promise<void> {
+    const superseded = refused.supersedes;
+    if (superseded === undefined || refused.purpose === 'rebuild') return;
+    let live = false;
+    try {
+      const observation = await this.deps.stores.operations.getObservation(superseded);
+      live = observation !== null && LIVE_STATES.has(observation.state);
+    } catch (error) {
+      // Undecided: swap only the active Attempt (the safe, non-terminal choice).
+      this.deps.log.warn('could not read the superseded attempt', {
+        operationId,
+        code: errorCode(error),
+      });
+    }
+    await this.restoreAfterRefusal(
+      operationId,
+      refused.id,
+      live
+        ? { state: 'submitted', activeAttemptId: superseded }
+        : { activeAttemptId: superseded },
+      lease,
+    );
   }
 
   /**
@@ -1505,12 +1634,13 @@ export class OperationEngine {
   /**
    * Spec §8.6: the node refused a replacement or cancel, so the Attempt it superseded is
    * still the live one and keeps its nonce. While the refused Attempt is still the active
-   * one (M3), the superseded one becomes active again, whatever the Operation's state.
-   * When the Operation still shows the refusal (`stalled`, or `signed` after a rejection),
-   * it also returns to `point`'s state, error and ambiguity; any other state (`included`,
-   * `submitted` or later) is the monitor's and is kept. The refused Attempt stays recorded
-   * and monitored. The lease is renewed first. A failure is only logged: the caller gets
-   * the node's error either way, and the Operation stays safely `stalled`.
+   * one (M3) and the Operation is not terminal (M-b: an ended Operation is left alone),
+   * the superseded one becomes active again. When the Operation still shows the refusal
+   * (`stalled`, or `signed` after a rejection) and `point` names a state, it also returns
+   * to `point`'s state, error and ambiguity; any other state (`included`, `submitted` or
+   * later) is the monitor's and is kept. The refused Attempt stays recorded and monitored.
+   * The lease is renewed first. A failure is only logged: the caller gets the node's error
+   * either way, and the Operation stays safely `stalled`.
    */
   protected async restoreAfterRefusal(
     operationId: string,
@@ -1531,8 +1661,10 @@ export class OperationEngine {
     try {
       await lease?.renew();
       await this.updateAfterBroadcast(await this.require(operationId), (current) => {
-        if (current.activeAttemptId !== refusedId) return undefined;
-        return current.state === 'stalled' || current.state === 'signed'
+        if (current.activeAttemptId !== refusedId || isTerminal(current.state))
+          return undefined;
+        return point.state !== undefined &&
+          (current.state === 'stalled' || current.state === 'signed')
           ? full
           : { activeAttemptId: point.activeAttemptId };
       });
