@@ -799,3 +799,36 @@ describe('transfer: one signing per operation on expiry chains (R24)', () => {
     expect(env.chain.receipt(sub.attempt?.id ?? '')?.success).toBe(true);
   });
 });
+
+describe('transfer: cold wallets', () => {
+  it('lands a transfer prepared by a watch-only wallet and signed offline', async () => {
+    const env = await createFakeEnv();
+    const publicKey = await env.signer.getPublicKey('secp256k1-ecdsa');
+    const cold = env.aio
+      .scope({ wallets: { cold: { publicKey: toHex(publicKey) } } })
+      .blockchain({ chain: 'fakechain', wallet: 'cold' });
+    const recipient = env.stranger();
+    const prepared = await env.run(
+      cold.prepareTransfer({ to: recipient, amount: 7n }, { idempotencyKey: 'cold-1' }),
+    );
+    // Offline: the key holder signs the exported requests (here the same local key).
+    const signed = await env.signer.sign(prepared.unsigned?.signingRequests ?? [], ctx);
+    if (signed.status !== 'signed') throw new Error('unreachable');
+    const sub = await env.run(
+      cold.submitSignatures(prepared.operation.id, signed.signatures),
+    );
+    expect(sub.state).toBe('submitted');
+    expect(sub.operationId).toBe(prepared.operation.id);
+    env.chain.mine();
+    expect(env.chain.receipt(sub.attempt?.id ?? '')?.success).toBe(true);
+    expect(env.chain.balance(recipient)).toBe(7n);
+
+    // A second submission after success is refused and changes nothing.
+    await expect(
+      env.run(cold.submitSignatures(prepared.operation.id, signed.signatures)),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+    const op = await env.stores.operations.get('default', prepared.operation.id);
+    expect(op?.attempts).toHaveLength(1);
+    expect(env.chain.sendCount(sub.attempt?.id ?? '')).toBe(1);
+  });
+});

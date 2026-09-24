@@ -169,4 +169,117 @@ describe('crash safety', () => {
     expect(env.chain.sendCount(ref)).toBe(2);
     expect(calls()).toBe(1);
   });
+
+  it.each(['before', 'after'] as const)(
+    'resumes without signing again when the process died %s the broadcast observation write',
+    async (timing) => {
+      const { env, faulty, calls, intent } = await crashEnv();
+      faulty.crashOn({ method: 'putObservation', timing });
+      await expect(
+        env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
+      ).rejects.toBeInstanceOf(CrashError);
+      const stored = await env.stores.operations.getByKey('default', 'k');
+      expect(stored?.state).toBe('signed');
+      const ref = stored?.attempts[0]?.ref.id ?? '';
+      const restarted = await env.restart({ killPrevious: true });
+      const sub = await restarted.run(
+        restarted.bc.transfer(intent, { idempotencyKey: 'k' }),
+      );
+      expect(sub).toMatchObject({ state: 'submitted', ambiguous: false });
+      expect(sub.attempt?.id).toBe(ref);
+      expect(calls()).toBe(1);
+      env.chain.mine();
+      expect(env.chain.receipt(ref)?.success).toBe(true);
+    },
+  );
+
+  it.each(['before', 'after'] as const)(
+    'keeps the nonce and never re-signs when the process died %s the stalled write',
+    async (timing) => {
+      const { env, faulty, calls, intent } = await crashEnv();
+      env.chain.configureEndpoint('main', { refuseNext: 'insufficient funds' });
+      faulty.crashOn({ method: 'update', timing, when: patchState('stalled') });
+      await expect(
+        env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
+      ).rejects.toBeInstanceOf(CrashError);
+      const stored = await env.stores.operations.getByKey('default', 'k');
+      expect(stored?.state).toBe(timing === 'before' ? 'signed' : 'stalled');
+      expect(stored?.reservation).toEqual({ kind: 'nonce', nonce: 0n });
+      const ref = stored?.attempts[0]?.ref.id ?? '';
+      const restarted = await env.restart({ killPrevious: true });
+      if (timing === 'after') {
+        await expect(
+          restarted.run(restarted.bc.transfer(intent, { idempotencyKey: 'k' })),
+        ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+      }
+      const sub =
+        timing === 'before'
+          ? await restarted.run(restarted.bc.transfer(intent, { idempotencyKey: 'k' }))
+          : await restarted.run(restarted.bc.rebroadcast(stored?.id ?? ''));
+      expect(sub.state).toBe('submitted');
+      expect(sub.attempt?.id).toBe(ref);
+      expect(calls()).toBe(1);
+      env.chain.mine();
+      expect(env.chain.receipt(ref)?.success).toBe(true);
+    },
+  );
+
+  it('keeps the nonce reserved when the process died before the failed write', async () => {
+    const { env, faulty, calls, intent } = await crashEnv();
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    faulty.crashOn({ method: 'update', timing: 'before', when: patchState('failed') });
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toBeInstanceOf(CrashError);
+    const stored = await env.stores.operations.getByKey('default', 'k');
+    expect(stored).toMatchObject({
+      state: 'signed',
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+    const restarted = await env.restart({ killPrevious: true });
+    // The node rejects the same bytes again: now the Operation fails and frees its nonce.
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(
+      restarted.run(restarted.bc.transfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toMatchObject({ code: 'TX_REJECTED' });
+    expect(calls()).toBe(1);
+    const first = await restarted.run(
+      restarted.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    const second = await restarted.run(
+      restarted.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    const nonces = await Promise.all(
+      [first, second].map(
+        async (p) =>
+          (await restarted.stores.operations.get('default', p.operation.id))?.reservation,
+      ),
+    );
+    expect(nonces).toEqual([
+      { kind: 'nonce', nonce: 0n },
+      { kind: 'nonce', nonce: 1n },
+    ]);
+  });
+
+  // Task 26 (carry-forward) reconciles this gap; here the nonce is never handed out twice.
+  it('never hands out a nonce twice when the process died after the failed write', async () => {
+    const { env, faulty, calls, intent } = await crashEnv();
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    faulty.crashOn({ method: 'update', timing: 'after', when: patchState('failed') });
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toBeInstanceOf(CrashError);
+    expect((await env.stores.operations.getByKey('default', 'k'))?.state).toBe('failed');
+    const restarted = await env.restart({ killPrevious: true });
+    await expect(
+      restarted.run(restarted.bc.transfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toMatchObject({ code: 'TX_REJECTED' });
+    expect(calls()).toBe(1);
+    const next = await restarted.run(
+      restarted.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(
+      (await restarted.stores.operations.get('default', next.operation.id))?.reservation,
+    ).toEqual({ kind: 'nonce', nonce: 1n });
+  });
 });
