@@ -3,6 +3,7 @@ import { containerOf } from '../../../src/core/container/internals';
 import { StateError } from '../../../src/core/errors/error';
 import { createLogger, type LogLevel } from '../../../src/core/events/logger';
 import type { AioEvent } from '../../../src/core/events/types';
+import { intentHash } from '../../../src/core/model/intent';
 import { sequenceKey } from '../../../src/core/ordering/sequence';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
@@ -10,9 +11,11 @@ import {
   MemoryLockManager,
   MemoryOperationStore,
   MemorySequenceStore,
+  createMemoryStores,
 } from '../../../src/core/store/memory';
 import type {
   LockManager,
+  OperationState,
   OperationStore,
   SequenceState,
   SequenceStore,
@@ -628,5 +631,187 @@ describe('prepareTransfer', () => {
     expect(logs.filter((entry) => entry.message === 'lease release failed')).toEqual([
       { level: 'warn', message: 'lease release failed', fields: { code: 'FENCING' } },
     ]);
+  });
+});
+
+// M3: invariants that already held, pinned so a regression cannot pass unnoticed.
+describe('prepare and abandon invariants', () => {
+  it('turns concurrent calls with one key into one operation and one reservation', async () => {
+    const env = await createFakeEnv();
+    const intent = { to: env.stranger(), amount: 1n };
+    const results = await env.run(
+      Promise.all(
+        [1, 2, 3].map(() => env.bc.prepareTransfer(intent, { idempotencyKey: 'dup' })),
+      ),
+    );
+    expect(new Set(results.map((r) => r.operation.id)).size).toBe(1);
+    expect(await env.stores.operations.list({ namespace: 'default' })).toHaveLength(1);
+    expect(await env.stores.sequences.get(walletSequenceKey(env))).toMatchObject({
+      next: 1n,
+      released: [],
+    });
+  });
+
+  it('keeps idempotency keys and reservations independent per namespace', async () => {
+    const stores = createMemoryStores(new FakeClock());
+    const signer = localSigner.generate({ curves: ['secp256k1'], id: 'hot' }).signer;
+    const a = await createFakeEnv({ stores, signer });
+    const b = await createFakeEnv({ stores, signer, aio: { namespace: 'tenant-b' } });
+    expect(b.address).toBe(a.address);
+    const first = await a.run(
+      a.bc.prepareTransfer({ to: a.stranger(), amount: 1n }, { idempotencyKey: 'k' }),
+    );
+    const second = await b.run(
+      b.bc.prepareTransfer({ to: b.stranger(), amount: 2n }, { idempotencyKey: 'k' }),
+    );
+    expect(second.operation.id).not.toBe(first.operation.id);
+    for (const namespace of ['default', 'tenant-b']) {
+      expect((await stores.operations.getByKey(namespace, 'k'))?.reservation).toEqual({
+        kind: 'nonce',
+        nonce: 0n,
+      });
+    }
+  });
+
+  it('treats a memo, fee, recipient or amount change under one key as a conflict', async () => {
+    const env = await createFakeEnv();
+    const to = env.stranger();
+    const base = { to, amount: 1n };
+    const first = await env.run(env.bc.prepareTransfer(base, { idempotencyKey: 'k' }));
+    const same = await env.run(
+      env.bc.prepareTransfer(
+        { outputs: [{ to, amount: '0.00000001' }] },
+        { idempotencyKey: 'k' },
+      ),
+    );
+    expect(same.operation.id).toBe(first.operation.id);
+    for (const variant of [
+      { ...base, memo: 'invoice-7' },
+      { ...base, fee: 'fast' as const },
+      { ...base, to: env.stranger() },
+      { ...base, amount: 2n },
+    ]) {
+      await expect(
+        env.run(env.bc.prepareTransfer(variant, { idempotencyKey: 'k' })),
+      ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+    }
+    // The fake chain has no tokens, so the asset is pinned at the hash the engine compares.
+    const stored = (await env.stores.operations.getByKey('default', 'k'))?.intent;
+    if (!stored) throw new Error('unreachable');
+    expect(
+      intentHash('fakechain', 'local', {
+        ...stored,
+        assetId: 'fakechain:local:token:0xabc',
+      }),
+    ).not.toBe(intentHash('fakechain', 'local', stored));
+  });
+
+  it('emits failure transitions with codes only, never messages, addresses or amounts', async () => {
+    const env = await createFakeEnv({
+      fund: 1_000n,
+      hooks: {
+        beforeSign: (ctx) => {
+          if (ctx.summary.outputs[0]?.amount === '777') throw new Error('over the limit');
+        },
+      },
+    });
+    const events: AioEvent[] = [];
+    env.aio.onAny((event) => events.push(event));
+    const poorTo = env.stranger();
+    const vetoTo = env.stranger();
+    await expect(
+      env.run(env.bc.prepareTransfer({ to: poorTo, amount: 123_456n })),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    await expect(
+      env.run(env.bc.prepareTransfer({ to: vetoTo, amount: 777n })),
+    ).rejects.toMatchObject({ code: 'POLICY_REJECTED' });
+    const failed = events.filter(
+      (e) => e.type === 'operation.state' && e.to === 'failed',
+    );
+    expect(
+      failed.map((e) => (e.type === 'operation.state' ? e.code : undefined)),
+    ).toEqual(['INSUFFICIENT_FUNDS', 'POLICY_REJECTED']);
+    const text = JSON.stringify(events, (_key, value: unknown) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    );
+    for (const secret of [
+      poorTo,
+      vetoTo,
+      env.address,
+      '123456',
+      'insufficient funds',
+      'over the limit',
+    ]) {
+      expect(text).not.toContain(secret);
+    }
+  });
+
+  it('refuses to abandon signed and later states, and abandons awaiting-signature', async () => {
+    const env = await createFakeEnv();
+    const later = [
+      'signed',
+      'submitted',
+      'stalled',
+      'included',
+      'final',
+      'failed',
+      'expired',
+    ];
+    for (const state of later as OperationState[]) {
+      const { operation } = await env.run(
+        env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+      );
+      const record = await env.stores.operations.get('default', operation.id);
+      if (!record) throw new Error('unreachable');
+      await env.stores.operations.update(
+        'default',
+        operation.id,
+        { state },
+        record.version,
+      );
+      await expect(env.run(env.bc.abandon(operation.id))).rejects.toMatchObject({
+        code: 'INVALID_TRANSITION',
+      });
+      expect((await env.stores.operations.get('default', operation.id))?.state).toBe(
+        state,
+      );
+    }
+    const { operation } = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    const record = await env.stores.operations.get('default', operation.id);
+    if (!record) throw new Error('unreachable');
+    await env.stores.operations.update(
+      'default',
+      operation.id,
+      { state: 'awaiting-signature' },
+      record.version,
+    );
+    expect((await env.run(env.bc.abandon(operation.id))).state).toBe('abandoned');
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(await reservationOf(env, next.operation.id)).toEqual({
+      kind: 'nonce',
+      nonce: BigInt(later.length),
+    });
+  });
+
+  it('allows same-state and state-less updates on a terminal operation', async () => {
+    const env = await createFakeEnv();
+    const { operation } = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    await env.run(env.bc.abandon(operation.id));
+    const engine = containerOf(env.aio).engine();
+    const abandoned = await engine.require(operation.id);
+    const touched = await engine.update(abandoned, { nextCheckAt: 5 });
+    expect(touched).toMatchObject({ state: 'abandoned', nextCheckAt: 5 });
+    const same = await engine.update(touched, {
+      state: 'abandoned',
+      clear: ['nextCheckAt'],
+    });
+    expect(same.state).toBe('abandoned');
+    expect(same.version).toBe(abandoned.version + 2);
   });
 });
