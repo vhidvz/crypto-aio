@@ -14,6 +14,14 @@ async function crashEnv(options: FakeEnvOptions = {}) {
 const patchState = (state: string) => (args: readonly unknown[]) =>
   (args[2] as OperationPatch | undefined)?.state === state;
 
+/** R26.2: a crash while recording a broadcast answer reaches the caller as ambiguous. */
+const crashedAfterBroadcast = {
+  ambiguous: true,
+  retryable: true,
+  context: expect.objectContaining({ operationId: expect.any(String) }),
+  cause: expect.objectContaining({ name: 'CrashError' }),
+};
+
 describe('crash safety', () => {
   it('rebroadcasts a signed-but-never-sent transfer without signing again', async () => {
     const { env, faulty, calls, intent } = await crashEnv();
@@ -39,7 +47,7 @@ describe('crash safety', () => {
     faulty.crashOn({ method: 'update', timing: 'before', when: patchState('submitted') });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
-    ).rejects.toBeInstanceOf(CrashError);
+    ).rejects.toMatchObject(crashedAfterBroadcast);
     const stored = await env.stores.operations.getByKey('default', 'k');
     const ref = stored?.attempts[0]?.ref.id ?? '';
     expect(stored?.state).toBe('signed');
@@ -58,7 +66,7 @@ describe('crash safety', () => {
     faulty.crashOn({ method: 'update', timing: 'before', when: patchState('submitted') });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
-    ).rejects.toBeInstanceOf(CrashError);
+    ).rejects.toMatchObject(crashedAfterBroadcast);
     env.chain.mine();
     const restarted = await env.restart({ killPrevious: true });
     const sub = await restarted.run(
@@ -177,7 +185,7 @@ describe('crash safety', () => {
       faulty.crashOn({ method: 'putObservation', timing });
       await expect(
         env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
-      ).rejects.toBeInstanceOf(CrashError);
+      ).rejects.toMatchObject(crashedAfterBroadcast);
       const stored = await env.stores.operations.getByKey('default', 'k');
       expect(stored?.state).toBe('signed');
       const ref = stored?.attempts[0]?.ref.id ?? '';
@@ -201,7 +209,7 @@ describe('crash safety', () => {
       faulty.crashOn({ method: 'update', timing, when: patchState('stalled') });
       await expect(
         env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
-      ).rejects.toBeInstanceOf(CrashError);
+      ).rejects.toMatchObject(crashedAfterBroadcast);
       const stored = await env.stores.operations.getByKey('default', 'k');
       expect(stored?.state).toBe(timing === 'before' ? 'signed' : 'stalled');
       expect(stored?.reservation).toEqual({ kind: 'nonce', nonce: 0n });
@@ -230,7 +238,7 @@ describe('crash safety', () => {
     faulty.crashOn({ method: 'update', timing: 'before', when: patchState('failed') });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
-    ).rejects.toBeInstanceOf(CrashError);
+    ).rejects.toMatchObject(crashedAfterBroadcast);
     const stored = await env.stores.operations.getByKey('default', 'k');
     expect(stored).toMatchObject({
       state: 'signed',
@@ -268,7 +276,7 @@ describe('crash safety', () => {
     faulty.crashOn({ method: 'update', timing: 'after', when: patchState('failed') });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
-    ).rejects.toBeInstanceOf(CrashError);
+    ).rejects.toMatchObject(crashedAfterBroadcast);
     expect((await env.stores.operations.getByKey('default', 'k'))?.state).toBe('failed');
     const restarted = await env.restart({ killPrevious: true });
     await expect(

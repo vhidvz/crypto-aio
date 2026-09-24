@@ -7,7 +7,12 @@ import type { ReadTarget } from '../../../src/core/lifecycle/engine';
 import type { OrderingData } from '../../../src/core/model/ordering';
 import { secret } from '../../../src/core/secret/secret';
 import { localSigner } from '../../../src/core/signing/local';
-import type { OperationRecord } from '../../../src/core/store/types';
+import { MemoryOperationStore } from '../../../src/core/store/memory';
+import type {
+  Fence,
+  OperationPatch,
+  OperationRecord,
+} from '../../../src/core/store/types';
 import type { Transport } from '../../../src/core/transport/types';
 import { REVERT_ADDRESS, fakeAddress, signFake } from '../../../src/testing/fake-chain';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
@@ -570,4 +575,54 @@ describe('broadcast answers never weaken evidence (R25)', () => {
       expect(op.error).toBeUndefined();
     },
   );
+});
+
+describe('read-only calls never race a broadcast (R26)', () => {
+  it('lets a status call race the broadcast without failing the transfer', async () => {
+    const env = await createFakeEnv();
+    const { driver } = await internalsOf(env.bc).pooled();
+    const broadcast = driver.broadcaster.broadcast.bind(driver.broadcaster);
+    let raced = 0;
+    driver.broadcaster.broadcast = async (signed, options) => {
+      raced += 1;
+      await env.bc.getTransactionStatus(signed.ref.id);
+      return broadcast(signed, options);
+    };
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    expect(raced).toBe(1);
+    expect(sub.state).toBe('submitted');
+    expect(await env.stores.operations.list({ namespace: 'default' })).toHaveLength(1);
+    expect(env.chain.sendCount(sub.attempt?.id ?? '')).toBe(1);
+    env.chain.mine();
+    expect(env.chain.nonce(env.address)).toBe(1n);
+  });
+
+  it('surfaces a post-broadcast write it cannot land as ambiguous, naming the operation', async () => {
+    // Another writer wins every compare-and-set of the post-broadcast transition.
+    class Contended extends MemoryOperationStore {
+      override async update(
+        namespace: string,
+        id: string,
+        patch: OperationPatch,
+        expectedVersion: number,
+        fence?: Fence,
+      ): Promise<OperationRecord> {
+        if (patch.state === 'submitted') {
+          await super.update(namespace, id, { nextCheckAt: 1 }, expectedVersion);
+        }
+        return super.update(namespace, id, patch, expectedVersion, fence);
+      }
+    }
+    const env = await createFakeEnv({ stores: { operations: new Contended() } });
+    const error = await env
+      .run(env.bc.transfer({ to: env.stranger(), amount: 5n }, { idempotencyKey: 'c' }))
+      .catch((e: unknown) => e);
+    const op = await env.stores.operations.getByKey('default', 'c');
+    expect(error).toMatchObject({
+      ambiguous: true,
+      retryable: true,
+      context: expect.objectContaining({ operationId: op?.id }),
+    });
+    expect(env.chain.inMempool(op?.attempts[0]?.ref.id ?? '')).toBe(true);
+  });
 });

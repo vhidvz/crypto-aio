@@ -1116,6 +1116,10 @@ export class OperationEngine {
    * answer, and a rejection of bytes a node once accepted counts only as a refusal.
    * Otherwise refused → `stalled`, keeping the nonce; rejected (proven invalid) → `failed`
    * with the nonce released, once every Attempt is rejected.
+   *
+   * R26.2: the node's own refusal or rejection is thrown as it is; any other failure while
+   * recording the answer (the bytes may have reached the network) is thrown `ambiguous`
+   * with `operationId`, so a caller retries with the same key instead of paying again.
    */
   protected async applyBroadcastResult(
     target: OperationTarget,
@@ -1124,6 +1128,24 @@ export class OperationEngine {
     result: BroadcastResult,
     lease?: LeaseHandle,
   ): Promise<OperationRecord> {
+    let outcome: OperationRecord | ChainError;
+    try {
+      outcome = await this.recordBroadcastResult(target, op, attempt, result, lease);
+    } catch (error) {
+      throw this.ambiguousAfterBroadcast(op, attempt, error);
+    }
+    if (outcome instanceof ChainError) throw outcome;
+    return outcome;
+  }
+
+  /** `applyBroadcastResult`'s transitions; returns (never throws) the node's own answer. */
+  protected async recordBroadcastResult(
+    target: OperationTarget,
+    op: OperationRecord,
+    attempt: AttemptRecord,
+    result: BroadcastResult,
+    lease?: LeaseHandle,
+  ): Promise<OperationRecord | ChainError> {
     const now = this.deps.clock.now();
     const accept = async (acknowledged: boolean): Promise<OperationRecord> => {
       await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
@@ -1133,12 +1155,18 @@ export class OperationEngine {
           ? { state: 'pending' as const }
           : {}),
       }));
-      const moves = op.state === 'signed' || op.state === 'stalled';
-      if (!moves && op.ambiguous !== true) return op;
-      return this.update(op, {
-        ...(moves ? { state: 'submitted' as const } : {}),
-        nextCheckAt: now,
-        clear: ['ambiguous', 'error'],
+      // R26.2: re-derived from the stored Operation after a lost compare-and-set. An
+      // unscheduled one is scheduled, since a read-only pass may have moved it meanwhile.
+      return this.updateAfterBroadcast(op, (current) => {
+        if (isTerminal(current.state)) return undefined;
+        const moves = current.state === 'signed' || current.state === 'stalled';
+        if (!moves && current.ambiguous !== true && current.nextCheckAt !== undefined)
+          return undefined;
+        return {
+          ...(moves ? { state: 'submitted' as const } : {}),
+          nextCheckAt: now,
+          clear: ['ambiguous', 'error'],
+        };
       });
     };
     if (result.kind === 'accepted' || result.kind === 'already-known')
@@ -1175,18 +1203,33 @@ export class OperationEngine {
         `transaction refused: ${result.reason}`,
         { context },
       );
-      await this.update(op, {
-        state: 'stalled',
-        error: error.toJSON(),
-        nextCheckAt: now,
-        clear: ['ambiguous'],
+      let stalls = false;
+      const next = await this.updateAfterBroadcast(op, async (current) => {
+        stalls = false;
+        if (isTerminal(current.state) || current.state === 'included') return undefined;
+        // After a lost compare-and-set: stronger evidence may have replaced the refusal.
+        if (current !== op) {
+          const observation = await this.deps.stores.operations.getObservation(
+            attempt.id,
+          );
+          if (observation?.state !== 'refused') return undefined;
+        }
+        stalls = true;
+        return {
+          state: 'stalled',
+          error: error.toJSON(),
+          nextCheckAt: now,
+          clear: ['ambiguous'],
+        };
       });
-      this.deps.events.emit('operation.stalled', {
-        namespace: this.deps.namespace,
-        operationId: op.id,
-        code: error.code,
-      });
-      throw error;
+      if (stalls) {
+        this.deps.events.emit('operation.stalled', {
+          namespace: this.deps.namespace,
+          operationId: op.id,
+          code: error.code,
+        });
+      }
+      return next.state === 'stalled' ? error : next;
     }
     const error = new ChainError(
       'TX_REJECTED',
@@ -1205,7 +1248,55 @@ export class OperationEngine {
       // nonce: fail and release it under the lease, as before signing (spec §8.5).
       await this.failAfterPrepare(target, op, error, lease);
     }
-    throw error;
+    return error;
+  }
+
+  /**
+   * R26.2: a post-broadcast Operation write. After a lost compare-and-set the Operation is
+   * re-read and `patchFor` re-derives the transition from it; `undefined` means the stored
+   * state already reflects it (or it no longer applies), and the stored Operation is
+   * returned.
+   */
+  protected async updateAfterBroadcast(
+    op: OperationRecord,
+    patchFor: (
+      current: OperationRecord,
+    ) => OperationPatch | undefined | Promise<OperationPatch | undefined>,
+  ): Promise<OperationRecord> {
+    let current = op;
+    for (let tries = 0; tries < 5; tries++) {
+      const patch = await patchFor(current);
+      if (!patch) return current;
+      try {
+        return await this.update(current, patch);
+      } catch (error) {
+        if (!isCryptoAioError(error, 'VERSION_CONFLICT')) throw error;
+        current = await this.require(op.id);
+      }
+    }
+    throw new StateError('VERSION_CONFLICT', `operation '${op.id}' kept changing`, {
+      context: { operationId: op.id },
+    });
+  }
+
+  /** R26.2: a failure after the bytes may have reached the network is always ambiguous. */
+  protected ambiguousAfterBroadcast(
+    op: OperationRecord,
+    attempt: AttemptRecord,
+    error: unknown,
+  ): CryptoAioError {
+    const cause = isCryptoAioError(error)
+      ? error
+      : new StateError(
+          'INVALID_TRANSITION',
+          'the broadcast outcome could not be recorded; the transaction may have reached the network',
+          { cause: sanitizeError(error) },
+        );
+    return withContext(
+      cause,
+      { operationId: op.id, attemptId: attempt.id },
+      { ambiguous: true, retryable: true },
+    );
   }
 
   /**

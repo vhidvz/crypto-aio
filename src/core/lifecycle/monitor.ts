@@ -467,6 +467,15 @@ export class Monitor {
       }
     }
     const terminal = isTerminal(evaluation.state);
+    // R26.1: a read-only pass (no fence) writes the Operation only when its state, outcome
+    // or error changes, never just to schedule it: a version bump would make a concurrent
+    // engine write (e.g. right after a broadcast) lose its compare-and-set. Scheduling
+    // (`nextCheckAt`) belongs to fenced workers and to engine transitions.
+    const changed =
+      evaluation.state !== op.state ||
+      (evaluation.outcome !== undefined && evaluation.outcome !== op.outcome) ||
+      (evaluation.error !== undefined && evaluation.error.code !== op.error?.code);
+    if (!changed && !fence) return op;
     const clear: ClearableField[] = [];
     if (terminal) clear.push('nextCheckAt');
     if (op.state === 'stalled' && evaluation.state !== 'stalled' && !evaluation.error)
@@ -481,9 +490,9 @@ export class Monitor {
             }).toJSON(),
           }
         : {}),
-      ...(terminal
-        ? {}
-        : { nextCheckAt: this.deps.clock.now() + this.deps.lifecycle().pollIntervalMs }),
+      ...(fence && !terminal
+        ? { nextCheckAt: this.deps.clock.now() + this.deps.lifecycle().pollIntervalMs }
+        : {}),
       ...(clear.length > 0 ? { clear } : {}),
     };
     return this.deps.engine.update(op, patch, fence);
