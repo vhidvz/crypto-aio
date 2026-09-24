@@ -44,6 +44,7 @@ import type {
 import type { ResolvedWallet } from '../signing/wallet';
 import {
   isTerminal,
+  type AttemptObservation,
   type AttemptRecord,
   type ExecutionContext,
   type Fence,
@@ -169,12 +170,33 @@ function isDefinitive(error: unknown): boolean {
   );
 }
 
-/** Observation states that mean the Attempt was mined (R24: stronger than any broadcast answer). */
-const ON_CHAIN_STATES: ReadonlySet<TxState> = new Set<TxState>([
+/**
+ * Observation states backed by chain evidence: the Attempt was mined, or its slot or expiry
+ * was consumed. No broadcast answer ever overwrites them (R24, R25); `replacedBy` is kept.
+ */
+const CHAIN_EVIDENCE_STATES: ReadonlySet<TxState> = new Set<TxState>([
   'included',
   'final',
   'failed',
+  'replaced',
+  'expired',
 ]);
+
+/**
+ * R25: a node once accepted these bytes (`firstSeenAt`: the broadcast path or the monitor
+ * saw them held), or they may be live (a `pending`, `mempool` or `dropped` observation left
+ * by an accepted or ambiguous send). A later rejection says nothing about bytes that may
+ * still sit in a mempool, so it is only a refusal: never terminal, the nonce is kept.
+ */
+function mayBeLive(observation: AttemptObservation | null): boolean {
+  return (
+    observation !== null &&
+    (observation.firstSeenAt !== undefined ||
+      observation.state === 'pending' ||
+      observation.state === 'mempool' ||
+      observation.state === 'dropped')
+  );
+}
 
 /** `signed`, or `submitted` with an unknown broadcast outcome: its stored bytes are (re)sent. */
 function awaitsBroadcast(op: OperationRecord): boolean {
@@ -1087,11 +1109,13 @@ export class OperationEngine {
 
   /**
    * Spec §8.2/§8.3. accepted / already-known → `submitted` (an `included` Operation is never
-   * downgraded). refused and rejected → the Attempt's own ref is looked up first (seen
-   * means it was ours all along). R24: an `included` Operation, or an Attempt whose
-   * observation already says it was mined, is never stalled, failed or released by a
-   * later answer. Otherwise refused → `stalled`, keeping the nonce; rejected (proven
-   * invalid) → `failed` with the nonce released, once every Attempt is rejected.
+   * downgraded); the acceptance is remembered on the observation (`firstSeenAt`). refused
+   * and rejected → the Attempt's own ref is looked up first (seen means it was ours all
+   * along). R24/R25: an `included` Operation, or an Attempt whose observation holds chain
+   * evidence (mined, replaced or expired), is never stalled, failed or released by a later
+   * answer, and a rejection of bytes a node once accepted counts only as a refusal.
+   * Otherwise refused → `stalled`, keeping the nonce; rejected (proven invalid) → `failed`
+   * with the nonce released, once every Attempt is rejected.
    */
   protected async applyBroadcastResult(
     target: OperationTarget,
@@ -1101,9 +1125,10 @@ export class OperationEngine {
     lease?: LeaseHandle,
   ): Promise<OperationRecord> {
     const now = this.deps.clock.now();
-    const accept = async (): Promise<OperationRecord> => {
+    const accept = async (acknowledged: boolean): Promise<OperationRecord> => {
       await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
         lastBroadcastAt: now,
+        ...(acknowledged ? { firstSeenAt: current?.firstSeenAt ?? now } : {}),
         ...(current === null || current.state === 'refused' || current.state === 'dropped'
           ? { state: 'pending' as const }
           : {}),
@@ -1116,36 +1141,40 @@ export class OperationEngine {
         clear: ['ambiguous', 'error'],
       });
     };
-    if (result.kind === 'accepted' || result.kind === 'already-known') return accept();
+    if (result.kind === 'accepted' || result.kind === 'already-known')
+      return accept(true);
     // refused or rejected: first the Attempt's own ref (spec §8.2): seen means it was ours.
-    if (await this.seenOwnRef(target, op, attempt, now)) return accept();
+    if (await this.seenOwnRef(target, op, attempt, now)) return accept(true);
     // R24: the monitor owns included Operations; a lagging answer never downgrades them.
     if (op.state === 'included') return op;
     const context = { operationId: op.id, attemptId: attempt.id };
-    const refused = result.kind === 'refused';
-    const error = refused
-      ? new ChainError(result.code, `transaction refused: ${result.reason}`, { context })
-      : new ChainError('TX_REJECTED', `transaction rejected: ${result.reason}`, {
-          context,
-        });
-    // R24: compare-and-set against the current observation, so stronger evidence the
-    // engine already holds (the Attempt was mined) is never overwritten.
+    // R24/R25: compare-and-set against the current observation, so chain evidence the
+    // engine already holds is never overwritten, and a rejection of bytes that may be live
+    // is recorded as the refusal it is.
     const saved = await writeObservation(
       this.observationDeps,
       attempt,
       op.id,
-      (current): ObservationPatch =>
-        current && ON_CHAIN_STATES.has(current.state)
-          ? { lastBroadcastAt: now }
-          : {
-              state: refused ? 'refused' : 'rejected',
-              evidence: refused ? 'observed' : 'proven',
-              reason: result.reason,
-              lastBroadcastAt: now,
-            },
+      (current): ObservationPatch => {
+        if (current && CHAIN_EVIDENCE_STATES.has(current.state))
+          return { lastBroadcastAt: now };
+        const proven = result.kind === 'rejected' && !mayBeLive(current);
+        return {
+          state: proven ? 'rejected' : 'refused',
+          evidence: proven ? 'proven' : 'observed',
+          reason: result.reason,
+          lastBroadcastAt: now,
+        };
+      },
     );
-    if (ON_CHAIN_STATES.has(saved.state)) return refused ? accept() : op;
-    if (refused) {
+    if (CHAIN_EVIDENCE_STATES.has(saved.state))
+      return result.kind === 'refused' ? accept(false) : op;
+    if (saved.state === 'refused') {
+      const error = new ChainError(
+        result.kind === 'refused' ? result.code : 'TX_REFUSED',
+        `transaction refused: ${result.reason}`,
+        { context },
+      );
       await this.update(op, {
         state: 'stalled',
         error: error.toJSON(),
@@ -1159,6 +1188,13 @@ export class OperationEngine {
       });
       throw error;
     }
+    const error = new ChainError(
+      'TX_REJECTED',
+      `transaction rejected: ${result.reason}`,
+      {
+        context,
+      },
+    );
     const siblings = await Promise.all(
       op.attempts
         .filter((a) => a.id !== attempt.id)

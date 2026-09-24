@@ -17,16 +17,26 @@ export interface ObservationDeps {
   readonly namespace: string;
 }
 
-/** Compare-and-set write of an Attempt observation; emits `attempt.state` on state changes. */
+/**
+ * Compare-and-set write of an Attempt observation; emits `attempt.state` on state changes.
+ * A function patch sees the stored observation on every try (so a writer can refuse to
+ * overwrite stronger evidence, R25) and may return `undefined` to keep a stored
+ * observation unchanged: it is then returned without a write (with none stored, the
+ * default observation is created as for an empty patch).
+ */
 export async function writeObservation(
   deps: ObservationDeps,
   attempt: AttemptRecord,
   operationId: string,
-  patch: ObservationPatch | ((current: AttemptObservation | null) => ObservationPatch),
+  patch:
+    | ObservationPatch
+    | ((current: AttemptObservation | null) => ObservationPatch | undefined),
 ): Promise<AttemptObservation> {
   for (let tries = 0; tries < 5; tries++) {
     const current = await deps.operations.getObservation(attempt.id);
-    const changes = typeof patch === 'function' ? patch(current) : patch;
+    const proposed = typeof patch === 'function' ? patch(current) : patch;
+    if (proposed === undefined && current) return current;
+    const changes = proposed ?? {};
     const base: Omit<AttemptObservation, 'version'> = current
       ? (({ version: _version, ...rest }) => rest)(current)
       : {

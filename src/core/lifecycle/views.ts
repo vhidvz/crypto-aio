@@ -8,6 +8,7 @@ import type {
   OperationRecord,
   OperationState,
 } from '../store/types';
+import type { ConfirmationResult, WaitOptions } from './monitor';
 
 export interface AttemptView {
   readonly id: string;
@@ -49,6 +50,8 @@ export interface PreparedOperation {
 export interface Submission extends OperationView {
   readonly operationId: string;
   readonly attempt?: AttemptRef;
+  /** Shorthand for `bc.waitForConfirmation(operationId, options)`. */
+  wait(options?: WaitOptions): Promise<ConfirmationResult>;
 }
 
 /** Final finality needs `proven` evidence; an observed-only view is at most probabilistic. */

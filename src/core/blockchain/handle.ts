@@ -20,9 +20,16 @@ import {
   PRE_SIGNING_STATES,
   type OperationEngine,
   type OperationTarget,
+  type ReadTarget,
   type TransferOptions,
 } from '../lifecycle/engine';
 import { normalizeIntent } from '../lifecycle/intent';
+import type {
+  ConfirmationResult,
+  Monitor,
+  TxStatusEvent,
+  WaitOptions,
+} from '../lifecycle/monitor';
 import { loadObservations } from '../lifecycle/observations';
 import {
   toView,
@@ -39,7 +46,6 @@ import { fromHex } from '../util/bytes';
 import { defaultBlockchain } from './default-ref';
 import { bindInternals, internalsOf, type HandleInternals } from './internal';
 import {
-  statusFromObservation,
   toAddress,
   toBlock,
   toFeeEstimate,
@@ -286,18 +292,47 @@ export class Blockchain<C extends ChainId = ChainId> {
     return toTransaction(m, tx, head, finalized);
   }
 
+  /** Status of a managed Operation (by id, Attempt ref or tx hash) or of any transaction id. */
   async getTransactionStatus(id: string): Promise<TxStatus> {
-    const { driver } = await this.mapping();
-    const [observation, head, finalized] = await Promise.all([
-      driver.reader.observe(
-        { id, idKind: 'tx-hash', canonical: true },
-        undefined,
-        undefined,
-      ),
-      driver.reader.getBlockHeight(),
-      driver.reader.getFinalizedHeight(),
-    ]);
-    return statusFromObservation(observation, head, finalized);
+    return (await this.monitor().status(await this.readTarget(), id)).status;
+  }
+
+  /**
+   * Resolves once `confirmations` (default: the handle's) are reached, or on proven finality with
+   * `finality: 'final'`. Rejects with the chain error when the Operation fails, expires or is
+   * replaced, and with `TIMEOUT` (retryable, state unchanged) when time runs out.
+   */
+  async waitForConfirmation(
+    ref: string,
+    options: WaitOptions = {},
+  ): Promise<ConfirmationResult> {
+    const { status, record } = await this.monitor().waitFor(
+      await this.readTarget(),
+      ref,
+      options,
+    );
+    return { status, ...(record ? { operation: await this.view(record) } : {}) };
+  }
+
+  /** Yields each status change until the Operation is terminal (or the transaction is final). */
+  watch(
+    ref: string,
+    options: { readonly pollIntervalMs?: number; readonly signal?: AbortSignal } = {},
+  ): AsyncIterable<TxStatusEvent> {
+    const readTarget = () => this.readTarget();
+    const monitor = () => this.monitor();
+    const view = (record: OperationRecord) => this.view(record);
+    return {
+      async *[Symbol.asyncIterator]() {
+        const target = await readTarget();
+        for await (const snapshot of monitor().watch(target, ref, options)) {
+          yield {
+            status: snapshot.status,
+            ...(snapshot.record ? { operation: await view(snapshot.record) } : {}),
+          };
+        }
+      },
+    };
   }
 
   async getBlockHeight(): Promise<bigint> {
@@ -447,6 +482,17 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   /** @internal */
+  protected monitor(): Monitor {
+    return containerOf(internalsOf(this).container).monitor();
+  }
+
+  /** @internal */
+  protected async readTarget(): Promise<ReadTarget> {
+    const internals = internalsOf(this);
+    return { selection: internals.selection, pooled: await internals.pooled() };
+  }
+
+  /** @internal */
   protected async target(): Promise<OperationTarget> {
     const internals = internalsOf(this);
     const [pooled, wallet] = await Promise.all([internals.pooled(), internals.wallet()]);
@@ -471,6 +517,7 @@ export class Blockchain<C extends ChainId = ChainId> {
       ...view,
       operationId: view.id,
       ...(view.activeAttempt ? { attempt: view.activeAttempt } : {}),
+      wait: (options?: WaitOptions) => this.waitForConfirmation(view.id, options),
     };
   }
 

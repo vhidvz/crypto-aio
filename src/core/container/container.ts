@@ -16,6 +16,7 @@ import { EventBus } from '../events/bus';
 import { createLogger } from '../events/logger';
 import type { AioEvent, AioEventName } from '../events/types';
 import { OperationEngine, errorCode, withLifecycleDefaults } from '../lifecycle/engine';
+import { Monitor } from '../lifecycle/monitor';
 import type { ChainId } from '../model/ids';
 import { SequenceCoordinator } from '../ordering/sequence';
 import {
@@ -268,12 +269,24 @@ export class CryptoAio {
   #bind(runtime: RootRuntime, layers: readonly ScopeOptions[], isRoot: boolean): void {
     const effective = () => mergeScopes([runtime.envLayer, ...layers]);
     let engine: OperationEngine | undefined;
+    let monitor: Monitor | undefined;
+    const getEngine = () => (engine ??= createEngine(runtime, effective));
     bindContainer(this, {
       runtime,
       layers,
       isRoot,
       effective,
-      engine: () => (engine ??= createEngine(runtime, effective)),
+      engine: getEngine,
+      monitor: () =>
+        (monitor ??= new Monitor({
+          engine: getEngine(),
+          stores: runtime.stores,
+          events: runtime.events,
+          clock: runtime.clock,
+          log: runtime.log.child('monitor'),
+          namespace: runtime.namespace,
+          lifecycle: () => withLifecycleDefaults(effective().lifecycle),
+        })),
     });
   }
 }

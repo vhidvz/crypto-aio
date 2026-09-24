@@ -4,6 +4,7 @@ import { ConfigError } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
 import type { OperationEngine } from '../lifecycle/engine';
+import type { Monitor } from '../lifecycle/monitor';
 import type { Catalogs } from '../registry/plugin';
 import type { Stores } from '../store/types';
 import type { TransportOptions } from '../transport/types';
@@ -35,6 +36,8 @@ export interface ContainerInternals {
   effective(): EffectiveOptions;
   /** Lazily created per container (scopes have their own hooks and lifecycle settings). */
   engine(): OperationEngine;
+  /** Lazily created per container, on top of its engine. */
+  monitor(): Monitor;
 }
 
 const registry = new WeakMap<object, ContainerInternals>();

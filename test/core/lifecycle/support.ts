@@ -1,6 +1,7 @@
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
 import type { Signer } from '../../../src/core/signing/types';
+import type { FakeEnv } from '../../../src/testing/env';
 
 /** A local signer that counts how many times it was asked to sign. */
 export function countingSigner(id = 'hot'): {
@@ -20,4 +21,23 @@ export function countingSigner(id = 'hot'): {
     },
   });
   return { signer, inner, calls: () => calls };
+}
+
+/** Mines one block per step while advancing fake time until `promise` settles. */
+export async function mineWhile<T>(
+  env: FakeEnv,
+  promise: Promise<T>,
+  stepMs = 1_000,
+  maxSteps = 500,
+): Promise<T> {
+  let done = false;
+  const tracked = promise.finally(() => {
+    done = true;
+  });
+  tracked.catch(() => undefined);
+  for (let i = 0; i < maxSteps && !done; i++) {
+    env.chain.mine();
+    await env.clock.advance(stepMs);
+  }
+  return tracked;
 }
