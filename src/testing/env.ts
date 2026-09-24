@@ -7,6 +7,7 @@ import type {
   WalletConfig,
 } from '../core/config/types';
 import { CryptoAio } from '../core/container/container';
+import { StateError } from '../core/errors/error';
 import { noopLogger } from '../core/events/logger';
 import { localSigner } from '../core/signing/local';
 import type { Signer } from '../core/signing/types';
@@ -40,8 +41,10 @@ export interface FakeEnvOptions {
   readonly transport?: Omit<TransportOptions, 'fetch'>;
   readonly lifecycle?: LifecycleOptions;
   readonly hooks?: Hooks;
-  /** Extra container options merged last. */
-  readonly aio?: AioOptions;
+  /** Extra container options merged last. Never `clock`, `stores` or `transport` — those are
+   * always the generation-fenced values (N3), so this type excludes them; passing any of them
+   * would either fail to type-check or (if forced through) be silently overridden. */
+  readonly aio?: Omit<AioOptions, 'clock' | 'stores' | 'transport'>;
 }
 
 export interface FakeEnv {
@@ -69,9 +72,19 @@ export interface FakeEnv {
   restart(options?: { readonly killPrevious?: boolean }): Promise<FakeEnv>;
 }
 
-/** Flipped to `false` by `restart({ killPrevious: true })`; every wrapper built for this
- * generation (clock, fetch, stores) checks it both when invoked and when the real call
- * underneath settles, so a dead generation can neither start nor finish any of them. */
+/**
+ * Flipped to `false` by `restart({ killPrevious: true })`; every wrapper built for this
+ * generation (clock, fetch, the fetched Response's body readers, the shared signer, the store
+ * proxies) checks it both when invoked and when the real call underneath settles, so a dead
+ * generation can neither start nor finish any of them.
+ *
+ * N2: the fence only becomes complete once the microtask queue has drained past the point
+ * where `generation.alive` was flipped. Code from the old generation that was already past a
+ * *settled* fenced call (holding a plain value, not awaiting anything) keeps running
+ * synchronously — nothing here can interrupt a synchronous continuation mid-expression — right
+ * up until it reaches its *next* fenced call, which then never lets it proceed further (or, for
+ * a synchronous wrapped call, throws instead — see `generationProxy`).
+ */
 interface Generation {
   alive: boolean;
 }
@@ -95,14 +108,50 @@ function generationClock(shared: FakeClock, generation: Generation): Clock {
   };
 }
 
-/** Per-generation fetch, fenced the same way as the clock. */
+/** Body-reading methods fenced on a fetched Response (N2); everything else (status, ok,
+ * headers, clone(), ...) passes straight through. */
+const FENCED_RESPONSE_READERS = new Set(['text', 'json', 'arrayBuffer']);
+
+/**
+ * N2: wraps a fetched Response so its body readers are fenced too — once a generation is
+ * dead, `text()`/`json()`/`arrayBuffer()` on a Response it already received must never settle
+ * either, exactly like the fetch call that produced it (a caller may have obtained the
+ * Response while still alive and only read its body afterwards). Every other property or
+ * method is bound to the real `target` (never invoked through the Proxy itself), so a native
+ * accessor like `.ok`/`.status` still sees a genuine `Response` as `this`.
+ */
+function generationResponse(response: Response, generation: Generation): Response {
+  return new Proxy(response, {
+    get(target, prop) {
+      const value: unknown = Reflect.get(target, prop); // no receiver: see generationProxy.
+      if (typeof value !== 'function') return value;
+      const bound = (value as (...args: unknown[]) => unknown).bind(target);
+      if (typeof prop !== 'string' || !FENCED_RESPONSE_READERS.has(prop)) return bound;
+      return (...args: unknown[]) =>
+        new Promise((resolve, reject) => {
+          if (!generation.alive) return; // never settles: already dead at call time.
+          Promise.resolve(bound(...args)).then(
+            (value) => {
+              if (generation.alive) resolve(value);
+            },
+            (error: unknown) => {
+              if (generation.alive) reject(error);
+            },
+          );
+        });
+    },
+  });
+}
+
+/** Per-generation fetch, fenced the same way as the clock; the Response it resolves with is
+ * itself fenced (N2), so a body read issued on it after the kill never settles either. */
 function generationFetch(shared: typeof fetch, generation: Generation): typeof fetch {
   return ((...args: Parameters<typeof fetch>) =>
     new Promise<Response>((resolve, reject) => {
       if (!generation.alive) return;
       Promise.resolve(shared(...args)).then(
         (response) => {
-          if (generation.alive) resolve(response);
+          if (generation.alive) resolve(generationResponse(response, generation));
         },
         (error: unknown) => {
           if (generation.alive) reject(error);
@@ -111,49 +160,69 @@ function generationFetch(shared: typeof fetch, generation: Generation): typeof f
     })) as typeof fetch;
 }
 
-/** Wraps one async method the same way `generationClock`/`generationFetch` wrap theirs. */
-function generationAsync<A extends unknown[], R>(
-  fn: (...args: A) => Promise<R>,
-  thisArg: unknown,
-  generation: Generation,
-): (...args: A) => Promise<R> {
-  return (...args: A) =>
-    new Promise<R>((resolve, reject) => {
-      if (!generation.alive) return;
-      Promise.resolve(fn.apply(thisArg, args)).then(
-        (value) => {
-          if (generation.alive) resolve(value);
-        },
-        (error: unknown) => {
-          if (generation.alive) reject(error);
-        },
-      );
-    });
-}
-
-/** Proxies every method of a shared store instance through `generationAsync`. */
-function generationStore<T extends object>(store: T, generation: Generation): T {
-  return new Proxy(store, {
-    get(target, prop, receiver: unknown) {
-      const value: unknown = Reflect.get(target, prop, receiver);
-      return typeof value === 'function'
-        ? generationAsync(
-            value as (...args: unknown[]) => Promise<unknown>,
-            target,
-            generation,
-          )
-        : value;
+/**
+ * N4: wraps every method of `target` so a generation's death fences it, and generalizes the
+ * old `generationStore` to any shared object with async methods (also used for the signer,
+ * N2). Only a Promise/thenable result is fenced the way `sleep`/`fetch` are (never settles
+ * once the generation dies); a genuinely synchronous method throws `StateError` when called on
+ * an already-dead generation — there's no "never resolve" for a call that must return
+ * synchronously — and otherwise passes its result straight through, unfenced. In practice every
+ * method wrapped here (`Stores`, `Signer`) is async; the synchronous branch is a defensive
+ * fallback for whatever else this helper wraps later.
+ */
+function generationProxy<T extends object>(target: T, generation: Generation): T {
+  return new Proxy(target, {
+    get(t, prop) {
+      // N4: no receiver, so a native/data getter runs with the real target as `this`.
+      const value: unknown = Reflect.get(t, prop);
+      if (typeof value !== 'function') return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      return (...args: unknown[]) => {
+        if (!generation.alive) {
+          // A call issued once the generation is already dead: never invoke the real method
+          // (no side effect from a dead continuation). It can't be left "hanging" the way an
+          // in-flight promise can, so it fails fast instead.
+          throw new StateError(
+            'INVALID_TRANSITION',
+            'crypto-aio/testing: this generation was killed by restart({ killPrevious: true })',
+          );
+        }
+        const result = fn.apply(t, args);
+        const thenable =
+          typeof result === 'object' &&
+          result !== null &&
+          typeof (result as { then?: unknown }).then === 'function';
+        if (!thenable) return result; // N4: a synchronous result passes straight through.
+        return new Promise((resolve, reject) => {
+          Promise.resolve(result as Promise<unknown>).then(
+            (value) => {
+              if (generation.alive) resolve(value);
+            },
+            (error: unknown) => {
+              if (generation.alive) reject(error);
+            },
+          );
+        });
+      };
     },
   });
 }
 
 function generationStores(stores: Stores, generation: Generation): Stores {
   return {
-    operations: generationStore(stores.operations, generation),
-    locks: generationStore(stores.locks, generation),
-    sequences: generationStore(stores.sequences, generation),
-    cursors: generationStore(stores.cursors, generation),
+    operations: generationProxy(stores.operations, generation),
+    locks: generationProxy(stores.locks, generation),
+    sequences: generationProxy(stores.sequences, generation),
+    cursors: generationProxy(stores.cursors, generation),
   };
+}
+
+/** N2: the shared signer (see the doc comment on `signers` in `assemble` — it's stateless and
+ * never rebuilt across generations) still has its `sign`/`getPublicKey` calls fenced per
+ * generation, the same as any other in-flight call; the underlying `Signer` instance is
+ * unchanged, just wrapped. */
+function generationSigner(shared: Signer, generation: Generation): Signer {
+  return generationProxy(shared, generation);
 }
 
 interface Shared {
@@ -200,21 +269,12 @@ async function assemble(shared: Shared, generation: Generation): Promise<FakeEnv
   const genStores = generationStores(stores, generation);
   const aio = new CryptoAio({
     env: false,
-    clock: generationClock(clock, generation),
     logger: noopLogger,
     plugins: [fakePlugin()],
-    stores: genStores,
-    transport: {
-      fetch: generationFetch(chain.fetch, generation),
-      baseDelayMs: 1,
-      maxDelayMs: 5,
-      timeoutMs: 5_000,
-      ...options.transport,
-    },
     providers: { fake: { endpoints } },
     // A local signer is stateless (holds no per-process state), so it is shared across
-    // generations rather than rebuilt on every restart().
-    signers: { [signer.id]: signer },
+    // generations rather than rebuilt on every restart() — only its calls are fenced (N2).
+    signers: { [signer.id]: generationSigner(signer, generation) },
     wallets: { main: { signer: signer.id }, ...options.wallets },
     chains: { [chainId]: { provider: 'fake', wallet: 'main' } },
     lifecycle: {
@@ -228,6 +288,19 @@ async function assemble(shared: Shared, generation: Generation): Promise<FakeEnv
     },
     ...(options.hooks ? { hooks: options.hooks } : {}),
     ...options.aio,
+    // N3: applied AFTER `options.aio`, so a generation's fencing can never be shadowed by it
+    // (its type already excludes these three keys — see `FakeEnvOptions.aio`). `env.stores`
+    // below reads the same `genStores` object handed to the container here, so they're
+    // guaranteed to be the same fenced instances.
+    clock: generationClock(clock, generation),
+    stores: genStores,
+    transport: {
+      fetch: generationFetch(chain.fetch, generation),
+      baseDelayMs: 1,
+      maxDelayMs: 5,
+      timeoutMs: 5_000,
+      ...options.transport,
+    },
   });
   const bc = aio.blockchain({ chain: chainId });
   const run = <T>(promise: Promise<T>, stepMs = 100): Promise<T> =>
