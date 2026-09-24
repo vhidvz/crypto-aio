@@ -381,7 +381,8 @@ export const DATA_CLASSIFICATION: {
     firstSeenAt: 'operational',
     lastSeenAt: 'operational',
     lastBroadcastAt: 'operational',
-    reason: 'operational',
+    // A node's refusal or rejection text can carry addresses or amounts (R24).
+    reason: 'sensitive',
     replacedBy: 'operational',
     version: 'operational',
   },

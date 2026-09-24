@@ -34,6 +34,12 @@ describe('DATA_CLASSIFICATION', () => {
     expect(DATA_CLASSIFICATION.operation.intent).toBe('sensitive');
     expect(DATA_CLASSIFICATION.operation.state).toBe('operational');
   });
+
+  // R24: a node's refusal or rejection text can carry addresses or amounts.
+  it('protects an observation reason like an operation error', () => {
+    expect(DATA_CLASSIFICATION.observation.reason).toBe('sensitive');
+    expect(DATA_CLASSIFICATION.operation.error).toBe('sensitive');
+  });
 });
 
 describe('memory store error messages', () => {

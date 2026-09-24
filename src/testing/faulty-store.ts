@@ -19,7 +19,14 @@ export class CrashError extends Error {
 
 export interface FaultPoint {
   readonly method: 'create' | 'update' | 'appendAttempt' | 'putObservation';
-  /** Receives the method arguments; defaults to "always". */
+  /**
+   * Receives the method's arguments, which differ by method; defaults to "always".
+   * - `create`: `[operation]`
+   * - `update`: `[namespace, id, patch, expectedVersion]` (the patch is `args[2]`)
+   * - `appendAttempt`: `[namespace, id, attempt, patch]`, without `expectedVersion`, so the
+   *   patch is `args[3]` and `args[2]` is the Attempt
+   * - `putObservation`: `[observation]`
+   */
   readonly when?: (args: readonly unknown[]) => boolean;
   /** `before`: the write never happens. `after`: the write happens, then the process "dies". */
   readonly timing: 'before' | 'after';
