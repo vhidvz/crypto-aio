@@ -114,6 +114,33 @@ describe('redaction', () => {
     expect(inspect(clean)).not.toContain('SECRETKEY');
   });
 
+  it('sanitizeError is total: unprintable throwables never make it throw (M5)', () => {
+    const hostile = {
+      toString() {
+        throw new Error('no');
+      },
+    };
+    const lying = new Error('fine');
+    Object.defineProperty(lying, 'message', {
+      get() {
+        throw new Error('no');
+      },
+    });
+    for (const value of [Object.create(null), hostile, lying]) {
+      expect(sanitizeError(value).message).toBe('[unprintable error]');
+    }
+    expect(sanitizeError(Symbol('custody')).message).toBe('Symbol(custody)');
+  });
+
+  it('sanitizeError redacts URLs in the error name and code (M5)', () => {
+    const err = new Error('boom');
+    err.name = 'Fault at https://x.io/SECRETKEY1234567890abc';
+    (err as Error & { code?: string }).code = 'E https://x.io/SECRETKEY1234567890abc';
+    const clean = sanitizeError(err);
+    expect(clean.name).toBe('Fault at https://x.io/[REDACTED]');
+    expect(inspect(clean)).not.toContain('SECRETKEY');
+  });
+
   it('passes null and undefined through sensitive keys unchanged', () => {
     expect(
       redactDeep({

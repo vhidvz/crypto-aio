@@ -78,15 +78,26 @@ function walk(value: unknown, depth: number, seen: WeakSet<object>): unknown {
   return out;
 }
 
-/** Copies an error's name/message/code with URLs redacted and without its cause chain. */
+const UNPRINTABLE = '[unprintable error]';
+
+/**
+ * Copies an error's name/message/code with URLs redacted and without its cause chain.
+ * Total: a throwable that cannot be read or printed yields '[unprintable error]'.
+ */
 export function sanitizeError(error: unknown): Error {
-  if (error instanceof Error) {
-    const clean = new Error(redactText(error.message));
-    clean.name = error.name;
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === 'string') (clean as Error & { code?: string }).code = code;
-    clean.stack = `${clean.name}: ${clean.message}`;
-    return clean;
+  try {
+    if (error instanceof Error) {
+      const clean = new Error(redactText(String(error.message)));
+      clean.name = redactText(String(error.name));
+      const code = (error as { code?: unknown }).code;
+      if (typeof code === 'string') {
+        (clean as Error & { code?: string }).code = redactText(code);
+      }
+      clean.stack = `${clean.name}: ${clean.message}`;
+      return clean;
+    }
+    return new Error(redactText(String(error)));
+  } catch {
+    return new Error(UNPRINTABLE);
   }
-  return new Error(redactText(String(error)));
 }

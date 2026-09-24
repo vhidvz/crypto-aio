@@ -351,6 +351,63 @@ describe('SigningOrchestrator', () => {
     expect(result.signatures[1]?.bytes).toEqual(s1.bytes);
   });
 
+  it('turns an async policy rejection into POLICY_REJECTED', async () => {
+    const { orchestrator } = setup(async () => {
+      await Promise.resolve();
+      throw new Error('approval denied');
+    });
+    await expect(orchestrator.authorize(ctx)).rejects.toMatchObject({
+      code: 'POLICY_REJECTED',
+      message: 'approval denied',
+    });
+  });
+
+  it('batches every request routed to one signer into a single call', async () => {
+    const { orchestrator, seen } = setup();
+    const batches: string[][] = [];
+    const batching = callbackSigner({
+      id: 'hot',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: async () => new Uint8Array(33),
+      sign: async (r, c) => {
+        batches.push(r.map((x) => x.id));
+        return hot.sign(r, c);
+      },
+    });
+    const result = await orchestrator.sign(
+      wallet({ hot: batching }),
+      [request('r0', keyA), request('r1', keyA)],
+      ctx,
+    );
+    expect(result.status).toBe('signed');
+    expect(batches).toEqual([['r0', 'r1']]);
+    expect(seen.filter((e) => e.type === 'signer.requested')).toMatchObject([
+      { requests: 2 },
+    ]);
+  });
+
+  it('ignores extra signatures and uses only the first one per request', async () => {
+    const { orchestrator } = setup();
+    const r = request('r0', keyA);
+    const good = signWith(keyA, r);
+    const bad = signWith(keyB, r);
+    const extra = signWith(keyA, request('r9', keyA));
+    const ok = await orchestrator.sign(
+      wallet({ hot: returning({ status: 'signed', signatures: [extra, good, bad] }) }),
+      [r],
+      ctx,
+    );
+    expect(ok.signatures).toHaveLength(1);
+    expect(ok.signatures[0]?.bytes).toEqual(good.bytes);
+    await expect(
+      orchestrator.sign(
+        wallet({ hot: returning({ status: 'signed', signatures: [bad, good] }) }),
+        [r],
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'SIGNATURE_MISMATCH' });
+  });
+
   it('turns policy vetoes into POLICY_REJECTED', async () => {
     const { orchestrator } = setup(() => {
       throw new Error('daily withdrawal limit reached');
@@ -401,6 +458,50 @@ describe('SigningOrchestrator', () => {
     ).rejects.toMatchObject({ code: 'SIGNER_UNAVAILABLE' });
   });
 
+  it('wraps an unprintable signer failure as SIGNING_FAILED (M5)', async () => {
+    const { orchestrator } = setup();
+    const odd = callbackSigner({
+      id: 'hot',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: async () => new Uint8Array(33),
+      sign: async () => {
+        throw Object.create(null);
+      },
+    });
+    const error = await orchestrator
+      .sign(wallet({ hot: odd }), [request('r0', keyA)], ctx)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'SIGNING_FAILED',
+      cause: { message: '[unprintable error]' },
+    });
+  });
+
+  it('guards the routing reads: signerFor and the signer scheme list (M5)', async () => {
+    const { orchestrator } = setup();
+    const unreadable = {
+      id: 'hot',
+      get schemes(): never {
+        throw new Error('vault https://vault.io/SECRETKEY1234567890abc sealed');
+      },
+      getPublicKey: async () => new Uint8Array(33),
+      sign: async () => ({ status: 'pending' }) as const,
+    } as Signer;
+    const router: ResolvedWallet = {
+      ...wallet({ hot }),
+      signerFor: () => {
+        throw new Error('router https://router.io/SECRETKEY1234567890abc down');
+      },
+    };
+    for (const w of [wallet({ hot: unreadable }), router]) {
+      const error = await orchestrator
+        .sign(w, [request('r0', keyA)], ctx)
+        .catch((e: unknown) => e);
+      expect(error).toMatchObject({ code: 'SIGNER_UNAVAILABLE' });
+      expect(inspect(error, { depth: 10 })).not.toContain('SECRETKEY1234567890abc');
+    }
+  });
+
   it('never leaks a URL secret from a signer failure', async () => {
     const { orchestrator, seen } = setup();
     const custody = callbackSigner({
@@ -443,6 +544,30 @@ describe('SigningOrchestrator', () => {
       { status: 'signed', signatures: [{ ...r0Sig, recovery: 0.5 }] },
     ],
     ['a non-string ticket', { status: 'pending', ticket: 7 }],
+    ['a null signature entry', { status: 'signed', signatures: [null] }],
+    [
+      'bytes given as a DataView',
+      {
+        status: 'signed',
+        signatures: [{ ...r0Sig, bytes: new DataView(r0Sig.bytes.buffer) }],
+      },
+    ],
+    [
+      'bytes given as an ArrayBuffer',
+      { status: 'signed', signatures: [{ ...r0Sig, bytes: r0Sig.bytes.slice().buffer }] },
+    ],
+    ['a NaN recovery', { status: 'signed', signatures: [{ ...r0Sig, recovery: NaN }] }],
+    [
+      'signatures whose own map would skip the entry checks',
+      {
+        status: 'signed',
+        signatures: Object.assign([{ ...r0Sig, bytes: toHex(r0Sig.bytes) }], {
+          map(this: unknown[]) {
+            return this;
+          },
+        }),
+      },
+    ],
     [
       'a result that throws when read',
       {

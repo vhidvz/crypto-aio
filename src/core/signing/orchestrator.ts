@@ -4,6 +4,7 @@ import {
   ValidationError,
   createError,
   isCryptoAioError,
+  type ErrorContext,
 } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { SchemeCatalog } from '../registry/schemes';
@@ -16,7 +17,7 @@ import type {
   SigningContext,
   SigningRequest,
 } from './types';
-import { signerFailure } from './guard';
+import { signerFailure, signerSchemes } from './guard';
 import type { ResolvedWallet } from './wallet';
 
 export type OrchestratedResult =
@@ -71,12 +72,15 @@ function checkResult(value: unknown, reject: Reject): CheckedResult {
   }
   if (status !== 'signed') reject('status is neither signed nor pending');
   if (!Array.isArray(signatures)) reject('signatures is not an array');
-  return {
-    status,
-    signatures: signatures.map((entry: unknown, index) =>
+  // An index loop, not `.map`: an own `map` property on the array cannot skip the checks.
+  const checked: SignatureBundle[] = [];
+  for (let index = 0; index < signatures.length; index++) {
+    const entry: unknown = signatures[index];
+    checked.push(
       checkBundle(entry, (problem) => reject(`signature #${index} ${problem}`)),
-    ),
-  };
+    );
+  }
+  return { status, signatures: checked };
 }
 
 /** Copies a request's bytes (and keyRef/params) so its holder cannot change the original. */
@@ -151,15 +155,7 @@ export class SigningOrchestrator {
     const groups = new Map<string, { signer: Signer; requests: SigningRequest[] }>();
     for (const request of requests) {
       if (done.has(request.id)) continue;
-      const route = wallet.signerFor(request.keyRef);
-      const schemes = route?.signer.schemes;
-      if (!route || !Array.isArray(schemes) || !schemes.includes(request.scheme)) {
-        throw new SigningError(
-          'SIGNER_UNAVAILABLE',
-          `no signer of wallet '${wallet.name}' can sign request '${request.id}' (${request.scheme})`,
-          { context: { operationId: ctx.operationId } },
-        );
-      }
+      const route = this.#route(wallet, request, { operationId: ctx.operationId });
       const group = groups.get(route.id) ?? { signer: route.signer, requests: [] };
       group.requests.push(request);
       groups.set(route.id, group);
@@ -240,6 +236,28 @@ export class SigningOrchestrator {
     return requests
       .map((r) => merged.get(r.id))
       .filter((s): s is SignatureBundle => s !== undefined);
+  }
+
+  /** Picks the signer for one request; the routing reads are guarded like signer calls (M5). */
+  #route(
+    wallet: ResolvedWallet,
+    request: SigningRequest,
+    context: ErrorContext,
+  ): { readonly id: string; readonly signer: Signer } {
+    const unavailable = `no signer of wallet '${wallet.name}' can sign request '${request.id}' (${request.scheme})`;
+    let route: { readonly id: string; readonly signer: Signer } | undefined;
+    try {
+      route = wallet.signerFor(request.keyRef);
+    } catch (error) {
+      throw signerFailure(error, 'SIGNER_UNAVAILABLE', unavailable, context);
+    }
+    if (
+      !route ||
+      !signerSchemes(route.id, route.signer, context).includes(request.scheme)
+    ) {
+      throw new SigningError('SIGNER_UNAVAILABLE', unavailable, { context });
+    }
+    return route;
   }
 
   /**
