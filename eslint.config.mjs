@@ -28,7 +28,12 @@ export default defineConfig(
         {
           patterns: [
             {
-              group: ['**/adapters/**', '**/testing/**', '**/adapters', '**/testing'],
+              group: [
+                '../**/adapters',
+                '../**/adapters/**',
+                '../**/testing',
+                '../**/testing/**',
+              ],
               message: 'src/core must not import adapters or the testing kit',
             },
             {
