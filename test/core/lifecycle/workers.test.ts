@@ -9,6 +9,9 @@ import {
 } from '../../../src/core/lifecycle/engine';
 import { Monitor } from '../../../src/core/lifecycle/monitor';
 import { sequenceKey } from '../../../src/core/ordering/sequence';
+import { callbackSigner } from '../../../src/core/signing/callback';
+import { localSigner } from '../../../src/core/signing/local';
+import type { Signer } from '../../../src/core/signing/types';
 import {
   MemoryOperationStore,
   MemorySequenceStore,
@@ -342,7 +345,144 @@ describe('a lost append keeps its contract (Task 24 review)', () => {
   });
 });
 
+describe('reconciliation fences out a stale prepared write (R29)', () => {
+  it('never lets a paused prepared write land on a nonce reconciliation released', async () => {
+    const operations = new GatedUpdateStore();
+    const { signer, signed } = recordingSigner();
+    const env = await createFakeEnv({ stores: { operations }, signer });
+    const intentA = { to: env.stranger(), amount: 1n };
+    const gate = operations.gate((patch) => patch.state === 'prepared');
+    const a = env.bc.transfer(intentA, { idempotencyKey: 'a' });
+    a.catch(() => undefined);
+    await env.run(gate.reached); // A allocated nonce 0 and renewed; its write is paused
+    await env.clock.advance(31_000); // A's address lease (30 s) lapses
+    const other = await env.restart(); // a second live process
+    await other.run(other.aio.operations.recover());
+    gate.release();
+    await expect(env.run(a)).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+    const opA = await other.stores.operations.getByKey('default', 'a');
+    expect(opA).toMatchObject({ state: 'created' });
+    expect(opA?.reservation).toBeUndefined();
+    const b = await other.run(
+      other.bc.transfer({ to: other.stranger(), amount: 1n }, { idempotencyKey: 'b' }),
+    );
+    expect((await stored(other, b.operationId)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
+    });
+    const again = await other.run(other.bc.transfer(intentA, { idempotencyKey: 'a' }));
+    expect((await stored(other, again.operationId)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 1n,
+    });
+    const nonces = await Promise.all(
+      signed.map(async (id) => (await stored(other, id)).reservation),
+    );
+    expect(nonces).toEqual([
+      { kind: 'nonce', nonce: 0n },
+      { kind: 'nonce', nonce: 1n },
+    ]);
+  });
+
+  it('holds a reservation that landed just before its fencing write', async () => {
+    const operations = new RacingUpdateStore();
+    const env = await createFakeEnv({ stores: { operations } });
+    operations.race = (patch) => (patch.state === 'prepared' ? 'crash' : undefined);
+    await expect(
+      env.run(
+        env.bc.transfer({ to: env.stranger(), amount: 1n }, { idempotencyKey: 'x' }),
+      ),
+    ).rejects.toBeInstanceOf(CrashError);
+    // The stale prepared write lands between the listing and the fencing write.
+    operations.race = (patch) =>
+      patch.clear?.includes('error') && patch.state === undefined
+        ? { state: 'prepared', reservation: { kind: 'nonce', nonce: 0n } }
+        : undefined;
+    const report = await env.run(env.aio.operations.recover());
+    expect(report).toMatchObject({ failed: 0, reconciled: 0 });
+    expect(await sequenceOf(env)).toMatchObject({ next: 1n, released: [] });
+  });
+});
+
 // ---- helpers --------------------------------------------------------------------------
+
+/** A local signer that records the Operation of every signing call. */
+function recordingSigner(): { signer: Signer; signed: string[] } {
+  const inner = localSigner.generate({ curves: ['secp256k1'], id: 'hot' }).signer;
+  const signed: string[] = [];
+  const signer = callbackSigner({
+    id: 'hot',
+    schemes: inner.schemes,
+    getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
+    sign: async (requests, ctx) => {
+      signed.push(ctx.operationId);
+      return inner.sign(requests, ctx);
+    },
+  });
+  return { signer, signed };
+}
+
+/**
+ * Before the next `update` its `race` matches: `'crash'` fails it unwritten; a patch is
+ * landed first by a racing writer (so the update loses its compare-and-set).
+ */
+class RacingUpdateStore extends MemoryOperationStore {
+  race: ((patch: OperationPatch) => OperationPatch | 'crash' | undefined) | undefined;
+
+  override async update(
+    namespace: string,
+    id: string,
+    patch: OperationPatch,
+    expectedVersion: number,
+    fence?: Fence,
+  ): Promise<OperationRecord> {
+    const decision = this.race?.(patch);
+    if (decision !== undefined) this.race = undefined;
+    if (decision === 'crash') throw new CrashError();
+    const current = decision ? await this.get(namespace, id) : null;
+    if (decision && current) await super.update(namespace, id, decision, current.version);
+    return super.update(namespace, id, patch, expectedVersion, fence);
+  }
+}
+
+/** Pauses the next `update` whose patch matches until `release()`: a slow store write. */
+class GatedUpdateStore extends MemoryOperationStore {
+  #gate:
+    | {
+        readonly matches: (patch: OperationPatch) => boolean;
+        readonly reached: () => void;
+        readonly opened: Promise<void>;
+      }
+    | undefined;
+
+  gate(matches: (patch: OperationPatch) => boolean): {
+    reached: Promise<void>;
+    release: () => void;
+  } {
+    let reached = (): void => undefined;
+    let release = (): void => undefined;
+    const reachedP = new Promise<void>((resolve) => (reached = resolve));
+    const opened = new Promise<void>((resolve) => (release = resolve));
+    this.#gate = { matches, reached, opened };
+    return { reached: reachedP, release };
+  }
+
+  override async update(
+    namespace: string,
+    id: string,
+    patch: OperationPatch,
+    expectedVersion: number,
+    fence?: Fence,
+  ): Promise<OperationRecord> {
+    const gate = this.#gate;
+    if (gate?.matches(patch)) {
+      this.#gate = undefined;
+      gate.reached();
+      await gate.opened;
+    }
+    return super.update(namespace, id, patch, expectedVersion, fence);
+  }
+}
 
 async function stored(env: FakeEnv, operationId: string): Promise<OperationRecord> {
   const op = await env.stores.operations.get('default', operationId);

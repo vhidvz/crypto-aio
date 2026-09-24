@@ -1392,7 +1392,10 @@ export class OperationEngine {
    * `op`'s wallet reserves, so the next allocation reuses it and the transfers waiting
    * behind the gap can land. It closes the leaks a release cannot: a crash between
    * allocation and the `prepared` write, a store failure inside a release after a terminal
-   * write, and a failure recorded without a release. Returns the reclaimed values. The
+   * write, and a failure recorded without a release. R29: every live `created` Operation
+   * without a reservation is fenced first (`fenceStalePrepare`), so a `prepared` write
+   * still in flight from a lapsed lease can never land on a released value (a legitimate
+   * transfer re-reads its Operation under the lease). Returns the reclaimed values. The
    * lease wait is bounded by `signal` and `acquireTimeoutMs` (`0` tries once); a busy lease
    * rejects with SEQUENCE_BUSY. A target whose wallet does not own `op` is refused
    * (INVALID_INTENT): its lease guards another sequence.
@@ -1418,17 +1421,38 @@ export class OperationEngine {
           from: op.intent.from,
           states: NON_TERMINAL_STATES,
         });
+        const held: bigint[] = [];
+        for (const record of live)
+          held.push(...heldNonces(await this.fenceStalePrepare(record)));
         await lease?.renew();
         return this.deps.sequences.reclaim(
           lease as LeaseHandle,
           this.sequenceKeyOf(target),
           chainPending,
-          live.flatMap(heldNonces),
+          held,
         );
       },
       signal,
       acquireTimeoutMs === undefined ? undefined : { acquireTimeoutMs },
     );
+  }
+
+  /**
+   * R29: a `created` Operation without a reservation may still have a `prepared` write in
+   * flight from a process whose lease lapsed (it allocated a nonce, renewed, then stalled).
+   * A no-effect compare-and-set at the listed version makes that stale write lose its own
+   * compare-and-set, so it can never land a reservation on a value this reconciliation
+   * releases. After a lost compare-and-set the re-read Operation is returned, and any
+   * reservation it now shows counts as held. Other Operations are returned as listed.
+   */
+  protected async fenceStalePrepare(record: OperationRecord): Promise<OperationRecord> {
+    if (record.state !== 'created' || record.reservation !== undefined) return record;
+    try {
+      return await this.update(record, { clear: ['error'] });
+    } catch (error) {
+      if (!isCryptoAioError(error, 'VERSION_CONFLICT')) throw error;
+      return this.require(record.id);
+    }
   }
 
   protected async everyAttemptRejected(op: OperationRecord): Promise<boolean> {
