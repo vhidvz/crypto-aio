@@ -35,12 +35,54 @@ function wallet(signers: Record<string, Signer>, primary = 'hot'): ResolvedWalle
     options: {},
     watchOnly: false,
     signerFor: (ref) => {
-      const id = ref?.id === 'cold' ? 'cold' : primary;
+      const id = ref?.id !== undefined ? ref.id : primary;
       const signer = signers[id];
+      return signer ? { id, signer } : undefined;
+    },
+    signerById: (id) => {
+      const signer = Object.hasOwn(signers, id) ? signers[id] : undefined;
       return signer ? { id, signer } : undefined;
     },
   };
 }
+
+/** A pending signer whose `cancelRequest` records tickets (or throws when `cancel` says so). */
+function pendingSigner(
+  id: string,
+  ticket: string | undefined,
+  cancelled: string[],
+  cancel: 'ok' | 'throws' | 'missing' = 'ok',
+): Signer {
+  return callbackSigner({
+    id,
+    schemes: ['secp256k1-ecdsa'],
+    getPublicKey: async () => new Uint8Array(33),
+    sign: async () => ({
+      status: 'pending',
+      ...(ticket !== undefined ? { ticket } : {}),
+    }),
+    ...(cancel === 'missing'
+      ? {}
+      : {
+          cancelRequest: async (t: string) => {
+            if (cancel === 'throws')
+              throw new Error('https://mpc.io/SECRETKEY1234567890abc down');
+            cancelled.push(`${id}:${t}`);
+          },
+        }),
+  });
+}
+
+const liarSigner = callbackSigner({
+  id: 'liar',
+  schemes: ['secp256k1-ecdsa'],
+  getPublicKey: async () => new Uint8Array(33),
+  sign: async (requests) => ({
+    status: 'signed',
+    // Signs with keyA; the tests route keyB requests to it, so nothing verifies.
+    signatures: requests.map((r) => signWith(keyA, r)),
+  }),
+});
 
 function request(id: string, key: Uint8Array, keyRef?: { id: string }): SigningRequest {
   return {
@@ -140,8 +182,99 @@ describe('SigningOrchestrator', () => {
       [request('r0', keyA), request('r1', keyB, { id: 'cold' })],
       ctx,
     );
-    expect(result).toMatchObject({ status: 'pending', ticket: 'mpc-7' });
+    expect(result).toMatchObject({
+      status: 'pending',
+      tickets: [{ signerId: 'cold', ticket: 'mpc-7' }],
+    });
     expect(result.signatures.map((s) => s.requestId)).toEqual(['r0']);
+  });
+
+  it('keeps every issued ticket with the signer that issued it (R22)', async () => {
+    const { orchestrator } = setup();
+    const cancelled: string[] = [];
+    const result = await orchestrator.sign(
+      wallet({
+        hot: pendingSigner('hot', 'h-1', cancelled),
+        cold: pendingSigner('cold', 'c-1', cancelled),
+        quiet: pendingSigner('quiet', undefined, cancelled),
+      }),
+      [
+        request('r0', keyA),
+        request('r1', keyB, { id: 'cold' }),
+        request('r2', keyB, { id: 'quiet' }),
+      ],
+      ctx,
+    );
+    expect(result).toEqual({
+      status: 'pending',
+      tickets: [
+        { signerId: 'hot', ticket: 'h-1' },
+        { signerId: 'cold', ticket: 'c-1' },
+      ],
+      signatures: [],
+    });
+    expect(cancelled).toEqual([]);
+  });
+
+  it('cancels already-issued tickets through their own signers before rethrowing (R22)', async () => {
+    const { orchestrator } = setup();
+    const cancelled: string[] = [];
+    const error = await orchestrator
+      .sign(
+        wallet({
+          hot: pendingSigner('hot', 'h-1', cancelled),
+          cold: pendingSigner('cold', 'c-1', cancelled),
+          liar: liarSigner,
+        }),
+        [
+          request('r0', keyA),
+          request('r1', keyB, { id: 'cold' }),
+          request('r2', keyB, { id: 'liar' }),
+        ],
+        ctx,
+      )
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'SIGNATURE_MISMATCH',
+      details: { cancelFailures: 0 },
+    });
+    expect(cancelled).toEqual(['hot:h-1', 'cold:c-1']);
+  });
+
+  it('counts failed or impossible cancellations and still rethrows the original error', async () => {
+    const { orchestrator } = setup();
+    const cancelled: string[] = [];
+    const broken = callbackSigner({
+      id: 'broken',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: async () => new Uint8Array(33),
+      sign: async () => {
+        throw new Error('HSM offline');
+      },
+    });
+    const error = await orchestrator
+      .sign(
+        wallet({
+          hot: pendingSigner('hot', 'h-1', cancelled, 'throws'),
+          cold: pendingSigner('cold', 'c-1', cancelled, 'missing'),
+          ok: pendingSigner('ok', 'o-1', cancelled),
+          broken,
+        }),
+        [
+          request('r0', keyA),
+          request('r1', keyB, { id: 'cold' }),
+          request('r2', keyB, { id: 'ok' }),
+          request('r3', keyB, { id: 'broken' }),
+        ],
+        ctx,
+      )
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'SIGNING_FAILED',
+      details: { cancelFailures: 2 },
+    });
+    expect(cancelled).toEqual(['ok:o-1']);
+    expect(inspect(error, { depth: 10 })).not.toContain('SECRETKEY1234567890abc');
   });
 
   it('does not re-sign requests that already have signatures', async () => {

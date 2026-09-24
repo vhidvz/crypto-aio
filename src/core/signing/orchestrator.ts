@@ -1,17 +1,29 @@
 import type { Hooks } from '../config/types';
-import { SigningError, ValidationError, isCryptoAioError } from '../errors/error';
+import {
+  SigningError,
+  ValidationError,
+  createError,
+  isCryptoAioError,
+} from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { SchemeCatalog } from '../registry/schemes';
 import { sanitizeError } from '../secret/redact';
 import type { Clock } from '../util/clock';
-import type { SignatureBundle, Signer, SigningContext, SigningRequest } from './types';
+import type {
+  SignatureBundle,
+  Signer,
+  SignerTicket,
+  SigningContext,
+  SigningRequest,
+} from './types';
 import type { ResolvedWallet } from './wallet';
 
 export type OrchestratedResult =
   | { readonly status: 'signed'; readonly signatures: readonly SignatureBundle[] }
   | {
       readonly status: 'pending';
-      readonly ticket?: string;
+      /** One entry per pending signer that issued a ticket (R22). */
+      readonly tickets: readonly SignerTicket[];
       readonly signatures: readonly SignatureBundle[];
     };
 
@@ -66,6 +78,20 @@ function checkResult(value: unknown, reject: Reject): CheckedResult {
   };
 }
 
+/** Cancels one ticket; false when the signer cannot cancel or its cancellation failed. */
+async function cancelTicket(
+  signer: Signer | undefined,
+  ticket: string,
+): Promise<boolean> {
+  try {
+    if (typeof signer?.cancelRequest !== 'function') return false;
+    await signer.cancelRequest(ticket);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class SigningOrchestrator {
   constructor(private readonly deps: OrchestratorDeps) {}
 
@@ -111,47 +137,25 @@ export class SigningOrchestrator {
       groups.set(route.id, group);
     }
     let pending = false;
-    let ticket: string | undefined;
+    const tickets: SignerTicket[] = [];
     for (const [signerId, group] of groups) {
-      const started = this.deps.clock.now();
-      this.deps.events.emit('signer.requested', {
-        namespace: ctx.namespace,
-        operationId: ctx.operationId,
-        signerId,
-        requests: group.requests.length,
-      });
       let result: CheckedResult;
       try {
-        result = await this.#request(signerId, group.signer, group.requests, ctx);
-        if (result.status === 'signed') {
-          for (const request of group.requests) {
-            const signature = result.signatures.find((s) => s.requestId === request.id);
-            if (!signature) {
-              throw new SigningError(
-                'SIGNING_FAILED',
-                `signer '${signerId}' returned no signature for request '${request.id}'`,
-                { context: { operationId: ctx.operationId } },
-              );
-            }
-            this.verify(request, signature);
-            done.set(request.id, signature);
-          }
-        }
+        result = await this.#signGroup(signerId, group.signer, group.requests, ctx, done);
       } catch (error) {
-        this.#completed(ctx, signerId, 'error', started);
-        throw error;
+        throw await this.#withdraw(error, tickets, groups);
       }
       if (result.status === 'pending') {
         pending = true;
-        ticket ??= result.ticket;
+        if (result.ticket !== undefined)
+          tickets.push({ signerId, ticket: result.ticket });
       }
-      this.#completed(ctx, signerId, result.status, started);
     }
     const signatures = requests
       .map((request) => done.get(request.id))
       .filter((s): s is SignatureBundle => s !== undefined);
     return pending
-      ? { status: 'pending', ...(ticket !== undefined ? { ticket } : {}), signatures }
+      ? { status: 'pending', tickets, signatures }
       : { status: 'signed', signatures };
   }
 
@@ -205,6 +209,71 @@ export class SigningOrchestrator {
     return requests
       .map((r) => merged.get(r.id))
       .filter((s): s is SignatureBundle => s !== undefined);
+  }
+
+  /** Asks one signer for its batch; verified signatures land in `done`. */
+  async #signGroup(
+    signerId: string,
+    signer: Signer,
+    requests: readonly SigningRequest[],
+    ctx: SigningContext,
+    done: Map<string, SignatureBundle>,
+  ): Promise<CheckedResult> {
+    const started = this.deps.clock.now();
+    this.deps.events.emit('signer.requested', {
+      namespace: ctx.namespace,
+      operationId: ctx.operationId,
+      signerId,
+      requests: requests.length,
+    });
+    try {
+      const result = await this.#request(signerId, signer, requests, ctx);
+      if (result.status === 'signed') {
+        for (const request of requests) {
+          const signature = result.signatures.find((s) => s.requestId === request.id);
+          if (!signature) {
+            throw new SigningError(
+              'SIGNING_FAILED',
+              `signer '${signerId}' returned no signature for request '${request.id}'`,
+              { context: { operationId: ctx.operationId } },
+            );
+          }
+          this.verify(request, signature);
+          done.set(request.id, signature);
+        }
+      }
+      this.#completed(ctx, signerId, result.status, started);
+      return result;
+    } catch (error) {
+      this.#completed(ctx, signerId, 'error', started);
+      throw error;
+    }
+  }
+
+  /**
+   * R22: before a failure escapes `sign()`, cancels (best effort) every ticket issued earlier
+   * in the same call through the signer that issued it. A ticket that could not be cancelled
+   * (no `cancelRequest`, or it threw) is counted in `details.cancelFailures`.
+   */
+  async #withdraw(
+    error: unknown,
+    tickets: readonly SignerTicket[],
+    groups: ReadonlyMap<string, { readonly signer: Signer }>,
+  ): Promise<unknown> {
+    if (tickets.length === 0) return error;
+    let cancelFailures = 0;
+    for (const { signerId, ticket } of tickets) {
+      if (!(await cancelTicket(groups.get(signerId)?.signer, ticket)))
+        cancelFailures += 1;
+    }
+    if (!isCryptoAioError(error)) return error;
+    return createError(error.code, error.message, {
+      cause: error.cause,
+      context: error.context,
+      details: { ...error.details, cancelFailures },
+      retryable: error.retryable,
+      ambiguous: error.ambiguous,
+    });
   }
 
   /**

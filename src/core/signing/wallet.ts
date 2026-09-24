@@ -17,6 +17,8 @@ export interface ResolvedWallet {
   signerFor(
     keyRef?: KeyRef,
   ): { readonly id: string; readonly signer: Signer } | undefined;
+  /** The signer with this id (own keys only), e.g. to cancel a ticket through its issuer. */
+  signerById(id: string): { readonly id: string; readonly signer: Signer } | undefined;
 }
 
 export function walletOptionsOf(config: WalletConfig): WalletOptions {
@@ -90,6 +92,11 @@ export async function resolveWallet(
       const id = routed ?? primary?.id;
       if (id === undefined) return undefined;
       const signer = id === primary?.id ? primary.instance : signers[id];
+      return signer ? { id, signer } : undefined;
+    },
+    signerById: (id) => {
+      if (id === primary?.id) return { id, signer: primary.instance };
+      const signer = Object.hasOwn(signers, id) ? signers[id] : undefined;
       return signer ? { id, signer } : undefined;
     },
   };

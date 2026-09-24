@@ -9,7 +9,7 @@ import type {
   TxState,
   UnsignedTx,
 } from '../model/transaction';
-import type { SignatureBundle } from '../signing/types';
+import type { SignatureBundle, SignerTicket } from '../signing/types';
 
 export type OperationState =
   | 'created'
@@ -110,7 +110,7 @@ export interface OperationRecord {
   readonly intent: StoredIntent;
   readonly unsigned?: UnsignedTx;
   readonly reservation?: OrderingData;
-  readonly signerTicket?: string;
+  readonly signerTickets?: readonly SignerTicket[];
   readonly partialSignatures?: readonly SignatureBundle[];
   readonly attempts: readonly AttemptRecord[];
   readonly activeAttemptId?: string;
@@ -132,7 +132,7 @@ export const CLEARABLE_FIELDS = [
   'outcome',
   'unsigned',
   'reservation',
-  'signerTicket',
+  'signerTickets',
   'partialSignatures',
   'activeAttemptId',
   'ambiguous',
@@ -147,7 +147,7 @@ export interface OperationPatch {
   readonly outcome?: 'executed' | 'cancelled';
   readonly unsigned?: UnsignedTx;
   readonly reservation?: OrderingData;
-  readonly signerTicket?: string;
+  readonly signerTickets?: readonly SignerTicket[];
   readonly partialSignatures?: readonly SignatureBundle[];
   readonly activeAttemptId?: string;
   readonly ambiguous?: boolean;
@@ -163,7 +163,7 @@ export const OPERATION_PATCH_KEYS = [
   'outcome',
   'unsigned',
   'reservation',
-  'signerTicket',
+  'signerTickets',
   'partialSignatures',
   'activeAttemptId',
   'ambiguous',
@@ -346,7 +346,7 @@ export const DATA_CLASSIFICATION: {
     intent: 'sensitive',
     unsigned: 'sensitive',
     reservation: 'sensitive',
-    signerTicket: 'sensitive',
+    signerTickets: 'sensitive',
     partialSignatures: 'sensitive',
     attempts: 'sensitive-until-broadcast',
     activeAttemptId: 'operational',

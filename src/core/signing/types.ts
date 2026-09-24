@@ -35,6 +35,12 @@ export type SigningResult =
   | { readonly status: 'signed'; readonly signatures: readonly SignatureBundle[] }
   | { readonly status: 'pending'; readonly ticket?: string };
 
+/** A pending signer's ticket, kept with the signer that issued it (only it can cancel it). */
+export interface SignerTicket {
+  readonly signerId: string;
+  readonly ticket: string;
+}
+
 export type SigningPurpose = 'original' | 'replacement' | 'cancel' | 'rebuild';
 
 /** Context handed to signers and policy hooks. Never contains secrets or SDK objects. */
