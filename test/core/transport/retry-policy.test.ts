@@ -229,6 +229,31 @@ describe('HttpTransport retry policy', () => {
     ).rejects.toMatchObject({ retryable: true });
   });
 
+  // #5 (round 3): #quorum fails fast — before querying any endpoint — when fewer are
+  // eligible right now than needed, instead of querying what's available first.
+  it('fails fast on a proof quorum without querying any endpoint when fewer are eligible than needed', async () => {
+    let bCalls = 0;
+    const fake = new FakeFetch()
+      .route('https://a.test', () => ({
+        status: 429,
+        text: '',
+        headers: { 'retry-after': '60' },
+      }))
+      .route('https://b.test', (req) => {
+        bCalls++;
+        return rpcResult(req, 'b');
+      });
+    const { transport, clock } = setup([A, B], fake, { proofQuorum: 2 });
+    // Prime A's rate limit via an ordinary call first, so it's already excluded from the
+    // eligible set by the time the quorum call runs.
+    await expect(drive(clock, transport.rpc('warm'))).resolves.toBe('b');
+    bCalls = 0;
+    await expect(
+      drive(clock, transport.rpc('x', [], { quorum: 'proof' })),
+    ).rejects.toMatchObject({ retryable: true });
+    expect(bCalls).toBe(0);
+  });
+
   // M4: options and endpoint URLs are validated at construction, without leaking the URL.
   it('validates transport options and endpoint URLs at construction', () => {
     const fake = new FakeFetch();
@@ -241,6 +266,14 @@ describe('HttpTransport retry policy', () => {
     const error = thrown(() => setup([{ name: 'bad', url: 'ftp://a.test/rpc' }], fake));
     expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
     expect((error as Error).message).not.toContain('ftp://a.test');
+  });
+
+  // #1 (round 3): an invalid configured header value fails at construction, naming only the
+  // endpoint id and header name.
+  it('rejects an invalid configured header value at construction', () => {
+    const fake = new FakeFetch();
+    const error = thrown(() => setup([{ ...A, headers: { 'x-bad': 'a\u0000b' } }], fake));
+    expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
   });
 
   // M12: a fresh probe set must be re-checked, not trusted from a prior confirmation.
@@ -346,6 +379,25 @@ describe('HttpTransport retry policy', () => {
     });
     expect(clock.now() - start).toBeLessThan(1_000);
     expect(calls).toBe(1); // the endpoint was never attempted again
+  });
+
+  // #6 (round 3): #pick's rate-limit wait bound uses the endpoint's own timeoutMs when it
+  // defines one, matching #attempt's own effective-timeout resolution — not just the
+  // transport-wide default.
+  it("bounds #pick's rate-limit wait by the endpoint's own timeoutMs when it defines one", async () => {
+    let calls = 0;
+    const fake = new FakeFetch().route('https://a.test', (req) =>
+      calls++ === 0
+        ? { status: 429, text: '', headers: { 'retry-after': '3' } }
+        : rpcResult(req, 'ok'),
+    );
+    const { transport, clock } = setup([{ ...A, timeoutMs: 5_000 }], fake, {
+      timeoutMs: 1_000,
+      maxAttempts: 2,
+    });
+    const start = clock.now();
+    await expect(drive(clock, transport.rpc('x'), 100)).resolves.toBe('ok');
+    expect(clock.now() - start).toBeGreaterThanOrEqual(3_000);
   });
 
   // R16 (controller amendment): mayHaveSent widens beyond timeout/network-error/5xx/unparseable

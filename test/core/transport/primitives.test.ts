@@ -98,14 +98,24 @@ describe('CircuitBreaker', () => {
     await clock.advance(1_000);
     expect(breaker.state).toBe('half-open');
     expect(breaker.canRequest()).toBe(true);
-    breaker.onAttempt();
+    // #4 (round 3): onAttempt() returns true when it took the half-open probe slot.
+    expect(breaker.onAttempt()).toBe(true);
     expect(breaker.canRequest()).toBe(false);
     breaker.onFailure();
     expect(breaker.state).toBe('open');
     await clock.advance(1_000);
-    breaker.onAttempt();
+    expect(breaker.onAttempt()).toBe(true);
     breaker.onSuccess();
     expect(breaker.state).toBe('closed');
+    expect(breaker.canRequest()).toBe(true);
+  });
+
+  // #4 (round 3): onAttempt() returns false when there's no half-open slot to take.
+  it('onAttempt returns false when the breaker is closed', () => {
+    const clock = new FakeClock();
+    const breaker = new CircuitBreaker({ failureThreshold: 2, openMs: 1_000 }, clock);
+    expect(breaker.state).toBe('closed');
+    expect(breaker.onAttempt()).toBe(false);
     expect(breaker.canRequest()).toBe(true);
   });
 
@@ -117,7 +127,7 @@ describe('CircuitBreaker', () => {
     expect(breaker.state).toBe('open');
     await clock.advance(1_000);
     expect(breaker.state).toBe('half-open');
-    breaker.onAttempt();
+    expect(breaker.onAttempt()).toBe(true);
     expect(breaker.canRequest()).toBe(false);
     breaker.onAbandon();
     expect(breaker.state).toBe('half-open');

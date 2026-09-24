@@ -66,6 +66,31 @@ describe('HttpTransport bridge', () => {
     expect(clock.now() - start).toBeLessThanOrEqual(1_000);
   });
 
+  // #1 (round 3): a bad SDK-supplied header value must be rejected before #run is even
+  // entered — no fetch, no breaker bookkeeping, no ambiguity tagging.
+  it('rejects an invalid SDK header value before touching any endpoint', async () => {
+    const fake = new FakeFetch().route('https://sol.test/rpc', (req) =>
+      rpcResult(req, 'x'),
+    );
+    const { transport, clock } = setup(
+      [{ name: 's', url: 'https://sol.test/rpc' }],
+      fake,
+    );
+    const bridged = transport.createFetch();
+    const error = await drive(
+      clock,
+      bridged(`${PLACEHOLDER_ORIGIN}/`, { headers: { 'x-bad': 'a\u0000b' } }),
+      100,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'CONFIG_INVALID',
+      retryable: false,
+      ambiguous: false,
+    });
+    expect(fake.calls).toHaveLength(0);
+    expect(transport.status()[0]?.failures).toBe(0);
+  });
+
   // M5: a Request input keeps its own method, headers and body.
   it('keeps a Request input method, headers and body', async () => {
     const fake = new FakeFetch().route('https://sol.test/rpc', (req) => ({
@@ -284,6 +309,28 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(heightCalls).toBe(2);
   });
 
+  // R18 / item 2 (round 3): #refresh never does breaker bookkeeping — not for a throttled
+  // identity probe it skips, and not even for a genuine (non-throttled) probe failure.
+  it('never counts an identity-probe failure or throttle hit against the breaker in #refresh', async () => {
+    let identityCalls = 0;
+    const fake = new FakeFetch().route('https://a.test', () => {
+      identityCalls++;
+      return { status: 503, text: '' };
+    });
+    const { transport, clock } = setup([A], fake, { healthIntervalMs: 60_000 });
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+    });
+    await drive(clock, transport.refreshHealth());
+    await drive(clock, transport.refreshHealth());
+    await drive(clock, transport.refreshHealth());
+    // Only the first refresh actually probed; the other two saw the still-throttled identity
+    // and skipped it.
+    expect(identityCalls).toBe(1);
+    expect(transport.status()[0]?.failures).toBe(0);
+  });
+
   // #9 (round 2): a probe that ignores its own abort signal must not hang the refresh
   // forever — it's raced against the deadline instead, so #healthRun always settles.
   it('settles the refresh within timeoutMs when a height probe never answers, and concurrent readers proceed', async () => {
@@ -300,6 +347,42 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(clock.now() - start).toBeLessThanOrEqual(1_000);
     expect(r1.status).toBe('fulfilled');
     expect(r2.status).toBe('fulfilled');
+  });
+
+  // #3 (round 3): a fully-failed refresh must not be re-attempted on every read during an
+  // outage — it backs off to min(healthIntervalMs, 1000) instead of a probe storm.
+  it('backs off outage re-probing instead of storming on every monitor read', async () => {
+    let heightCallsA = 0;
+    let heightCallsB = 0;
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) => {
+        if (method(req) === 'height') heightCallsA++;
+        return { status: 503, text: '' };
+      })
+      .route('https://b.test', (req) => {
+        if (method(req) === 'height') heightCallsB++;
+        return { status: 503, text: '' };
+      });
+    const { transport, clock } = setup([A, B], fake, { healthIntervalMs: 60_000 });
+    transport.setProbes({
+      height: async (call) => BigInt(await call.rpc<string>('height')),
+    });
+    for (let i = 0; i < 10; i++) {
+      await expect(
+        drive(clock, transport.rpc('x', [], { purpose: 'monitor' }), 50),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    }
+    expect(heightCallsA).toBeLessThanOrEqual(2);
+    expect(heightCallsB).toBeLessThanOrEqual(2);
+
+    await clock.advance(1_000);
+    const beforeA = heightCallsA;
+    const beforeB = heightCallsB;
+    await expect(
+      drive(clock, transport.rpc('x', [], { purpose: 'monitor' }), 50),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    expect(heightCallsA).toBeGreaterThan(beforeA);
+    expect(heightCallsB).toBeGreaterThan(beforeB);
   });
 
   // I8 (round 2, item 1): a single transient height-probe failure must not block monitor
@@ -321,6 +404,11 @@ describe('HttpTransport health refresh concurrency', () => {
     await expect(
       drive(clock, transport.rpc('x', [], { purpose: 'monitor' })),
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    // #3 (round 3): a fully-failed refresh now backs off for min(healthIntervalMs, 1000)ms
+    // before the next re-probe (outage-storm guard), rather than re-probing on the very next
+    // read; advance past that window so this still proves "not blocked for the full
+    // healthIntervalMs" rather than "blocked for 0ms".
+    await clock.advance(1_000);
     await expect(
       drive(clock, transport.rpc('x', [], { purpose: 'monitor' })),
     ).resolves.toBe('from-a');

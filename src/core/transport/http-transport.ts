@@ -188,6 +188,9 @@ export class HttpTransport implements Transport {
   #best: bigint | undefined;
   #highest: bigint | undefined;
   #lastHealthAt = Number.NEGATIVE_INFINITY;
+  /** #3 (round 3): set after a refresh where every probe failed, so ensureFreshHealth backs
+   * off instead of storming the same down endpoints on every read during an outage. */
+  #nextRefreshAt = Number.NEGATIVE_INFINITY;
   #healthRun: Promise<void> | undefined;
   #rpcId = 0;
 
@@ -222,8 +225,20 @@ export class HttpTransport implements Transport {
         );
       }
       const headers: Record<string, string> = {};
-      for (const [name, value] of Object.entries(config.headers ?? {}))
-        headers[name] = reveal(value);
+      for (const [name, value] of Object.entries(config.headers ?? {})) {
+        const revealed = reveal(value);
+        // #1 (round 3): validated once here (never with the value in the message) so a bad
+        // header can never surface later as a per-attempt local error.
+        try {
+          new Headers({ [name]: revealed });
+        } catch {
+          throw new ConfigError(
+            'CONFIG_INVALID',
+            `endpoint '${id}' has an invalid value for header '${name}'`,
+          );
+        }
+        headers[name] = revealed;
+      }
       const pathAndQuery = `${parsed.pathname}${parsed.search}`;
       const secrets = [
         url,
@@ -331,6 +346,18 @@ export class HttpTransport implements Transport {
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
       const headerSource =
         init?.headers ?? (input instanceof Request ? input.headers : undefined);
+      // #1 (round 3): built once, here, before #run — a bad SDK header value must fail with
+      // no fetch, no breaker bookkeeping and no ambiguity tag, never as a per-attempt local
+      // error (round 2 built this inside the attempt, around :351).
+      let baseHeaders: Headers;
+      try {
+        baseHeaders = new Headers(headerSource);
+      } catch {
+        throw new ConfigError(
+          'CONFIG_INVALID',
+          'bridged fetch request has an invalid header value',
+        );
+      }
       let body = init?.body ?? undefined;
       if (body === undefined && input instanceof Request && input.body) {
         // M5: a Request input's own body is preserved (read once, replayed on every retry).
@@ -348,7 +375,8 @@ export class HttpTransport implements Transport {
         label,
         { ...options, ...(signal ? { signal } : {}) },
         async (endpoint, deadline) => {
-          const requestHeaders = new Headers(headerSource);
+          // #1 (round 3): cloning an already-valid Headers instance never throws.
+          const requestHeaders = new Headers(baseHeaders);
           for (const [name, value] of Object.entries(endpoint.headers))
             requestHeaders.set(name, value);
           const started = this.#clock.now();
@@ -414,6 +442,10 @@ export class HttpTransport implements Transport {
     // cancelled by it.
     if (this.#healthRun) await this.#join(this.#healthRun, signal);
     if (this.#clock.now() - this.#lastHealthAt < this.#opts.healthIntervalMs) return;
+    // #3 (round 3): after a fully-failed refresh, back off until #nextRefreshAt instead of
+    // re-probing every down endpoint on every read during an outage. Reads in this window
+    // simply see no fresh health and proceed with the existing no-eligible-endpoint semantics.
+    if (this.#clock.now() < this.#nextRefreshAt) return;
     await this.refreshHealth(signal);
   }
 
@@ -495,14 +527,15 @@ export class HttpTransport implements Transport {
   ): Promise<T> {
     const retry = options.retry ?? 'safe';
     const attempts = retry === 'never-auto' ? 1 : this.#opts.maxAttempts;
-    const timeoutMs = options.timeoutMs ?? this.#opts.timeoutMs;
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
     let mayHaveSent = false;
     for (let attempt = 0; attempt < attempts; attempt++) {
       let endpoint: Endpoint;
       try {
-        endpoint = await this.#pick(purpose, tried, options.signal, timeoutMs);
+        // #6 (round 3): the raw call-level override (possibly undefined) is passed through
+        // so #pick can fall back to the endpoint's own timeoutMs, matching #attempt.
+        endpoint = await this.#pick(purpose, tried, options.signal, options.timeoutMs);
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (last) break;
@@ -539,6 +572,18 @@ export class HttpTransport implements Transport {
     // silently shrink the quorum. A required endpoint that's rate-limited therefore fails
     // the call with a retryable error instead of resolving from fewer endpoints than needed.
     const needed = Math.max(1, Math.min(requested, this.#candidates(purpose).length));
+    // #5 (round 3): if fewer endpoints are eligible right now than needed, fail fast —
+    // before querying any of them — instead of querying what's available and discovering
+    // the shortfall only afterward.
+    if (this.#eligible(purpose).length < needed) {
+      throw this.#externalize(
+        new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          `quorum of ${needed} not reachable for ${label}`,
+          { context: { transportId: this.id } },
+        ),
+      );
+    }
     const results: { endpoint: Endpoint; value: T }[] = [];
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
@@ -633,8 +678,8 @@ export class HttpTransport implements Transport {
     let ownsProbe = false;
     try {
       await this.#ensureIdentity(endpoint, signal);
-      endpoint.breaker.onAttempt();
-      ownsProbe = true;
+      // #4 (round 3): onAttempt() itself reports whether this attempt claimed the slot.
+      ownsProbe = endpoint.breaker.onAttempt();
       this.#events.emit('rpc.request', {
         transportId: this.id,
         endpointId: endpoint.id,
@@ -744,7 +789,7 @@ export class HttpTransport implements Transport {
     purpose: RequestPurpose,
     tried: ReadonlySet<string>,
     signal: AbortSignal | undefined,
-    timeoutMs: number,
+    callTimeoutMs: number | undefined,
   ): Promise<Endpoint> {
     for (;;) {
       const eligible = this.#eligible(purpose);
@@ -762,7 +807,11 @@ export class HttpTransport implements Transport {
         e.notBefore < min.notBefore ? e : min,
       );
       const waitMs = Math.max(0, earliest.notBefore - this.#clock.now());
-      if (waitMs > timeoutMs) {
+      // #6 (round 3): matches #attempt's own effective-timeout resolution — the earliest
+      // endpoint's own timeoutMs, when set, bounds its wait instead of only the transport
+      // default.
+      const boundMs = callTimeoutMs ?? earliest.timeoutMs ?? this.#opts.timeoutMs;
+      if (waitMs > boundMs) {
         throw new ProviderError(
           'RATE_LIMITED',
           'endpoint rate limit wait exceeds the call timeout',
@@ -1258,7 +1307,14 @@ export class HttpTransport implements Transport {
           endpoint.timeoutMs ?? this.#opts.timeoutMs,
         );
         try {
-          await this.#ensureIdentity(endpoint, deadline);
+          // R18/item 2 (round 3): a throttled identity probe is skipped here entirely
+          // rather than re-attempted and left to #ensureIdentity's own internal throttle
+          // check to reject — there's no traffic behind a throttle hit, so nothing should
+          // even look like an attempt.
+          const identityThrottled =
+            endpoint.identityRetryAt !== undefined &&
+            this.#clock.now() < endpoint.identityRetryAt;
+          if (!identityThrottled) await this.#ensureIdentity(endpoint, deadline);
           if (probe) {
             try {
               endpoint.height = await raceAbort(
@@ -1273,12 +1329,11 @@ export class HttpTransport implements Transport {
             }
           }
           anySucceeded = true;
-        } catch (error) {
-          const failure = this.#classify(error, endpoint, deadline);
-          if (failure.code !== 'PROVIDER_MISCONFIGURED') {
-            endpoint.breaker.onFailure();
-            endpoint.failures += 1;
-          }
+        } catch {
+          // R18 (round 3): #refresh never does breaker bookkeeping — no onAttempt, onSuccess,
+          // onFailure or onAbandon. A probe failure here only affects height/identity state
+          // (already updated above by #ensureIdentity or the height-probe catch), never
+          // endpoint.breaker or endpoint.failures. The breaker tracks request traffic only.
         } finally {
           cancel();
         }
@@ -1309,7 +1364,14 @@ export class HttpTransport implements Transport {
     // I8 round 2: if every endpoint's probe(s) failed, #lastHealthAt is left unset (rather
     // than stamped) so the next ensureFreshHealth call probes again instead of trusting a
     // fully-failed refresh as fresh for a whole healthIntervalMs.
-    if (anySucceeded) this.#lastHealthAt = this.#clock.now();
+    // #3 (round 3): but an immediate re-probe on every read during an outage is its own
+    // storm, so a fully-failed refresh instead sets a short backoff.
+    if (anySucceeded) {
+      this.#lastHealthAt = this.#clock.now();
+    } else {
+      this.#nextRefreshAt =
+        this.#clock.now() + Math.min(this.#opts.healthIntervalMs, 1_000);
+    }
   }
 
   // ---- errors ----------------------------------------------------------------------
