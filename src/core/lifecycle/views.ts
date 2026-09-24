@@ -45,6 +45,12 @@ export interface PreparedOperation {
   };
 }
 
+/** Result of transfer/submitSignatures/rebroadcast: the Operation view plus its active Attempt. */
+export interface Submission extends OperationView {
+  readonly operationId: string;
+  readonly attempt?: AttemptRef;
+}
+
 /** Final finality needs `proven` evidence; an observed-only view is at most probabilistic. */
 export function statusOf(observation: AttemptObservation): TxStatus {
   const { state } = observation;

@@ -1,7 +1,7 @@
 import { describeSelection, resolveSelection } from '../config/resolve';
 import type { HandleConfig, HandleOptions } from '../config/types';
 import { containerOf } from '../container/internals';
-import type { DriverLimits, WalletOptions } from '../driver/types';
+import type { BroadcastResult, DriverLimits, WalletOptions } from '../driver/types';
 import {
   ConfigError,
   ProviderError,
@@ -15,7 +15,7 @@ import type { Capability } from '../model/capability';
 import type { FeeEstimate } from '../model/fee';
 import type { ChainId, ExtOf, LibraryOf, NetworkOf } from '../model/ids';
 import { toStoredIntent, type TransferIntent } from '../model/intent';
-import type { Block, Transaction, TxStatus } from '../model/transaction';
+import type { Block, RawTx, Transaction, TxStatus } from '../model/transaction';
 import {
   PRE_SIGNING_STATES,
   type OperationEngine,
@@ -24,8 +24,14 @@ import {
 } from '../lifecycle/engine';
 import { normalizeIntent } from '../lifecycle/intent';
 import { loadObservations } from '../lifecycle/observations';
-import { toView, type OperationView, type PreparedOperation } from '../lifecycle/views';
+import {
+  toView,
+  type OperationView,
+  type PreparedOperation,
+  type Submission,
+} from '../lifecycle/views';
 import { deriveXpubChild } from '../signing/hd';
+import type { SignatureBundle } from '../signing/types';
 import { resolveWallet, walletOptionsOf } from '../signing/wallet';
 import type { OperationRecord } from '../store/types';
 import type { EndpointState, EndpointStatus } from '../transport/types';
@@ -330,6 +336,47 @@ export class Blockchain<C extends ChainId = ChainId> {
     return this.prepared(target, await this.engine().prepare(target, intent, options));
   }
 
+  /**
+   * Idempotent transfer. Throws the mapped chain error when the Operation stalls or fails;
+   * throws an `ambiguous` error (with `context.operationId`) when the broadcast outcome is
+   * unknown. Retry with the same `idempotencyKey` in both cases.
+   */
+  async transfer(
+    intent: TransferIntent,
+    options: TransferOptions = {},
+  ): Promise<Submission> {
+    const target = await this.target();
+    return this.submission(await this.engine().transfer(target, intent, options));
+  }
+
+  async submitSignatures(
+    operationId: string,
+    signatures: readonly SignatureBundle[],
+  ): Promise<Submission> {
+    return this.submission(
+      await this.engine().submitSignatures(await this.target(), operationId, signatures),
+    );
+  }
+
+  /** Resends the active Attempt's stored raw transaction (e.g. after topping up a stalled wallet). */
+  async rebroadcast(operationId: string): Promise<Submission> {
+    return this.submission(
+      await this.engine().rebroadcast(await this.target(), operationId),
+    );
+  }
+
+  /**
+   * Broadcasts an externally signed transaction WITHOUT creating an Operation: no idempotency,
+   * persistence or monitoring. Prefer prepareTransfer + submitSignatures for managed flows.
+   */
+  async broadcast(raw: RawTx): Promise<BroadcastResult> {
+    const { driver } = await internalsOf(this).pooled();
+    return driver.broadcaster.broadcast({
+      raw,
+      ref: { id: '', idKind: 'tx-hash', canonical: false },
+    });
+  }
+
   /** Abandons an Operation that has no signed transaction yet and releases its reservation. */
   async abandon(operationId: string): Promise<OperationView> {
     return this.view(await this.engine().abandon(await this.target(), operationId));
@@ -415,6 +462,16 @@ export class Blockchain<C extends ChainId = ChainId> {
   protected async view(record: OperationRecord): Promise<OperationView> {
     const { runtime } = containerOf(internalsOf(this).container);
     return toView(record, await loadObservations(runtime.stores.operations, record));
+  }
+
+  /** @internal */
+  protected async submission(record: OperationRecord): Promise<Submission> {
+    const view = await this.view(record);
+    return {
+      ...view,
+      operationId: view.id,
+      ...(view.activeAttempt ? { attempt: view.activeAttempt } : {}),
+    };
   }
 
   /**

@@ -1,13 +1,18 @@
 import type { AssetService } from '../assets/service';
 import type { LifecycleOptions, ResolvedSelection } from '../config/types';
 import type { PooledDriver } from '../container/pool';
-import type { BuildContext } from '../driver/types';
+import type { BroadcastResult, BuildContext } from '../driver/types';
 import {
   ChainError,
+  ProviderError,
+  SigningError,
   StateError,
+  TimeoutError,
   ValidationError,
   createError,
   isCryptoAioError,
+  withContext,
+  type CryptoAioError,
   type SerializedError,
 } from '../errors/error';
 import type { EventBus } from '../events/bus';
@@ -27,11 +32,18 @@ import {
   type SequenceCoordinator,
 } from '../ordering/sequence';
 import { sanitizeError } from '../secret/redact';
-import type { SigningOrchestrator } from '../signing/orchestrator';
-import type { SignerTicket, SigningContext, SigningPurpose } from '../signing/types';
+import type { OrchestratedResult, SigningOrchestrator } from '../signing/orchestrator';
+import type {
+  SignatureBundle,
+  SignerTicket,
+  SigningContext,
+  SigningPurpose,
+  SigningRequest,
+} from '../signing/types';
 import type { ResolvedWallet } from '../signing/wallet';
 import {
   isTerminal,
+  type AttemptRecord,
   type ExecutionContext,
   type Fence,
   type OperationPatch,
@@ -40,9 +52,10 @@ import {
   type Stores,
 } from '../store/types';
 import { randomId } from '../util/bytes';
-import type { Clock } from '../util/clock';
+import { abortReason, type Clock } from '../util/clock';
 import { canonicalJson, sha256Hex } from '../util/json';
 import { normalizeIntent } from './intent';
+import { writeObservation, type ObservationDeps } from './observations';
 
 /** What read-only lifecycle work (monitoring, waiting) needs: no wallet required. */
 export interface ReadTarget {
@@ -139,6 +152,11 @@ function isDefinitive(error: unknown): boolean {
   );
 }
 
+/** `signed`, or `submitted` with an unknown broadcast outcome: its stored bytes are (re)sent. */
+function awaitsBroadcast(op: OperationRecord): boolean {
+  return op.state === 'signed' || (op.state === 'submitted' && op.ambiguous === true);
+}
+
 /**
  * M1: the built transaction must use exactly the slot the engine reserved: the ordering
  * kind of the driver, the allocated nonce or seqno, and no input held by another live
@@ -213,6 +231,118 @@ export class OperationEngine {
       );
     }
     return this.settle(current);
+  }
+
+  /**
+   * Idempotent transfer: prepare → sign → persist the Attempt (write-ahead) → broadcast.
+   * A repeat resumes where the Operation stopped and never signs an Attempt twice.
+   */
+  async transfer(
+    target: OperationTarget,
+    intent: TransferIntent,
+    options: TransferOptions = {},
+  ): Promise<OperationRecord> {
+    if (target.wallet.watchOnly) {
+      throw new SigningError(
+        'SIGNER_UNAVAILABLE',
+        `wallet '${target.wallet.name}' is watch-only; use prepareTransfer and submitSignatures`,
+      );
+    }
+    const { record, stored } = await this.open(target, intent, options);
+    return this.drive(target, record, stored, options.signal);
+  }
+
+  /**
+   * Adds externally produced signatures (cold, offline, MPC); completes and broadcasts once
+   * every request is signed. Under the address lease (R23), and the `beforeSign` policy is
+   * asked again first (defence in depth): a veto fails the Operation, releases its nonce and
+   * cancels its signer tickets, as a veto before signing does.
+   */
+  async submitSignatures(
+    target: OperationTarget,
+    operationId: string,
+    signatures: readonly SignatureBundle[],
+  ): Promise<OperationRecord> {
+    let vetoed: readonly SignerTicket[] = [];
+    try {
+      const done = await this.withAddressLease(target, async (lease) => {
+        const op = await this.require(operationId);
+        this.assertOwnedBy(target, op);
+        if (op.state !== 'prepared' && op.state !== 'awaiting-signature') {
+          throw new StateError(
+            'INVALID_TRANSITION',
+            `cannot submit signatures in state '${op.state}'`,
+            { context: { operationId } },
+          );
+        }
+        const unsigned = op.unsigned as UnsignedTx;
+        const requests = unsigned.signingRequests;
+        const merged = this.deps.orchestrator.accept(
+          requests,
+          signatures,
+          this.usablePartials(op, requests),
+        );
+        const ctx = this.signingContext(target, op, unsigned, 'original');
+        try {
+          await this.signingDeadline(op, lease, undefined, () =>
+            this.deps.orchestrator.authorize(ctx),
+          );
+        } catch (error) {
+          if (isCryptoAioError(error, 'POLICY_REJECTED')) {
+            await this.failAfterPrepare(target, op, error, lease);
+            vetoed = op.signerTickets ?? [];
+          }
+          throw error;
+        }
+        if (merged.length < requests.length) {
+          await lease?.renew();
+          return this.update(op, {
+            state: 'awaiting-signature',
+            partialSignatures: merged,
+          });
+        }
+        const signed = await this.appendSigned(
+          target,
+          op,
+          unsigned,
+          merged,
+          'original',
+          undefined,
+          lease,
+        );
+        return this.broadcastActive(target, signed, undefined, lease);
+      });
+      return this.settle(done);
+    } finally {
+      // Only after a veto's terminal write landed, and after the lease is dropped.
+      await this.cancelTickets(target, operationId, vetoed);
+    }
+  }
+
+  /**
+   * Resends the SAME stored raw bytes of the active Attempt (never builds or signs), under
+   * the address lease (R23).
+   */
+  async rebroadcast(
+    target: OperationTarget,
+    operationId: string,
+  ): Promise<OperationRecord> {
+    return this.withAddressLease(target, async (lease) => {
+      const op = await this.require(operationId);
+      this.assertOwnedBy(target, op);
+      if (
+        isTerminal(op.state) ||
+        PRE_SIGNING_STATES.has(op.state) ||
+        !op.activeAttemptId
+      ) {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          `nothing to rebroadcast in state '${op.state}'`,
+          { context: { operationId } },
+        );
+      }
+      return this.broadcastActive(target, op, undefined, lease);
+    });
   }
 
   /**
@@ -534,12 +664,422 @@ export class OperationEngine {
   }
 
   /**
-   * Terminal failure while no valid signed bytes exist: mark failed, then free the nonce,
-   * both under one address lease (R23). Callers already inside `withAddressLease` must pass
-   * their lease (it is not re-entrant). The lease is renewed first: when it was lost (a
-   * slow policy hook outlived it), nothing is written, so the Operation stays `prepared`
-   * and its next repeat retries under a fresh lease. A lost lease or a failed release is
-   * logged by code, and the original `error` is rethrown in its place.
+   * Takes an Operation as far as one call can, all under the address lease (R23): `created`
+   * is prepared, `prepared` is signed into the write-ahead Attempt, and a `signed` (or
+   * ambiguously `submitted`) Operation resends its stored raw bytes; it is never signed
+   * again. Any other state is returned as it is (`settle` rethrows a stored failure).
+   */
+  protected async drive(
+    target: OperationTarget,
+    op: OperationRecord,
+    stored: StoredIntent,
+    signal?: AbortSignal,
+  ): Promise<OperationRecord> {
+    if (op.state !== 'created' && op.state !== 'prepared' && !awaitsBroadcast(op)) {
+      return this.settle(op);
+    }
+    const current = await this.withAddressLease(
+      target,
+      async (lease) => {
+        let fresh = await this.require(op.id);
+        if (fresh.state === 'created') {
+          fresh = await this.prepareStage(target, fresh, stored, lease, signal);
+        }
+        if (fresh.state === 'prepared') {
+          fresh = await this.signStage(target, fresh, lease, signal);
+        }
+        if (awaitsBroadcast(fresh)) {
+          fresh = await this.broadcastActive(target, fresh, signal, lease);
+        }
+        return fresh;
+      },
+      signal,
+    );
+    return this.settle(current);
+  }
+
+  /**
+   * Runs the policy hook and the signer(s) over the stored unsigned payload, bounded by the
+   * lease (`signingDeadline`). A veto or a mismatching signature fails the Operation before
+   * signing. A pending result is persisted as `awaiting-signature` with every ticket (R22);
+   * a signed one becomes the write-ahead Attempt.
+   */
+  protected async signStage(
+    target: OperationTarget,
+    op: OperationRecord,
+    lease?: LeaseHandle,
+    signal?: AbortSignal,
+  ): Promise<OperationRecord> {
+    const unsigned = op.unsigned as UnsignedTx;
+    const ctx = this.signingContext(target, op, unsigned, 'original');
+    const existing = this.usablePartials(op, unsigned.signingRequests);
+    let result: OrchestratedResult;
+    try {
+      result = await this.signingDeadline(op, lease, signal, async () => {
+        await this.deps.orchestrator.authorize(ctx);
+        return this.deps.orchestrator.sign(
+          target.wallet,
+          unsigned.signingRequests,
+          ctx,
+          existing,
+        );
+      });
+    } catch (error) {
+      if (
+        isCryptoAioError(error, 'POLICY_REJECTED') ||
+        isCryptoAioError(error, 'SIGNATURE_MISMATCH')
+      ) {
+        await this.failAfterPrepare(target, op, error, lease);
+      }
+      throw error;
+    }
+    if (result.status === 'signed') {
+      return this.appendSigned(
+        target,
+        op,
+        unsigned,
+        result.signatures,
+        'original',
+        undefined,
+        lease,
+      );
+    }
+    try {
+      await lease?.renew();
+      return await this.update(op, {
+        state: 'awaiting-signature',
+        partialSignatures: result.signatures,
+        ...(result.tickets.length > 0 ? { signerTickets: result.tickets } : {}),
+      });
+    } catch (error) {
+      // R22: a ticket that was not recorded could never be cancelled later.
+      await this.cancelTickets(target, op.id, result.tickets);
+      throw error;
+    }
+  }
+
+  /**
+   * Bounds a signer or policy call (carry-forward: they have no deadline of their own).
+   * Under the address lease it gets at most `leaseMs` from a fresh renewal: a lease cannot
+   * be renewed once it has expired, so a later answer could never be persisted anyway. The
+   * caller's `signal` also ends the wait. On timeout or abort nothing is written: the
+   * Operation keeps its state and reservation (a late signature may still appear), and a
+   * repeat asks again. Without a lease (expiry ordering) nothing else waits on the signer.
+   */
+  protected async signingDeadline<T>(
+    op: OperationRecord,
+    lease: LeaseHandle | undefined,
+    signal: AbortSignal | undefined,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    signal?.throwIfAborted();
+    if (!lease && !signal) return work();
+    await lease?.renew();
+    const done = new AbortController();
+    const limits: Promise<never>[] = [];
+    if (lease) {
+      limits.push(
+        this.deps.clock.sleep(this.deps.lifecycle().leaseMs, done.signal).then(() => {
+          throw new TimeoutError(
+            'TIMEOUT',
+            'the signer did not answer while the address lease was held',
+            { retryable: true, context: { operationId: op.id } },
+          );
+        }),
+      );
+    }
+    if (signal) {
+      limits.push(
+        new Promise<never>((_resolve, reject) => {
+          const onAbort = () => reject(abortReason(signal));
+          signal.addEventListener('abort', onAbort, { once: true });
+          done.signal.addEventListener(
+            'abort',
+            () => signal.removeEventListener('abort', onAbort),
+            { once: true },
+          );
+        }),
+      );
+    }
+    try {
+      return await Promise.race([work(), ...limits]);
+    } finally {
+      done.abort();
+    }
+  }
+
+  /**
+   * Carry-forward: the persisted partial signatures that still verify. A corrupt entry is
+   * dropped (its request is signed or submitted again) instead of making `sign()` or
+   * `accept()` throw SIGNATURE_MISMATCH on every call, which would strand the Operation.
+   */
+  protected usablePartials(
+    op: OperationRecord,
+    requests: readonly SigningRequest[],
+  ): SignatureBundle[] {
+    const partials: readonly unknown[] = Array.isArray(op.partialSignatures)
+      ? op.partialSignatures
+      : [];
+    const usable: SignatureBundle[] = [];
+    for (const partial of partials) {
+      try {
+        usable.push(
+          ...this.deps.orchestrator.accept(requests, [partial as SignatureBundle], []),
+        );
+      } catch (error) {
+        this.deps.log.warn('dropped an unusable partial signature', {
+          operationId: op.id,
+          code: errorCode(error),
+        });
+      }
+    }
+    return usable;
+  }
+
+  /**
+   * Assembles and persists an immutable Attempt BEFORE any broadcast (write-ahead). `lease`
+   * is renewed right before the write (R23): signing may have outlived it, and then
+   * nothing is written.
+   */
+  protected async appendSigned(
+    target: OperationTarget,
+    op: OperationRecord,
+    unsigned: UnsignedTx,
+    signatures: readonly SignatureBundle[],
+    purpose: SigningPurpose,
+    supersedes?: string,
+    lease?: LeaseHandle,
+  ): Promise<OperationRecord> {
+    const signed = await target.pooled.driver.builder.assemble(unsigned, signatures);
+    const attempt: AttemptRecord = {
+      id: randomId('att'),
+      ref: signed.ref,
+      raw: signed.raw,
+      ordering: unsigned.ordering,
+      fee: unsigned.fee,
+      unsigned,
+      purpose,
+      ...(supersedes !== undefined ? { supersedes } : {}),
+      createdAt: this.deps.clock.now(),
+    };
+    await lease?.renew();
+    const next = await this.deps.stores.operations.appendAttempt(
+      this.deps.namespace,
+      op.id,
+      attempt,
+      {
+        state: 'signed',
+        clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous', 'error'],
+      },
+      op.version,
+    );
+    if (next.state !== op.state) this.emitState(next, op.state);
+    return next;
+  }
+
+  protected activeAttempt(op: OperationRecord): AttemptRecord {
+    const attempt = op.attempts.find((a) => a.id === op.activeAttemptId);
+    if (!attempt) {
+      throw new StateError(
+        'INVALID_TRANSITION',
+        `operation '${op.id}' has no active attempt`,
+        { context: { operationId: op.id } },
+      );
+    }
+    return attempt;
+  }
+
+  protected get observationDeps(): ObservationDeps {
+    return {
+      operations: this.deps.stores.operations,
+      events: this.deps.events,
+      namespace: this.deps.namespace,
+    };
+  }
+
+  /**
+   * Sends the active Attempt's stored raw bytes. `lease` is the held address lease (every
+   * caller holds it, R23; leases are not reentrant): a rejection's terminal write and
+   * release run under it.
+   */
+  protected async broadcastActive(
+    target: OperationTarget,
+    op: OperationRecord,
+    signal?: AbortSignal,
+    lease?: LeaseHandle,
+  ): Promise<OperationRecord> {
+    const attempt = this.activeAttempt(op);
+    const fanout = this.deps.lifecycle().broadcastFanout;
+    let result: BroadcastResult;
+    try {
+      result = await target.pooled.driver.broadcaster.broadcast(
+        { raw: attempt.raw, ref: attempt.ref },
+        { ...(fanout > 1 ? { fanout } : {}), ...(signal ? { signal } : {}) },
+      );
+    } catch (error) {
+      throw await this.recordAmbiguous(op, attempt, error, signal);
+    }
+    return this.applyBroadcastResult(target, op, attempt, result, lease);
+  }
+
+  /**
+   * The broadcast may have reached the network: a transport failure, an RPC error after a
+   * possibly delivered attempt (`ambiguous`), or a caller abort (which the transport
+   * surfaces bare). The Operation becomes `submitted` + `ambiguous` and is monitored; it is
+   * never failed and keeps its reservation. A retry with the same key resends the stored
+   * bytes. A store failure here is only logged: the caller must get the ambiguous error.
+   */
+  protected async recordAmbiguous(
+    op: OperationRecord,
+    attempt: AttemptRecord,
+    error: unknown,
+    signal?: AbortSignal,
+  ): Promise<CryptoAioError> {
+    const now = this.deps.clock.now();
+    try {
+      if (op.state === 'signed' || op.state === 'stalled') {
+        await this.update(op, {
+          state: 'submitted',
+          ambiguous: true,
+          nextCheckAt: now,
+          clear: ['error'],
+        });
+      }
+      await writeObservation(this.observationDeps, attempt, op.id, {
+        lastBroadcastAt: now,
+      });
+    } catch (storeError) {
+      this.deps.log.warn('could not record an ambiguous broadcast', {
+        operationId: op.id,
+        code: errorCode(storeError),
+      });
+    }
+    const cause = isCryptoAioError(error)
+      ? error
+      : signal?.aborted
+        ? new TimeoutError(
+            'TIMEOUT',
+            'the broadcast was aborted; the transaction may have reached the network',
+            { cause: sanitizeError(error) },
+          )
+        : new ProviderError(
+            'PROVIDER_UNAVAILABLE',
+            'broadcast failed; the transaction may have reached the network',
+            { cause: sanitizeError(error) },
+          );
+    return withContext(
+      cause,
+      { operationId: op.id, attemptId: attempt.id },
+      { ambiguous: true, retryable: true },
+    );
+  }
+
+  /**
+   * Spec §8.2/§8.3. accepted / already-known → `submitted` (an `included` Operation is never
+   * downgraded). refused → the Attempt's own ref is looked up first (seen means it was ours
+   * all along), else `stalled`, keeping the nonce. rejected (proven invalid) → `failed`
+   * with the nonce released, once every Attempt is rejected.
+   */
+  protected async applyBroadcastResult(
+    target: OperationTarget,
+    op: OperationRecord,
+    attempt: AttemptRecord,
+    result: BroadcastResult,
+    lease?: LeaseHandle,
+  ): Promise<OperationRecord> {
+    const now = this.deps.clock.now();
+    const accept = async (): Promise<OperationRecord> => {
+      await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
+        lastBroadcastAt: now,
+        ...(current === null || current.state === 'refused' || current.state === 'dropped'
+          ? { state: 'pending' as const }
+          : {}),
+      }));
+      const moves = op.state === 'signed' || op.state === 'stalled';
+      if (!moves && op.ambiguous !== true) return op;
+      return this.update(op, {
+        ...(moves ? { state: 'submitted' as const } : {}),
+        nextCheckAt: now,
+        clear: ['ambiguous', 'error'],
+      });
+    };
+    const context = { operationId: op.id, attemptId: attempt.id };
+    switch (result.kind) {
+      case 'accepted':
+      case 'already-known':
+        return accept();
+      case 'refused': {
+        const own = await target.pooled.driver.reader.observe(
+          attempt.ref,
+          attempt.ordering,
+          op.intent.from,
+        );
+        if (own.seen !== 'none') return accept();
+        const error = new ChainError(
+          result.code,
+          `transaction refused: ${result.reason}`,
+          {
+            context,
+          },
+        );
+        if (op.state === 'included') throw error; // the monitor owns included Operations
+        await writeObservation(this.observationDeps, attempt, op.id, {
+          state: 'refused',
+          evidence: 'observed',
+          reason: result.reason,
+          lastBroadcastAt: now,
+        });
+        await this.update(op, {
+          state: 'stalled',
+          error: error.toJSON(),
+          nextCheckAt: now,
+          clear: ['ambiguous'],
+        });
+        this.deps.events.emit('operation.stalled', {
+          namespace: this.deps.namespace,
+          operationId: op.id,
+          code: result.code,
+        });
+        throw error;
+      }
+      case 'rejected': {
+        const error = new ChainError(
+          'TX_REJECTED',
+          `transaction rejected: ${result.reason}`,
+          { context },
+        );
+        if (op.state === 'included') throw error; // the monitor owns included Operations
+        await writeObservation(this.observationDeps, attempt, op.id, {
+          state: 'rejected',
+          evidence: 'proven',
+          reason: result.reason,
+          lastBroadcastAt: now,
+        });
+        const siblings = await Promise.all(
+          op.attempts
+            .filter((a) => a.id !== attempt.id)
+            .map((a) => this.deps.stores.operations.getObservation(a.id)),
+        );
+        if (siblings.every((o) => o?.state === 'rejected' && o.evidence === 'proven')) {
+          // Every Attempt is permanently invalid, so no valid signed bytes exist for the
+          // nonce: fail and release it under the lease, as before signing (spec §8.5).
+          await this.failAfterPrepare(target, op, error, lease);
+        }
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Terminal failure while no valid signed bytes exist (before signing, or once every
+   * Attempt is proven `rejected`): mark failed, then free the nonce, both under one address
+   * lease (R23). Callers already inside `withAddressLease` must pass their lease (it is not
+   * re-entrant); a caller without one gets it acquired first (acquire → renew → CAS →
+   * release, never CAS before acquire). The lease is renewed first: when it was lost (a
+   * slow policy hook or signer outlived it), nothing is written, the Operation keeps its
+   * state, its next repeat retries under a fresh lease, and the original `error` is
+   * rethrown. Returning means the terminal write landed; a failed release after it is only
+   * logged (callers rethrow their own error either way). Logs carry codes only.
    */
   protected async failAfterPrepare(
     target: OperationTarget,
@@ -564,7 +1104,7 @@ export class OperationEngine {
     const failed = await this.update(op, {
       state: 'failed',
       error: serializeError(error),
-      clear: ['unsigned', 'partialSignatures', 'signerTickets'],
+      clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous'],
     });
     try {
       await this.releaseReservation(target, op, lease);
@@ -573,32 +1113,34 @@ export class OperationEngine {
         operationId: op.id,
         code: errorCode(releaseError),
       });
-      throw error;
     }
     return failed;
   }
 
   /**
-   * Returns the Operation's reserved nonce. Call at most once per allocation, only after
-   * the Operation's terminal CAS, and pass the held lease when already inside one
-   * (`withLease` is not re-entrant).
+   * Returns the Operation's reserved nonce under the held address lease. Call at most once
+   * per allocation, only after the Operation's terminal CAS made under that same lease.
+   * There is no lease-less fallback: acquiring a lease only after the CAS could fail and
+   * leak the nonce (R23), so a missing lease for a nonce is a programming error.
    */
   protected async releaseReservation(
     target: OperationTarget,
     op: OperationRecord,
-    lease?: LeaseHandle,
+    lease: LeaseHandle | undefined,
   ): Promise<void> {
     const reservation = op.reservation;
     if (reservation?.kind !== 'nonce') return;
-    const key = this.sequenceKeyOf(target);
-    if (lease) {
-      await this.deps.sequences.release(lease, key, reservation.nonce);
-      return;
+    if (!lease) {
+      throw new StateError(
+        'INVALID_TRANSITION',
+        'a nonce is released only under the address lease of its terminal write',
+        { context: { operationId: op.id } },
+      );
     }
-    // No caller in this file reaches this any more (R23 passes the held lease everywhere).
-    // It stays for Task 24's broadcast path, which can fail an Operation outside a lease.
-    await this.deps.sequences.withLease(key, (held) =>
-      this.deps.sequences.release(held, key, reservation.nonce),
+    await this.deps.sequences.release(
+      lease,
+      this.sequenceKeyOf(target),
+      reservation.nonce,
     );
   }
 
