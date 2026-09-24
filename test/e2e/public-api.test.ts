@@ -17,6 +17,7 @@ import {
   localSigner,
   noopLogger,
   secret,
+  type AdapterManifest,
   type ScanEvent,
   type Signer,
 } from '../../src';
@@ -33,6 +34,7 @@ import {
   describeOperationStoreContract,
   describeSequenceStoreContract,
   drive,
+  fakeManifest,
   fakePlugin,
   rpcResult,
   type FakeEnv,
@@ -327,6 +329,27 @@ describe('public API', () => {
     expect(await env.run(client.rpc<string>('fake_blockNumber'))).toBe('0');
     await expect(native(env.bc, 'ethers' as 'fake-sdk')).rejects.toMatchObject({
       code: 'INCOMPATIBLE_SELECTION',
+    });
+  });
+
+  it('refuses a native client when the driver exposes none', async () => {
+    const bare: AdapterManifest = {
+      ...fakeManifest,
+      load: async () => {
+        const factory = await fakeManifest.load();
+        return {
+          create: async (ctx) => {
+            const { createNativeClient: _omitted, ...driver } = await factory.create(ctx);
+            return driver;
+          },
+        };
+      },
+    };
+    const env = await createFakeEnv({
+      aio: { plugins: [{ ...fakePlugin(), adapters: [bare] }] },
+    });
+    await expect(env.run(native(env.bc, 'fake-sdk'))).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CAPABILITY',
     });
   });
 });
