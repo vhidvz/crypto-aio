@@ -78,6 +78,27 @@ function checkResult(value: unknown, reject: Reject): CheckedResult {
   };
 }
 
+/** Copies a request's bytes (and keyRef/params) so its holder cannot change the original. */
+function snapshotRequest(request: SigningRequest): SigningRequest {
+  const { keyRef, params } = request;
+  return {
+    id: request.id,
+    scheme: request.scheme,
+    payload: new Uint8Array(request.payload),
+    payloadKind: request.payloadKind,
+    publicKey: new Uint8Array(request.publicKey),
+    ...(keyRef ? { keyRef: { ...keyRef } } : {}),
+    ...(params
+      ? {
+          params: {
+            ...params,
+            ...(params.tweak ? { tweak: new Uint8Array(params.tweak) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 /** Cancels one ticket; false when the signer cannot cancel or its cancellation failed. */
 async function cancelTicket(
   signer: Signer | undefined,
@@ -115,10 +136,12 @@ export class SigningOrchestrator {
   /** Signs requests not covered by `existing`, batching per signer and verifying every signature. */
   async sign(
     wallet: ResolvedWallet,
-    requests: readonly SigningRequest[],
+    callerRequests: readonly SigningRequest[],
     ctx: SigningContext,
     existing: readonly SignatureBundle[] = [],
   ): Promise<OrchestratedResult> {
+    // Private snapshots: neither the caller nor a signer can change what gets verified.
+    const requests = callerRequests.map(snapshotRequest);
     const done = new Map(existing.map((s) => [s.requestId, s]));
     const groups = new Map<string, { signer: Signer; requests: SigningRequest[] }>();
     for (const request of requests) {
@@ -211,7 +234,10 @@ export class SigningOrchestrator {
       .filter((s): s is SignatureBundle => s !== undefined);
   }
 
-  /** Asks one signer for its batch; verified signatures land in `done`. */
+  /**
+   * Asks one signer for its batch. The signer gets fresh copies; its signatures are verified
+   * against `requests` (the orchestrator's snapshots) and land in `done`.
+   */
   async #signGroup(
     signerId: string,
     signer: Signer,
@@ -227,7 +253,12 @@ export class SigningOrchestrator {
       requests: requests.length,
     });
     try {
-      const result = await this.#request(signerId, signer, requests, ctx);
+      const result = await this.#request(
+        signerId,
+        signer,
+        requests.map(snapshotRequest),
+        ctx,
+      );
       if (result.status === 'signed') {
         for (const request of requests) {
           const signature = result.signatures.find((s) => s.requestId === request.id);

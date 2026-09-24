@@ -428,6 +428,35 @@ describe('SigningOrchestrator', () => {
     expect(() => orchestrator.verify(r0, signature!)).not.toThrow();
   });
 
+  it('hands signers copies and verifies against its own snapshot of each request', async () => {
+    const { orchestrator } = setup();
+    const tweak = new Uint8Array(32).fill(7);
+    const original: SigningRequest = { ...request('r0', keyA), params: { tweak } };
+    const before = {
+      payload: original.payload.slice(),
+      publicKey: original.publicKey.slice(),
+      tweak: tweak.slice(),
+    };
+    const mutator = callbackSigner({
+      id: 'hot',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: async () => new Uint8Array(33),
+      sign: async ([r]) => {
+        // Rewrites the request in place, then signs what it now says with the key it now names.
+        r!.payload.reverse();
+        r!.publicKey.set(secp256k1.getPublicKey(keyB, true));
+        r!.params?.tweak?.fill(0);
+        return { status: 'signed', signatures: [signWith(keyB, r!)] };
+      },
+    });
+    await expect(
+      orchestrator.sign(wallet({ hot: mutator }), [original], ctx),
+    ).rejects.toMatchObject({ code: 'SIGNATURE_MISMATCH' });
+    expect(original.payload).toEqual(before.payload);
+    expect(original.publicKey).toEqual(before.publicKey);
+    expect(tweak).toEqual(before.tweak);
+  });
+
   it('emits operational data only in signer events', async () => {
     const { orchestrator, seen } = setup();
     await orchestrator.sign(wallet({ hot }), [r0], ctx);
