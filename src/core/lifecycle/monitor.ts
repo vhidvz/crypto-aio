@@ -531,7 +531,7 @@ export class Monitor {
     // R26.3: failing an all-rejected Operation releases its nonce, so the engine applies it
     // under the address lease; the monitor never makes a reservation-holding transition.
     if (evaluation.error?.code === 'TX_REJECTED')
-      return this.failRejected(op, signal, !fence && !signal);
+      return this.failRejected(op, signal, !fence);
     const terminal = isTerminal(evaluation.state);
     // R26.1: a read-only pass (no fence) writes the Operation only when its state, outcome
     // or error changes, never just to schedule it: a version bump would make a concurrent
@@ -565,9 +565,10 @@ export class Monitor {
   }
 
   /**
-   * Hands the all-rejected verdict to the engine, its lease wait bounded by the pass
-   * `signal` (the caller's abort and, in `waitFor`, its deadline); an unresolvable target
-   * leaves the Operation non-terminal.
+   * Hands the all-rejected verdict to the engine: an unfenced pass (`tryOnce`) tries the
+   * lease once, a fenced one waits `acquireTimeoutMs`, and either wait is bounded by the
+   * pass `signal` (the caller's abort and, in `waitFor`, its deadline). An unresolvable
+   * target leaves the Operation non-terminal.
    */
   private async failRejected(
     op: OperationRecord,
@@ -588,8 +589,9 @@ export class Monitor {
       });
       return op;
     }
-    // An unfenced pass with no signal (`getTransactionStatus`, `watch` without one) tries
-    // the lease once: a busy lease leaves the Operation for a later pass.
+    // Every unfenced pass (`getTransactionStatus`, `watch`, `waitFor`), signalled or not,
+    // tries the lease once: a busy lease leaves the Operation for a later pass. Only a
+    // fenced worker pass waits `acquireTimeoutMs`.
     return this.deps.engine.failRejected(target, op, {
       signal,
       ...(tryOnce ? { acquireTimeoutMs: 0 } : {}),

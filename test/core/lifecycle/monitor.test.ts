@@ -313,6 +313,15 @@ function capturingLogger() {
   return { log, warnings };
 }
 
+/** Holds the wallet's address lease for another owner. */
+function holdLease(env: FakeEnv) {
+  return env.stores.locks.acquire(
+    sequenceKey('default', env.chainId, 'local', env.address),
+    'elsewhere',
+    600_000,
+  );
+}
+
 describe('monitor: evidence and the monotonic height guard', () => {
   it.each([
     ['no verified height is known', () => undefined],
@@ -898,13 +907,6 @@ describe('monitor: fix round 2', () => {
 });
 
 describe('monitor: the all-rejected verdict from read-only passes (fix round 2)', () => {
-  const holdLease = (env: FakeEnv) =>
-    env.stores.locks.acquire(
-      sequenceKey('default', env.chainId, 'local', env.address),
-      'elsewhere',
-      600_000,
-    );
-
   it("bounds the lease wait by the caller's deadline and signal", async () => {
     const { env, op } = await rejectedButLive();
     await holdLease(env);
@@ -1009,5 +1011,64 @@ describe('monitor: fix round 3', () => {
       kind: 'nonce',
       nonce: 1n,
     });
+  });
+});
+
+describe('monitor: fix round 4', () => {
+  it('revives a refused attempt as possibly live after an ambiguous resend (R25)', async () => {
+    const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
+    const intent = { to: env.stranger(), amount: 3n };
+    env.chain.configureEndpoint('main', { refuseNext: 'insufficient funds' });
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'revive' })),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    const op = await env.stores.operations.getByKey('default', 'revive');
+    if (!op) throw new Error('unreachable');
+    expect(
+      await env.stores.operations.getObservation(op.activeAttemptId ?? ''),
+    ).toMatchObject({ state: 'refused' });
+    // The node admits the bytes, then the send fails: the outcome is ambiguous.
+    env.chain.configureEndpoint('main', { acceptThenFail: true });
+    await expect(env.run(env.bc.rebroadcast(op.id))).rejects.toMatchObject({
+      ambiguous: true,
+    });
+    env.chain.dropFromMempool(op.attempts[0]?.ref.id ?? '');
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'revive' })),
+    ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+    expect(await stored(env, op.id)).toMatchObject({
+      state: 'stalled',
+      error: { code: 'TX_REFUSED' },
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect((await stored(env, next.operation.id)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 1n,
+    });
+  });
+
+  it('tries the lease once on an unfenced pass even with a signal', async () => {
+    const { log, warnings } = capturingLogger();
+    const { env, op } = await rejectedButLive({ aio: { logger: log } });
+    await holdLease(env);
+    const ctl = new AbortController();
+    const watching = (async () => {
+      for await (const event of env.bc.watch(op.id, { signal: ctl.signal }))
+        return event.status.state;
+      return undefined;
+    })();
+    const started = env.clock.now();
+    expect(await env.run(watching)).toBe('rejected');
+    expect(env.clock.now() - started).toBeLessThanOrEqual(200);
+    expect((await stored(env, op.id)).state).toBe('signed');
+    expect(warnings).toContainEqual({
+      message: expect.any(String),
+      fields: { operationId: op.id, code: 'SEQUENCE_BUSY' },
+    });
+    ctl.abort();
   });
 });

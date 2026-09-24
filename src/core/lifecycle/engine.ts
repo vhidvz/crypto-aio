@@ -1087,11 +1087,16 @@ export class OperationEngine {
         operationId: op.id,
         code: errorCode(storeError),
       });
-    // First, and on its own: the observation (created `pending`) is the may-be-live marker
-    // (R25) a later rejection must see, whatever happens to the Operation write below.
-    await writeObservation(this.observationDeps, attempt, op.id, {
+    // First, and on its own: the observation is the may-be-live marker (R25) a later
+    // rejection must see, whatever happens to the Operation write below. As in `accept()`,
+    // a missing, `refused` or `dropped` one becomes `pending`: this send may have delivered
+    // the bytes. Stronger evidence (chain or proven states) is never overwritten (R24).
+    await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
       lastBroadcastAt: now,
-    }).catch(logFailure);
+      ...(current === null || current.state === 'refused' || current.state === 'dropped'
+        ? { state: 'pending' as const }
+        : {}),
+    })).catch(logFailure);
     // R26.2: re-derived after a lost compare-and-set (e.g. a worker's claim mid-broadcast).
     await this.updateAfterBroadcast(op, (current) =>
       current.state === 'signed' || current.state === 'stalled'
