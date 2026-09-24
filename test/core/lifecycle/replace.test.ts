@@ -17,7 +17,7 @@ import type {
 } from '../../../src/core/store/types';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
 import { signFake } from '../../../src/testing/fake-chain';
-import type { FakeClock } from '../../../src/testing/fake-clock';
+import { settle, type FakeClock } from '../../../src/testing/fake-clock';
 import { CrashError, FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, mineWhile } from './support';
 
@@ -203,6 +203,14 @@ describe('replace, cancel and rebuild', () => {
     const final = await mineWhile(env, cancelled.wait({ finality: 'final' }));
     expect(final.operation).toMatchObject({ state: 'final', outcome: 'cancelled' });
     expect(env.chain.balance(recipient)).toBe(0n);
+    // M4: the losing original is linked to the cancel that consumed its slot.
+    expect(
+      await env.stores.operations.getObservation(sub.attempts[0]?.id ?? ''),
+    ).toMatchObject({
+      state: 'replaced',
+      evidence: 'proven',
+      replacedBy: cancelled.attempt?.id,
+    });
   });
 
   it('reports a cancel that lost the race and keeps the original outcome', async () => {
@@ -220,6 +228,14 @@ describe('replace, cancel and rebuild', () => {
       env.bc.waitForConfirmation(sub.operationId, { finality: 'final' }),
     );
     expect(final.operation?.outcome).toBe('executed');
+    // M4: the refused cancel is proven replaced by the original that won.
+    expect(
+      await env.stores.operations.getObservation(op?.attempts[1]?.id ?? ''),
+    ).toMatchObject({
+      state: 'replaced',
+      evidence: 'proven',
+      replacedBy: sub.attempt?.id,
+    });
   });
 
   it('does not offer replace or cancel on expiry chains', async () => {
@@ -319,6 +335,10 @@ describe('replace, cancel and rebuild', () => {
     expect(env.chain.inMempool(original)).toBe(true);
     const final = await mineWhile(env, sub.wait({ finality: 'final' }));
     expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    // M4: the refused replacement is proven replaced by the original that won.
+    expect(
+      await env.stores.operations.getObservation(op.attempts[1]?.id ?? ''),
+    ).toMatchObject({ state: 'replaced', evidence: 'proven', replacedBy: original });
   });
 
   it('refuses, before signing, a new attempt that would not conflict with the earlier ones', async () => {
@@ -397,6 +417,33 @@ describe('replace, cancel and rebuild', () => {
       kind: 'nonce',
       nonce: 1n,
     });
+  });
+
+  // M4 (R22): a pending answer that arrives after the deadline still holds a live approval.
+  it('cancels the ticket of a replacement signer that answers pending after the deadline', async () => {
+    const cancelled: string[] = [];
+    const late: { answer?: (result: SigningResult) => void } = {};
+    const { signer } = purposeSigner(
+      () =>
+        new Promise<SigningResult>((resolve) => {
+          late.answer = resolve;
+        }),
+      cancelled,
+    );
+    const env = await createFakeEnv({ signer, lifecycle: { signTimeoutMs: 5_000 } });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: 'fast' }), 1_000),
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(cancelled).toEqual([]);
+    late.answer?.({ status: 'pending', ticket: 'job-late' });
+    await settle();
+    expect(cancelled).toEqual(['job-late']);
+    const op = await stored(env, sub.operationId);
+    expect(op.attempts).toHaveLength(1);
+    expect(op.signerTickets).toBeUndefined();
   });
 
   it('keeps the address lease alive for a replacement signer slower than leaseMs', async () => {
