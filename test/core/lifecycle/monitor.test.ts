@@ -10,6 +10,7 @@ import {
 } from '../../../src/core/lifecycle/engine';
 import { Monitor } from '../../../src/core/lifecycle/monitor';
 import type { OrderingData } from '../../../src/core/model/ordering';
+import { sequenceKey } from '../../../src/core/ordering/sequence';
 import { secret } from '../../../src/core/secret/secret';
 import { localSigner } from '../../../src/core/signing/local';
 import { MemoryOperationStore } from '../../../src/core/store/memory';
@@ -20,7 +21,11 @@ import type {
 } from '../../../src/core/store/types';
 import type { Transport } from '../../../src/core/transport/types';
 import { REVERT_ADDRESS, fakeAddress, signFake } from '../../../src/testing/fake-chain';
-import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
+import {
+  createFakeEnv,
+  type FakeEnv,
+  type FakeEnvOptions,
+} from '../../../src/testing/env';
 import { FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, mineWhile } from './support';
 
@@ -270,6 +275,42 @@ function withHighest(transport: Transport, highest: () => bigint | undefined): T
       return typeof value === 'function' ? (value as () => unknown).bind(real) : value;
     },
   });
+}
+
+/** A signed transfer whose only Attempt is proven rejected: the failed write was lost. */
+async function rejectedButLive(options: FakeEnvOptions = {}) {
+  const faulty = new FaultyOperationStore(new MemoryOperationStore());
+  const first = await createFakeEnv({ ...options, stores: { operations: faulty } });
+  first.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+  faulty.crashOn({
+    method: 'update',
+    timing: 'before',
+    when: (args) => (args[2] as OperationPatch | undefined)?.state === 'failed',
+  });
+  await expect(
+    first.run(
+      first.bc.transfer({ to: first.stranger(), amount: 3n }, { idempotencyKey: 'rj' }),
+    ),
+  ).rejects.toMatchObject({ ambiguous: true });
+  const env = await first.restart({ killPrevious: true });
+  const op = await env.stores.operations.getByKey('default', 'rj');
+  if (!op) throw new Error('unreachable');
+  expect(op.state).toBe('signed');
+  expect(
+    await env.stores.operations.getObservation(op.activeAttemptId ?? ''),
+  ).toMatchObject({ state: 'rejected', evidence: 'proven' });
+  return { env, op };
+}
+
+/** A logger that records every warning's message and fields. */
+function capturingLogger() {
+  const warnings: { message: string; fields: unknown }[] = [];
+  const log: Logger = {
+    ...noopLogger,
+    warn: (message, fields) => warnings.push({ message, fields }),
+    child: () => log,
+  };
+  return { log, warnings };
 }
 
 describe('monitor: evidence and the monotonic height guard', () => {
@@ -636,31 +677,6 @@ describe('read-only calls never race a broadcast (R26)', () => {
 });
 
 describe('the all-rejected verdict runs under the address lease (R26.3)', () => {
-  /** A signed transfer whose only Attempt is proven rejected: the failed write was lost. */
-  async function rejectedButLive() {
-    const faulty = new FaultyOperationStore(new MemoryOperationStore());
-    const first = await createFakeEnv({ stores: { operations: faulty } });
-    first.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
-    faulty.crashOn({
-      method: 'update',
-      timing: 'before',
-      when: (args) => (args[2] as OperationPatch | undefined)?.state === 'failed',
-    });
-    await expect(
-      first.run(
-        first.bc.transfer({ to: first.stranger(), amount: 3n }, { idempotencyKey: 'rj' }),
-      ),
-    ).rejects.toMatchObject({ ambiguous: true });
-    const env = await first.restart({ killPrevious: true });
-    const op = await env.stores.operations.getByKey('default', 'rj');
-    if (!op) throw new Error('unreachable');
-    expect(op.state).toBe('signed');
-    expect(
-      await env.stores.operations.getObservation(op.activeAttemptId ?? ''),
-    ).toMatchObject({ state: 'rejected', evidence: 'proven' });
-    return { env, op };
-  }
-
   it('fails the operation and frees its nonce from a monitor pass', async () => {
     const { env, op } = await rejectedButLive();
     await env.run(env.bc.getTransactionStatus(op.id));
@@ -878,5 +894,68 @@ describe('monitor: fix round 2', () => {
       10,
     );
     expect(due.map((op) => op.id)).toEqual([signed.id]);
+  });
+});
+
+describe('monitor: the all-rejected verdict from read-only passes (fix round 2)', () => {
+  const holdLease = (env: FakeEnv) =>
+    env.stores.locks.acquire(
+      sequenceKey('default', env.chainId, 'local', env.address),
+      'elsewhere',
+      600_000,
+    );
+
+  it("bounds the lease wait by the caller's deadline and signal", async () => {
+    const { env, op } = await rejectedButLive();
+    await holdLease(env);
+    let started = env.clock.now();
+    let settledAt = 0;
+    const timed = env.bc.waitForConfirmation(op.id, { timeoutMs: 2_000 }).finally(() => {
+      settledAt = env.clock.now();
+    });
+    await expect(env.run(timed)).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(settledAt - started).toBeLessThanOrEqual(2_100);
+    const ctl = new AbortController();
+    void env.clock.sleep(500).then(() => ctl.abort(new Error('stop')));
+    started = env.clock.now();
+    const aborted = env.bc
+      .waitForConfirmation(op.id, { signal: ctl.signal })
+      .finally(() => {
+        settledAt = env.clock.now();
+      });
+    await expect(env.run(aborted)).rejects.toThrow('stop');
+    expect(settledAt - started).toBeLessThanOrEqual(600);
+    expect((await stored(env, op.id)).state).toBe('signed');
+  });
+
+  it('leaves the operation non-terminal and logs the code while the lease stays busy', async () => {
+    const { log, warnings } = capturingLogger();
+    const { env, op } = await rejectedButLive({ aio: { logger: log } });
+    await holdLease(env);
+    expect(await env.run(env.bc.getTransactionStatus(op.id))).toMatchObject({
+      state: 'rejected',
+    });
+    expect((await stored(env, op.id)).state).toBe('signed');
+    expect(warnings).toContainEqual({
+      message: expect.any(String),
+      fields: { operationId: op.id, code: 'SEQUENCE_BUSY' },
+    });
+  });
+
+  it('treats a wallet re-pointed to another key as an unresolvable target', async () => {
+    const { log, warnings } = capturingLogger();
+    const { env, op } = await rejectedButLive({ aio: { logger: log } });
+    const repointed = env.aio.scope({
+      signers: { hot: localSigner.generate({ curves: ['secp256k1'], id: 'hot' }).signer },
+    });
+    const bc = repointed.blockchain({ chain: env.chainId });
+    expect(await env.run(bc.getTransactionStatus(op.id))).toMatchObject({
+      state: 'rejected',
+    });
+    expect((await stored(env, op.id)).state).toBe('signed');
+    expect(warnings).toContainEqual({
+      message: expect.any(String),
+      fields: { operationId: op.id, code: 'INVALID_INTENT' },
+    });
   });
 });

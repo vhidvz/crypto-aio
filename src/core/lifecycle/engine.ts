@@ -1250,7 +1250,7 @@ export class OperationEngine {
         context,
       },
     );
-    await this.failRejected(target, op, lease, error);
+    await this.failRejected(target, op, { lease, error });
     return error;
   }
 
@@ -1262,18 +1262,50 @@ export class OperationEngine {
    * the verdict and renews the lease before the terminal compare-and-set; a lost lease or a
    * verdict that no longer holds writes nothing and returns the stored Operation. Pass the
    * held lease when already inside `withAddressLease` (it is not re-entrant).
+   *
+   * Without a held lease (the monitor), the lease wait is bounded by `signal` as well as
+   * `acquireTimeoutMs`; a busy lease, or a target whose wallet no longer owns the Operation
+   * (e.g. re-pointed to another key), writes nothing, logs the code and returns `op`. An
+   * abort is rethrown.
    */
   async failRejected(
     target: OperationTarget,
     op: OperationRecord,
-    lease?: LeaseHandle,
-    error?: CryptoAioError,
+    options: {
+      readonly lease?: LeaseHandle;
+      readonly error?: CryptoAioError;
+      readonly signal?: AbortSignal;
+    } = {},
   ): Promise<OperationRecord> {
-    this.assertOwnedBy(target, op);
+    const { lease, error, signal } = options;
+    try {
+      this.assertOwnedBy(target, op);
+    } catch (mismatch) {
+      this.deps.log.warn('the resolved wallet does not own the operation', {
+        operationId: op.id,
+        code: errorCode(mismatch),
+      });
+      return op;
+    }
     if (!lease && LEASED_ORDERINGS.has(target.pooled.driver.ordering)) {
-      return this.withAddressLease(target, (held) =>
-        this.failRejected(target, op, held, error),
-      );
+      let acquired = false;
+      try {
+        return await this.withAddressLease(
+          target,
+          (held) => {
+            acquired = true;
+            return this.failRejected(target, op, { error, lease: held });
+          },
+          signal,
+        );
+      } catch (leaseError) {
+        if (acquired || signal?.aborted) throw leaseError;
+        this.deps.log.warn('address lease unavailable for a terminal write', {
+          operationId: op.id,
+          code: errorCode(leaseError),
+        });
+        return op;
+      }
     }
     const reason =
       error ??

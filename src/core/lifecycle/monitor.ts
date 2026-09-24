@@ -169,7 +169,7 @@ export class Monitor {
         if (current) observations.set(attempt.id, current);
       }
     }
-    return this.applyEvaluation(op, observations, fence);
+    return this.applyEvaluation(op, observations, fence, signal);
   }
 
   /** Current status of a managed Operation (after a check) or of an arbitrary transaction id. */
@@ -511,6 +511,7 @@ export class Monitor {
     op: OperationRecord,
     observations: ReadonlyMap<string, AttemptObservation>,
     fence?: Fence,
+    signal?: AbortSignal,
   ): Promise<OperationRecord> {
     const evaluation = evaluateOperation(op, observations);
     const { winner } = evaluation;
@@ -529,7 +530,7 @@ export class Monitor {
     }
     // R26.3: failing an all-rejected Operation releases its nonce, so the engine applies it
     // under the address lease; the monitor never makes a reservation-holding transition.
-    if (evaluation.error?.code === 'TX_REJECTED') return this.failRejected(op);
+    if (evaluation.error?.code === 'TX_REJECTED') return this.failRejected(op, signal);
     const terminal = isTerminal(evaluation.state);
     // R26.1: a read-only pass (no fence) writes the Operation only when its state, outcome
     // or error changes, never just to schedule it: a version bump would make a concurrent
@@ -562,8 +563,15 @@ export class Monitor {
     return this.deps.engine.update(op, patch, fence);
   }
 
-  /** Hands the all-rejected verdict to the engine; unresolvable → left non-terminal. */
-  private async failRejected(op: OperationRecord): Promise<OperationRecord> {
+  /**
+   * Hands the all-rejected verdict to the engine, its lease wait bounded by the pass
+   * `signal` (the caller's abort and, in `waitFor`, its deadline); an unresolvable target
+   * leaves the Operation non-terminal.
+   */
+  private async failRejected(
+    op: OperationRecord,
+    signal?: AbortSignal,
+  ): Promise<OperationRecord> {
     let target: OperationTarget | undefined;
     let failure: unknown;
     try {
@@ -578,7 +586,7 @@ export class Monitor {
       });
       return op;
     }
-    return this.deps.engine.failRejected(target, op);
+    return this.deps.engine.failRejected(target, op, { signal });
   }
 
   private bestStatus(
