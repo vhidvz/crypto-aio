@@ -63,14 +63,24 @@ export interface TxStatusEvent {
   readonly operation?: OperationView;
 }
 
+/**
+ * What `recover()` did. The counts are per Operation, except `reconciled`, and they
+ * overlap: an Operation whose resend was attempted and whose check then failed counts in
+ * both `rebroadcast` and `failed`.
+ */
 export interface RecoveryReport {
-  /** `signed` or ambiguously `submitted` Operations whose stored bytes were sent again. */
+  /**
+   * `signed` or ambiguously `submitted` Operations whose stored bytes were sent again:
+   * attempted resends, including ones the node refused or whose outcome is unknown.
+   */
   readonly rebroadcast: number;
+  /** Operations checked on chain after any resend. */
   readonly checked: number;
-  /** Operations that need a caller (see `recovery.skipped`). */
+  /** Operations that need a caller (see `recovery.skipped`); never resent or checked. */
   readonly skipped: number;
+  /** Operations whose target could not be rebuilt, or whose resend or check threw. */
   readonly failed: number;
-  /** Leaked nonce values that reconciliation returned for reuse. */
+  /** Leaked nonce values that reconciliation returned for reuse (across all wallets). */
   readonly reconciled: number;
 }
 
@@ -83,6 +93,8 @@ export interface WorkerOptions {
 }
 
 const DEFAULT_BATCH = 50;
+/** How many Operations' reported gaps a monitor remembers (`nonce.gap` is at-least-once). */
+const GAP_MEMORY = 10_000;
 
 /**
  * Rebuilds the wallet-bound target of a stored Operation (from its `context`); `undefined`
@@ -129,7 +141,10 @@ function isSettled(observation: AttemptObservation | null | undefined): boolean 
  * (finalized data confirmed by quorum proof reads). A stale view decides nothing.
  */
 export class Monitor {
-  /** Per Operation, the expected nonces a `nonce.gap` was already emitted for. */
+  /**
+   * Per Operation, the expected nonces a `nonce.gap` was already emitted for; least
+   * recently reported first, capped at `GAP_MEMORY` Operations (M2).
+   */
   readonly #gaps = new Map<string, Set<string>>();
 
   constructor(private readonly deps: MonitorDeps) {}
@@ -162,7 +177,18 @@ export class Monitor {
     fence?: Fence,
     signal?: AbortSignal,
   ): Promise<OperationRecord> {
-    if (isTerminal(op.state) || PRE_SIGNING_STATES.has(op.state)) return op;
+    return (await this.#checkPass(target, op, fence, signal)).record;
+  }
+
+  /** `check`, also telling whether the view was stale (it then decided nothing). */
+  async #checkPass(
+    target: ReadTarget,
+    op: OperationRecord,
+    fence?: Fence,
+    signal?: AbortSignal,
+  ): Promise<{ readonly record: OperationRecord; readonly stale: boolean }> {
+    if (isTerminal(op.state) || PRE_SIGNING_STATES.has(op.state))
+      return { record: op, stale: false };
     const { pooled } = target;
     signal?.throwIfAborted();
     await pooled.transport.ensureFreshHealth(signal);
@@ -176,7 +202,7 @@ export class Monitor {
     // Controller amendment (carry-forward): when probes are configured, an unknown verified
     // height means the view cannot be judged, so decide nothing.
     if (highest === undefined ? pooled.transport.hasProbes() : head + tolerance < highest)
-      return op; // stale view: decide nothing
+      return { record: op, stale: true }; // stale view: decide nothing
     const observations = new Map<string, AttemptObservation>();
     for (const attempt of op.attempts) {
       try {
@@ -190,7 +216,10 @@ export class Monitor {
         if (current) observations.set(attempt.id, current);
       }
     }
-    return this.applyEvaluation(op, observations, fence, signal);
+    return {
+      record: await this.applyEvaluation(op, observations, fence, signal),
+      stale: false,
+    };
   }
 
   /** Current status of a managed Operation (after a check) or of an arbitrary transaction id. */
@@ -345,12 +374,17 @@ export class Monitor {
    * (a stale worker's writes fail), then releases the claim. R26: every claimed Operation
    * that stays live leaves the pass scheduled a poll interval ahead, including when its
    * check threw, its view was stale or its all-rejected verdict could not run, so no worker
-   * claims it again before then. Returns how many Operations it claimed.
+   * claims it again before then. A stale view also skips gap handling and reconciliation.
+   * `signal` bounds each check and its lease wait; once it aborts, the Operations not yet
+   * checked are only released, still due, for another worker. Returns how many Operations
+   * it claimed.
    */
   async runOnce(options: {
     readonly workerId: string;
     readonly batch?: number;
+    readonly signal?: AbortSignal;
   }): Promise<number> {
+    const { signal } = options;
     const claimed = await this.deps.stores.operations.claimDue(
       this.deps.namespace,
       options.workerId,
@@ -361,23 +395,7 @@ export class Monitor {
     const resolve = this.#passResolver();
     for (const op of claimed) {
       const fence: Fence = { claimToken: (op.claim as OperationClaim).token };
-      const started = this.deps.clock.now();
-      let current: OperationRecord | undefined;
-      try {
-        const target = await this.#targetOf(resolve, op);
-        current = await this.check(target, op, fence);
-        await this.#detectNonceGap(target, current);
-      } catch (error) {
-        this.deps.log.warn('monitor check failed', {
-          operationId: op.id,
-          code: errorCode(error),
-        });
-      }
-      const scheduled =
-        current !== undefined &&
-        (isTerminal(current.state) ||
-          (current.nextCheckAt !== undefined && current.nextCheckAt > started));
-      if (!scheduled) await this.#reschedule(op.id, fence, started);
+      if (!signal?.aborted) await this.#process(resolve, op, fence, signal);
       await this.deps.stores.operations
         .releaseClaim(this.deps.namespace, op.id, fence)
         .catch((error: unknown) =>
@@ -388,6 +406,33 @@ export class Monitor {
         );
     }
     return claimed.length;
+  }
+
+  /** One claimed Operation of a worker pass (see `runOnce`). */
+  async #process(
+    resolve: TargetResolver,
+    op: OperationRecord,
+    fence: Fence,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    const started = this.deps.clock.now();
+    let current: OperationRecord | undefined;
+    try {
+      const target = await this.#targetOf(resolve, op);
+      const pass = await this.#checkPass(target, op, fence, signal);
+      current = pass.record;
+      if (!pass.stale) await this.#detectNonceGap(target, current);
+    } catch (error) {
+      this.deps.log.warn('monitor check failed', {
+        operationId: op.id,
+        code: errorCode(error),
+      });
+    }
+    const scheduled =
+      current !== undefined &&
+      (isTerminal(current.state) ||
+        (current.nextCheckAt !== undefined && current.nextCheckAt > started));
+    if (!scheduled) await this.#reschedule(op.id, fence, started);
   }
 
   /**
@@ -403,7 +448,11 @@ export class Monitor {
     while (!signal?.aborted) {
       let processed = 0;
       try {
-        processed = await this.runOnce({ workerId, batch });
+        processed = await this.runOnce({
+          workerId,
+          batch,
+          ...(signal ? { signal } : {}),
+        });
       } catch (error) {
         this.deps.log.warn('monitor worker pass failed', {
           workerId,
@@ -592,19 +641,21 @@ export class Monitor {
     const observation = attempt
       ? await this.deps.stores.operations.getObservation(attempt.id)
       : null;
-    const since =
-      observation?.firstSeenAt ??
-      observation?.lastBroadcastAt ??
-      attempt?.createdAt ??
-      op.createdAt;
+    // M3: not `lastBroadcastAt`, which every resend of a dropped Attempt refreshes.
+    const since = observation?.firstSeenAt ?? attempt?.createdAt ?? op.createdAt;
     if (this.deps.clock.now() - since < this.deps.lifecycle().droppedGracePeriodMs)
       return;
     const expected = await sequence.pending(op.intent.from);
     if (expected >= op.reservation.nonce) return;
     const reported = this.#gaps.get(op.id) ?? new Set<string>();
+    this.#gaps.delete(op.id);
+    this.#gaps.set(op.id, reported);
+    if (this.#gaps.size > GAP_MEMORY) {
+      const oldest = this.#gaps.keys().next().value;
+      if (oldest !== undefined) this.#gaps.delete(oldest);
+    }
     if (!reported.has(expected.toString())) {
       reported.add(expected.toString());
-      this.#gaps.set(op.id, reported);
       const blocking = (
         await this.deps.stores.operations.list({
           namespace: this.deps.namespace,

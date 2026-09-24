@@ -144,7 +144,9 @@ async function operationTarget(
   let handle: Blockchain<ChainId>;
   try {
     handle = container.blockchain(named.length > 0 ? { ...base, provider: named } : base);
-  } catch {
+  } catch (error) {
+    // Only a config that no longer resolves (e.g. a renamed provider) falls back.
+    if (!(error instanceof ConfigError)) throw error;
     handle = container.blockchain(base);
   }
   const internals = internalsOf(handle);
@@ -176,7 +178,7 @@ export interface MonitorApi {
   /** Runs worker passes until `signal` aborts; any number of workers may run. */
   start(options?: WorkerOptions): Promise<void>;
   /** One worker pass; resolves to the number of Operations it claimed. */
-  runOnce(options?: Omit<WorkerOptions, 'signal'>): Promise<number>;
+  runOnce(options?: WorkerOptions): Promise<number>;
 }
 
 /**
@@ -364,6 +366,7 @@ export class CryptoAio {
         internals.monitor().runOnce({
           workerId: options.workerId ?? internals.runtime.owner,
           ...(options.batch !== undefined ? { batch: options.batch } : {}),
+          ...(options.signal ? { signal: options.signal } : {}),
         }),
     };
   }

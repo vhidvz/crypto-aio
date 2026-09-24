@@ -1406,9 +1406,11 @@ export class OperationEngine {
 
   /**
    * Nonce reconciliation, never a filler transaction (spec). Under the address lease,
-   * returns to `released` every value in [chainPending, next) that no live Operation of
+   * returns to `released` every value in [floor, next) that no live Operation of
    * `op`'s wallet reserves, so the next allocation reuses it and the transfers waiting
-   * behind the gap can land. It closes the leaks a release cannot: a crash between
+   * behind the gap can land; `floor` is `chainPending`, raised above the highest nonce of
+   * any `final` Operation of the wallet (a lagging endpoint can under-report pending). It
+   * closes the leaks a release cannot: a crash between
    * allocation and the `prepared` write, a store failure inside a release after a terminal
    * write, and a failure recorded without a release. R29: every live `created` Operation
    * without a reservation is fenced first (`fenceStalePrepare`), so a `prepared` write
@@ -1431,12 +1433,24 @@ export class OperationEngine {
     return this.withAddressLease(
       target,
       async (lease) => {
-        const chainPending = await sequence.pending(op.intent.from);
-        const live = await this.deps.stores.operations.list({
+        const wallet = {
           namespace: this.deps.namespace,
           chain: op.context.chain,
           network: op.context.network,
           from: op.intent.from,
+        };
+        const chainPending = await sequence.pending(op.intent.from);
+        // M1: a lagging endpoint can under-report pending; a final Operation's nonce was
+        // consumed on chain whatever it says, so the scan starts above the highest one.
+        let floor = chainPending;
+        for (const final of await this.deps.stores.operations.list({
+          ...wallet,
+          states: ['final'],
+        })) {
+          for (const nonce of heldNonces(final)) if (nonce >= floor) floor = nonce + 1n;
+        }
+        const live = await this.deps.stores.operations.list({
+          ...wallet,
           states: NON_TERMINAL_STATES,
         });
         const held: bigint[] = [];
@@ -1446,7 +1460,7 @@ export class OperationEngine {
         return this.deps.sequences.reclaim(
           lease as LeaseHandle,
           this.sequenceKeyOf(target),
-          chainPending,
+          floor,
           held,
         );
       },

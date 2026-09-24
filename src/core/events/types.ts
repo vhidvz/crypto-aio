@@ -72,6 +72,12 @@ export interface AioEvents {
     operationId: string;
     value: string;
   };
+  /**
+   * A submitted Operation has waited past the grace period while the chain's pending nonce
+   * (`expected`) is below its own. At-least-once: a monitor reports each (Operation,
+   * expected) once, but that memory is per process and bounded, so the same gap is reported
+   * again after a restart, by another process, or once it was forgotten.
+   */
   'nonce.gap': {
     namespace: string;
     chain: string;

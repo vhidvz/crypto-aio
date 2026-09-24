@@ -379,6 +379,74 @@ describe('gaps follow the pending nonce; verdicts carry the claim (fix round 1)'
   });
 });
 
+describe('fix round 1 minors (M1, M4)', () => {
+  it('never releases a consumed nonce when a lagging endpoint under-reports pending', async () => {
+    const env = await createFakeEnv();
+    const first = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await mineWhile(env, first.wait({ finality: 'final' }));
+    await env.run(env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }));
+    env.chain.configureEndpoint('main', { lag: 60 });
+    const report = await env.run(env.aio.operations.recover());
+    expect(report).toMatchObject({ failed: 0, reconciled: 0 });
+    expect(await sequenceOf(env)).toMatchObject({ next: 2n, released: [] });
+  });
+
+  it('skips gap handling and reconciliation on a stale-view pass', async () => {
+    const env = await createFakeEnv();
+    const gaps: AioEvent[] = [];
+    env.aio.on('nonce.gap', (e) => gaps.push(e));
+    env.chain.configureEndpoint('main', { refuseNext: 'insufficient funds' });
+    await expect(
+      env.run(env.bc.transfer({ to: env.stranger(), amount: 3n })),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await env.clock.advance(11_000);
+    const reconcile = jest.spyOn(containerOf(env.aio).engine(), 'reconcileNonces');
+    const real = await targetOf(env);
+    const stale: OperationTarget = {
+      ...real,
+      pooled: { ...real.pooled, transport: withHighest(real.pooled.transport, 1_000n) },
+    };
+    expect(
+      await env.run(monitorWith(env, async () => stale).runOnce({ workerId: 'w' })),
+    ).toBe(2);
+    expect(gaps).toEqual([]);
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it('stops a worker waiting on a busy lease as soon as its signal aborts', async () => {
+    const { env, op } = await rejectedButLive();
+    await env.stores.locks.acquire(leaseKey(env), 'elsewhere', 600_000);
+    const ctl = new AbortController();
+    const worker = env.aio.monitor.start({ workerId: 'w', signal: ctl.signal });
+    await env.clock.advance(1_000); // the fenced pass waits for the address lease
+    ctl.abort();
+    const aborted = env.clock.now();
+    await env.run(worker);
+    expect(env.clock.now() - aborted).toBeLessThan(1_000);
+    expect((await stored(env, op.id)).state).toBe('signed');
+  });
+
+  it('claims at most `batch` operations per pass, and passes again after a full one', async () => {
+    const operations = new ClaimRecordingStore();
+    const env = await createFakeEnv({ stores: { operations } });
+    for (let i = 0; i < 3; i++)
+      await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    expect(await env.run(env.aio.monitor.runOnce({ workerId: 'w', batch: 2 }))).toBe(2);
+    await env.clock.advance(1_000);
+    operations.claims.length = 0;
+    const ctl = new AbortController();
+    const worker = env.aio.monitor.start({ workerId: 'w', batch: 2, signal: ctl.signal });
+    await env.clock.advance(0);
+    expect(operations.claims.slice(0, 3)).toEqual([
+      { limit: 2, claimed: 2 },
+      { limit: 2, claimed: 1 },
+    ]);
+    ctl.abort();
+    await env.run(worker);
+  });
+});
+
 describe('reconciliation fences out a stale prepared write (R29)', () => {
   it('never lets a paused prepared write land on a nonce reconciliation released', async () => {
     const operations = new GatedUpdateStore();
@@ -476,6 +544,23 @@ class RacingUpdateStore extends MemoryOperationStore {
     const current = decision ? await this.get(namespace, id) : null;
     if (decision && current) await super.update(namespace, id, decision, current.version);
     return super.update(namespace, id, patch, expectedVersion, fence);
+  }
+}
+
+/** Records every `claimDue` limit and how many Operations it claimed. */
+class ClaimRecordingStore extends MemoryOperationStore {
+  readonly claims: { limit: number; claimed: number }[] = [];
+
+  override async claimDue(
+    namespace: string,
+    workerId: string,
+    now: number,
+    leaseMs: number,
+    limit: number,
+  ): Promise<OperationRecord[]> {
+    const claimed = await super.claimDue(namespace, workerId, now, leaseMs, limit);
+    this.claims.push({ limit, claimed: claimed.length });
+    return claimed;
   }
 }
 
