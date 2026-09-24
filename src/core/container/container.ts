@@ -1,6 +1,6 @@
 import { AssetService } from '../assets/service';
 import { Blockchain } from '../blockchain/handle';
-import type { HandleInternals } from '../blockchain/internal';
+import { internalsOf, type HandleInternals } from '../blockchain/internal';
 import { readEnvChains } from '../config/env';
 import { isPlainObject, mergeScopes } from '../config/merge';
 import { resolveSelection } from '../config/resolve';
@@ -15,7 +15,12 @@ import { ConfigError } from '../errors/error';
 import { EventBus } from '../events/bus';
 import { createLogger } from '../events/logger';
 import type { AioEvent, AioEventName } from '../events/types';
-import { OperationEngine, errorCode, withLifecycleDefaults } from '../lifecycle/engine';
+import {
+  OperationEngine,
+  errorCode,
+  withLifecycleDefaults,
+  type OperationTarget,
+} from '../lifecycle/engine';
 import { Monitor } from '../lifecycle/monitor';
 import type { ChainId } from '../model/ids';
 import { SequenceCoordinator } from '../ordering/sequence';
@@ -28,7 +33,7 @@ import {
 import { SigningOrchestrator } from '../signing/orchestrator';
 import { resolveWallet, type ResolvedWallet } from '../signing/wallet';
 import { createMemoryStores } from '../store/memory';
-import type { Stores } from '../store/types';
+import type { OperationRecord, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
 import { systemClock } from '../util/clock';
 import { builtinPlugins } from './builtins';
@@ -110,6 +115,34 @@ function createEngine(
     }),
     lifecycle,
   });
+}
+
+/**
+ * R26.3: the wallet-bound target of a stored Operation, rebuilt from its frozen context
+ * (chain, network, library, wallet, signer) against the container's current config. The
+ * engine checks the resolved wallet still owns the Operation before using it.
+ */
+async function operationTarget(
+  container: CryptoAio,
+  runtime: RootRuntime,
+  record: OperationRecord,
+): Promise<OperationTarget> {
+  const { chain, network, library, wallet, signer } = record.context;
+  const handle = container.blockchain({
+    chain,
+    network,
+    library,
+    wallet,
+    ...(signer !== undefined ? { signer } : {}),
+  } as HandleConfig<ChainId>);
+  const internals = internalsOf(handle);
+  const [pooled, resolved] = await Promise.all([internals.pooled(), internals.wallet()]);
+  return {
+    selection: internals.selection,
+    pooled,
+    wallet: resolved,
+    assets: runtime.assets,
+  };
 }
 
 /**
@@ -286,6 +319,7 @@ export class CryptoAio {
           log: runtime.log.child('monitor'),
           namespace: runtime.namespace,
           lifecycle: () => withLifecycleDefaults(effective().lifecycle),
+          resolveTarget: (record) => operationTarget(this, runtime, record),
         })),
     });
   }

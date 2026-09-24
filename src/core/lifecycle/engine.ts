@@ -1238,17 +1238,83 @@ export class OperationEngine {
         context,
       },
     );
-    const siblings = await Promise.all(
-      op.attempts
-        .filter((a) => a.id !== attempt.id)
-        .map((a) => this.deps.stores.operations.getObservation(a.id)),
-    );
-    if (siblings.every((o) => o?.state === 'rejected' && o.evidence === 'proven')) {
-      // Every Attempt is permanently invalid, so no valid signed bytes exist for the
-      // nonce: fail and release it under the lease, as before signing (spec §8.5).
-      await this.failAfterPrepare(target, op, error, lease);
-    }
+    await this.failRejected(target, op, lease, error);
     return error;
+  }
+
+  /**
+   * R26.3: the all-rejected verdict. Once every Attempt is proven `rejected`, no valid
+   * signed bytes exist for the nonce: the Operation fails and the nonce is released in the
+   * same step, under the address lease (R23, spec §8.5), whoever reaches the verdict (the
+   * broadcast path or the monitor). Under the lease it re-reads the Operation, re-checks
+   * the verdict and renews the lease before the terminal compare-and-set; a lost lease or a
+   * verdict that no longer holds writes nothing and returns the stored Operation. Pass the
+   * held lease when already inside `withAddressLease` (it is not re-entrant).
+   */
+  async failRejected(
+    target: OperationTarget,
+    op: OperationRecord,
+    lease?: LeaseHandle,
+    error?: CryptoAioError,
+  ): Promise<OperationRecord> {
+    this.assertOwnedBy(target, op);
+    if (!lease && LEASED_ORDERINGS.has(target.pooled.driver.ordering)) {
+      return this.withAddressLease(target, (held) =>
+        this.failRejected(target, op, held, error),
+      );
+    }
+    const reason =
+      error ??
+      new ChainError('TX_REJECTED', 'every attempt was rejected as invalid', {
+        context: { operationId: op.id },
+      });
+    for (let tries = 0; tries < 5; tries++) {
+      const current = await this.require(op.id);
+      if (isTerminal(current.state) || !(await this.everyAttemptRejected(current)))
+        return current;
+      try {
+        await lease?.renew();
+      } catch (renewError) {
+        this.deps.log.warn('address lease lost before a terminal write', {
+          operationId: op.id,
+          code: errorCode(renewError),
+        });
+        return current;
+      }
+      let failed: OperationRecord;
+      try {
+        failed = await this.update(current, {
+          state: 'failed',
+          error: serializeError(reason),
+          clear: ['ambiguous', 'nextCheckAt'],
+        });
+      } catch (updateError) {
+        if (isCryptoAioError(updateError, 'VERSION_CONFLICT')) continue;
+        throw updateError;
+      }
+      try {
+        await this.releaseReservation(target, current, lease);
+      } catch (releaseError) {
+        this.deps.log.warn('reservation release failed', {
+          operationId: op.id,
+          code: errorCode(releaseError),
+        });
+      }
+      return failed;
+    }
+    throw new StateError('VERSION_CONFLICT', `operation '${op.id}' kept changing`, {
+      context: { operationId: op.id },
+    });
+  }
+
+  protected async everyAttemptRejected(op: OperationRecord): Promise<boolean> {
+    const observations = await Promise.all(
+      op.attempts.map((a) => this.deps.stores.operations.getObservation(a.id)),
+    );
+    return (
+      observations.length > 0 &&
+      observations.every((o) => o?.state === 'rejected' && o.evidence === 'proven')
+    );
   }
 
   /**
@@ -1334,9 +1400,8 @@ export class OperationEngine {
   }
 
   /**
-   * Terminal failure while no valid signed bytes exist (before signing, or once every
-   * Attempt is proven `rejected`): mark failed, then free the nonce, both under one address
-   * lease (R23). Callers already inside `withAddressLease` must pass their lease (it is not
+   * Terminal failure before any signed bytes exist (after signing, see `failRejected`):
+   * mark failed, then free the nonce, both under one address lease (R23). Callers already inside `withAddressLease` must pass their lease (it is not
    * re-entrant); a caller without one gets it acquired first (acquire → renew → CAS →
    * release, never CAS before acquire). The lease is renewed first: when it was lost (a
    * slow policy hook or signer outlived it), nothing is written, the Operation keeps its

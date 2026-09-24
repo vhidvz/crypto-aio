@@ -66,7 +66,13 @@ export interface RecoveryReport {
   readonly failed: number;
 }
 
-export type TargetResolver = (op: OperationRecord) => Promise<OperationTarget>;
+/**
+ * Rebuilds the wallet-bound target of a stored Operation (from its `context`); `undefined`
+ * (or a rejection) when it cannot be resolved any more, e.g. its wallet config is gone.
+ */
+export type TargetResolver = (
+  op: OperationRecord,
+) => Promise<OperationTarget | undefined>;
 
 export interface MonitorDeps {
   readonly engine: OperationEngine;
@@ -76,6 +82,8 @@ export interface MonitorDeps {
   readonly log: Logger;
   readonly namespace: string;
   readonly lifecycle: () => ResolvedLifecycle;
+  /** R26.3: reservation-holding verdicts are applied by the engine on this target. */
+  readonly resolveTarget: TargetResolver;
 }
 
 interface Snapshot {
@@ -466,6 +474,9 @@ export class Monitor {
         );
       }
     }
+    // R26.3: failing an all-rejected Operation releases its nonce, so the engine applies it
+    // under the address lease; the monitor never makes a reservation-holding transition.
+    if (evaluation.error?.code === 'TX_REJECTED') return this.failRejected(op);
     const terminal = isTerminal(evaluation.state);
     // R26.1: a read-only pass (no fence) writes the Operation only when its state, outcome
     // or error changes, never just to schedule it: a version bump would make a concurrent
@@ -496,6 +507,25 @@ export class Monitor {
       ...(clear.length > 0 ? { clear } : {}),
     };
     return this.deps.engine.update(op, patch, fence);
+  }
+
+  /** Hands the all-rejected verdict to the engine; unresolvable → left non-terminal. */
+  private async failRejected(op: OperationRecord): Promise<OperationRecord> {
+    let target: OperationTarget | undefined;
+    let failure: unknown;
+    try {
+      target = await this.deps.resolveTarget(op);
+    } catch (error) {
+      failure = error;
+    }
+    if (!target) {
+      this.deps.log.warn('cannot resolve the target to fail a rejected operation', {
+        operationId: op.id,
+        code: errorCode(failure),
+      });
+      return op;
+    }
+    return this.deps.engine.failRejected(target, op);
   }
 
   private bestStatus(

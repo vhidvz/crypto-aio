@@ -2,8 +2,13 @@ import { secp256k1 } from '@noble/curves/secp256k1';
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { containerOf } from '../../../src/core/container/internals';
 import type { ChainReader, ProofSource } from '../../../src/core/driver/types';
+import { noopLogger, type Logger } from '../../../src/core/events/logger';
 import type { AioEvent } from '../../../src/core/events/types';
-import type { ReadTarget } from '../../../src/core/lifecycle/engine';
+import {
+  withLifecycleDefaults,
+  type ReadTarget,
+} from '../../../src/core/lifecycle/engine';
+import { Monitor } from '../../../src/core/lifecycle/monitor';
 import type { OrderingData } from '../../../src/core/model/ordering';
 import { secret } from '../../../src/core/secret/secret';
 import { localSigner } from '../../../src/core/signing/local';
@@ -16,6 +21,7 @@ import type {
 import type { Transport } from '../../../src/core/transport/types';
 import { REVERT_ADDRESS, fakeAddress, signFake } from '../../../src/testing/fake-chain';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
+import { FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, mineWhile } from './support';
 
 describe('monitor', () => {
@@ -624,5 +630,73 @@ describe('read-only calls never race a broadcast (R26)', () => {
       context: expect.objectContaining({ operationId: op?.id }),
     });
     expect(env.chain.inMempool(op?.attempts[0]?.ref.id ?? '')).toBe(true);
+  });
+});
+
+describe('the all-rejected verdict runs under the address lease (R26.3)', () => {
+  /** A signed transfer whose only Attempt is proven rejected: the failed write was lost. */
+  async function rejectedButLive() {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const first = await createFakeEnv({ stores: { operations: faulty } });
+    first.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    faulty.crashOn({
+      method: 'update',
+      timing: 'before',
+      when: (args) => (args[2] as OperationPatch | undefined)?.state === 'failed',
+    });
+    await expect(
+      first.run(
+        first.bc.transfer({ to: first.stranger(), amount: 3n }, { idempotencyKey: 'rj' }),
+      ),
+    ).rejects.toMatchObject({ ambiguous: true });
+    const env = await first.restart({ killPrevious: true });
+    const op = await env.stores.operations.getByKey('default', 'rj');
+    if (!op) throw new Error('unreachable');
+    expect(op.state).toBe('signed');
+    expect(
+      await env.stores.operations.getObservation(op.activeAttemptId ?? ''),
+    ).toMatchObject({ state: 'rejected', evidence: 'proven' });
+    return { env, op };
+  }
+
+  it('fails the operation and frees its nonce from a monitor pass', async () => {
+    const { env, op } = await rejectedButLive();
+    await env.run(env.bc.getTransactionStatus(op.id));
+    expect(await stored(env, op.id)).toMatchObject({
+      state: 'failed',
+      error: { code: 'TX_REJECTED' },
+    });
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect((await stored(env, next.operation.id)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
+    });
+  });
+
+  it('leaves the operation non-terminal when its target cannot be resolved', async () => {
+    const { env, op } = await rejectedButLive();
+    const internals = containerOf(env.aio);
+    const warnings: unknown[] = [];
+    const log: Logger = {
+      ...noopLogger,
+      warn: (_message, fields) => warnings.push(fields),
+      child: () => log,
+    };
+    const monitor = new Monitor({
+      engine: internals.engine(),
+      stores: env.stores,
+      events: internals.runtime.events,
+      clock: internals.runtime.clock,
+      log,
+      namespace: 'default',
+      lifecycle: () => withLifecycleDefaults(internals.effective().lifecycle),
+      resolveTarget: async () => undefined,
+    });
+    const { target } = await monitorOf(env);
+    const checked = await env.run(monitor.check(target, op));
+    expect(checked.state).toBe('signed');
+    expect(warnings).toEqual([{ operationId: op.id, code: 'UNKNOWN' }]);
   });
 });
