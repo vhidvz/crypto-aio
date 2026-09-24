@@ -266,7 +266,16 @@ function generationProxy<T extends object>(target: T, generation: Generation): T
   // (e.g. a `callbackSigner`) has non-configurable read-only properties, and the Proxy
   // invariants would then forbid returning the fenced wrapper instead of the real value.
   // Every read is forwarded to the real object; descriptors are reported configurable.
+  // Writes are refused loudly: they would otherwise land silently on the stand-in.
+  const refuse = (trap: string): never => {
+    throw new TypeError(
+      `crypto-aio/testing: '${trap}' is not supported on a fenced object`,
+    );
+  };
   return new Proxy({} as T, {
+    set: () => refuse('set'),
+    defineProperty: () => refuse('defineProperty'),
+    deleteProperty: () => refuse('deleteProperty'),
     has: (_stand, prop) => Reflect.has(target, prop),
     ownKeys: () => Reflect.ownKeys(target),
     getPrototypeOf: () => Reflect.getPrototypeOf(target),

@@ -345,6 +345,25 @@ describe('createFakeEnv restart()', () => {
     expect(runtime.stores.operations).toBe(env.stores.operations);
   });
 
+  it('rejects writes through a fenced object instead of dropping them on the stand-in', async () => {
+    const env = await createFakeEnv();
+    const fenced = containerOf(env.aio).effective().signers[
+      env.signer.id
+    ] as unknown as Record<string, unknown>;
+    const writes: [string, () => unknown][] = [
+      ['set', () => (fenced.extra = 1)],
+      ['defineProperty', () => Object.defineProperty(fenced, 'extra', { value: 1 })],
+      ['deleteProperty', () => delete fenced.id],
+    ];
+    for (const [trap, write] of writes) {
+      const error = thrown(write);
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error).toMatchObject({ message: expect.stringContaining(`'${trap}'`) });
+    }
+    expect(fenced.id).toBe(env.signer.id);
+    expect(Object.keys(fenced)).not.toContain('extra');
+  });
+
   it('fences a frozen callbackSigner and a frozen store without breaking Proxy invariants', async () => {
     const inner = localSigner.generate({ curves: ['secp256k1'], id: 'inner' }).signer;
     const signer = callbackSigner({
