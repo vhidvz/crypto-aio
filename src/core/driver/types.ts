@@ -250,6 +250,12 @@ export interface ChainDriver {
   close?(): Promise<void>;
 }
 
+/**
+ * M12: a factory's `create()` must call `transport.setProbes(...)` exactly once, before any
+ * other traffic, on every `Transport` it receives here — including `indexer`, when present.
+ * `setProbes` resets health/identity state, so calling it again later, or skipping it on one
+ * of the two transports, leaves that transport's health checks silently unconfigured.
+ */
 export interface DriverContext {
   readonly chain: ChainInfo;
   readonly network: NetworkInfo;

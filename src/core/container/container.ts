@@ -134,7 +134,11 @@ export class CryptoAio {
     this.#bind(runtime, [scopePart(options)], true);
   }
 
-  /** Child container: inherits config, pool, stores and namespace; overrides merge on top. */
+  /**
+   * Child container: inherits config, pool, stores and namespace; overrides merge on top.
+   * Not a tenant boundary — a scope shares its root's pool and stores. Use a separate
+   * `new CryptoAio({ namespace })` when isolation between tenants is required.
+   */
   scope(overrides: ScopeOptions): CryptoAio {
     return new CryptoAio({}, { parent: this, overrides });
   }
