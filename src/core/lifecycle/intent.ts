@@ -48,8 +48,9 @@ function assertFeeData(value: unknown): void {
 
 /** M8/N5: `fee` is a known `FeeSpeed` or a plain-data `FeeOverride`, recursively — amounts
  * are `bigint` or a decimal string, like everywhere else in this API, never a JS `number` at
- * any depth, and never a class instance such as `Date`. */
-function validateFee(fee: TransferIntent['fee']): void {
+ * any depth, and never a class instance such as `Date`. Also the engine's guard for a
+ * replacement fee (Task 27). */
+export function validateFee(fee: TransferIntent['fee']): void {
   if (fee === undefined || isFeeSpeed(fee)) return;
   if (fee === null || typeof fee !== 'object' || Array.isArray(fee)) {
     throw new ValidationError(

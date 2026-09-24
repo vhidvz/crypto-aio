@@ -12,7 +12,7 @@ import { Address } from '../model/address';
 import { Amount } from '../model/amount';
 import type { AssetInfo, AssetRef } from '../model/asset';
 import type { Capability } from '../model/capability';
-import type { FeeEstimate } from '../model/fee';
+import type { FeeEstimate, FeeOverride, FeeSpeed } from '../model/fee';
 import type { ChainId, ExtOf, LibraryOf, NetworkOf } from '../model/ids';
 import { toStoredIntent, type TransferIntent } from '../model/intent';
 import type { Block, RawTx, Transaction, TxStatus } from '../model/transaction';
@@ -403,6 +403,33 @@ export class Blockchain<C extends ChainId = ChainId> {
     return this.submission(
       await this.engine().rebroadcast(await this.target(), operationId),
     );
+  }
+
+  /**
+   * Replaces a pending transfer with a higher-fee, mutually exclusive Attempt (capability
+   * `replace-fee`; a synchronous signer). If the node refuses it, the original stays live
+   * and active, and the node's error is thrown.
+   */
+  async replace(
+    operationId: string,
+    options: { readonly fee: FeeSpeed | FeeOverride },
+  ): Promise<Submission> {
+    return this.submission(
+      await this.engine().replace(await this.target(), operationId, options.fee),
+    );
+  }
+
+  /**
+   * Tries to cancel with a conflicting Attempt (capability `cancel`); the outcome is
+   * `cancelled` only if the cancel wins at finality, and the original may still win.
+   */
+  async cancel(operationId: string): Promise<Submission> {
+    return this.submission(await this.engine().cancel(await this.target(), operationId));
+  }
+
+  /** Expiry-based chains: re-issues an Operation whose earlier Attempts are provably expired. */
+  async rebuild(operationId: string): Promise<Submission> {
+    return this.submission(await this.engine().rebuild(await this.target(), operationId));
   }
 
   /**

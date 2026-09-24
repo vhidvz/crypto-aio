@@ -1,7 +1,7 @@
 import type { AssetService } from '../assets/service';
 import type { LifecycleOptions, ResolvedSelection } from '../config/types';
 import type { PooledDriver } from '../container/pool';
-import type { BroadcastResult, BuildContext } from '../driver/types';
+import type { BroadcastResult, BuildContext, SequenceSource } from '../driver/types';
 import {
   ChainError,
   ConfigError,
@@ -9,6 +9,7 @@ import {
   SigningError,
   StateError,
   TimeoutError,
+  UnsupportedCapabilityError,
   ValidationError,
   createError,
   isCryptoAioError,
@@ -24,7 +25,12 @@ import {
   type StoredIntent,
   type TransferIntent,
 } from '../model/intent';
-import type { OrderingData, OrderingKind } from '../model/ordering';
+import type { FeeOverride, FeeSpeed } from '../model/fee';
+import {
+  mutuallyExclusive,
+  type OrderingData,
+  type OrderingKind,
+} from '../model/ordering';
 import type { TxState, UnsignedTx } from '../model/transaction';
 import { reservedInputs, seqnoHolder } from '../ordering/reservations';
 import {
@@ -46,7 +52,9 @@ import {
   NON_TERMINAL_STATES,
   isTerminal,
   type AttemptObservation,
+  type AttemptPurpose,
   type AttemptRecord,
+  type ClearableField,
   type ExecutionContext,
   type Fence,
   type OperationFilter,
@@ -59,7 +67,7 @@ import {
 import { randomId } from '../util/bytes';
 import { abortReason, type Clock } from '../util/clock';
 import { canonicalJson, sha256Hex } from '../util/json';
-import { normalizeIntent } from './intent';
+import { normalizeIntent, validateFee } from './intent';
 import {
   writeObservation,
   type ObservationDeps,
@@ -234,6 +242,22 @@ function hasReclaimable(
 function awaitsBroadcast(op: OperationRecord): boolean {
   return op.state === 'signed' || (op.state === 'submitted' && op.ambiguous === true);
 }
+
+/** Spec §8.6: the states in which a replacement or cancel may supersede the active Attempt. */
+const CONFLICTABLE_STATES: ReadonlySet<OperationState> = new Set<OperationState>([
+  'submitted',
+  'stalled',
+]);
+/** The only state `rebuild` reopens. */
+const REBUILDABLE_STATES: ReadonlySet<OperationState> = new Set<OperationState>([
+  'expired',
+]);
+/** Where the stored bytes of a new Attempt whose broadcast never completed are resent. */
+const RESUMABLE_STATES: ReadonlySet<OperationState> = new Set<OperationState>([
+  'signed',
+  'submitted',
+  'stalled',
+]);
 
 /**
  * M1: the built transaction must use exactly the slot the engine reserved: the ordering
@@ -486,6 +510,117 @@ export class OperationEngine {
     }
   }
 
+  /**
+   * Spec §8.6: a new Attempt paying a higher fee for the same slot (same nonce or seqno,
+   * or conflicting inputs). Needs the `replace-fee` capability, the driver's
+   * ReplacementPolicy and a synchronous signer; `submitted` or `stalled` only. See
+   * `createConflicting`.
+   */
+  async replace(
+    target: OperationTarget,
+    operationId: string,
+    fee: FeeSpeed | FeeOverride,
+  ): Promise<OperationRecord> {
+    const policy = target.pooled.driver.replacement;
+    const build = policy?.replace ? policy.buildReplacement?.bind(policy) : undefined;
+    if (!build || !target.selection.capabilities.has('replace-fee')) {
+      throw new UnsupportedCapabilityError(
+        'UNSUPPORTED_CAPABILITY',
+        `${target.selection.chain.id} does not support fee replacement`,
+      );
+    }
+    if (fee === undefined)
+      throw new ValidationError('INVALID_INTENT', 'a replacement needs a fee');
+    validateFee(fee);
+    return this.createConflicting(target, operationId, 'replacement', (previous, ctx) =>
+      build(previous, fee, ctx),
+    );
+  }
+
+  /**
+   * "Cancel" is a conflicting transaction for the same slot (e.g. a self-transfer), not a
+   * protocol primitive: the outcome is `cancelled` only when the cancel Attempt reaches
+   * proven finality, and the original may still win. Capability `cancel`; `submitted` or
+   * `stalled` only. A repeat while a cancel is the active Attempt returns the Operation,
+   * never a second cancel. See `createConflicting`.
+   */
+  async cancel(target: OperationTarget, operationId: string): Promise<OperationRecord> {
+    const policy = target.pooled.driver.replacement;
+    const build = policy?.cancel ? policy.buildCancel?.bind(policy) : undefined;
+    if (!build || !target.selection.capabilities.has('cancel')) {
+      throw new UnsupportedCapabilityError(
+        'UNSUPPORTED_CAPABILITY',
+        `${target.selection.chain.id} does not support cancellation`,
+      );
+    }
+    return this.createConflicting(target, operationId, 'cancel', (previous, ctx) =>
+      build(previous, ctx),
+    );
+  }
+
+  /**
+   * Expiry and seqno chains only: once every earlier Attempt is provably dead (re-proved
+   * here from finalized state, `assertAttemptsDead`), an `expired` Operation gets a fresh
+   * Attempt and is live again. It is the one explicit exception to "a terminal Operation
+   * never moves" (see `appendSigned`). Under the Operation's lease (the op lock on expiry
+   * chains, the address lease on seqno chains); signed once, persisted before its
+   * broadcast, and a repeat resends a persisted rebuild instead of signing another. A
+   * refusal of the rebuilt Attempt leaves the Operation `stalled`, never `expired` again:
+   * only the monitor's proof can end it.
+   */
+  async rebuild(target: OperationTarget, operationId: string): Promise<OperationRecord> {
+    const driver = target.pooled.driver;
+    if (driver.ordering !== 'expiry' && driver.ordering !== 'seqno') {
+      throw new UnsupportedCapabilityError(
+        'UNSUPPORTED_CAPABILITY',
+        `${target.selection.chain.id} transactions do not expire; use replace or cancel`,
+      );
+    }
+    const done = await this.withOperationLease(target, operationId, async (lease) => {
+      const op = await this.require(operationId);
+      this.assertOwnedBy(target, op);
+      const resumed = await this.resumeNewAttempt(target, op, 'rebuild', lease);
+      if (resumed) return resumed;
+      if (!REBUILDABLE_STATES.has(op.state)) {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          `only expired operations can be rebuilt (state '${op.state}')`,
+          { context: { operationId } },
+        );
+      }
+      await this.assertAttemptsDead(target, op);
+      let ordering: OrderingData | undefined;
+      if (driver.ordering === 'seqno') {
+        if (!driver.sequence) {
+          throw new StateError(
+            'INVALID_TRANSITION',
+            `the ${op.context.chain} driver has seqno ordering but no sequence source`,
+          );
+        }
+        ordering = await this.nextSeqno(driver.sequence, op);
+      }
+      const build: BuildContext = {
+        from: op.intent.from,
+        keys: target.wallet.keys,
+        wallet: target.wallet.options,
+        ...(ordering ? { ordering } : {}),
+      };
+      const fee = await driver.builder.estimateFee(op.intent, build);
+      const unsigned = await driver.builder.build(op.intent, fee, build);
+      assertBuiltOrdering(op.id, driver.ordering, ordering, undefined, unsigned.ordering);
+      const signed = await this.signNewAttempt(
+        target,
+        op,
+        unsigned,
+        'rebuild',
+        REBUILDABLE_STATES,
+        lease,
+      );
+      return this.broadcastActive(target, signed, undefined, lease);
+    });
+    return this.settle(done);
+  }
+
   get(operationId: string): Promise<OperationRecord | null> {
     return this.deps.stores.operations.get(this.deps.namespace, operationId);
   }
@@ -651,22 +786,7 @@ export class OperationEngine {
           );
         }
         if (driver.ordering === 'seqno') {
-          const holder = seqnoHolder(await this.walletOperations(op), op.id);
-          if (holder) {
-            throw new StateError(
-              'SEQUENCE_BUSY',
-              'the wallet has another operation in flight (seqno wallets are strictly serial)',
-              {
-                retryable: true,
-                context: { operationId: op.id, blockingOperationId: holder.id },
-              },
-            );
-          }
-          reservation = {
-            kind: 'seqno',
-            seqno: await driver.sequence.pending(stored.from),
-            validUntil: 0,
-          };
+          reservation = await this.nextSeqno(driver.sequence, op);
         } else {
           const pending = await driver.sequence.pending(stored.from);
           const nonce = await this.deps.sequences.allocate(
@@ -1000,6 +1120,15 @@ export class OperationEngine {
    * (R24), and callers continue from its state; a still pre-signing one rethrows the
    * VERSION_CONFLICT, and an abandoned one is INVALID_TRANSITION. The `signed` Operation is
    * scheduled (`nextCheckAt: now`), like every engine transition after signing.
+   *
+   * A new Attempt (`supersedes` set: replace, cancel, rebuild) has a stricter lost-CAS
+   * contract: the stored Operation is returned only when it shows this very Attempt;
+   * otherwise the VERSION_CONFLICT is rethrown (`signNewAttempt` may retry it).
+   *
+   * The store does not guard transitions, so appending to a terminal Operation is refused
+   * here, with one explicit exception: a `rebuild` Attempt reopens an `expired` Operation
+   * (Task 27; `rebuild` re-proves every earlier Attempt dead under the lease first). It is
+   * the only way out of a terminal state; `update` refuses every other.
    */
   protected async appendSigned(
     target: OperationTarget,
@@ -1010,6 +1139,13 @@ export class OperationEngine {
     supersedes?: string,
     lease?: LeaseHandle,
   ): Promise<OperationRecord> {
+    if (isTerminal(op.state) && !(purpose === 'rebuild' && op.state === 'expired')) {
+      throw new StateError(
+        'INVALID_TRANSITION',
+        `operation '${op.id}' is ${op.state}; no ${purpose} attempt can be added`,
+        { context: { operationId: op.id } },
+      );
+    }
     const signed = await target.pooled.driver.builder.assemble(unsigned, signatures);
     const attempt: AttemptRecord = {
       id: randomId('att'),
@@ -1047,6 +1183,10 @@ export class OperationEngine {
       // conflict is rethrown (a repeat signs again); an abandoned one cannot be signed.
       if (!isCryptoAioError(error, 'VERSION_CONFLICT')) throw error;
       const stored = await this.require(op.id);
+      if (supersedes !== undefined) {
+        if (stored.attempts.some((a) => a.id === attempt.id)) return stored;
+        throw error;
+      }
       if (stored.state === 'abandoned') {
         throw new StateError(
           'INVALID_TRANSITION',
@@ -1071,6 +1211,284 @@ export class OperationEngine {
       );
     }
     return attempt;
+  }
+
+  // ---- new Attempts: replace, cancel, rebuild (spec §8.6) -------------------------------
+
+  /**
+   * Replace and cancel, under the Operation's lease (the address lease; the op lock on
+   * expiry chains). The new Attempt is built from the active one and must be mutually
+   * exclusive with every earlier Attempt (checked before signing; for inputs, exclusion is
+   * not transitive) and use the slot `assertBuiltOrdering` expects. It is signed once and
+   * persisted before its broadcast (`signNewAttempt`), never re-signed: a repeat whose
+   * Attempt was persisted but never, or ambiguously, sent resends its stored bytes
+   * (`resumeNewAttempt`). When the node refuses the fresh Attempt, the one it superseded is
+   * still live: the Operation goes back to its previous state and active Attempt
+   * (`restoreAfterRefusal`) and the node's error is thrown. That refusal is never terminal.
+   */
+  protected async createConflicting(
+    target: OperationTarget,
+    operationId: string,
+    purpose: 'replacement' | 'cancel',
+    build: (previous: UnsignedTx, ctx: BuildContext) => Promise<UnsignedTx>,
+  ): Promise<OperationRecord> {
+    const done = await this.withOperationLease(target, operationId, async (lease) => {
+      const op = await this.require(operationId);
+      this.assertOwnedBy(target, op);
+      const resumed = await this.resumeNewAttempt(target, op, purpose, lease);
+      if (resumed) return resumed;
+      if (!CONFLICTABLE_STATES.has(op.state)) {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          `cannot create a ${purpose} for an operation in state '${op.state}'`,
+          { context: { operationId } },
+        );
+      }
+      const previous = this.activeAttempt(op);
+      if (previous.purpose === 'cancel') {
+        // A repeat of the cancel returns it. A replacement would be built from the cancel's
+        // own transaction, yet report `executed` if it won.
+        if (purpose === 'cancel') return op;
+        throw new StateError(
+          'INVALID_TRANSITION',
+          'a cancel is in flight and cannot be replaced',
+          { context: { operationId } },
+        );
+      }
+      const driver = target.pooled.driver;
+      const excludeInputs =
+        driver.ordering === 'inputs'
+          ? reservedInputs(await this.walletOperations(op), op.id)
+          : undefined;
+      const unsigned = await build(previous.unsigned, {
+        from: op.intent.from,
+        keys: target.wallet.keys,
+        wallet: target.wallet.options,
+        ...(excludeInputs ? { excludeInputs } : {}),
+      });
+      if (!op.attempts.every((a) => mutuallyExclusive(unsigned.ordering, a.ordering))) {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          `the ${purpose} would not conflict with every earlier attempt; refusing to risk a double spend`,
+          { context: { operationId } },
+        );
+      }
+      assertBuiltOrdering(
+        op.id,
+        driver.ordering,
+        previous.ordering,
+        excludeInputs,
+        unsigned.ordering,
+      );
+      const signed = await this.signNewAttempt(
+        target,
+        op,
+        unsigned,
+        purpose,
+        CONFLICTABLE_STATES,
+        lease,
+      );
+      try {
+        return await this.broadcastActive(target, signed, undefined, lease);
+      } catch (error) {
+        // Only the node's own answer; an ambiguous failure may have delivered the bytes.
+        if (isCryptoAioError(error) && error.category === 'chain' && !error.ambiguous)
+          await this.restoreAfterRefusal(op, signed.activeAttemptId, lease);
+        throw error;
+      }
+    });
+    return this.settle(done);
+  }
+
+  /**
+   * A repeat of a replace, cancel or rebuild whose Attempt was persisted but never sent (no
+   * broadcast recorded: a crash after `appendAttempt`) or sent with an unknown outcome
+   * (ambiguous): its stored bytes are resent, never signed again, so a retry creates no
+   * second new Attempt. `undefined` when there is nothing to resume. A refusal of these
+   * bytes takes the ordinary broadcast path (`stalled`, slot kept): a node may hold them.
+   */
+  protected async resumeNewAttempt(
+    target: OperationTarget,
+    op: OperationRecord,
+    purpose: Exclude<AttemptPurpose, 'original'>,
+    lease: LeaseHandle | undefined,
+  ): Promise<OperationRecord | undefined> {
+    const active = op.attempts.find((a) => a.id === op.activeAttemptId);
+    if (active?.purpose !== purpose || !RESUMABLE_STATES.has(op.state)) return undefined;
+    if (!awaitsBroadcast(op)) {
+      const observation = await this.deps.stores.operations.getObservation(active.id);
+      if (observation?.lastBroadcastAt !== undefined) return undefined;
+    }
+    return this.broadcastActive(target, op, undefined, lease);
+  }
+
+  /**
+   * Signs a new Attempt once and persists it (write-ahead) before any broadcast. The policy
+   * hook and the signer are bounded by `lifecycle.signTimeoutMs`, with the lease renewed
+   * meanwhile (`signingDeadline`). A pending answer is refused, since new Attempts need a
+   * synchronous signer, and its tickets are cancelled through their issuers (R22), as are
+   * those of a pending answer that arrives after the deadline. A veto, a timeout or a bad
+   * signature writes nothing.
+   *
+   * A lost compare-and-set (e.g. a worker's claim bumped the version) is retried with the
+   * same signatures under the same lease while the re-read Operation is still `eligible`
+   * with the same Attempts. Otherwise the VERSION_CONFLICT is rethrown and these bytes,
+   * never persisted or sent, are dropped. Success is returned only when the stored
+   * Operation shows the new Attempt (`appendSigned`).
+   */
+  protected async signNewAttempt(
+    target: OperationTarget,
+    op: OperationRecord,
+    unsigned: UnsignedTx,
+    purpose: Exclude<AttemptPurpose, 'original'>,
+    eligible: ReadonlySet<OperationState>,
+    lease: LeaseHandle | undefined,
+  ): Promise<OperationRecord> {
+    const supersedes = this.activeAttempt(op).id;
+    const ctx = this.signingContext(target, op, unsigned, purpose);
+    const result = await this.signingDeadline(
+      op,
+      lease,
+      undefined,
+      async () => {
+        await this.deps.orchestrator.authorize(ctx);
+        return this.deps.orchestrator.sign(target.wallet, unsigned.signingRequests, ctx);
+      },
+      async (late) => {
+        if (late.status === 'pending')
+          await this.cancelTickets(target, op.id, late.tickets);
+      },
+    );
+    if (result.status === 'pending') {
+      await this.cancelTickets(target, op.id, result.tickets);
+      throw new SigningError(
+        'SIGNING_FAILED',
+        `${purpose} attempts need a synchronous signer`,
+        { context: { operationId: op.id } },
+      );
+    }
+    let current = op;
+    for (let tries = 1; ; tries++) {
+      try {
+        return await this.appendSigned(
+          target,
+          current,
+          unsigned,
+          result.signatures,
+          purpose,
+          supersedes,
+          lease,
+        );
+      } catch (error) {
+        if (!isCryptoAioError(error, 'VERSION_CONFLICT') || tries >= 5) throw error;
+        current = await this.require(op.id);
+        if (
+          !eligible.has(current.state) ||
+          current.activeAttemptId !== supersedes ||
+          current.attempts.length !== op.attempts.length
+        )
+          throw error;
+      }
+    }
+  }
+
+  /**
+   * Spec §8.6: the node refused a fresh replacement or cancel, so the Attempt it superseded
+   * is still the live one and keeps its nonce: the Operation returns to `before`'s state,
+   * error and ambiguity with that Attempt active. The refused Attempt stays recorded and
+   * monitored. Only while the refused Attempt is still active and the Operation still shows
+   * the refusal (`stalled`, or `signed` after a rejection); anything the monitor recorded
+   * meanwhile is kept. The lease is renewed first. A failure is only logged: the caller
+   * gets the node's error either way, and the Operation stays safely `stalled`.
+   */
+  protected async restoreAfterRefusal(
+    before: OperationRecord,
+    refusedId: string | undefined,
+    lease: LeaseHandle | undefined,
+  ): Promise<void> {
+    const clear: ClearableField[] = [];
+    if (!before.error) clear.push('error');
+    if (!before.ambiguous) clear.push('ambiguous');
+    const patch: OperationPatch = {
+      state: before.state,
+      activeAttemptId: before.activeAttemptId,
+      ...(before.error ? { error: before.error } : {}),
+      ...(before.ambiguous ? { ambiguous: true } : {}),
+      ...(clear.length > 0 ? { clear } : {}),
+    };
+    try {
+      await lease?.renew();
+      await this.updateAfterBroadcast(await this.require(before.id), (current) =>
+        current.activeAttemptId === refusedId &&
+        (current.state === 'stalled' || current.state === 'signed')
+          ? patch
+          : undefined,
+      );
+    } catch (error) {
+      this.deps.log.warn('could not restore the attempt a refused one superseded', {
+        operationId: before.id,
+        code: errorCode(error),
+      });
+    }
+  }
+
+  /**
+   * Rebuild's precondition, re-proved from finalized state (quorum proof reads), never
+   * taken from stored observations: each earlier Attempt's expiry passed, or (seqno)
+   * another transaction consumed its slot, per finalized state, and only then is it
+   * confirmed not included at finality. In that order, as the monitor does: any inclusion
+   * would lie at or below the already finalized expiry or slot, so the later read sees it.
+   * Otherwise INVALID_TRANSITION; nothing is written.
+   */
+  protected async assertAttemptsDead(
+    target: OperationTarget,
+    op: OperationRecord,
+  ): Promise<void> {
+    const { proofs } = target.pooled.driver;
+    const from = op.intent.from;
+    for (const attempt of op.attempts) {
+      const { ordering } = attempt;
+      const unreachable =
+        (await proofs.expired(ordering)) ||
+        (ordering.kind === 'seqno' &&
+          (await proofs.slotConsumed(ordering, from, 'finalized')));
+      const dead =
+        unreachable &&
+        !(await proofs.includedFinal(attempt.ref, ordering, from)).included;
+      if (!dead) {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          'an earlier attempt is not provably dead; refusing to rebuild',
+          { context: { operationId: op.id, attemptId: attempt.id } },
+        );
+      }
+    }
+  }
+
+  /**
+   * The wallet's next seqno as a reservation. Seqno wallets are strictly serial: another
+   * live Operation that may still consume the current seqno makes this SEQUENCE_BUSY.
+   */
+  protected async nextSeqno(
+    sequence: SequenceSource,
+    op: OperationRecord,
+  ): Promise<OrderingData> {
+    const holder = seqnoHolder(await this.walletOperations(op), op.id);
+    if (holder) {
+      throw new StateError(
+        'SEQUENCE_BUSY',
+        'the wallet has another operation in flight (seqno wallets are strictly serial)',
+        {
+          retryable: true,
+          context: { operationId: op.id, blockingOperationId: holder.id },
+        },
+      );
+    }
+    return {
+      kind: 'seqno',
+      seqno: await sequence.pending(op.intent.from),
+      validUntil: 0,
+    };
   }
 
   protected get observationDeps(): ObservationDeps {
