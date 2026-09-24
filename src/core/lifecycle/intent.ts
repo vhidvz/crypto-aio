@@ -13,7 +13,8 @@ export type HandleContext = MappingContext;
 
 /** N5: recursively rejects a JS `number` at any depth, and any non-plain value (a class
  * instance such as `Date`) anywhere inside a `FeeOverride` — only plain data is allowed:
- * strings, bigints, booleans, plain objects and arrays. */
+ * strings, bigints, booleans, plain objects and arrays. An object field set to `undefined` is
+ * treated as omitted (N-E). */
 function assertFeeData(value: unknown): void {
   if (typeof value === 'number') {
     throw new ValidationError(
@@ -38,7 +39,8 @@ function assertFeeData(value: unknown): void {
     if (proto !== Object.prototype && proto !== null) {
       throw new ValidationError('INVALID_INTENT', 'fee override must be plain data');
     }
-    for (const v of Object.values(value)) assertFeeData(v);
+    // N-E: an `undefined` field is an omitted optional field, not a non-plain value.
+    for (const v of Object.values(value)) if (v !== undefined) assertFeeData(v);
     return;
   }
   throw new ValidationError('INVALID_INTENT', 'fee override must be plain data');

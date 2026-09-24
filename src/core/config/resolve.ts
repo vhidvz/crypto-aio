@@ -34,6 +34,12 @@ function toList(
     : [value as ProviderRef];
 }
 
+/** Own-key lookup in a named map, so an inherited name (`constructor`, `toString`,
+ * `__proto__`, ...) is unknown rather than resolving to an `Object.prototype` member. */
+function own<T>(map: Readonly<Record<string, T>>, name: string): T | undefined {
+  return Object.hasOwn(map, name) ? map[name] : undefined;
+}
+
 function inlineName(config: ProviderConfig): string {
   return `inline:${sha256Hex(canonicalJson(config)).slice(0, 8)}`;
 }
@@ -72,7 +78,7 @@ function resolveProviders(
     let config: ProviderConfig;
     if (typeof ref === 'string') {
       name = ref;
-      const configured = effective.providers[ref];
+      const configured = own(effective.providers, ref);
       if (configured) config = configured;
       else if (catalogs.presets.has(ref, kind)) config = { preset: ref };
       else throw new ConfigError('CONFIG_INVALID', `unknown provider '${ref}'`);
@@ -223,7 +229,7 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
 
   let wallet: ResolvedSelection['wallet'];
   if (merged.wallet !== undefined) {
-    const config = effective.wallets[merged.wallet];
+    const config = own(effective.wallets, merged.wallet);
     if (!config)
       throw new ConfigError('CONFIG_INVALID', `unknown wallet '${merged.wallet}'`);
     if (config.chains && !config.chains.includes(chain.id)) {
@@ -233,7 +239,7 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
       );
     }
     for (const signerId of Object.values(config.signers ?? {})) {
-      if (!effective.signers[signerId])
+      if (!own(effective.signers, signerId))
         throw new ConfigError('CONFIG_INVALID', `unknown signer '${signerId}'`);
     }
     wallet = { name: merged.wallet, config };
@@ -242,7 +248,7 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
   let signer: ResolvedSelection['signer'];
   const signerId = merged.signer ?? wallet?.config.signer;
   if (signerId !== undefined) {
-    const instance = effective.signers[signerId];
+    const instance = own(effective.signers, signerId);
     if (!instance)
       throw new ConfigError('CONFIG_INVALID', `unknown signer '${signerId}'`);
     if (!chain.schemes.some((scheme) => instance.schemes.includes(scheme))) {

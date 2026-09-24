@@ -265,6 +265,22 @@ describe('Blockchain handle', () => {
         from,
       ),
     ).resolves.toMatchObject({ fee: { fee: 1_000n }, memo: 'ok' });
+    // N-E: an omitted optional field (`undefined`) inside an override is not "non-plain data",
+    // and a top-level `fee: undefined` simply means "no fee override".
+    await expect(
+      normalizeIntent(
+        ctx,
+        {
+          to: env.stranger(),
+          amount: '1',
+          fee: { fee: 1_000n, tip: { max: undefined } },
+        },
+        from,
+      ),
+    ).resolves.toMatchObject({ fee: { fee: 1_000n } });
+    await expect(
+      normalizeIntent(ctx, { to: env.stranger(), amount: '1', fee: undefined }, from),
+    ).resolves.toBeDefined();
   });
 
   it('normalizeIntent rejects a fee override with a number or a class instance at any depth', async () => {
@@ -648,6 +664,54 @@ describe('containers', () => {
     expect(() => {
       (layer.signers as Record<string, unknown>).other = env.signer;
     }).toThrow();
+  });
+
+  it('keeps a plain-object signer opaque: the same object, with its own state, in every layer', async () => {
+    const env = await createFakeEnv();
+    const counted = {
+      id: 'counted',
+      schemes: env.signer.schemes,
+      calls: 0,
+      getPublicKey(scheme: string) {
+        this.calls += 1;
+        return env.signer.getPublicKey(scheme);
+      },
+      sign(...args: Parameters<Signer['sign']>) {
+        this.calls += 1;
+        return env.signer.sign(...args);
+      },
+    };
+    const aio = new CryptoAio({
+      env: false,
+      logger: noopLogger,
+      clock: env.clock,
+      plugins: [fakePlugin()],
+      transport: { fetch: env.chain.fetch },
+      providers: { fake: { endpoints: [{ url: env.chain.endpoint('opaque') }] } },
+      signers: { counted },
+      wallets: { main: { signer: 'counted' } },
+      chains: { fakechain: { provider: 'fake', wallet: 'main' } },
+    });
+    const scoped = aio.scope({ signers: { counted } });
+    expect(containerOf(aio).effective().signers.counted).toBe(counted);
+    expect(containerOf(scoped).effective().signers.counted).toBe(counted);
+
+    const address = await env.run(
+      scoped.blockchain({ chain: 'fakechain' }).walletAddress(),
+    );
+    expect(address.canonical).toBe(env.address);
+    expect(counted.calls).toBe(1);
+  });
+
+  it('looks wallets up by own key only: an Object.prototype name is an unknown wallet', async () => {
+    const env = await createFakeEnv();
+    expect(
+      thrown(() => env.aio.blockchain({ chain: 'fakechain', wallet: 'constructor' })),
+    ).toMatchObject({
+      name: 'ConfigError',
+      code: 'CONFIG_INVALID',
+      message: expect.stringMatching(/unknown wallet 'constructor'/),
+    });
   });
 
   it('lets scopes override without mutating the parent and keeps plugins root-only', async () => {

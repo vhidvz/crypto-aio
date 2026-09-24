@@ -177,6 +177,27 @@ describe('resolveSelection', () => {
     expect(
       thrown(() => resolve({ chain: 'testchain', provider: 'acme', wallet: 'ghost' })),
     ).toMatchObject({ message: expect.stringMatching(/unknown wallet 'ghost'/) });
+    // Own-key lookups: inherited Object.prototype names are unknown, not "found".
+    expect(
+      thrown(() => resolve({ chain: 'testchain', provider: 'acme', wallet: 'toString' })),
+    ).toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: expect.stringMatching(/unknown wallet 'toString'/),
+    });
+    expect(
+      thrown(() => resolve({ chain: 'testchain', provider: 'toString' })),
+    ).toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: expect.stringMatching(/unknown provider/),
+    });
+    expect(
+      thrown(() =>
+        resolve({ chain: 'testchain', provider: 'acme', signer: '__proto__' }),
+      ),
+    ).toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: expect.stringMatching(/unknown signer '__proto__'/),
+    });
     expect(
       thrown(() =>
         resolve({ chain: 'testchain', provider: 'acme', wallet: 'restricted' }),

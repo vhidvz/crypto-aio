@@ -61,8 +61,8 @@ export function deepMerge(
 
 /**
  * Shallow merge where `undefined` never overrides. Values are cloned (see `cloneValue`) so a
- * named-map entry replaced whole never aliases the caller's input; class instances such as
- * Signers keep their identity. Skips `__proto__`/`constructor`/`prototype` keys.
+ * named-map entry replaced whole never aliases the caller's input; class instances keep their
+ * identity (`signers` never goes through here — see `byReference`). Skips `__proto__`/`constructor`/`prototype` keys.
  */
 function shallow<T extends object>(base: T | undefined, over: T | undefined): T {
   const out: Record<string, unknown> = {};
@@ -75,6 +75,24 @@ function shallow<T extends object>(base: T | undefined, over: T | undefined): T 
     out[key] = cloneValue(value);
   }
   return out as T;
+}
+
+/**
+ * Merges a map of opaque values by name, taking every value by reference (never cloned). Used
+ * for `signers`: `Signer` is an interface, so a plain-object signer is legitimate and must keep
+ * its identity and its own-property state. Skips `__proto__`/`constructor`/`prototype` keys.
+ */
+function byReference<T>(
+  base: Readonly<Record<string, T>>,
+  over: Readonly<Record<string, T>> | undefined,
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const layer of [base, over ?? {}]) {
+    for (const [key, value] of Object.entries(layer)) {
+      if (value !== undefined && !UNSAFE_KEYS.has(key)) out[key] = value;
+    }
+  }
+  return out;
 }
 
 /** Chain defaults: fields are atomic (provider lists are replaced), `options` deep-merges. */
@@ -104,7 +122,7 @@ export function mergeScopes(
       chains[id] = mergeChainDefaults(chains[id], defaults);
     }
     providers = shallow(providers, layer.providers);
-    signers = shallow(signers, layer.signers);
+    signers = byReference(signers, layer.signers);
     wallets = shallow(wallets, layer.wallets);
     hooks = shallow(hooks, layer.hooks);
     lifecycle = shallow(lifecycle, layer.lifecycle);
