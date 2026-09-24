@@ -153,6 +153,20 @@ function serializeJson(payload: unknown): string {
   }
 }
 
+/** #3 (round 4): builds the request once, before #run, so an invalid or forbidden method, a
+ * GET/HEAD with a body or a bad header value is a local config error — no fetch, no breaker
+ * bookkeeping, never ambiguous. The message never repeats the input. */
+function buildRequest(url: string | URL, init: RequestInit, what: string): Request {
+  try {
+    return new Request(url, init);
+  } catch {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `${what} has an invalid method, header or body`,
+    );
+  }
+}
+
 function rpcLabel(payload: unknown): string {
   if (Array.isArray(payload)) return 'batch';
   const method = (payload as { method?: unknown } | null)?.method;
@@ -180,6 +194,10 @@ export class HttpTransport implements Transport {
    * have been delivered — every such failure except HTTP 401/403/429 and JSON-RPC-level rate
    * limiting (R16: those mean the request was never actually processed). */
   readonly #maybeDelivered = new WeakSet<CryptoAioError>();
+  /** #4 (round 4): identity-check failures caused only by the owning request's caller
+   * aborting — they say nothing about the endpoint, so a refresh that joined one counts the
+   * endpoint as not attempted rather than failed. */
+  readonly #abandonedChecks = new WeakSet<object>();
   readonly #clock: Clock;
   readonly #events: EventBus;
   readonly #log: Logger;
@@ -312,6 +330,15 @@ export class HttpTransport implements Transport {
         : typeof request.body === 'string'
           ? request.body
           : serializeJson(request.body);
+    buildRequest(
+      PLACEHOLDER_ORIGIN,
+      {
+        method: request.method,
+        ...(request.headers ? { headers: request.headers } : {}),
+        ...(bodyText !== undefined ? { body: bodyText } : {}),
+      },
+      'http request',
+    );
     return this.#run(
       routeLabel(request.method, request.route),
       options,
@@ -346,18 +373,6 @@ export class HttpTransport implements Transport {
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
       const headerSource =
         init?.headers ?? (input instanceof Request ? input.headers : undefined);
-      // #1 (round 3): built once, here, before #run — a bad SDK header value must fail with
-      // no fetch, no breaker bookkeeping and no ambiguity tag, never as a per-attempt local
-      // error (round 2 built this inside the attempt, around :351).
-      let baseHeaders: Headers;
-      try {
-        baseHeaders = new Headers(headerSource);
-      } catch {
-        throw new ConfigError(
-          'CONFIG_INVALID',
-          'bridged fetch request has an invalid header value',
-        );
-      }
       let body = init?.body ?? undefined;
       if (body === undefined && input instanceof Request && input.body) {
         // M5: a Request input's own body is preserved (read once, replayed on every retry).
@@ -367,8 +382,25 @@ export class HttpTransport implements Transport {
         // can replay the same bytes.
         body = new Uint8Array(await new Response(body).arrayBuffer());
       }
+      // #1 (round 3) / #3 (round 4): the whole request is built once, here, before #run — a
+      // bad SDK header value, a GET/HEAD with a body or an invalid or forbidden method fails
+      // with no fetch, no breaker bookkeeping and no ambiguity tag, never as a per-attempt
+      // local error. Every attempt reuses its method, headers and body bytes (headers and
+      // bytes together, so e.g. a multipart boundary always matches its body).
+      const template = buildRequest(
+        url,
+        {
+          method,
+          ...(headerSource !== undefined ? { headers: headerSource } : {}),
+          ...(body !== undefined ? { body } : {}),
+        },
+        'bridged fetch request',
+      );
+      const payload = template.body
+        ? new Uint8Array(await template.arrayBuffer())
+        : undefined;
       // Bridged SDK calls have no route template; the raw path never becomes an event label.
-      const label = method;
+      const label = template.method;
       const options = classify?.(url, init) ?? {};
       const signal = init?.signal ?? options.signal;
       return this.#run(
@@ -376,16 +408,16 @@ export class HttpTransport implements Transport {
         { ...options, ...(signal ? { signal } : {}) },
         async (endpoint, deadline) => {
           // #1 (round 3): cloning an already-valid Headers instance never throws.
-          const requestHeaders = new Headers(baseHeaders);
+          const requestHeaders = new Headers(template.headers);
           for (const [name, value] of Object.entries(endpoint.headers))
             requestHeaders.set(name, value);
           const started = this.#clock.now();
           const response = await this.#fetch(
             joinUrl(endpoint.url, url.pathname, url.search),
             {
-              method,
+              method: template.method,
               headers: requestHeaders,
-              ...(body !== undefined ? { body } : {}),
+              ...(payload !== undefined ? { body: payload } : {}),
               signal: deadline,
               redirect: 'error',
             },
@@ -427,10 +459,16 @@ export class HttpTransport implements Transport {
   setProbes(probes: HealthProbes): void {
     this.#probes = probes;
     // M12: a new probe set invalidates any previously confirmed identity.
+    // #5 (round 4): ...and the health timers and stored heights. #highest stays: it is the
+    // monotonic guard, rebuilt from verified endpoints only if one turns out mismatched (R19).
+    this.#lastHealthAt = Number.NEGATIVE_INFINITY;
+    this.#nextRefreshAt = Number.NEGATIVE_INFINITY;
+    this.#best = undefined;
     for (const endpoint of this.#endpoints) {
       endpoint.identity = 'unchecked';
       endpoint.identityCheck = undefined;
       endpoint.identityRetryAt = undefined;
+      endpoint.height = undefined;
     }
   }
 
@@ -1223,6 +1261,26 @@ export class HttpTransport implements Transport {
 
   // ---- health ----------------------------------------------------------------------
 
+  /** Same condition under which #ensureIdentity actually probes. */
+  #identityProbed(): boolean {
+    return (
+      this.#probes.identity !== undefined && this.#probes.expectedIdentity !== undefined
+    );
+  }
+
+  /** R19 (round 4): the highest known height among endpoints that may feed health heights —
+   * with an identity probe configured, only endpoints whose identity is 'ok'. */
+  #verifiedMaxHeight(): bigint | undefined {
+    const probed = this.#identityProbed();
+    let max: bigint | undefined;
+    for (const e of this.#endpoints) {
+      if (e.height === undefined || e.identity === 'mismatch') continue;
+      if (probed && e.identity !== 'ok') continue;
+      if (max === undefined || e.height > max) max = e.height;
+    }
+    return max;
+  }
+
   async #ensureIdentity(endpoint: Endpoint, signal: AbortSignal): Promise<void> {
     const probe = this.#probes.identity;
     const expected = this.#probes.expectedIdentity;
@@ -1240,46 +1298,30 @@ export class HttpTransport implements Transport {
           { context: this.#context(endpoint) },
         );
       }
-      endpoint.identityCheck ??= (async () => {
+      const shared = endpoint.identityCheck;
+      if (shared) {
+        // #6 (round 4): a joiner races its own signal against the shared check, the same way
+        // #join does — its caller's abort or its own deadline rejects only this caller, and
+        // the check runs on for its owner. Only TIMEOUT (this joiner's deadline) is wrapped;
+        // a caller's abort reason and the check's own failure propagate as they are.
         try {
-          // #9 (round 2): races the probe against `signal` so a probe that ignores its
-          // own signal argument can't hang #ensureIdentity forever.
-          const actual = await raceAbort(probe(this.#direct(endpoint, signal)), signal);
-          if (actual === expected) {
-            endpoint.identity = 'ok';
-            endpoint.identityRetryAt = undefined;
-            return;
-          }
-          endpoint.identity = 'mismatch';
-          this.#events.emit('provider.misconfigured', {
-            transportId: this.id,
-            endpointId: endpoint.id,
-            expected: sanitizeIdentityField(expected),
-            actual: sanitizeIdentityField(String(actual)),
-          });
-          this.#log.warn('endpoint serves a different network; disabled', {
-            endpointId: endpoint.id,
-          });
+          await raceAbort(shared, signal);
         } catch (error) {
-          // Any probe failure (a definitive RPC error, a transport error, a malformed
-          // reply) is an endpoint-local failure, not a confirmed mismatch: identity stays
-          // 'unchecked' and the endpoint fails over (I6a).
-          // N2 (round 2, item 4): a caller abort is not a probe failure — it must not set
-          // the throttle, or a single-endpoint transport could be locked out entirely.
-          if (!(signal.aborted && signal.reason !== TIMEOUT)) {
-            endpoint.identityRetryAt = this.#clock.now() + this.#opts.healthIntervalMs;
-          }
-          const cause = this.#classify(error, endpoint, signal);
-          throw new ProviderError(
-            'PROVIDER_UNAVAILABLE',
-            `identity probe failed for endpoint '${endpoint.id}'`,
-            { context: this.#context(endpoint), cause },
-          );
-        } finally {
-          endpoint.identityCheck = undefined;
+          if (error !== TIMEOUT) throw error;
+          throw this.#identityProbeFailed(endpoint, error, signal);
         }
-      })();
-      await endpoint.identityCheck;
+      } else {
+        const check = this.#checkIdentity(endpoint, probe, expected, signal);
+        endpoint.identityCheck = check;
+        // Cleared from outside the check, once settled and only while still current: a probe
+        // that throws synchronously can't leave a settled check behind, and a check replaced
+        // by setProbes can't clear its successor.
+        const clear = () => {
+          if (endpoint.identityCheck === check) endpoint.identityCheck = undefined;
+        };
+        void check.then(clear, clear);
+        await check;
+      }
     }
     if (endpoint.identity === 'mismatch') {
       throw new ProviderError(
@@ -1293,12 +1335,78 @@ export class HttpTransport implements Transport {
     }
   }
 
+  /** The owner's identity probe; joiners share its promise via endpoint.identityCheck. */
+  async #checkIdentity(
+    endpoint: Endpoint,
+    probe: NonNullable<HealthProbes['identity']>,
+    expected: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      // #9 (round 2): races the probe against `signal` so a probe that ignores its own
+      // signal argument can't hang #ensureIdentity forever.
+      const actual = await raceAbort(probe(this.#direct(endpoint, signal)), signal);
+      if (actual === expected) {
+        endpoint.identity = 'ok';
+        endpoint.identityRetryAt = undefined;
+        return;
+      }
+      endpoint.identity = 'mismatch';
+      // R19 (round 4): a disabled endpoint's height stops counting at once; #best and
+      // #highest are rebuilt from identity-verified endpoints with known heights only.
+      endpoint.height = undefined;
+      this.#best = this.#verifiedMaxHeight();
+      this.#highest = this.#best;
+      this.#events.emit('provider.misconfigured', {
+        transportId: this.id,
+        endpointId: endpoint.id,
+        expected: sanitizeIdentityField(expected),
+        actual: sanitizeIdentityField(String(actual)),
+      });
+      this.#log.warn('endpoint serves a different network; disabled', {
+        endpointId: endpoint.id,
+      });
+    } catch (error) {
+      // Any probe failure (a definitive RPC error, a transport error, a malformed reply) is
+      // an endpoint-local failure, not a confirmed mismatch: identity stays 'unchecked' and
+      // the endpoint fails over (I6a).
+      // N2 (round 2, item 4): a caller abort is not a probe failure — it must not set the
+      // throttle, or a single-endpoint transport could be locked out entirely.
+      const callerAborted = signal.aborted && signal.reason !== TIMEOUT;
+      if (!callerAborted) {
+        endpoint.identityRetryAt = this.#clock.now() + this.#opts.healthIntervalMs;
+      }
+      const failure = this.#identityProbeFailed(endpoint, error, signal);
+      if (callerAborted) this.#abandonedChecks.add(failure);
+      throw failure;
+    }
+  }
+
+  /** An identity probe failure as a retryable, sanitized, untagged endpoint-local error. */
+  #identityProbeFailed(
+    endpoint: Endpoint,
+    error: unknown,
+    signal: AbortSignal,
+  ): ProviderError {
+    return new ProviderError(
+      'PROVIDER_UNAVAILABLE',
+      `identity probe failed for endpoint '${endpoint.id}'`,
+      {
+        context: this.#context(endpoint),
+        cause: this.#classify(error, endpoint, signal),
+      },
+    );
+  }
+
   async #refresh(): Promise<void> {
     const probe = this.#probes.height;
+    const identityProbed = this.#identityProbed();
     const targets = this.#endpoints.filter((e) => e.identity !== 'mismatch');
     // I8 round 2: only a refresh where at least one endpoint's probe(s) actually succeeded
     // counts as fresh (see #lastHealthAt below).
     let anySucceeded = false;
+    // #4 (round 4): set when an endpoint was not really attempted (see #abandonedChecks).
+    let anyAbandoned = false;
     await Promise.all(
       targets.map(async (endpoint) => {
         // I8: the shared run is never bound to any single caller's signal; each probe only
@@ -1307,45 +1415,48 @@ export class HttpTransport implements Transport {
           endpoint.timeoutMs ?? this.#opts.timeoutMs,
         );
         try {
-          // R18/item 2 (round 3): a throttled identity probe is skipped here entirely
-          // rather than re-attempted and left to #ensureIdentity's own internal throttle
-          // check to reject — there's no traffic behind a throttle hit, so nothing should
-          // even look like an attempt.
-          const identityThrottled =
-            endpoint.identityRetryAt !== undefined &&
-            this.#clock.now() < endpoint.identityRetryAt;
-          if (!identityThrottled) await this.#ensureIdentity(endpoint, deadline);
-          if (probe) {
-            try {
-              endpoint.height = await raceAbort(
-                probe(this.#direct(endpoint, deadline)),
-                deadline,
-              );
-            } catch (heightError) {
-              // I8 round 2: a failed height probe clears the stored height instead of
-              // leaving it stale, so the endpoint counts as unknown, not merely un-refreshed.
+          if (identityProbed) {
+            // R18/item 2 (round 3): a throttled identity probe is skipped here entirely
+            // rather than re-attempted and left to #ensureIdentity's own internal throttle
+            // check to reject — there's no traffic behind a throttle hit, so nothing should
+            // even look like an attempt.
+            const identityThrottled =
+              endpoint.identityRetryAt !== undefined &&
+              this.#clock.now() < endpoint.identityRetryAt;
+            if (!identityThrottled) await this.#ensureIdentity(endpoint, deadline);
+            // R19 (round 4): only an endpoint verified 'ok' in this refresh is height-probed
+            // and feeds #best/#highest/lag/anySucceeded. A throttled or still-unchecked one
+            // is cleared and does not count as succeeded.
+            if (endpoint.identity !== 'ok') {
               endpoint.height = undefined;
-              throw heightError;
+              return;
             }
           }
+          if (probe) {
+            endpoint.height = await raceAbort(
+              probe(this.#direct(endpoint, deadline)),
+              deadline,
+            );
+          }
           anySucceeded = true;
-        } catch {
+        } catch (error) {
+          // I8 round 2 / R19: a failed identity or height probe clears the stored height
+          // instead of leaving it stale, so the endpoint counts as unknown.
+          endpoint.height = undefined;
+          if (this.#abandonedChecks.has(error as object)) anyAbandoned = true;
           // R18 (round 3): #refresh never does breaker bookkeeping — no onAttempt, onSuccess,
-          // onFailure or onAbandon. A probe failure here only affects height/identity state
-          // (already updated above by #ensureIdentity or the height-probe catch), never
-          // endpoint.breaker or endpoint.failures. The breaker tracks request traffic only.
+          // onFailure or onAbandon. A probe failure here only affects height/identity state,
+          // never endpoint.breaker or endpoint.failures. The breaker tracks request traffic.
         } finally {
           cancel();
         }
       }),
     );
-    const heights = this.#endpoints
-      .filter((e) => e.identity !== 'mismatch' && e.height !== undefined)
-      .map((e) => e.height as bigint);
-    if (heights.length > 0) {
-      this.#best = heights.reduce((max, h) => (h > max ? h : max));
-      if (this.#highest === undefined || this.#best > this.#highest)
-        this.#highest = this.#best;
+    // R19 (round 4): monotonic only among identity-verified endpoints.
+    const best = this.#verifiedMaxHeight();
+    if (best !== undefined) {
+      this.#best = best;
+      if (this.#highest === undefined || best > this.#highest) this.#highest = best;
     }
     for (const status of this.status()) {
       // 'half-open' has no matching value in the provider.health event payload; 'unknown'
@@ -1366,9 +1477,11 @@ export class HttpTransport implements Transport {
     // fully-failed refresh as fresh for a whole healthIntervalMs.
     // #3 (round 3): but an immediate re-probe on every read during an outage is its own
     // storm, so a fully-failed refresh instead sets a short backoff.
+    // #4 (round 4): a refresh with an endpoint left unattempted (a joined identity check its
+    // caller aborted) never arms the backoff, so the next read re-probes it.
     if (anySucceeded) {
       this.#lastHealthAt = this.#clock.now();
-    } else {
+    } else if (!anyAbandoned) {
       this.#nextRefreshAt =
         this.#clock.now() + Math.min(this.#opts.healthIntervalMs, 1_000);
     }

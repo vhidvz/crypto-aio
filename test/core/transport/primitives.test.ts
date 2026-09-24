@@ -119,6 +119,17 @@ describe('CircuitBreaker', () => {
     expect(breaker.canRequest()).toBe(true);
   });
 
+  // #2 (round 4): only the attempt that actually takes the half-open slot owns it.
+  it('a second onAttempt() while probing returns false', async () => {
+    const clock = new FakeClock();
+    const breaker = new CircuitBreaker({ failureThreshold: 1, openMs: 1_000 }, clock);
+    breaker.onFailure();
+    await clock.advance(1_000);
+    expect(breaker.onAttempt()).toBe(true);
+    expect(breaker.onAttempt()).toBe(false);
+    expect(breaker.canRequest()).toBe(false);
+  });
+
   // I7: an abandoned half-open probe (e.g. the caller aborted) must not lock the endpoint out.
   it('onAbandon clears a half-open probe without changing state', async () => {
     const clock = new FakeClock();

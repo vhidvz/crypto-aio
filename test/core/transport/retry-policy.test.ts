@@ -47,6 +47,47 @@ describe('HttpTransport retry policy', () => {
     await expect(drive(clock, transport.rpc('z'))).resolves.toBe('ok');
   });
 
+  // #2 (round 4): a second concurrent request that reaches a half-open endpoint never owns
+  // the probe slot, so its abort can't free the first request's slot and admit a third.
+  it('keeps the half-open slot with the first request when a concurrent second one aborts', async () => {
+    let mode: 'fail' | 'held' = 'fail';
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fake = new FakeFetch().route('https://a.test', (req, signal) => {
+      if (mode === 'fail') return { status: 503, text: '' };
+      if (method(req) === 'first') return gate.then(() => rpcResult(req, 'ok'));
+      return hang(signal);
+    });
+    const { transport, clock } = setup([A], fake, { failureThreshold: 1, openMs: 1_000 });
+    await expect(drive(clock, transport.rpc('x'), 50)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+    });
+    await clock.advance(1_000);
+    expect(transport.status()[0]?.state).toBe('half-open');
+
+    mode = 'held';
+    const first = transport.rpc('first');
+    const second = new AbortController();
+    const reason = new Error('cancelled');
+    const secondCall = transport.rpc('second', [], { signal: second.signal });
+    await settle();
+    const callsInFlight = fake.calls.length;
+    second.abort(reason);
+    await expect(secondCall).rejects.toBe(reason);
+
+    const third = new AbortController();
+    const thirdCall = transport.rpc('third', [], { signal: third.signal });
+    thirdCall.catch(() => undefined);
+    await settle();
+    expect(fake.calls).toHaveLength(callsInFlight);
+    third.abort(new Error('cleanup'));
+    await expect(thirdCall).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+
+    release();
+    await expect(drive(clock, first)).resolves.toBe('ok');
+    expect(transport.status()[0]?.state).not.toBe('half-open');
+  });
+
   // I9: Retry-After on one endpoint must not stall failover to a healthy one, and the
   // per-endpoint limit must persist across calls.
   it('fails over immediately on Retry-After and persists the limit across calls', async () => {
@@ -198,6 +239,67 @@ describe('HttpTransport retry policy', () => {
     await expect(drive(clock, transport.rpc('y'))).resolves.toBe('from-a');
   });
 
+  // #6 (round 4): a request that joins another request's in-flight identity check races its
+  // own signal, like #join — its abort rejects only that caller, and the check runs on.
+  it("rejects only the joining caller when it aborts during another request's identity check", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let identityCalls = 0;
+    const fake = new FakeFetch().route('https://a.test', async (req) => {
+      if (method(req) !== 'chain_id') return rpcResult(req, 'from-a');
+      identityCalls++;
+      await gate;
+      return rpcResult(req, '1');
+    });
+    const { transport, clock } = setup([A], fake);
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+    });
+    const owner = transport.rpc('x');
+    await settle();
+    const joiner = new AbortController();
+    const reason = new Error('cancelled');
+    let joinerSettled = false;
+    const joined = transport.rpc('y', [], { signal: joiner.signal });
+    joined.then(
+      () => (joinerSettled = true),
+      () => (joinerSettled = true),
+    );
+    await settle();
+    joiner.abort(reason);
+    await settle();
+    expect(joinerSettled).toBe(true);
+    await expect(joined).rejects.toBe(reason);
+    release();
+    await expect(drive(clock, owner)).resolves.toBe('from-a');
+    expect(identityCalls).toBe(1);
+  });
+
+  // #3 (round 4): http() validates its method and per-request headers before #run.
+  it('rejects an invalid http() header value before touching any endpoint', async () => {
+    const fake = new FakeFetch().route('https://a.test', () => ({ text: 'ok' }));
+    const { transport, clock } = setup([A], fake);
+    const error = await drive(
+      clock,
+      transport.http({
+        method: 'GET',
+        path: '/x',
+        headers: { 'x-bad': 'a\u0000b' },
+        responseType: 'text',
+      }),
+      100,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'CONFIG_INVALID',
+      retryable: false,
+      ambiguous: false,
+    });
+    expect((error as Error).message).not.toContain('a\u0000b');
+    expect(fake.calls).toHaveLength(0);
+    expect(transport.status()[0]).toMatchObject({ failures: 0, state: 'unknown' });
+  });
+
   // M3: a local serialization error never reaches an endpoint.
   it('rejects unserializable params before touching any endpoint', async () => {
     const fake = new FakeFetch().route('https://a.test', (req) => rpcResult(req, 'ok'));
@@ -298,6 +400,37 @@ describe('HttpTransport retry policy', () => {
     });
     await expect(drive(clock, transport.rpc('y'))).resolves.toBe('ok');
     expect(probed).toBe(1);
+  });
+
+  // #5 (round 4): a new probe set also invalidates the health timers and stored heights, so
+  // neither an armed outage backoff nor a fresh stamp from the old probes delays the new ones.
+  it('setProbes resets the health timers and stored heights', async () => {
+    const { transport, clock } = setup([A], new FakeFetch(), {
+      healthIntervalMs: 60_000,
+    });
+    transport.setProbes({ height: () => Promise.reject(new Error('down')) });
+    await drive(clock, transport.ensureFreshHealth());
+    let probed = 0;
+    transport.setProbes({
+      height: () => {
+        probed++;
+        return Promise.resolve(100n);
+      },
+    });
+    await drive(clock, transport.ensureFreshHealth());
+    expect(probed).toBe(1);
+    expect(transport.status()[0]?.height).toBe(100n);
+
+    transport.setProbes({
+      height: () => {
+        probed++;
+        return Promise.resolve(7n);
+      },
+    });
+    expect(transport.status()[0]?.height).toBeUndefined();
+    await drive(clock, transport.ensureFreshHealth());
+    expect(probed).toBe(2);
+    expect(transport.status()[0]?.height).toBe(7n);
   });
 
   // M12: a definitive answer proves the endpoint healthy and resets its failure count.

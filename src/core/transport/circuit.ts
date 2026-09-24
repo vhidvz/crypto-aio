@@ -31,9 +31,10 @@ export class CircuitBreaker {
   }
 
   /** #4 (round 3): returns true when this call actually took the half-open probe slot, so
-   * the caller can track ownership of it (e.g. to decide whether it may later abandon it). */
+   * the caller can track ownership of it (e.g. to decide whether it may later abandon it).
+   * #2 (round 4): a slot another attempt already holds is not taken again — false. */
   onAttempt(): boolean {
-    if (this.state !== 'half-open') return false;
+    if (this.state !== 'half-open' || this.#probing) return false;
     this.#probing = true;
     return true;
   }

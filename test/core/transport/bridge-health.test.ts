@@ -1,10 +1,16 @@
 import { inspect } from 'node:util';
 import {
   PLACEHOLDER_ORIGIN,
+  type EndpointCall,
   type EndpointConfig,
 } from '../../../src/core/transport/types';
 import { drive, settle } from '../../../src/testing/fake-clock';
-import { FakeFetch, rpcResult, type FakeRequest } from '../../../src/testing/fake-fetch';
+import {
+  FakeFetch,
+  hang,
+  rpcResult,
+  type FakeRequest,
+} from '../../../src/testing/fake-fetch';
 import { setup } from './support';
 
 const A: EndpointConfig = { name: 'a', url: 'https://a.test/rpc' };
@@ -89,6 +95,31 @@ describe('HttpTransport bridge', () => {
     });
     expect(fake.calls).toHaveLength(0);
     expect(transport.status()[0]?.failures).toBe(0);
+  });
+
+  // #3 (round 4): the whole Request is built once before #run — a GET with a body (which
+  // fetch itself would reject) is a local config error, never an endpoint failure.
+  it('rejects a GET with a body before touching any endpoint', async () => {
+    const fake = new FakeFetch().route('https://sol.test/rpc', (req) =>
+      rpcResult(req, 'x'),
+    );
+    const { transport, clock } = setup(
+      [{ name: 's', url: 'https://sol.test/rpc' }],
+      fake,
+    );
+    const bridged = transport.createFetch();
+    const error = await drive(
+      clock,
+      bridged(`${PLACEHOLDER_ORIGIN}/`, { method: 'GET', body: '{"x":1}' }),
+      100,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'CONFIG_INVALID',
+      retryable: false,
+      ambiguous: false,
+    });
+    expect(fake.calls).toHaveLength(0);
+    expect(transport.status()[0]).toMatchObject({ failures: 0, state: 'unknown' });
   });
 
   // M5: a Request input keeps its own method, headers and body.
@@ -415,6 +446,39 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(heightCalls).toBe(2);
   });
 
+  // #4 (round 4): a refresh that joined a request-path identity check which its own caller
+  // then aborted learned nothing about the endpoint — that counts as not attempted, so it
+  // must not arm the outage backoff, and the next monitor read re-probes.
+  it('re-probes on the next monitor read after a caller aborts a joined identity check', async () => {
+    let identityCalls = 0;
+    const fake = new FakeFetch().route('https://a.test', (req, signal) => {
+      if (method(req) === 'chain_id') {
+        identityCalls++;
+        return identityCalls === 1 ? hang(signal) : rpcResult(req, '1');
+      }
+      return rpcResult(req, method(req) === 'height' ? '100' : 'from-a');
+    });
+    const { transport, clock } = setup([A], fake, { healthIntervalMs: 60_000 });
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+      height: async (call) => BigInt(await call.rpc<string>('height')),
+    });
+    const controller = new AbortController();
+    const reason = new Error('cancelled');
+    const request = transport.rpc('x', [], { signal: controller.signal });
+    await settle();
+    const refresh = transport.refreshHealth();
+    await settle();
+    controller.abort(reason);
+    await expect(request).rejects.toBe(reason);
+    await drive(clock, refresh);
+    await expect(
+      drive(clock, transport.rpc('y', [], { purpose: 'monitor' })),
+    ).resolves.toBe('from-a');
+    expect(identityCalls).toBe(2);
+  });
+
   // I8: once a height probe is configured, proof reads exclude both a lagging endpoint and
   // one whose height is unknown (its probe failed), the same way.
   it('excludes both a lagging endpoint and an unknown-height endpoint from proof reads', async () => {
@@ -441,5 +505,98 @@ describe('HttpTransport health refresh concurrency', () => {
     // for the height probe during refreshHealth().
     expect(fake.callsTo('https://b.test')).toHaveLength(1);
     expect(fake.callsTo('https://c.test')).toHaveLength(1);
+  });
+});
+
+// Fix round 4 (controller ruling R19): only identity-verified endpoints feed health heights.
+describe('HttpTransport verified-only health heights', () => {
+  // A is on chain 1 at height 100 (its first `aHeightFailures` height probes return 503).
+  // B serves another network at height 1,000,000, and its first chain_id is a 503, so it is
+  // identity-throttled (not yet known to be mismatched) for healthIntervalMs.
+  const wrongNetworkB = (aHeightFailures = 0) => {
+    let aHeightCalls = 0;
+    let bIdentityCalls = 0;
+    let bHeightCalls = 0;
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) => {
+        if (method(req) === 'chain_id') return rpcResult(req, '1');
+        if (method(req) !== 'height') return rpcResult(req, 'from-a');
+        aHeightCalls++;
+        return aHeightCalls <= aHeightFailures
+          ? { status: 503, text: '' }
+          : rpcResult(req, '100');
+      })
+      .route('https://b.test', (req) => {
+        if (method(req) === 'chain_id') {
+          bIdentityCalls++;
+          return bIdentityCalls === 1 ? { status: 503, text: '' } : rpcResult(req, '5');
+        }
+        if (method(req) !== 'height') return rpcResult(req, 'from-b');
+        bHeightCalls++;
+        return rpcResult(req, '1000000');
+      });
+    return { fake, bHeightCalls: () => bHeightCalls };
+  };
+  const probes = {
+    identity: (call: EndpointCall) => call.rpc<string>('chain_id'),
+    expectedIdentity: '1',
+    height: async (call: EndpointCall) => BigInt(await call.rpc<string>('height')),
+  };
+
+  it('never takes a height from an identity-throttled endpoint on a direct refresh', async () => {
+    const { fake, bHeightCalls } = wrongNetworkB();
+    const { transport, clock } = setup([A, B], fake, { maxLagBlocks: 5 });
+    transport.setProbes(probes);
+    await drive(clock, transport.refreshHealth());
+    await drive(clock, transport.refreshHealth());
+    expect(transport.highestHeight()).toBe(100n);
+    expect(transport.status().find((s) => s.id === 'a')?.state).not.toBe('lagging');
+    expect(bHeightCalls()).toBe(0);
+  });
+
+  // Deviation from the spec's "same setup": A's first height probe also fails, so the first
+  // refresh fails entirely and the next one is driven by the outage backoff (1 s later) while
+  // B is still identity-throttled. With A healthy from the start, ensureFreshHealth would not
+  // refresh again until healthIntervalMs, when B's throttle has already expired.
+  it('never takes a height from an identity-throttled endpoint on the outage-backoff path', async () => {
+    const { fake, bHeightCalls } = wrongNetworkB(1);
+    const { transport, clock } = setup([A, B], fake, {
+      maxLagBlocks: 5,
+      healthIntervalMs: 15_000,
+    });
+    transport.setProbes(probes);
+    const heights: (bigint | undefined)[] = [];
+    await drive(clock, transport.ensureFreshHealth());
+    heights.push(transport.highestHeight());
+    for (let elapsed = 0; elapsed < 16_000; elapsed += 1_000) {
+      await clock.advance(1_000);
+      await drive(clock, transport.ensureFreshHealth());
+      heights.push(transport.highestHeight());
+    }
+    expect(heights.filter((h) => h !== undefined && h > 100n)).toEqual([]);
+    expect(transport.status().find((s) => s.id === 'b')?.state).toBe('disabled');
+    expect(transport.highestHeight()).toBe(100n);
+    expect(bHeightCalls()).toBe(0);
+  });
+
+  // R19: a height recorded before an identity probe was configured stops counting once its
+  // endpoint turns out to serve another network — #highest is rebuilt from verified ones.
+  it('rebuilds highestHeight from verified endpoints when an endpoint is disabled', async () => {
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) =>
+        rpcResult(req, method(req) === 'chain_id' ? '1' : '100'),
+      )
+      .route('https://b.test', (req) =>
+        rpcResult(req, method(req) === 'chain_id' ? '5' : '1000000'),
+      );
+    const { transport, clock } = setup([A, B], fake, { maxLagBlocks: 5 });
+    transport.setProbes({ height: probes.height });
+    await drive(clock, transport.refreshHealth());
+    expect(transport.highestHeight()).toBe(1_000_000n);
+    transport.setProbes(probes);
+    await drive(clock, transport.refreshHealth());
+    expect(transport.status().find((s) => s.id === 'b')?.state).toBe('disabled');
+    expect(transport.highestHeight()).toBe(100n);
+    expect(transport.status().find((s) => s.id === 'a')?.state).toBe('healthy');
   });
 });
