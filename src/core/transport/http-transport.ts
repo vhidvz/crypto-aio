@@ -456,6 +456,12 @@ export class HttpTransport implements Transport {
     return bridged as typeof fetch;
   }
 
+  /** N6: least-invasive detector for "no health probe was ever configured" — mirrors the same
+   * condition `ensureFreshHealth` already uses to skip probing entirely. */
+  hasProbes(): boolean {
+    return Boolean(this.#probes.height) || Boolean(this.#probes.identity);
+  }
+
   setProbes(probes: HealthProbes): void {
     this.#probes = probes;
     // M12: a new probe set invalidates any previously confirmed identity.

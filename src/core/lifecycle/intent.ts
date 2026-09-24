@@ -11,9 +11,42 @@ import { toAddress, type MappingContext } from '../blockchain/mapping';
 
 export type HandleContext = MappingContext;
 
-/** M8: `fee` is a known `FeeSpeed` or a plain-data `FeeOverride`; a `FeeOverride`'s own
- * values may never be a JS `number` — amounts are `bigint` or a decimal string, like
- * everywhere else in this API. */
+/** N5: recursively rejects a JS `number` at any depth, and any non-plain value (a class
+ * instance such as `Date`) anywhere inside a `FeeOverride` — only plain data is allowed:
+ * strings, bigints, booleans, plain objects and arrays. */
+function assertFeeData(value: unknown): void {
+  if (typeof value === 'number') {
+    throw new ValidationError(
+      'INVALID_INTENT',
+      'fee override amounts must be a bigint or a decimal string, never a number',
+    );
+  }
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'bigint' ||
+    typeof value === 'boolean'
+  ) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) assertFeeData(item);
+    return;
+  }
+  if (typeof value === 'object') {
+    const proto: unknown = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      throw new ValidationError('INVALID_INTENT', 'fee override must be plain data');
+    }
+    for (const v of Object.values(value)) assertFeeData(v);
+    return;
+  }
+  throw new ValidationError('INVALID_INTENT', 'fee override must be plain data');
+}
+
+/** M8/N5: `fee` is a known `FeeSpeed` or a plain-data `FeeOverride`, recursively — amounts
+ * are `bigint` or a decimal string, like everywhere else in this API, never a JS `number` at
+ * any depth, and never a class instance such as `Date`. */
 function validateFee(fee: TransferIntent['fee']): void {
   if (fee === undefined || isFeeSpeed(fee)) return;
   if (fee === null || typeof fee !== 'object' || Array.isArray(fee)) {
@@ -22,18 +55,7 @@ function validateFee(fee: TransferIntent['fee']): void {
       'fee must be a fee speed or a plain fee override object',
     );
   }
-  const proto: unknown = Object.getPrototypeOf(fee);
-  if (proto !== Object.prototype && proto !== null) {
-    throw new ValidationError('INVALID_INTENT', 'fee override must be a plain object');
-  }
-  for (const value of Object.values(fee)) {
-    if (typeof value === 'number') {
-      throw new ValidationError(
-        'INVALID_INTENT',
-        'fee override amounts must be a bigint or a decimal string, never a number',
-      );
-    }
-  }
+  assertFeeData(fee);
 }
 
 /** Resolves the asset, normalizes addresses and amounts, and enforces capabilities. */

@@ -54,17 +54,22 @@ function cloneFrozen<T>(value: T): T {
   return value;
 }
 
-/** M4: `chains`/`providers`/`wallets` are cloned and deep-frozen at construction, so mutating
- * the caller's options object afterwards never affects handles already built from this layer. */
+/** M4/N7: `chains`/`providers`/`wallets`/`signers`/`hooks`/`lifecycle` are all cloned and
+ * deep-frozen at construction, so mutating the caller's options object afterwards never
+ * affects handles already built from this layer. For `signers`, only the map OBJECT is
+ * cloned (a fresh, frozen copy so adding/replacing a key on the caller's own map can't reach
+ * an existing layer) — the `Signer` instances it holds are class instances, not plain data,
+ * so `cloneFrozen` passes them through by reference, unfrozen, exactly like `wallets`'
+ * `Secret` values. */
 function scopePart(options: ScopeOptions): ScopeOptions {
   const { chains, providers, signers, wallets, hooks, lifecycle } = options;
   return {
     ...(chains ? { chains: cloneFrozen(chains) } : {}),
     ...(providers ? { providers: cloneFrozen(providers) } : {}),
-    ...(signers ? { signers } : {}),
+    ...(signers ? { signers: cloneFrozen(signers) } : {}),
     ...(wallets ? { wallets: cloneFrozen(wallets) } : {}),
-    ...(hooks ? { hooks } : {}),
-    ...(lifecycle ? { lifecycle } : {}),
+    ...(hooks ? { hooks: cloneFrozen(hooks) } : {}),
+    ...(lifecycle ? { lifecycle: cloneFrozen(lifecycle) } : {}),
   };
 }
 

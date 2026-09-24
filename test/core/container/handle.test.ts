@@ -13,7 +13,9 @@ import type { AdapterManifest } from '../../../src/core/driver/types';
 import { normalizeIntent } from '../../../src/core/lifecycle/intent';
 import { noopLogger } from '../../../src/core/events/logger';
 import { localSigner } from '../../../src/core/signing/local';
+import type { Signer } from '../../../src/core/signing/types';
 import { createMemoryStores } from '../../../src/core/store/memory';
+import type { Transport } from '../../../src/core/transport/types';
 import { FakeClock } from '../../../src/testing/fake-clock';
 import { fromHex } from '../../../src/core/util/bytes';
 import { fakeAddress } from '../../../src/testing/fake-chain';
@@ -174,6 +176,25 @@ describe('Blockchain handle', () => {
     });
   });
 
+  it('walletAddress(name) applies the same per-chain checks resolveSelection would', async () => {
+    const env = await createFakeEnv();
+    // N1: a wallet restricted to a DIFFERENT chain must fail the same `wallet.chains`
+    // enablement check a directly-selected wallet would get, not silently resolve.
+    const scoped = env.aio.scope({
+      wallets: { restricted: { signer: 'hot', chains: ['fakeexpiry'] } },
+    });
+    const bc = scoped.blockchain({ chain: 'fakechain', wallet: 'main' });
+    await expect(env.run(bc.walletAddress('restricted'))).rejects.toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: expect.stringMatching(/not enabled for chain 'fakechain'/),
+    });
+    // N1: an own-property lookup — a wallet literally named 'constructor' is unknown, not
+    // `Object.prototype.constructor`.
+    await expect(env.run(bc.walletAddress('constructor'))).rejects.toMatchObject({
+      code: 'CONFIG_INVALID',
+    });
+  });
+
   it('derives deposit addresses from an xpub without private keys', async () => {
     const account = HDKey.fromMasterSeed(
       fromHex('000102030405060708090a0b0c0d0e0f'),
@@ -244,6 +265,34 @@ describe('Blockchain handle', () => {
         from,
       ),
     ).resolves.toMatchObject({ fee: { fee: 1_000n }, memo: 'ok' });
+  });
+
+  it('normalizeIntent rejects a fee override with a number or a class instance at any depth', async () => {
+    const env = await createFakeEnv();
+    const internals = internalsOf(env.bc);
+    const pooled = await env.run(internals.pooled());
+    const from = await env.run(env.bc.walletAddress());
+    const ctx = {
+      selection: internals.selection,
+      driver: pooled.driver,
+      assets: containerOf(env.aio).runtime.assets,
+    };
+    const reject = (fee: unknown) =>
+      expect(
+        normalizeIntent(
+          ctx,
+          { to: env.stranger(), amount: '1', fee: fee as never },
+          from,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+    // N5 pinned cases.
+    await reject({ gwei: 5 });
+    await reject(new Date());
+    await reject('lots');
+    // N5: "at any depth" — a number or a class instance nested inside an otherwise-plain
+    // override must be rejected too, not just at the top level.
+    await reject({ tip: { gwei: 5 } });
+    await reject({ tip: [{ at: new Date() }] });
   });
 
   it('loads adapters lazily and surfaces DEPENDENCY_MISSING', async () => {
@@ -440,6 +489,58 @@ describe('ready()', () => {
     const env = await createFakeEnv();
     await expect(env.run(env.bc.ready())).resolves.toBe(env.bc);
   });
+
+  it('treats an unknown endpoint as usable when the transport has no health probes configured', async () => {
+    const env = await createFakeEnv();
+    // N6: a factory that never calls transport.setProbes leaves the REAL pooled transport's
+    // probes empty — done here by handing the fake driver factory a stand-in transport whose
+    // setProbes is a no-op, so the pool's own transport (what ready() inspects) is untouched.
+    const noProbes: AdapterManifest = {
+      family: 'fake',
+      library: 'no-probes-sdk',
+      chains: ['fakechain'],
+      capabilities: [],
+      peerDependencies: [],
+      load: async () => ({
+        create: (ctx) =>
+          fakeDriverFactory.create({
+            ...ctx,
+            transport: { setProbes: () => undefined } as unknown as Transport,
+          }),
+      }),
+    };
+    env.aio.use({ name: 'no-probes', adapters: [noProbes] });
+    const bc = env.aio.blockchain({
+      chain: 'fakechain',
+      library: 'no-probes-sdk' as 'fake-sdk',
+    });
+    const pooled = await env.run(internalsOf(bc).pooled());
+    expect(pooled.transport.hasProbes()).toBe(false);
+    await expect(env.run(bc.ready())).resolves.toBe(bc);
+    expect(pooled.transport.status()).toEqual([
+      expect.objectContaining({ state: 'unknown' }),
+    ]);
+  });
+
+  it('treats a half-open endpoint as usable', async () => {
+    const env = await createFakeEnv({
+      transport: { failureThreshold: 1, openMs: 1_000, maxAttempts: 1 },
+    });
+    env.chain.configureEndpoint('main', { down: true });
+    // One failed 'read'-purpose call opens the breaker (failureThreshold: 1).
+    await expect(env.run(env.bc.getBalance(env.address))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+    });
+    const pooled = await env.run(internalsOf(env.bc).pooled());
+    expect(pooled.transport.status()).toEqual([
+      expect.objectContaining({ state: 'open' }),
+    ]);
+    await env.clock.advance(1_100);
+    expect(pooled.transport.status()).toEqual([
+      expect.objectContaining({ state: 'half-open' }),
+    ]);
+    await expect(env.run(env.bc.ready())).resolves.toBe(env.bc);
+  });
 });
 
 describe('containers', () => {
@@ -482,7 +583,7 @@ describe('containers', () => {
     });
   });
 
-  it("clones and deep-freezes each layer's wallets/chains/providers so mutating the caller's options afterwards never reaches existing handles", async () => {
+  it("clones and deep-freezes each layer's wallets/chains/providers/signers so mutating the caller's options afterwards never reaches existing handles", async () => {
     const env = await createFakeEnv();
     const chains: Record<
       string,
@@ -490,19 +591,38 @@ describe('containers', () => {
     > = {
       fakechain: { provider: 'fake', wallet: 'main' },
     };
+    const providers: Record<string, { endpoints: { url: string }[] }> = {
+      fake: { endpoints: [{ url: env.chain.endpoint('m4') }] },
+    };
+    const wallets: Record<string, { signer: string }> = { main: { signer: 'hot' } };
+    const signers: Record<string, Signer> = { hot: env.signer };
     const aio = new CryptoAio({
       env: false,
       logger: noopLogger,
       clock: env.clock,
       plugins: [fakePlugin()],
       transport: { fetch: env.chain.fetch },
-      providers: { fake: { endpoints: [{ url: env.chain.endpoint('m4') }] } },
-      signers: { hot: env.signer },
-      wallets: { main: { signer: 'hot' } },
+      providers,
+      signers,
+      wallets,
       chains,
     });
+    // N7: mutate every one of the caller's own objects AFTER construction.
     chains.fakechain = { provider: 'fake', wallet: 'main', confirmations: 99 };
+    providers.fake = { endpoints: [{ url: env.chain.endpoint('m4-rogue') }] };
+    wallets.main = { signer: 'rogue' };
+    const rogueSigner = localSigner.generate({
+      curves: ['secp256k1'],
+      id: 'rogue',
+    }).signer;
+    signers.hot = rogueSigner;
+
     expect(aio.blockchain({ chain: 'fakechain' }).config.confirmations).toBe(2);
+    // A handle built AFTER the mutations above still resolves through the ORIGINAL 'hot'
+    // signer and the ORIGINAL 'm4' provider endpoint, proving the container read its own
+    // frozen copies rather than the caller's live, since-mutated objects.
+    const address = await env.run(aio.blockchain({ chain: 'fakechain' }).walletAddress());
+    expect(address.canonical).toBe(env.address);
 
     const layer = containerOf(aio).layers[0];
     if (!layer) throw new Error('expected a root layer');
@@ -510,6 +630,23 @@ describe('containers', () => {
     expect(Object.isFrozen(layer.chains?.fakechain)).toBe(true);
     expect(() => {
       (layer.chains as Record<string, unknown>).fakechain = {};
+    }).toThrow();
+
+    expect(Object.isFrozen(layer.providers)).toBe(true);
+    expect(Object.isFrozen(layer.providers?.fake)).toBe(true);
+    expect(layer.providers).not.toBe(providers);
+
+    expect(Object.isFrozen(layer.wallets)).toBe(true);
+    expect(Object.isFrozen(layer.wallets?.main)).toBe(true);
+    expect(layer.wallets?.main).toEqual({ signer: 'hot' });
+
+    // N7: the signers MAP is a fresh, frozen copy; the Signer INSTANCE it holds is the same
+    // object (referenced, not cloned).
+    expect(Object.isFrozen(layer.signers)).toBe(true);
+    expect(layer.signers).not.toBe(signers);
+    expect(layer.signers?.hot).toBe(env.signer);
+    expect(() => {
+      (layer.signers as Record<string, unknown>).other = env.signer;
     }).toThrow();
   });
 

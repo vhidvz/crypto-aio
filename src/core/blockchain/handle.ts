@@ -1,4 +1,4 @@
-import { describeSelection } from '../config/resolve';
+import { describeSelection, resolveSelection } from '../config/resolve';
 import type { HandleConfig, HandleOptions } from '../config/types';
 import { containerOf } from '../container/internals';
 import type { DriverLimits, WalletOptions } from '../driver/types';
@@ -19,7 +19,7 @@ import type { Block, Transaction, TxStatus } from '../model/transaction';
 import { normalizeIntent } from '../lifecycle/intent';
 import { deriveXpubChild } from '../signing/hd';
 import { resolveWallet, walletOptionsOf } from '../signing/wallet';
-import type { EndpointStatus } from '../transport/types';
+import type { EndpointState, EndpointStatus } from '../transport/types';
 import { fromHex } from '../util/bytes';
 import { defaultBlockchain } from './default-ref';
 import { bindInternals, internalsOf, type HandleInternals } from './internal';
@@ -100,8 +100,11 @@ export class Blockchain<C extends ChainId = ChainId> {
    * Loads the adapter, connects its transport and validates it's actually usable; fails fast
    * on a missing dependency (`DEPENDENCY_MISSING`), an invalid wallet (surfaced by resolving
    * it), or a provider that can't serve reads: `PROVIDER_UNAVAILABLE` when no configured
-   * endpoint is healthy, `PROVIDER_MISCONFIGURED` (non-retryable) when every endpoint's
-   * identity mismatches the configured network.
+   * endpoint is usable, `PROVIDER_MISCONFIGURED` (non-retryable) when every endpoint's
+   * identity mismatches the configured network. An endpoint is usable when it's 'healthy',
+   * 'lagging' or 'half-open' (N6: the breaker is willing to try it), or 'unknown' while the
+   * transport has no health probes configured at all — nothing could ever have marked it
+   * healthy/lagging in that case, so 'unknown' is simply its steady state.
    */
   async ready(): Promise<this> {
     const internals = internalsOf(this);
@@ -115,7 +118,12 @@ export class Blockchain<C extends ChainId = ChainId> {
         { retryable: false },
       );
     }
-    if (!statuses.some((s) => s.state === 'healthy' || s.state === 'lagging')) {
+    const usable = (state: EndpointState): boolean =>
+      state === 'healthy' ||
+      state === 'lagging' ||
+      state === 'half-open' ||
+      (state === 'unknown' && !pooled.transport.hasProbes());
+    if (!statuses.some((s) => usable(s.state))) {
       throw new ProviderError(
         'PROVIDER_UNAVAILABLE',
         `no healthy endpoint for ${this.chain}`,
@@ -158,30 +166,31 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   /** Address of the handle's own selected wallet, or of another configured `wallet` by name
-   * (spec §5.2) — resolved fresh against this handle's driver, without switching the handle. */
+   * (spec §5.2) — resolved fresh against this handle's driver, without switching the handle.
+   * N1 (round 2): re-resolved through `resolveSelection` (not `resolveWallet` directly) so a
+   * named wallet gets the same `wallet.chains` enablement check, unknown-signer validation and
+   * signer-scheme compatibility check that the handle's own wallet got at construction. */
   async walletAddress(wallet?: string): Promise<Address> {
     const internals = internalsOf(this);
     const selection = internals.selection;
     if (wallet === undefined || wallet === selection.wallet?.name) {
       return (await internals.wallet()).address;
     }
-    const effective = containerOf(internals.container).effective();
-    const config = effective.wallets[wallet];
-    if (!config) throw new ConfigError('CONFIG_INVALID', `unknown wallet '${wallet}'`);
-    const signerId = config.signer;
-    const instance = signerId !== undefined ? effective.signers[signerId] : undefined;
+    const container = containerOf(internals.container);
+    const effective = container.effective();
+    // N1: an own-property check, so a wallet literally named 'constructor' (or any other
+    // Object.prototype key) can never be mistaken for one that exists.
+    if (!Object.hasOwn(effective.wallets, wallet)) {
+      throw new ConfigError('CONFIG_INVALID', `unknown wallet '${wallet}'`);
+    }
     const { driver } = await internals.pooled();
-    const resolved = await resolveWallet(
-      {
-        ...selection,
-        wallet: { name: wallet, config },
-        signer:
-          instance && signerId !== undefined ? { id: signerId, instance } : undefined,
-      },
-      driver,
-      effective.signers,
-    );
-    return resolved.address;
+    const resolved = resolveSelection({
+      handle: { ...selection.handle, wallet, signer: undefined },
+      effective,
+      catalogs: container.runtime.catalogs,
+    });
+    const resolvedWallet = await resolveWallet(resolved, driver, effective.signers);
+    return resolvedWallet.address;
   }
 
   /** Derives a deposit address from the wallet's xpub (capability `hd-public-derivation`). */

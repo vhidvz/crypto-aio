@@ -89,6 +89,11 @@ export interface Transport {
     classify?: (url: URL, init: RequestInit | undefined) => CallOptions,
   ): typeof fetch;
   setProbes(probes: HealthProbes): void;
+  /** N6: whether any health probe (`identity` and/or `height`) has ever been configured via
+   * `setProbes`. A transport with none configured can never mark an endpoint 'healthy' or
+   * 'lagging' — its endpoints stay 'unknown' forever, which callers like `Blockchain.ready()`
+   * treat as acceptable only in that case. */
+  hasProbes(): boolean;
   refreshHealth(signal?: AbortSignal): Promise<void>;
   ensureFreshHealth(signal?: AbortSignal): Promise<void>;
   status(): EndpointStatus[];
