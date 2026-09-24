@@ -45,12 +45,14 @@ export interface PreparedOperation {
   };
 }
 
+/** Final finality needs `proven` evidence; an observed-only view is at most probabilistic. */
 export function statusOf(observation: AttemptObservation): TxStatus {
+  const { state } = observation;
+  const settled = state === 'final' || state === 'failed';
   const finality =
-    observation.state === 'final' ||
-    (observation.state === 'failed' && observation.evidence === 'proven')
+    settled && observation.evidence === 'proven'
       ? 'final'
-      : observation.state === 'included' || observation.state === 'failed'
+      : settled || state === 'included'
         ? 'probabilistic'
         : 'none';
   return {
