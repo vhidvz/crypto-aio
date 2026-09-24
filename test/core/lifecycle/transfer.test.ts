@@ -5,8 +5,8 @@ import { sequenceKey } from '../../../src/core/ordering/sequence';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
 import type { Signer, SigningResult } from '../../../src/core/signing/types';
-import { MemoryLockManager } from '../../../src/core/store/memory';
-import type { LockManager } from '../../../src/core/store/types';
+import { MemoryLockManager, MemoryOperationStore } from '../../../src/core/store/memory';
+import type { LockManager, OperationStore } from '../../../src/core/store/types';
 import { toHex } from '../../../src/core/util/bytes';
 import { fakeAddress, signFake } from '../../../src/testing/fake-chain';
 import { createFakeEnv, type FakeEnvOptions } from '../../../src/testing/env';
@@ -714,5 +714,88 @@ describe('transfer: broadcast answers never override stronger evidence (R24)', (
       reservation: { kind: 'nonce', nonce: 0n },
     });
     expect(op?.nextCheckAt).toBeDefined();
+  });
+});
+
+describe('transfer: one signing per operation on expiry chains (R24)', () => {
+  it('signs once when a same-key repeat arrives while the first call is signing', async () => {
+    const inner = localSigner.generate({ curves: ['secp256k1'], id: 'slow' }).signer;
+    const clock: { current?: FakeClock } = {};
+    let signCalls = 0;
+    let hookRuns = 0;
+    const slow = callbackSigner({
+      id: 'hot',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: (scheme, keyRef) => inner.getPublicKey(scheme, keyRef),
+      sign: async (requests, signingCtx) => {
+        signCalls += 1;
+        await clock.current?.sleep(5_000);
+        return inner.sign(requests, signingCtx);
+      },
+    });
+    const env = await createFakeEnv({
+      ordering: 'expiry',
+      signer: slow,
+      hooks: {
+        beforeSign: () => {
+          hookRuns += 1;
+        },
+      },
+    });
+    clock.current = env.clock;
+    const intent = { to: env.stranger(), amount: 3n };
+    const first = env.bc.transfer(intent, { idempotencyKey: 'dup' });
+    first.catch(() => undefined);
+    for (let i = 0; i < 100 && signCalls === 0; i++) await env.clock.advance(100);
+    expect(signCalls).toBe(1);
+    const second = env.bc.transfer(intent, { idempotencyKey: 'dup' });
+    const [a, b] = await env.run(Promise.all([first, second]));
+    expect(signCalls).toBe(1);
+    expect(hookRuns).toBe(1);
+    expect(b.operationId).toBe(a.operationId);
+    expect(b.state).toBe('submitted');
+    const op = await env.stores.operations.get('default', a.operationId);
+    expect(op?.attempts).toHaveLength(1);
+  });
+
+  it('continues with the winning attempt when its own attempt lost the append race', async () => {
+    const inner = new MemoryOperationStore(new FakeClock());
+    let raced = false;
+    const operations = new Proxy(inner, {
+      get(target, prop) {
+        if (prop === 'appendAttempt') {
+          return async (...args: Parameters<OperationStore['appendAttempt']>) => {
+            if (!raced) {
+              // Another process appends its own Attempt first (same bytes, another id).
+              raced = true;
+              const [namespace, id, attempt, patch, version, fence] = args;
+              await target.appendAttempt(
+                namespace,
+                id,
+                { ...attempt, id: 'att_winner' },
+                patch,
+                version,
+                fence,
+              );
+            }
+            return target.appendAttempt(...args);
+          };
+        }
+        const value: unknown = Reflect.get(target, prop);
+        return typeof value === 'function'
+          ? (value as (...a: unknown[]) => unknown).bind(target)
+          : value;
+      },
+    });
+    const env = await createFakeEnv({ ordering: 'expiry', stores: { operations } });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'race' }),
+    );
+    expect(sub.state).toBe('submitted');
+    const op = await env.stores.operations.get('default', sub.operationId);
+    expect(op?.attempts.map((a) => a.id)).toEqual(['att_winner']);
+    expect(op?.activeAttemptId).toBe('att_winner');
+    env.chain.mine();
+    expect(env.chain.receipt(sub.attempt?.id ?? '')?.success).toBe(true);
   });
 });

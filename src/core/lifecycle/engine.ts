@@ -289,7 +289,7 @@ export class OperationEngine {
   ): Promise<OperationRecord> {
     let vetoed: readonly SignerTicket[] = [];
     try {
-      const done = await this.withAddressLease(target, async (lease) => {
+      const done = await this.withOperationLease(target, operationId, async (lease) => {
         const op = await this.require(operationId);
         this.assertOwnedBy(target, op);
         if (op.state !== 'prepared' && op.state !== 'awaiting-signature') {
@@ -334,7 +334,9 @@ export class OperationEngine {
           undefined,
           lease,
         );
-        return this.broadcastActive(target, signed, undefined, lease);
+        return awaitsBroadcast(signed)
+          ? this.broadcastActive(target, signed, undefined, lease)
+          : signed;
       });
       return this.settle(done);
     } finally {
@@ -533,6 +535,28 @@ export class OperationEngine {
     return this.deps.sequences.withLease(this.sequenceKeyOf(target), fn, signal);
   }
 
+  /**
+   * Serializes one Operation's signing transitions: the wallet's address lease where the
+   * ordering needs one, otherwise (expiry ordering) a short per-Operation lock, so two
+   * same-key repeats can never both sign it (R24). Its handle is passed down (renewed,
+   * heartbeat) exactly like the address lease; it never guards a sequence write.
+   */
+  protected withOperationLease<T>(
+    target: OperationTarget,
+    operationId: string,
+    fn: (lease: LeaseHandle | undefined) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (LEASED_ORDERINGS.has(target.pooled.driver.ordering)) {
+      return this.withAddressLease(target, fn, signal);
+    }
+    return this.deps.sequences.withLease(
+      `op:${this.deps.namespace}:${operationId}`,
+      fn,
+      signal,
+    );
+  }
+
   protected sequenceKeyOf(target: OperationTarget): string {
     return sequenceKey(
       this.deps.namespace,
@@ -688,7 +712,8 @@ export class OperationEngine {
   }
 
   /**
-   * Takes an Operation as far as one call can, all under the address lease (R23): `created`
+   * Takes an Operation as far as one call can, all under its lease (`withOperationLease`:
+   * the address lease, R23, or a per-Operation lock on expiry chains, R24): `created`
    * is prepared, `prepared` is signed into the write-ahead Attempt, and a `signed` (or
    * ambiguously `submitted`) Operation resends its stored raw bytes; it is never signed
    * again. Any other state is returned as it is (`settle` rethrows a stored failure).
@@ -702,8 +727,9 @@ export class OperationEngine {
     if (op.state !== 'created' && op.state !== 'prepared' && !awaitsBroadcast(op)) {
       return this.settle(op);
     }
-    const current = await this.withAddressLease(
+    const current = await this.withOperationLease(
       target,
+      op.id,
       async (lease) => {
         let fresh = await this.require(op.id);
         if (fresh.state === 'created') {
@@ -914,7 +940,8 @@ export class OperationEngine {
   /**
    * Assembles and persists an immutable Attempt BEFORE any broadcast (write-ahead). `lease`
    * is renewed right before the write (R23): signing may have outlived it, and then
-   * nothing is written.
+   * nothing is written. When the append loses its compare-and-set, the stored Operation is
+   * returned instead (R24), and callers continue from its state.
    */
   protected async appendSigned(
     target: OperationTarget,
@@ -938,16 +965,25 @@ export class OperationEngine {
       createdAt: this.deps.clock.now(),
     };
     await lease?.renew();
-    const next = await this.deps.stores.operations.appendAttempt(
-      this.deps.namespace,
-      op.id,
-      attempt,
-      {
-        state: 'signed',
-        clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous', 'error'],
-      },
-      op.version,
-    );
+    let next: OperationRecord;
+    try {
+      next = await this.deps.stores.operations.appendAttempt(
+        this.deps.namespace,
+        op.id,
+        attempt,
+        {
+          state: 'signed',
+          clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous', 'error'],
+        },
+        op.version,
+      );
+    } catch (error) {
+      // R24: another writer changed the Operation first (e.g. appended its own Attempt).
+      // These bytes were never persisted or sent, so they are dropped; the caller goes on
+      // from the stored Operation instead of surfacing the conflict.
+      if (!isCryptoAioError(error, 'VERSION_CONFLICT')) throw error;
+      return this.require(op.id);
+    }
     if (next.state !== op.state) this.emitState(next, op.state);
     return next;
   }
