@@ -13,6 +13,7 @@ import { SigningOrchestrator } from '../../../src/core/signing/orchestrator';
 import type {
   Signer,
   SigningRequest,
+  SignatureBundle,
   SigningResult,
 } from '../../../src/core/signing/types';
 import type { ResolvedWallet } from '../../../src/core/signing/wallet';
@@ -304,6 +305,52 @@ describe('SigningOrchestrator', () => {
     expect(calls).toBe(1);
   });
 
+  it.each<[string, unknown]>([
+    ['64 zero bytes', { requestId: 'r0', bytes: new Uint8Array(64), recovery: 0 }],
+    ['a string bytes value', { requestId: 'r0', bytes: 'ab'.repeat(64), recovery: 0 }],
+  ])(
+    'sign() verifies existing signatures before trusting them: %s',
+    async (_label, bad) => {
+      const { orchestrator } = setup();
+      let calls = 0;
+      const counting = callbackSigner({
+        id: 'hot',
+        schemes: ['secp256k1-ecdsa'],
+        getPublicKey: async () => new Uint8Array(33),
+        sign: async (r, c) => {
+          calls += 1;
+          return hot.sign(r, c);
+        },
+      });
+      const existing = [bad as SignatureBundle];
+      await expect(
+        orchestrator.sign(
+          wallet({ hot: counting }),
+          [request('r0', keyA)],
+          ctx,
+          existing,
+        ),
+      ).rejects.toMatchObject({ code: 'SIGNATURE_MISMATCH' });
+      expect(calls).toBe(0);
+    },
+  );
+
+  it('sign() ignores existing entries for unknown requests and copies known ones', async () => {
+    const { orchestrator } = setup();
+    const r1 = request('r1', keyA);
+    const s1 = signWith(keyA, r1);
+    const stray = { requestId: 'zz', bytes: 'not bytes' } as unknown as SignatureBundle;
+    const result = await orchestrator.sign(
+      wallet({ hot }),
+      [request('r0', keyA), r1],
+      ctx,
+      [stray, s1],
+    );
+    expect(result.signatures.map((s) => s.requestId)).toEqual(['r0', 'r1']);
+    expect(result.signatures[1]?.bytes).not.toBe(s1.bytes);
+    expect(result.signatures[1]?.bytes).toEqual(s1.bytes);
+  });
+
   it('turns policy vetoes into POLICY_REJECTED', async () => {
     const { orchestrator } = setup(() => {
       throw new Error('daily withdrawal limit reached');
@@ -523,5 +570,27 @@ describe('SigningOrchestrator', () => {
         orchestrator.accept(requests, [{ ...s1, recovery: s1.recovery ^ 1 }], [s0]),
       ),
     ).toMatchObject({ code: 'SIGNATURE_MISMATCH' });
+  });
+
+  it('accept() verifies existing signatures, ignores unknown ones and copies known ones', () => {
+    const { orchestrator } = setup();
+    const requests = [request('r0', keyA), request('r1', keyB)];
+    const s0 = signWith(keyA, requests[0]!);
+    const s1 = signWith(keyB, requests[1]!);
+    const zeros = { requestId: 'r0', bytes: new Uint8Array(64), recovery: 0 };
+    const text = {
+      requestId: 'r0',
+      bytes: 'ab'.repeat(64),
+    } as unknown as SignatureBundle;
+    expect(thrown(() => orchestrator.accept(requests, [s1], [zeros]))).toMatchObject({
+      code: 'SIGNATURE_MISMATCH',
+    });
+    expect(thrown(() => orchestrator.accept(requests, [s1], [text]))).toMatchObject({
+      code: 'SIGNATURE_MISMATCH',
+    });
+    const stray = { requestId: 'zz', bytes: 'x' } as unknown as SignatureBundle;
+    const merged = orchestrator.accept(requests, [s1], [stray, s0]);
+    expect(merged.map((s) => s.requestId)).toEqual(['r0', 'r1']);
+    expect(merged[0]?.bytes).not.toBe(s0.bytes);
   });
 });

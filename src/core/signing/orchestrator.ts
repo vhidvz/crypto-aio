@@ -133,7 +133,11 @@ export class SigningOrchestrator {
     }
   }
 
-  /** Signs requests not covered by `existing`, batching per signer and verifying every signature. */
+  /**
+   * Signs requests not covered by `existing`, batching per signer and verifying every
+   * signature. Each `existing` entry for one of `requests` is shape-checked, copied and
+   * re-verified first (SIGNATURE_MISMATCH otherwise); entries for other ids are ignored.
+   */
   async sign(
     wallet: ResolvedWallet,
     callerRequests: readonly SigningRequest[],
@@ -142,7 +146,7 @@ export class SigningOrchestrator {
   ): Promise<OrchestratedResult> {
     // Private snapshots: neither the caller nor a signer can change what gets verified.
     const requests = callerRequests.map(snapshotRequest);
-    const done = new Map(existing.map((s) => [s.requestId, s]));
+    const done = this.#adopt(existing, new Map(requests.map((r) => [r.id, r])));
     const groups = new Map<string, { signer: Signer; requests: SigningRequest[] }>();
     for (const request of requests) {
       if (done.has(request.id)) continue;
@@ -201,7 +205,10 @@ export class SigningOrchestrator {
     }
   }
 
-  /** Merges externally produced signatures (cold/offline/MPC) after verifying each one. */
+  /**
+   * Merges externally produced signatures (cold/offline/MPC) after verifying each one, and
+   * re-verifies `existing` the same way `sign()` does.
+   */
   accept(
     requests: readonly SigningRequest[],
     provided: readonly SignatureBundle[],
@@ -211,7 +218,7 @@ export class SigningOrchestrator {
       throw new ValidationError('INVALID_INTENT', 'external signatures must be an array');
     }
     const byId = new Map(requests.map((r) => [r.id, r]));
-    const merged = new Map(existing.map((s) => [s.requestId, s]));
+    const merged = this.#adopt(existing, byId);
     for (const [index, entry] of provided.entries()) {
       const signature = checkBundle(entry, (problem) => {
         throw new ValidationError(
@@ -232,6 +239,36 @@ export class SigningOrchestrator {
     return requests
       .map((r) => merged.get(r.id))
       .filter((s): s is SignatureBundle => s !== undefined);
+  }
+
+  /**
+   * Re-checks previously collected signatures before trusting them: each entry whose
+   * `requestId` names one of `byId` is shape-checked, copied and verified; others are ignored.
+   */
+  #adopt(
+    existing: readonly SignatureBundle[],
+    byId: ReadonlyMap<string, SigningRequest>,
+  ): Map<string, SignatureBundle> {
+    const adopted = new Map<string, SignatureBundle>();
+    for (let index = 0; index < existing.length; index++) {
+      const entry: unknown = existing[index];
+      const id =
+        typeof entry === 'object' && entry !== null
+          ? (entry as { requestId?: unknown }).requestId
+          : undefined;
+      if (typeof id !== 'string' || !byId.has(id)) continue;
+      const signature = checkBundle(entry, (problem) => {
+        throw new SigningError(
+          'SIGNATURE_MISMATCH',
+          `existing signature for request '${id}' ${problem}`,
+        );
+      });
+      const request = byId.get(signature.requestId);
+      if (!request) continue;
+      this.verify(request, signature);
+      adopted.set(request.id, signature);
+    }
+    return adopted;
   }
 
   /**
