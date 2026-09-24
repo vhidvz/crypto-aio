@@ -44,6 +44,12 @@ export interface HttpRequest {
   readonly body?: unknown;
   readonly headers?: Readonly<Record<string, string>>;
   readonly responseType?: 'json' | 'text';
+  /**
+   * Low-cardinality template label used for event and log method fields instead of the
+   * raw path, e.g. `'/address/:address/utxo'`. Must contain no identifiers (addresses,
+   * hashes, ids). When omitted, events fall back to the bare HTTP method.
+   */
+  readonly route?: string;
 }
 
 /** Single-attempt calls against one specific endpoint (used by health probes). */

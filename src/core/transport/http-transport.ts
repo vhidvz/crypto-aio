@@ -62,6 +62,7 @@ interface Endpoint {
   readonly bucket?: TokenBucket;
   identity: 'unchecked' | 'ok' | 'mismatch';
   identityCheck?: Promise<void>;
+  identityRetryAt?: number;
   height?: bigint;
   latencyMs?: number;
   failures: number;
@@ -98,6 +99,19 @@ function rpcLabel(payload: unknown): string {
   if (Array.isArray(payload)) return 'batch';
   const method = (payload as { method?: unknown } | null)?.method;
   return typeof method === 'string' ? method : 'rpc';
+}
+
+/** Low-cardinality event label: method+route when a route template is given, else the bare method. */
+function routeLabel(method: string, route: string | undefined): string {
+  return route ? `${method} ${route}` : method;
+}
+
+const IDENTITY_FIELD_CHARS = /[^A-Za-z0-9:_.-]/g;
+
+/** Strips everything but a safe character set and caps length, for event fields sourced from provider answers. */
+function sanitizeIdentityField(value: string): string {
+  const cleaned = value.replace(IDENTITY_FIELD_CHARS, '').slice(0, 64);
+  return cleaned.length > 0 ? cleaned : 'invalid';
 }
 
 export class HttpTransport implements Transport {
@@ -206,8 +220,10 @@ export class HttpTransport implements Transport {
   }
 
   http<T = unknown>(request: HttpRequest, options: CallOptions = {}): Promise<T> {
-    return this.#run(`${request.method} ${request.path}`, options, (endpoint, signal) =>
-      this.#httpOnce<T>(endpoint, request, signal),
+    return this.#run(
+      routeLabel(request.method, request.route),
+      options,
+      (endpoint, signal) => this.#httpOnce<T>(endpoint, request, signal),
     );
   }
 
@@ -229,7 +245,8 @@ export class HttpTransport implements Transport {
       }
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
       const body = init?.body ?? undefined;
-      const label = `${method} ${url.pathname}`;
+      // Bridged SDK calls have no route template; the raw path never becomes an event label.
+      const label = method;
       const options = classify?.(url, init) ?? {};
       const signal = init?.signal ?? options.signal;
       return this.#run(
@@ -247,6 +264,7 @@ export class HttpTransport implements Transport {
               headers,
               ...(body !== undefined ? { body } : {}),
               signal: deadline,
+              redirect: 'error',
             },
           );
           this.#throwForStatus(endpoint, response);
@@ -609,7 +627,7 @@ export class HttpTransport implements Transport {
     const mode = request.responseType ?? 'json';
     const { text, json } = await this.#exchange(
       endpoint,
-      `${request.method} ${request.path}`,
+      routeLabel(request.method, request.route),
       {
         method: request.method,
         url: joinUrl(endpoint.url, request.path, query),
@@ -626,6 +644,9 @@ export class HttpTransport implements Transport {
       },
       signal,
       mode,
+      // Error message text keeps the real path (unchanged, existing behaviour); only the
+      // event label above is route-based to avoid leaking identifiers into events.
+      `${request.method} ${request.path}`,
     );
     return (mode === 'text' ? text : json) as T;
   }
@@ -649,6 +670,7 @@ export class HttpTransport implements Transport {
     },
     signal: AbortSignal,
     mode: Mode,
+    errorLabel: string = label,
   ): Promise<{ text: string; json: unknown }> {
     const started = this.#clock.now();
     const response = await this.#fetch(request.url, {
@@ -656,6 +678,7 @@ export class HttpTransport implements Transport {
       headers: { ...endpoint.headers, ...request.headers },
       ...(request.body !== undefined ? { body: request.body } : {}),
       signal,
+      redirect: 'error',
     });
     const text = await response.text();
     this.#throwForStatus(endpoint, response);
@@ -680,9 +703,18 @@ export class HttpTransport implements Transport {
       const isRpcError =
         mode === 'rpc' && json !== null && typeof json === 'object' && 'error' in json;
       if (!isRpcError) {
+        if (mode === 'rpc') {
+          // A 4xx in RPC mode without a JSON-RPC envelope is an endpoint-local failure,
+          // not a definitive protocol answer: retry and fail over (I6b).
+          throw new ProviderError(
+            'PROVIDER_UNAVAILABLE',
+            `${errorLabel} did not return a JSON-RPC envelope (HTTP ${response.status})`,
+            { context },
+          );
+        }
         throw new ProviderError(
           'RPC_ERROR',
-          `${label} refused (HTTP ${response.status})`,
+          `${errorLabel} refused (HTTP ${response.status})`,
           {
             context,
             details: {
@@ -698,7 +730,7 @@ export class HttpTransport implements Transport {
       endpointId: endpoint.id,
       method: label,
       latencyMs: this.#clock.now() - started,
-      bytes: text.length,
+      bytes: new TextEncoder().encode(text).length,
     });
     return { text, json };
   }
@@ -706,6 +738,14 @@ export class HttpTransport implements Transport {
   #throwForStatus(endpoint: Endpoint, response: Response): void {
     const context = this.#context(endpoint);
     const status = response.status;
+    if (status === 408) {
+      // Retryable in every mode (I6b): a request timeout is an endpoint-local failure.
+      throw new ProviderError(
+        'PROVIDER_UNAVAILABLE',
+        'endpoint request timed out (HTTP 408)',
+        { context },
+      );
+    }
     if (status === 429) {
       const retryAfterMs = parseRetryAfter(
         response.headers.get('retry-after'),
@@ -735,6 +775,7 @@ export class HttpTransport implements Transport {
 
   #unwrapRpc<T>(endpoint: Endpoint, method: string, id: number, json: unknown): T {
     const context = this.#context(endpoint);
+    // Step 1: the body must be an object.
     if (json === null || typeof json !== 'object' || Array.isArray(json)) {
       throw new ProviderError(
         'PROVIDER_UNAVAILABLE',
@@ -745,18 +786,41 @@ export class HttpTransport implements Transport {
     const body = json as {
       id?: unknown;
       result?: unknown;
-      error?: { code?: unknown; message?: unknown; data?: unknown };
+      error?: { code?: unknown; message?: unknown; data?: unknown } | null;
     };
-    if (body.error) {
-      const code = typeof body.error.code === 'number' ? body.error.code : undefined;
+    const hasResult = 'result' in body;
+    const hasError = 'error' in body && body.error !== undefined && body.error !== null;
+    const errorCode =
+      hasError && typeof body.error?.code === 'number' ? body.error.code : undefined;
+    // Step 2: id must match, except a null id is only valid alongside a parse/invalid-request error.
+    const idIsNullForProtocolError =
+      body.id === null && (errorCode === -32700 || errorCode === -32600);
+    const idMatches = idIsNullForProtocolError || String(body.id) === String(id);
+    // Step 3: exactly one of result/error. Any of these three problems is an endpoint-local
+    // failure, not a definitive protocol answer: retry and fail over (I5).
+    if (!idMatches || (hasResult && hasError) || (!hasResult && !hasError)) {
+      throw new ProviderError(
+        'PROVIDER_UNAVAILABLE',
+        `invalid JSON-RPC envelope for ${method}`,
+        { context },
+      );
+    }
+    // Step 4: only now classify the error or return the result.
+    if (hasError) {
+      const err = body.error as { code?: unknown; message?: unknown; data?: unknown };
+      const code = typeof err.code === 'number' ? err.code : undefined;
       const message = this.#scrub(
         endpoint,
-        typeof body.error.message === 'string' ? body.error.message : 'unknown error',
+        typeof err.message === 'string' ? err.message : 'unknown error',
       ).slice(0, 300);
+      const rawData = err.data;
       const data =
-        typeof body.error.data === 'string' && body.error.data.length <= 512
-          ? body.error.data
-          : undefined;
+        rawData === undefined
+          ? undefined
+          : this.#scrub(
+              endpoint,
+              typeof rawData === 'string' ? rawData : JSON.stringify(rawData),
+            ).slice(0, 512);
       const details = {
         rpcCode: code,
         rpcMessage: message,
@@ -777,20 +841,6 @@ export class HttpTransport implements Transport {
         details,
       });
     }
-    if (String(body.id) !== String(id)) {
-      throw new ProviderError(
-        'PROVIDER_UNAVAILABLE',
-        `mismatched JSON-RPC response id for ${method}`,
-        { context },
-      );
-    }
-    if (!('result' in body)) {
-      throw new ProviderError(
-        'PROVIDER_UNAVAILABLE',
-        `JSON-RPC response to ${method} has no result`,
-        { context },
-      );
-    }
     return body.result as T;
   }
 
@@ -801,23 +851,47 @@ export class HttpTransport implements Transport {
     const expected = this.#probes.expectedIdentity;
     if (!probe || expected === undefined || endpoint.identity === 'ok') return;
     if (endpoint.identity === 'unchecked') {
+      // A prior probe attempt failed (not a confirmed mismatch): back off until the next
+      // health interval instead of re-probing on every attempt (I6a).
+      if (
+        endpoint.identityRetryAt !== undefined &&
+        this.#clock.now() < endpoint.identityRetryAt
+      ) {
+        throw new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          `endpoint '${endpoint.id}' identity not yet confirmed`,
+          { context: this.#context(endpoint) },
+        );
+      }
       endpoint.identityCheck ??= (async () => {
         try {
           const actual = await probe(this.#direct(endpoint, signal));
           if (actual === expected) {
             endpoint.identity = 'ok';
+            endpoint.identityRetryAt = undefined;
             return;
           }
           endpoint.identity = 'mismatch';
           this.#events.emit('provider.misconfigured', {
             transportId: this.id,
             endpointId: endpoint.id,
-            expected,
-            actual: String(actual).slice(0, 80),
+            expected: sanitizeIdentityField(expected),
+            actual: sanitizeIdentityField(String(actual)),
           });
           this.#log.warn('endpoint serves a different network; disabled', {
             endpointId: endpoint.id,
           });
+        } catch (error) {
+          // Any probe failure (a definitive RPC error, a transport error, a malformed
+          // reply) is an endpoint-local failure, not a confirmed mismatch: identity stays
+          // 'unchecked' and the endpoint fails over (I6a).
+          endpoint.identityRetryAt = this.#clock.now() + this.#opts.healthIntervalMs;
+          const cause = this.#classify(error, endpoint, signal);
+          throw new ProviderError(
+            'PROVIDER_UNAVAILABLE',
+            `identity probe failed for endpoint '${endpoint.id}'`,
+            { context: this.#context(endpoint), cause },
+          );
         } finally {
           endpoint.identityCheck = undefined;
         }

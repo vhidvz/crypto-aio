@@ -83,7 +83,7 @@ export class FakeFetch {
       status: reply.status ?? 200,
       headers: {
         'content-type': reply.text !== undefined ? 'text/plain' : 'application/json',
-        'content-length': String(text.length),
+        'content-length': String(new TextEncoder().encode(text).length),
         ...reply.headers,
       },
     });
