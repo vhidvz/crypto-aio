@@ -556,9 +556,10 @@ export class OperationEngine {
     target: OperationTarget,
     fn: (lease: LeaseHandle | undefined) => Promise<T>,
     signal?: AbortSignal,
+    options?: { readonly acquireTimeoutMs?: number },
   ): Promise<T> {
     if (!LEASED_ORDERINGS.has(target.pooled.driver.ordering)) return fn(undefined);
-    return this.deps.sequences.withLease(this.sequenceKeyOf(target), fn, signal);
+    return this.deps.sequences.withLease(this.sequenceKeyOf(target), fn, signal, options);
   }
 
   /**
@@ -1068,7 +1069,9 @@ export class OperationEngine {
    * possibly delivered attempt (`ambiguous`), or a caller abort (which the transport
    * surfaces bare). The Operation becomes `submitted` + `ambiguous` and is monitored; it is
    * never failed and keeps its reservation. A retry with the same key resends the stored
-   * bytes. A store failure here is only logged: the caller must get the ambiguous error.
+   * bytes. The observation is written first and on its own, then the transition, re-derived
+   * after a lost compare-and-set; a store failure is only logged: the caller must get the
+   * ambiguous error.
    * R28 (spec §13): `ambiguous: true` means the outcome is unknown and the caller retries
    * with the same idempotency key; the error keeps its code and that code's retryability.
    */
@@ -1079,24 +1082,22 @@ export class OperationEngine {
     signal?: AbortSignal,
   ): Promise<CryptoAioError> {
     const now = this.deps.clock.now();
-    try {
-      if (op.state === 'signed' || op.state === 'stalled') {
-        await this.update(op, {
-          state: 'submitted',
-          ambiguous: true,
-          nextCheckAt: now,
-          clear: ['error'],
-        });
-      }
-      await writeObservation(this.observationDeps, attempt, op.id, {
-        lastBroadcastAt: now,
-      });
-    } catch (storeError) {
+    const logFailure = (storeError: unknown) =>
       this.deps.log.warn('could not record an ambiguous broadcast', {
         operationId: op.id,
         code: errorCode(storeError),
       });
-    }
+    // First, and on its own: the observation (created `pending`) is the may-be-live marker
+    // (R25) a later rejection must see, whatever happens to the Operation write below.
+    await writeObservation(this.observationDeps, attempt, op.id, {
+      lastBroadcastAt: now,
+    }).catch(logFailure);
+    // R26.2: re-derived after a lost compare-and-set (e.g. a worker's claim mid-broadcast).
+    await this.updateAfterBroadcast(op, (current) =>
+      current.state === 'signed' || current.state === 'stalled'
+        ? { state: 'submitted', ambiguous: true, nextCheckAt: now, clear: ['error'] }
+        : undefined,
+    ).catch(logFailure);
     const cause = isCryptoAioError(error)
       ? error
       : signal?.aborted
@@ -1266,9 +1267,9 @@ export class OperationEngine {
    * held lease when already inside `withAddressLease` (it is not re-entrant).
    *
    * Without a held lease (the monitor), the lease wait is bounded by `signal` as well as
-   * `acquireTimeoutMs`; a busy lease, or a target whose wallet no longer owns the Operation
-   * (e.g. re-pointed to another key), writes nothing, logs the code and returns `op`. An
-   * abort is rethrown.
+   * `acquireTimeoutMs` (the option overrides it; `0` tries once); a busy lease, or a target
+   * whose wallet no longer owns the Operation (e.g. re-pointed to another key), writes
+   * nothing, logs the code and returns `op`. An abort is rethrown.
    */
   async failRejected(
     target: OperationTarget,
@@ -1277,9 +1278,10 @@ export class OperationEngine {
       readonly lease?: LeaseHandle;
       readonly error?: CryptoAioError;
       readonly signal?: AbortSignal;
+      readonly acquireTimeoutMs?: number;
     } = {},
   ): Promise<OperationRecord> {
-    const { lease, error, signal } = options;
+    const { lease, error, signal, acquireTimeoutMs } = options;
     try {
       this.assertOwnedBy(target, op);
     } catch (mismatch) {
@@ -1299,6 +1301,7 @@ export class OperationEngine {
             return this.failRejected(target, op, { error, lease: held });
           },
           signal,
+          acquireTimeoutMs === undefined ? undefined : { acquireTimeoutMs },
         );
       } catch (leaseError) {
         if (acquired || signal?.aborted) throw leaseError;

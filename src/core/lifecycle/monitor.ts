@@ -530,7 +530,8 @@ export class Monitor {
     }
     // R26.3: failing an all-rejected Operation releases its nonce, so the engine applies it
     // under the address lease; the monitor never makes a reservation-holding transition.
-    if (evaluation.error?.code === 'TX_REJECTED') return this.failRejected(op, signal);
+    if (evaluation.error?.code === 'TX_REJECTED')
+      return this.failRejected(op, signal, !fence && !signal);
     const terminal = isTerminal(evaluation.state);
     // R26.1: a read-only pass (no fence) writes the Operation only when its state, outcome
     // or error changes, never just to schedule it: a version bump would make a concurrent
@@ -570,7 +571,8 @@ export class Monitor {
    */
   private async failRejected(
     op: OperationRecord,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    tryOnce: boolean,
   ): Promise<OperationRecord> {
     let target: OperationTarget | undefined;
     let failure: unknown;
@@ -586,7 +588,12 @@ export class Monitor {
       });
       return op;
     }
-    return this.deps.engine.failRejected(target, op, { signal });
+    // An unfenced pass with no signal (`getTransactionStatus`, `watch` without one) tries
+    // the lease once: a busy lease leaves the Operation for a later pass.
+    return this.deps.engine.failRejected(target, op, {
+      signal,
+      ...(tryOnce ? { acquireTimeoutMs: 0 } : {}),
+    });
   }
 
   private bestStatus(

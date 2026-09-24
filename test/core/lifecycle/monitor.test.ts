@@ -932,14 +932,24 @@ describe('monitor: the all-rejected verdict from read-only passes (fix round 2)'
     const { log, warnings } = capturingLogger();
     const { env, op } = await rejectedButLive({ aio: { logger: log } });
     await holdLease(env);
+    // Fix round 3: a call without a signal tries the lease once instead of waiting it out.
+    const started = env.clock.now();
     expect(await env.run(env.bc.getTransactionStatus(op.id))).toMatchObject({
       state: 'rejected',
     });
+    expect(env.clock.now() - started).toBeLessThanOrEqual(200);
     expect((await stored(env, op.id)).state).toBe('signed');
     expect(warnings).toContainEqual({
       message: expect.any(String),
       fields: { operationId: op.id, code: 'SEQUENCE_BUSY' },
     });
+    const watching = (async () => {
+      for await (const event of env.bc.watch(op.id)) return event.status.state;
+      return undefined;
+    })();
+    const watchStarted = env.clock.now();
+    expect(await env.run(watching)).toBe('rejected');
+    expect(env.clock.now() - watchStarted).toBeLessThanOrEqual(200);
   });
 
   it('treats a wallet re-pointed to another key as an unresolvable target', async () => {
@@ -956,6 +966,48 @@ describe('monitor: the all-rejected verdict from read-only passes (fix round 2)'
     expect(warnings).toContainEqual({
       message: expect.any(String),
       fields: { operationId: op.id, code: 'INVALID_INTENT' },
+    });
+  });
+});
+
+describe('monitor: fix round 3', () => {
+  it('records an ambiguous broadcast as possibly live even when a claim races its update', async () => {
+    const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
+    const { driver } = await internalsOf(env.bc).pooled();
+    const broadcast = driver.broadcaster.broadcast.bind(driver.broadcaster);
+    let claimed = 0;
+    driver.broadcaster.broadcast = async (signed, options) => {
+      if (claimed === 0) {
+        claimed = (
+          await env.stores.operations.claimDue('default', 'w', env.clock.now(), 1_000, 10)
+        ).length;
+      }
+      return broadcast(signed, options);
+    };
+    env.chain.configureEndpoint('main', { acceptThenFail: true });
+    const intent = { to: env.stranger(), amount: 3n };
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'race' })),
+    ).rejects.toMatchObject({ ambiguous: true });
+    expect(claimed).toBe(1);
+    const op = await env.stores.operations.getByKey('default', 'race');
+    if (!op) throw new Error('unreachable');
+    expect(op).toMatchObject({ state: 'submitted', ambiguous: true });
+    env.chain.dropFromMempool(op.attempts[0]?.ref.id ?? '');
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'race' })),
+    ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+    expect(await stored(env, op.id)).toMatchObject({
+      state: 'stalled',
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect((await stored(env, next.operation.id)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 1n,
     });
   });
 });

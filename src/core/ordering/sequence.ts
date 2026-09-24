@@ -78,15 +78,18 @@ export class SequenceCoordinator {
    * than `leaseMs`, it can outlive the outer lease, take it over and fence the outer
    * caller. Code that already holds the lease must pass its `LeaseHandle` down instead.
    * The lease is not renewed automatically; long callbacks call `lease.renew()`.
+   * `options.acquireTimeoutMs` overrides the wait for this call (`0`: a single try).
    */
   async withLease<T>(
     key: string,
     fn: (lease: LeaseHandle) => Promise<T>,
     signal?: AbortSignal,
+    options: { readonly acquireTimeoutMs?: number } = {},
   ): Promise<T> {
     signal?.throwIfAborted();
     const deadline =
-      this.deps.clock.now() + (this.deps.acquireTimeoutMs ?? this.deps.leaseMs);
+      this.deps.clock.now() +
+      (options.acquireTimeoutMs ?? this.deps.acquireTimeoutMs ?? this.deps.leaseMs);
     let lease = await this.deps.locks.acquire(key, this.deps.owner, this.deps.leaseMs);
     while (!lease) {
       if (this.deps.clock.now() >= deadline) {
