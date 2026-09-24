@@ -18,7 +18,7 @@ import { toStoredIntent, type TransferIntent } from '../model/intent';
 import type { Block, Transaction, TxStatus } from '../model/transaction';
 import { normalizeIntent } from '../lifecycle/intent';
 import { deriveXpubChild } from '../signing/hd';
-import { walletOptionsOf } from '../signing/wallet';
+import { resolveWallet, walletOptionsOf } from '../signing/wallet';
 import type { EndpointStatus } from '../transport/types';
 import { fromHex } from '../util/bytes';
 import { defaultBlockchain } from './default-ref';
@@ -157,8 +157,31 @@ export class Blockchain<C extends ChainId = ChainId> {
     );
   }
 
-  async walletAddress(): Promise<Address> {
-    return (await internalsOf(this).wallet()).address;
+  /** Address of the handle's own selected wallet, or of another configured `wallet` by name
+   * (spec §5.2) — resolved fresh against this handle's driver, without switching the handle. */
+  async walletAddress(wallet?: string): Promise<Address> {
+    const internals = internalsOf(this);
+    const selection = internals.selection;
+    if (wallet === undefined || wallet === selection.wallet?.name) {
+      return (await internals.wallet()).address;
+    }
+    const effective = containerOf(internals.container).effective();
+    const config = effective.wallets[wallet];
+    if (!config) throw new ConfigError('CONFIG_INVALID', `unknown wallet '${wallet}'`);
+    const signerId = config.signer;
+    const instance = signerId !== undefined ? effective.signers[signerId] : undefined;
+    const { driver } = await internals.pooled();
+    const resolved = await resolveWallet(
+      {
+        ...selection,
+        wallet: { name: wallet, config },
+        signer:
+          instance && signerId !== undefined ? { id: signerId, instance } : undefined,
+      },
+      driver,
+      effective.signers,
+    );
+    return resolved.address;
   }
 
   /** Derives a deposit address from the wallet's xpub (capability `hd-public-derivation`). */
@@ -291,8 +314,17 @@ export class Blockchain<C extends ChainId = ChainId> {
                 if (typeof method !== 'string' || method === 'then') return undefined;
                 return async (...args: unknown[]) => {
                   const { driver } = await internals.pooled();
-                  const fn = driver.ext?.[family]?.[method] as
-                    ((...a: unknown[]) => Promise<unknown>) | undefined;
+                  // M9: own-property checks at both levels, so a name inherited from
+                  // Object.prototype (`constructor`, `toString`, ...) can never be mistaken
+                  // for a real family method.
+                  const familyExt =
+                    driver.ext && Object.hasOwn(driver.ext, family)
+                      ? driver.ext[family]
+                      : undefined;
+                  const fn =
+                    familyExt && Object.hasOwn(familyExt, method)
+                      ? (familyExt[method] as (...a: unknown[]) => Promise<unknown>)
+                      : undefined;
                   if (typeof fn !== 'function') {
                     throw new UnsupportedCapabilityError(
                       'UNSUPPORTED_CAPABILITY',

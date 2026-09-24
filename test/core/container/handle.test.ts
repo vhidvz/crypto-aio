@@ -153,6 +153,27 @@ describe('Blockchain handle', () => {
     expect((await env.run(env.bc.walletAddress())).canonical).toBe(env.address);
   });
 
+  it('walletAddress(name) resolves a different configured wallet without changing the handle', async () => {
+    const env = await createFakeEnv();
+    const otherSigner = localSigner.generate({
+      curves: ['secp256k1'],
+      id: 'other',
+    }).signer;
+    const scoped = env.aio.scope({
+      signers: { other: otherSigner },
+      wallets: { spare: { signer: 'other' } },
+    });
+    const bc = scoped.blockchain({ chain: 'fakechain', wallet: 'main' });
+    const mainAddress = await env.run(bc.walletAddress());
+    const spareAddress = await env.run(bc.walletAddress('spare'));
+    expect(mainAddress.canonical).toBe(env.address);
+    expect(spareAddress.canonical).not.toBe(mainAddress.canonical);
+    expect(bc.config.wallet).toBe('main');
+    await expect(env.run(bc.walletAddress('nope'))).rejects.toMatchObject({
+      code: 'CONFIG_INVALID',
+    });
+  });
+
   it('derives deposit addresses from an xpub without private keys', async () => {
     const account = HDKey.fromMasterSeed(
       fromHex('000102030405060708090a0b0c0d0e0f'),
@@ -259,6 +280,19 @@ describe('Blockchain handle', () => {
       code: 'UNSUPPORTED_CAPABILITY',
     });
     expect((env.bc.ext as unknown as { then?: unknown }).then).toBeUndefined();
+  });
+
+  it('ext rejects prototype-inherited property names instead of returning them', async () => {
+    const env = await createFakeEnv();
+    const loose = env.bc.ext as unknown as {
+      fake: Record<'constructor' | 'toString', () => Promise<unknown>>;
+    };
+    await expect(env.run(loose.fake.constructor())).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CAPABILITY',
+    });
+    await expect(env.run(loose.fake.toString())).rejects.toMatchObject({
+      code: 'UNSUPPORTED_CAPABILITY',
+    });
   });
 });
 
