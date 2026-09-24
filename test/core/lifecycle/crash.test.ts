@@ -14,11 +14,17 @@ async function crashEnv(options: FakeEnvOptions = {}) {
 const patchState = (state: string) => (args: readonly unknown[]) =>
   (args[2] as OperationPatch | undefined)?.state === state;
 
-/** R26.2: a crash while recording a broadcast answer reaches the caller as ambiguous. */
+/**
+ * R26.2/R27: a crash while recording a broadcast answer reaches the caller as an ambiguous
+ * STATE_UNRECORDED naming the Operation (the crash is not a crypto-aio error: `UNKNOWN`).
+ */
 const crashedAfterBroadcast = {
+  code: 'STATE_UNRECORDED',
+  category: 'state',
   ambiguous: true,
   retryable: true,
   context: expect.objectContaining({ operationId: expect.any(String) }),
+  details: { causeCode: 'UNKNOWN' },
   cause: expect.objectContaining({ name: 'CrashError' }),
 };
 

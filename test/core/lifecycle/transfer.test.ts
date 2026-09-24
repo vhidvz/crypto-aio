@@ -704,9 +704,12 @@ describe('transfer: broadcast answers never override stronger evidence (R24)', (
     const error = await env
       .run(env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'ol' }))
       .catch((e: unknown) => e);
+    // R27: after a broadcast, an unrecorded outcome is ambiguous STATE_UNRECORDED.
     expect(error).toMatchObject({
-      code: 'PROVIDER_UNAVAILABLE',
+      code: 'STATE_UNRECORDED',
+      ambiguous: true,
       context: expect.objectContaining({ operationId: expect.any(String) }),
+      details: { causeCode: 'PROVIDER_UNAVAILABLE' },
     });
     const op = await env.stores.operations.getByKey('default', 'ol');
     expect(op).toMatchObject({

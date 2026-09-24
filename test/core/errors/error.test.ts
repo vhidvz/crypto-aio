@@ -3,6 +3,7 @@ import {
   ConfigError,
   CryptoAioError,
   ProviderError,
+  StateError,
   createError,
   isCryptoAioError,
   withContext,
@@ -30,6 +31,12 @@ describe('CryptoAioError', () => {
   it('createError picks the subclass for the code category', () => {
     expect(createError('CONFIG_INVALID', 'bad')).toBeInstanceOf(ConfigError);
     expect(createError('TIMEOUT', 'late').category).toBe('timeout');
+  });
+
+  it('catalogues STATE_UNRECORDED as a retryable state error (R27)', () => {
+    const e = createError('STATE_UNRECORDED', 'not recorded');
+    expect(e).toBeInstanceOf(StateError);
+    expect(e).toMatchObject({ category: 'state', retryable: true, ambiguous: false });
   });
 
   it('serializes without stack or cause', () => {

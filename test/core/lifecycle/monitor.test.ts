@@ -625,9 +625,11 @@ describe('read-only calls never race a broadcast (R26)', () => {
       .catch((e: unknown) => e);
     const op = await env.stores.operations.getByKey('default', 'c');
     expect(error).toMatchObject({
+      code: 'STATE_UNRECORDED',
       ambiguous: true,
       retryable: true,
       context: expect.objectContaining({ operationId: op?.id }),
+      details: { causeCode: 'VERSION_CONFLICT' },
     });
     expect(env.chain.inMempool(op?.attempts[0]?.ref.id ?? '')).toBe(true);
   });

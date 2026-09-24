@@ -1353,23 +1353,25 @@ export class OperationEngine {
     });
   }
 
-  /** R26.2: a failure after the bytes may have reached the network is always ambiguous. */
+  /**
+   * R26.2/R27: a failure after the bytes may have reached the network is always an
+   * ambiguous STATE_UNRECORDED (retryable by its catalogue entry, so no other code's
+   * retryability is overridden), naming the Operation and the original code.
+   */
   protected ambiguousAfterBroadcast(
     op: OperationRecord,
     attempt: AttemptRecord,
     error: unknown,
   ): CryptoAioError {
-    const cause = isCryptoAioError(error)
-      ? error
-      : new StateError(
-          'INVALID_TRANSITION',
-          'the broadcast outcome could not be recorded; the transaction may have reached the network',
-          { cause: sanitizeError(error) },
-        );
-    return withContext(
-      cause,
-      { operationId: op.id, attemptId: attempt.id },
-      { ambiguous: true, retryable: true },
+    return new StateError(
+      'STATE_UNRECORDED',
+      'the broadcast outcome could not be recorded; the transaction may have reached the network',
+      {
+        ambiguous: true,
+        cause: sanitizeError(error),
+        context: { operationId: op.id, attemptId: attempt.id },
+        details: { causeCode: errorCode(error) },
+      },
     );
   }
 

@@ -47,6 +47,8 @@ export const ERROR_CODES = {
   INVALID_TRANSITION: { category: 'state', retryable: false },
   NOT_FOUND: { category: 'state', retryable: false },
   SEQUENCE_BUSY: { category: 'state', retryable: true },
+  /** R27: the outcome may have happened (e.g. a delivered broadcast) but was not recorded. */
+  STATE_UNRECORDED: { category: 'state', retryable: true },
   SCANNER_REORG_TOO_DEEP: { category: 'state', retryable: false },
   TIMEOUT: { category: 'timeout', retryable: true },
 } as const satisfies Record<string, CodeDefinition>;
