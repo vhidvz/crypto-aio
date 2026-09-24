@@ -1,7 +1,10 @@
+import { secp256k1 } from '@noble/curves/secp256k1';
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { containerOf } from '../../../src/core/container/internals';
+import type { ProofSource } from '../../../src/core/driver/types';
 import type { OperationTarget } from '../../../src/core/lifecycle/engine';
 import type { FeeSpeed } from '../../../src/core/model/fee';
+import { secret } from '../../../src/core/secret/secret';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
 import type { SigningResult } from '../../../src/core/signing/types';
@@ -13,6 +16,7 @@ import type {
   OperationRecord,
 } from '../../../src/core/store/types';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
+import { signFake } from '../../../src/testing/fake-chain';
 import type { FakeClock } from '../../../src/testing/fake-clock';
 import { CrashError, FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, mineWhile } from './support';
@@ -127,6 +131,31 @@ const expiryEnv = (options: Parameters<typeof createFakeEnv>[0] = {}) =>
     lifecycle: { rebroadcastIntervalMs: 10_000_000 },
     ...options,
   });
+
+/** The pooled driver's proofs; a test stubs one by assignment and restores it after. */
+async function proofsOf(env: FakeEnv): Promise<ProofSource> {
+  return (await internalsOf(env.bc).pooled()).driver.proofs;
+}
+
+/**
+ * I4: the fake never proves a seqno transaction expired, so its expiry proof is stubbed to
+ * say so while the monitor proves the dropped transfer expired, then restored.
+ */
+async function expiredSeqnoTransfer(env: FakeEnv, recipient: string) {
+  const proofs = await proofsOf(env);
+  const expired = proofs.expired;
+  const sub = await env.run(env.bc.transfer({ to: recipient, amount: 7n }));
+  env.chain.dropFromMempool(sub.attempt?.id ?? '');
+  proofs.expired = async () => true;
+  try {
+    await expect(
+      mineWhile(env, env.bc.waitForConfirmation(sub.operationId, { finality: 'final' })),
+    ).rejects.toMatchObject({ code: 'TX_EXPIRED' });
+  } finally {
+    proofs.expired = expired;
+  }
+  return sub;
+}
 
 describe('replace, cancel and rebuild', () => {
   it('replaces a transaction with a higher fee and settles on the replacement', async () => {
@@ -698,6 +727,112 @@ describe('replace, cancel and rebuild', () => {
     });
     expect((await stored(env, sub.operationId)).attempts).toHaveLength(2);
     expect(calls()).toBe(2);
+  });
+
+  // I4 + M1: seqno chains.
+  it('rebuilds an expired seqno transfer on the same seqno and refreshes its reservation', async () => {
+    const env = await createFakeEnv({
+      ordering: 'seqno',
+      lifecycle: { rebroadcastIntervalMs: 10_000_000 },
+    });
+    const recipient = env.stranger();
+    const sub = await expiredSeqnoTransfer(env, recipient);
+    const proofs = await proofsOf(env);
+    const expired = proofs.expired;
+    proofs.expired = async () => true;
+    let rebuilt;
+    try {
+      rebuilt = await env.run(env.bc.rebuild(sub.operationId));
+    } finally {
+      proofs.expired = expired;
+    }
+    expect(rebuilt.attempts.map((a) => a.purpose)).toEqual(['original', 'rebuild']);
+    const op = await stored(env, sub.operationId);
+    const [original, rebuild] = op.attempts;
+    expect(rebuild?.ordering).toMatchObject({ kind: 'seqno', seqno: 0n });
+    expect(op.reservation).toEqual(rebuild?.ordering);
+    expect(op.reservation).not.toEqual(original?.ordering);
+    const final = await mineWhile(env, rebuilt.wait({ finality: 'final' }));
+    expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    expect(env.chain.balance(recipient)).toBe(7n);
+  });
+
+  it('proves a consumed seqno dead before the inclusion check and rebuilds on the next one', async () => {
+    const key = secp256k1.utils.randomPrivateKey();
+    const env = await createFakeEnv({
+      ordering: 'seqno',
+      signer: localSigner({ id: 'hot', secp256k1: secret(key) }),
+      lifecycle: { rebroadcastIntervalMs: 10_000_000 },
+    });
+    const recipient = env.stranger();
+    const sub = await expiredSeqnoTransfer(env, recipient);
+    // Another transaction takes seqno 0, and it is finalized.
+    env.chain.submit(
+      signFake(
+        {
+          chainId: 'fake-local',
+          from: env.address,
+          to: env.stranger(),
+          amount: '1',
+          fee: '1',
+          nonce: '0',
+        },
+        key,
+      ),
+    );
+    env.chain.mine(5);
+    const proofs = await proofsOf(env);
+    const real = { ...proofs };
+    const reads: string[] = [];
+    proofs.expired = async (ordering) => {
+      reads.push('expired');
+      return real.expired(ordering);
+    };
+    proofs.slotConsumed = async (ordering, from, level) => {
+      reads.push(`slotConsumed:${level}`);
+      return real.slotConsumed(ordering, from, level);
+    };
+    proofs.includedFinal = async (ref, ordering, from) => {
+      reads.push('includedFinal');
+      return real.includedFinal(ref, ordering, from);
+    };
+    let rebuilt;
+    try {
+      rebuilt = await env.run(env.bc.rebuild(sub.operationId));
+    } finally {
+      Object.assign(proofs, real);
+    }
+    expect(reads).toEqual(['expired', 'slotConsumed:finalized', 'includedFinal']);
+    const op = await stored(env, sub.operationId);
+    expect(op.attempts[1]?.ordering).toMatchObject({ kind: 'seqno', seqno: 1n });
+    expect(op.reservation).toEqual(op.attempts[1]?.ordering);
+    const final = await mineWhile(env, rebuilt.wait({ finality: 'final' }));
+    expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    expect(env.chain.balance(recipient)).toBe(7n);
+  });
+
+  it('refuses to rebuild while another operation holds the wallet’s seqno', async () => {
+    const env = await createFakeEnv({
+      ordering: 'seqno',
+      lifecycle: { rebroadcastIntervalMs: 10_000_000 },
+    });
+    const sub = await expiredSeqnoTransfer(env, env.stranger());
+    const other = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    const proofs = await proofsOf(env);
+    const expired = proofs.expired;
+    proofs.expired = async () => true;
+    try {
+      await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
+        code: 'SEQUENCE_BUSY',
+        context: expect.objectContaining({ blockingOperationId: other.operationId }),
+      });
+    } finally {
+      proofs.expired = expired;
+    }
+    expect(await stored(env, sub.operationId)).toMatchObject({
+      state: 'expired',
+      attempts: [expect.objectContaining({ purpose: 'original' })],
+    });
   });
 
   it('keeps every terminal state final except an expired operation that is rebuilt', async () => {

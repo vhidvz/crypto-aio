@@ -622,9 +622,12 @@ export class OperationEngine {
    * Attempt and is live again. It is the one explicit exception to "a terminal Operation
    * never moves" (see `appendSigned`). Under the Operation's lease (the op lock on expiry
    * chains, the address lease on seqno chains); signed once, persisted before its
-   * broadcast, and a repeat resends a persisted rebuild instead of signing another. A
-   * refusal of the rebuilt Attempt leaves the Operation `stalled`, never `expired` again:
-   * only the monitor's proof can end it.
+   * broadcast, and a repeat resends a persisted rebuild instead of signing another. On a
+   * seqno chain it takes the wallet's next seqno (SEQUENCE_BUSY while another live
+   * Operation holds it), and the Operation's `reservation` is refreshed to the rebuilt
+   * Attempt's ordering in the same write as the Attempt (M1). A refusal of the rebuilt
+   * Attempt leaves the Operation `stalled`, never `expired` again: only the monitor's proof
+   * can end it.
    */
   async rebuild(target: OperationTarget, operationId: string): Promise<OperationRecord> {
     const driver = target.pooled.driver;
@@ -1228,6 +1231,8 @@ export class OperationEngine {
           // R26.1: scheduled from the moment signed bytes exist, so the Operation stays
           // claimable whatever moves it next (a read-only pass never schedules).
           nextCheckAt: attempt.createdAt,
+          // M1: a rebuild takes a new slot (seqno); the reservation follows it.
+          ...(purpose === 'rebuild' ? { reservation: unsigned.ordering } : {}),
           clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous', 'error'],
         },
         op.version,
