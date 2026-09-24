@@ -147,7 +147,17 @@ interface ChainState {
   readonly receipts: Map<string, FakeReceipt>;
 }
 
-class RpcFailure extends Error {}
+/** A node-style JSON-RPC rejection. `code` defaults to -32000 (application error); framework-level
+ *  failures (parse error, invalid request, method not found, invalid params) use their standard
+ *  JSON-RPC codes so callers can distinguish "malformed request" from "the node said no". */
+class RpcFailure extends Error {
+  readonly code: number;
+
+  constructor(message: string, code = -32000) {
+    super(message);
+    this.code = code;
+  }
+}
 
 export class FakeChain {
   readonly ordering: FakeOrdering;
@@ -280,7 +290,11 @@ export class FakeChain {
     }
   }
 
-  /** Replaces the last `depth` blocks with `depth + 1` new ones; dropped txs do not return. */
+  /**
+   * Replaces the last `depth` blocks with `depth + 1` new ones; dropped txs do not return.
+   * `options.force` bypasses the finalized-height guard; it exists only to simulate an
+   * adversarial "chain lied about finality" scenario and is never needed for an honest reorg.
+   */
   reorg(
     depth: number,
     options: { readonly drop?: readonly string[]; readonly force?: boolean } = {},
@@ -329,30 +343,45 @@ export class FakeChain {
     if (signal?.aborted) throw signal.reason;
     if (endpoint.down) return new Response('service unavailable', { status: 503 });
     if (endpoint.html) return new Response('<html>maintenance</html>', { status: 200 });
-    const request = JSON.parse(typeof init?.body === 'string' ? init.body : 'null') as {
-      id?: unknown;
-      method?: string;
-      params?: unknown[];
-    } | null;
+    // `requestId` stays null until a well-formed request is parsed; -32700/-32600 replies echo
+    // null (their request never yielded a trustworthy id), everything else echoes the real id.
+    let requestId: unknown = null;
     const reply = (payload: object) =>
-      new Response(
-        JSON.stringify({ jsonrpc: '2.0', id: request?.id ?? null, ...payload }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        },
-      );
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: requestId, ...payload }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    // Nothing below this point may reject the returned promise: every failure, including bugs in
+    // `#handle` or `#admit`, is reported as a JSON-RPC error reply or (last resort) an HTTP 500.
     try {
-      const result = this.#handle(endpoint, request?.method ?? '', request?.params ?? []);
-      if (request?.method === 'fake_sendRawTransaction' && endpoint.acceptThenFail) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(typeof init?.body === 'string' ? init.body : 'null');
+      } catch {
+        throw new RpcFailure('parse error', -32700);
+      }
+      if (
+        parsed === null ||
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed) ||
+        typeof (parsed as { method?: unknown }).method !== 'string' ||
+        !('id' in parsed)
+      ) {
+        throw new RpcFailure('invalid request', -32600);
+      }
+      const request = parsed as { id: unknown; method: string; params?: unknown[] };
+      requestId = request.id;
+      const result = this.#handle(endpoint, request.method, request.params ?? []);
+      if (request.method === 'fake_sendRawTransaction' && endpoint.acceptThenFail) {
         endpoint.acceptThenFail = false;
         return new Response('gateway timeout', { status: 504 });
       }
       return reply({ result });
     } catch (error) {
-      if (error instanceof RpcFailure)
-        return reply({ error: { code: -32000, message: error.message } });
-      throw error;
+      if (error instanceof RpcFailure) {
+        return reply({ error: { code: error.code, message: error.message } });
+      }
+      return new Response('internal error', { status: 500 });
     }
   }) as typeof fetch;
 
@@ -424,18 +453,23 @@ export class FakeChain {
       );
     }
     if (this.#mempool.has(id)) throw new RpcFailure('already known');
-    const entry: ChainTx = {
-      id,
-      tx,
-      from: tx.from,
-      to: tx.to.toLowerCase(),
-      amount: BigInt(tx.amount),
-      fee: BigInt(tx.fee),
-      ...(tx.nonce !== undefined ? { nonce: BigInt(tx.nonce) } : {}),
-      ...(tx.lastValidHeight !== undefined
-        ? { lastValidHeight: BigInt(tx.lastValidHeight) }
-        : {}),
-    };
+    let entry: ChainTx;
+    try {
+      entry = {
+        id,
+        tx,
+        from: tx.from,
+        to: tx.to.toLowerCase(),
+        amount: BigInt(tx.amount),
+        fee: BigInt(tx.fee),
+        ...(tx.nonce !== undefined ? { nonce: BigInt(tx.nonce) } : {}),
+        ...(tx.lastValidHeight !== undefined
+          ? { lastValidHeight: BigInt(tx.lastValidHeight) }
+          : {}),
+      };
+    } catch {
+      throw new RpcFailure('malformed transaction');
+    }
     if (entry.fee < this.minFee) throw new RpcFailure('fee too low');
     if (this.ordering === 'expiry') {
       if (entry.lastValidHeight === undefined || entry.lastValidHeight <= this.head) {
@@ -534,13 +568,22 @@ export class FakeChain {
       }
       case 'fake_getBlock': {
         const ref = arg(0);
-        const block = /^[0-9a-f]{64}$/.test(ref)
-          ? this.#blocks.find((b) => b.hash === ref)
-          : this.#blocks[
-              Number(
-                ref === 'latest' ? view : ref === 'finalized' ? finalized : BigInt(ref),
-              )
-            ];
+        let block: FakeBlock | undefined;
+        if (/^[0-9a-f]{64}$/.test(ref)) {
+          block = this.#blocks.find((b) => b.hash === ref);
+        } else if (ref === 'latest') {
+          block = this.#blocks[Number(view)];
+        } else if (ref === 'finalized') {
+          block = this.#blocks[Number(finalized)];
+        } else {
+          let refHeight: bigint;
+          try {
+            refHeight = BigInt(ref);
+          } catch {
+            throw new RpcFailure('invalid params: fake_getBlock ref', -32602);
+          }
+          block = this.#blocks[Number(refHeight)];
+        }
         if (!block || block.height > view) return null;
         return this.#wireBlock(block, params[1] === true);
       }
@@ -579,7 +622,7 @@ export class FakeChain {
       case 'fake_getFinalizedTransaction':
         return endpoint.forkFinalized ? null : this.#wireTx(arg(0), finalized, false);
       default:
-        throw new RpcFailure(`method not found: ${method}`);
+        throw new RpcFailure(`method not found: ${method}`, -32601);
     }
   }
 }

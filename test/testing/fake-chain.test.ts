@@ -3,6 +3,7 @@ import {
   FakeChain,
   REVERT_ADDRESS,
   fakeAddress,
+  fakeTxId,
   signFake,
   type FakeUnsigned,
 } from '../../src/testing/fake-chain';
@@ -198,5 +199,109 @@ describe('FakeChain', () => {
     chain.configureEndpoint('lagging', { down: true });
     expect((await chain.fetch(url, { method: 'POST', body: '{}' })).status).toBe(503);
     await expect(chain.fetch('https://elsewhere.test/x')).rejects.toThrow('fetch failed');
+  });
+
+  it('acceptThenFail admits the transaction but answers 504 once', async () => {
+    const chain = new FakeChain();
+    const alice = key();
+    const bob = key();
+    chain.fund(alice.address, 100n);
+    const url = chain.endpoint('flaky', { acceptThenFail: true });
+    const raw = signFake(tx(alice.address, bob.address), alice.priv);
+    const response = await chain.fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'fake_sendRawTransaction',
+        params: [raw],
+      }),
+    });
+    expect(response.status).toBe(504);
+    expect(chain.inMempool(fakeTxId(raw))).toBe(true);
+  });
+
+  it('refuseNext rejects only the next send, with the given message', async () => {
+    const chain = new FakeChain();
+    const alice = key();
+    const bob = key();
+    chain.fund(alice.address, 100n);
+    const url = chain.endpoint('grumpy', { refuseNext: 'try again later' });
+    const raw = signFake(tx(alice.address, bob.address), alice.priv);
+    const send = () =>
+      chain.fetch(url, {
+        method: 'POST',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'fake_sendRawTransaction',
+          params: [raw],
+        }),
+      });
+    const refused = (await (await send()).json()) as { error?: { message: string } };
+    expect(refused.error?.message).toBe('try again later');
+    const accepted = (await (await send()).json()) as { result?: unknown };
+    expect(typeof accepted.result).toBe('string');
+  });
+
+  it('forkFinalized reports a divergent finalized block', async () => {
+    const chain = new FakeChain();
+    chain.mine(5);
+    const url = chain.endpoint('forked', { forkFinalized: true });
+    const response = await chain.fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'fake_finalizedBlock',
+        params: [],
+      }),
+    });
+    const body = (await response.json()) as { result: { hash: string } };
+    expect(body.result.hash).toBe('f'.repeat(64));
+  });
+
+  it('answers with standard JSON-RPC error codes, and never rejects the fetch promise', async () => {
+    const chain = new FakeChain();
+    const url = chain.endpoint('strict');
+    const post = async (body: string) => {
+      const response = await chain.fetch(url, { method: 'POST', body });
+      expect(response.status).toBe(200);
+      return (await response.json()) as {
+        id: unknown;
+        error?: { code: number; message: string };
+      };
+    };
+
+    const parseError = await post('not-json{');
+    expect(parseError.id).toBeNull();
+    expect(parseError.error?.code).toBe(-32700);
+
+    const noMethod = await post(JSON.stringify({ jsonrpc: '2.0', id: 1 }));
+    expect(noMethod.id).toBeNull();
+    expect(noMethod.error?.code).toBe(-32600);
+
+    const noId = await post(
+      JSON.stringify({ jsonrpc: '2.0', method: 'fake_blockNumber' }),
+    );
+    expect(noId.id).toBeNull();
+    expect(noId.error?.code).toBe(-32600);
+
+    const unknownMethod = await post(
+      JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'fake_nope' }),
+    );
+    expect(unknownMethod.id).toBe(7);
+    expect(unknownMethod.error?.code).toBe(-32601);
+
+    const badRef = await post(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 8,
+        method: 'fake_getBlock',
+        params: ['not-a-block-ref'],
+      }),
+    );
+    expect(badRef.id).toBe(8);
+    expect(badRef.error?.code).toBe(-32602);
   });
 });
