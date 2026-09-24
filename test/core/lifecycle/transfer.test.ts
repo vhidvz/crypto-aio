@@ -175,7 +175,9 @@ describe('transfer', () => {
     const error = await env
       .run(env.bc.transfer(intent, { idempotencyKey: 'amb' }))
       .catch((e: unknown) => e);
+    // R28: `ambiguous` carries the retry guidance; the code keeps its catalogue retryability.
     expect(error).toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
       ambiguous: true,
       retryable: true,
       context: expect.objectContaining({ operationId: expect.any(String) }),
@@ -208,7 +210,7 @@ describe('transfer', () => {
     expect(error).toMatchObject({
       code: 'RPC_ERROR',
       ambiguous: true,
-      retryable: true,
+      retryable: false,
       context: expect.objectContaining({ operationId: expect.any(String) }),
     });
     const op = await env.stores.operations.getByKey('default', 'amb-rpc');
@@ -242,6 +244,7 @@ describe('transfer', () => {
       )
       .catch((e: unknown) => e);
     expect(error).toMatchObject({
+      code: 'TIMEOUT',
       ambiguous: true,
       retryable: true,
       context: expect.objectContaining({ operationId: expect.any(String) }),

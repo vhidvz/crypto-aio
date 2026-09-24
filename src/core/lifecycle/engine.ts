@@ -1069,6 +1069,8 @@ export class OperationEngine {
    * surfaces bare). The Operation becomes `submitted` + `ambiguous` and is monitored; it is
    * never failed and keeps its reservation. A retry with the same key resends the stored
    * bytes. A store failure here is only logged: the caller must get the ambiguous error.
+   * R28 (spec §13): `ambiguous: true` means the outcome is unknown and the caller retries
+   * with the same idempotency key; the error keeps its code and that code's retryability.
    */
   protected async recordAmbiguous(
     op: OperationRecord,
@@ -1111,7 +1113,7 @@ export class OperationEngine {
     return withContext(
       cause,
       { operationId: op.id, attemptId: attempt.id },
-      { ambiguous: true, retryable: true },
+      { ambiguous: true },
     );
   }
 
