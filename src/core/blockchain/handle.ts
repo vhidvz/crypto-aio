@@ -368,14 +368,19 @@ export class Blockchain<C extends ChainId = ChainId> {
     return new Scanner(
       {
         load: async () => {
-          const mapping = await this.mapping();
-          const blocks = mapping.driver.blocks;
+          // One pooled entry, so the driver and its transport always belong together.
+          const { driver, transport } = await internals.pooled();
+          const blocks = driver.blocks;
           if (!blocks)
             throw new UnsupportedCapabilityError(
               'UNSUPPORTED_CAPABILITY',
               `${this.chain} driver has no block source`,
             );
-          const { transport } = await internals.pooled();
+          const mapping = {
+            selection: internals.selection,
+            driver,
+            assets: runtime.assets,
+          };
           return { mapping, blocks, transport };
         },
         cursors: runtime.stores.cursors,
@@ -403,6 +408,13 @@ export class Blockchain<C extends ChainId = ChainId> {
         `${this.chain} has no address history (configure an indexer)`,
       );
     }
+    const { cursor, limit = 50 } = options;
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new ConfigError('CONFIG_INVALID', 'history limit must be a positive integer');
+    }
+    if (cursor !== undefined && typeof cursor !== 'string') {
+      throw new ConfigError('CONFIG_INVALID', 'history cursor must be a string');
+    }
     const m = await this.mapping();
     const source = m.driver.history;
     if (!source)
@@ -411,8 +423,8 @@ export class Blockchain<C extends ChainId = ChainId> {
         `${this.chain} driver has no history source`,
       );
     const page = await source.list(toAddress(m, address).canonical, {
-      ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
-      limit: options.limit ?? 50,
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit,
     });
     const [head, finalized] = await Promise.all([
       m.driver.reader.getBlockHeight(),

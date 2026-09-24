@@ -1,5 +1,10 @@
 import type { MappingContext } from '../../../src/core/blockchain/mapping';
-import type { AdapterManifest, DriverBlock } from '../../../src/core/driver/types';
+import type {
+  AdapterManifest,
+  BlockSource,
+  DriverBlock,
+  ScanFilter,
+} from '../../../src/core/driver/types';
 import { EventBus } from '../../../src/core/events/bus';
 import { noopLogger } from '../../../src/core/events/logger';
 import type { AioEvent } from '../../../src/core/events/types';
@@ -8,7 +13,9 @@ import {
   type ScanEvent,
   type ScannerDeps,
 } from '../../../src/core/observe/scanner';
+import type { AssetRef } from '../../../src/core/model/asset';
 import { MemoryCursorStore } from '../../../src/core/store/memory';
+import type { CursorStore } from '../../../src/core/store/types';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
 import { FakeClock, drive } from '../../../src/testing/fake-clock';
 import { fakeDriverFactory } from '../../../src/testing/fake-driver';
@@ -337,11 +344,143 @@ describe('scanner cursor and delivery guarantees', () => {
       { cursorKey: 'k', reorgWindow: 0 },
       { cursorKey: 'k', reorgWindow: 1.5 },
       { cursorKey: 'k', pollIntervalMs: 0 },
+      { cursorKey: 'k', filter: null as unknown as object },
+      { cursorKey: 'k', filter: { addresses: env.address as unknown as string[] } },
+      { cursorKey: 'k', filter: { addresses: [42 as unknown as string] } },
+      { cursorKey: 'k', filter: { assets: 'native' as unknown as AssetRef[] } },
+      { cursorKey: 'k', filter: { assets: [{ standard: 'erc20' } as AssetRef] } },
     ]) {
       expect(thrown(() => env.bc.scanner(options))).toMatchObject({
         code: 'CONFIG_INVALID',
       });
     }
+    // Only the driver can judge an address string: a typed error on the first read.
+    const bad = env.bc
+      .scanner({ cursorKey: 'bad-address', filter: { addresses: ['not-an-address'] } })
+      [Symbol.asyncIterator]();
+    await expect(env.run(bad.next())).rejects.toMatchObject({ code: 'INVALID_ADDRESS' });
+  });
+
+  it('refills the reorg window after a rollback, so a second reorg still resolves', async () => {
+    const env = await createFakeEnv({ chain: { finalityDepth: 20 } });
+    env.chain.mine(6);
+    const iterator = env.bc
+      .scanner({ cursorKey: 'twice', from: 1n, reorgWindow: 4 })
+      [Symbol.asyncIterator]();
+    for (let i = 0; i < 6; i++) await (await take(env, iterator)).ack();
+    env.chain.reorg(2);
+    const first = await take(env, iterator);
+    expect(first).toMatchObject({ type: 'rollback', to: { height: 4n } });
+    await first.ack();
+    expect(
+      (await env.stores.cursors.get('default:fakechain:local:twice'))?.cursor.recent,
+    ).toEqual([1n, 2n, 3n, 4n].map((height) => checkpoint(env, height)));
+    env.chain.reorg(5);
+    const second = await take(env, iterator);
+    expect(second).toMatchObject({ type: 'rollback', to: checkpoint(env, 2n) });
+    if (second.type !== 'rollback') throw new Error('unreachable');
+    expect(second.removed.map((r) => r.height)).toEqual([4n, 3n]);
+  });
+
+  it('validates a reset checkpoint without a recent window against the chain', async () => {
+    const env = await createFakeEnv();
+    env.chain.mine(3);
+    const key = 'default:fakechain:local:reset';
+    const hash = env.chain.block(2n)?.hash as string;
+    await env.stores.cursors.put(key, { height: 2n, hash, recent: [] }, null);
+    const iterator = env.bc.scanner({ cursorKey: 'reset' })[Symbol.asyncIterator]();
+    const event = await take(env, iterator);
+    expect(event).toMatchObject({ type: 'block', block: { height: 3n } });
+    await event.ack();
+    expect((await env.stores.cursors.get(key))?.cursor.recent).toEqual([
+      checkpoint(env, 2n),
+      checkpoint(env, 3n),
+    ]);
+    const stray = { height: 2n, hash: 'f'.repeat(64), recent: [] };
+    await env.stores.cursors.put('default:fakechain:local:stray', stray, null);
+    const refused = env.bc.scanner({ cursorKey: 'stray' })[Symbol.asyncIterator]();
+    await expect(env.run(refused.next(), 500)).rejects.toMatchObject({
+      code: 'SCANNER_REORG_TOO_DEEP',
+    });
+  });
+
+  it('treats a retried ack whose earlier write landed unseen as committed', async () => {
+    const inner = new MemoryCursorStore();
+    let failAfterWrite = false;
+    const cursors: CursorStore = {
+      get: (key) => inner.get(key),
+      put: async (key, cursor, expectedVersion) => {
+        const version = await inner.put(key, cursor, expectedVersion);
+        if (failAfterWrite) {
+          failAfterWrite = false;
+          throw new Error('connection reset after the write');
+        }
+        return version;
+      },
+    };
+    const env = await createFakeEnv({ stores: { cursors } });
+    env.chain.mine(2);
+    const iterator = env.bc
+      .scanner({ cursorKey: 'ambiguous', from: 1n })
+      [Symbol.asyncIterator]();
+    const one = await take(env, iterator);
+    failAfterWrite = true;
+    await expect(one.ack()).rejects.toThrow('connection reset after the write');
+    await one.ack();
+    const two = await take(env, iterator);
+    expect(heightOf(two)).toBe(2n);
+    await two.ack();
+    expect((await inner.get('default:fakechain:local:ambiguous'))?.version).toBe(2);
+  });
+
+  it('normalizes filter.assets within the chain and passes them to the block source', async () => {
+    const env = await createFakeEnv();
+    const wanted = env.stranger();
+    env.chain.mine();
+    const filters: (ScanFilter | undefined)[] = [];
+    const spied: AdapterManifest = {
+      family: 'fake',
+      library: 'spied-sdk',
+      chains: ['fakechain'],
+      capabilities: ['block-scan'],
+      peerDependencies: [],
+      load: async () => ({
+        create: async (ctx) => {
+          const driver = await fakeDriverFactory.create(ctx);
+          const blocks = driver.blocks as BlockSource;
+          return {
+            ...driver,
+            blocks: {
+              header: (height) => blocks.header(height),
+              transactions: (block, filter) => {
+                filters.push(filter);
+                return blocks.transactions(block, filter);
+              },
+            },
+          };
+        },
+      }),
+    };
+    env.aio.use({ name: 'spied', adapters: [spied] });
+    const bc = env.aio.blockchain({
+      chain: 'fakechain',
+      library: 'spied-sdk' as 'fake-sdk',
+    });
+    const iterator = bc
+      .scanner({
+        cursorKey: 'assets',
+        from: 1n,
+        filter: { addresses: [wanted.toUpperCase()], assets: ['fakechain:local/native'] },
+      })
+      [Symbol.asyncIterator]();
+    await take(env, iterator);
+    expect(filters).toEqual([{ addresses: [wanted], assets: ['native'] }]);
+    const foreign = bc
+      .scanner({ cursorKey: 'foreign', filter: { assets: ['otherchain:local/native'] } })
+      [Symbol.asyncIterator]();
+    await expect(env.run(foreign.next())).rejects.toMatchObject({
+      code: 'ASSET_RESOLUTION',
+    });
   });
 });
 
@@ -445,5 +584,16 @@ describe('address history', () => {
     expect(thrown(() => bc.scanner({ cursorKey: 'nope' }))).toMatchObject({
       code: 'UNSUPPORTED_CAPABILITY',
     });
+    for (const options of [
+      { limit: 0 },
+      { limit: 1.5 },
+      { limit: '10' as unknown as number },
+      { cursor: 5 as unknown as string },
+    ]) {
+      await expect(env.run(bc.history(recipient, options))).rejects.toMatchObject({
+        code: 'CONFIG_INVALID',
+      });
+    }
+    expect(calls).toHaveLength(1);
   });
 });
