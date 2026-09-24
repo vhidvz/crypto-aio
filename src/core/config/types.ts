@@ -68,7 +68,10 @@ export interface Hooks {
    * Throw to veto signing (policy engines, approvals). Runs before every signing request.
    * It may run more than once per Operation: once per concurrent caller, and again when a
    * `prepared` Operation is repeated. Make it idempotent; `ctx.operationId` identifies the
-   * Operation. It runs while the wallet's address lease is held, so keep it short.
+   * Operation. It runs while the wallet's address lease is held, so keep it short: a hook
+   * running longer than `lifecycle.leaseMs` can lose the lease to another transfer. A veto
+   * after that writes nothing; the Operation stays `prepared` and is vetoed again on its
+   * next repeat.
    */
   readonly beforeSign?: (ctx: SigningContext) => void | Promise<void>;
 }

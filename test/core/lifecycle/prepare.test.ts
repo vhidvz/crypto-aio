@@ -186,6 +186,72 @@ describe('prepareTransfer', () => {
     });
   });
 
+  // N1 (P13): a veto from a hook that outlives the address lease writes nothing, so the
+  // nonce is never lost; the veto is retried on the next repeat under a fresh lease.
+  it('keeps the nonce when a slow veto outlives the address lease', async () => {
+    let lingering = true;
+    const { logs, logger } = captureLogs();
+    const env: FakeEnv = await createFakeEnv({
+      aio: { logger },
+      hooks: {
+        beforeSign: async (ctx) => {
+          if (ctx.summary.outputs[0]?.amount !== '999') return;
+          if (lingering) await env.clock.sleep(40_000); // leaseMs is 30s
+          throw new Error('vetoed late');
+        },
+      },
+    });
+    const slowIntent = { to: env.stranger(), amount: 999n };
+    const slow = env.bc.prepareTransfer(slowIntent, { idempotencyKey: 'slow' }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await env.run(env.clock.sleep(10_000));
+    const second = await env.run(
+      env.bc.prepareTransfer(
+        { to: env.stranger(), amount: 1n },
+        { idempotencyKey: 'second' },
+      ),
+    );
+    expect(await reservationOf(env, second.operation.id)).toEqual({
+      kind: 'nonce',
+      nonce: 1n,
+    });
+    expect(await env.run(slow)).toMatchObject({ code: 'POLICY_REJECTED' });
+    expect((await env.stores.operations.getByKey('default', 'slow'))?.state).toBe(
+      'prepared',
+    );
+    lingering = false;
+    await expect(
+      env.run(env.bc.prepareTransfer(slowIntent, { idempotencyKey: 'slow' })),
+    ).rejects.toMatchObject({ code: 'POLICY_REJECTED' });
+    expect((await env.stores.operations.getByKey('default', 'slow'))?.state).toBe(
+      'failed',
+    );
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(await reservationOf(env, next.operation.id)).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
+    });
+    expect(
+      logs.filter((entry) => entry.message === 'reservation release failed'),
+    ).toEqual([]);
+    const slowId = (await env.stores.operations.getByKey('default', 'slow'))?.id;
+    expect(
+      logs.filter(
+        (entry) => entry.message === 'address lease lost before a terminal write',
+      ),
+    ).toEqual([
+      {
+        level: 'warn',
+        message: 'address lease lost before a terminal write',
+        fields: { operationId: slowId, code: 'FENCING' },
+      },
+    ]);
+  });
+
   // I2 (P4): lease contention fails abandon before any write, so a retry succeeds.
   it('lets abandon be retried after it lost the address lease to contention', async () => {
     const env = await createFakeEnv();

@@ -151,15 +151,25 @@ function assertBuiltOrdering(
   excluded: readonly string[] | undefined,
   built: OrderingData,
 ): void {
+  // No existing code names an input conflict without implying a nonce, so NONCE_CONFLICT
+  // (the ordering-slot conflict code) is kept and the message says what actually clashed.
+  if (built.kind === kind && built.kind === 'inputs') {
+    if (built.inputs.some((input) => excluded?.includes(input))) {
+      throw new ChainError(
+        'NONCE_CONFLICT',
+        'input reservation conflict: the built transaction spends an input held by another operation',
+        { context: { operationId } },
+      );
+    }
+    return;
+  }
   const matches =
     built.kind === kind &&
     (built.kind === 'nonce'
       ? allocated?.kind === 'nonce' && built.nonce === allocated.nonce
       : built.kind === 'seqno'
         ? allocated?.kind === 'seqno' && built.seqno === allocated.seqno
-        : built.kind === 'inputs'
-          ? !built.inputs.some((input) => excluded?.includes(input))
-          : true);
+        : true);
   if (!matches) {
     throw new ChainError(
       'NONCE_CONFLICT',
@@ -207,8 +217,9 @@ export class OperationEngine {
 
   /**
    * Only before any signed bytes exist. Under the address lease (R23): re-reads the
-   * Operation, marks it `abandoned` and releases its reservation. Pending signer tickets are
-   * cancelled after the lease is dropped, even when the release failed.
+   * Operation, renews the lease (a lost lease fails before any write), marks it
+   * `abandoned` and releases its reservation. Pending signer tickets are cancelled after
+   * the lease is dropped, even when the release failed.
    */
   async abandon(target: OperationTarget, operationId: string): Promise<OperationRecord> {
     let tickets: readonly SignerTicket[] = [];
@@ -223,6 +234,7 @@ export class OperationEngine {
             { context: { operationId } },
           );
         }
+        await lease?.renew();
         const next = await this.update(op, {
           state: 'abandoned',
           clear: ['partialSignatures', 'signerTickets'],
@@ -524,8 +536,10 @@ export class OperationEngine {
   /**
    * Terminal failure while no valid signed bytes exist: mark failed, then free the nonce,
    * both under one address lease (R23). Callers already inside `withAddressLease` must pass
-   * their lease (it is not re-entrant). A failed release is logged by code and the original
-   * `error` is rethrown in its place.
+   * their lease (it is not re-entrant). The lease is renewed first: when it was lost (a
+   * slow policy hook outlived it), nothing is written, so the Operation stays `prepared`
+   * and its next repeat retries under a fresh lease. A lost lease or a failed release is
+   * logged by code, and the original `error` is rethrown in its place.
    */
   protected async failAfterPrepare(
     target: OperationTarget,
@@ -537,6 +551,15 @@ export class OperationEngine {
       return this.withAddressLease(target, (held) =>
         this.failAfterPrepare(target, op, error, held),
       );
+    }
+    try {
+      await lease?.renew();
+    } catch (renewError) {
+      this.deps.log.warn('address lease lost before a terminal write', {
+        operationId: op.id,
+        code: errorCode(renewError),
+      });
+      throw error;
     }
     const failed = await this.update(op, {
       state: 'failed',
@@ -572,6 +595,8 @@ export class OperationEngine {
       await this.deps.sequences.release(lease, key, reservation.nonce);
       return;
     }
+    // No caller in this file reaches this any more (R23 passes the held lease everywhere).
+    // It stays for Task 24's broadcast path, which can fail an Operation outside a lease.
     await this.deps.sequences.withLease(key, (held) =>
       this.deps.sequences.release(held, key, reservation.nonce),
     );
