@@ -744,6 +744,15 @@ describe('replace, cancel and rebuild', () => {
     // The node's minimum fee rises above the cancel's, and the cancel is evicted.
     (env.chain as { minFee: bigint }).minFee = 3n;
     env.chain.dropFromMempool(first.attempt?.id ?? '');
+    // R30.1: only once the monitor has seen it dropped does a repeat bump it.
+    expect(
+      (await env.run(env.bc.cancel(sub.operationId))).attempts.map((a) => a.purpose),
+    ).toEqual(['original', 'cancel']);
+    await env.clock.advance(11_000);
+    await env.run(env.bc.getTransactionStatus(sub.operationId));
+    expect(
+      await env.stores.operations.getObservation(first.attempts[1]?.id ?? ''),
+    ).toMatchObject({ state: 'dropped' });
     const again = await env.run(env.bc.cancel(sub.operationId));
     expect(again.attempts.map((a) => a.purpose)).toEqual([
       'original',
@@ -779,6 +788,79 @@ describe('replace, cancel and rebuild', () => {
       { asset: 'native', amount: 9n, label: 'network' },
     ]);
     expect(calls()).toBe(2);
+  });
+
+  // N4 / R30.1: concurrent or retried cancels are idempotent while the cancel is pending.
+  it('creates one cancel for concurrent cancels, and a new one only at an explicit fee', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createFakeEnv({ signer });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    const [a, b] = await env.run(
+      Promise.all([env.bc.cancel(sub.operationId), env.bc.cancel(sub.operationId)]),
+    );
+    expect(a.attempt).toEqual(b.attempt);
+    expect(b.attempts.map((x) => x.purpose)).toEqual(['original', 'cancel']);
+    expect(calls()).toBe(2);
+    // An explicit fee always asks for a new cancel while none is on chain.
+    const raised = await env.run(env.bc.cancel(sub.operationId, { fee: { fee: 9n } }));
+    expect(raised.attempts.map((x) => x.purpose)).toEqual([
+      'original',
+      'cancel',
+      'cancel',
+    ]);
+    expect(env.chain.inMempool(raised.attempt?.id ?? '')).toBe(true);
+    expect(calls()).toBe(3);
+  });
+
+  // N3: bumps climb from the highest-fee earlier cancel, never re-signing an identical one.
+  it('bumps from the highest-fee earlier cancel after a refused one gave the active role back', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createFakeEnv({ signer });
+    const recipient = env.stranger();
+    const sub = await env.run(
+      env.bc.transfer({ to: recipient, amount: 7n, fee: 'slow' }),
+    );
+    const first = await env.run(env.bc.cancel(sub.operationId));
+    // The floor rises and the cancel is evicted: resending it is refused.
+    (env.chain as { minFee: bigint }).minFee = 3n;
+    env.chain.dropFromMempool(first.attempt?.id ?? '');
+    await expect(env.run(env.bc.rebroadcast(sub.operationId))).rejects.toMatchObject({
+      code: 'FEE_TOO_LOW',
+    });
+    const restored = await stored(env, sub.operationId);
+    expect(restored.activeAttemptId).toBe(restored.attempts[0]?.id);
+    const again = await env.run(env.bc.cancel(sub.operationId));
+    const op = await stored(env, sub.operationId);
+    expect(op.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel', 'cancel']);
+    expect(op.attempts[2]?.fee.charges[0]?.amount).toBe(3n);
+    expect(env.chain.inMempool(again.attempt?.id ?? '')).toBe(true);
+    expect(calls()).toBe(3);
+    const final = await mineWhile(env, again.wait({ finality: 'final' }));
+    expect(final.operation).toMatchObject({ state: 'final', outcome: 'cancelled' });
+    expect(env.chain.balance(recipient)).toBe(0n);
+  });
+
+  // N1 / R30.1: an active cancel recorded as refused gives the active role back, then is bumped.
+  it('restores the superseded attempt before bumping an active cancel recorded as refused', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    const first = await env.run(env.bc.cancel(sub.operationId));
+    // As if a resend's refusal had been recorded without its restore.
+    const observation = await env.stores.operations.getObservation(
+      first.attempts[1]?.id ?? '',
+    );
+    if (!observation) throw new Error('the cancel was observed when it was accepted');
+    const { version, ...fields } = observation;
+    await env.stores.operations.putObservation({ ...fields, state: 'refused' }, version);
+    const again = await env.run(env.bc.cancel(sub.operationId));
+    const op = await stored(env, sub.operationId);
+    expect(op.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel', 'cancel']);
+    expect(op.attempts[2]?.supersedes).toBe(op.attempts[0]?.id);
+    expect(env.chain.inMempool(again.attempt?.id ?? '')).toBe(true);
   });
 
   // I3 / R30: replace is idempotent per fee spec; another spec is another request.

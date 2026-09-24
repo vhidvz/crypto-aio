@@ -412,8 +412,12 @@ export class Blockchain<C extends ChainId = ChainId> {
    *
    * Idempotent per fee spec: repeating the call with the same `fee` (the same speed name,
    * or an equal override) returns the replacement it already made, resending it if its
-   * broadcast was never recorded; nothing is signed again. To bump again, pass another
-   * spec, such as a higher explicit override.
+   * broadcast was never recorded or it was refused; nothing is signed again, and a refusal
+   * is thrown, never reported as a success. To bump again, pass another spec, such as a
+   * higher explicit override.
+   *
+   * While that replacement is stored but not yet sent, another fee spec (or a cancel) is
+   * refused with `INVALID_TRANSITION`: repeat the same spec, or call `rebroadcast`, first.
    */
   async replace(
     operationId: string,
@@ -427,11 +431,17 @@ export class Blockchain<C extends ChainId = ChainId> {
   /**
    * Tries to cancel with a conflicting Attempt (capability `cancel`); the outcome is
    * `cancelled` only if the cancel wins at finality, and the original may still win. The
-   * cancel pays the network's minimum bump, or `options.fee` (refused below it).
+   * cancel pays the network's minimum bump over the highest earlier cancel, or `options.fee`
+   * (refused below that bump).
    *
    * Repeating the call while a cancel is pending resends it if its broadcast was never
-   * recorded, returns it once it is on chain, and otherwise bumps it (a new cancel for the
-   * same slot at a higher fee), so a cancel that cannot land never leaves the nonce stuck.
+   * recorded, and returns it while a node holds it or once it is on chain, so concurrent and
+   * retried calls create one cancel. Only a cancel the node refused or dropped is bumped by
+   * a repeat, one step at a time; when the node's minimum fee is more than one bump away,
+   * pass `options.fee`, which always builds a new cancel while none is on chain.
+   *
+   * While a replacement is stored but not yet sent, a cancel is refused with
+   * `INVALID_TRANSITION`: repeat that replacement's fee, or call `rebroadcast`, first.
    */
   async cancel(
     operationId: string,

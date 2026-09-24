@@ -259,6 +259,21 @@ function withRequestedFee(unsigned: UnsignedTx, fee: FeeSpeed | FeeOverride): Un
   };
 }
 
+/** An Attempt's total fee, summed over its charges. */
+function feeOf(attempt: AttemptRecord): bigint {
+  return attempt.fee.charges.reduce((sum, charge) => sum + charge.amount, 0n);
+}
+
+/** N3: the earlier cancel paying the most; a new cancel is bumped from it, so bumps climb. */
+function highestFeeCancel(op: OperationRecord): AttemptRecord | undefined {
+  let best: AttemptRecord | undefined;
+  for (const attempt of op.attempts) {
+    if (attempt.purpose === 'cancel' && (!best || feeOf(attempt) > feeOf(best)))
+      best = attempt;
+  }
+  return best;
+}
+
 /** R30: the same `FeeSpeed` name, or a canonically equal `FeeOverride`. */
 function sameFeeSpec(
   attempt: AttemptRecord,
@@ -568,7 +583,13 @@ export class OperationEngine {
    * R30: idempotent per fee spec. While the active Attempt is a replacement made for the
    * same spec (the same `FeeSpeed` name, or a canonically equal `FeeOverride`), a repeat
    * signs nothing and returns it, resending its stored bytes when their broadcast was never
-   * recorded or was ambiguous. To bump again, pass another spec (e.g. a higher override).
+   * recorded or was ambiguous. N1: a replacement for the same spec that was refused (the
+   * superseded Attempt active again) is resent, never signed again; a refusal is thrown,
+   * never a success. To bump again, pass another spec (e.g. a higher override).
+   *
+   * M-a: while the active replacement is persisted but unsent (`signed`), another fee spec
+   * is refused with INVALID_TRANSITION; repeat the same spec (it is resent) or call
+   * `rebroadcast` first.
    */
   async replace(
     target: OperationTarget,
@@ -599,14 +620,21 @@ export class OperationEngine {
    * "Cancel" is a conflicting transaction for the same slot (e.g. a self-transfer), not a
    * protocol primitive: the outcome is `cancelled` only when the cancel Attempt reaches
    * proven finality, and the original may still win. Capability `cancel`; `submitted` or
-   * `stalled` only. It pays the driver's minimum bump, or `fee` when given (refused below
-   * the bump). See `createConflicting`.
+   * `stalled` only. It pays the driver's minimum bump over the highest-fee earlier cancel
+   * (or over the active Attempt when there is none), or `fee` when given (refused below
+   * that bump). See `createConflicting`.
    *
-   * R30: a repeat while a cancel is the active Attempt resends its stored bytes when their
-   * broadcast was never recorded or was ambiguous, returns it unchanged once it is on chain
-   * (mined, or its slot or expiry consumed), and otherwise (refused, dropped, or simply not
-   * mined yet) builds a bumped cancel from it, so a cancel that cannot land never leaves the
-   * nonce stuck.
+   * R30.1: a repeat while a cancel is the active Attempt resends its stored bytes when their
+   * broadcast was never recorded or was ambiguous, and returns it unchanged while a node
+   * holds it (`pending`, `mempool`) or once it is on chain; concurrent and retried cancels
+   * are idempotent. Only a cancel recorded `refused` or `dropped` is bumped by a repeat (N3:
+   * each bump climbs one step from the highest-fee cancel), so a cancel that cannot land
+   * never leaves the nonce stuck. When the node's floor is more than one bump away, pass
+   * `fee`: an explicit fee always builds a new cancel while none is on chain.
+   *
+   * M-a: while the active replacement is persisted but unsent (`signed`), a cancel is refused
+   * with INVALID_TRANSITION; repeat that replacement's fee spec (it is resent) or call
+   * `rebroadcast` first.
    */
   async cancel(
     target: OperationTarget,
@@ -1300,9 +1328,10 @@ export class OperationEngine {
    * still live: the Operation goes back to its previous state and active Attempt
    * (`restoreAfterRefusal`) and the node's error is thrown. That refusal is never terminal.
    *
-   * R30, a repeat of the active Attempt's request (`fee` is the requested spec): the same
-   * replacement spec returns that replacement; a cancel is resent or returned while it is
-   * unsent or on chain, and bumped otherwise (see `replace` and `cancel`).
+   * R30/R30.1, a repeat of an earlier request (`fee` is the requested spec): the same
+   * replacement spec is answered by that replacement (`repeatReplacement`); a cancel is
+   * resent, returned, or bumped when refused or dropped (`repeatCancel`). See `replace` and
+   * `cancel`.
    */
   protected async createConflicting(
     target: OperationTarget,
@@ -1312,7 +1341,7 @@ export class OperationEngine {
     build: (previous: UnsignedTx, ctx: BuildContext) => Promise<UnsignedTx>,
   ): Promise<OperationRecord> {
     const done = await this.withOperationLease(target, operationId, async (lease) => {
-      const op = await this.require(operationId);
+      let op = await this.require(operationId);
       this.assertOwnedBy(target, op);
       const active = op.attempts.find((a) => a.id === op.activeAttemptId);
       if (purpose === 'replacement') {
@@ -1321,10 +1350,10 @@ export class OperationEngine {
           prior && (await this.repeatReplacement(target, op, prior, lease));
         if (repeated) return repeated;
       } else if (active?.purpose === 'cancel') {
-        const resumed = await this.resumeNewAttempt(target, op, purpose, lease);
-        if (resumed) return resumed;
-        if (await this.onChain(active)) return op;
-        // A sent cancel that is not on chain: a bumped cancel is built from it below.
+        const repeated = await this.repeatCancel(target, op, active, fee, lease);
+        if (repeated) return repeated;
+        // A new, bumped cancel is built below, from the Operation as it now stands.
+        op = await this.require(operationId);
       }
       if (!CONFLICTABLE_STATES.has(op.state)) {
         throw new StateError(
@@ -1348,7 +1377,9 @@ export class OperationEngine {
         driver.ordering === 'inputs'
           ? reservedInputs(await this.walletOperations(op), op.id)
           : undefined;
-      const unsigned = await build(previous.unsigned, {
+      // N3: a cancel is bumped from the highest-fee earlier cancel (never an identical one).
+      const base = purpose === 'cancel' ? (highestFeeCancel(op) ?? previous) : previous;
+      const unsigned = await build(base.unsigned, {
         from: op.intent.from,
         keys: target.wallet.keys,
         wallet: target.wallet.options,
@@ -1472,10 +1503,31 @@ export class OperationEngine {
     return next;
   }
 
-  /** R30: the Attempt's recorded observation holds chain evidence (mined, slot consumed). */
-  protected async onChain(attempt: AttemptRecord): Promise<boolean> {
-    const observation = await this.deps.stores.operations.getObservation(attempt.id);
-    return observation !== null && CHAIN_EVIDENCE_STATES.has(observation.state);
+  /**
+   * R30.1: a cancel while a cancel is the active Attempt. Its stored bytes are resent when
+   * their broadcast was never recorded or was ambiguous; it is returned unchanged while a
+   * node holds it (`pending`, `mempool`) and once it is on chain (chain evidence), so
+   * concurrent and retried cancels are idempotent. `undefined` asks the caller for a new,
+   * bumped cancel: only when the cancel is recorded `refused` or `dropped`, or for an
+   * explicit `fee` while it is not on chain. A refused one first gives the active role back
+   * to the Attempt it superseded (N1), so it is never reported as a success.
+   */
+  protected async repeatCancel(
+    target: OperationTarget,
+    op: OperationRecord,
+    active: AttemptRecord,
+    fee: FeeSpeed | FeeOverride | undefined,
+    lease: LeaseHandle | undefined,
+  ): Promise<OperationRecord | undefined> {
+    const resumed = await this.resumeNewAttempt(target, op, 'cancel', lease);
+    if (resumed) return resumed;
+    const observation = await this.deps.stores.operations.getObservation(active.id);
+    if (observation && CHAIN_EVIDENCE_STATES.has(observation.state)) return op;
+    const stuck = observation?.state === 'refused' || observation?.state === 'dropped';
+    if (!stuck && fee === undefined) return op;
+    if (observation?.state === 'refused')
+      await this.undoRefusedResend(op.id, active, lease);
+    return undefined;
   }
 
   /**
