@@ -17,6 +17,7 @@ import { FakeClock } from '../../../src/testing/fake-clock';
 import { fromHex } from '../../../src/core/util/bytes';
 import { fakeAddress } from '../../../src/testing/fake-chain';
 import { createFakeEnv } from '../../../src/testing/env';
+import { fakeDriverFactory } from '../../../src/testing/fake-driver';
 import { fakePlugin } from '../../../src/testing/fake-plugin';
 import { thrown } from '../../helpers';
 
@@ -241,6 +242,85 @@ describe('statusFromObservation', () => {
   it('gives 0 confirmations for a lagging (inconsistent) head', () => {
     const status = statusFromObservation({ seen: 'block', blockHeight: 10n }, 5n, 0n);
     expect(status.confirmations).toBe(0);
+  });
+});
+
+describe('DriverPool', () => {
+  it('closes and rejects further use with StateError; a handle pooled beforehand is unaffected', async () => {
+    const env = await createFakeEnv();
+    await env.run(internalsOf(env.bc).pooled());
+    await env.aio.close();
+    const fresh = env.aio.blockchain({ chain: 'fakechain' });
+    await expect(env.run(internalsOf(fresh).pooled())).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+    });
+    expect(await env.run(env.bc.getBlockHeight())).toBe(0n);
+  });
+
+  it('shares one in-flight creation between concurrent get() calls on the same pool key', async () => {
+    const env = await createFakeEnv();
+    let loads = 0;
+    const counted: AdapterManifest = {
+      family: 'fake',
+      library: 'counted-sdk',
+      chains: ['fakechain'],
+      capabilities: [],
+      peerDependencies: [],
+      load: async () => {
+        loads += 1;
+        return fakeDriverFactory;
+      },
+    };
+    env.aio.use({ name: 'counted', adapters: [counted] });
+    const bcA = env.aio.blockchain({
+      chain: 'fakechain',
+      library: 'counted-sdk' as 'fake-sdk',
+    });
+    const bcB = env.aio.blockchain({
+      chain: 'fakechain',
+      library: 'counted-sdk' as 'fake-sdk',
+    });
+    const [a, b] = await env.run(
+      Promise.all([internalsOf(bcA).pooled(), internalsOf(bcB).pooled()]),
+    );
+    expect(a.driver).toBe(b.driver);
+    expect(loads).toBe(1);
+  });
+
+  it('retries pool creation after a failure instead of caching the rejection', async () => {
+    const env = await createFakeEnv();
+    let attempts = 0;
+    const flaky: AdapterManifest = {
+      family: 'fake',
+      library: 'flaky-sdk',
+      chains: ['fakechain'],
+      capabilities: [],
+      peerDependencies: [{ name: 'flaky-sdk', range: '^1.0.0' }],
+      load: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw Object.assign(new Error("Cannot find module 'flaky-sdk'"), {
+            code: 'MODULE_NOT_FOUND',
+          });
+        }
+        return fakeDriverFactory;
+      },
+    };
+    env.aio.use({ name: 'flaky', adapters: [flaky] });
+    const bc = env.aio.blockchain({
+      chain: 'fakechain',
+      library: 'flaky-sdk' as 'fake-sdk',
+    });
+    await expect(env.run(bc.ready())).rejects.toMatchObject({
+      code: 'DEPENDENCY_MISSING',
+    });
+    await expect(env.run(bc.ready())).resolves.toBe(bc);
+    expect(attempts).toBe(2);
+  });
+
+  it('reports driver limits', async () => {
+    const env = await createFakeEnv();
+    expect(await env.run(env.bc.limits())).toEqual({ maxOutputs: 1 });
   });
 });
 

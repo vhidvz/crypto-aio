@@ -1,5 +1,6 @@
 import type { ResolvedSelection } from '../config/types';
 import type { ChainDriver } from '../driver/types';
+import { StateError } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
 import type { Catalogs } from '../registry/plugin';
@@ -25,20 +26,33 @@ export interface DriverPoolDeps {
 /** Shares one driver + transport per (chain, network, library, provider credentials, options). */
 export class DriverPool {
   readonly #entries = new Map<string, Promise<PooledDriver>>();
+  #closed = false;
 
   constructor(private readonly deps: DriverPoolDeps) {}
 
   get(selection: ResolvedSelection): Promise<PooledDriver> {
+    if (this.#closed) {
+      return Promise.reject(
+        new StateError('INVALID_TRANSITION', 'driver pool is closed'),
+      );
+    }
     let entry = this.#entries.get(selection.poolKey);
     if (!entry) {
       entry = this.#create(selection);
       this.#entries.set(selection.poolKey, entry);
-      entry.catch(() => this.#entries.delete(selection.poolKey));
+      entry.catch(() => {
+        // Only evict THIS entry: a concurrent get() may already have replaced it (e.g. a
+        // retry after this one failed), and that newer entry must survive.
+        if (this.#entries.get(selection.poolKey) === entry) {
+          this.#entries.delete(selection.poolKey);
+        }
+      });
     }
     return entry;
   }
 
   async close(): Promise<void> {
+    this.#closed = true;
     const entries = [...this.#entries.values()];
     this.#entries.clear();
     await Promise.allSettled(
