@@ -2,7 +2,9 @@ import type { ResolvedSelection, WalletConfig } from '../config/types';
 import type { ChainDriver, WalletKey, WalletOptions } from '../driver/types';
 import { ConfigError } from '../errors/error';
 import { Address } from '../model/address';
+import type { SchemeCatalog } from '../registry/schemes';
 import { fromHex } from '../util/bytes';
+import { signerPublicKey, signerSchemes } from './guard';
 import type { KeyRef, Signer } from './types';
 
 export interface ResolvedWallet {
@@ -33,6 +35,7 @@ export async function resolveWallet(
   selection: ResolvedSelection,
   driver: ChainDriver,
   signers: Readonly<Record<string, Signer>>,
+  schemes: SchemeCatalog,
 ): Promise<ResolvedWallet> {
   const wallet = selection.wallet;
   if (!wallet) {
@@ -46,9 +49,19 @@ export async function resolveWallet(
   const keyRef = config.keyRef;
   const keys: WalletKey[] = [];
   if (selection.signer) {
+    // R9.3: the signer is user-supplied code; its scheme list and keys are guarded.
+    const { id, instance } = selection.signer;
+    const supported = signerSchemes(id, instance);
     for (const scheme of selection.chain.schemes) {
-      if (!selection.signer.instance.schemes.includes(scheme)) continue;
-      const publicKey = await selection.signer.instance.getPublicKey(scheme, keyRef);
+      if (!supported.includes(scheme)) continue;
+      const { publicKeyLength } = schemes.get(scheme);
+      const publicKey = await signerPublicKey(
+        id,
+        instance,
+        scheme,
+        keyRef,
+        publicKeyLength,
+      );
       keys.push({ scheme, publicKey, ...(keyRef ? { keyRef } : {}) });
     }
   } else if (config.publicKey) {

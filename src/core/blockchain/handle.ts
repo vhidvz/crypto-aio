@@ -189,7 +189,12 @@ export class Blockchain<C extends ChainId = ChainId> {
       effective,
       catalogs: container.runtime.catalogs,
     });
-    const resolvedWallet = await resolveWallet(resolved, driver, effective.signers);
+    const resolvedWallet = await resolveWallet(
+      resolved,
+      driver,
+      effective.signers,
+      container.runtime.catalogs.schemes,
+    );
     return resolvedWallet.address;
   }
 

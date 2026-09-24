@@ -16,6 +16,7 @@ import type {
   SigningContext,
   SigningRequest,
 } from './types';
+import { signerFailure } from './guard';
 import type { ResolvedWallet } from './wallet';
 
 export type OrchestratedResult =
@@ -366,11 +367,12 @@ export class SigningOrchestrator {
         );
       });
     } catch (error) {
-      if (isCryptoAioError(error)) throw error;
-      throw new SigningError('SIGNING_FAILED', `signer '${signerId}' failed`, {
-        cause: sanitizeError(error),
+      throw signerFailure(
+        error,
+        'SIGNING_FAILED',
+        `signer '${signerId}' failed`,
         context,
-      });
+      );
     }
   }
 

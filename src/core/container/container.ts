@@ -174,7 +174,12 @@ export class CryptoAio {
         wallet ??= handle
           .pooled()
           .then(({ driver }) =>
-            resolveWallet(selection, driver, internals.effective().signers),
+            resolveWallet(
+              selection,
+              driver,
+              internals.effective().signers,
+              runtime.catalogs.schemes,
+            ),
           )
           .catch((error: unknown) => {
             wallet = undefined;
