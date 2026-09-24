@@ -409,6 +409,11 @@ export class Blockchain<C extends ChainId = ChainId> {
    * Replaces a pending transfer with a higher-fee, mutually exclusive Attempt (capability
    * `replace-fee`; a synchronous signer). If the node refuses it, the original stays live
    * and active, and the node's error is thrown.
+   *
+   * Idempotent per fee spec: repeating the call with the same `fee` (the same speed name,
+   * or an equal override) returns the replacement it already made, resending it if its
+   * broadcast was never recorded; nothing is signed again. To bump again, pass another
+   * spec, such as a higher explicit override.
    */
   async replace(
     operationId: string,
@@ -421,10 +426,20 @@ export class Blockchain<C extends ChainId = ChainId> {
 
   /**
    * Tries to cancel with a conflicting Attempt (capability `cancel`); the outcome is
-   * `cancelled` only if the cancel wins at finality, and the original may still win.
+   * `cancelled` only if the cancel wins at finality, and the original may still win. The
+   * cancel pays the network's minimum bump, or `options.fee` (refused below it).
+   *
+   * Repeating the call while a cancel is pending resends it if its broadcast was never
+   * recorded, returns it once it is on chain, and otherwise bumps it (a new cancel for the
+   * same slot at a higher fee), so a cancel that cannot land never leaves the nonce stuck.
    */
-  async cancel(operationId: string): Promise<Submission> {
-    return this.submission(await this.engine().cancel(await this.target(), operationId));
+  async cancel(
+    operationId: string,
+    options: { readonly fee?: FeeSpeed | FeeOverride } = {},
+  ): Promise<Submission> {
+    return this.submission(
+      await this.engine().cancel(await this.target(), operationId, options.fee),
+    );
   }
 
   /** Expiry-based chains: re-issues an Operation whose earlier Attempts are provably expired. */

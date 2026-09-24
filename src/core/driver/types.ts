@@ -201,7 +201,17 @@ export interface ReplacementPolicy {
     fee: FeeSpeed | FeeOverride,
     ctx: BuildContext,
   ): Promise<UnsignedTx>;
-  buildCancel?(previous: UnsignedTx, ctx: BuildContext): Promise<UnsignedTx>;
+  /**
+   * A transaction for `previous`'s slot that does not execute the transfer (e.g. a
+   * self-transfer). Without `fee` it pays the network's minimum bump over `previous`; with
+   * one, that fee, refused (FEE_TOO_LOW) below the bump. `previous` may itself be a cancel
+   * (R30: a repeat cancel bumps a stuck one).
+   */
+  buildCancel?(
+    previous: UnsignedTx,
+    ctx: BuildContext,
+    fee?: FeeSpeed | FeeOverride,
+  ): Promise<UnsignedTx>;
 }
 
 export interface ScanFilter {

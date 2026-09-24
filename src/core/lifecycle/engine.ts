@@ -248,6 +248,31 @@ function isRefusal(error: unknown): boolean {
   return isCryptoAioError(error) && error.category === 'chain' && !error.ambiguous;
 }
 
+/**
+ * R30: a replacement records the fee spec it was asked for (plain data, R11) in its fee
+ * details, so a repeat of the same request is recognised instead of signed again.
+ */
+function withRequestedFee(unsigned: UnsignedTx, fee: FeeSpeed | FeeOverride): UnsignedTx {
+  return {
+    ...unsigned,
+    fee: { ...unsigned.fee, details: { ...unsigned.fee.details, requestedFee: fee } },
+  };
+}
+
+/** R30: the same `FeeSpeed` name, or a canonically equal `FeeOverride`. */
+function sameFeeSpec(
+  attempt: AttemptRecord,
+  fee: FeeSpeed | FeeOverride | undefined,
+): boolean {
+  const recorded = attempt.fee.details.requestedFee;
+  if (recorded === undefined || fee === undefined) return false;
+  try {
+    return canonicalJson(recorded) === canonicalJson(fee);
+  } catch {
+    return false;
+  }
+}
+
 /** What `restoreAfterRefusal` puts back: the Operation as the refused Attempt found it. */
 interface RestorePoint {
   readonly state: OperationState;
@@ -528,6 +553,11 @@ export class OperationEngine {
    * or conflicting inputs). Needs the `replace-fee` capability, the driver's
    * ReplacementPolicy and a synchronous signer; `submitted` or `stalled` only. See
    * `createConflicting`.
+   *
+   * R30: idempotent per fee spec. While the active Attempt is a replacement made for the
+   * same spec (the same `FeeSpeed` name, or a canonically equal `FeeOverride`), a repeat
+   * signs nothing and returns it, resending its stored bytes when their broadcast was never
+   * recorded or was ambiguous. To bump again, pass another spec (e.g. a higher override).
    */
   async replace(
     target: OperationTarget,
@@ -545,8 +575,12 @@ export class OperationEngine {
     if (fee === undefined)
       throw new ValidationError('INVALID_INTENT', 'a replacement needs a fee');
     validateFee(fee);
-    return this.createConflicting(target, operationId, 'replacement', (previous, ctx) =>
-      build(previous, fee, ctx),
+    return this.createConflicting(
+      target,
+      operationId,
+      'replacement',
+      fee,
+      async (previous, ctx) => withRequestedFee(await build(previous, fee, ctx), fee),
     );
   }
 
@@ -554,10 +588,20 @@ export class OperationEngine {
    * "Cancel" is a conflicting transaction for the same slot (e.g. a self-transfer), not a
    * protocol primitive: the outcome is `cancelled` only when the cancel Attempt reaches
    * proven finality, and the original may still win. Capability `cancel`; `submitted` or
-   * `stalled` only. A repeat while a cancel is the active Attempt returns the Operation,
-   * never a second cancel. See `createConflicting`.
+   * `stalled` only. It pays the driver's minimum bump, or `fee` when given (refused below
+   * the bump). See `createConflicting`.
+   *
+   * R30: a repeat while a cancel is the active Attempt resends its stored bytes when their
+   * broadcast was never recorded or was ambiguous, returns it unchanged once it is on chain
+   * (mined, or its slot or expiry consumed), and otherwise (refused, dropped, or simply not
+   * mined yet) builds a bumped cancel from it, so a cancel that cannot land never leaves the
+   * nonce stuck.
    */
-  async cancel(target: OperationTarget, operationId: string): Promise<OperationRecord> {
+  async cancel(
+    target: OperationTarget,
+    operationId: string,
+    fee?: FeeSpeed | FeeOverride,
+  ): Promise<OperationRecord> {
     const policy = target.pooled.driver.replacement;
     const build = policy?.cancel ? policy.buildCancel?.bind(policy) : undefined;
     if (!build || !target.selection.capabilities.has('cancel')) {
@@ -566,8 +610,9 @@ export class OperationEngine {
         `${target.selection.chain.id} does not support cancellation`,
       );
     }
-    return this.createConflicting(target, operationId, 'cancel', (previous, ctx) =>
-      build(previous, ctx),
+    if (fee !== undefined) validateFee(fee);
+    return this.createConflicting(target, operationId, 'cancel', fee, (previous, ctx) =>
+      build(previous, ctx, fee),
     );
   }
 
@@ -1238,18 +1283,30 @@ export class OperationEngine {
    * (`resumeNewAttempt`). When the node refuses the fresh Attempt, the one it superseded is
    * still live: the Operation goes back to its previous state and active Attempt
    * (`restoreAfterRefusal`) and the node's error is thrown. That refusal is never terminal.
+   *
+   * R30, a repeat of the active Attempt's request (`fee` is the requested spec): the same
+   * replacement spec returns that replacement; a cancel is resent or returned while it is
+   * unsent or on chain, and bumped otherwise (see `replace` and `cancel`).
    */
   protected async createConflicting(
     target: OperationTarget,
     operationId: string,
     purpose: 'replacement' | 'cancel',
+    fee: FeeSpeed | FeeOverride | undefined,
     build: (previous: UnsignedTx, ctx: BuildContext) => Promise<UnsignedTx>,
   ): Promise<OperationRecord> {
     const done = await this.withOperationLease(target, operationId, async (lease) => {
       const op = await this.require(operationId);
       this.assertOwnedBy(target, op);
-      const resumed = await this.resumeNewAttempt(target, op, purpose, lease);
-      if (resumed) return resumed;
+      const active = op.attempts.find((a) => a.id === op.activeAttemptId);
+      const repeat =
+        active?.purpose === purpose && (purpose === 'cancel' || sameFeeSpec(active, fee));
+      if (repeat) {
+        const resumed = await this.resumeNewAttempt(target, op, purpose, lease);
+        if (resumed) return resumed;
+        if (purpose === 'replacement' || (await this.onChain(active))) return op;
+        // A sent cancel that is not on chain: a bumped cancel is built from it below.
+      }
       if (!CONFLICTABLE_STATES.has(op.state)) {
         throw new StateError(
           'INVALID_TRANSITION',
@@ -1258,10 +1315,9 @@ export class OperationEngine {
         );
       }
       const previous = this.activeAttempt(op);
-      if (previous.purpose === 'cancel') {
-        // A repeat of the cancel returns it. A replacement would be built from the cancel's
-        // own transaction, yet report `executed` if it won.
-        if (purpose === 'cancel') return op;
+      if (previous.purpose === 'cancel' && purpose === 'replacement') {
+        // A replacement would be built from the cancel's own transaction, yet report
+        // `executed` if it won.
         throw new StateError(
           'INVALID_TRANSITION',
           'a cancel is in flight and cannot be replaced',
@@ -1323,6 +1379,12 @@ export class OperationEngine {
       }
     });
     return this.settle(done);
+  }
+
+  /** R30: the Attempt's recorded observation holds chain evidence (mined, slot consumed). */
+  protected async onChain(attempt: AttemptRecord): Promise<boolean> {
+    const observation = await this.deps.stores.operations.getObservation(attempt.id);
+    return observation !== null && CHAIN_EVIDENCE_STATES.has(observation.state);
   }
 
   /**

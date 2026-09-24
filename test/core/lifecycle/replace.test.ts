@@ -528,22 +528,113 @@ describe('replace, cancel and rebuild', () => {
     expect(op.error).toBeUndefined();
   });
 
-  it('returns the in-flight cancel on a repeat and never replaces a cancel', async () => {
+  it('never replaces a cancel, and returns a cancel already on chain on a repeat', async () => {
     const { signer, calls } = countingSigner();
     const env = await createFakeEnv({ signer });
     const sub = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
     );
     const first = await env.run(env.bc.cancel(sub.operationId));
-    const again = await env.run(env.bc.cancel(sub.operationId));
-    expect(again.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel']);
-    expect(again.attempt?.id).toBe(first.attempt?.id);
     // A replacement would be built from the cancel's self-transfer, yet report `executed`.
     await expect(
       env.run(env.bc.replace(sub.operationId, { fee: { fee: 100n } })),
     ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
-    expect((await stored(env, sub.operationId)).attempts).toHaveLength(2);
+    env.chain.mine();
+    await env.run(env.bc.waitForConfirmation(sub.operationId, { confirmations: 1 }));
+    const again = await env.run(env.bc.cancel(sub.operationId));
+    expect(again).toMatchObject({ state: 'included', attempt: first.attempt });
+    expect(again.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel']);
     expect(calls()).toBe(2);
+  });
+
+  // I1 / R30: a cancel that cannot land is bumped by a repeat, so the nonce never sticks.
+  it('bumps a dropped cancel on a repeat and settles on the bumped one', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createFakeEnv({ signer });
+    const recipient = env.stranger();
+    const sub = await env.run(
+      env.bc.transfer({ to: recipient, amount: 7n, fee: 'slow' }),
+    );
+    const first = await env.run(env.bc.cancel(sub.operationId));
+    expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(false);
+    // The node's minimum fee rises above the cancel's, and the cancel is evicted.
+    (env.chain as { minFee: bigint }).minFee = 3n;
+    env.chain.dropFromMempool(first.attempt?.id ?? '');
+    const again = await env.run(env.bc.cancel(sub.operationId));
+    expect(again.attempts.map((a) => a.purpose)).toEqual([
+      'original',
+      'cancel',
+      'cancel',
+    ]);
+    expect(again.attempt?.id).not.toBe(first.attempt?.id);
+    expect(env.chain.inMempool(again.attempt?.id ?? '')).toBe(true);
+    expect(calls()).toBe(3);
+    const final = await mineWhile(env, again.wait({ finality: 'final' }));
+    expect(final.operation).toMatchObject({ state: 'final', outcome: 'cancelled' });
+    expect(env.chain.balance(recipient)).toBe(0n);
+  });
+
+  it('cancels at an explicit fee, refusing one below the bump before signing', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createFakeEnv({ signer });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    await expect(
+      env.run(env.bc.cancel(sub.operationId, { fee: { fee: 1n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    await expect(
+      env.run(env.bc.cancel(sub.operationId, { fee: { fee: 5 } })),
+    ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+    expect(calls()).toBe(1);
+    const cancelled = await env.run(env.bc.cancel(sub.operationId, { fee: { fee: 9n } }));
+    expect(env.chain.inMempool(cancelled.attempt?.id ?? '')).toBe(true);
+    const op = await stored(env, sub.operationId);
+    expect(op.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel']);
+    expect(op.attempts[1]?.fee.charges).toEqual([
+      { asset: 'native', amount: 9n, label: 'network' },
+    ]);
+    expect(calls()).toBe(2);
+  });
+
+  // I3 / R30: replace is idempotent per fee spec; another spec is another request.
+  it('returns the existing replacement for the same fee spec after a crash', async () => {
+    const { signer, calls } = countingSigner();
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({ signer, stores: { operations: faulty } });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    faulty.crashOn({
+      method: 'update',
+      timing: 'after',
+      when: (args) => (args[2] as OperationPatch | undefined)?.state === 'submitted',
+    });
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: 'fast' })),
+    ).rejects.toMatchObject({ code: 'STATE_UNRECORDED', ambiguous: true });
+    const restarted = await env.restart({ killPrevious: true });
+    const again = await restarted.run(
+      restarted.bc.replace(sub.operationId, { fee: 'fast' }),
+    );
+    expect(again.state).toBe('submitted');
+    expect(again.attempts.map((a) => a.purpose)).toEqual(['original', 'replacement']);
+    expect(calls()).toBe(2);
+    // An equal override written differently is the same spec; a higher one is a new request.
+    const bumped = await restarted.run(
+      restarted.bc.replace(sub.operationId, { fee: { fee: 10n } }),
+    );
+    const repeat = await restarted.run(
+      restarted.bc.replace(sub.operationId, { fee: { fee: 10n } }),
+    );
+    expect(repeat.attempts.map((a) => a.purpose)).toEqual([
+      'original',
+      'replacement',
+      'replacement',
+    ]);
+    expect(repeat.attempt).toEqual(bumped.attempt);
+    expect(env.chain.inMempool(bumped.attempt?.id ?? '')).toBe(true);
+    expect(calls()).toBe(3);
   });
 
   // ---- rebuild ------------------------------------------------------------------------

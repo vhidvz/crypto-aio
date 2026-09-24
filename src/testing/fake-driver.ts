@@ -442,22 +442,32 @@ export const fakeDriverFactory: DriverFactory = {
                 previous.ordering,
               );
             },
-            async buildCancel(previous, build) {
+            async buildCancel(previous, build, requested) {
               const bumped = (previousFee(previous) * (100n + minBump) + 99n) / 100n;
-              const fee: FeeEstimateDraft = {
-                kind: 'fake',
-                speed: 'custom',
-                charges: [{ asset: 'native', amount: bumped, label: 'network' }],
-                bound: 'exact',
-                details: { fee: bumped },
-              };
+              const fee: FeeEstimateDraft =
+                requested === undefined
+                  ? {
+                      kind: 'fake',
+                      speed: 'custom',
+                      charges: [{ asset: 'native', amount: bumped, label: 'network' }],
+                      bound: 'exact',
+                      details: { fee: bumped },
+                    }
+                  : await feeFor(requested);
+              const amount = fee.charges.reduce((sum, c) => sum + c.amount, 0n);
+              if (amount * 100n < previousFee(previous) * (100n + minBump)) {
+                throw new ChainError(
+                  'FEE_TOO_LOW',
+                  `a cancel's fee must be at least ${minBump}% higher`,
+                );
+              }
               const tx = previousTx(previous);
               return buildUnsigned(
                 {
                   asset: 'native',
                   outputs: [{ to: tx.from, amount: 0n }],
                   from: tx.from,
-                  fee: { fee: bumped },
+                  fee: requested ?? { fee: amount },
                 },
                 fee,
                 build,
