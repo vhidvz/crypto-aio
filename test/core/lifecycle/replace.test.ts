@@ -43,9 +43,44 @@ function purposeSigner(
   return { signer, calls: () => calls };
 }
 
-/** Bumps the Operation's version (as a worker's claim does) right before the next append. */
+type RacedMethod = 'appendAttempt' | 'update';
+
+/**
+ * Writes `patch` to the Operation right before the next matching store write (as a worker's
+ * claim or a monitor pass does), so that write loses its compare-and-set. One-shot races;
+ * `state` narrows an `update` race to patches moving the Operation to that state.
+ */
 class RacingStore extends MemoryOperationStore {
-  race?: OperationPatch;
+  races: { method: RacedMethod; patch: OperationPatch; state?: string }[] = [];
+
+  raceBefore(method: RacedMethod, patch: OperationPatch, state?: string): void {
+    this.races.push({ method, patch, ...(state ? { state } : {}) });
+  }
+
+  async runRace(
+    method: RacedMethod,
+    namespace: string,
+    id: string,
+    patch: OperationPatch,
+  ): Promise<void> {
+    const index = this.races.findIndex(
+      (r) => r.method === method && (r.state === undefined || r.state === patch.state),
+    );
+    const [race] = index < 0 ? [] : this.races.splice(index, 1);
+    const current = race ? await this.get(namespace, id) : null;
+    if (race && current) await super.update(namespace, id, race.patch, current.version);
+  }
+
+  override async update(
+    namespace: string,
+    id: string,
+    patch: OperationPatch,
+    expectedVersion: number,
+    fence?: Fence,
+  ): Promise<OperationRecord> {
+    await this.runRace('update', namespace, id, patch);
+    return super.update(namespace, id, patch, expectedVersion, fence);
+  }
 
   override async appendAttempt(
     namespace: string,
@@ -55,10 +90,7 @@ class RacingStore extends MemoryOperationStore {
     expectedVersion: number,
     fence?: Fence,
   ): Promise<OperationRecord> {
-    const race = this.race;
-    this.race = undefined;
-    const current = race ? await this.get(namespace, id) : null;
-    if (race && current) await this.update(namespace, id, race, current.version);
+    await this.runRace('appendAttempt', namespace, id, patch);
     return super.appendAttempt(namespace, id, attempt, patch, expectedVersion, fence);
   }
 }
@@ -369,7 +401,7 @@ describe('replace, cancel and rebuild', () => {
     const sub = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
     );
-    store.race = { nextCheckAt: env.clock.now() };
+    store.raceBefore('appendAttempt', { nextCheckAt: env.clock.now() });
     const replaced = await env.run(env.bc.replace(sub.operationId, { fee: 'fast' }));
     expect(replaced.attempts.map((a) => a.purpose)).toEqual(['original', 'replacement']);
     expect(env.chain.inMempool(replaced.attempt?.id ?? '')).toBe(true);
@@ -383,7 +415,7 @@ describe('replace, cancel and rebuild', () => {
     const sub = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
     );
-    store.race = { state: 'included' };
+    store.raceBefore('appendAttempt', { state: 'included' });
     await expect(
       env.run(env.bc.replace(sub.operationId, { fee: 'fast' })),
     ).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
@@ -419,6 +451,81 @@ describe('replace, cancel and rebuild', () => {
     expect(env.chain.inMempool(replacement)).toBe(true);
     expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(false);
     expect(calls()).toBe(2);
+  });
+
+  // I2: a resumed Attempt the node refuses is undone like a fresh one.
+  it('restores the superseded attempt when a resumed replacement is refused', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    // The driver asks for a 10% bump; this node wants 50%.
+    const env = await createFakeEnv({
+      stores: { operations: faulty },
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toBeInstanceOf(CrashError);
+    const restarted = await env.restart({ killPrevious: true });
+    await expect(
+      restarted.run(restarted.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    // The dead generation's stores never settle: read through the restarted one.
+    const op = await stored(restarted, sub.operationId);
+    expect(op.attempts.map((a) => a.purpose)).toEqual(['original', 'replacement']);
+    expect(op).toMatchObject({ state: 'submitted', activeAttemptId: op.attempts[0]?.id });
+    expect(op.error).toBeUndefined();
+    expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(true);
+  });
+
+  // M3: the refusal is reported even when the Operation moved on before it was recorded.
+  it('reports a refusal and restores the active attempt when the operation moved on', async () => {
+    const store = new RacingStore();
+    const env = await createFakeEnv({
+      stores: { operations: store },
+      chain: { minFee: 10n, replacementBumpPercent: 50 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n, fee: 'slow' }),
+    );
+    // The monitor records the original as mined just before the refusal is written.
+    store.raceBefore('update', { state: 'included' }, 'stalled');
+    await expect(
+      env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const op = await stored(env, sub.operationId);
+    // The state is the monitor's; only the active Attempt goes back.
+    expect(op).toMatchObject({ state: 'included', activeAttemptId: op.attempts[0]?.id });
+  });
+
+  // M2: the restore returns to the snapshot the append was made over, not an older read.
+  it('restores the state the refused attempt was appended over', async () => {
+    const store = new RacingStore();
+    const env = await createFakeEnv({
+      stores: { operations: store },
+      chain: { minFee: 10n },
+    });
+    await expect(
+      env.run(
+        env.bc.transfer(
+          { to: env.stranger(), amount: 7n, fee: { fee: 1n } },
+          { idempotencyKey: 'cheap' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const id = (await env.stores.operations.getByKey('default', 'cheap'))?.id ?? '';
+    // While the replacement is signed, the Operation leaves `stalled` (e.g. a monitor pass).
+    store.raceBefore('appendAttempt', { state: 'submitted', clear: ['error'] });
+    // Above the driver's 10% bump, below the node's minimum fee: refused.
+    await expect(env.run(env.bc.replace(id, { fee: { fee: 2n } }))).rejects.toMatchObject(
+      { code: 'FEE_TOO_LOW' },
+    );
+    const op = await stored(env, id);
+    expect(op.attempts).toHaveLength(2);
+    expect(op).toMatchObject({ state: 'submitted', activeAttemptId: op.attempts[0]?.id });
+    expect(op.error).toBeUndefined();
   });
 
   it('returns the in-flight cancel on a repeat and never replaces a cancel', async () => {

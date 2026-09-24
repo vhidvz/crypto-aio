@@ -243,6 +243,19 @@ function awaitsBroadcast(op: OperationRecord): boolean {
   return op.state === 'signed' || (op.state === 'submitted' && op.ambiguous === true);
 }
 
+/** The node's own answer (refused, rejected): not ambiguous, so the bytes were not taken. */
+function isRefusal(error: unknown): boolean {
+  return isCryptoAioError(error) && error.category === 'chain' && !error.ambiguous;
+}
+
+/** What `restoreAfterRefusal` puts back: the Operation as the refused Attempt found it. */
+interface RestorePoint {
+  readonly state: OperationState;
+  readonly activeAttemptId: string;
+  readonly error?: SerializedError;
+  readonly ambiguous?: boolean;
+}
+
 /** Spec §8.6: the states in which a replacement or cancel may supersede the active Attempt. */
 const CONFLICTABLE_STATES: ReadonlySet<OperationState> = new Set<OperationState>([
   'submitted',
@@ -608,7 +621,7 @@ export class OperationEngine {
       const fee = await driver.builder.estimateFee(op.intent, build);
       const unsigned = await driver.builder.build(op.intent, fee, build);
       assertBuiltOrdering(op.id, driver.ordering, ordering, undefined, unsigned.ordering);
-      const signed = await this.signNewAttempt(
+      const { signed } = await this.signNewAttempt(
         target,
         op,
         unsigned,
@@ -1280,7 +1293,7 @@ export class OperationEngine {
         excludeInputs,
         unsigned.ordering,
       );
-      const signed = await this.signNewAttempt(
+      const { signed, before } = await this.signNewAttempt(
         target,
         op,
         unsigned,
@@ -1292,8 +1305,20 @@ export class OperationEngine {
         return await this.broadcastActive(target, signed, undefined, lease);
       } catch (error) {
         // Only the node's own answer; an ambiguous failure may have delivered the bytes.
-        if (isCryptoAioError(error) && error.category === 'chain' && !error.ambiguous)
-          await this.restoreAfterRefusal(op, signed.activeAttemptId, lease);
+        // M2: back to the snapshot the append was made over, not the read before signing.
+        if (isRefusal(error)) {
+          await this.restoreAfterRefusal(
+            op.id,
+            signed.activeAttemptId,
+            {
+              state: before.state,
+              activeAttemptId: previous.id,
+              ...(before.error ? { error: before.error } : {}),
+              ...(before.ambiguous ? { ambiguous: true } : {}),
+            },
+            lease,
+          );
+        }
         throw error;
       }
     });
@@ -1304,8 +1329,12 @@ export class OperationEngine {
    * A repeat of a replace, cancel or rebuild whose Attempt was persisted but never sent (no
    * broadcast recorded: a crash after `appendAttempt`) or sent with an unknown outcome
    * (ambiguous): its stored bytes are resent, never signed again, so a retry creates no
-   * second new Attempt. `undefined` when there is nothing to resume. A refusal of these
-   * bytes takes the ordinary broadcast path (`stalled`, slot kept): a node may hold them.
+   * second new Attempt. `undefined` when there is nothing to resume.
+   *
+   * I2: when the node refuses a resent replacement or cancel, the Attempt it superseded is
+   * restored as the active one, as on the fresh path. The state it was appended over is not
+   * recorded, so `submitted` is restored (the superseded Attempt was live) and the monitor
+   * re-derives it. A refused rebuild stays `stalled` (see `rebuild`).
    */
   protected async resumeNewAttempt(
     target: OperationTarget,
@@ -1319,7 +1348,19 @@ export class OperationEngine {
       const observation = await this.deps.stores.operations.getObservation(active.id);
       if (observation?.lastBroadcastAt !== undefined) return undefined;
     }
-    return this.broadcastActive(target, op, undefined, lease);
+    try {
+      return await this.broadcastActive(target, op, undefined, lease);
+    } catch (error) {
+      if (isRefusal(error) && purpose !== 'rebuild' && active.supersedes !== undefined) {
+        await this.restoreAfterRefusal(
+          op.id,
+          active.id,
+          { state: 'submitted', activeAttemptId: active.supersedes },
+          lease,
+        );
+      }
+      throw error;
+    }
   }
 
   /**
@@ -1334,7 +1375,8 @@ export class OperationEngine {
    * same signatures under the same lease while the re-read Operation is still `eligible`
    * with the same Attempts. Otherwise the VERSION_CONFLICT is rethrown and these bytes,
    * never persisted or sent, are dropped. Success is returned only when the stored
-   * Operation shows the new Attempt (`appendSigned`).
+   * Operation shows the new Attempt (`appendSigned`): `signed`, together with `before`, the
+   * snapshot the successful append was made over (M2: what a refusal restores).
    */
   protected async signNewAttempt(
     target: OperationTarget,
@@ -1343,7 +1385,7 @@ export class OperationEngine {
     purpose: Exclude<AttemptPurpose, 'original'>,
     eligible: ReadonlySet<OperationState>,
     lease: LeaseHandle | undefined,
-  ): Promise<OperationRecord> {
+  ): Promise<{ readonly signed: OperationRecord; readonly before: OperationRecord }> {
     const supersedes = this.activeAttempt(op).id;
     const ctx = this.signingContext(target, op, unsigned, purpose);
     const result = await this.signingDeadline(
@@ -1370,7 +1412,7 @@ export class OperationEngine {
     let current = op;
     for (let tries = 1; ; tries++) {
       try {
-        return await this.appendSigned(
+        const signed = await this.appendSigned(
           target,
           current,
           unsigned,
@@ -1379,6 +1421,7 @@ export class OperationEngine {
           supersedes,
           lease,
         );
+        return { signed, before: current };
       } catch (error) {
         if (!isCryptoAioError(error, 'VERSION_CONFLICT') || tries >= 5) throw error;
         current = await this.require(op.id);
@@ -1393,40 +1436,42 @@ export class OperationEngine {
   }
 
   /**
-   * Spec §8.6: the node refused a fresh replacement or cancel, so the Attempt it superseded
-   * is still the live one and keeps its nonce: the Operation returns to `before`'s state,
-   * error and ambiguity with that Attempt active. The refused Attempt stays recorded and
-   * monitored. Only while the refused Attempt is still active and the Operation still shows
-   * the refusal (`stalled`, or `signed` after a rejection); anything the monitor recorded
-   * meanwhile is kept. The lease is renewed first. A failure is only logged: the caller
-   * gets the node's error either way, and the Operation stays safely `stalled`.
+   * Spec §8.6: the node refused a replacement or cancel, so the Attempt it superseded is
+   * still the live one and keeps its nonce. While the refused Attempt is still the active
+   * one (M3), the superseded one becomes active again, whatever the Operation's state.
+   * When the Operation still shows the refusal (`stalled`, or `signed` after a rejection),
+   * it also returns to `point`'s state, error and ambiguity; any other state (`included`,
+   * `submitted` or later) is the monitor's and is kept. The refused Attempt stays recorded
+   * and monitored. The lease is renewed first. A failure is only logged: the caller gets
+   * the node's error either way, and the Operation stays safely `stalled`.
    */
   protected async restoreAfterRefusal(
-    before: OperationRecord,
+    operationId: string,
     refusedId: string | undefined,
+    point: RestorePoint,
     lease: LeaseHandle | undefined,
   ): Promise<void> {
     const clear: ClearableField[] = [];
-    if (!before.error) clear.push('error');
-    if (!before.ambiguous) clear.push('ambiguous');
-    const patch: OperationPatch = {
-      state: before.state,
-      activeAttemptId: before.activeAttemptId,
-      ...(before.error ? { error: before.error } : {}),
-      ...(before.ambiguous ? { ambiguous: true } : {}),
+    if (!point.error) clear.push('error');
+    if (!point.ambiguous) clear.push('ambiguous');
+    const full: OperationPatch = {
+      state: point.state,
+      activeAttemptId: point.activeAttemptId,
+      ...(point.error ? { error: point.error } : {}),
+      ...(point.ambiguous ? { ambiguous: true } : {}),
       ...(clear.length > 0 ? { clear } : {}),
     };
     try {
       await lease?.renew();
-      await this.updateAfterBroadcast(await this.require(before.id), (current) =>
-        current.activeAttemptId === refusedId &&
-        (current.state === 'stalled' || current.state === 'signed')
-          ? patch
-          : undefined,
-      );
+      await this.updateAfterBroadcast(await this.require(operationId), (current) => {
+        if (current.activeAttemptId !== refusedId) return undefined;
+        return current.state === 'stalled' || current.state === 'signed'
+          ? full
+          : { activeAttemptId: point.activeAttemptId };
+      });
     } catch (error) {
       this.deps.log.warn('could not restore the attempt a refused one superseded', {
-        operationId: before.id,
+        operationId,
         code: errorCode(error),
       });
     }
@@ -1709,7 +1754,9 @@ export class OperationEngine {
           code: error.code,
         });
       }
-      return next.state === 'stalled' ? error : next;
+      // M3: a new Attempt's refusal is always the answer, even when the Operation moved on
+      // meanwhile (e.g. the Attempt it superseded was mined): never success for its call.
+      return next.state === 'stalled' || attempt.supersedes !== undefined ? error : next;
     }
     const error = new ChainError(
       'TX_REJECTED',
