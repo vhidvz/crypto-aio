@@ -1,4 +1,5 @@
 import { inspect } from 'node:util';
+import { createLogger } from '../../../src/core/events/logger';
 import { secret } from '../../../src/core/secret/secret';
 import {
   PLACEHOLDER_ORIGIN,
@@ -130,6 +131,86 @@ describe('HttpTransport requests', () => {
     ]) {
       expect(text).not.toContain('SUPERSECRET');
       expect(text).not.toContain('TOPSECRETTOKEN');
+    }
+  });
+
+  // M10 (fix round 1, group C): a secret in the endpoint URL's query string never leaks.
+  it('never leaks a secret embedded in the endpoint URL query string', async () => {
+    const fake = new FakeFetch().route('https://node.test', () => {
+      throw new TypeError('fetch failed', {
+        cause: new Error(
+          'connect ECONNREFUSED https://node.test/v1?api_key=sk_live_QUERYSECRET',
+        ),
+      });
+    });
+    const { transport, clock, seen } = setup(
+      [{ name: 'main', url: secret('https://node.test/v1?api_key=sk_live_QUERYSECRET') }],
+      fake,
+    );
+    const error = await drive(clock, transport.rpc('x')).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    for (const text of [
+      inspect(error, { depth: 10 }),
+      JSON.stringify(error),
+      JSON.stringify(seen),
+      JSON.stringify(transport.status()),
+    ]) {
+      expect(text).not.toContain('sk_live_QUERYSECRET');
+    }
+  });
+
+  // M10: a secret in the endpoint URL's userinfo never leaks.
+  it('never leaks a secret embedded in the endpoint URL userinfo', async () => {
+    const fake = new FakeFetch().route('https://node.test', () => {
+      throw new TypeError('fetch failed', {
+        cause: new Error(
+          'connect ECONNREFUSED https://user:sk_live_USERINFOSECRET@node.test/v1',
+        ),
+      });
+    });
+    const { transport, clock, seen } = setup(
+      [{ name: 'main', url: secret('https://user:sk_live_USERINFOSECRET@node.test/v1') }],
+      fake,
+    );
+    const error = await drive(clock, transport.rpc('x')).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    for (const text of [
+      inspect(error, { depth: 10 }),
+      JSON.stringify(error),
+      JSON.stringify(seen),
+      JSON.stringify(transport.status()),
+    ]) {
+      expect(text).not.toContain('sk_live_USERINFOSECRET');
+    }
+  });
+
+  // M10: a capture logger (not noopLogger) never records the secret either. The identity
+  // probe's mismatch warning is the transport's only log call site, so a mismatch scenario is
+  // used to prove the assertion isn't vacuous.
+  it('never logs a secret through a capture logger', async () => {
+    const records: unknown[] = [];
+    const log = createLogger('test', (level, namespace, message, fields) => {
+      records.push({ level, namespace, message, fields });
+    });
+    const fake = new FakeFetch().route('https://node.test', (req) =>
+      rpcResult(req, method(req) === 'chain_id' ? '5' : 'ok'),
+    );
+    const { transport, clock } = setup(
+      [{ name: 'main', url: 'https://node.test/v1/sk_live_LOGSECRET' }],
+      fake,
+      {},
+      log,
+    );
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+    });
+    await expect(drive(clock, transport.rpc('x'))).rejects.toMatchObject({
+      code: 'PROVIDER_MISCONFIGURED',
+    });
+    expect(records.length).toBeGreaterThan(0);
+    for (const record of records) {
+      expect(JSON.stringify(record)).not.toContain('sk_live_LOGSECRET');
     }
   });
 

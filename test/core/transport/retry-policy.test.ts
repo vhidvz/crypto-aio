@@ -232,4 +232,47 @@ describe('HttpTransport retry policy', () => {
     expect(clock.now() - start).toBeGreaterThanOrEqual(60_000);
     expect(clock.now() - start).toBeLessThan(120_000);
   });
+
+  // R16 (controller amendment): mayHaveSent widens beyond timeout/network-error/5xx/unparseable
+  // to every post-fetch endpoint failure except HTTP 401/403/429 — including a JSON-RPC
+  // envelope-validation failure (here, an id mismatch).
+  it('marks ambiguous when an envelope id-mismatch precedes a definitive JSON-RPC error', async () => {
+    let calls = 0;
+    const fake = new FakeFetch().route('https://a.test', (req) =>
+      calls++ === 0
+        ? {
+            json: {
+              jsonrpc: '2.0',
+              id: 999_999,
+              error: { code: -32000, message: 'nope' },
+            },
+          }
+        : rpcError(req, -32000, 'nonce too low'),
+    );
+    const { transport, clock } = setup([A], fake, { maxAttempts: 2 });
+    const error = await drive(
+      clock,
+      transport.rpc('send', [], { retry: 'ambiguous-on-failure' }),
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
+    expect(calls).toBe(2);
+  });
+
+  // R16: HTTP 429 stays excluded from ambiguity — the server never processed the request.
+  it('does not mark ambiguous when only a 429 precedes a definitive error', async () => {
+    let calls = 0;
+    const fake = new FakeFetch().route('https://a.test', (req) =>
+      calls++ === 0
+        ? { status: 429, text: '', headers: { 'retry-after': '1' } }
+        : rpcError(req, -32000, 'nonce too low'),
+    );
+    const { transport, clock } = setup([A], fake, { maxAttempts: 2 });
+    const error = await drive(
+      clock,
+      transport.rpc('send', [], { retry: 'ambiguous-on-failure' }),
+      100,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: false });
+    expect(calls).toBe(2);
+  });
 });

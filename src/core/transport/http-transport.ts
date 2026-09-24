@@ -160,7 +160,9 @@ export class HttpTransport implements Transport {
   readonly id: string;
   readonly #endpoints: Endpoint[];
   readonly #opts: ResolvedOptions;
-  /** I4: errors whose attempt reached the network, so the request may have been delivered. */
+  /** I4/R16: errors from an attempt whose `fetch` was invoked and answered, so the request may
+   * have been delivered — every such failure except HTTP 401/403/429 and JSON-RPC-level rate
+   * limiting (R16: those mean the request was never actually processed). */
   readonly #maybeDelivered = new WeakSet<CryptoAioError>();
   readonly #clock: Clock;
   readonly #events: EventBus;
@@ -295,19 +297,32 @@ export class HttpTransport implements Transport {
     ): Promise<Response> => {
       const raw =
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      const url = new URL(raw);
+      // M5: a relative or otherwise invalid URL is a config error; the message never
+      // repeats the caller's input.
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        throw new ConfigError('CONFIG_INVALID', 'bridged fetch requires an absolute URL');
+      }
       if (url.origin !== PLACEHOLDER_ORIGIN) {
         throw new ConfigError(
           'CONFIG_INVALID',
           'bridged fetch accepts only transport placeholder URLs',
         );
       }
+      // M5: a Request input keeps its own method, headers and body unless init overrides them.
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      const headerSource =
+        init?.headers ?? (input instanceof Request ? input.headers : undefined);
       let body = init?.body ?? undefined;
-      // M3: a stream body can only be read once; buffer it up front so every retry attempt
-      // can replay the same bytes.
-      if (body instanceof ReadableStream) {
-        body = await new Response(body).arrayBuffer();
+      if (body === undefined && input instanceof Request && input.body) {
+        // M5: a Request input's own body is preserved (read once, replayed on every retry).
+        body = new Uint8Array(await input.arrayBuffer());
+      } else if (body instanceof ReadableStream) {
+        // M3: a stream body can only be read once; buffer it up front so every retry attempt
+        // can replay the same bytes.
+        body = new Uint8Array(await new Response(body).arrayBuffer());
       }
       // Bridged SDK calls have no route template; the raw path never becomes an event label.
       const label = method;
@@ -317,7 +332,7 @@ export class HttpTransport implements Transport {
         label,
         { ...options, ...(signal ? { signal } : {}) },
         async (endpoint, deadline) => {
-          const headers = new Headers(init?.headers);
+          const headers = new Headers(headerSource);
           for (const [name, value] of Object.entries(endpoint.headers))
             headers.set(name, value);
           const started = this.#clock.now();
@@ -331,14 +346,28 @@ export class HttpTransport implements Transport {
               redirect: 'error',
             },
           );
-          this.#throwForStatus(endpoint, response);
-          this.#emitResponse(
-            endpoint,
-            label,
-            started,
-            Number(response.headers.get('content-length') ?? 0),
-          );
-          return response;
+          // M5: an error-status response body is never returned to the SDK; drain it so the
+          // connection can be released instead of leaking it.
+          try {
+            this.#throwForStatus(endpoint, response);
+          } catch (error) {
+            try {
+              response.body?.cancel();
+            } catch {
+              /* best effort */
+            }
+            throw error;
+          }
+          // I1: buffer the whole body here, while the deadline and the caller's signal are
+          // still attached, and hand the SDK a fresh Response whose `url` is always '' — the
+          // real endpoint URL (and any secret it carries) never reaches the SDK.
+          const buffer = await response.arrayBuffer();
+          this.#emitResponse(endpoint, label, started, buffer.byteLength);
+          return new Response(buffer, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
         },
       );
     };
@@ -357,15 +386,36 @@ export class HttpTransport implements Transport {
 
   async ensureFreshHealth(signal?: AbortSignal): Promise<void> {
     if (!this.#probes.height && !this.#probes.identity) return;
+    // I8: an in-flight refresh is awaited before the staleness check, so a second concurrent
+    // caller can't slip through and read endpoint state mid-refresh (e.g. heights still
+    // unset). This caller's own signal is raced against it; the shared run itself is not
+    // cancelled by it.
+    if (this.#healthRun) await this.#join(this.#healthRun, signal);
     if (this.#clock.now() - this.#lastHealthAt < this.#opts.healthIntervalMs) return;
     await this.refreshHealth(signal);
   }
 
   refreshHealth(signal?: AbortSignal): Promise<void> {
-    this.#healthRun ??= this.#refresh(signal).finally(() => {
+    // I8: the shared run is started at most once and is never bound to any one caller's
+    // signal; each caller instead races its own signal against it via #join.
+    this.#healthRun ??= this.#refresh().finally(() => {
       this.#healthRun = undefined;
     });
-    return this.#healthRun;
+    return this.#join(this.#healthRun, signal);
+  }
+
+  /** I8: resolves/rejects with `run`, but also rejects early (with only THIS caller's promise)
+   * if `signal` aborts first. `run` itself is left untouched either way. */
+  #join(run: Promise<void>, signal?: AbortSignal): Promise<void> {
+    if (!signal) return run;
+    if (signal.aborted) return Promise.reject(signal.reason);
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      run.then(resolve, reject).finally(() => {
+        signal.removeEventListener('abort', onAbort);
+      });
+    });
   }
 
   status(): EndpointStatus[] {
@@ -594,8 +644,8 @@ export class HttpTransport implements Transport {
     }
   }
 
-  /** Endpoints that are structurally usable for `purpose` (breaker, identity, lag), ignoring
-   * any per-endpoint rate-limit wait (I9). */
+  /** Endpoints that are structurally usable for `purpose` (breaker, identity, lag/height),
+   * ignoring any per-endpoint rate-limit wait (I9). */
   #candidates(purpose: RequestPurpose): Endpoint[] {
     const strict = purpose === 'monitor' || purpose === 'proof';
     return this.#endpoints
@@ -603,7 +653,7 @@ export class HttpTransport implements Transport {
         (e) =>
           e.identity !== 'mismatch' &&
           e.breaker.canRequest() &&
-          (!strict || !this.#lagging(e)),
+          (!strict || !this.#excludedForHeight(e)),
       )
       .sort(
         (a, b) =>
@@ -654,6 +704,14 @@ export class HttpTransport implements Transport {
       this.#best !== undefined &&
       this.#best - endpoint.height > BigInt(this.#opts.maxLagBlocks)
     );
+  }
+
+  /** I8: once a height probe is configured, an endpoint whose height is unknown (its probe
+   * never ran or failed) is excluded from monitor/proof reads the same way a lagging one is. */
+  #excludedForHeight(endpoint: Endpoint): boolean {
+    if (!this.#probes.height) return false;
+    if (endpoint.height === undefined) return true;
+    return this.#lagging(endpoint);
   }
 
   /** I9: clamps Retry-After, or falls back to backoff, and records the endpoint's notBefore. */
@@ -859,23 +917,30 @@ export class HttpTransport implements Transport {
       if (!isRpcError) {
         if (mode === 'rpc') {
           // A 4xx in RPC mode without a JSON-RPC envelope is an endpoint-local failure,
-          // not a definitive protocol answer: retry and fail over (I6b).
-          throw new ProviderError(
-            'PROVIDER_UNAVAILABLE',
-            `${errorLabel} did not return a JSON-RPC envelope (HTTP ${response.status})`,
-            { context },
+          // not a definitive protocol answer: retry and fail over (I6b). R16: the server did
+          // respond, so a later definitive failure on this call still inherits ambiguity.
+          throw this.#markSent(
+            new ProviderError(
+              'PROVIDER_UNAVAILABLE',
+              `${errorLabel} did not return a JSON-RPC envelope (HTTP ${response.status})`,
+              { context },
+            ),
           );
         }
-        throw new ProviderError(
-          'RPC_ERROR',
-          `${errorLabel} refused (HTTP ${response.status})`,
-          {
-            context,
-            details: {
-              status: response.status,
-              body: this.#scrub(endpoint, text).slice(0, 300),
+        // R16: same reasoning for a REST 4xx that isn't 401/403/429/408 (those are peeled off
+        // in #throwForStatus and excluded there).
+        throw this.#markSent(
+          new ProviderError(
+            'RPC_ERROR',
+            `${errorLabel} refused (HTTP ${response.status})`,
+            {
+              context,
+              details: {
+                status: response.status,
+                body: this.#scrub(endpoint, text).slice(0, 300),
+              },
             },
-          },
+          ),
         );
       }
     }
@@ -903,14 +968,19 @@ export class HttpTransport implements Transport {
     const context = this.#context(endpoint);
     const status = response.status;
     if (status === 408) {
-      // Retryable in every mode (I6b): a request timeout is an endpoint-local failure.
-      throw new ProviderError(
-        'PROVIDER_UNAVAILABLE',
-        'endpoint request timed out (HTTP 408)',
-        { context },
+      // Retryable in every mode (I6b): a request timeout is an endpoint-local failure that
+      // may have reached the server before it gave up (R16).
+      throw this.#markSent(
+        new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          'endpoint request timed out (HTTP 408)',
+          { context },
+        ),
       );
     }
     if (status === 429) {
+      // R16: rate-limiting means the request was never actually processed — excluded from
+      // ambiguity, like 401/403 below.
       const retryAfterMs = parseRetryAfter(
         response.headers.get('retry-after'),
         this.#clock.now(),
@@ -922,6 +992,7 @@ export class HttpTransport implements Transport {
       });
     }
     if (status === 401 || status === 403) {
+      // R16: credentials were rejected before any processing — excluded from ambiguity.
       throw new ProviderError(
         'PROVIDER_MISCONFIGURED',
         `endpoint rejected the credentials (HTTP ${status})`,
@@ -943,12 +1014,15 @@ export class HttpTransport implements Transport {
 
   #unwrapRpc<T>(endpoint: Endpoint, method: string, id: number, json: unknown): T {
     const context = this.#context(endpoint);
-    // Step 1: the body must be an object.
+    // Step 1: the body must be an object. R16: the server did respond, so this attempt may
+    // have been delivered even though its answer was unusable.
     if (json === null || typeof json !== 'object' || Array.isArray(json)) {
-      throw new ProviderError(
-        'PROVIDER_UNAVAILABLE',
-        `malformed JSON-RPC response to ${method}`,
-        { context },
+      throw this.#markSent(
+        new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          `malformed JSON-RPC response to ${method}`,
+          { context },
+        ),
       );
     }
     const body = json as {
@@ -965,12 +1039,15 @@ export class HttpTransport implements Transport {
       body.id === null && (errorCode === -32700 || errorCode === -32600);
     const idMatches = idIsNullForProtocolError || String(body.id) === String(id);
     // Step 3: exactly one of result/error. Any of these three problems is an endpoint-local
-    // failure, not a definitive protocol answer: retry and fail over (I5).
+    // failure, not a definitive protocol answer: retry and fail over (I5). R16: same reasoning
+    // as step 1 — the server responded, so this attempt may have been delivered.
     if (!idMatches || (hasResult && hasError) || (!hasResult && !hasError)) {
-      throw new ProviderError(
-        'PROVIDER_UNAVAILABLE',
-        `invalid JSON-RPC envelope for ${method}`,
-        { context },
+      throw this.#markSent(
+        new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          `invalid JSON-RPC envelope for ${method}`,
+          { context },
+        ),
       );
     }
     // Step 4: only now classify the error or return the result.
@@ -999,13 +1076,19 @@ export class HttpTransport implements Transport {
         code === 429 ||
         /rate limit|too many requests|request limit/i.test(message)
       ) {
-        // I9: no Retry-After header at the JSON-RPC level, so back off.
+        // I9: no Retry-After header at the JSON-RPC level, so back off. R16: a JSON-RPC-level
+        // rate limit carries the same "never processed" meaning as an HTTP 429 — excluded
+        // from ambiguity for the same reason.
         const retryAfterMs = this.#applyRateLimit(endpoint, undefined);
         throw new ProviderError('RATE_LIMITED', `endpoint rate limited ${method}`, {
           context,
           details: { ...details, retryAfterMs },
         });
       }
+      // A definitive JSON-RPC application error (e.g. "nonce too low") is not itself tagged:
+      // the server told us exactly what happened, so a lone instance of it is never ambiguous
+      // (I4). It still inherits ambiguity from an earlier possibly-delivered attempt via
+      // #withRetry/#fanout's accumulated `mayHaveSent`.
       throw new ProviderError('RPC_ERROR', `${method} failed: ${message}`, {
         context,
         details,
@@ -1080,21 +1163,20 @@ export class HttpTransport implements Transport {
     }
   }
 
-  async #refresh(signal?: AbortSignal): Promise<void> {
-    this.#lastHealthAt = this.#clock.now();
+  async #refresh(): Promise<void> {
     const probe = this.#probes.height;
     const targets = this.#endpoints.filter((e) => e.identity !== 'mismatch');
     await Promise.all(
       targets.map(async (endpoint) => {
+        // I8: the shared run is never bound to any single caller's signal; each probe only
+        // ever times out against its own deadline.
         const { signal: deadline, cancel } = this.#deadline(
           endpoint.timeoutMs ?? this.#opts.timeoutMs,
-          signal,
         );
         try {
           await this.#ensureIdentity(endpoint, deadline);
           if (probe) endpoint.height = await probe(this.#direct(endpoint, deadline));
         } catch (error) {
-          if (signal?.aborted) return;
           const failure = this.#classify(error, endpoint, deadline);
           if (failure.code !== 'PROVIDER_MISCONFIGURED') {
             endpoint.breaker.onFailure();
@@ -1125,6 +1207,9 @@ export class HttpTransport implements Transport {
         ...(status.lag !== undefined ? { lag: status.lag.toString() } : {}),
       });
     }
+    // I8: only a completed refresh counts as fresh; #healthRun's `finally` clears the
+    // in-flight marker regardless, but the staleness clock only advances here.
+    this.#lastHealthAt = this.#clock.now();
   }
 
   // ---- errors ----------------------------------------------------------------------
