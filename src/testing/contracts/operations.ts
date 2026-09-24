@@ -183,6 +183,28 @@ export function describeOperationStoreContract(
       assert.equal(cleared.state, 'prepared');
     });
 
+    api.it(
+      'bumps the version on every successful update, even one that changes nothing',
+      async () => {
+        // R29: the engine fences a stale writer with a no-effect compare-and-set; a store
+        // that skipped writing an unchanged record would let the stale write land.
+        const { operations } = await create();
+        const { record } = await operations.create(sampleOperation());
+        assert.equal(record.error, undefined);
+        const bumped = await operations.update(
+          'ns',
+          record.id,
+          { clear: ['error'] },
+          record.version,
+        );
+        assert.equal(bumped.version, record.version + 1);
+        await rejectsWithCode(
+          operations.update('ns', record.id, { state: 'prepared' }, record.version),
+          'VERSION_CONFLICT',
+        );
+      },
+    );
+
     api.it('appends attempts atomically with the state change', async () => {
       const { operations } = await create();
       const { record } = await operations.create(sampleOperation());

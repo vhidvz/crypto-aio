@@ -49,9 +49,11 @@ import {
   type AttemptRecord,
   type ExecutionContext,
   type Fence,
+  type OperationFilter,
   type OperationPatch,
   type OperationRecord,
   type OperationState,
+  type SequenceState,
   type Stores,
 } from '../store/types';
 import { randomId } from '../util/bytes';
@@ -211,6 +213,21 @@ function heldNonces(op: OperationRecord): bigint[] {
     ...op.attempts.map((a) => a.ordering),
   ];
   return orderings.flatMap((o) => (o?.kind === 'nonce' ? [o.nonce] : []));
+}
+
+/** Failures proven on chain at finality: their nonce was consumed. */
+const CONSUMED_FAILURES: ReadonlySet<string> = new Set(['TX_REVERTED', 'TX_REPLACED']);
+
+/** Whether some value in [from, next) is neither released nor held. */
+function hasReclaimable(
+  state: SequenceState | null,
+  from: bigint,
+  held: readonly bigint[],
+): boolean {
+  if (!state) return false;
+  const taken = new Set([...state.released, ...held]);
+  for (let value = from; value < state.next; value++) if (!taken.has(value)) return true;
+  return false;
 }
 
 /** `signed`, or `submitted` with an unknown broadcast outcome: its stored bytes are (re)sent. */
@@ -1408,9 +1425,9 @@ export class OperationEngine {
    * Nonce reconciliation, never a filler transaction (spec). Under the address lease,
    * returns to `released` every value in [floor, next) that no live Operation of
    * `op`'s wallet reserves, so the next allocation reuses it and the transfers waiting
-   * behind the gap can land; `floor` is `chainPending`, raised above the highest nonce of
-   * any `final` Operation of the wallet (a lagging endpoint can under-report pending). It
-   * closes the leaks a release cannot: a crash between
+   * behind the gap can land; `floor` is `consumedFloor` (never below a nonce the chain
+   * consumed at finality), and the wallet's history is read only when some value is
+   * reclaimable at all. It closes the leaks a release cannot: a crash between
    * allocation and the `prepared` write, a store failure inside a release after a terminal
    * write, and a failure recorded without a release. R29: every live `created` Operation
    * without a reservation is fenced first (`fenceStalePrepare`), so a `prepared` write
@@ -1439,34 +1456,49 @@ export class OperationEngine {
           network: op.context.network,
           from: op.intent.from,
         };
+        const key = this.sequenceKeyOf(target);
         const chainPending = await sequence.pending(op.intent.from);
-        // M1: a lagging endpoint can under-report pending; a final Operation's nonce was
-        // consumed on chain whatever it says, so the scan starts above the highest one.
-        let floor = chainPending;
-        for (const final of await this.deps.stores.operations.list({
-          ...wallet,
-          states: ['final'],
-        })) {
-          for (const nonce of heldNonces(final)) if (nonce >= floor) floor = nonce + 1n;
-        }
         const live = await this.deps.stores.operations.list({
           ...wallet,
           states: NON_TERMINAL_STATES,
         });
+        // Cheap first: with nothing reclaimable, neither the fencing writes nor the
+        // wallet's history are needed (fencing only ever adds held values).
+        const state = await this.deps.stores.sequences.get(key);
+        if (!hasReclaimable(state, chainPending, live.flatMap(heldNonces))) return [];
         const held: bigint[] = [];
         for (const record of live)
           held.push(...heldNonces(await this.fenceStalePrepare(record)));
+        const floor = await this.consumedFloor(wallet, chainPending);
         await lease?.renew();
-        return this.deps.sequences.reclaim(
-          lease as LeaseHandle,
-          this.sequenceKeyOf(target),
-          floor,
-          held,
-        );
+        return this.deps.sequences.reclaim(lease as LeaseHandle, key, floor, held);
       },
       signal,
       acquireTimeoutMs === undefined ? undefined : { acquireTimeoutMs },
     );
+  }
+
+  /**
+   * The lowest value reconciliation may reclaim: `chainPending` (a lagging endpoint can
+   * under-report it), raised above every nonce the chain consumed at finality, i.e. those
+   * of `final` Operations and of failures proven on chain (`TX_REVERTED`, `TX_REPLACED`).
+   * A rejection, a failure before signing or an abandoned Operation consumed nothing.
+   */
+  protected async consumedFloor(
+    wallet: Omit<OperationFilter, 'states' | 'limit'>,
+    chainPending: bigint,
+  ): Promise<bigint> {
+    let floor = chainPending;
+    const history = await this.deps.stores.operations.list({
+      ...wallet,
+      states: ['final', 'failed'],
+    });
+    for (const record of history) {
+      if (record.state === 'failed' && !CONSUMED_FAILURES.has(record.error?.code ?? ''))
+        continue;
+      for (const nonce of heldNonces(record)) if (nonce >= floor) floor = nonce + 1n;
+    }
+    return floor;
   }
 
   /**

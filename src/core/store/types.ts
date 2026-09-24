@@ -237,6 +237,11 @@ export interface OperationStore {
   getByKey(namespace: string, idempotencyKey: string): Promise<OperationRecord | null>;
   /** Finds by an Attempt ref id or by an observed canonical tx hash. */
   findByRef(namespace: string, refOrTxHash: string): Promise<OperationRecord | null>;
+  /**
+   * Compare-and-set on `expectedVersion`, optionally fenced. Every successful update bumps
+   * version, even when the patch changes no field (R29: the engine fences stale writers
+   * with such a no-effect update).
+   */
   update(
     namespace: string,
     id: string,

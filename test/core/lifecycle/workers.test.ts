@@ -1,7 +1,7 @@
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { containerOf } from '../../../src/core/container/internals';
 import { ChainError } from '../../../src/core/errors/error';
-import { noopLogger } from '../../../src/core/events/logger';
+import { noopLogger, type Logger } from '../../../src/core/events/logger';
 import type { AioEvent } from '../../../src/core/events/types';
 import {
   withLifecycleDefaults,
@@ -19,13 +19,19 @@ import {
 import type {
   AttemptRecord,
   Fence,
+  OperationFilter,
   OperationPatch,
   OperationRecord,
   SequenceState,
   SequenceStore,
 } from '../../../src/core/store/types';
 import type { Transport } from '../../../src/core/transport/types';
-import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
+import {
+  createFakeEnv,
+  type FakeEnv,
+  type FakeEnvOptions,
+} from '../../../src/testing/env';
+import { REVERT_ADDRESS } from '../../../src/testing/fake-chain';
 import { CrashError, FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, mineWhile } from './support';
 
@@ -447,6 +453,61 @@ describe('fix round 1 minors (M1, M4)', () => {
   });
 });
 
+describe('fix round 2 minors', () => {
+  it('never releases the nonce of a mined revert when a lagging endpoint under-reports pending', async () => {
+    const env = await createFakeEnv();
+    const first = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await mineWhile(env, first.wait({ finality: 'final' }));
+    const reverted = await env.run(env.bc.transfer({ to: REVERT_ADDRESS, amount: 1n }));
+    await expect(
+      mineWhile(env, reverted.wait({ finality: 'final' })),
+    ).rejects.toMatchObject({ code: 'TX_REVERTED' });
+    expect((await stored(env, reverted.operationId)).state).toBe('failed');
+    await env.run(env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }));
+    env.chain.configureEndpoint('main', { lag: 200 });
+    const report = await env.run(env.aio.operations.recover());
+    expect(report).toMatchObject({ failed: 0, reconciled: 0 });
+    expect(await sequenceOf(env)).toMatchObject({ next: 3n, released: [] });
+  });
+
+  it('lists no wallet history when there is nothing to reclaim', async () => {
+    const operations = new ListRecordingStore();
+    const env = await createFakeEnv({ stores: { operations } });
+    await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    operations.filters.length = 0;
+    expect(await env.run(env.aio.operations.recover())).toMatchObject({ reconciled: 0 });
+    const history = operations.filters.filter((filter) =>
+      filter.states?.some((state) => state === 'final' || state === 'failed'),
+    );
+    expect(history).toEqual([]);
+  });
+
+  it('claims nothing once its signal has aborted', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    const ctl = new AbortController();
+    ctl.abort();
+    expect(
+      await env.run(env.aio.monitor.runOnce({ workerId: 'w', signal: ctl.signal })),
+    ).toBe(0);
+    expect((await stored(env, sub.operationId)).claim).toBeUndefined();
+  });
+
+  it('logs a check stopped by shutdown at debug level, not as a failure', async () => {
+    const { log, warnings, debugs } = capturingLogger();
+    const { env } = await rejectedButLive({ aio: { logger: log } });
+    await env.stores.locks.acquire(leaseKey(env), 'elsewhere', 600_000);
+    const ctl = new AbortController();
+    const worker = env.aio.monitor.start({ workerId: 'w', signal: ctl.signal });
+    await env.clock.advance(1_000); // the fenced pass waits for the address lease
+    ctl.abort();
+    await env.run(worker);
+    expect(warnings.map((w) => w.message)).not.toContain('monitor check failed');
+    expect(debugs.map((d) => d.message)).toContain('monitor check stopped');
+  });
+});
+
 describe('reconciliation fences out a stale prepared write (R29)', () => {
   it('never lets a paused prepared write land on a nonce reconciliation released', async () => {
     const operations = new GatedUpdateStore();
@@ -544,6 +605,29 @@ class RacingUpdateStore extends MemoryOperationStore {
     const current = decision ? await this.get(namespace, id) : null;
     if (decision && current) await super.update(namespace, id, decision, current.version);
     return super.update(namespace, id, patch, expectedVersion, fence);
+  }
+}
+
+/** A logger that records every warning's and debug record's message and fields. */
+function capturingLogger() {
+  const warnings: { message: string; fields: unknown }[] = [];
+  const debugs: { message: string; fields: unknown }[] = [];
+  const log: Logger = {
+    ...noopLogger,
+    warn: (message, fields) => warnings.push({ message, fields }),
+    debug: (message, fields) => debugs.push({ message, fields }),
+    child: () => log,
+  };
+  return { log, warnings, debugs };
+}
+
+/** Records the filter of every `list` call. */
+class ListRecordingStore extends MemoryOperationStore {
+  readonly filters: OperationFilter[] = [];
+
+  override async list(filter: OperationFilter): Promise<OperationRecord[]> {
+    this.filters.push(filter);
+    return super.list(filter);
   }
 }
 
@@ -657,9 +741,9 @@ function withHighest(transport: Transport, highest: bigint): Transport {
 }
 
 /** A signed transfer whose only Attempt is proven rejected: the failed write was lost. */
-async function rejectedButLive() {
+async function rejectedButLive(options: FakeEnvOptions = {}) {
   const faulty = new FaultyOperationStore(new MemoryOperationStore());
-  const first = await createFakeEnv({ stores: { operations: faulty } });
+  const first = await createFakeEnv({ ...options, stores: { operations: faulty } });
   first.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
   faulty.crashOn({
     method: 'update',

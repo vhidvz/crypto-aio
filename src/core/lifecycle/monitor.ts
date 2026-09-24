@@ -385,6 +385,7 @@ export class Monitor {
     readonly signal?: AbortSignal;
   }): Promise<number> {
     const { signal } = options;
+    if (signal?.aborted) return 0;
     const claimed = await this.deps.stores.operations.claimDue(
       this.deps.namespace,
       options.workerId,
@@ -423,10 +424,11 @@ export class Monitor {
       current = pass.record;
       if (!pass.stale) await this.#detectNonceGap(target, current);
     } catch (error) {
-      this.deps.log.warn('monitor check failed', {
-        operationId: op.id,
-        code: errorCode(error),
-      });
+      // An abort mid-check is an expected shutdown, not a failure.
+      this.deps.log[signal?.aborted ? 'debug' : 'warn'](
+        signal?.aborted ? 'monitor check stopped' : 'monitor check failed',
+        { operationId: op.id, code: errorCode(error) },
+      );
     }
     const scheduled =
       current !== undefined &&
