@@ -64,7 +64,8 @@ export interface HealthProbes {
   readonly height?: (call: EndpointCall) => Promise<bigint>;
 }
 
-export type EndpointState = 'healthy' | 'lagging' | 'open' | 'disabled' | 'unknown';
+export type EndpointState =
+  'healthy' | 'lagging' | 'open' | 'half-open' | 'disabled' | 'unknown';
 
 export interface EndpointStatus {
   readonly id: string;

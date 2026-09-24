@@ -2,6 +2,7 @@ import {
   ConfigError,
   ProviderError,
   TimeoutError,
+  ValidationError,
   isCryptoAioError,
   withContext,
   type CryptoAioError,
@@ -63,6 +64,8 @@ interface Endpoint {
   identity: 'unchecked' | 'ok' | 'mismatch';
   identityCheck?: Promise<void>;
   identityRetryAt?: number;
+  /** Earliest time this endpoint may be picked again, from Retry-After or backoff (I9). */
+  notBefore: number;
   height?: bigint;
   latencyMs?: number;
   failures: number;
@@ -75,6 +78,29 @@ export interface HttpTransportDeps {
   readonly options?: TransportOptions;
   readonly id?: string;
   readonly random?: () => number;
+}
+
+const POSITIVE_MS_OPTIONS = [
+  'timeoutMs',
+  'baseDelayMs',
+  'maxDelayMs',
+  'healthIntervalMs',
+] as const;
+
+/** M4: validated at construction so bad config fails fast, never with the URL in the message. */
+function validateOptions(options: TransportOptions): void {
+  if (
+    options.maxAttempts !== undefined &&
+    (!Number.isInteger(options.maxAttempts) || options.maxAttempts < 1)
+  ) {
+    throw new ConfigError('CONFIG_INVALID', 'maxAttempts must be an integer >= 1');
+  }
+  for (const key of POSITIVE_MS_OPTIONS) {
+    const value = options[key];
+    if (value !== undefined && !(Number.isFinite(value) && value > 0)) {
+      throw new ConfigError('CONFIG_INVALID', `${key} must be a finite number > 0`);
+    }
+  }
 }
 
 function resolveOptions(options: TransportOptions = {}): ResolvedOptions {
@@ -93,6 +119,22 @@ function joinUrl(base: string, path: string, query: string): string {
   }
   new URLSearchParams(query).forEach((value, key) => url.searchParams.append(key, value));
   return url.toString();
+}
+
+/** M3: serialized once, before any endpoint is attempted; a bigint or other non-JSON value
+ * never reaches an endpoint and never counts as an endpoint failure. */
+function serializeJson(payload: unknown): string {
+  try {
+    return JSON.stringify(payload);
+  } catch (error) {
+    throw new ValidationError(
+      'INVALID_INTENT',
+      'request payload could not be serialized',
+      {
+        cause: error,
+      },
+    );
+  }
 }
 
 function rpcLabel(payload: unknown): string {
@@ -118,6 +160,8 @@ export class HttpTransport implements Transport {
   readonly id: string;
   readonly #endpoints: Endpoint[];
   readonly #opts: ResolvedOptions;
+  /** I4: errors whose attempt reached the network, so the request may have been delivered. */
+  readonly #maybeDelivered = new WeakSet<CryptoAioError>();
   readonly #clock: Clock;
   readonly #events: EventBus;
   readonly #log: Logger;
@@ -133,6 +177,7 @@ export class HttpTransport implements Transport {
     if (endpoints.length === 0) {
       throw new ConfigError('CONFIG_INVALID', 'a transport needs at least one endpoint');
     }
+    validateOptions(deps.options ?? {});
     this.id = deps.id ?? randomId('tr');
     this.#opts = resolveOptions(deps.options);
     this.#clock = deps.clock;
@@ -151,6 +196,12 @@ export class HttpTransport implements Transport {
         parsed = new URL(url);
       } catch {
         throw new ConfigError('CONFIG_INVALID', `endpoint '${id}' has an invalid URL`);
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new ConfigError(
+          'CONFIG_INVALID',
+          `endpoint '${id}' must use http or https`,
+        );
       }
       const headers: Record<string, string> = {};
       for (const [name, value] of Object.entries(config.headers ?? {}))
@@ -185,33 +236,35 @@ export class HttpTransport implements Transport {
             }
           : {}),
         identity: 'unchecked',
+        notBefore: Number.NEGATIVE_INFINITY,
         failures: 0,
       };
     });
   }
 
-  rpc<T = unknown>(
+  // rpc/rpcRaw/http are `async` on purpose (M3): serializing the body happens synchronously,
+  // before any endpoint is touched, and `async` turns a bad payload into a rejected Promise
+  // rather than a synchronous throw, keeping the Transport contract's `Promise<T>` honest.
+  async rpc<T = unknown>(
     method: string,
     params: unknown = [],
     options: CallOptions = {},
   ): Promise<T> {
+    const id = ++this.#rpcId;
+    const body = serializeJson({ jsonrpc: '2.0', id, method, params });
     return this.#run(method, options, (endpoint, signal) =>
-      this.#rpcOnce<T>(endpoint, method, params, signal),
+      this.#rpcOnce<T>(endpoint, method, id, body, signal),
     );
   }
 
-  rpcRaw(payload: unknown, options: CallOptions = {}): Promise<unknown> {
+  async rpcRaw(payload: unknown, options: CallOptions = {}): Promise<unknown> {
     const label = rpcLabel(payload);
+    const body = serializeJson(payload);
     return this.#run(label, options, async (endpoint, signal) => {
       const { json } = await this.#exchange(
         endpoint,
         label,
-        {
-          method: 'POST',
-          url: endpoint.url,
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        },
+        this.#jsonPost(endpoint.url, body),
         signal,
         'rpc',
       );
@@ -219,11 +272,17 @@ export class HttpTransport implements Transport {
     });
   }
 
-  http<T = unknown>(request: HttpRequest, options: CallOptions = {}): Promise<T> {
+  async http<T = unknown>(request: HttpRequest, options: CallOptions = {}): Promise<T> {
+    const bodyText =
+      request.body === undefined
+        ? undefined
+        : typeof request.body === 'string'
+          ? request.body
+          : serializeJson(request.body);
     return this.#run(
       routeLabel(request.method, request.route),
       options,
-      (endpoint, signal) => this.#httpOnce<T>(endpoint, request, signal),
+      (endpoint, signal) => this.#httpOnce<T>(endpoint, request, bodyText, signal),
     );
   }
 
@@ -244,7 +303,12 @@ export class HttpTransport implements Transport {
         );
       }
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-      const body = init?.body ?? undefined;
+      let body = init?.body ?? undefined;
+      // M3: a stream body can only be read once; buffer it up front so every retry attempt
+      // can replay the same bytes.
+      if (body instanceof ReadableStream) {
+        body = await new Response(body).arrayBuffer();
+      }
       // Bridged SDK calls have no route template; the raw path never becomes an event label.
       const label = method;
       const options = classify?.(url, init) ?? {};
@@ -268,13 +332,12 @@ export class HttpTransport implements Transport {
             },
           );
           this.#throwForStatus(endpoint, response);
-          this.#events.emit('rpc.response', {
-            transportId: this.id,
-            endpointId: endpoint.id,
-            method: label,
-            latencyMs: this.#clock.now() - started,
-            bytes: Number(response.headers.get('content-length') ?? 0),
-          });
+          this.#emitResponse(
+            endpoint,
+            label,
+            started,
+            Number(response.headers.get('content-length') ?? 0),
+          );
           return response;
         },
       );
@@ -284,6 +347,12 @@ export class HttpTransport implements Transport {
 
   setProbes(probes: HealthProbes): void {
     this.#probes = probes;
+    // M12: a new probe set invalidates any previously confirmed identity.
+    for (const endpoint of this.#endpoints) {
+      endpoint.identity = 'unchecked';
+      endpoint.identityCheck = undefined;
+      endpoint.identityRetryAt = undefined;
+    }
   }
 
   async ensureFreshHealth(signal?: AbortSignal): Promise<void> {
@@ -310,11 +379,13 @@ export class HttpTransport implements Transport {
           ? 'disabled'
           : e.breaker.state === 'open'
             ? 'open'
-            : this.#lagging(e)
-              ? 'lagging'
-              : e.height !== undefined || e.identity === 'ok'
-                ? 'healthy'
-                : 'unknown';
+            : e.breaker.state === 'half-open'
+              ? 'half-open'
+              : this.#lagging(e)
+                ? 'lagging'
+                : e.height !== undefined || e.identity === 'ok'
+                  ? 'healthy'
+                  : 'unknown';
       return {
         id: e.id,
         kind: e.kind,
@@ -354,11 +425,13 @@ export class HttpTransport implements Transport {
     const attempts = retry === 'never-auto' ? 1 : this.#opts.maxAttempts;
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
+    let mayHaveSent = false;
     for (let attempt = 0; attempt < attempts; attempt++) {
       let endpoint: Endpoint;
       try {
-        endpoint = this.#pick(purpose, tried);
+        endpoint = await this.#pick(purpose, tried, options.signal);
       } catch (error) {
+        if (options.signal?.aborted) throw error;
         if (last) break;
         throw error;
       }
@@ -366,15 +439,18 @@ export class HttpTransport implements Transport {
       try {
         return await this.#attempt(endpoint, label, attempt, options, work);
       } catch (error) {
-        if (options.signal?.aborted) throw error;
-        const failure = error as CryptoAioError;
-        if (!failure.retryable) throw failure;
+        const { failure, definitive } = this.#endpointFailure(error, options);
+        if (this.#maybeDelivered.has(failure)) mayHaveSent = true;
+        if (definitive)
+          throw this.#externalize(this.#finalize(failure, retry, mayHaveSent));
         last = failure;
-        if (attempt + 1 < attempts)
-          await this.#clock.sleep(this.#delay(attempt, failure), options.signal);
+        // I9: a rate-limit wait is #pick's job now; only back off for other failures.
+        if (attempt + 1 < attempts && failure.code !== 'RATE_LIMITED') {
+          await this.#clock.sleep(this.#delay(attempt), options.signal);
+        }
       }
     }
-    throw this.#finalize(last as CryptoAioError, retry);
+    throw this.#externalize(this.#finalize(last as CryptoAioError, retry, mayHaveSent));
   }
 
   async #quorum<T>(
@@ -399,23 +475,20 @@ export class HttpTransport implements Transport {
           value: await this.#attempt(endpoint, label, tried.size - 1, options, work),
         });
       } catch (error) {
-        if (options.signal?.aborted) throw error;
-        const failure = error as CryptoAioError;
-        if (!failure.retryable) throw failure;
+        const { failure, definitive } = this.#endpointFailure(error, options);
+        if (definitive) throw failure;
         last = failure;
       }
     }
     const first = results[0];
     if (!first || results.length < needed) {
-      throw (
+      throw this.#externalize(
         last ??
-        new ProviderError(
-          'PROVIDER_UNAVAILABLE',
-          `quorum of ${needed} not reachable for ${label}`,
-          {
-            context: { transportId: this.id },
-          },
-        )
+          new ProviderError(
+            'PROVIDER_UNAVAILABLE',
+            `quorum of ${needed} not reachable for ${label}`,
+            { context: { transportId: this.id } },
+          ),
       );
     }
     const expected = canonicalJson(first.value);
@@ -440,11 +513,7 @@ export class HttpTransport implements Transport {
     work: Work<T>,
   ): Promise<T> {
     const targets = this.#eligible(purpose).slice(0, options.fanout);
-    if (targets.length === 0) {
-      throw new ProviderError('PROVIDER_UNAVAILABLE', 'no healthy endpoint available', {
-        context: { transportId: this.id },
-      });
-    }
+    if (targets.length === 0) throw this.#noHealthyEndpoint();
     const settled = await Promise.allSettled(
       targets.map((endpoint, index) =>
         this.#attempt(endpoint, label, index, options, work),
@@ -456,9 +525,15 @@ export class HttpTransport implements Transport {
     const errors = settled.map(
       (outcome) => (outcome as PromiseRejectedResult).reason as CryptoAioError,
     );
+    // I4: any settled attempt that reached the network makes the whole fanout ambiguous.
+    const mayHaveSent = errors.some((e) => this.#maybeDelivered.has(e));
+    const retry = options.retry ?? 'safe';
     const definitive = errors.find((e) => !e.retryable);
-    if (definitive) throw definitive;
-    throw this.#finalize(errors[0] as CryptoAioError, options.retry ?? 'safe');
+    if (definitive)
+      throw this.#externalize(this.#finalize(definitive, retry, mayHaveSent));
+    throw this.#externalize(
+      this.#finalize(errors[0] as CryptoAioError, retry, mayHaveSent),
+    );
   }
 
   async #attempt<T>(
@@ -489,13 +564,21 @@ export class HttpTransport implements Transport {
       endpoint.latencyMs = this.#clock.now() - started;
       return value;
     } catch (error) {
-      if (options.signal?.aborted) throw options.signal.reason;
+      if (options.signal?.aborted) {
+        // I7/M3: onAttempt() may have flagged a half-open probe; the caller cancelled
+        // before we could report success or failure, so free the slot without penalizing
+        // the endpoint.
+        endpoint.breaker.onAbandon();
+        throw options.signal.reason;
+      }
       const failure = this.#classify(error, endpoint, signal);
       if (failure.retryable) {
         endpoint.breaker.onFailure();
         endpoint.failures += 1;
       } else {
+        // M12: a definitive answer proves the endpoint is reachable and healthy.
         endpoint.breaker.onSuccess();
+        endpoint.failures = 0;
       }
       this.#events.emit('rpc.error', {
         transportId: this.id,
@@ -511,7 +594,9 @@ export class HttpTransport implements Transport {
     }
   }
 
-  #eligible(purpose: RequestPurpose): Endpoint[] {
+  /** Endpoints that are structurally usable for `purpose` (breaker, identity, lag), ignoring
+   * any per-endpoint rate-limit wait (I9). */
+  #candidates(purpose: RequestPurpose): Endpoint[] {
     const strict = purpose === 'monitor' || purpose === 'proof';
     return this.#endpoints
       .filter(
@@ -528,19 +613,39 @@ export class HttpTransport implements Transport {
       );
   }
 
-  #pick(purpose: RequestPurpose, tried: ReadonlySet<string>): Endpoint {
-    const eligible = this.#eligible(purpose);
-    if (eligible.length === 0) {
-      throw new ProviderError('PROVIDER_UNAVAILABLE', 'no healthy endpoint available', {
-        context: { transportId: this.id },
-      });
+  #eligible(purpose: RequestPurpose): Endpoint[] {
+    const now = this.#clock.now();
+    return this.#candidates(purpose).filter((e) => e.notBefore <= now);
+  }
+
+  #noHealthyEndpoint(): ProviderError {
+    return new ProviderError('PROVIDER_UNAVAILABLE', 'no healthy endpoint available', {
+      context: { transportId: this.id },
+    });
+  }
+
+  /** I9: picks the best available endpoint, waiting only when every structurally-usable
+   * endpoint is still rate-limited, and only until the earliest one frees up. */
+  async #pick(
+    purpose: RequestPurpose,
+    tried: ReadonlySet<string>,
+    signal?: AbortSignal,
+  ): Promise<Endpoint> {
+    for (;;) {
+      const eligible = this.#eligible(purpose);
+      if (eligible.length > 0) {
+        const untried = eligible.filter((e) => !tried.has(e.id));
+        const pool = untried.length > 0 ? untried : eligible;
+        return (
+          pool.find((e) => !e.bucket || e.bucket.msUntilToken() === 0) ??
+          (pool[0] as Endpoint)
+        );
+      }
+      const waiting = this.#candidates(purpose);
+      if (waiting.length === 0) throw this.#noHealthyEndpoint();
+      const earliest = Math.min(...waiting.map((e) => e.notBefore));
+      await this.#clock.sleep(Math.max(0, earliest - this.#clock.now()), signal);
     }
-    const untried = eligible.filter((e) => !tried.has(e.id));
-    const pool = untried.length > 0 ? untried : eligible;
-    return (
-      pool.find((e) => !e.bucket || e.bucket.msUntilToken() === 0) ??
-      (pool[0] as Endpoint)
-    );
   }
 
   #lagging(endpoint: Endpoint): boolean {
@@ -551,16 +656,49 @@ export class HttpTransport implements Transport {
     );
   }
 
-  #delay(attempt: number, failure: CryptoAioError): number {
-    const retryAfter = failure.details?.retryAfterMs;
-    if (typeof retryAfter === 'number') return Math.min(retryAfter, MAX_RETRY_AFTER_MS);
+  /** I9: clamps Retry-After, or falls back to backoff, and records the endpoint's notBefore. */
+  #applyRateLimit(endpoint: Endpoint, retryAfterMs: number | undefined): number {
+    const delayMs =
+      retryAfterMs !== undefined
+        ? Math.min(retryAfterMs, MAX_RETRY_AFTER_MS)
+        : backoffDelay(endpoint.failures, this.#opts, this.#random);
+    endpoint.notBefore = this.#clock.now() + delayMs;
+    return delayMs;
+  }
+
+  #delay(attempt: number): number {
     return backoffDelay(attempt, this.#opts, this.#random);
   }
 
-  #finalize(error: CryptoAioError, retry: RetryClass): CryptoAioError {
-    return retry === 'ambiguous-on-failure' && error.retryable
+  /** I4: `mayHaveSent` covers every attempt that was possibly delivered, not just this one;
+   * once true, even a later definitive error can't rule out an earlier ambiguous attempt. */
+  #finalize(
+    error: CryptoAioError,
+    retry: RetryClass,
+    mayHaveSent: boolean,
+  ): CryptoAioError {
+    return retry === 'ambiguous-on-failure' && mayHaveSent
       ? withContext(error, {}, { ambiguous: true })
       : error;
+  }
+
+  /** I10: PROVIDER_MISCONFIGURED is only retryable internally, to allow failover between
+   * endpoints; once every endpoint has been exhausted, the caller must see it as final. */
+  #externalize(error: CryptoAioError): CryptoAioError {
+    return error.code === 'PROVIDER_MISCONFIGURED' && error.retryable
+      ? withContext(error, {}, { retryable: false })
+      : error;
+  }
+
+  /** M9: shared retry-loop catch handling. Caller aborts propagate as-is; everything else is
+   * classified as either a definitive (stop retrying) or a retryable endpoint failure. */
+  #endpointFailure(
+    error: unknown,
+    options: CallOptions,
+  ): { readonly failure: CryptoAioError; readonly definitive: boolean } {
+    if (options.signal?.aborted) throw options.signal.reason;
+    const failure = error as CryptoAioError;
+    return { failure, definitive: !failure.retryable };
   }
 
   #deadline(
@@ -591,22 +729,26 @@ export class HttpTransport implements Transport {
     return (this.#opts.fetch ?? globalThis.fetch)(url, init);
   }
 
+  /** M9: the JSON-RPC POST shape is identical whether the caller goes through `rpc()` or the
+   * direct per-endpoint health-probe calls. */
+  #jsonPost(
+    url: string,
+    body: string,
+  ): { method: 'POST'; url: string; headers: Record<string, string>; body: string } {
+    return { method: 'POST', url, headers: { 'content-type': 'application/json' }, body };
+  }
+
   async #rpcOnce<T>(
     endpoint: Endpoint,
     method: string,
-    params: unknown,
+    id: number,
+    body: string,
     signal: AbortSignal,
   ): Promise<T> {
-    const id = ++this.#rpcId;
     const { json } = await this.#exchange(
       endpoint,
       method,
-      {
-        method: 'POST',
-        url: endpoint.url,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
-      },
+      this.#jsonPost(endpoint.url, body),
       signal,
       'rpc',
     );
@@ -616,14 +758,13 @@ export class HttpTransport implements Transport {
   async #httpOnce<T>(
     endpoint: Endpoint,
     request: HttpRequest,
+    bodyText: string | undefined,
     signal: AbortSignal,
   ): Promise<T> {
     const query = request.query
       ? new URLSearchParams({ ...request.query }).toString()
       : '';
-    const hasBody = request.body !== undefined;
-    const bodyText =
-      typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
+    const hasBody = bodyText !== undefined;
     const mode = request.responseType ?? 'json';
     const { text, json } = await this.#exchange(
       endpoint,
@@ -653,9 +794,20 @@ export class HttpTransport implements Transport {
 
   #direct(endpoint: Endpoint, signal: AbortSignal): EndpointCall {
     return {
-      rpc: <T>(method: string, params?: unknown) =>
-        this.#rpcOnce<T>(endpoint, method, params ?? [], signal),
-      http: <T>(request: HttpRequest) => this.#httpOnce<T>(endpoint, request, signal),
+      rpc: <T>(method: string, params?: unknown) => {
+        const id = ++this.#rpcId;
+        const body = serializeJson({ jsonrpc: '2.0', id, method, params: params ?? [] });
+        return this.#rpcOnce<T>(endpoint, method, id, body, signal);
+      },
+      http: <T>(request: HttpRequest) => {
+        const bodyText =
+          request.body === undefined
+            ? undefined
+            : typeof request.body === 'string'
+              ? request.body
+              : serializeJson(request.body);
+        return this.#httpOnce<T>(endpoint, request, bodyText, signal);
+      },
     };
   }
 
@@ -689,12 +841,14 @@ export class HttpTransport implements Transport {
         json = text.length > 0 ? JSON.parse(text) : null;
       } catch {
         if (response.ok) {
-          throw new ProviderError(
-            'PROVIDER_UNAVAILABLE',
-            `endpoint returned a non-JSON body (HTTP ${response.status})`,
-            {
-              context,
-            },
+          // I4: an unparseable 2xx body is inherently ambiguous — the server accepted the
+          // request but we can't tell what it said.
+          throw this.#markSent(
+            new ProviderError(
+              'PROVIDER_UNAVAILABLE',
+              `endpoint returned a non-JSON body (HTTP ${response.status})`,
+              { context },
+            ),
           );
         }
       }
@@ -725,14 +879,24 @@ export class HttpTransport implements Transport {
         );
       }
     }
+    this.#emitResponse(endpoint, label, started, new TextEncoder().encode(text).length);
+    return { text, json };
+  }
+
+  /** M9: the `rpc.response` event is emitted identically from `#exchange` and the SDK bridge. */
+  #emitResponse(
+    endpoint: Endpoint,
+    method: string,
+    started: number,
+    byteLength: number,
+  ): void {
     this.#events.emit('rpc.response', {
       transportId: this.id,
       endpointId: endpoint.id,
-      method: label,
+      method,
       latencyMs: this.#clock.now() - started,
-      bytes: new TextEncoder().encode(text).length,
+      bytes: byteLength,
     });
-    return { text, json };
   }
 
   #throwForStatus(endpoint: Endpoint, response: Response): void {
@@ -751,9 +915,10 @@ export class HttpTransport implements Transport {
         response.headers.get('retry-after'),
         this.#clock.now(),
       );
+      const delayMs = this.#applyRateLimit(endpoint, retryAfterMs);
       throw new ProviderError('RATE_LIMITED', 'endpoint rate limited (HTTP 429)', {
         context,
-        ...(retryAfterMs !== undefined ? { details: { retryAfterMs } } : {}),
+        details: { retryAfterMs: delayMs },
       });
     }
     if (status === 401 || status === 403) {
@@ -767,9 +932,12 @@ export class HttpTransport implements Transport {
       );
     }
     if (status >= 500) {
-      throw new ProviderError('PROVIDER_UNAVAILABLE', `endpoint error (HTTP ${status})`, {
-        context,
-      });
+      // I4: a 5xx is inherently ambiguous — the server may have processed the request.
+      throw this.#markSent(
+        new ProviderError('PROVIDER_UNAVAILABLE', `endpoint error (HTTP ${status})`, {
+          context,
+        }),
+      );
     }
   }
 
@@ -831,9 +999,11 @@ export class HttpTransport implements Transport {
         code === 429 ||
         /rate limit|too many requests|request limit/i.test(message)
       ) {
+        // I9: no Retry-After header at the JSON-RPC level, so back off.
+        const retryAfterMs = this.#applyRateLimit(endpoint, undefined);
         throw new ProviderError('RATE_LIMITED', `endpoint rate limited ${method}`, {
           context,
-          details,
+          details: { ...details, retryAfterMs },
         });
       }
       throw new ProviderError('RPC_ERROR', `${method} failed: ${message}`, {
@@ -944,7 +1114,9 @@ export class HttpTransport implements Transport {
         this.#highest = this.#best;
     }
     for (const status of this.status()) {
-      if (status.state === 'unknown') continue;
+      // 'half-open' has no matching value in the provider.health event payload; 'unknown'
+      // is likewise not worth reporting.
+      if (status.state === 'unknown' || status.state === 'half-open') continue;
       this.#events.emit('provider.health', {
         transportId: this.id,
         endpointId: status.id,
@@ -980,10 +1152,10 @@ export class HttpTransport implements Transport {
     if (isCryptoAioError(error))
       return error.context.endpointId ? error : withContext(error, context);
     if (signal.aborted && signal.reason === TIMEOUT) {
-      return new TimeoutError(
-        'TIMEOUT',
-        `request to endpoint '${endpoint.id}' timed out`,
-        { context },
+      return this.#markSent(
+        new TimeoutError('TIMEOUT', `request to endpoint '${endpoint.id}' timed out`, {
+          context,
+        }),
       );
     }
     const inner =
@@ -993,13 +1165,19 @@ export class HttpTransport implements Transport {
     );
     clean.name = inner instanceof Error ? inner.name : 'Error';
     clean.stack = `${clean.name}: ${clean.message}`;
-    return new ProviderError(
-      'PROVIDER_UNAVAILABLE',
-      `request to endpoint '${endpoint.id}' failed: ${clean.message}`,
-      {
-        context,
-        cause: clean,
-      },
+    // I4: a raw (non-CryptoAioError) throw from fetch is a network error after the call.
+    return this.#markSent(
+      new ProviderError(
+        'PROVIDER_UNAVAILABLE',
+        `request to endpoint '${endpoint.id}' failed: ${clean.message}`,
+        { context, cause: clean },
+      ),
     );
+  }
+
+  /** I4: tags an error as "the attempt may have reached the network", for ambiguity tracking. */
+  #markSent<E extends CryptoAioError>(error: E): E {
+    this.#maybeDelivered.add(error);
+    return error;
   }
 }

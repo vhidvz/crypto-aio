@@ -34,6 +34,11 @@ export class CircuitBreaker {
     if (this.state === 'half-open') this.#probing = true;
   }
 
+  /** Clears a half-open probe slot without changing state (e.g. the probe was abandoned). */
+  onAbandon(): void {
+    this.#probing = false;
+  }
+
   onSuccess(): void {
     this.#failures = 0;
     this.#openedAt = undefined;

@@ -108,4 +108,19 @@ describe('CircuitBreaker', () => {
     expect(breaker.state).toBe('closed');
     expect(breaker.canRequest()).toBe(true);
   });
+
+  // I7: an abandoned half-open probe (e.g. the caller aborted) must not lock the endpoint out.
+  it('onAbandon clears a half-open probe without changing state', async () => {
+    const clock = new FakeClock();
+    const breaker = new CircuitBreaker({ failureThreshold: 1, openMs: 1_000 }, clock);
+    breaker.onFailure();
+    expect(breaker.state).toBe('open');
+    await clock.advance(1_000);
+    expect(breaker.state).toBe('half-open');
+    breaker.onAttempt();
+    expect(breaker.canRequest()).toBe(false);
+    breaker.onAbandon();
+    expect(breaker.state).toBe('half-open');
+    expect(breaker.canRequest()).toBe(true);
+  });
 });
