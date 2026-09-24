@@ -1,12 +1,14 @@
 import type { ChainDriver } from '../../src/core/driver/types';
 import { EventBus } from '../../src/core/events/bus';
 import { noopLogger } from '../../src/core/events/logger';
+import type { NetworkInfo } from '../../src/core/model/chain';
 import type { OrderingData } from '../../src/core/model/ordering';
 import { localSigner } from '../../src/core/signing/local';
 import type { SigningContext } from '../../src/core/signing/types';
 import { HttpTransport } from '../../src/core/transport/http-transport';
 import { FakeChain, type FakeOrdering } from '../../src/testing/fake-chain';
 import { FakeClock, drive } from '../../src/testing/fake-clock';
+import { FakeFetch, hang, rpcError } from '../../src/testing/fake-fetch';
 import { fakeManifest, fakePlugin } from '../../src/testing/fake-plugin';
 
 const CHAIN_OF: Record<FakeOrdering, string> = {
@@ -272,5 +274,103 @@ describe('fake driver', () => {
       await t.run(t.driver.blocks!.transactions(header!, { addresses: [stranger] })),
     ).toHaveLength(0);
     expect(t.driver.createNativeClient?.()).not.toBe(t.driver.createNativeClient?.());
+  });
+
+  it('keeps a broadcast error ambiguous when an earlier attempt may have been delivered', async () => {
+    const clock = new FakeClock();
+    const info = fakePlugin().chains?.find((c) => c.id === 'fakechain');
+    if (!info) throw new Error('missing chain');
+    const base = info.networks.local as NonNullable<(typeof info.networks)['local']>;
+    // Drop `identity` so the driver never registers an `expectedIdentity` probe: with only
+    // two scripted responses (a hang, then a definitive RPC error), an identity check would
+    // consume the first one and break the scenario below.
+    const network: NetworkInfo = { ...base, identity: undefined };
+    const fake = new FakeFetch();
+    let attempts = 0;
+    fake.route('https://ambiguous.test/rpc', (request, signal) => {
+      attempts += 1;
+      // Attempt 1 hangs until the transport's own deadline aborts it (an ambiguous,
+      // possibly-delivered failure, per I4). Attempt 2 answers as if a different attempt's
+      // send had already landed and consumed the slot ("nonce too low").
+      return attempts === 1 ? hang(signal) : rpcError(request, -32000, 'nonce too low');
+    });
+    const transport = new HttpTransport(
+      [{ name: 'main', url: 'https://ambiguous.test/rpc' }],
+      {
+        clock,
+        events: new EventBus(clock, noopLogger),
+        log: noopLogger,
+        options: { fetch: fake.fetch, baseDelayMs: 1, maxDelayMs: 2, timeoutMs: 5 },
+      },
+    );
+    const factory = await fakeManifest.load();
+    const driver: ChainDriver = await factory.create({
+      chain: info,
+      network,
+      library: 'fake-sdk',
+      transport,
+      clock,
+      log: noopLogger,
+      options: {},
+    });
+    const signed = {
+      raw: { encoding: 'base64' as const, data: 'ZmFrZQ==' },
+      ref: { id: 'deadbeef', idKind: 'tx-hash' as const, canonical: true },
+    };
+    await expect(
+      drive(clock, driver.broadcaster.broadcast(signed)),
+    ).rejects.toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
+    expect(attempts).toBe(2);
+  });
+
+  it('covers seqno ordering: build, checkFunds, broadcast and same-slot conflicts', async () => {
+    const t = await setupDriver('seqno');
+    t.chain.fund(t.from, 1_000n);
+    expect(
+      await t.run(
+        t.driver.builder.checkFunds(
+          {
+            asset: 'native',
+            outputs: [{ to: t.other, amount: 10n }],
+            from: t.from,
+            fee: 'normal',
+          },
+          {
+            kind: 'fake',
+            speed: 'normal',
+            charges: [{ asset: 'native', amount: 2n, label: 'network' }],
+            bound: 'exact',
+            details: {},
+          },
+          { from: t.from, keys: t.keys, wallet: {} },
+        ),
+      ),
+    ).toEqual({ ok: true });
+    const first = await t.send({
+      ordering: { kind: 'seqno', seqno: 0n, validUntil: 0 },
+      amount: 10n,
+    });
+    expect(first.unsigned.ordering).toMatchObject({ kind: 'seqno', seqno: 0n });
+    if (first.unsigned.ordering.kind === 'seqno') {
+      expect(typeof first.unsigned.ordering.validUntil).toBe('number');
+    }
+    expect(await first.broadcast()).toEqual({ kind: 'accepted' });
+    const second = await t.send({
+      ordering: { kind: 'seqno', seqno: 0n, validUntil: 0 },
+      amount: 20n,
+    });
+    expect(await second.broadcast()).toMatchObject({
+      kind: 'refused',
+      code: 'NONCE_CONFLICT',
+    });
+  });
+
+  it('classifies an already-mined resend (expiry chains) as already-known', async () => {
+    const t = await setupDriver('expiry');
+    t.chain.fund(t.from, 1_000n);
+    const { broadcast } = await t.send();
+    expect(await broadcast()).toEqual({ kind: 'accepted' });
+    t.chain.mine();
+    expect(await broadcast()).toEqual({ kind: 'already-known' });
   });
 });

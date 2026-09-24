@@ -63,7 +63,7 @@ const REJECTED =
   /malformed transaction|invalid chain id|invalid sender|invalid signature/;
 
 function classify(message: string): BroadcastResult {
-  if (/already known/.test(message)) return { kind: 'already-known' };
+  if (/already known|already processed/.test(message)) return { kind: 'already-known' };
   if (REJECTED.test(message)) return { kind: 'rejected', reason: message };
   if (/insufficient funds/.test(message))
     return { kind: 'refused', code: 'INSUFFICIENT_FUNDS', reason: message };
@@ -319,7 +319,13 @@ export const fakeDriverFactory: DriverFactory = {
           });
           return { kind: 'accepted' };
         } catch (error) {
-          if (isCryptoAioError(error, 'RPC_ERROR')) {
+          // R17/I4: the transport tags a definitive RPC_ERROR as ambiguous when an earlier
+          // attempt for this same call may already have reached the node (e.g. it timed out
+          // after being delivered, and the retry then sees "nonce too low"). Classifying that
+          // as a normal refusal would let a caller release or reuse a nonce/seqno slot whose
+          // transaction may actually be live — so an ambiguous error is rethrown unclassified
+          // instead of being turned into a resolved BroadcastResult.
+          if (isCryptoAioError(error, 'RPC_ERROR') && !error.ambiguous) {
             return classify(String(error.details?.rpcMessage ?? error.message));
           }
           throw error;
