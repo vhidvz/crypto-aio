@@ -1,6 +1,7 @@
 import { setDefaultBlockchainFactory } from '../blockchain/default-ref';
 import { mergeChainDefaults } from '../config/merge';
 import type { AioOptions, ChainDefaults, HandleOptions } from '../config/types';
+import type { Stores } from '../store/types';
 import { CryptoAio } from './container';
 import { containerOf } from './internals';
 
@@ -35,15 +36,25 @@ export function defaultContainer(): CryptoAio {
   return instance;
 }
 
+function definedStores(stores: Partial<Stores> | undefined): Partial<Stores> {
+  return Object.fromEntries(
+    Object.entries(stores ?? {}).filter(([, store]) => store !== undefined),
+  ) as Partial<Stores>;
+}
+
 /**
  * Merges options into the default container. Existing handles keep their frozen config; the
- * stores are carried over so Operations stay visible. Intended for application startup.
+ * stores are carried over key by key (not wholesale) so Operations stay visible even across
+ * a `configure()` call that names only some of them. Intended for application startup.
+ *
+ * Each call starts a new generation of the default container (a new event bus, owner id and
+ * driver pool); it never closes the previous one.
  */
 export function configure(options: AioOptions): CryptoAio {
-  const stores =
-    options.stores ?? (instance ? containerOf(instance).runtime.stores : undefined);
+  const previousStores = instance ? containerOf(instance).runtime.stores : undefined;
+  const stores: Partial<Stores> = { ...previousStores, ...definedStores(options.stores) };
   accumulated = mergeAioOptions(accumulated, options);
-  instance = new CryptoAio({ ...accumulated, ...(stores ? { stores } : {}) });
+  instance = new CryptoAio({ ...accumulated, stores });
   return instance;
 }
 

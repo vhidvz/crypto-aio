@@ -76,8 +76,9 @@ export class Blockchain<C extends ChainId = ChainId> {
     return describeSelection(internalsOf(this).selection);
   }
 
+  /** A fresh copy on every read; mutating the result never affects `supports()`. */
   get capabilities(): ReadonlySet<Capability> {
-    return internalsOf(this).selection.capabilities;
+    return new Set(internalsOf(this).selection.capabilities);
   }
 
   supports(capability: Capability): boolean {

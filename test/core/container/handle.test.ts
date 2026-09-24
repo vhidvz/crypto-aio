@@ -2,9 +2,17 @@ import { HDKey } from '@scure/bip32';
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { Blockchain } from '../../../src/core/blockchain/handle';
 import { CryptoAio } from '../../../src/core/container/container';
-import { configure, resetDefaultContainer } from '../../../src/core/container/default';
+import {
+  configure,
+  defaultContainer,
+  resetDefaultContainer,
+} from '../../../src/core/container/default';
+import { containerOf } from '../../../src/core/container/internals';
 import type { AdapterManifest } from '../../../src/core/driver/types';
 import { noopLogger } from '../../../src/core/events/logger';
+import { localSigner } from '../../../src/core/signing/local';
+import { createMemoryStores } from '../../../src/core/store/memory';
+import { FakeClock } from '../../../src/testing/fake-clock';
 import { fromHex } from '../../../src/core/util/bytes';
 import { fakeAddress } from '../../../src/testing/fake-chain';
 import { createFakeEnv } from '../../../src/testing/env';
@@ -30,6 +38,15 @@ describe('Blockchain handle', () => {
     expect(Object.isFrozen(env.bc)).toBe(true);
   });
 
+  it('capabilities() returns a copy; mutating it cannot change supports()', async () => {
+    const env = await createFakeEnv();
+    const caps = env.bc.capabilities as unknown as Set<string>;
+    expect(caps.has('tokens')).toBe(false);
+    caps.add('tokens');
+    expect(env.bc.supports('tokens')).toBe(false);
+    expect(env.bc.capabilities.has('tokens')).toBe(false);
+  });
+
   it('returns a new handle from with() and leaves the original unchanged', async () => {
     const env = await createFakeEnv();
     const five = env.bc.with({ confirmations: 5 });
@@ -48,6 +65,24 @@ describe('Blockchain handle', () => {
     const other = await createFakeEnv();
     const c = await other.run(internalsOf(other.bc).pooled());
     expect(c.driver).not.toBe(a.driver);
+  });
+
+  it('shares one pool entry across wallets/signers without leaking either through it', async () => {
+    const env = await createFakeEnv();
+    const otherSigner = localSigner.generate({
+      curves: ['secp256k1'],
+      id: 'other',
+    }).signer;
+    const scoped = env.aio.scope({
+      signers: { other: otherSigner },
+      wallets: { second: { signer: 'other' } },
+    });
+    const secondBc = scoped.blockchain({ chain: 'fakechain', wallet: 'second' });
+    const a = await env.run(internalsOf(env.bc).pooled());
+    const b = await env.run(internalsOf(secondBc).pooled());
+    expect(a.driver).toBe(b.driver);
+    expect((a as unknown as { selection?: unknown }).selection).toBeUndefined();
+    expect((b as unknown as { selection?: unknown }).selection).toBeUndefined();
   });
 
   it('reads balances, heights, blocks and transactions', async () => {
@@ -226,5 +261,25 @@ describe('containers', () => {
     expect(thrown(() => new CryptoAio({ namespace: 'bad namespace!' }))).toMatchObject({
       code: 'CONFIG_INVALID',
     });
+  });
+
+  it('configure() accumulates stores key by key across calls, keeping earlier ones', async () => {
+    const env = await createFakeEnv();
+    const storesA = createMemoryStores(new FakeClock());
+    const storesB = createMemoryStores(new FakeClock());
+    configure({
+      env: false,
+      logger: noopLogger,
+      plugins: [fakePlugin()],
+      clock: env.clock,
+      transport: { fetch: env.chain.fetch },
+      providers: { fake: { endpoints: [{ url: env.chain.endpoint('i2') }] } },
+      chains: { fakechain: { provider: 'fake' } },
+      stores: { operations: storesA.operations },
+    });
+    configure({ stores: { cursors: storesB.cursors } });
+    const runtime = containerOf(defaultContainer()).runtime;
+    expect(runtime.stores.operations).toBe(storesA.operations);
+    expect(runtime.stores.cursors).toBe(storesB.cursors);
   });
 });

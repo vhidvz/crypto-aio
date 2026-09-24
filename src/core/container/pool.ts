@@ -12,7 +12,6 @@ export interface PooledDriver {
   readonly driver: ChainDriver;
   readonly transport: Transport;
   readonly indexer?: Transport;
-  readonly selection: ResolvedSelection;
 }
 
 export interface DriverPoolDeps {
@@ -86,6 +85,6 @@ export class DriverPool {
       log: this.deps.log.child(selection.chain.id),
       options: selection.options,
     });
-    return { driver, transport, ...(indexer ? { indexer } : {}), selection };
+    return { driver, transport, ...(indexer ? { indexer } : {}) };
   }
 }
