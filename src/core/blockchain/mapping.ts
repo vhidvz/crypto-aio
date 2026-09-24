@@ -58,7 +58,12 @@ export async function toFeeEstimate(
   };
 }
 
-/** Observation-level status (single endpoint); proven verdicts come from the monitor. */
+/**
+ * Observation-level status (a single endpoint's view). This never returns `state: 'final'`:
+ * that verdict requires `proven` evidence, produced only by the monitor's quorum-checked
+ * path (Task 25's `statusOf`). A block at or below the finalized height is reported as
+ * `state: 'included'` with `finality: 'final'`, evidence staying `'observed'`.
+ */
 export function statusFromObservation(
   observation: DriverTxObservation,
   head: bigint,
@@ -68,7 +73,7 @@ export function statusFromObservation(
     const depth = head - observation.blockHeight + 1n;
     const isFinal = observation.blockHeight <= finalized;
     return {
-      state: observation.success === false ? 'failed' : isFinal ? 'final' : 'included',
+      state: observation.success === false ? 'failed' : 'included',
       evidence: 'observed',
       confirmations: depth > 0n ? Number(depth) : 0,
       finality: isFinal ? 'final' : 'probabilistic',

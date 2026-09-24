@@ -4,6 +4,7 @@ import { containerOf } from '../container/internals';
 import type { DriverLimits, WalletOptions } from '../driver/types';
 import {
   ConfigError,
+  ProviderError,
   UnsupportedCapabilityError,
   ValidationError,
 } from '../errors/error';
@@ -95,9 +96,32 @@ export class Blockchain<C extends ChainId = ChainId> {
     } as HandleConfig<C>);
   }
 
-  /** Loads the adapter and connects its transport; fails fast on missing dependencies. */
+  /**
+   * Loads the adapter, connects its transport and validates it's actually usable; fails fast
+   * on a missing dependency (`DEPENDENCY_MISSING`), an invalid wallet (surfaced by resolving
+   * it), or a provider that can't serve reads: `PROVIDER_UNAVAILABLE` when no configured
+   * endpoint is healthy, `PROVIDER_MISCONFIGURED` (non-retryable) when every endpoint's
+   * identity mismatches the configured network.
+   */
   async ready(): Promise<this> {
-    await internalsOf(this).pooled();
+    const internals = internalsOf(this);
+    const pooled = await internals.pooled();
+    await pooled.transport.refreshHealth();
+    const statuses = pooled.transport.status();
+    if (statuses.length > 0 && statuses.every((s) => s.state === 'disabled')) {
+      throw new ProviderError(
+        'PROVIDER_MISCONFIGURED',
+        `every endpoint for ${this.chain} serves a different network than configured`,
+        { retryable: false },
+      );
+    }
+    if (!statuses.some((s) => s.state === 'healthy' || s.state === 'lagging')) {
+      throw new ProviderError(
+        'PROVIDER_UNAVAILABLE',
+        `no healthy endpoint for ${this.chain}`,
+      );
+    }
+    if (internals.selection.wallet) await internals.wallet();
     return this;
   }
 

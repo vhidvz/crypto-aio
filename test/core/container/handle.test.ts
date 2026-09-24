@@ -1,6 +1,7 @@
 import { HDKey } from '@scure/bip32';
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { Blockchain } from '../../../src/core/blockchain/handle';
+import { statusFromObservation } from '../../../src/core/blockchain/mapping';
 import { CryptoAio } from '../../../src/core/container/container';
 import {
   configure,
@@ -206,6 +207,73 @@ describe('Blockchain handle', () => {
       code: 'UNSUPPORTED_CAPABILITY',
     });
     expect((env.bc.ext as unknown as { then?: unknown }).then).toBeUndefined();
+  });
+});
+
+describe('statusFromObservation', () => {
+  it('gives 1 confirmation when head equals the block height', () => {
+    const status = statusFromObservation({ seen: 'block', blockHeight: 5n }, 5n, 0n);
+    expect(status).toMatchObject({
+      state: 'included',
+      evidence: 'observed',
+      confirmations: 1,
+      finality: 'probabilistic',
+    });
+  });
+
+  it('reports a finalized block as included, not final, with observed evidence', () => {
+    const status = statusFromObservation({ seen: 'block', blockHeight: 5n }, 8n, 5n);
+    expect(status.state).toBe('included');
+    expect(status.state).not.toBe('final');
+    expect(status.evidence).toBe('observed');
+    expect(status.finality).toBe('final');
+  });
+
+  it('reports a failed transaction as failed regardless of finality', () => {
+    const status = statusFromObservation(
+      { seen: 'block', blockHeight: 5n, success: false },
+      5n,
+      5n,
+    );
+    expect(status.state).toBe('failed');
+  });
+
+  it('gives 0 confirmations for a lagging (inconsistent) head', () => {
+    const status = statusFromObservation({ seen: 'block', blockHeight: 10n }, 5n, 0n);
+    expect(status.confirmations).toBe(0);
+  });
+});
+
+describe('ready()', () => {
+  it('surfaces a ConfigError from an invalid wallet', async () => {
+    const env = await createFakeEnv();
+    const scoped = env.aio.scope({
+      wallets: { bad: { signer: 'hot', address: env.stranger() } },
+    });
+    const bc = scoped.blockchain({ chain: 'fakechain', wallet: 'bad' });
+    await expect(env.run(bc.ready())).rejects.toMatchObject({ code: 'CONFIG_INVALID' });
+  });
+
+  it('throws PROVIDER_UNAVAILABLE when every endpoint is down', async () => {
+    const env = await createFakeEnv();
+    env.chain.configureEndpoint('main', { down: true });
+    await expect(env.run(env.bc.ready())).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+    });
+  });
+
+  it('throws non-retryable PROVIDER_MISCONFIGURED when every endpoint has the wrong identity', async () => {
+    const env = await createFakeEnv();
+    env.chain.configureEndpoint('main', { identity: 'some-other-network' });
+    await expect(env.run(env.bc.ready())).rejects.toMatchObject({
+      code: 'PROVIDER_MISCONFIGURED',
+      retryable: false,
+    });
+  });
+
+  it('resolves once healthy and returns the handle itself', async () => {
+    const env = await createFakeEnv();
+    await expect(env.run(env.bc.ready())).resolves.toBe(env.bc);
   });
 });
 
