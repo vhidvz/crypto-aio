@@ -472,3 +472,103 @@ describe('transfer: signing under the address lease', () => {
     ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
   });
 });
+
+describe('transfer: broadcast answers never override stronger evidence (R24)', () => {
+  type Env = Awaited<ReturnType<typeof createFakeEnv>>;
+
+  /** A submitted transfer that is mined; the engine holds an `included` observation of it. */
+  async function minedTransfer(env: Env) {
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'm' }),
+    );
+    env.chain.mine();
+    const op = await env.stores.operations.get('default', sub.operationId);
+    const attemptId = op?.activeAttemptId ?? '';
+    const current = await env.stores.operations.getObservation(attemptId);
+    if (!current) throw new Error('unreachable');
+    const { version, ...rest } = current;
+    await env.stores.operations.putObservation(
+      { ...rest, state: 'included', confirmations: 1 },
+      version,
+    );
+    // This reader lags one block, so it no longer sees the mined transaction at all.
+    env.chain.configureEndpoint('main', { lag: 1 });
+    return { operationId: sub.operationId, attemptId };
+  }
+
+  async function expectUntouched(env: Env, operationId: string, attemptId: string) {
+    const op = await env.stores.operations.get('default', operationId);
+    expect(op).toMatchObject({
+      state: 'submitted',
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+    expect(op?.error).toBeUndefined();
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'included',
+    });
+    const next = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    expect(await nonceOf(env, next.operation.id)).toBe(1n);
+  }
+
+  it('does not stall a mined transfer when a lagging reader cannot see it after a refusal', async () => {
+    const env = await createFakeEnv();
+    const stalled: string[] = [];
+    env.aio.on('operation.stalled', (e) => stalled.push(e.code));
+    const { operationId, attemptId } = await minedTransfer(env);
+    const resumed = await env.run(env.bc.rebroadcast(operationId));
+    expect(resumed.state).toBe('submitted');
+    expect(stalled).toEqual([]);
+    await expectUntouched(env, operationId, attemptId);
+  });
+
+  it('does not fail a mined transfer when a lagging reader cannot see it after a rejection', async () => {
+    const env = await createFakeEnv();
+    const { operationId, attemptId } = await minedTransfer(env);
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    const resumed = await env.run(env.bc.rebroadcast(operationId));
+    expect(resumed.state).toBe('submitted');
+    await expectUntouched(env, operationId, attemptId);
+  });
+
+  it('looks up its own transaction before treating a rejection as proof', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'mp' }),
+    );
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    const resumed = await env.run(env.bc.rebroadcast(sub.operationId));
+    expect(resumed.state).toBe('submitted');
+    const op = await env.stores.operations.get('default', sub.operationId);
+    expect(op?.state).toBe('submitted');
+    expect(
+      (await env.stores.operations.getObservation(op?.activeAttemptId ?? ''))?.state,
+    ).toBe('pending');
+    env.chain.mine();
+    expect(env.chain.receipt(sub.attempt?.id ?? '')?.success).toBe(true);
+  });
+
+  it('schedules a check and names the operation when its own-ref lookup fails', async () => {
+    const env = await createFakeEnv();
+    env.chain.configureEndpoint('main', { refuseNext: 'insufficient funds' });
+    const off = env.aio.on('rpc.error', (e) => {
+      if (e.method !== 'fake_sendRawTransaction') return;
+      off();
+      env.chain.configureEndpoint('main', { down: true });
+    });
+    const error = await env
+      .run(env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'ol' }))
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      context: expect.objectContaining({ operationId: expect.any(String) }),
+    });
+    const op = await env.stores.operations.getByKey('default', 'ol');
+    expect(op).toMatchObject({
+      state: 'signed',
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+    expect(op?.nextCheckAt).toBeDefined();
+  });
+});

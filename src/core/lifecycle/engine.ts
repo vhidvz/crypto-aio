@@ -24,7 +24,7 @@ import {
   type TransferIntent,
 } from '../model/intent';
 import type { OrderingData, OrderingKind } from '../model/ordering';
-import type { UnsignedTx } from '../model/transaction';
+import type { TxState, UnsignedTx } from '../model/transaction';
 import { reservedInputs, seqnoHolder } from '../ordering/reservations';
 import {
   sequenceKey,
@@ -55,7 +55,11 @@ import { randomId } from '../util/bytes';
 import { abortReason, type Clock } from '../util/clock';
 import { canonicalJson, sha256Hex } from '../util/json';
 import { normalizeIntent } from './intent';
-import { writeObservation, type ObservationDeps } from './observations';
+import {
+  writeObservation,
+  type ObservationDeps,
+  type ObservationPatch,
+} from './observations';
 
 /** What read-only lifecycle work (monitoring, waiting) needs: no wallet required. */
 export interface ReadTarget {
@@ -151,6 +155,13 @@ function isDefinitive(error: unknown): boolean {
     DEFINITIVE_CATEGORIES.has(error.category)
   );
 }
+
+/** Observation states that mean the Attempt was mined (R24: stronger than any broadcast answer). */
+const ON_CHAIN_STATES: ReadonlySet<TxState> = new Set<TxState>([
+  'included',
+  'final',
+  'failed',
+]);
 
 /** `signed`, or `submitted` with an unknown broadcast outcome: its stored bytes are (re)sent. */
 function awaitsBroadcast(op: OperationRecord): boolean {
@@ -976,9 +987,11 @@ export class OperationEngine {
 
   /**
    * Spec §8.2/§8.3. accepted / already-known → `submitted` (an `included` Operation is never
-   * downgraded). refused → the Attempt's own ref is looked up first (seen means it was ours
-   * all along), else `stalled`, keeping the nonce. rejected (proven invalid) → `failed`
-   * with the nonce released, once every Attempt is rejected.
+   * downgraded). refused and rejected → the Attempt's own ref is looked up first (seen
+   * means it was ours all along). R24: an `included` Operation, or an Attempt whose
+   * observation already says it was mined, is never stalled, failed or released by a
+   * later answer. Otherwise refused → `stalled`, keeping the nonce; rejected (proven
+   * invalid) → `failed` with the nonce released, once every Attempt is rejected.
    */
   protected async applyBroadcastResult(
     target: OperationTarget,
@@ -1003,70 +1016,93 @@ export class OperationEngine {
         clear: ['ambiguous', 'error'],
       });
     };
+    if (result.kind === 'accepted' || result.kind === 'already-known') return accept();
+    // refused or rejected: first the Attempt's own ref (spec §8.2): seen means it was ours.
+    if (await this.seenOwnRef(target, op, attempt, now)) return accept();
+    // R24: the monitor owns included Operations; a lagging answer never downgrades them.
+    if (op.state === 'included') return op;
     const context = { operationId: op.id, attemptId: attempt.id };
-    switch (result.kind) {
-      case 'accepted':
-      case 'already-known':
-        return accept();
-      case 'refused': {
-        const own = await target.pooled.driver.reader.observe(
-          attempt.ref,
-          attempt.ordering,
-          op.intent.from,
-        );
-        if (own.seen !== 'none') return accept();
-        const error = new ChainError(
-          result.code,
-          `transaction refused: ${result.reason}`,
-          {
-            context,
-          },
-        );
-        if (op.state === 'included') throw error; // the monitor owns included Operations
-        await writeObservation(this.observationDeps, attempt, op.id, {
-          state: 'refused',
-          evidence: 'observed',
-          reason: result.reason,
-          lastBroadcastAt: now,
+    const refused = result.kind === 'refused';
+    const error = refused
+      ? new ChainError(result.code, `transaction refused: ${result.reason}`, { context })
+      : new ChainError('TX_REJECTED', `transaction rejected: ${result.reason}`, {
+          context,
         });
-        await this.update(op, {
-          state: 'stalled',
-          error: error.toJSON(),
-          nextCheckAt: now,
-          clear: ['ambiguous'],
-        });
-        this.deps.events.emit('operation.stalled', {
-          namespace: this.deps.namespace,
+    // R24: compare-and-set against the current observation, so stronger evidence the
+    // engine already holds (the Attempt was mined) is never overwritten.
+    const saved = await writeObservation(
+      this.observationDeps,
+      attempt,
+      op.id,
+      (current): ObservationPatch =>
+        current && ON_CHAIN_STATES.has(current.state)
+          ? { lastBroadcastAt: now }
+          : {
+              state: refused ? 'refused' : 'rejected',
+              evidence: refused ? 'observed' : 'proven',
+              reason: result.reason,
+              lastBroadcastAt: now,
+            },
+    );
+    if (ON_CHAIN_STATES.has(saved.state)) return refused ? accept() : op;
+    if (refused) {
+      await this.update(op, {
+        state: 'stalled',
+        error: error.toJSON(),
+        nextCheckAt: now,
+        clear: ['ambiguous'],
+      });
+      this.deps.events.emit('operation.stalled', {
+        namespace: this.deps.namespace,
+        operationId: op.id,
+        code: error.code,
+      });
+      throw error;
+    }
+    const siblings = await Promise.all(
+      op.attempts
+        .filter((a) => a.id !== attempt.id)
+        .map((a) => this.deps.stores.operations.getObservation(a.id)),
+    );
+    if (siblings.every((o) => o?.state === 'rejected' && o.evidence === 'proven')) {
+      // Every Attempt is permanently invalid, so no valid signed bytes exist for the
+      // nonce: fail and release it under the lease, as before signing (spec §8.5).
+      await this.failAfterPrepare(target, op, error, lease);
+    }
+    throw error;
+  }
+
+  /**
+   * Spec §8.2: before a refusal or rejection is believed, looks the Attempt's own ref up.
+   * A failed lookup decides nothing: the Operation is scheduled for the monitor (as the
+   * ambiguous path does) and the error names it.
+   */
+  protected async seenOwnRef(
+    target: OperationTarget,
+    op: OperationRecord,
+    attempt: AttemptRecord,
+    now: number,
+  ): Promise<boolean> {
+    try {
+      const own = await target.pooled.driver.reader.observe(
+        attempt.ref,
+        attempt.ordering,
+        op.intent.from,
+      );
+      return own.seen !== 'none';
+    } catch (error) {
+      await this.update(op, { nextCheckAt: now }).catch((storeError: unknown) =>
+        this.deps.log.warn('could not schedule a check', {
           operationId: op.id,
-          code: result.code,
-        });
-        throw error;
-      }
-      case 'rejected': {
-        const error = new ChainError(
-          'TX_REJECTED',
-          `transaction rejected: ${result.reason}`,
-          { context },
-        );
-        if (op.state === 'included') throw error; // the monitor owns included Operations
-        await writeObservation(this.observationDeps, attempt, op.id, {
-          state: 'rejected',
-          evidence: 'proven',
-          reason: result.reason,
-          lastBroadcastAt: now,
-        });
-        const siblings = await Promise.all(
-          op.attempts
-            .filter((a) => a.id !== attempt.id)
-            .map((a) => this.deps.stores.operations.getObservation(a.id)),
-        );
-        if (siblings.every((o) => o?.state === 'rejected' && o.evidence === 'proven')) {
-          // Every Attempt is permanently invalid, so no valid signed bytes exist for the
-          // nonce: fail and release it under the lease, as before signing (spec §8.5).
-          await this.failAfterPrepare(target, op, error, lease);
-        }
-        throw error;
-      }
+          code: errorCode(storeError),
+        }),
+      );
+      const cause = isCryptoAioError(error)
+        ? error
+        : new ProviderError('PROVIDER_UNAVAILABLE', 'own-transaction lookup failed', {
+            cause: sanitizeError(error),
+          });
+      throw withContext(cause, { operationId: op.id, attemptId: attempt.id });
     }
   }
 
