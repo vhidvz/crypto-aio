@@ -6,6 +6,7 @@ import { isPlainObject, mergeScopes } from '../config/merge';
 import { resolveSelection } from '../config/resolve';
 import type {
   AioOptions,
+  EffectiveOptions,
   HandleConfig,
   HandleOptions,
   ScopeOptions,
@@ -14,13 +15,16 @@ import { ConfigError } from '../errors/error';
 import { EventBus } from '../events/bus';
 import { createLogger } from '../events/logger';
 import type { AioEvent, AioEventName } from '../events/types';
+import { OperationEngine, errorCode, withLifecycleDefaults } from '../lifecycle/engine';
 import type { ChainId } from '../model/ids';
+import { SequenceCoordinator } from '../ordering/sequence';
 import {
   applyPlugin,
   cloneCatalogs,
   createCatalogs,
   type Plugin,
 } from '../registry/plugin';
+import { SigningOrchestrator } from '../signing/orchestrator';
 import { resolveWallet, type ResolvedWallet } from '../signing/wallet';
 import { createMemoryStores } from '../store/memory';
 import type { Stores } from '../store/types';
@@ -71,6 +75,40 @@ function scopePart(options: ScopeOptions): ScopeOptions {
     ...(hooks ? { hooks: cloneFrozen(hooks) } : {}),
     ...(lifecycle ? { lifecycle: cloneFrozen(lifecycle) } : {}),
   };
+}
+
+function createEngine(
+  runtime: RootRuntime,
+  effective: () => EffectiveOptions,
+): OperationEngine {
+  const lifecycle = () => withLifecycleDefaults(effective().lifecycle);
+  const { leaseMs } = lifecycle();
+  const log = runtime.log.child('lifecycle');
+  return new OperationEngine({
+    namespace: runtime.namespace,
+    stores: runtime.stores,
+    events: runtime.events,
+    clock: runtime.clock,
+    log,
+    orchestrator: new SigningOrchestrator({
+      schemes: () => runtime.catalogs.schemes,
+      events: runtime.events,
+      clock: runtime.clock,
+      hooks: () => effective().hooks,
+    }),
+    sequences: new SequenceCoordinator({
+      locks: runtime.stores.locks,
+      sequences: runtime.stores.sequences,
+      clock: runtime.clock,
+      owner: runtime.owner,
+      leaseMs,
+      acquireTimeoutMs: leaseMs,
+      // The code only: a store's error message may carry detail that logs must not.
+      onReleaseError: (error) =>
+        log.warn('lease release failed', { code: errorCode(error) }),
+    }),
+    lifecycle,
+  });
 }
 
 /**
@@ -228,11 +266,14 @@ export class CryptoAio {
   }
 
   #bind(runtime: RootRuntime, layers: readonly ScopeOptions[], isRoot: boolean): void {
+    const effective = () => mergeScopes([runtime.envLayer, ...layers]);
+    let engine: OperationEngine | undefined;
     bindContainer(this, {
       runtime,
       layers,
       isRoot,
-      effective: () => mergeScopes([runtime.envLayer, ...layers]),
+      effective,
+      engine: () => (engine ??= createEngine(runtime, effective)),
     });
   }
 }

@@ -16,9 +16,18 @@ import type { FeeEstimate } from '../model/fee';
 import type { ChainId, ExtOf, LibraryOf, NetworkOf } from '../model/ids';
 import { toStoredIntent, type TransferIntent } from '../model/intent';
 import type { Block, Transaction, TxStatus } from '../model/transaction';
+import {
+  PRE_SIGNING_STATES,
+  type OperationEngine,
+  type OperationTarget,
+  type TransferOptions,
+} from '../lifecycle/engine';
 import { normalizeIntent } from '../lifecycle/intent';
+import { loadObservations } from '../lifecycle/observations';
+import { toView, type OperationView, type PreparedOperation } from '../lifecycle/views';
 import { deriveXpubChild } from '../signing/hd';
 import { resolveWallet, walletOptionsOf } from '../signing/wallet';
+import type { OperationRecord } from '../store/types';
 import type { EndpointState, EndpointStatus } from '../transport/types';
 import { fromHex } from '../util/bytes';
 import { defaultBlockchain } from './default-ref';
@@ -312,6 +321,25 @@ export class Blockchain<C extends ChainId = ChainId> {
     };
   }
 
+  /** Builds and persists the unsigned transaction (reserving nonce/inputs) for offline or async signing. */
+  async prepareTransfer(
+    intent: TransferIntent,
+    options: TransferOptions = {},
+  ): Promise<PreparedOperation> {
+    const target = await this.target();
+    return this.prepared(target, await this.engine().prepare(target, intent, options));
+  }
+
+  /** Abandons an Operation that has no signed transaction yet and releases its reservation. */
+  async abandon(operationId: string): Promise<OperationView> {
+    return this.view(await this.engine().abandon(await this.target(), operationId));
+  }
+
+  async getOperation(operationId: string): Promise<OperationView | null> {
+    const record = await this.engine().get(operationId);
+    return record ? this.view(record) : null;
+  }
+
   /** Typed family extensions: `bc.ext.<family>.<method>(...)` (async, loads the adapter on demand). */
   get ext(): ExtOf<C> {
     const internals = internalsOf(this);
@@ -363,6 +391,59 @@ export class Blockchain<C extends ChainId = ChainId> {
       selection: internals.selection,
       driver,
       assets: containerOf(internals.container).runtime.assets,
+    };
+  }
+
+  /** @internal */
+  protected engine(): OperationEngine {
+    return containerOf(internalsOf(this).container).engine();
+  }
+
+  /** @internal */
+  protected async target(): Promise<OperationTarget> {
+    const internals = internalsOf(this);
+    const [pooled, wallet] = await Promise.all([internals.pooled(), internals.wallet()]);
+    return {
+      selection: internals.selection,
+      pooled,
+      wallet,
+      assets: containerOf(internals.container).runtime.assets,
+    };
+  }
+
+  /** @internal */
+  protected async view(record: OperationRecord): Promise<OperationView> {
+    const { runtime } = containerOf(internalsOf(this).container);
+    return toView(record, await loadObservations(runtime.stores.operations, record));
+  }
+
+  /**
+   * @internal Signing material only while the Operation awaits signatures: an idempotent
+   * repeat of an abandoned Operation returns its view alone.
+   */
+  protected async prepared(
+    target: OperationTarget,
+    record: OperationRecord,
+  ): Promise<PreparedOperation> {
+    const operation = await this.view(record);
+    const unsigned = record.unsigned;
+    if (!unsigned || !PRE_SIGNING_STATES.has(record.state)) return { operation };
+    const fee = await toFeeEstimate(
+      {
+        selection: target.selection,
+        driver: target.pooled.driver,
+        assets: target.assets,
+      },
+      unsigned.fee,
+    );
+    return {
+      operation,
+      unsigned: {
+        payload: unsigned.payload,
+        signingRequests: unsigned.signingRequests,
+        ...(unsigned.expectedRef ? { expectedRef: unsigned.expectedRef } : {}),
+        fee,
+      },
     };
   }
 }

@@ -3,6 +3,7 @@ import type { EffectiveOptions, ScopeOptions } from '../config/types';
 import { ConfigError } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
+import type { OperationEngine } from '../lifecycle/engine';
 import type { Catalogs } from '../registry/plugin';
 import type { Stores } from '../store/types';
 import type { TransportOptions } from '../transport/types';
@@ -32,6 +33,8 @@ export interface ContainerInternals {
   readonly layers: readonly ScopeOptions[];
   readonly isRoot: boolean;
   effective(): EffectiveOptions;
+  /** Lazily created per container (scopes have their own hooks and lifecycle settings). */
+  engine(): OperationEngine;
 }
 
 const registry = new WeakMap<object, ContainerInternals>();
