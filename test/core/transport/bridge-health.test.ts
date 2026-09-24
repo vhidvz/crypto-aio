@@ -3,7 +3,7 @@ import {
   PLACEHOLDER_ORIGIN,
   type EndpointConfig,
 } from '../../../src/core/transport/types';
-import { drive } from '../../../src/testing/fake-clock';
+import { drive, settle } from '../../../src/testing/fake-clock';
 import { FakeFetch, rpcResult, type FakeRequest } from '../../../src/testing/fake-fetch';
 import { setup } from './support';
 
@@ -131,6 +131,86 @@ describe('HttpTransport bridge', () => {
     expect(cancelled).toBe(true);
   });
 
+  // N1: statuses 101/103/204/205/304 must never carry a body on the Response constructed
+  // for the SDK — the Response constructor throws if they do.
+  it('returns status 204 and 304 responses correctly after exactly 1 fetch', async () => {
+    for (const status of [204, 304] as const) {
+      const fake = new FakeFetch().route(
+        'https://sol.test/rpc',
+        () => new Response(null, { status }),
+      );
+      const { transport, clock } = setup(
+        [{ name: 's', url: 'https://sol.test/rpc' }],
+        fake,
+      );
+      const bridged = transport.createFetch();
+      const response = await drive(clock, bridged(`${PLACEHOLDER_ORIGIN}/`));
+      expect(response.status).toBe(status);
+      expect(fake.calls).toHaveLength(1);
+    }
+  });
+
+  // #10: content-encoding/content-length describe the original wire body, not the
+  // already-decoded buffer handed to the SDK — they must not be copied across.
+  it('drops content-encoding and content-length from the bridged response headers', async () => {
+    const fake = new FakeFetch().route(
+      'https://sol.test/rpc',
+      () =>
+        new Response('{"ok":true}', {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'content-encoding': 'gzip',
+            'content-length': '999',
+          },
+        }),
+    );
+    const { transport, clock } = setup(
+      [{ name: 's', url: 'https://sol.test/rpc' }],
+      fake,
+    );
+    const bridged = transport.createFetch();
+    const response = await drive(clock, bridged(`${PLACEHOLDER_ORIGIN}/`));
+    expect(response.headers.has('content-encoding')).toBe(false);
+    expect(response.headers.has('content-length')).toBe(false);
+    expect(response.headers.get('content-type')).toBe('application/json');
+  });
+
+  // #7: a rejecting response.body.cancel() must never surface as an unhandled rejection.
+  it('never leaves an unhandled rejection when the response body fails to cancel', async () => {
+    const fake = new FakeFetch().route('https://sol.test/rpc', () => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('server error'));
+        },
+        cancel() {
+          return Promise.reject(new Error('cancel failed'));
+        },
+      });
+      return new Response(body, { status: 503 });
+    });
+    const { transport, clock } = setup(
+      [{ name: 's', url: 'https://sol.test/rpc' }],
+      fake,
+      { maxAttempts: 1 },
+    );
+    const bridged = transport.createFetch();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await expect(drive(clock, bridged(`${PLACEHOLDER_ORIGIN}/`))).rejects.toMatchObject(
+        {
+          code: 'PROVIDER_UNAVAILABLE',
+        },
+      );
+      await settle();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(unhandled).toHaveLength(0);
+  });
+
   // M5: a 401 response body is likewise cancelled, not leaked.
   it('cancels a 401 response body instead of leaking the stream', async () => {
     let cancelled = false;
@@ -161,8 +241,11 @@ describe('HttpTransport bridge', () => {
 });
 
 describe('HttpTransport health refresh concurrency', () => {
-  // I8: two concurrent monitor reads started during the first refresh must both be served by
-  // the non-lagging endpoint, and must share a single underlying refresh.
+  // I8 (round 2, item 1): rewritten so the lagging endpoint sits at priority 0 and the height
+  // probe only resolves after the fake clock advances — so if a caller could slip past the
+  // shared in-flight refresh (the pre-round-1 bug), it would race ahead on stale/unset height
+  // data and route to the lagging endpoint by priority alone. Two concurrent monitor reads
+  // must both be served by the non-lagging endpoint regardless.
   it('serves two concurrent monitor reads from a single health refresh', async () => {
     const heights: Record<string, string> = { a: '100', b: '90' };
     let heightCalls = 0;
@@ -175,14 +258,17 @@ describe('HttpTransport health refresh concurrency', () => {
       .route('https://b.test', handler('b'));
     const { transport, clock } = setup(
       [
-        { ...A, priority: 0 },
-        { ...B, priority: 1 },
+        { ...B, priority: 0 }, // B is lagging (height 90) but placed first by priority
+        { ...A, priority: 1 }, // A is the non-lagging endpoint (height 100)
       ],
       fake,
       { maxLagBlocks: 5 },
     );
     transport.setProbes({
-      height: async (call) => BigInt(await call.rpc<string>('height')),
+      height: async (call) => {
+        await clock.sleep(50); // resolves only once the fake clock is advanced
+        return BigInt(await call.rpc<string>('height'));
+      },
     });
     const [r1, r2] = await drive(
       clock,
@@ -195,6 +281,49 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(r2).toBe('a');
     // One height probe per endpoint: the second caller joined the in-flight refresh instead
     // of starting its own.
+    expect(heightCalls).toBe(2);
+  });
+
+  // #9 (round 2): a probe that ignores its own abort signal must not hang the refresh
+  // forever — it's raced against the deadline instead, so #healthRun always settles.
+  it('settles the refresh within timeoutMs when a height probe never answers, and concurrent readers proceed', async () => {
+    const { transport, clock } = setup([A], new FakeFetch(), { timeoutMs: 1_000 });
+    transport.setProbes({
+      height: () => new Promise<bigint>(() => undefined),
+    });
+    const start = clock.now();
+    const [r1, r2] = await drive(
+      clock,
+      Promise.allSettled([transport.refreshHealth(), transport.refreshHealth()]),
+      100,
+    );
+    expect(clock.now() - start).toBeLessThanOrEqual(1_000);
+    expect(r1.status).toBe('fulfilled');
+    expect(r2.status).toBe('fulfilled');
+  });
+
+  // I8 (round 2, item 1): a single transient height-probe failure must not block monitor
+  // reads for a full healthIntervalMs — the next read re-probes instead of trusting a
+  // fully-failed refresh as fresh.
+  it('re-probes on the next read after a transient height-probe failure instead of blocking for healthIntervalMs', async () => {
+    let heightCalls = 0;
+    const fake = new FakeFetch().route('https://a.test', (req) => {
+      if (method(req) === 'height') {
+        heightCalls++;
+        return heightCalls === 1 ? { status: 503, text: '' } : rpcResult(req, '100');
+      }
+      return rpcResult(req, 'from-a');
+    });
+    const { transport, clock } = setup([A], fake, { healthIntervalMs: 60_000 });
+    transport.setProbes({
+      height: async (call) => BigInt(await call.rpc<string>('height')),
+    });
+    await expect(
+      drive(clock, transport.rpc('x', [], { purpose: 'monitor' })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    await expect(
+      drive(clock, transport.rpc('x', [], { purpose: 'monitor' })),
+    ).resolves.toBe('from-a');
     expect(heightCalls).toBe(2);
   });
 

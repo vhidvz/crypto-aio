@@ -1,7 +1,12 @@
 import { inspect } from 'node:util';
 import type { EndpointConfig } from '../../../src/core/transport/types';
 import { drive } from '../../../src/testing/fake-clock';
-import { FakeFetch, rpcResult, type FakeRequest } from '../../../src/testing/fake-fetch';
+import {
+  FakeFetch,
+  hang,
+  rpcResult,
+  type FakeRequest,
+} from '../../../src/testing/fake-fetch';
 import { setup } from './support';
 
 const A: EndpointConfig = { name: 'a', url: 'https://a.test/rpc' };
@@ -153,6 +158,41 @@ describe('HttpTransport response classification and scrubbing', () => {
       .route('https://b.test', (req) => rpcResult(req, 'b'));
     const { transport, clock } = setup([A, B], fake);
     await expect(drive(clock, transport.rpc('x'))).resolves.toBe('b');
+  });
+
+  // R17 refinement (round 2, item 6): a REST 4xx is a definitive, non-retryable answer from
+  // the endpoint — it must not itself set mayHaveSent.
+  it('a first-attempt REST 400 is not ambiguous', async () => {
+    const fake = new FakeFetch().route('https://a.test', () => ({
+      status: 400,
+      text: 'bad-txns-inputs-missingorspent',
+    }));
+    const { transport, clock } = setup([A], fake, { maxAttempts: 1 });
+    const error = await drive(
+      clock,
+      transport.http({ method: 'POST', path: '/tx' }, { retry: 'ambiguous-on-failure' }),
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: false });
+  });
+
+  // R17: the same 400 still inherits ambiguity from an earlier possibly-delivered attempt.
+  it('the same REST 400 after an earlier timeout is ambiguous', async () => {
+    let calls = 0;
+    const fake = new FakeFetch().route('https://a.test', (_req, signal) =>
+      calls++ === 0
+        ? hang(signal)
+        : { status: 400, text: 'bad-txns-inputs-missingorspent' },
+    );
+    const { transport, clock } = setup([A], fake, { maxAttempts: 2 });
+    const error = await drive(
+      clock,
+      transport.http(
+        { method: 'POST', path: '/tx' },
+        { retry: 'ambiguous-on-failure', timeoutMs: 1_000 },
+      ),
+      100,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
   });
 
   it('fails over on an HTML body from http() in JSON mode', async () => {

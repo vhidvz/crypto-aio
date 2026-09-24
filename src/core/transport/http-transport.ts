@@ -50,6 +50,22 @@ type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 
 const MAX_RETRY_AFTER_MS = 60_000;
 const TIMEOUT = new Error('transport timeout');
+/** N1: statuses that must never carry a body on the Response passed back to the SDK. */
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
+/** #9 (probe hang): races `promise` against `signal`, rejecting with the signal's abort
+ * reason if it fires first. Guards against a probe callback that ignores its own signal
+ * argument and never settles on its own. */
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason as unknown);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason as unknown);
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', onAbort);
+    });
+  });
+}
 
 interface Endpoint {
   readonly id: string;
@@ -332,15 +348,15 @@ export class HttpTransport implements Transport {
         label,
         { ...options, ...(signal ? { signal } : {}) },
         async (endpoint, deadline) => {
-          const headers = new Headers(headerSource);
+          const requestHeaders = new Headers(headerSource);
           for (const [name, value] of Object.entries(endpoint.headers))
-            headers.set(name, value);
+            requestHeaders.set(name, value);
           const started = this.#clock.now();
           const response = await this.#fetch(
             joinUrl(endpoint.url, url.pathname, url.search),
             {
               method,
-              headers,
+              headers: requestHeaders,
               ...(body !== undefined ? { body } : {}),
               signal: deadline,
               redirect: 'error',
@@ -351,11 +367,10 @@ export class HttpTransport implements Transport {
           try {
             this.#throwForStatus(endpoint, response);
           } catch (error) {
-            try {
-              response.body?.cancel();
-            } catch {
-              /* best effort */
-            }
+            // #7: cancel() returns a promise that can reject asynchronously; an unhandled
+            // rejection here can crash the process, so it's always caught, even when body
+            // is null.
+            void response.body?.cancel().catch(() => undefined);
             throw error;
           }
           // I1: buffer the whole body here, while the deadline and the caller's signal are
@@ -363,10 +378,17 @@ export class HttpTransport implements Transport {
           // real endpoint URL (and any secret it carries) never reaches the SDK.
           const buffer = await response.arrayBuffer();
           this.#emitResponse(endpoint, label, started, buffer.byteLength);
-          return new Response(buffer, {
+          // N1: the Response constructor throws if a body is given alongside a status that
+          // must never carry one.
+          const responseHeaders = new Headers(response.headers);
+          // #10: drop headers describing the original (possibly compressed) wire body —
+          // they no longer describe this already-decoded buffer.
+          responseHeaders.delete('content-encoding');
+          responseHeaders.delete('content-length');
+          return new Response(NULL_BODY_STATUSES.has(response.status) ? null : buffer, {
             status: response.status,
             statusText: response.statusText,
-            headers: response.headers,
+            headers: responseHeaders,
           });
         },
       );
@@ -473,13 +495,14 @@ export class HttpTransport implements Transport {
   ): Promise<T> {
     const retry = options.retry ?? 'safe';
     const attempts = retry === 'never-auto' ? 1 : this.#opts.maxAttempts;
+    const timeoutMs = options.timeoutMs ?? this.#opts.timeoutMs;
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
     let mayHaveSent = false;
     for (let attempt = 0; attempt < attempts; attempt++) {
       let endpoint: Endpoint;
       try {
-        endpoint = await this.#pick(purpose, tried, options.signal);
+        endpoint = await this.#pick(purpose, tried, options.signal, timeoutMs);
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (last) break;
@@ -511,7 +534,11 @@ export class HttpTransport implements Transport {
   ): Promise<T> {
     const requested =
       options.quorum === 'proof' ? this.#opts.proofQuorum : (options.quorum ?? 1);
-    const needed = Math.max(1, Math.min(requested, this.#eligible(purpose).length));
+    // N3 (round 2, item 5): sized from the full candidate set (breaker/identity/lag), not
+    // the rate-limit-filtered eligible set — a required endpoint being rate-limited must not
+    // silently shrink the quorum. A required endpoint that's rate-limited therefore fails
+    // the call with a retryable error instead of resolving from fewer endpoints than needed.
+    const needed = Math.max(1, Math.min(requested, this.#candidates(purpose).length));
     const results: { endpoint: Endpoint; value: T }[] = [];
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
@@ -593,15 +620,21 @@ export class HttpTransport implements Transport {
     options: CallOptions,
     work: Work<T>,
   ): Promise<T> {
-    const { signal, cancel } = this.#deadline(
-      options.timeoutMs ?? endpoint.timeoutMs ?? this.#opts.timeoutMs,
-      options.signal,
-    );
+    const timeoutMs = options.timeoutMs ?? endpoint.timeoutMs ?? this.#opts.timeoutMs;
+    // M3/#2 (round 2): the token-bucket wait runs before the per-attempt deadline is armed,
+    // with its own timeoutMs-bounded budget. A wait that times out (or that the caller
+    // aborts) never touches the breaker and is never tagged ambiguous — no fetch has
+    // happened yet.
+    await this.#takeToken(endpoint, timeoutMs, options.signal);
+    const { signal, cancel } = this.#deadline(timeoutMs, options.signal);
     const started = this.#clock.now();
+    // #8 (round 2): only set once THIS attempt's own onAttempt() call ran, so only this
+    // attempt may release a half-open probe slot it actually claimed.
+    let ownsProbe = false;
     try {
       await this.#ensureIdentity(endpoint, signal);
-      await endpoint.bucket?.take(signal);
       endpoint.breaker.onAttempt();
+      ownsProbe = true;
       this.#events.emit('rpc.request', {
         transportId: this.id,
         endpointId: endpoint.id,
@@ -615,10 +648,10 @@ export class HttpTransport implements Transport {
       return value;
     } catch (error) {
       if (options.signal?.aborted) {
-        // I7/M3: onAttempt() may have flagged a half-open probe; the caller cancelled
-        // before we could report success or failure, so free the slot without penalizing
-        // the endpoint.
-        endpoint.breaker.onAbandon();
+        // I7/M3/#8: only free the half-open slot if THIS attempt actually claimed it —
+        // an abort during the identity check or the token wait never frees another
+        // request's half-open slot.
+        if (ownsProbe) endpoint.breaker.onAbandon();
         throw options.signal.reason;
       }
       const failure = this.#classify(error, endpoint, signal);
@@ -644,14 +677,43 @@ export class HttpTransport implements Transport {
     }
   }
 
+  /** M3/#2 (round 2): bounds the token-bucket wait by the caller's signal and the call's
+   * timeoutMs, run before the per-attempt deadline is armed. A wait that exceeds timeoutMs
+   * fails with a retryable rate-limit error, without touching the breaker — no fetch has
+   * happened yet, so this can never be tagged ambiguous either. */
+  async #takeToken(
+    endpoint: Endpoint,
+    timeoutMs: number,
+    outer?: AbortSignal,
+  ): Promise<void> {
+    if (!endpoint.bucket) return;
+    const { signal, cancel } = this.#deadline(timeoutMs, outer);
+    try {
+      await endpoint.bucket.take(signal);
+    } catch {
+      if (outer?.aborted) throw outer.reason;
+      throw new ProviderError(
+        'RATE_LIMITED',
+        `rate limit wait exceeded the call timeout for endpoint '${endpoint.id}'`,
+        { context: this.#context(endpoint) },
+      );
+    } finally {
+      cancel();
+    }
+  }
+
   /** Endpoints that are structurally usable for `purpose` (breaker, identity, lag/height),
    * ignoring any per-endpoint rate-limit wait (I9). */
   #candidates(purpose: RequestPurpose): Endpoint[] {
     const strict = purpose === 'monitor' || purpose === 'proof';
+    const now = this.#clock.now();
     return this.#endpoints
       .filter(
         (e) =>
           e.identity !== 'mismatch' &&
+          // N2 (round 2, item 4): an identity-throttled endpoint is excluded the same way a
+          // rate-limited one is — never picked, and a throttle hit never reaches the breaker.
+          (e.identityRetryAt === undefined || e.identityRetryAt <= now) &&
           e.breaker.canRequest() &&
           (!strict || !this.#excludedForHeight(e)),
       )
@@ -675,11 +737,14 @@ export class HttpTransport implements Transport {
   }
 
   /** I9: picks the best available endpoint, waiting only when every structurally-usable
-   * endpoint is still rate-limited, and only until the earliest one frees up. */
+   * endpoint is still rate-limited, and only until the earliest one frees up.
+   * #11 (round 2): that wait is bounded by the call's timeoutMs — a wait longer than that
+   * fails at once with a retryable rate-limit error instead of stalling the whole call. */
   async #pick(
     purpose: RequestPurpose,
     tried: ReadonlySet<string>,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    timeoutMs: number,
   ): Promise<Endpoint> {
     for (;;) {
       const eligible = this.#eligible(purpose);
@@ -693,8 +758,18 @@ export class HttpTransport implements Transport {
       }
       const waiting = this.#candidates(purpose);
       if (waiting.length === 0) throw this.#noHealthyEndpoint();
-      const earliest = Math.min(...waiting.map((e) => e.notBefore));
-      await this.#clock.sleep(Math.max(0, earliest - this.#clock.now()), signal);
+      const earliest = waiting.reduce((min, e) =>
+        e.notBefore < min.notBefore ? e : min,
+      );
+      const waitMs = Math.max(0, earliest.notBefore - this.#clock.now());
+      if (waitMs > timeoutMs) {
+        throw new ProviderError(
+          'RATE_LIMITED',
+          'endpoint rate limit wait exceeds the call timeout',
+          { context: this.#context(earliest) },
+        );
+      }
+      await this.#clock.sleep(waitMs, signal);
     }
   }
 
@@ -927,20 +1002,20 @@ export class HttpTransport implements Transport {
             ),
           );
         }
-        // R16: same reasoning for a REST 4xx that isn't 401/403/429/408 (those are peeled off
-        // in #throwForStatus and excluded there).
-        throw this.#markSent(
-          new ProviderError(
-            'RPC_ERROR',
-            `${errorLabel} refused (HTTP ${response.status})`,
-            {
-              context,
-              details: {
-                status: response.status,
-                body: this.#scrub(endpoint, text).slice(0, 300),
-              },
+        // R17 (round 2, item 6): a REST 4xx that isn't 401/403/429/408 (peeled off in
+        // #throwForStatus) is a definitive, non-retryable answer from the endpoint — it
+        // must not itself set mayHaveSent, though it still inherits ambiguity from an
+        // earlier tagged attempt via #withRetry/#fanout's accumulated mayHaveSent.
+        throw new ProviderError(
+          'RPC_ERROR',
+          `${errorLabel} refused (HTTP ${response.status})`,
+          {
+            context,
+            details: {
+              status: response.status,
+              body: this.#scrub(endpoint, text).slice(0, 300),
             },
-          ),
+          },
         );
       }
     }
@@ -1118,7 +1193,9 @@ export class HttpTransport implements Transport {
       }
       endpoint.identityCheck ??= (async () => {
         try {
-          const actual = await probe(this.#direct(endpoint, signal));
+          // #9 (round 2): races the probe against `signal` so a probe that ignores its
+          // own signal argument can't hang #ensureIdentity forever.
+          const actual = await raceAbort(probe(this.#direct(endpoint, signal)), signal);
           if (actual === expected) {
             endpoint.identity = 'ok';
             endpoint.identityRetryAt = undefined;
@@ -1138,7 +1215,11 @@ export class HttpTransport implements Transport {
           // Any probe failure (a definitive RPC error, a transport error, a malformed
           // reply) is an endpoint-local failure, not a confirmed mismatch: identity stays
           // 'unchecked' and the endpoint fails over (I6a).
-          endpoint.identityRetryAt = this.#clock.now() + this.#opts.healthIntervalMs;
+          // N2 (round 2, item 4): a caller abort is not a probe failure — it must not set
+          // the throttle, or a single-endpoint transport could be locked out entirely.
+          if (!(signal.aborted && signal.reason !== TIMEOUT)) {
+            endpoint.identityRetryAt = this.#clock.now() + this.#opts.healthIntervalMs;
+          }
           const cause = this.#classify(error, endpoint, signal);
           throw new ProviderError(
             'PROVIDER_UNAVAILABLE',
@@ -1166,6 +1247,9 @@ export class HttpTransport implements Transport {
   async #refresh(): Promise<void> {
     const probe = this.#probes.height;
     const targets = this.#endpoints.filter((e) => e.identity !== 'mismatch');
+    // I8 round 2: only a refresh where at least one endpoint's probe(s) actually succeeded
+    // counts as fresh (see #lastHealthAt below).
+    let anySucceeded = false;
     await Promise.all(
       targets.map(async (endpoint) => {
         // I8: the shared run is never bound to any single caller's signal; each probe only
@@ -1175,7 +1259,20 @@ export class HttpTransport implements Transport {
         );
         try {
           await this.#ensureIdentity(endpoint, deadline);
-          if (probe) endpoint.height = await probe(this.#direct(endpoint, deadline));
+          if (probe) {
+            try {
+              endpoint.height = await raceAbort(
+                probe(this.#direct(endpoint, deadline)),
+                deadline,
+              );
+            } catch (heightError) {
+              // I8 round 2: a failed height probe clears the stored height instead of
+              // leaving it stale, so the endpoint counts as unknown, not merely un-refreshed.
+              endpoint.height = undefined;
+              throw heightError;
+            }
+          }
+          anySucceeded = true;
         } catch (error) {
           const failure = this.#classify(error, endpoint, deadline);
           if (failure.code !== 'PROVIDER_MISCONFIGURED') {
@@ -1209,7 +1306,10 @@ export class HttpTransport implements Transport {
     }
     // I8: only a completed refresh counts as fresh; #healthRun's `finally` clears the
     // in-flight marker regardless, but the staleness clock only advances here.
-    this.#lastHealthAt = this.#clock.now();
+    // I8 round 2: if every endpoint's probe(s) failed, #lastHealthAt is left unset (rather
+    // than stamped) so the next ensureFreshHealth call probes again instead of trusting a
+    // fully-failed refresh as fresh for a whole healthIntervalMs.
+    if (anySucceeded) this.#lastHealthAt = this.#clock.now();
   }
 
   // ---- errors ----------------------------------------------------------------------

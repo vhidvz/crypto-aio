@@ -135,6 +135,69 @@ describe('HttpTransport retry policy', () => {
     expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: false });
   });
 
+  // N2 (round 2, item 4): an identity-throttled endpoint is excluded from #candidates, the
+  // same way notBefore excludes a rate-limited one — a never-auto call must not waste its
+  // single attempt on an endpoint already known to be identity-unreachable.
+  it('excludes an identity-throttled endpoint from a following never-auto call', async () => {
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) =>
+        method(req) === 'chain_id'
+          ? {
+              json: {
+                jsonrpc: '2.0',
+                id: req.json<{ id: unknown }>().id,
+                error: { code: -32601, message: 'method not found' },
+              },
+            }
+          : rpcResult(req, 'from-a'),
+      )
+      .route('https://b.test', (req) =>
+        rpcResult(req, method(req) === 'chain_id' ? '1' : 'from-b'),
+      );
+    const { transport, clock } = setup(
+      [
+        { ...A, priority: 0 },
+        { ...B, priority: 1 },
+      ],
+      fake,
+    );
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+    });
+    await expect(drive(clock, transport.rpc('warm'))).resolves.toBe('from-b');
+    const aCallsAfterFirst = fake.callsTo('https://a.test').length;
+    await expect(
+      drive(clock, transport.rpc('x', [], { retry: 'never-auto' })),
+    ).resolves.toBe('from-b');
+    expect(fake.callsTo('https://a.test')).toHaveLength(aCallsAfterFirst);
+  });
+
+  // N2: a caller abort during the identity probe must not set the throttle — a
+  // single-endpoint transport must still be able to serve the next call.
+  it('lets a single-endpoint transport serve the next call after a caller abort during the identity probe', async () => {
+    let identityCalls = 0;
+    const fake = new FakeFetch().route('https://a.test', (req, signal) => {
+      if (method(req) !== 'chain_id') return rpcResult(req, 'from-a');
+      identityCalls++;
+      // Only the first (aborted) probe hangs; a later probe succeeds, proving the endpoint
+      // can still be re-checked rather than being locked out by a throttle it never earned.
+      return identityCalls === 1 ? hang(signal) : rpcResult(req, '1');
+    });
+    const { transport, clock } = setup([A], fake);
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+    });
+    const controller = new AbortController();
+    const reason = new Error('cancelled');
+    const probe = transport.rpc('x', [], { signal: controller.signal });
+    await settle();
+    controller.abort(reason);
+    await expect(probe).rejects.toBe(reason);
+    await expect(drive(clock, transport.rpc('y'))).resolves.toBe('from-a');
+  });
+
   // M3: a local serialization error never reaches an endpoint.
   it('rejects unserializable params before touching any endpoint', async () => {
     const fake = new FakeFetch().route('https://a.test', (req) => rpcResult(req, 'ok'));
@@ -144,6 +207,26 @@ describe('HttpTransport retry policy', () => {
       retryable: false,
     });
     expect(fake.calls).toHaveLength(0);
+  });
+
+  // N3 (round 2, item 5): needed is sized from the full candidate set, not the
+  // rate-limit-filtered eligible set — a required endpoint being rate-limited must not
+  // silently shrink the quorum to whatever's left.
+  it('never resolves a proof quorum from fewer endpoints than required', async () => {
+    const fake = new FakeFetch()
+      .route('https://a.test', () => ({
+        status: 429,
+        text: '',
+        headers: { 'retry-after': '60' },
+      }))
+      .route('https://b.test', (req) => rpcResult(req, 'b'));
+    const { transport, clock } = setup([A, B], fake, { proofQuorum: 2 });
+    // Prime A's rate limit via an ordinary call first, so it's already excluded from the
+    // eligible set by the time the quorum call sizes `needed`.
+    await expect(drive(clock, transport.rpc('warm'))).resolves.toBe('b');
+    await expect(
+      drive(clock, transport.rpc('x', [], { quorum: 'proof' })),
+    ).rejects.toMatchObject({ retryable: true });
   });
 
   // M4: options and endpoint URLs are validated at construction, without leaking the URL.
@@ -228,9 +311,41 @@ describe('HttpTransport retry policy', () => {
     );
     const { transport, clock } = setup([A], fake);
     const start = clock.now();
-    await expect(drive(clock, transport.rpc('x'), 1_000)).resolves.toBe('ok');
+    // #11 (round 2): #pick's wait is now bounded by the call's timeoutMs, so this call must
+    // allow enough budget for the clamped (not the raw, unclamped) Retry-After to elapse.
+    await expect(
+      drive(clock, transport.rpc('x', [], { timeoutMs: 65_000 }), 1_000),
+    ).resolves.toBe('ok');
     expect(clock.now() - start).toBeGreaterThanOrEqual(60_000);
     expect(clock.now() - start).toBeLessThan(120_000);
+  });
+
+  // #11 (round 2): #pick's wait for a rate-limited endpoint is bounded by the call's
+  // timeoutMs — a persisted rate limit from an earlier call must not stall a fresh call with
+  // a short timeout, and the throttled endpoint must not even be re-attempted.
+  it('fails at once on a persisted rate limit whose wait exceeds a fresh call timeout', async () => {
+    let calls = 0;
+    const fake = new FakeFetch().route('https://a.test', () => {
+      calls++;
+      return { status: 429, text: '', headers: { 'retry-after': '60' } };
+    });
+    const { transport, clock } = setup([A], fake, { maxAttempts: 1 });
+    // First call sets notBefore 60s out.
+    await drive(clock, transport.rpc('warm')).catch(() => undefined);
+    expect(calls).toBe(1);
+    const start = clock.now();
+    const error = await drive(
+      clock,
+      transport.rpc('x', [], { timeoutMs: 500 }),
+      50,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'RATE_LIMITED',
+      retryable: true,
+      ambiguous: false,
+    });
+    expect(clock.now() - start).toBeLessThan(1_000);
+    expect(calls).toBe(1); // the endpoint was never attempted again
   });
 
   // R16 (controller amendment): mayHaveSent widens beyond timeout/network-error/5xx/unparseable
@@ -256,6 +371,31 @@ describe('HttpTransport retry policy', () => {
     ).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
     expect(calls).toBe(2);
+  });
+
+  // M3/#2 (round 2): a token-bucket wait that exceeds the call's timeoutMs fails with
+  // RATE_LIMITED, retryable, untagged — no fetch was ever attempted, so the breaker (and its
+  // failure counter) must stay untouched.
+  it('a token-wait timeout leaves the breaker closed and gives ambiguous: false', async () => {
+    const fake = new FakeFetch().route('https://a.test', (req) => rpcResult(req, 'ok'));
+    const { transport, clock } = setup(
+      [{ ...A, rateLimit: { rps: 1, burst: 1 } }],
+      fake,
+      { maxAttempts: 1 },
+    );
+    // Consume the single burst token first.
+    await drive(clock, transport.rpc('warm'));
+    const error = await drive(
+      clock,
+      transport.rpc('x', [], { retry: 'ambiguous-on-failure', timeoutMs: 500 }),
+      50,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: 'RATE_LIMITED',
+      retryable: true,
+      ambiguous: false,
+    });
+    expect(transport.status()[0]?.failures).toBe(0);
   });
 
   // R16: HTTP 429 stays excluded from ambiguity — the server never processed the request.
