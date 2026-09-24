@@ -34,12 +34,17 @@ export function seqnoHolder(
   );
 }
 
+/**
+ * The lowest nonce still reserved by a live, not-yet-included Operation. Included
+ * nonces are already consumed on chain, so counting them would mask a gap above them.
+ */
 export function lowestOutstandingNonce(
   operations: readonly OperationRecord[],
 ): { nonce: bigint; operationId: string } | undefined {
   let lowest: { nonce: bigint; operationId: string } | undefined;
   for (const op of operations) {
-    if (isTerminal(op.state) || op.reservation?.kind !== 'nonce') continue;
+    if (isTerminal(op.state) || op.state === 'included') continue;
+    if (op.reservation?.kind !== 'nonce') continue;
     if (!lowest || op.reservation.nonce < lowest.nonce)
       lowest = { nonce: op.reservation.nonce, operationId: op.id };
   }

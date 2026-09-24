@@ -60,16 +60,31 @@ export interface SequenceCoordinatorDeps {
   readonly leaseMs: number;
   /** How long to wait for a busy address before failing with SEQUENCE_BUSY (default: leaseMs). */
   readonly acquireTimeoutMs?: number;
+  /**
+   * Observes a failed best-effort lease release (the lease then lapses by its TTL).
+   * Its own failure is ignored. Log only the error code: messages may carry store detail.
+   */
+  onReleaseError?(error: unknown): void;
 }
 
 export class SequenceCoordinator {
   constructor(private readonly deps: SequenceCoordinatorDeps) {}
 
+  /**
+   * Runs `fn` while holding the address lease for `key`, then releases it.
+   *
+   * Not re-entrant: a nested `withLease` on the same key waits like any other caller.
+   * It fails with SEQUENCE_BUSY after `acquireTimeoutMs`, or, when that is not shorter
+   * than `leaseMs`, it can outlive the outer lease, take it over and fence the outer
+   * caller. Code that already holds the lease must pass its `LeaseHandle` down instead.
+   * The lease is not renewed automatically; long callbacks call `lease.renew()`.
+   */
   async withLease<T>(
     key: string,
     fn: (lease: LeaseHandle) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
+    signal?.throwIfAborted();
     const deadline =
       this.deps.clock.now() + (this.deps.acquireTimeoutMs ?? this.deps.leaseMs);
     let lease = await this.deps.locks.acquire(key, this.deps.owner, this.deps.leaseMs);
@@ -91,7 +106,13 @@ export class SequenceCoordinator {
       // Best effort: a failed release must not replace the callback's outcome (for
       // example a completed broadcast). The lease then lapses by its TTL, and fencing
       // still guards every write.
-      await this.deps.locks.release(handle.current).catch(() => undefined);
+      await this.deps.locks.release(handle.current).catch((error: unknown) => {
+        try {
+          this.deps.onReleaseError?.(error);
+        } catch {
+          // An observer failure must not replace the outcome either.
+        }
+      });
     }
   }
 
@@ -112,7 +133,12 @@ export class SequenceCoordinator {
     return pick;
   }
 
-  /** Returns a reserved value for reuse. Only legal while no valid signed bytes exist for it. */
+  /**
+   * Returns a reserved value for reuse. Only legal while no valid signed bytes exist for
+   * it. Precondition: called at most once per allocation, by the Operation holding the
+   * value, after its terminal CAS or after a failure before its reservation was persisted.
+   * Releasing a value that is at or above `next`, or already released, is a no-op.
+   */
   async release(lease: LeaseHandle, key: string, value: bigint): Promise<void> {
     const fence = fenceFor(lease, key);
     const state = await this.deps.sequences.get(key);

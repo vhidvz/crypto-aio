@@ -58,6 +58,8 @@ export class MemoryLockManager implements LockManager {
   }
 }
 
+// Sequence and cursor error messages omit the key: it embeds a wallet address, and
+// error messages reach logs.
 export class MemorySequenceStore implements SequenceStore {
   readonly #states = new Map<string, SequenceState>();
 
@@ -73,13 +75,10 @@ export class MemorySequenceStore implements SequenceStore {
   ): Promise<void> {
     const current = this.#states.get(key);
     if ((current?.version ?? null) !== expectedVersion) {
-      throw new StateError(
-        'VERSION_CONFLICT',
-        `sequence '${key}' was modified concurrently`,
-      );
+      throw new StateError('VERSION_CONFLICT', 'the sequence was modified concurrently');
     }
     if (current && state.fence < current.fence) {
-      throw new StateError('FENCING', `stale fencing token for sequence '${key}'`);
+      throw new StateError('FENCING', 'stale fencing token for the sequence');
     }
     this.#states.set(key, clone({ ...state, version: (current?.version ?? 0) + 1 }));
   }
@@ -100,10 +99,7 @@ export class MemoryCursorStore implements CursorStore {
   ): Promise<number> {
     const current = this.#cursors.get(key);
     if ((current?.version ?? null) !== expectedVersion) {
-      throw new StateError(
-        'VERSION_CONFLICT',
-        `cursor '${key}' was modified concurrently`,
-      );
+      throw new StateError('VERSION_CONFLICT', 'the cursor was modified concurrently');
     }
     const version = (current?.version ?? 0) + 1;
     this.#cursors.set(key, clone({ cursor, version }));
