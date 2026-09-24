@@ -47,7 +47,7 @@ export class AssetService {
     const known = catalogs.assets.get(id);
     if (known) return known;
     const lookup = driver.reader.getTokenMetadata;
-    if (!driver.capabilities.has('tokens') || !lookup) {
+    if (!selection.capabilities.has('tokens') || !lookup) {
       throw new UnsupportedCapabilityError(
         'UNSUPPORTED_CAPABILITY',
         `chain '${chain}' does not support tokens`,

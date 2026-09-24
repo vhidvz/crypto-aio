@@ -10,6 +10,7 @@ import {
 } from '../../../src/core/container/default';
 import { containerOf } from '../../../src/core/container/internals';
 import type { AdapterManifest } from '../../../src/core/driver/types';
+import { normalizeIntent } from '../../../src/core/lifecycle/intent';
 import { noopLogger } from '../../../src/core/events/logger';
 import { localSigner } from '../../../src/core/signing/local';
 import { createMemoryStores } from '../../../src/core/store/memory';
@@ -120,6 +121,27 @@ describe('Blockchain handle', () => {
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
   });
 
+  it("gates token resolution on the resolved selection's capabilities, not the driver's own", async () => {
+    const env = await createFakeEnv();
+    const internals = internalsOf(env.bc);
+    const pooled = await env.run(internals.pooled());
+    const assets = containerOf(env.aio).runtime.assets;
+    const driverWithTokens = {
+      ...pooled.driver,
+      capabilities: new Set([...pooled.driver.capabilities, 'tokens']),
+      reader: {
+        ...pooled.driver.reader,
+        getTokenMetadata: async () => ({ symbol: 'TKN', decimals: 6 }),
+      },
+    };
+    await expect(
+      assets.resolve(internals.selection, driverWithTokens, {
+        standard: 'erc20',
+        contract: '0xabc',
+      }),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
+  });
+
   it('validates and normalizes addresses', async () => {
     const env = await createFakeEnv();
     expect(await env.run(env.bc.validateAddress('nope'))).toBe(false);
@@ -172,6 +194,35 @@ describe('Blockchain handle', () => {
     await expect(
       env.run(env.bc.estimateFee({ to: env.stranger(), amount: '0' })),
     ).rejects.toMatchObject({ code: 'INVALID_AMOUNT' });
+  });
+
+  it('normalizeIntent validates fee and memo shapes before reaching the driver', async () => {
+    const env = await createFakeEnv();
+    const internals = internalsOf(env.bc);
+    const pooled = await env.run(internals.pooled());
+    const from = await env.run(env.bc.walletAddress());
+    const ctx = {
+      selection: internals.selection,
+      driver: pooled.driver,
+      assets: containerOf(env.aio).runtime.assets,
+    };
+    await expect(
+      normalizeIntent(ctx, { to: env.stranger(), amount: '1', fee: { fee: 5 } }, from),
+    ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+    await expect(
+      normalizeIntent(
+        ctx,
+        { to: env.stranger(), amount: '1', memo: 42 as unknown as string },
+        from,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+    await expect(
+      normalizeIntent(
+        ctx,
+        { to: env.stranger(), amount: '1', fee: { fee: 1_000n }, memo: 'ok' },
+        from,
+      ),
+    ).resolves.toMatchObject({ fee: { fee: 1_000n }, memo: 'ok' });
   });
 
   it('loads adapters lazily and surfaces DEPENDENCY_MISSING', async () => {
