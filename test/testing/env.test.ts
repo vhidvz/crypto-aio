@@ -1,8 +1,13 @@
+import { inspect } from 'node:util';
 import { containerOf } from '../../src/core/container/internals';
+import { StateError } from '../../src/core/errors/error';
+import { localSigner } from '../../src/core/signing/local';
 import { createMemoryStores } from '../../src/core/store/memory';
+import type { CursorStore } from '../../src/core/store/types';
 import type { Clock } from '../../src/core/util/clock';
 import { createFakeEnv, type FakeEnvOptions } from '../../src/testing/env';
 import { FakeClock } from '../../src/testing/fake-clock';
+import { thrown } from '../helpers';
 
 describe('createFakeEnv restart()', () => {
   it('keeps the previous generation alive by default and shares durable state', async () => {
@@ -194,6 +199,122 @@ describe('createFakeEnv restart()', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(settled).toBe(false);
+  });
+
+  it("N-A: an old generation's async store/signer calls issued after the kill never settle and never throw", async () => {
+    const env = await createFakeEnv();
+    const oldSigner = containerOf(env.aio).effective().signers[env.signer.id];
+    if (!oldSigner) throw new Error('expected the fenced signer to be registered');
+    const restarted = await env.restart({ killPrevious: true });
+
+    let storeCall: Promise<unknown> | undefined;
+    let signerCall: Promise<unknown> | undefined;
+    expect(() => {
+      storeCall = env.stores.cursors.get('x');
+      signerCall = oldSigner.getPublicKey('secp256k1-ecdsa');
+    }).not.toThrow();
+    const newGenClock = containerOf(restarted.aio).runtime.clock;
+    const settledAs = (name: string) => () => name;
+    const winner = await restarted.run(
+      Promise.race([
+        storeCall?.then(settledAs('store'), settledAs('store')),
+        signerCall?.then(settledAs('signer'), settledAs('signer')),
+        newGenClock.sleep(50).then(() => 'timeout'),
+      ]),
+    );
+    expect(winner).toBe('timeout');
+
+    // Diagnostics on the dead proxy pass straight through.
+    expect(JSON.stringify(oldSigner)).toBe(JSON.stringify(env.signer));
+    expect(() => inspect(oldSigner)).not.toThrow();
+  });
+
+  it('N-A: a synchronous method on a fenced store throws StateError once the generation is killed; port methods never settle', async () => {
+    const memory = createMemoryStores(new FakeClock());
+    // Non-`async` arrow functions returning promises: the port allowlist, not the function
+    // kind, decides that `get`/`put` are async.
+    const cursors = {
+      get: (key: string) => memory.cursors.get(key),
+      put: (...args: Parameters<CursorStore['put']>) => memory.cursors.put(...args),
+      peek: () => 'live',
+    };
+    const env = await createFakeEnv({ stores: { cursors } });
+    const fenced = env.stores.cursors as unknown as typeof cursors;
+    expect(fenced.peek()).toBe('live');
+
+    await env.restart({ killPrevious: true });
+
+    expect(thrown(() => fenced.peek())).toBeInstanceOf(StateError);
+    let settled = false;
+    fenced.get('x').then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
+  });
+
+  it('N-B: a signer supplied through options.aio.signers is fenced too, alongside the default one', async () => {
+    const cold = localSigner.generate({ curves: ['secp256k1'], id: 'cold' }).signer;
+    const env = await createFakeEnv({ aio: { signers: { cold } } });
+    const signers = containerOf(env.aio).effective().signers;
+    const fencedCold = signers.cold;
+    if (!fencedCold) throw new Error('expected the aio signer to be registered');
+    expect(fencedCold).not.toBe(cold);
+    expect(fencedCold.id).toBe('cold');
+    expect(signers[env.signer.id]?.id).toBe(env.signer.id);
+
+    let settled = false;
+    fencedCold.getPublicKey('secp256k1-ecdsa').then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await env.restart({ killPrevious: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
+  });
+
+  it("N-C: killPrevious fences a Response's clone(), blob() and body stream reads", async () => {
+    const env = await createFakeEnv();
+    const fetchFn = containerOf(env.aio).runtime.transport.fetch as typeof fetch;
+    const post = () =>
+      fetchFn(env.chain.endpoint('main'), {
+        method: 'POST',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'fake_blockNumber',
+          params: [],
+        }),
+      });
+    // While alive, the fenced clone and body stream behave like the real ones.
+    const alive = await post();
+    expect(JSON.parse(await alive.clone().text())).toMatchObject({ jsonrpc: '2.0' });
+    const aliveBody = (await post()).body;
+    if (!aliveBody) throw new Error('expected a body');
+    const first = await aliveBody.getReader().read();
+    expect(first.done).toBe(false);
+
+    const [forClone, forBlob, forReader] = [await post(), await post(), await post()];
+    const reader = forReader.body?.getReader();
+    if (!reader) throw new Error('expected a body');
+    await env.restart({ killPrevious: true });
+
+    const settled: string[] = [];
+    const track = (name: string, promise: Promise<unknown>) =>
+      promise.then(
+        () => settled.push(name),
+        () => settled.push(name),
+      );
+    void track('clone', forClone.clone().text());
+    void track('blob', forBlob.blob());
+    void track('read', reader.read());
+    await env.clock.advance(10_000);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(settled).toEqual([]);
   });
 
   it('env.stores is exactly the fenced store instances the container itself uses (N3)', async () => {
