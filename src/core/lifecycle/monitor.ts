@@ -2,6 +2,7 @@ import { statusFromObservation } from '../blockchain/mapping';
 import type { ProofSource } from '../driver/types';
 import {
   ChainError,
+  ConfigError,
   StateError,
   TimeoutError,
   ValidationError,
@@ -12,15 +13,18 @@ import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
 import type { TxStatus } from '../model/transaction';
 import {
+  NON_TERMINAL_STATES,
   isTerminal,
   type AttemptObservation,
   type AttemptRecord,
   type ClearableField,
   type Fence,
+  type OperationClaim,
   type OperationPatch,
   type OperationRecord,
   type Stores,
 } from '../store/types';
+import { randomId } from '../util/bytes';
 import type { Clock } from '../util/clock';
 import {
   PRE_SIGNING_STATES,
@@ -60,11 +64,25 @@ export interface TxStatusEvent {
 }
 
 export interface RecoveryReport {
+  /** `signed` or ambiguously `submitted` Operations whose stored bytes were sent again. */
   readonly rebroadcast: number;
   readonly checked: number;
+  /** Operations that need a caller (see `recovery.skipped`). */
   readonly skipped: number;
   readonly failed: number;
+  /** Leaked nonce values that reconciliation returned for reuse. */
+  readonly reconciled: number;
 }
+
+export interface WorkerOptions {
+  /** Default: a random id per `start` call. */
+  readonly workerId?: string;
+  readonly signal?: AbortSignal;
+  /** How many due Operations one pass claims. Default: 50. */
+  readonly batch?: number;
+}
+
+const DEFAULT_BATCH = 50;
 
 /**
  * Rebuilds the wallet-bound target of a stored Operation (from its `context`); `undefined`
@@ -111,6 +129,9 @@ function isSettled(observation: AttemptObservation | null | undefined): boolean 
  * (finalized data confirmed by quorum proof reads). A stale view decides nothing.
  */
 export class Monitor {
+  /** Per Operation, the expected nonces a `nonce.gap` was already emitted for. */
+  readonly #gaps = new Map<string, Set<string>>();
+
   constructor(private readonly deps: MonitorDeps) {}
 
   private get observationDeps(): ObservationDeps {
@@ -314,6 +335,301 @@ export class Monitor {
       } catch {
         return;
       }
+    }
+  }
+
+  // ---- workers and recovery ------------------------------------------------------------
+
+  /**
+   * One worker pass: claims up to `batch` due Operations, checks each under its claim fence
+   * (a stale worker's writes fail), then releases the claim. R26: every claimed Operation
+   * that stays live leaves the pass scheduled a poll interval ahead, including when its
+   * check threw, its view was stale or its all-rejected verdict could not run, so no worker
+   * claims it again before then. Returns how many Operations it claimed.
+   */
+  async runOnce(options: {
+    readonly workerId: string;
+    readonly batch?: number;
+  }): Promise<number> {
+    const claimed = await this.deps.stores.operations.claimDue(
+      this.deps.namespace,
+      options.workerId,
+      this.deps.clock.now(),
+      this.deps.lifecycle().claimLeaseMs,
+      options.batch ?? DEFAULT_BATCH,
+    );
+    const resolve = this.#passResolver();
+    for (const op of claimed) {
+      const fence: Fence = { claimToken: (op.claim as OperationClaim).token };
+      const started = this.deps.clock.now();
+      let current: OperationRecord | undefined;
+      try {
+        const target = await this.#targetOf(resolve, op);
+        current = await this.check(target, op, fence);
+        await this.#detectNonceGap(target, current);
+      } catch (error) {
+        this.deps.log.warn('monitor check failed', {
+          operationId: op.id,
+          code: errorCode(error),
+        });
+      }
+      const scheduled =
+        current !== undefined &&
+        (isTerminal(current.state) ||
+          (current.nextCheckAt !== undefined && current.nextCheckAt > started));
+      if (!scheduled) await this.#reschedule(op.id, fence, started);
+      await this.deps.stores.operations
+        .releaseClaim(this.deps.namespace, op.id, fence)
+        .catch((error: unknown) =>
+          this.deps.log.debug('claim already lost', {
+            operationId: op.id,
+            code: errorCode(error),
+          }),
+        );
+    }
+    return claimed.length;
+  }
+
+  /**
+   * Runs worker passes until `signal` aborts. Any number of workers, in any number of
+   * processes, may run: claims keep them apart. A full batch is followed by the next pass at
+   * once, anything less by a poll-interval sleep. A failed pass (e.g. a store outage) is
+   * logged by code and retried after the sleep.
+   */
+  async start(options: WorkerOptions = {}): Promise<void> {
+    const workerId = options.workerId ?? randomId('worker');
+    const batch = options.batch ?? DEFAULT_BATCH;
+    const { signal } = options;
+    while (!signal?.aborted) {
+      let processed = 0;
+      try {
+        processed = await this.runOnce({ workerId, batch });
+      } catch (error) {
+        this.deps.log.warn('monitor worker pass failed', {
+          workerId,
+          code: errorCode(error),
+        });
+      }
+      if (processed > 0 && processed >= batch) continue;
+      try {
+        await this.deps.clock.sleep(this.deps.lifecycle().pollIntervalMs, signal);
+      } catch {
+        return;
+      }
+    }
+  }
+
+  /**
+   * Startup recovery for this namespace; it never signs. `signed` and ambiguously
+   * `submitted` Operations resend their stored raw bytes; every other signed-or-later live
+   * Operation is checked. `created`, `prepared`, `awaiting-signature` and `stalled` ones need
+   * a caller and are reported through `recovery.skipped` (codes and states only). Then each
+   * wallet with a live Operation has its nonces reconciled under its address lease. A
+   * failure is logged by code and counted, and the rest go on. `signal` stops recovery
+   * between Operations and bounds each check and lease wait.
+   */
+  async recover(
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<RecoveryReport> {
+    const { signal } = options;
+    const { namespace } = this.deps;
+    const live = await this.deps.stores.operations.list({
+      namespace,
+      states: NON_TERMINAL_STATES,
+    });
+    const resolve = this.#passResolver();
+    let rebroadcast = 0;
+    let checked = 0;
+    let skipped = 0;
+    let failed = 0;
+    let reconciled = 0;
+    const skip = (op: OperationRecord, reason: string) => {
+      skipped += 1;
+      this.deps.events.emit('recovery.skipped', {
+        namespace,
+        operationId: op.id,
+        state: op.state,
+        reason,
+      });
+    };
+    for (const op of live) {
+      if (signal?.aborted) break;
+      if (PRE_SIGNING_STATES.has(op.state)) {
+        skip(op, 'CALLER_ACTION_REQUIRED');
+        continue;
+      }
+      if (op.state === 'stalled') {
+        skip(op, 'STALLED');
+        continue;
+      }
+      try {
+        const target = await this.#targetOf(resolve, op);
+        let current = op;
+        if (
+          op.state === 'signed' ||
+          (op.state === 'submitted' && op.ambiguous === true)
+        ) {
+          try {
+            current = await this.deps.engine.rebroadcast(target, op.id);
+          } catch (error) {
+            // A refusal or an unknown outcome is recorded on the Operation: check it next.
+            if (
+              !isCryptoAioError(error) ||
+              (error.category !== 'chain' && error.ambiguous !== true)
+            )
+              throw error;
+            current = (await this.find(op.id)) ?? op;
+          }
+          rebroadcast += 1;
+        }
+        await this.check(target, current, undefined, signal);
+        checked += 1;
+      } catch (error) {
+        failed += 1;
+        this.deps.log.warn('recovery of an operation failed', {
+          operationId: op.id,
+          code: errorCode(error),
+        });
+      }
+    }
+    const wallets = new Map<string, OperationRecord>();
+    for (const op of live) {
+      const key = [op.context.chain, op.context.network, op.intent.from].join('\n');
+      if (!wallets.has(key)) wallets.set(key, op);
+    }
+    for (const op of wallets.values()) {
+      if (signal?.aborted) break;
+      try {
+        const target = await this.#targetOf(resolve, op);
+        reconciled += (await this.deps.engine.reconcileNonces(target, op, { signal }))
+          .length;
+      } catch (error) {
+        this.deps.log.warn('nonce reconciliation failed', {
+          operationId: op.id,
+          code: errorCode(error),
+        });
+      }
+    }
+    return { rebroadcast, checked, skipped, failed, reconciled };
+  }
+
+  /** The resolver for one pass: each execution context's target is rebuilt once. */
+  #passResolver(): TargetResolver {
+    const targets = new Map<string, Promise<OperationTarget | undefined>>();
+    return (op) => {
+      let target = targets.get(op.context.configHash);
+      if (!target) {
+        target = this.deps.resolveTarget(op);
+        targets.set(op.context.configHash, target);
+      }
+      return target;
+    };
+  }
+
+  async #targetOf(
+    resolve: TargetResolver,
+    op: OperationRecord,
+  ): Promise<OperationTarget> {
+    const target = await resolve(op);
+    if (!target) {
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        `the target of operation '${op.id}' cannot be rebuilt from its context`,
+      );
+    }
+    return target;
+  }
+
+  /**
+   * R26: leaves a claimed, live Operation scheduled a poll interval ahead, unless it ended,
+   * another worker took it over or a writer scheduled it meanwhile. A pre-signing Operation
+   * is never scheduled (callers drive it), so it is unscheduled instead. Best effort.
+   */
+  async #reschedule(id: string, fence: Fence, started: number): Promise<void> {
+    try {
+      for (let tries = 0; tries < 3; tries++) {
+        const fresh = await this.deps.stores.operations.get(this.deps.namespace, id);
+        if (
+          !fresh ||
+          isTerminal(fresh.state) ||
+          fresh.claim?.token !== fence.claimToken ||
+          (fresh.nextCheckAt !== undefined && fresh.nextCheckAt > started)
+        )
+          return;
+        const patch: OperationPatch = PRE_SIGNING_STATES.has(fresh.state)
+          ? { clear: ['nextCheckAt'] }
+          : { nextCheckAt: this.deps.clock.now() + this.deps.lifecycle().pollIntervalMs };
+        try {
+          await this.deps.engine.update(fresh, patch, fence);
+          return;
+        } catch (error) {
+          if (!isCryptoAioError(error, 'VERSION_CONFLICT')) throw error;
+        }
+      }
+    } catch (error) {
+      this.deps.log.debug('could not reschedule a claimed operation', {
+        operationId: id,
+        code: errorCode(error),
+      });
+    }
+  }
+
+  /**
+   * `nonce.gap`, once per (Operation, expected nonce): a `submitted` Operation has waited
+   * longer than `droppedGracePeriodMs` since its active Attempt was first seen or sent, and
+   * the chain still expects a lower nonce. It names the live Operation holding that nonce,
+   * when one exists. Every such pass then reconciles the wallet's nonces, trying the lease
+   * once (never a filler transaction): a leaked value goes back for the next transfer.
+   */
+  async #detectNonceGap(target: OperationTarget, op: OperationRecord): Promise<void> {
+    const { sequence } = target.pooled.driver;
+    if (op.state !== 'submitted' || op.reservation?.kind !== 'nonce' || !sequence) {
+      this.#gaps.delete(op.id);
+      return;
+    }
+    const attempt = op.attempts.find((a) => a.id === op.activeAttemptId);
+    const observation = attempt
+      ? await this.deps.stores.operations.getObservation(attempt.id)
+      : null;
+    const since =
+      observation?.firstSeenAt ??
+      observation?.lastBroadcastAt ??
+      attempt?.createdAt ??
+      op.createdAt;
+    if (this.deps.clock.now() - since < this.deps.lifecycle().droppedGracePeriodMs)
+      return;
+    const expected = await sequence.latest(op.intent.from);
+    if (expected >= op.reservation.nonce) return;
+    const reported = this.#gaps.get(op.id) ?? new Set<string>();
+    if (!reported.has(expected.toString())) {
+      reported.add(expected.toString());
+      this.#gaps.set(op.id, reported);
+      const blocking = (
+        await this.deps.stores.operations.list({
+          namespace: this.deps.namespace,
+          chain: op.context.chain,
+          network: op.context.network,
+          from: op.intent.from,
+          states: NON_TERMINAL_STATES,
+        })
+      ).find((o) => o.reservation?.kind === 'nonce' && o.reservation.nonce === expected);
+      this.deps.events.emit('nonce.gap', {
+        namespace: this.deps.namespace,
+        chain: op.context.chain,
+        network: op.context.network,
+        operationId: op.id,
+        expected: expected.toString(),
+        ...(blocking ? { blockingOperationId: blocking.id } : {}),
+      });
+    }
+    try {
+      await this.deps.engine.reconcileNonces(target, op, { acquireTimeoutMs: 0 });
+    } catch (error) {
+      const busy = isCryptoAioError(error, 'SEQUENCE_BUSY');
+      this.deps.log[busy ? 'debug' : 'warn']('nonce reconciliation did not run', {
+        operationId: op.id,
+        code: errorCode(error),
+      });
     }
   }
 

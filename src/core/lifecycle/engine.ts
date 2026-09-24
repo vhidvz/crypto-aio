@@ -43,6 +43,7 @@ import type {
 } from '../signing/types';
 import type { ResolvedWallet } from '../signing/wallet';
 import {
+  NON_TERMINAL_STATES,
   isTerminal,
   type AttemptObservation,
   type AttemptRecord,
@@ -200,6 +201,16 @@ function mayBeLive(observation: AttemptObservation | null): boolean {
       observation.state === 'mempool' ||
       observation.state === 'dropped')
   );
+}
+
+/** Every nonce a live Operation holds: its reservation, unsigned payload and Attempts. */
+function heldNonces(op: OperationRecord): bigint[] {
+  const orderings = [
+    op.reservation,
+    op.unsigned?.ordering,
+    ...op.attempts.map((a) => a.ordering),
+  ];
+  return orderings.flatMap((o) => (o?.kind === 'nonce' ? [o.nonce] : []));
 }
 
 /** `signed`, or `submitted` with an unknown broadcast outcome: its stored bytes are (re)sent. */
@@ -967,8 +978,10 @@ export class OperationEngine {
   /**
    * Assembles and persists an immutable Attempt BEFORE any broadcast (write-ahead). `lease`
    * is renewed right before the write (R23): signing may have outlived it, and then
-   * nothing is written. When the append loses its compare-and-set, the stored Operation is
-   * returned instead (R24), and callers continue from its state. The `signed` Operation is
+   * nothing is written. When the append loses its compare-and-set to a writer that took the
+   * Operation to `signed` or beyond (or ended it), the stored Operation is returned instead
+   * (R24), and callers continue from its state; a still pre-signing one rethrows the
+   * VERSION_CONFLICT, and an abandoned one is INVALID_TRANSITION. The `signed` Operation is
    * scheduled (`nextCheckAt: now`), like every engine transition after signing.
    */
   protected async appendSigned(
@@ -1011,9 +1024,21 @@ export class OperationEngine {
     } catch (error) {
       // R24: another writer changed the Operation first (e.g. appended its own Attempt).
       // These bytes were never persisted or sent, so they are dropped; the caller goes on
-      // from the stored Operation instead of surfacing the conflict.
+      // from the stored Operation instead of surfacing the conflict. Lost-CAS contract:
+      // only when that writer took it to `signed` or beyond (or ended it). A stored
+      // pre-signing Operation means these signatures were not recorded anywhere, so the
+      // conflict is rethrown (a repeat signs again); an abandoned one cannot be signed.
       if (!isCryptoAioError(error, 'VERSION_CONFLICT')) throw error;
-      return this.require(op.id);
+      const stored = await this.require(op.id);
+      if (stored.state === 'abandoned') {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          `operation '${op.id}' was abandoned while it was being signed`,
+          { context: { operationId: op.id } },
+        );
+      }
+      if (PRE_SIGNING_STATES.has(stored.state)) throw error;
+      return stored;
     }
     if (next.state !== op.state) this.emitState(next, op.state);
     return next;
@@ -1359,6 +1384,51 @@ export class OperationEngine {
     throw new StateError('VERSION_CONFLICT', `operation '${op.id}' kept changing`, {
       context: { operationId: op.id },
     });
+  }
+
+  /**
+   * Nonce reconciliation, never a filler transaction (spec). Under the address lease,
+   * returns to `released` every value in [chainPending, next) that no live Operation of
+   * `op`'s wallet reserves, so the next allocation reuses it and the transfers waiting
+   * behind the gap can land. It closes the leaks a release cannot: a crash between
+   * allocation and the `prepared` write, a store failure inside a release after a terminal
+   * write, and a failure recorded without a release. Returns the reclaimed values. The
+   * lease wait is bounded by `signal` and `acquireTimeoutMs` (`0` tries once); a busy lease
+   * rejects with SEQUENCE_BUSY. A target whose wallet does not own `op` is refused
+   * (INVALID_INTENT): its lease guards another sequence.
+   */
+  async reconcileNonces(
+    target: OperationTarget,
+    op: OperationRecord,
+    options: { readonly signal?: AbortSignal; readonly acquireTimeoutMs?: number } = {},
+  ): Promise<readonly bigint[]> {
+    const { driver } = target.pooled;
+    const sequence = driver.sequence;
+    if (driver.ordering !== 'nonce' || !sequence) return [];
+    this.assertOwnedBy(target, op);
+    const { signal, acquireTimeoutMs } = options;
+    return this.withAddressLease(
+      target,
+      async (lease) => {
+        const chainPending = await sequence.pending(op.intent.from);
+        const live = await this.deps.stores.operations.list({
+          namespace: this.deps.namespace,
+          chain: op.context.chain,
+          network: op.context.network,
+          from: op.intent.from,
+          states: NON_TERMINAL_STATES,
+        });
+        await lease?.renew();
+        return this.deps.sequences.reclaim(
+          lease as LeaseHandle,
+          this.sequenceKeyOf(target),
+          chainPending,
+          live.flatMap(heldNonces),
+        );
+      },
+      signal,
+      acquireTimeoutMs === undefined ? undefined : { acquireTimeoutMs },
+    );
   }
 
   protected async everyAttemptRejected(op: OperationRecord): Promise<boolean> {

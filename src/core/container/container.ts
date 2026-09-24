@@ -21,7 +21,9 @@ import {
   withLifecycleDefaults,
   type OperationTarget,
 } from '../lifecycle/engine';
-import { Monitor } from '../lifecycle/monitor';
+import { Monitor, type RecoveryReport, type WorkerOptions } from '../lifecycle/monitor';
+import { loadObservations } from '../lifecycle/observations';
+import { toView, type OperationView } from '../lifecycle/views';
 import type { ChainId } from '../model/ids';
 import { SequenceCoordinator } from '../ordering/sequence';
 import {
@@ -33,7 +35,7 @@ import {
 import { SigningOrchestrator } from '../signing/orchestrator';
 import { resolveWallet, type ResolvedWallet } from '../signing/wallet';
 import { createMemoryStores } from '../store/memory';
-import type { OperationRecord, Stores } from '../store/types';
+import type { OperationRecord, OperationState, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
 import { systemClock } from '../util/clock';
 import { builtinPlugins } from './builtins';
@@ -119,22 +121,32 @@ function createEngine(
 
 /**
  * R26.3: the wallet-bound target of a stored Operation, rebuilt from its frozen context
- * (chain, network, library, wallet, signer) against the container's current config. The
- * engine checks the resolved wallet still owns the Operation before using it.
+ * (chain, network, library, wallet, signer) against the container's current config: its
+ * own named providers first, then the current defaults when those no longer resolve
+ * (inline configs are recorded by hash only and cannot be rebuilt). The only resolver:
+ * workers, recovery and the monitor's all-rejected verdict all use it. The engine checks
+ * the resolved wallet still owns the Operation before using it.
  */
 async function operationTarget(
   container: CryptoAio,
   runtime: RootRuntime,
   record: OperationRecord,
 ): Promise<OperationTarget> {
-  const { chain, network, library, wallet, signer } = record.context;
-  const handle = container.blockchain({
+  const { chain, network, library, wallet, signer, providers } = record.context;
+  const base = {
     chain,
     network,
     library,
     wallet,
     ...(signer !== undefined ? { signer } : {}),
-  } as HandleConfig<ChainId>);
+  } as HandleConfig<ChainId>;
+  const named = providers.filter((name) => !name.startsWith('inline:'));
+  let handle: Blockchain<ChainId>;
+  try {
+    handle = container.blockchain(named.length > 0 ? { ...base, provider: named } : base);
+  } catch {
+    handle = container.blockchain(base);
+  }
   const internals = internalsOf(handle);
   const [pooled, resolved] = await Promise.all([internals.pooled(), internals.wallet()]);
   return {
@@ -143,6 +155,28 @@ async function operationTarget(
     wallet: resolved,
     assets: runtime.assets,
   };
+}
+
+export interface OperationsFilter {
+  readonly states?: readonly OperationState[];
+  readonly chain?: string;
+  readonly network?: string;
+  readonly limit?: number;
+}
+
+export interface OperationsApi {
+  get(id: string): Promise<OperationView | null>;
+  /** In creation order. */
+  list(filter?: OperationsFilter): Promise<OperationView[]>;
+  /** Startup recovery for this namespace (see RecoveryReport); it never signs. */
+  recover(options?: { readonly signal?: AbortSignal }): Promise<RecoveryReport>;
+}
+
+export interface MonitorApi {
+  /** Runs worker passes until `signal` aborts; any number of workers may run. */
+  start(options?: WorkerOptions): Promise<void>;
+  /** One worker pass; resolves to the number of Operations it claimed. */
+  runOnce(options?: Omit<WorkerOptions, 'signal'>): Promise<number>;
 }
 
 /**
@@ -291,6 +325,47 @@ export class CryptoAio {
 
   onAny(handler: (event: AioEvent) => void): () => void {
     return containerOf(this).runtime.events.onAny(handler);
+  }
+
+  /** Stored Operations of this namespace, as views, and startup recovery. */
+  get operations(): OperationsApi {
+    const internals = containerOf(this);
+    const store = internals.runtime.stores.operations;
+    const namespace = internals.runtime.namespace;
+    const view = async (record: OperationRecord) =>
+      toView(record, await loadObservations(store, record));
+    return {
+      get: async (id) => {
+        const record = await store.get(namespace, id);
+        return record ? view(record) : null;
+      },
+      list: async (filter = {}) =>
+        Promise.all(
+          (
+            await store.list({
+              namespace,
+              ...(filter.states ? { states: filter.states } : {}),
+              ...(filter.chain ? { chain: filter.chain } : {}),
+              ...(filter.network ? { network: filter.network } : {}),
+              ...(filter.limit !== undefined ? { limit: filter.limit } : {}),
+            })
+          ).map(view),
+        ),
+      recover: (options) => internals.monitor().recover(options),
+    };
+  }
+
+  /** Background workers that check due Operations without anyone waiting on them. */
+  get monitor(): MonitorApi {
+    const internals = containerOf(this);
+    return {
+      start: (options) => internals.monitor().start(options),
+      runOnce: (options = {}) =>
+        internals.monitor().runOnce({
+          workerId: options.workerId ?? internals.runtime.owner,
+          ...(options.batch !== undefined ? { batch: options.batch } : {}),
+        }),
+    };
   }
 
   /** Closes pooled drivers (root only; scopes share their root's pool). */

@@ -152,4 +152,39 @@ export class SequenceCoordinator {
       state.version,
     );
   }
+
+  /**
+   * Nonce reconciliation: returns to `released` every value in [chainPending, next) that is
+   * neither released already nor in `reserved`, and returns those values (ascending). It
+   * never touches a value below `chainPending` (the chain consumed it) or at or above
+   * `next` (never allocated). The caller holds `lease` and reads `reserved` (the values live
+   * Operations hold) under it, so no allocation can interleave; nothing is written when
+   * there is nothing to reclaim.
+   */
+  async reclaim(
+    lease: LeaseHandle,
+    key: string,
+    chainPending: bigint,
+    reserved: readonly bigint[],
+  ): Promise<bigint[]> {
+    const fence = fenceFor(lease, key);
+    const state = await this.deps.sequences.get(key);
+    if (!state) return [];
+    const held = new Set([...state.released, ...reserved]);
+    const reclaimed: bigint[] = [];
+    for (let value = chainPending; value < state.next; value++) {
+      if (!held.has(value)) reclaimed.push(value);
+    }
+    if (reclaimed.length === 0) return [];
+    await this.deps.sequences.put(
+      key,
+      {
+        next: state.next,
+        released: [...state.released, ...reclaimed].sort(byValue),
+        fence,
+      },
+      state.version,
+    );
+    return reclaimed;
+  }
 }

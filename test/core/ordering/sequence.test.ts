@@ -333,6 +333,48 @@ describe('SequenceCoordinator', () => {
       expect(String((error as Error).message)).not.toContain('0xOTHER');
     }
   });
+
+  it('reclaims only unreserved, unreleased values in [chainPending, next)', async () => {
+    const { coordinator, clock, sequences } = setup();
+    const run = <T>(fn: (lease: LeaseHandle) => Promise<T>) =>
+      drive(clock, coordinator.withLease(KEY, fn));
+    for (let i = 0; i < 6; i++)
+      await run((lease) => coordinator.allocate(lease, KEY, 0n));
+    await run((lease) => coordinator.release(lease, KEY, 4n));
+    // The chain consumed 0 and 1, a live operation holds 2, and 4 is already released.
+    expect(await run((lease) => coordinator.reclaim(lease, KEY, 2n, [2n]))).toEqual([
+      3n,
+      5n,
+    ]);
+    const after = await sequences.get(KEY);
+    expect(after).toMatchObject({ next: 6n, released: [3n, 4n, 5n] });
+    expect(await run((lease) => coordinator.reclaim(lease, KEY, 2n, [2n]))).toEqual([]);
+    expect(await run((lease) => coordinator.reclaim(lease, KEY, 9n, []))).toEqual([]);
+    expect(await sequences.get(KEY)).toEqual(after); // same version: nothing written
+  });
+
+  it('fences a stale or foreign lease out of reclaiming', async () => {
+    const { clock, locks, make } = setup(1_000);
+    const a = make('a');
+    const b = make('b');
+    const leaseA = new LeaseHandle(locks, 1_000, (await locks.acquire(KEY, 'a', 1_000))!);
+    await clock.advance(1_001);
+    await drive(
+      clock,
+      b.withLease(KEY, (lease) => b.allocate(lease, KEY, 0n)),
+    );
+    await expect(a.reclaim(leaseA, KEY, 0n, [])).rejects.toMatchObject({
+      code: 'FENCING',
+    });
+    const OTHER = sequenceKey('ns', 'c', 'n', 'other');
+    await expect(
+      drive(
+        clock,
+        b.withLease(OTHER, (lease) => b.reclaim(lease, KEY, 0n, [])),
+      ),
+    ).rejects.toMatchObject({ code: 'FENCING' });
+    expect(await b.withLease(KEY, async () => undefined)).toBeUndefined();
+  });
 });
 
 describe('reservations', () => {
