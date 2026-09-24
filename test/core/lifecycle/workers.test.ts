@@ -345,6 +345,40 @@ describe('a lost append keeps its contract (Task 24 review)', () => {
   });
 });
 
+describe('gaps follow the pending nonce; verdicts carry the claim (fix round 1)', () => {
+  it('reports no gap while every lower nonce is still pending (congestion)', async () => {
+    const env = await createFakeEnv();
+    const gaps: AioEvent[] = [];
+    env.aio.on('nonce.gap', (e) => gaps.push(e));
+    const reconcile = jest.spyOn(containerOf(env.aio).engine(), 'reconcileNonces');
+    await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await env.clock.advance(11_000);
+    expect(await env.run(env.aio.monitor.runOnce({ workerId: 'w' }))).toBe(2);
+    expect(gaps).toEqual([]);
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it("never lands a stale worker's all-rejected verdict after a takeover", async () => {
+    const { env, op } = await rejectedButLive();
+    const store = env.stores.operations;
+    const [stale] = await store.claimDue('default', 'a', env.clock.now(), 1_000, 10);
+    await env.clock.advance(1_500);
+    const [current] = await store.claimDue('default', 'b', env.clock.now(), 1_000, 10);
+    if (!stale?.claim || !current?.claim) throw new Error('unreachable');
+    const monitor = containerOf(env.aio).monitor();
+    const target = await targetOf(env);
+    await env.run(monitor.check(target, current, { claimToken: stale.claim.token }));
+    expect((await stored(env, op.id)).state).toBe('signed');
+    const decided = await env.run(
+      monitor.check(target, await stored(env, op.id), {
+        claimToken: current.claim.token,
+      }),
+    );
+    expect(decided.state).toBe('failed');
+  });
+});
+
 describe('reconciliation fences out a stale prepared write (R29)', () => {
   it('never lets a paused prepared write land on a nonce reconciliation released', async () => {
     const operations = new GatedUpdateStore();

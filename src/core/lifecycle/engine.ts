@@ -1299,7 +1299,9 @@ export class OperationEngine {
    * Without a held lease (the monitor), the lease wait is bounded by `signal` as well as
    * `acquireTimeoutMs` (the option overrides it; `0` tries once); a busy lease, or a target
    * whose wallet no longer owns the Operation (e.g. re-pointed to another key), writes
-   * nothing, logs the code and returns `op`. An abort is rethrown.
+   * nothing, logs the code and returns `op`. An abort is rethrown. A worker passes its
+   * claim `fence`: the terminal write carries it, and a claim taken over by another worker
+   * (FENCING) writes nothing, logs the code and returns the stored Operation.
    */
   async failRejected(
     target: OperationTarget,
@@ -1309,9 +1311,10 @@ export class OperationEngine {
       readonly error?: CryptoAioError;
       readonly signal?: AbortSignal;
       readonly acquireTimeoutMs?: number;
+      readonly fence?: Fence;
     } = {},
   ): Promise<OperationRecord> {
-    const { lease, error, signal, acquireTimeoutMs } = options;
+    const { lease, error, signal, acquireTimeoutMs, fence } = options;
     try {
       this.assertOwnedBy(target, op);
     } catch (mismatch) {
@@ -1328,7 +1331,11 @@ export class OperationEngine {
           target,
           (held) => {
             acquired = true;
-            return this.failRejected(target, op, { error, lease: held });
+            return this.failRejected(target, op, {
+              error,
+              lease: held,
+              ...(fence ? { fence } : {}),
+            });
           },
           signal,
           acquireTimeoutMs === undefined ? undefined : { acquireTimeoutMs },
@@ -1362,13 +1369,24 @@ export class OperationEngine {
       }
       let failed: OperationRecord;
       try {
-        failed = await this.update(current, {
-          state: 'failed',
-          error: serializeError(reason),
-          clear: ['ambiguous', 'nextCheckAt'],
-        });
+        failed = await this.update(
+          current,
+          {
+            state: 'failed',
+            error: serializeError(reason),
+            clear: ['ambiguous', 'nextCheckAt'],
+          },
+          fence,
+        );
       } catch (updateError) {
         if (isCryptoAioError(updateError, 'VERSION_CONFLICT')) continue;
+        if (fence && isCryptoAioError(updateError, 'FENCING')) {
+          this.deps.log.debug('claim lost before a terminal write', {
+            operationId: op.id,
+            code: updateError.code,
+          });
+          return current;
+        }
         throw updateError;
       }
       try {

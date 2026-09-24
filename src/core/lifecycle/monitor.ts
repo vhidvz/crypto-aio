@@ -577,8 +577,9 @@ export class Monitor {
   /**
    * `nonce.gap`, once per (Operation, expected nonce): a `submitted` Operation has waited
    * longer than `droppedGracePeriodMs` since its active Attempt was first seen or sent, and
-   * the chain still expects a lower nonce. It names the live Operation holding that nonce,
-   * when one exists. Every such pass then reconciles the wallet's nonces, trying the lease
+   * the chain's pending nonce is still below its own (spec §8.5: a lower nonce is missing
+   * even from the mempool, so congestion alone is no gap). It names the live Operation
+   * holding the expected nonce, when one exists. Every such pass then reconciles the wallet's nonces, trying the lease
    * once (never a filler transaction): a leaked value goes back for the next transfer.
    */
   async #detectNonceGap(target: OperationTarget, op: OperationRecord): Promise<void> {
@@ -598,7 +599,7 @@ export class Monitor {
       op.createdAt;
     if (this.deps.clock.now() - since < this.deps.lifecycle().droppedGracePeriodMs)
       return;
-    const expected = await sequence.latest(op.intent.from);
+    const expected = await sequence.pending(op.intent.from);
     if (expected >= op.reservation.nonce) return;
     const reported = this.#gaps.get(op.id) ?? new Set<string>();
     if (!reported.has(expected.toString())) {
@@ -847,7 +848,7 @@ export class Monitor {
     // R26.3: failing an all-rejected Operation releases its nonce, so the engine applies it
     // under the address lease; the monitor never makes a reservation-holding transition.
     if (evaluation.error?.code === 'TX_REJECTED')
-      return this.failRejected(op, signal, !fence);
+      return this.failRejected(op, signal, fence);
     const terminal = isTerminal(evaluation.state);
     // R26.1: a read-only pass (no fence) writes the Operation only when its state, outcome
     // or error changes, never just to schedule it: a version bump would make a concurrent
@@ -883,13 +884,14 @@ export class Monitor {
   /**
    * Hands the all-rejected verdict to the engine: an unfenced pass (`tryOnce`) tries the
    * lease once, a fenced one waits `acquireTimeoutMs`, and either wait is bounded by the
-   * pass `signal` (the caller's abort and, in `waitFor`, its deadline). An unresolvable
-   * target leaves the Operation non-terminal.
+   * pass `signal` (the caller's abort and, in `waitFor`, its deadline). A fenced pass's
+   * terminal write carries its claim `fence`, so a worker whose claim was taken over writes
+   * nothing. An unresolvable target leaves the Operation non-terminal.
    */
   private async failRejected(
     op: OperationRecord,
     signal: AbortSignal | undefined,
-    tryOnce: boolean,
+    fence: Fence | undefined,
   ): Promise<OperationRecord> {
     let target: OperationTarget | undefined;
     let failure: unknown;
@@ -910,7 +912,7 @@ export class Monitor {
     // fenced worker pass waits `acquireTimeoutMs`.
     return this.deps.engine.failRejected(target, op, {
       signal,
-      ...(tryOnce ? { acquireTimeoutMs: 0 } : {}),
+      ...(fence ? { fence } : { acquireTimeoutMs: 0 }),
     });
   }
 
