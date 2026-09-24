@@ -844,3 +844,39 @@ describe('monitor: fix round 1 (I2, I3, M4)', () => {
     expect(calls.slotConsumed).toBe(0);
   });
 });
+
+describe('monitor: fix round 2', () => {
+  it('keeps an operation a read-only pass moved out of signed claimable', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const first = await createFakeEnv({ stores: { operations: faulty } });
+    faulty.crashOn({
+      method: 'update',
+      timing: 'before',
+      when: (args) => (args[2] as OperationPatch | undefined)?.state === 'submitted',
+    });
+    await expect(
+      first.run(
+        first.bc.transfer(
+          { to: first.stranger(), amount: 3n },
+          { idempotencyKey: 'sch' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'STATE_UNRECORDED' });
+    const env = await first.restart({ killPrevious: true });
+    const signed = await env.stores.operations.getByKey('default', 'sch');
+    if (!signed) throw new Error('unreachable');
+    expect(signed.state).toBe('signed');
+    await env.run(env.bc.getTransactionStatus(signed.id));
+    const moved = await stored(env, signed.id);
+    expect(moved.state).toBe('submitted');
+    expect(moved.nextCheckAt).toBeDefined();
+    const due = await env.stores.operations.claimDue(
+      'default',
+      'worker',
+      env.clock.now(),
+      1_000,
+      10,
+    );
+    expect(due.map((op) => op.id)).toEqual([signed.id]);
+  });
+});

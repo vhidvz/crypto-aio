@@ -967,7 +967,8 @@ export class OperationEngine {
    * Assembles and persists an immutable Attempt BEFORE any broadcast (write-ahead). `lease`
    * is renewed right before the write (R23): signing may have outlived it, and then
    * nothing is written. When the append loses its compare-and-set, the stored Operation is
-   * returned instead (R24), and callers continue from its state.
+   * returned instead (R24), and callers continue from its state. The `signed` Operation is
+   * scheduled (`nextCheckAt: now`), like every engine transition after signing.
    */
   protected async appendSigned(
     target: OperationTarget,
@@ -999,6 +1000,9 @@ export class OperationEngine {
         attempt,
         {
           state: 'signed',
+          // R26.1: scheduled from the moment signed bytes exist, so the Operation stays
+          // claimable whatever moves it next (a read-only pass never schedules).
+          nextCheckAt: attempt.createdAt,
           clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous', 'error'],
         },
         op.version,
