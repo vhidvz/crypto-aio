@@ -9,17 +9,12 @@ All-In-One Crypto-Currency for Backend
 [![GitHub](https://img.shields.io/github/license/vhidvz/crypto-aio?style=flat)](https://github.com/vhidvz/crypto-aio/blob/master/LICENSE)
 [![documentation](https://img.shields.io/badge/documentation-click_to_read-c27cf4)](https://vhidvz.github.io/crypto-aio/)
 
-## Quick Start
+## Status
 
-```ts
-import { CryptoAio } from 'crypto-aio';
+`0.1.0` is under active development: the 0.0.x API (`caio.eth.*`) has been removed and the
+library is being rebuilt as a blockchain abstraction layer. See [CHANGELOG.md](CHANGELOG.md),
+including the security advisory about credentials that were committed to this repository.
 
-const caio = new CryptoAio();
-
-caio.eth.getGasPrice();
-
-caio.eth.createAccount();
-caio.eth.account.create();
-
-caio.eth.account.getBalance();
-```
+Plan 1 is complete: the SDK-free core, a fake chain family and the testing kit
+(`crypto-aio/testing`). The chain families arrive in Plans 2–6; until then, no real
+blockchain is supported.

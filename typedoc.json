@@ -1,0 +1,8 @@
+{
+  "entryPoints": ["src/index.ts", "src/native.ts", "src/testing/index.ts"],
+  "out": "docs/api",
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "readme": "none"
+}
