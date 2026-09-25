@@ -276,6 +276,15 @@ describe('public API', () => {
         cause: new Error('connect ECONNREFUSED https://node.test/v1/sk_live_E2ESECRET'),
       });
     });
+    // M5: a second endpoint serves another network, so the transport logs its disabling.
+    fake.route('https://stray.test', (request) =>
+      rpcResult(
+        request,
+        request.json<{ method: string }>().method === 'fake_identity'
+          ? 'fake-other'
+          : '0',
+      ),
+    );
     const logs: unknown[] = [];
     const aio = new CryptoAio({
       env: false,
@@ -291,6 +300,7 @@ describe('public API', () => {
               url: secret('https://node.test/v1/sk_live_E2ESECRET'),
               headers: { authorization: secret('Bearer E2ETOKEN') },
             },
+            { name: 'stray', url: secret('https://stray.test/v1/sk_live_E2ESECRET') },
           ],
         },
       },
@@ -298,6 +308,10 @@ describe('public API', () => {
     });
     const events: unknown[] = [];
     aio.onAny((event) => events.push(event));
+    // M5: a throwing handler is logged too; its error carries the secret URL.
+    aio.on('rpc.error', () => {
+      throw new Error('handler saw https://node.test/v1/sk_live_E2ESECRET');
+    });
     const bc = aio.blockchain({ chain: 'fakechain' });
     const error = await drive(clock, bc.getBlock(1n)).catch((e: unknown) => e);
     expect(error).toMatchObject({
@@ -306,6 +320,14 @@ describe('public API', () => {
     });
     expect(events).toContainEqual(expect.objectContaining({ type: 'rpc.error' }));
     const deep = { depth: Infinity, showHidden: true };
+    expect(logs.length).toBeGreaterThan(0);
+    const messages = logs.map((record) => (record as unknown[])[2]);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        'endpoint serves a different network; disabled',
+        'event handler threw',
+      ]),
+    );
     for (const text of [
       inspect(error, deep),
       JSON.stringify(error),
