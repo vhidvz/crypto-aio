@@ -400,7 +400,7 @@ export class OperationEngine {
             fresh = await this.prepareStage(target, fresh, stored, lease, options.signal);
           }
           if (fresh.state === 'prepared') {
-            await this.authorizeOrFail(target, fresh, lease);
+            await this.authorizeOrFail(target, fresh, lease, options.signal);
           }
           return fresh;
         },
@@ -994,17 +994,26 @@ export class OperationEngine {
     }
   }
 
+  /**
+   * `prepare()`'s policy check. M3: bounded like signing, by `lifecycle.signTimeoutMs` and
+   * the caller's `signal` (`signingDeadline`), but with no heartbeat: a hook that outlives
+   * the lease loses it, and its veto then writes nothing (N1). Only a veto fails the
+   * Operation; a timeout or an abort leaves it `prepared` for a repeat to authorize again.
+   */
   protected async authorizeOrFail(
     target: OperationTarget,
     op: OperationRecord,
     lease?: LeaseHandle,
+    signal?: AbortSignal,
   ): Promise<void> {
+    const ctx = this.signingContext(target, op, op.unsigned as UnsignedTx, 'original');
     try {
-      await this.deps.orchestrator.authorize(
-        this.signingContext(target, op, op.unsigned as UnsignedTx, 'original'),
+      await this.signingDeadline(op, undefined, signal, () =>
+        this.deps.orchestrator.authorize(ctx),
       );
     } catch (error) {
-      await this.failAfterPrepare(target, op, error, lease);
+      if (isCryptoAioError(error, 'POLICY_REJECTED'))
+        await this.failAfterPrepare(target, op, error, lease);
       throw error;
     }
   }
@@ -1139,7 +1148,7 @@ export class OperationEngine {
       this.deps.clock.sleep(this.deps.lifecycle().signTimeoutMs, done.signal).then(() => {
         throw new TimeoutError(
           'TIMEOUT',
-          'the signer did not answer within lifecycle.signTimeoutMs',
+          'the signer or policy hook did not answer within lifecycle.signTimeoutMs',
           { retryable: true, context: { operationId: op.id } },
         );
       }),

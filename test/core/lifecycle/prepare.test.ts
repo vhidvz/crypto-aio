@@ -252,6 +252,32 @@ describe('prepareTransfer', () => {
     ]);
   });
 
+  // M3: the policy hook of prepare() is bounded by lifecycle.signTimeoutMs, like signing.
+  it('stops waiting for a hung policy hook after signTimeoutMs and fails nothing', async () => {
+    let hung = true;
+    const env = await createFakeEnv({
+      lifecycle: { signTimeoutMs: 5_000 },
+      hooks: {
+        beforeSign: () => (hung ? new Promise<void>(() => undefined) : undefined),
+      },
+    });
+    const intent = { to: env.stranger(), amount: 3n };
+    const started = env.clock.now();
+    await expect(
+      env.run(env.bc.prepareTransfer(intent, { idempotencyKey: 'hung' })),
+    ).rejects.toMatchObject({ code: 'TIMEOUT', retryable: true });
+    expect(env.clock.now() - started).toBeLessThanOrEqual(6_000);
+    expect(await env.stores.operations.getByKey('default', 'hung')).toMatchObject({
+      state: 'prepared',
+      reservation: { kind: 'nonce', nonce: 0n },
+    });
+    hung = false;
+    const repeat = await env.run(
+      env.bc.prepareTransfer(intent, { idempotencyKey: 'hung' }),
+    );
+    expect(repeat.operation.state).toBe('prepared');
+  });
+
   // I2 (P4): lease contention fails abandon before any write, so a retry succeeds.
   it('lets abandon be retried after it lost the address lease to contention', async () => {
     const env = await createFakeEnv();
