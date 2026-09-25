@@ -4,11 +4,13 @@ import type {
   ChainDriver,
   DriverBlock,
   DriverTransaction,
+  DriverTransfer,
   DriverTxObservation,
 } from '../driver/types';
+import { isCryptoAioError } from '../errors/error';
 import { Address } from '../model/address';
 import { Amount } from '../model/amount';
-import type { AssetRef } from '../model/asset';
+import type { AssetInfo, AssetRef } from '../model/asset';
 import type { FeeEstimate, FeeEstimateDraft } from '../model/fee';
 import type { Block, Transaction, Transfer, TxStatus } from '../model/transaction';
 
@@ -103,26 +105,47 @@ export function toBlock(block: DriverBlock): Block {
   };
 }
 
+/**
+ * R35: a transfer whose asset does not resolve becomes an `UnresolvedTransfer` marker, so
+ * one junk token never fails a whole read. Only a retryable failure propagates, and the
+ * read is then retried; an error that is not a crypto-aio error is a driver bug and
+ * propagates too.
+ */
+async function toTransfer(
+  ctx: MappingContext,
+  txId: string,
+  transfer: DriverTransfer,
+): Promise<Transfer> {
+  const common = {
+    id: `${txId}:${transfer.locator}`,
+    from: transfer.from.map((value) => lenientAddress(ctx, value)),
+    to: lenientAddress(ctx, transfer.to),
+    source: transfer.source,
+    ...(transfer.memo !== undefined ? { memo: transfer.memo } : {}),
+  };
+  let asset: AssetInfo;
+  try {
+    asset = await resolveAsset(ctx, transfer.asset);
+  } catch (error) {
+    if (!isCryptoAioError(error) || error.retryable) throw error;
+    return {
+      ...common,
+      unresolved: { asset: transfer.asset, amount: transfer.amount, code: error.code },
+    };
+  }
+  return { ...common, asset, amount: Amount.fromBase(transfer.amount, asset) };
+}
+
 export async function toTransaction(
   ctx: MappingContext,
   tx: DriverTransaction,
   head: bigint,
   finalized: bigint,
 ): Promise<Transaction> {
-  const transfers: Transfer[] = await Promise.all(
-    tx.transfers.map(async (transfer) => {
-      const asset = await resolveAsset(ctx, transfer.asset);
-      return {
-        id: `${tx.id}:${transfer.locator}`,
-        from: transfer.from.map((value) => lenientAddress(ctx, value)),
-        to: lenientAddress(ctx, transfer.to),
-        asset,
-        amount: Amount.fromBase(transfer.amount, asset),
-        source: transfer.source,
-        ...(transfer.memo !== undefined ? { memo: transfer.memo } : {}),
-      };
-    }),
+  const transfers = await Promise.all(
+    tx.transfers.map((transfer) => toTransfer(ctx, tx.id, transfer)),
   );
+  const unresolved = transfers.some((t) => t.unresolved !== undefined);
   const fee = tx.fee
     ? await Promise.all(
         tx.fee.map(async (f) =>
@@ -147,7 +170,7 @@ export async function toTransaction(
       : {}),
     ...(fee ? { fee } : {}),
     transfers,
-    decoding: tx.decoding,
+    decoding: unresolved && tx.decoding === 'complete' ? 'partial' : tx.decoding,
     ...(tx.raw ? { raw: tx.raw } : {}),
     details: tx.details,
   };

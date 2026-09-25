@@ -181,13 +181,9 @@ export class Scanner implements AsyncIterable<ScanEvent> {
     const reader = mapping.driver.reader;
     const { chain, network } = mapping.selection;
     const key = `${this.deps.namespace}:${chain.id}:${network.id}:${this.options.cursorKey}`;
-    const source: Source = {
-      mapping,
-      blocks,
-      transport,
-      window: this.options.reorgWindow ?? this.deps.defaults.reorgWindow,
-      filter: await this.scanFilter(mapping),
-    };
+    const window = this.options.reorgWindow ?? this.deps.defaults.reorgWindow;
+    // Resolved inside the loop, so a transient failure resolving filter.assets is retried.
+    let source: Source | undefined;
     const poll = this.options.pollIntervalMs ?? this.deps.defaults.pollIntervalMs;
     const tip = () =>
       this.options.mode === 'final'
@@ -201,6 +197,13 @@ export class Scanner implements AsyncIterable<ScanEvent> {
     while (!signal?.aborted) {
       let step: Step | undefined;
       try {
+        source ??= {
+          mapping,
+          blocks,
+          transport,
+          window,
+          filter: await this.scanFilter(mapping),
+        };
         cursor ??= await this.initialCursor(source, await tip());
         if (cursor) {
           const verdict = validated

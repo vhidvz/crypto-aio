@@ -3,8 +3,10 @@ import type {
   AdapterManifest,
   BlockSource,
   DriverBlock,
+  DriverTransaction,
   ScanFilter,
 } from '../../../src/core/driver/types';
+import { ProviderError } from '../../../src/core/errors/error';
 import { EventBus } from '../../../src/core/events/bus';
 import { noopLogger } from '../../../src/core/events/logger';
 import type { AioEvent } from '../../../src/core/events/types';
@@ -13,7 +15,8 @@ import {
   type ScanEvent,
   type ScannerDeps,
 } from '../../../src/core/observe/scanner';
-import type { AssetRef } from '../../../src/core/model/asset';
+import type { AssetMetadata, AssetRef, TokenRef } from '../../../src/core/model/asset';
+import type { Transaction } from '../../../src/core/model/transaction';
 import { MemoryCursorStore } from '../../../src/core/store/memory';
 import type { CursorStore } from '../../../src/core/store/types';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
@@ -658,5 +661,148 @@ describe('address history', () => {
       });
     }
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('transfers of an unresolvable asset (R35)', () => {
+  const tokens = {
+    empty: { standard: 'erc20', contract: 'empty' },
+    broken: { standard: 'erc20', contract: 'broken' },
+    good: { standard: 'erc20', contract: 'good' },
+  } as const;
+  /** Every decoded native transfer also carries one token-event transfer of each token. */
+  const withTokens = (tx: DriverTransaction): DriverTransaction => {
+    const native = tx.transfers[0];
+    if (!native) return tx;
+    const logs = Object.values(tokens).map((asset, i) => ({
+      ...native,
+      locator: `log:${i}`,
+      asset,
+      amount: 1_000n + BigInt(i),
+      source: 'token-event' as const,
+    }));
+    return { ...tx, transfers: [...tx.transfers, ...logs] };
+  };
+
+  /** fakechain with token support, served by `metadata`, over the fake driver. */
+  async function tokenEnv(metadata: (ref: TokenRef) => Promise<AssetMetadata>) {
+    const env = await createFakeEnv();
+    const manifest: AdapterManifest = {
+      family: 'fake',
+      library: 'token-sdk',
+      chains: ['fakechain'],
+      capabilities: ['block-scan', 'address-history', 'tokens'],
+      peerDependencies: [],
+      load: async () => ({
+        create: async (ctx) => {
+          const driver = await fakeDriverFactory.create(ctx);
+          const blocks = driver.blocks as BlockSource;
+          const getTransaction = async (id: string) => {
+            const tx = await driver.reader.getTransaction(id);
+            return tx && withTokens(tx);
+          };
+          return {
+            ...driver,
+            reader: { ...driver.reader, getTransaction, getTokenMetadata: metadata },
+            blocks: {
+              header: (height) => blocks.header(height),
+              transactions: async (block, filter) =>
+                (await blocks.transactions(block, filter)).map(withTokens),
+            },
+            history: {
+              list: async () => {
+                const ids = env.chain.block(1n)?.txIds ?? [];
+                const txs = await Promise.all(ids.map(getTransaction));
+                return { items: txs.filter((tx) => tx !== null) };
+              },
+            },
+          };
+        },
+      }),
+    };
+    env.aio.use({ name: 'tokens', adapters: [manifest] });
+    const bc = env.aio.blockchain({
+      chain: 'fakechain',
+      library: 'token-sdk' as 'fake-sdk',
+    });
+    return { env, bc };
+  }
+
+  const junk = async (ref: TokenRef): Promise<AssetMetadata> => {
+    if (ref.contract === 'broken')
+      throw new ProviderError('RPC_ERROR', 'decimals() reverted');
+    return ref.contract === 'empty'
+      ? { symbol: '', decimals: 0 }
+      : { symbol: 'TKN', decimals: 6 };
+  };
+
+  const expectMarked = (tx: Transaction | null | undefined) => {
+    expect(tx?.decoding).toBe('partial');
+    const [native, empty, broken, good] = tx?.transfers ?? [];
+    expect(native).toMatchObject({ amount: { base: 7n }, asset: { ref: 'native' } });
+    expect(native?.unresolved).toBeUndefined();
+    expect(empty).toMatchObject({
+      id: `${tx?.id}:log:0`,
+      source: 'token-event',
+      unresolved: { asset: tokens.empty, amount: 1_000n, code: 'ASSET_RESOLUTION' },
+    });
+    expect(empty?.asset).toBeUndefined();
+    expect(empty?.amount).toBeUndefined();
+    expect(broken).toMatchObject({
+      unresolved: { asset: tokens.broken, amount: 1_001n, code: 'RPC_ERROR' },
+    });
+    expect(good).toMatchObject({
+      asset: { ref: tokens.good, metadata: { decimals: 6 } },
+      amount: { base: 1_002n },
+    });
+  };
+
+  it('delivers a junk token transfer with a marker and keeps scanning', async () => {
+    const { env, bc } = await tokenEnv(junk);
+    await env.run(bc.transfer({ to: env.stranger(), amount: 7n }));
+    env.chain.mine(2);
+    const iterator = bc.scanner({ cursorKey: 'junk', from: 1n })[Symbol.asyncIterator]();
+    const one = await take(env, iterator);
+    if (one.type !== 'block') throw new Error('unreachable');
+    expectMarked(one.transactions[0]);
+    await one.ack();
+    expect(heightOf(await take(env, iterator))).toBe(2n);
+  });
+
+  it('marks the transfer in getTransaction and history, and still propagates a retryable failure', async () => {
+    const { env, bc } = await tokenEnv(junk);
+    await env.run(bc.transfer({ to: env.stranger(), amount: 7n }));
+    env.chain.mine();
+    const txId = env.chain.block(1n)?.txIds[0] as string;
+    expectMarked(await env.run(bc.getTransaction(txId)));
+    expectMarked((await env.run(bc.history(env.address))).items[0]);
+    const flaky = await tokenEnv(async (ref) => {
+      if (ref.contract === 'good')
+        throw new ProviderError('PROVIDER_UNAVAILABLE', 'try again');
+      return junk(ref);
+    });
+    await flaky.env.run(flaky.bc.transfer({ to: flaky.env.stranger(), amount: 7n }));
+    flaky.env.chain.mine();
+    const id = flaky.env.chain.block(1n)?.txIds[0] as string;
+    await expect(flaky.env.run(flaky.bc.getTransaction(id))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+    });
+  });
+
+  it('retries a transient failure resolving filter.assets instead of ending the scan', async () => {
+    let failures = 2;
+    const { env, bc } = await tokenEnv(async (ref) => {
+      if (failures > 0) {
+        failures--;
+        throw new ProviderError('PROVIDER_UNAVAILABLE', 'try again');
+      }
+      return junk(ref);
+    });
+    env.chain.mine();
+    const iterator = bc
+      .scanner({ cursorKey: 'filtered', from: 1n, filter: { assets: [tokens.good] } })
+      [Symbol.asyncIterator]();
+    expect(heightOf(await take(env, iterator))).toBe(1n);
+    expect(failures).toBe(0);
   });
 });

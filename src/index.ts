@@ -128,12 +128,14 @@ export type {
   Evidence,
   Finality,
   RawTx,
+  ResolvedTransfer,
   SignedTx,
   Transaction,
   Transfer,
   TransferSource,
   TxState,
   TxStatus,
+  UnresolvedTransfer,
   UnsignedTx,
 } from './core/model/transaction';
 
