@@ -52,9 +52,10 @@ const malformedHistory = () =>
 
 /**
  * EIP-1559 prices for `speed`: the tip is the median, over the window, of the speed's
- * percentile (at least `minTip`); the cap allows the next base fee to double. A history
- * without the next base fee, or with a reward row shorter than `FEE_PERCENTILES`, is a
- * retryable `PROVIDER_UNAVAILABLE`.
+ * percentile (at least `minTip`); the cap allows the next base fee to double. The history
+ * must answer a request for `FEE_PERCENTILES`: one without the next base fee, without
+ * reward rows, or with a reward row shorter than `FEE_PERCENTILES` is a retryable
+ * `PROVIDER_UNAVAILABLE`, never a tip of `minTip`.
  */
 export function feesFromHistory(
   history: EvmFeeHistory,
@@ -62,7 +63,9 @@ export function feesFromHistory(
   minTip: bigint,
 ): { readonly params: EvmFeeParams; readonly baseFeePerGas: bigint } {
   const baseFeePerGas = history.baseFeePerGas[history.baseFeePerGas.length - 1];
-  if (baseFeePerGas === undefined) throw malformedHistory();
+  if (baseFeePerGas === undefined || history.reward.length === 0) {
+    throw malformedHistory();
+  }
   const index = SPEED_INDEX[speed];
   const tips = history.reward.map((row) => {
     const tip = row[index];

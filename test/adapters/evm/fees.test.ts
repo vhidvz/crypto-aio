@@ -1,5 +1,6 @@
 import { classifyBroadcastError } from '../../../src/adapters/evm/errors';
 import {
+  FEE_PERCENTILES,
   feeDraft,
   feeOf,
   feesFromHistory,
@@ -63,6 +64,24 @@ describe('EVM fee policy', () => {
     };
     expect(() => feesFromHistory(short, 'fast', 0n)).toThrow(malformed);
     expect(() => feesFromHistory(short, 'slow', 0n)).toThrow(malformed);
+    // Percentiles were requested, so no reward rows at all is malformed, not a zero tip.
+    expect(() => feesFromHistory({ ...history, reward: [] }, 'slow', 25n)).toThrow(
+      malformed,
+    );
+  });
+
+  it("reads each speed's tip from its FEE_PERCENTILES column", () => {
+    expect(FEE_PERCENTILES).toEqual([10, 25, 50]);
+    const row = FEE_PERCENTILES.map(BigInt);
+    const byPercentile = { ...history, reward: [row, row, row] };
+    const tips = (['slow', 'normal', 'fast'] as const).map(
+      (speed) => feesFromHistory(byPercentile, speed, 0n).params,
+    );
+    expect(tips).toEqual([
+      expect.objectContaining({ maxPriorityFeePerGas: 10n }),
+      expect.objectContaining({ maxPriorityFeePerGas: 25n }),
+      expect.objectContaining({ maxPriorityFeePerGas: 50n }),
+    ]);
   });
 
   it('keeps a plain transfer at 21000 gas and adds 20% headroom to anything else', () => {
