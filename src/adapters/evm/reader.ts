@@ -18,7 +18,7 @@ import {
 import type { Logger } from '../../core/events/logger';
 import type { AssetMetadata, AssetRef, TokenRef } from '../../core/model/asset';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
-import { decodeTransaction, evmObservation } from './decode';
+import { chainObservation, decodeTransaction, evmObservation } from './decode';
 import type { EvmNetworkConfig } from './network';
 import type { EvmBlock, EvmCallTags, EvmClient, EvmExt } from './types';
 
@@ -197,11 +197,19 @@ export function createEvmReader(ctx: EvmContext): ChainReader {
       const receipt = tx.blockHash !== null ? await client.getReceipt(id, READ) : null;
       return decodeTransaction(client.abi, tx, receipt, undefined, ctx.config);
     },
-    observe: async (ref) => {
+    /**
+     * With an ordering, the R50 verdict on one of our own Attempts. Without one (a status
+     * lookup by id, for a transaction the library does not manage) the chain's view, so a
+     * third party's call that shares the `transfer` selector is not reported failed (R68).
+     */
+    observe: async (ref, ordering) => {
       const tx = await client.getTransaction(ref.id, MONITOR);
       if (!tx) return { seen: 'none' };
-      if (tx.blockHash === null) return evmObservation(client.abi, tx, null);
-      return evmObservation(client.abi, tx, await client.getReceipt(ref.id, MONITOR));
+      const receipt =
+        tx.blockHash === null ? null : await client.getReceipt(ref.id, MONITOR);
+      return ordering === undefined
+        ? chainObservation(tx, receipt)
+        : evmObservation(client.abi, tx, receipt);
     },
     getTokenMetadata: async (ref: TokenRef): Promise<AssetMetadata> => {
       const contract = tokenOf(ref);

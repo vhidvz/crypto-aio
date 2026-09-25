@@ -485,12 +485,22 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     // A third party's contract call that shares the `transfer(address,uint256)` selector.
     const other = await submit(h, 1, { ...transfer, to: OTHER, data });
     h.node.mine();
-    const ref = { id: token, idKind: 'tx-hash' as const, canonical: true };
-    expect(await h.run(reader.observe(ref, undefined, undefined))).toMatchObject({
+    const ref = (id: string) => ({ id, idKind: 'tx-hash' as const, canonical: true });
+    // Our own Attempt, observed with its ordering: the R50 verdict.
+    expect(
+      await h.run(reader.observe(ref(token), { kind: 'nonce', nonce: 0n }, KEY_ADDRESS)),
+    ).toMatchObject({
       seen: 'block',
       success: false,
       reason: 'token transfer failed',
     });
+    // A status lookup by id (no ordering) is the chain's view: a selector-sharing call
+    // that logged no Transfer succeeded, as its receipt says.
+    for (const hash of [other, token]) {
+      const seen = await h.run(reader.observe(ref(hash), undefined, undefined));
+      expect(seen).toMatchObject({ seen: 'block', success: true });
+      expect(seen).not.toHaveProperty('reason');
+    }
     // The general decoder reports what the chain reports: the call succeeded, moving nothing.
     for (const hash of [token, other]) {
       const decoded = await h.run(reader.getTransaction(hash));

@@ -32,7 +32,10 @@ export function tokenTransferLanded(
 }
 
 /** What the chain reports: where the transaction is, and its receipt's status. */
-function chainObservation(tx: EvmTx, receipt: EvmReceipt | null): DriverTxObservation {
+export function chainObservation(
+  tx: EvmTx,
+  receipt: EvmReceipt | null,
+): DriverTxObservation {
   if (receipt) {
     return {
       seen: 'block',
