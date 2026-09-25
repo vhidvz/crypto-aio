@@ -1,3 +1,5 @@
+import { keccak_256 } from '@noble/hashes/sha3';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import { EVM_CHAINS } from '../../../src/adapters/evm/chains';
 import { EVM_PRESETS } from '../../../src/adapters/evm/presets';
 import { EVM_TOKENS } from '../../../src/adapters/evm/tokens';
@@ -101,6 +103,77 @@ describe('EVM chain data', () => {
     );
     expect(EVM_TOKENS).toHaveLength(8);
   });
+
+  /** Plan 2 Appendix A: Tether's supported-protocols page, Circle's USDC addresses page. */
+  const TOKENS: readonly (readonly [string, 'USDT' | 'USDC', string])[] = [
+    ['ethereum', 'USDT', '0xdAC17F958D2ee523a2206206994597C13D831ec7'],
+    ['avalanche', 'USDT', '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'],
+    ['ethereum', 'USDC', '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
+    ['polygon', 'USDC', '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359'],
+    ['avalanche', 'USDC', '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E'],
+    ['arbitrum', 'USDC', '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'],
+    ['optimism', 'USDC', '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85'],
+    ['base', 'USDC', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'],
+  ];
+
+  /** EIP-55, computed here with keccak-256 rather than by an SDK. */
+  const checksum = (address: string) => {
+    const hex = address.slice(2).toLowerCase();
+    const hash = bytesToHex(keccak_256(utf8ToBytes(hex)));
+    const digits = [...hex].map((c, i) =>
+      Number.parseInt(hash[i] ?? '0', 16) >= 8 ? c.toUpperCase() : c,
+    );
+    return `0x${digits.join('')}`;
+  };
+
+  it('computes EIP-55 checksums like the EIP test vectors', () => {
+    for (const vector of [
+      '0x52908400098527886E0F7030069857D2E4169EE7',
+      '0xde709f2102306220921060314715629080e2fb77',
+      '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+      '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359',
+      '0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB',
+      '0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb',
+    ])
+      expect(checksum(vector)).toBe(vector);
+  });
+
+  it.each(TOKENS)(
+    'resolves %s mainnet %s to its issuer contract, EIP-55 checksummed',
+    (chain, symbol, contract) => {
+      expect(contract).toMatch(/^0x[0-9a-fA-F]{40}$/);
+      expect(checksum(contract)).toBe(contract);
+      expect(catalogs().assets.resolveAlias(chain, 'mainnet', symbol)).toMatchObject({
+        id: `${chain}:mainnet/erc20:${contract}`,
+        ref: { standard: 'erc20', contract },
+        metadata: { symbol, decimals: 6 },
+      });
+    },
+  );
+
+  it('is frozen all the way down, so no caller can change the shared chain data', () => {
+    const frozen = (value: unknown): boolean =>
+      typeof value !== 'object' ||
+      value === null ||
+      (Object.isFrozen(value) && Object.values(value).every(frozen));
+    expect(frozen(EVM_CHAINS)).toBe(true);
+    const net = (c: string, n: string) => catalogs().chains.network(c, n);
+    // FINALIZED_TAG and each chain's `remove` list are shared by all its networks.
+    const finality = net('ethereum', 'sepolia').finality;
+    const remove = net('arbitrum', 'mainnet').capabilities?.remove ?? [];
+    expect(remove).toHaveLength(2);
+    expect(Reflect.set(finality, 'fallbackConfirmations', 1)).toBe(false);
+    expect(Reflect.set(remove, 2, 'tokens')).toBe(false);
+    expect(() => (remove as string[]).push('tokens')).toThrow(TypeError);
+    expect(net('ethereum', 'mainnet').finality).toEqual({
+      kind: 'tag',
+      tag: 'finalized',
+      fallbackConfirmations: 128,
+    });
+    expect(net('arbitrum', 'sepolia').capabilities).toEqual({
+      remove: ['replace-fee', 'cancel'],
+    });
+  });
 });
 
 describe('EVM provider presets', () => {
@@ -129,6 +202,28 @@ describe('EVM provider presets', () => {
       expect.objectContaining({
         code: 'CONFIG_INVALID',
         message: expect.stringMatching(/requires an apiKey/),
+      }),
+    );
+  });
+
+  it('refuses an empty or missing apiKey, naming the preset and network only', () => {
+    for (const apiKey of ['', secret(''), secret('  ')]) {
+      expect(() =>
+        presets.resolve('infura', { chain: 'base', network: 'sepolia', apiKey }, 'rpc'),
+      ).toThrow(
+        expect.objectContaining({
+          code: 'CONFIG_INVALID',
+          message:
+            "provider preset 'infura' requires a non-empty apiKey for base:sepolia",
+        }),
+      );
+    }
+    // Called directly, without the catalog's own apiKey check.
+    const alchemy = EVM_PRESETS.find((p) => p.name === 'alchemy');
+    expect(() => alchemy?.endpoints({ chain: 'bsc', network: 'testnet' })).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_INVALID',
+        message: "provider preset 'alchemy' requires a non-empty apiKey for bsc:testnet",
       }),
     );
   });

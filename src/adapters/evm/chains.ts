@@ -8,6 +8,7 @@
  * - `maxLagBlocks`: about 60 seconds of blocks, only where the block time is verified.
  * - `replacement.minBumpPercent: 10`: the spec's default (geth's `--txpool.pricebump`).
  */
+import type { KnownCapability } from '../../core/model/capability';
 import type { ChainInfo, FinalityPolicy, NetworkInfo } from '../../core/model/chain';
 
 const FINALIZED_TAG: FinalityPolicy = {
@@ -32,7 +33,7 @@ interface ChainSpec {
   readonly feeModel: 'evm-1559' | 'evm-legacy';
   readonly finality?: FinalityPolicy;
   /** Network capabilities removed from the EVM manifests' list. */
-  readonly remove?: readonly string[];
+  readonly remove?: readonly KnownCapability[];
   /** `false` on chains without a mempool to replace transactions in (Arbitrum). */
   readonly replacement?: boolean;
   readonly params?: Readonly<Record<string, unknown>>;
@@ -78,9 +79,21 @@ function evmChain(spec: ChainSpec): ChainInfo {
   };
 }
 
+/**
+ * Freezes plain data all the way down, as `BUILTIN_SCHEMES` is frozen: networks share
+ * `FINALIZED_TAG`, and a chain's networks share its `remove` list, so no caller may change them.
+ */
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null) {
+    for (const item of Object.values(value)) deepFreeze(item);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 const OP_STACK = { l1DataFee: 'op-stack' } as const;
 
-export const EVM_CHAINS: readonly ChainInfo[] = [
+export const EVM_CHAINS: readonly ChainInfo[] = deepFreeze([
   evmChain({
     id: 'ethereum',
     symbol: 'ETH',
@@ -228,4 +241,4 @@ export const EVM_CHAINS: readonly ChainInfo[] = [
       },
     ],
   }),
-];
+]);

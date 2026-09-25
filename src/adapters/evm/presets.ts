@@ -3,6 +3,7 @@
  * documentation are listed (Plan 2 appendix); a preset refuses every other network with
  * `CONFIG_INVALID`. Keyed URLs are `Secret`s, so the key never reaches logs or errors.
  */
+import { ConfigError } from '../../core/errors/error';
 import type { PresetInput, ProviderPreset } from '../../core/registry/providers';
 import { reveal, secret } from '../../core/secret/secret';
 import type { EndpointConfig } from '../../core/transport/types';
@@ -73,6 +74,18 @@ function entry(table: Table, input: PresetInput): string {
   return value;
 }
 
+/** The revealed key; the error names the preset and network, never the key. */
+function apiKeyOf(name: string, input: PresetInput): string {
+  const key: unknown = input.apiKey === undefined ? undefined : reveal(input.apiKey);
+  if (typeof key !== 'string' || key.trim() === '') {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `provider preset '${name}' requires a non-empty apiKey for ${input.chain}:${input.network}`,
+    );
+  }
+  return key;
+}
+
 function keyed(
   name: string,
   table: Table,
@@ -84,10 +97,7 @@ function keyed(
     requiresApiKey: true,
     supports: (chain, network) => table[chain]?.[network] !== undefined,
     endpoints: (input): readonly EndpointConfig[] => [
-      {
-        name,
-        url: secret(url(entry(table, input), reveal(input.apiKey as string))),
-      },
+      { name, url: secret(url(entry(table, input), apiKeyOf(name, input))) },
     ],
   };
 }
