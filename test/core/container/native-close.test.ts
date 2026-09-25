@@ -5,6 +5,18 @@ import { createFakeEnv } from '../../../src/testing/env';
 import { fakeManifest, fakePlugin } from '../../../src/testing/fake-plugin';
 
 describe('closing native clients (N6)', () => {
+  it('leaves no timer behind when a native client closes normally (M4)', async () => {
+    const logs: unknown[][] = [];
+    const env = await createFakeEnv({
+      aio: { logger: createLogger('n6', (...record) => logs.push(record)) },
+    });
+    const client = await env.run(native(env.bc, 'fake-sdk'));
+    await env.run(env.aio.close());
+    expect(client.closes).toBe(1);
+    expect(env.clock.pending).toBe(0);
+    expect(logs.filter(([level]) => level === 'warn')).toEqual([]);
+  });
+
   it('stops waiting for a native client that never finishes closing', async () => {
     let started = 0;
     const stuck: AdapterManifest = {

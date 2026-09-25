@@ -19,10 +19,11 @@ import type { Catalogs } from '../registry/plugin';
 
 /**
  * Resolves asset inputs strictly within one chain/network. Token metadata is cached per
- * container, and so is a token's own permanent failure (N6: a non-retryable crypto-aio
- * error, e.g. `ASSET_RESOLUTION` for a contract with no usable `decimals`), so a junk token
- * seen in every scanned block is queried once. A retryable or foreign failure is dropped
- * from the cache and the next resolution queries again.
+ * container, and so is a token's own permanent failure (N6, R53: only a crypto-aio
+ * `ASSET_RESOLUTION` error, e.g. for a contract with no usable `decimals`), so a junk token
+ * seen in every scanned block is queried once. Every other failure (a provider error,
+ * retryable or not, or a foreign error) is dropped from the cache, and the next resolution
+ * queries again: a provider fault must never pin a token.
  */
 export class AssetService {
   readonly #metadata = new Map<AssetId, Promise<AssetMetadata>>();
@@ -68,7 +69,7 @@ export class AssetService {
       pending = lookup.call(driver.reader, ref);
       this.#metadata.set(id, pending);
       pending.catch((error: unknown) => {
-        if (!isCryptoAioError(error) || error.retryable) this.#metadata.delete(id);
+        if (!isCryptoAioError(error, 'ASSET_RESOLUTION')) this.#metadata.delete(id);
       });
     }
     const metadata = await pending;

@@ -186,6 +186,28 @@ function sanitizeIdentityField(value: string): string {
   return cleaned.length > 0 ? cleaned : 'invalid';
 }
 
+/**
+ * Whether every quorum result matches the first under `canonicalJson`, compared whole or,
+ * with a `quorumKey`, on the key's projection. M2: a key that throws (or projects something
+ * `canonicalJson` rejects) counts as a disagreement, never a foreign error. Without a key,
+ * the comparison is unchanged.
+ */
+function quorumAgrees(
+  values: readonly unknown[],
+  quorumKey: ((result: unknown) => unknown) | undefined,
+): boolean {
+  const agree = (key: (value: unknown) => string): boolean => {
+    const expected = key(values[0]);
+    return values.every((value) => key(value) === expected);
+  };
+  if (!quorumKey) return agree(canonicalJson);
+  try {
+    return agree((value) => canonicalJson(quorumKey(value)));
+  } catch {
+    return false;
+  }
+}
+
 export class HttpTransport implements Transport {
   readonly id: string;
   readonly #endpoints: Endpoint[];
@@ -663,10 +685,12 @@ export class HttpTransport implements Transport {
           ),
       );
     }
-    const key = (value: T): string =>
-      canonicalJson(options.quorumKey ? options.quorumKey(value) : value);
-    const expected = key(first.value);
-    if (results.some((r) => key(r.value) !== expected)) {
+    if (
+      !quorumAgrees(
+        results.map((r) => r.value),
+        options.quorumKey,
+      )
+    ) {
       const endpointIds = results.map((r) => r.endpoint.id);
       this.#events.emit('provider.inconsistent', {
         transportId: this.id,

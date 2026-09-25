@@ -35,7 +35,8 @@ export interface CallOptions {
    * The part of each endpoint's result that must agree under `quorum` (default: the whole
    * result). Lets a caller compare consensus facts only, e.g. a block's number, hash and
    * parent hash, not fields that node implementations format differently. The call still
-   * resolves with the first endpoint's whole result.
+   * resolves with the first endpoint's whole result. A key that throws on any result counts
+   * as a disagreement (a retryable `PROVIDER_INCONSISTENT`).
    */
   readonly quorumKey?: (result: unknown) => unknown;
   /** Send to this many endpoints concurrently (raw-transaction broadcasts). */

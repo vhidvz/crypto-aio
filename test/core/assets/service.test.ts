@@ -49,6 +49,23 @@ describe('AssetService token metadata cache (N6)', () => {
     expect(getTokenMetadata).toHaveBeenCalledTimes(2);
   });
 
+  it('drops a non-retryable provider failure from the cache (R53: only ASSET_RESOLUTION is cached)', async () => {
+    let calls = 0;
+    const { service, driver, getTokenMetadata } = serviceWith(async () => {
+      calls += 1;
+      if (calls === 1) throw new ProviderError('RPC_ERROR', 'method not allowed');
+      return { symbol: 'TKN', decimals: 6 };
+    });
+    await expect(service.resolve(selection, driver, token)).rejects.toMatchObject({
+      code: 'RPC_ERROR',
+      retryable: false,
+    });
+    await expect(service.resolve(selection, driver, token)).resolves.toMatchObject({
+      metadata: { symbol: 'TKN', decimals: 6 },
+    });
+    expect(getTokenMetadata).toHaveBeenCalledTimes(2);
+  });
+
   it('drops a foreign (non crypto-aio) failure from the cache', async () => {
     const { service, driver, getTokenMetadata } = serviceWith(async () => {
       throw new TypeError('driver bug');
