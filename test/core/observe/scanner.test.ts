@@ -431,16 +431,37 @@ describe('scanner cursor and delivery guarantees', () => {
     const event = await take(env, iterator);
     expect(event).toMatchObject({ type: 'block', block: { height: 3n } });
     await event.ack();
-    expect((await env.stores.cursors.get(key))?.cursor.recent).toEqual([
-      checkpoint(env, 2n),
-      checkpoint(env, 3n),
-    ]);
+    // M4: validation refills the window from the chain below the checkpoint.
+    expect((await env.stores.cursors.get(key))?.cursor.recent).toEqual(
+      [0n, 1n, 2n, 3n].map((height) => checkpoint(env, height)),
+    );
     const stray = { height: 2n, hash: 'f'.repeat(64), recent: [] };
     await env.stores.cursors.put('default:fakechain:local:stray', stray, null);
     const refused = env.bc.scanner({ cursorKey: 'stray' })[Symbol.asyncIterator]();
     await expect(env.run(refused.next(), 500)).rejects.toMatchObject({
       code: 'SCANNER_REORG_TOO_DEEP',
     });
+  });
+
+  it('refills the window of a validated reset checkpoint, so an in-window reorg rolls back (M4)', async () => {
+    const env = await createFakeEnv({ chain: { finalityDepth: 20 } });
+    env.chain.mine(5);
+    const key = 'default:fakechain:local:refilled';
+    const hash = env.chain.block(4n)?.hash as string;
+    await env.stores.cursors.put(key, { height: 4n, hash, recent: [] }, null);
+    const iterator = env.bc
+      .scanner({ cursorKey: 'refilled', reorgWindow: 4 })
+      [Symbol.asyncIterator]();
+    await (await take(env, iterator)).ack();
+    expect((await env.stores.cursors.get(key))?.cursor.recent).toEqual(
+      [2n, 3n, 4n, 5n].map((height) => checkpoint(env, height)),
+    );
+    const ancestor = checkpoint(env, 2n);
+    env.chain.reorg(3);
+    const rollback = await take(env, iterator);
+    expect(rollback).toMatchObject({ type: 'rollback', to: ancestor });
+    if (rollback.type !== 'rollback') throw new Error('unreachable');
+    expect(rollback.removed.map((r) => r.height)).toEqual([5n, 4n, 3n]);
   });
 
   it('treats a retried ack whose earlier write landed unseen as committed', async () => {

@@ -162,7 +162,7 @@ function sameCursor(a: ScanCursor, b: ScanCursor): boolean {
  * A cursor stopped by `SCANNER_REORG_TOO_DEEP` is reset explicitly: scan under a new
  * `cursorKey`, or `put` a checkpoint `{ height, hash, recent }` for its key through the
  * `CursorStore`. A checkpoint without `recent` is validated on its own block, and its
- * reorg protection then rebuilds as blocks are delivered.
+ * window is then refilled from the chain below that block (M4).
  */
 export class Scanner implements AsyncIterable<ScanEvent> {
   constructor(
@@ -207,9 +207,14 @@ export class Scanner implements AsyncIterable<ScanEvent> {
         };
         cursor ??= await this.initialCursor(source, await tip());
         if (cursor) {
-          const verdict = validated
-            ? 'canonical'
-            : await this.findRollback(source, cursor);
+          let verdict = validated ? 'canonical' : await this.findRollback(source, cursor);
+          if (!validated && verdict === 'canonical') {
+            // M4: a short window (a reset checkpoint) is refilled from the chain below the
+            // validated block, so a reorg within the window still rolls back.
+            const recent = await this.refill(source, windowOf(cursor));
+            if (recent) cursor = { ...cursor, recent };
+            else verdict = undefined;
+          }
           validated = verdict !== undefined;
           step =
             verdict === 'canonical'
