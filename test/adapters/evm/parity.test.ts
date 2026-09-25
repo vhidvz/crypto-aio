@@ -76,7 +76,8 @@ describe('EthersClient and Web3Client parity', () => {
       );
       expect(b.abi.encodeBalanceOf(address)).toBe(a.abi.encodeBalanceOf(address));
     }
-    const payload = a.serializeUnsigned({
+    // An OP Stack payload, built by a client on that network (R61).
+    const payload = clients(10n)[0].serializeUnsigned({
       type: 'eip1559',
       chainId: 10n,
       nonce: 1n,

@@ -6,6 +6,7 @@
  */
 import { Web3, core, eth, utils } from 'web3';
 import type { DisposableNativeClient } from '../../core/driver/types';
+import { ProviderError, isCryptoAioError } from '../../core/errors/error';
 import type { Transport } from '../../core/transport/types';
 import {
   ABI_WORD,
@@ -87,13 +88,11 @@ export class Web3Client extends EvmClientBase {
   readonly library = 'web3';
   readonly abi = web3Abi;
   readonly #transport: Transport;
-  readonly #chainId: bigint;
   readonly #common: InstanceType<typeof eth.accounts.Common>;
 
   constructor(transport: Transport, chainId: bigint) {
-    super();
+    super(chainId);
     this.#transport = transport;
-    this.#chainId = chainId;
     this.#common = eth.accounts.Common.custom(
       { chainId: Number(chainId), networkId: Number(chainId) },
       { hardfork: 'london' },
@@ -106,9 +105,16 @@ export class Web3Client extends EvmClientBase {
     tags: EvmCallTags,
   ): Promise<unknown> {
     return throughSdk(
-      (call) => {
+      async (call) => {
         const manager = new core.Web3RequestManager(eip1193(call) as never);
-        return manager.send({ method, params: [...params] } as never);
+        try {
+          return await manager.send({ method, params: [...params] } as never);
+        } catch (error) {
+          // R61: web3 reads an answer shaped like a JSON-RPC error as an error of its own.
+          // A transport failure is put back by `throughSdk`; anything else is the answer's.
+          if (isCryptoAioError(error)) throw error;
+          throw new ProviderError('PROVIDER_UNAVAILABLE', 'malformed JSON-RPC answer');
+        }
       },
       this.#transport,
       tags,
@@ -132,16 +138,16 @@ export class Web3Client extends EvmClientBase {
     return utils.toChecksumAddress(`0x${digest.slice(-40)}`);
   }
 
-  serializeUnsigned(tx: EvmTxFields): string {
+  protected encodeUnsigned(tx: EvmTxFields): string {
     const message = this.#tx(tx).getMessageToSign(false);
     return utils.bytesToHex(Array.isArray(message) ? rlpList(message) : message);
   }
 
-  unsignedHash(tx: EvmTxFields): string {
+  protected hashUnsigned(tx: EvmTxFields): string {
     return utils.bytesToHex(this.#tx(tx).getMessageToSign(true));
   }
 
-  serializeSigned(
+  protected encodeSigned(
     tx: EvmTxFields,
     signature: EvmSignature,
   ): { raw: string; hash: string } {
@@ -182,7 +188,7 @@ export class Web3Client extends EvmClientBase {
         options,
       );
     }
-    const v = signature && this.#chainId * 2n + 35n + BigInt(signature.yParity);
+    const v = signature && this.chainId * 2n + 35n + BigInt(signature.yParity);
     return eth.accounts.Transaction.fromTxData(
       {
         ...common,

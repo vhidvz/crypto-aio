@@ -94,6 +94,26 @@ describe.each(LIBRARIES)('EvmClient codec (%s)', (library) => {
     },
   );
 
+  it('refuses a transaction for another chain, of either type (R61)', () => {
+    for (const vector of VECTORS) {
+      const { chainId } = vector.fields;
+      const local = makeClient(library, nodeTransport({ chainId }).transport, chainId);
+      const other = { ...vector.fields, chainId: chainId + 1n };
+      for (const encode of [
+        () => local.serializeUnsigned(other),
+        () => local.unsignedHash(other),
+        () => local.serializeSigned(other, signDigest(vector.digest)),
+      ]) {
+        expect(encode).toThrow(
+          expect.objectContaining({
+            code: 'INVALID_INTENT',
+            message: 'transaction chain id does not match the network',
+          }),
+        );
+      }
+    }
+  });
+
   it('validates, checksums and derives addresses strictly', () => {
     expect(client.addressFromPublicKey(KEY_PUBLIC)).toBe(KEY_ADDRESS);
     expect(
@@ -544,6 +564,27 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     await expect(t.run(t.client.blockNumber(READ))).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
       retryable: true,
+    });
+  });
+
+  it("classifies a JSON-RPC-shaped error answer as malformed, not as the node's error (R61)", async () => {
+    const t = setup();
+    t.node.intercept = (_e, method) =>
+      method === 'eth_call'
+        ? {
+            result: {
+              jsonrpc: '2.0',
+              id: 1,
+              error: { code: 3, message: 'execution reverted' },
+            },
+          }
+        : undefined;
+    await expect(
+      t.run(t.client.call({ to: RECIPIENT, data: '0x' }, 'latest', READ)),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: expect.stringMatching(/^malformed .*JSON-RPC answer$/),
     });
   });
 

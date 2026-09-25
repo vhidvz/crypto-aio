@@ -127,6 +127,12 @@ const hexOf = (value: bigint): string => `0x${value.toString(16)}`;
 export abstract class EvmClientBase implements EvmClient {
   abstract readonly library: string;
   abstract readonly abi: EvmAbi;
+  /** The chain id of the network this client serves. */
+  protected readonly chainId: bigint;
+
+  constructor(chainId: bigint) {
+    this.chainId = chainId;
+  }
 
   /** One JSON-RPC request through the SDK's bridge, under `tags`; resolves with `result`. */
   protected abstract send(
@@ -138,13 +144,46 @@ export abstract class EvmClientBase implements EvmClient {
   abstract isAddress(value: string): boolean;
   abstract checksum(address: string): string;
   abstract addressFromPublicKey(publicKey: Uint8Array): string;
-  abstract serializeUnsigned(tx: EvmTxFields): string;
-  abstract unsignedHash(tx: EvmTxFields): string;
-  abstract serializeSigned(
+  abstract createNative(): DisposableNativeClient;
+
+  /** The SDK codec, reached only through the chain-id guard below. */
+  protected abstract encodeUnsigned(tx: EvmTxFields): string;
+  protected abstract hashUnsigned(tx: EvmTxFields): string;
+  protected abstract encodeSigned(
     tx: EvmTxFields,
     signature: EvmSignature,
   ): { readonly raw: string; readonly hash: string };
-  abstract createNative(): DisposableNativeClient;
+
+  serializeUnsigned(tx: EvmTxFields): string {
+    return this.encodeUnsigned(this.#onNetwork(tx));
+  }
+
+  unsignedHash(tx: EvmTxFields): string {
+    return this.hashUnsigned(this.#onNetwork(tx));
+  }
+
+  serializeSigned(
+    tx: EvmTxFields,
+    signature: EvmSignature,
+  ): { readonly raw: string; readonly hash: string } {
+    return this.encodeSigned(this.#onNetwork(tx), signature);
+  }
+
+  /**
+   * R61: a transaction for another chain is refused before any codec work. The SDKs
+   * disagree about it: ethers commits to `tx.chainId`, web3 to the client's chain id (and
+   * throws a plain `Error` for a type-2 mismatch), so without this guard the two clients
+   * would produce different signing bytes for the same fields.
+   */
+  #onNetwork(tx: EvmTxFields): EvmTxFields {
+    if (tx.chainId !== this.chainId) {
+      throw new ValidationError(
+        'INVALID_INTENT',
+        'transaction chain id does not match the network',
+      );
+    }
+    return tx;
+  }
 
   /** Runs the SDK's checksum; `INVALID_ADDRESS` for anything but a valid hex address. */
   protected checked(address: string, checksum: (value: string) => string): string {

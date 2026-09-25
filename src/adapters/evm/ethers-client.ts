@@ -122,7 +122,7 @@ export class EthersClient extends EvmClientBase {
   readonly #network: Network;
 
   constructor(transport: Transport, chainId: bigint) {
-    super();
+    super(chainId);
     this.#transport = transport;
     // A plain network: ethers' known networks carry plugins (ENS, gas stations) we never use.
     this.#network = new Network('crypto-aio', chainId);
@@ -149,15 +149,15 @@ export class EthersClient extends EvmClientBase {
     return computeAddress(hexlify(uncompressedPublicKey(publicKey)));
   }
 
-  serializeUnsigned(tx: EvmTxFields): string {
+  protected encodeUnsigned(tx: EvmTxFields): string {
     return toEthers(tx).unsignedSerialized;
   }
 
-  unsignedHash(tx: EvmTxFields): string {
+  protected hashUnsigned(tx: EvmTxFields): string {
     return toEthers(tx).unsignedHash;
   }
 
-  serializeSigned(
+  protected encodeSigned(
     tx: EvmTxFields,
     signature: EvmSignature,
   ): { raw: string; hash: string } {
