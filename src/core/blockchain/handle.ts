@@ -25,11 +25,12 @@ import {
   type TransferOptions,
 } from '../lifecycle/engine';
 import { normalizeIntent } from '../lifecycle/intent';
-import type {
-  ConfirmationResult,
-  Monitor,
-  TxStatusEvent,
-  WaitOptions,
+import {
+  assertSameNetwork,
+  type ConfirmationResult,
+  type Monitor,
+  type TxStatusEvent,
+  type WaitOptions,
 } from '../lifecycle/monitor';
 import { loadObservations } from '../lifecycle/observations';
 import {
@@ -564,9 +565,12 @@ export class Blockchain<C extends ChainId = ChainId> {
     return this.view(await this.engine().abandon(await this.target(), operationId));
   }
 
+  /** An Operation of this handle's chain and network (another one is INVALID_INTENT). */
   async getOperation(operationId: string): Promise<OperationView | null> {
     const record = await this.engine().get(operationId);
-    return record ? this.view(record) : null;
+    if (!record) return null;
+    assertSameNetwork(internalsOf(this).selection, record);
+    return this.view(record);
   }
 
   /** Typed family extensions: `bc.ext.<family>.<method>(...)` (async, loads the adapter on demand). */

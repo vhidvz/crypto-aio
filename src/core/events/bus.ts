@@ -1,3 +1,4 @@
+import { isCryptoAioError } from '../errors/error';
 import type { Clock } from '../util/clock';
 import type { Logger } from './logger';
 import type { AioEvent, AioEventName, AioEvents } from './types';
@@ -36,7 +37,11 @@ export class EventBus {
       try {
         handler(event);
       } catch (error) {
-        this.log.warn('event handler threw', { type, error });
+        // M8: the code only; a handler's error message may carry anything.
+        this.log.warn('event handler threw', {
+          type,
+          code: isCryptoAioError(error) ? error.code : 'UNKNOWN',
+        });
       }
     }
   }

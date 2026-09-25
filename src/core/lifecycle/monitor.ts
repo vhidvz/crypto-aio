@@ -1,4 +1,5 @@
 import { statusFromObservation } from '../blockchain/mapping';
+import type { ResolvedSelection } from '../config/types';
 import type { ProofSource } from '../driver/types';
 import {
   ChainError,
@@ -230,7 +231,7 @@ export class Monitor {
   async status(target: ReadTarget, ref: string, signal?: AbortSignal): Promise<Snapshot> {
     let record = await this.find(ref);
     if (!record) return { status: await this.rawStatus(target, ref) };
-    this.assertSameNetwork(target, record);
+    assertSameNetwork(target.selection, record);
     if (!isTerminal(record.state) && !PRE_SIGNING_STATES.has(record.state)) {
       try {
         record = await this.check(target, record, undefined, signal);
@@ -529,7 +530,7 @@ export class Monitor {
         ) {
           const writer = await this.#resolved(writes, op);
           try {
-            current = await this.deps.engine.rebroadcast(writer, op.id);
+            current = await this.deps.engine.rebroadcast(writer, op.id, signal);
           } catch (error) {
             // A refusal or an unknown outcome is recorded on the Operation: check it next.
             if (
@@ -799,7 +800,7 @@ export class Monitor {
       op.state !== 'stalled'
     ) {
       signal?.throwIfAborted();
-      await this.#rebroadcastDropped(target, op, attempt, saved, now);
+      await this.#rebroadcastDropped(target, op, attempt, saved, now, signal);
     }
     return saved;
   }
@@ -1031,16 +1032,6 @@ export class Monitor {
     return statusFromObservation(observation, head, finalized);
   }
 
-  private assertSameNetwork(target: ReadTarget, record: OperationRecord): void {
-    const { chain, network } = target.selection;
-    if (record.context.chain !== chain.id || record.context.network !== network.id) {
-      throw new ValidationError(
-        'INVALID_INTENT',
-        `operation '${record.id}' belongs to ${record.context.chain}:${record.context.network}, not ${chain.id}:${network.id}`,
-      );
-    }
-  }
-
   private defaultError(record: OperationRecord): SerializedError {
     const code = record.state === 'expired' ? 'TX_EXPIRED' : 'TX_REJECTED';
     return new ChainError(code, `operation ended in state '${record.state}'`).toJSON();
@@ -1067,6 +1058,7 @@ export class Monitor {
     attempt: AttemptRecord,
     observation: AttemptObservation,
     now: number,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (
       now - (observation.lastBroadcastAt ?? 0) <
@@ -1075,10 +1067,10 @@ export class Monitor {
       return;
     let accepted = false;
     try {
-      const result = await target.pooled.driver.broadcaster.broadcast({
-        raw: attempt.raw,
-        ref: attempt.ref,
-      });
+      const result = await target.pooled.driver.broadcaster.broadcast(
+        { raw: attempt.raw, ref: attempt.ref },
+        signal ? { signal } : {},
+      );
       accepted = result.kind === 'accepted' || result.kind === 'already-known';
     } catch (error) {
       // The code only: an error message may carry detail that logs must not.
@@ -1091,6 +1083,20 @@ export class Monitor {
       lastBroadcastAt: now,
       ...(accepted ? { firstSeenAt: stored?.firstSeenAt ?? now } : {}),
     }));
+  }
+}
+
+/** Refuses a stored Operation of another chain or network than `selection` (INVALID_INTENT). */
+export function assertSameNetwork(
+  selection: Pick<ResolvedSelection, 'chain' | 'network'>,
+  record: OperationRecord,
+): void {
+  const { chain, network } = selection;
+  if (record.context.chain !== chain.id || record.context.network !== network.id) {
+    throw new ValidationError(
+      'INVALID_INTENT',
+      `operation '${record.id}' belongs to ${record.context.chain}:${record.context.network}, not ${chain.id}:${network.id}`,
+    );
   }
 }
 

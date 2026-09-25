@@ -15,6 +15,7 @@ import {
   isCryptoAioError,
   withContext,
   type CryptoAioError,
+  type ErrorCode,
   type SerializedError,
 } from '../errors/error';
 import type { EventBus } from '../events/bus';
@@ -148,11 +149,13 @@ const DEFINITIVE_CATEGORIES = new Set([
   'signing',
 ]);
 
-export function serializeError(error: unknown): SerializedError {
+/**
+ * M8: a crypto-aio error as it is; anything else under `fallback`, the most specific
+ * existing code for the caller's context (there is no generic code), with a sanitized message.
+ */
+export function serializeError(error: unknown, fallback: ErrorCode): SerializedError {
   return (
-    isCryptoAioError(error)
-      ? error
-      : createError('SIGNING_FAILED', sanitizeError(error).message)
+    isCryptoAioError(error) ? error : createError(fallback, sanitizeError(error).message)
   ).toJSON();
 }
 
@@ -173,7 +176,7 @@ export function errorCode(error: unknown): string {
   return isCryptoAioError(error) ? error.code : 'UNKNOWN';
 }
 
-function isDefinitive(error: unknown): boolean {
+function isDefinitive(error: unknown): error is CryptoAioError {
   return (
     isCryptoAioError(error) &&
     !error.retryable &&
@@ -507,24 +510,30 @@ export class OperationEngine {
   async rebroadcast(
     target: OperationTarget,
     operationId: string,
+    signal?: AbortSignal,
   ): Promise<OperationRecord> {
     const listed = await this.require(operationId);
-    return this.withAddressLease(target, listed, async (lease) => {
-      const op = await this.require(operationId);
-      this.assertOwnedBy(target, op);
-      if (
-        isTerminal(op.state) ||
-        PRE_SIGNING_STATES.has(op.state) ||
-        !op.activeAttemptId
-      ) {
-        throw new StateError(
-          'INVALID_TRANSITION',
-          `nothing to rebroadcast in state '${op.state}'`,
-          { context: { operationId } },
-        );
-      }
-      return this.resendActive(target, op, undefined, lease);
-    });
+    return this.withAddressLease(
+      target,
+      listed,
+      async (lease) => {
+        const op = await this.require(operationId);
+        this.assertOwnedBy(target, op);
+        if (
+          isTerminal(op.state) ||
+          PRE_SIGNING_STATES.has(op.state) ||
+          !op.activeAttemptId
+        ) {
+          throw new StateError(
+            'INVALID_TRANSITION',
+            `nothing to rebroadcast in state '${op.state}'`,
+            { context: { operationId } },
+          );
+        }
+        return this.resendActive(target, op, signal, lease);
+      },
+      signal,
+    );
   }
 
   /**
@@ -984,7 +993,7 @@ export class OperationEngine {
             );
         }
         if (isDefinitive(error)) {
-          await this.update(op, { state: 'failed', error: serializeError(error) }).catch(
+          await this.update(op, { state: 'failed', error: error.toJSON() }).catch(
             (e: unknown) =>
               this.deps.log.warn('could not record a failure', {
                 operationId: op.id,
@@ -2205,7 +2214,7 @@ export class OperationEngine {
           current,
           {
             state: 'failed',
-            error: serializeError(reason),
+            error: reason.toJSON(),
             clear: ['ambiguous', 'nextCheckAt'],
           },
           fence,
@@ -2482,7 +2491,8 @@ export class OperationEngine {
     }
     const failed = await this.update(op, {
       state: 'failed',
-      error: serializeError(error),
+      // Its callers pass a veto or a signing failure: nothing was signed or sent.
+      error: serializeError(error, 'SIGNING_FAILED'),
       clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous'],
     });
     try {

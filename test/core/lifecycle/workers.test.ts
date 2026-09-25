@@ -719,6 +719,40 @@ describe('monitoring is signer-free (R32)', () => {
   });
 });
 
+describe('resends carry the pass signal (M8)', () => {
+  it('passes the pass signal to the rebroadcast of a dropped attempt', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    const op = await stored(env, sub.operationId);
+    env.chain.dropFromMempool(op.attempts[0]?.ref.id ?? '');
+    await env.clock.advance(11_000);
+    const signals = await broadcastSignals(env);
+    const ctl = new AbortController();
+    expect(
+      await env.run(env.aio.monitor.runOnce({ workerId: 'w', signal: ctl.signal })),
+    ).toBe(1);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toBe(ctl.signal);
+  });
+
+  it("passes recovery's signal to the resend of a signed operation", async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({ stores: { operations: faulty } });
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    await expect(
+      env.run(env.bc.transfer({ to: env.stranger(), amount: 3n })),
+    ).rejects.toBeInstanceOf(CrashError);
+    const restarted = await env.restart({ killPrevious: true });
+    const signals = await broadcastSignals(restarted);
+    const ctl = new AbortController();
+    expect(
+      await restarted.run(restarted.aio.operations.recover({ signal: ctl.signal })),
+    ).toMatchObject({ rebroadcast: 1, failed: 0 });
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toBe(ctl.signal);
+  });
+});
+
 // ---- helpers --------------------------------------------------------------------------
 
 /** A local signer that records the Operation of every signing call. */
@@ -1009,4 +1043,16 @@ function rotatedContainer(
       timeoutMs: 5_000,
     },
   });
+}
+
+/** Records the `signal` of every broadcast through `env`'s pooled driver. */
+async function broadcastSignals(env: FakeEnv): Promise<(AbortSignal | undefined)[]> {
+  const { driver } = await internalsOf(env.bc).pooled();
+  const broadcast = driver.broadcaster.broadcast.bind(driver.broadcaster);
+  const signals: (AbortSignal | undefined)[] = [];
+  driver.broadcaster.broadcast = (signed, options) => {
+    signals.push(options?.signal);
+    return broadcast(signed, options);
+  };
+  return signals;
 }

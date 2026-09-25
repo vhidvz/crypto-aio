@@ -1,6 +1,10 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { createLogger, type LogLevel } from '../../../src/core/events/logger';
-import { withLifecycleDefaults } from '../../../src/core/lifecycle/engine';
+import { StateError } from '../../../src/core/errors/error';
+import {
+  serializeError,
+  withLifecycleDefaults,
+} from '../../../src/core/lifecycle/engine';
 import { sequenceKey } from '../../../src/core/ordering/sequence';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
@@ -522,6 +526,17 @@ describe('transfer: signing under the address lease', () => {
       );
     }
     expect(withLifecycleDefaults({}).signTimeoutMs).toBe(120_000);
+  });
+
+  // M8: a failure that is not a crypto-aio error takes the caller's code, never a fixed one.
+  it("serializes a foreign error under the caller's code, and a crypto-aio error as it is", () => {
+    expect(serializeError(new Error('boom'), 'TX_REJECTED')).toMatchObject({
+      code: 'TX_REJECTED',
+      category: 'chain',
+      message: 'boom',
+    });
+    const own = new StateError('NOT_FOUND', 'missing');
+    expect(serializeError(own, 'TX_REJECTED')).toEqual(own.toJSON());
   });
 
   it('runs submitSignatures under the address lease', async () => {

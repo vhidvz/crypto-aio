@@ -1,3 +1,4 @@
+import { StateError } from '../../../src/core/errors/error';
 import { EventBus } from '../../../src/core/events/bus';
 import {
   createLogger,
@@ -44,6 +45,26 @@ describe('EventBus', () => {
     bus.emit('scanner.block', { namespace: 'ns', cursorKey: 'c', height: '1' });
     expect(all).toEqual(['scanner.block']);
     expect(warnings).toEqual(['event handler threw']);
+  });
+
+  // M8: the warning carries the event type and the error code, never the error itself.
+  it('logs a throwing handler by event type and error code only', () => {
+    const warnings: unknown[] = [];
+    const bus = new EventBus(new FakeClock(), {
+      ...noopLogger,
+      warn: (message, fields) => warnings.push([message, fields]),
+    });
+    bus.on('scanner.block', () => {
+      throw new Error('boom at https://user:pw@rpc.example/key');
+    });
+    bus.on('scanner.block', () => {
+      throw new StateError('NOT_FOUND', 'missing');
+    });
+    bus.emit('scanner.block', { namespace: 'ns', cursorKey: 'c', height: '1' });
+    expect(warnings).toEqual([
+      ['event handler threw', { type: 'scanner.block', code: 'UNKNOWN' }],
+      ['event handler threw', { type: 'scanner.block', code: 'NOT_FOUND' }],
+    ]);
   });
 
   it('tolerates a double unsubscribe and stops delivery after unsubscribing', () => {

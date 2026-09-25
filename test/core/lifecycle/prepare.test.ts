@@ -673,6 +673,21 @@ describe('prepareTransfer', () => {
     expect(await env.run(env.bc.getOperation('op_missing'))).toBeNull();
   });
 
+  // M8: like getTransactionStatus, a handle only shows Operations of its chain and network.
+  it('refuses to show an operation of another chain or network', async () => {
+    const env = await createFakeEnv();
+    const prepared = await env.run(
+      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    );
+    const other = env.aio.blockchain({ chain: 'fakeexpiry', provider: 'fake' });
+    await expect(
+      env.run(other.getOperation(prepared.operation.id)),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+    });
+    expect(await env.run(other.getOperation('op_missing'))).toBeNull();
+  });
+
   // Carry-forward: IntentSummary (addresses, amounts) never reaches an event payload.
   it('emits operational events only, never addresses or amounts', async () => {
     const env = await createFakeEnv({ fund: 10n ** 12n });
