@@ -1,4 +1,5 @@
 import { MemoryOperationStore, createMemoryStores } from '../../../src/core/store/memory';
+import type { ClearableField } from '../../../src/core/store/types';
 import type { ContractTestApi } from '../../../src/testing/contracts/api';
 import {
   describeOperationStoreContract,
@@ -50,5 +51,28 @@ describe('createMemoryStores', () => {
 
     const lease = await stores.locks.acquire('k', 'owner', 500);
     expect(lease?.expiresAt).toBe(clock.now() + 500);
+  });
+});
+
+describe('MemoryOperationStore patches', () => {
+  it("reads a caller's clear list once, so what is validated is what is cleared (M6)", async () => {
+    const store = new MemoryOperationStore(new FakeClock());
+    const { record } = await store.create(sampleOperation());
+    let reads = 0;
+    // Yields an allowed field on the first read and a store-owned one after that.
+    const fickle = {
+      *[Symbol.iterator]() {
+        reads += 1;
+        yield reads === 1 ? 'error' : 'attempts';
+      },
+    };
+    const updated = await store.update(
+      record.namespace,
+      record.id,
+      { clear: fickle as unknown as ClearableField[] },
+      record.version,
+    );
+    expect(reads).toBe(1);
+    expect(updated.attempts).toEqual([]);
   });
 });

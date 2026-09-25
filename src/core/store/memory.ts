@@ -144,8 +144,10 @@ function applyPatch(
   // applied, so an accessor (a getter or Proxy trap) on the patch object can't change
   // what keys are visible between validation and application.
   const entries = Object.entries(patch) as readonly (readonly [string, unknown])[];
-  const clearList = (entries.find(([key]) => key === 'clear')?.[1] ??
-    []) as readonly string[];
+  // M6: the caller's `clear` list is read once too, so what is validated is what is cleared.
+  const clear = entries.find(([key]) => key === 'clear')?.[1];
+  const clearList: readonly string[] =
+    clear === undefined ? [] : Array.from(clear as Iterable<string>);
   assertValidPatch(entries, clearList);
   const next: Record<string, unknown> = { ...current };
   for (const [key, value] of entries) {

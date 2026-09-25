@@ -145,6 +145,7 @@ export const CLEARABLE_FIELDS = Object.freeze([
   'nextCheckAt',
 ] as const);
 
+/** The only fields an `OperationPatch` may `clear`; never store-owned state or `state`. */
 export type ClearableField = (typeof CLEARABLE_FIELDS)[number];
 
 export interface OperationPatch {
@@ -230,11 +231,18 @@ export interface CreateResult {
  *   previously stored `AttemptRecord`, and rejects a duplicate attempt id. Attempt ids
  *   are globally unique across every Operation and namespace (observations are keyed
  *   by attempt id alone).
+ * - `claimDue` and `list` are scoped by namespace: they never return a record of another
+ *   namespace, even one with the same id.
  * - `claimDue` returns only non-terminal operations with `nextCheckAt` set and `<=
  *   now`, ordered by `(nextCheckAt, createdAt)` with a stable tie-break for equal
- *   values, and returns `[]` for `limit <= 0`. Claim tokens are strictly increasing
- *   per store; fenced writes are rejected after a takeover.
+ *   values, and returns `[]` for `limit <= 0`. A claimed Operation is excluded until
+ *   its `claim.until <= now`; then another worker may take it over. Claim tokens are
+ *   strictly increasing per store; fenced writes are rejected after a takeover.
  * - `list` returns matches in creation order.
+ * - `ClearableField` is restricted on purpose: `clear` can never remove store-owned or
+ *   identity fields (`attempts`, `claim`, `version`, `id`, ...) or `state`. An
+ *   implementation reads the caller's `clear` list once (M6), so the list it validates is
+ *   the list it applies.
  */
 export interface OperationStore {
   create(operation: NewOperation): Promise<CreateResult>;
