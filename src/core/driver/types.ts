@@ -266,7 +266,7 @@ export interface DisposableNativeClient {
  * | Method | Purpose | Retry | Quorum | Returns / throws |
  * | --- | --- | --- | --- | --- |
  * | `reader.getBalance`, `getBlock`, `getTransaction` | `read` | `safe` | none | `null` when not found; provider errors propagate |
- * | `reader.getTokenMetadata` | `read` | `safe` | none | N6: a token's own unusable metadata (no contract, a reverting or malformed `decimals`/`symbol`) throws `ValidationError('ASSET_RESOLUTION')`, which the core caches per container (R53: only `ASSET_RESOLUTION` is cached); every other failure, e.g. a transient provider failure (propagated retryable) or any other provider error, is not cached and the next lookup queries again |
+ * | `reader.getTokenMetadata` | `read` | `safe` | none | N6: a token's own unusable metadata (no contract, a reverting or malformed `decimals`/`symbol`) throws `ValidationError('ASSET_RESOLUTION')`, which the core caches per container (R53: only a non-retryable `ASSET_RESOLUTION` is cached); every other failure, e.g. a transient provider failure (propagated retryable) or any other provider error, is not cached and the next lookup queries again |
  * | `reader.getBlockHeight`, `getFinalizedHeight` | `monitor` | `safe` | none | propagate; they feed the stale-view guards and confirmation depths |
  * | `reader.observe(ref, ordering, from)` | `monitor` | `safe` | none | `{ seen: 'none' }` when not visible; `ordering` and `from` are `undefined` for a transaction the library does not manage |
  * | `sequence.pending`, `sequence.latest` | `monitor` | `safe` | none | propagate |
