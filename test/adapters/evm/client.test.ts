@@ -1,6 +1,6 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { Wallet } from 'ethers';
-import { eth } from 'web3';
+import { core, eth } from 'web3';
 import { quorumKeyFor, throughSdk } from '../../../src/adapters/evm/rpc';
 import { ProviderError } from '../../../src/core/errors/error';
 import type { CallOptions, Transport } from '../../../src/core/transport/types';
@@ -567,6 +567,24 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     expect(t.node.served.length).toBeGreaterThan(count);
     await first.close?.();
     await second.close?.();
+  });
+});
+
+describe('Web3Client', () => {
+  it("takes web3's EIP-1193 path: its provider's request is an async function (M10)", async () => {
+    // web3 4.16 sends a non-async `request` down its legacy request-provider path instead.
+    const send = jest.spyOn(core.Web3RequestManager.prototype, 'send');
+    try {
+      const { transport } = recording({ eth_blockNumber: '0x5' });
+      await makeClient('web3', transport, 1n).blockNumber(READ);
+      expect(
+        send.mock.contexts.map((manager) =>
+          core.isEIP1193Provider(manager.provider as never),
+        ),
+      ).toEqual([true]);
+    } finally {
+      send.mockRestore();
+    }
   });
 });
 
