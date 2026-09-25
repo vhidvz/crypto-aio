@@ -184,6 +184,12 @@ export interface ProofSource {
   ): Promise<boolean>;
   /** Whether expiry has passed per finalized state (expiry/seqno models; false otherwise). */
   expired(ordering: OrderingData): Promise<boolean>;
+  /**
+   * R33: the hash of the block at `height` on the chain at `level`, or `null` when there is
+   * none yet (above the head, or above the finalized height for `'finalized'`). Confirms
+   * the monitor's orphan decisions and the scanner's rollback and TOO_DEEP verdicts.
+   */
+  blockHash(height: bigint, level: FinalityLevel): Promise<string | null>;
 }
 
 export interface SequenceSource {

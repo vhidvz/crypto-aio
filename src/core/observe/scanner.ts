@@ -385,7 +385,8 @@ export class Scanner implements AsyncIterable<ScanEvent> {
    * block is, and `undefined` when this view cannot decide: it is stale, or it does not show
    * a block yet (absence is never divergence). Throws `SCANNER_REORG_TOO_DEEP` only when
    * every retained block is visible and none is canonical. The rolled-back cursor's window
-   * is refilled from the chain below the ancestor.
+   * is refilled from the chain below the ancestor. R33: a rollback or TOO_DEEP verdict of
+   * this header walk stands only once the proof quorum confirms it.
    */
   private async findRollback(
     source: Source,
@@ -400,6 +401,8 @@ export class Scanner implements AsyncIterable<ScanEvent> {
       if (!canonical) return undefined;
       if (canonical.hash !== entry.hash) continue;
       if (i === 0) return 'canonical';
+      if (!(await this.confirmed(source, newestFirst.slice(0, i), entry)))
+        return undefined;
       const recent = await this.refill(
         source,
         window.filter((r) => r.height <= entry.height),
@@ -410,10 +413,31 @@ export class Scanner implements AsyncIterable<ScanEvent> {
         next: { height: entry.height, hash: entry.hash, recent },
       };
     }
+    if (!(await this.confirmed(source, newestFirst))) return undefined;
     throw new StateError(
       'SCANNER_REORG_TOO_DEEP',
       `the chain diverged deeper than the ${source.window}-block window of cursor '${this.options.cursorKey}'; reset the cursor explicitly`,
     );
+  }
+
+  /**
+   * R33: whether the quorum-served hashes confirm a verdict: every `removed` block has been
+   * replaced at its height, and `ancestor` (when given) is still canonical. No block at a
+   * height decides nothing (`false`); a quorum that disagrees throws a retryable error,
+   * which the scan loop also treats as "look again later".
+   */
+  private async confirmed(
+    source: Source,
+    removed: readonly Checkpoint[],
+    ancestor?: Checkpoint,
+  ): Promise<boolean> {
+    const { proofs } = source.mapping.driver;
+    for (const entry of removed) {
+      const hash = await proofs.blockHash(entry.height, 'latest');
+      if (hash === null || hash === entry.hash) return false;
+    }
+    if (ancestor === undefined) return true;
+    return (await proofs.blockHash(ancestor.height, 'latest')) === ancestor.hash;
   }
 
   /**

@@ -126,6 +126,42 @@ describe('scanner', () => {
     });
   });
 
+  it('rolls back or stops on a quorum, never on one endpoint serving a fork (R33)', async () => {
+    const env = await createFakeEnv({
+      endpoints: ['liar', 'honest'],
+      chain: { finalityDepth: 20 },
+    });
+    const rollbacks: AioEvent[] = [];
+    env.aio.on('scanner.rollback', (e) => rollbacks.push(e));
+    env.chain.mine(5);
+    const iterator = env.bc
+      .scanner({ cursorKey: 'forked', from: 1n, reorgWindow: 2 })
+      [Symbol.asyncIterator]();
+    for (let i = 0; i < 3; i++) await (await take(env, iterator)).ack();
+    let settled = false;
+    const pending = iterator.next().finally(() => {
+      settled = true;
+    });
+    env.chain.configureEndpoint('liar', { forkAbove: 2 }); // looks like a rollback to 2
+    await env.clock.advance(3_000);
+    env.chain.configureEndpoint('liar', { forkAbove: 0 }); // looks deeper than the window
+    await env.clock.advance(3_000);
+    expect(settled).toBe(false);
+    env.chain.configureEndpoint('liar', { forkAbove: undefined });
+    const next = (await env.run(pending, 500)).value as ScanEvent;
+    expect(next).toMatchObject({ type: 'block', block: { height: 4n } });
+    await next.ack();
+    env.chain.reorg(2);
+    const rollback = await take(env, iterator);
+    expect(rollback).toMatchObject({ type: 'rollback', to: { height: 3n } });
+    await rollback.ack();
+    expect(rollbacks).toHaveLength(1);
+    env.chain.reorg(5);
+    await expect(env.run(iterator.next(), 500)).rejects.toMatchObject({
+      code: 'SCANNER_REORG_TOO_DEEP',
+    });
+  });
+
   it('only emits finalized blocks in final mode', async () => {
     const env = await createFakeEnv();
     env.chain.mine(5);
@@ -504,6 +540,7 @@ describe('scanner stale-view guard', () => {
       selection: { chain: { id: 'stub' }, network: { id: 'net', maxLagBlocks: 2 } },
       driver: {
         reader: { getBlockHeight: async () => 2n, getFinalizedHeight: async () => 2n },
+        proofs: { blockHash: async (height: bigint) => hashes.get(height) ?? null },
       },
     } as unknown as MappingContext;
     const deps: ScannerDeps = {

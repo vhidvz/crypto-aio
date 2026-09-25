@@ -397,6 +397,8 @@ export const fakeDriverFactory: DriverFactory = {
         if (order.kind !== 'expiry' || order.lastValidHeight === undefined) return false;
         return (await finalizedHead()).height >= order.lastValidHeight;
       },
+      blockHash: (height, level) =>
+        proof<string | null>('fake_getBlockHash', [height.toString(), level]),
     };
 
     const sequence: SequenceSource | undefined =

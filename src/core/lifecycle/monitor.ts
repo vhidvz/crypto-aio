@@ -708,12 +708,15 @@ export class Monitor {
     let reorgedFrom: string | undefined;
     let patch: ObservationPatch;
     if (seen.seen === 'block' && seen.blockHeight !== undefined) {
-      // The transaction is in another block than recorded: its old block was orphaned.
+      // The transaction is in another block than recorded: its old block was orphaned, once
+      // the quorum confirms it (R33); one endpoint's other block alone decides nothing.
       if (
         current?.blockHash !== undefined &&
         seen.blockHash !== undefined &&
         current.blockHash !== seen.blockHash
       ) {
+        if (!(await this.orphaned(target, current))) return current;
+        signal?.throwIfAborted();
         reorgedFrom = current.blockHash;
       }
       patch = {
@@ -732,7 +735,8 @@ export class Monitor {
       if (current?.blockHash !== undefined) {
         // Absence (or a mempool sighting) of an included transaction is not evidence of a
         // reorg by itself: a lagging or inconsistent endpoint shows the same. Only a
-        // different block at the recorded height proves it; otherwise decide nothing.
+        // quorum-served different block at the recorded height proves it; otherwise decide
+        // nothing.
         if (!(await this.orphaned(target, current))) return current;
         signal?.throwIfAborted();
         reorgedFrom = current.blockHash;
@@ -818,14 +822,25 @@ export class Monitor {
     };
   }
 
-  /** Whether the block recorded for `observation` is no longer the one at its height. */
+  /**
+   * Whether the block recorded for `observation` is no longer the one at its height. R33:
+   * only the quorum-served hash decides; a disagreement or other retryable failure, or no
+   * block at that height yet, decides nothing (`false`).
+   */
   private async orphaned(
     target: ReadTarget,
     observation: AttemptObservation,
   ): Promise<boolean> {
-    if (observation.blockHeight === undefined) return false;
-    const block = await target.pooled.driver.reader.getBlock(observation.blockHeight);
-    return block !== null && block.hash !== observation.blockHash;
+    const { blockHeight, blockHash } = observation;
+    if (blockHeight === undefined || blockHash === undefined) return false;
+    let canonical: string | null;
+    try {
+      canonical = await target.pooled.driver.proofs.blockHash(blockHeight, 'latest');
+    } catch (error) {
+      if (!isCryptoAioError(error) || !error.retryable) throw error;
+      return false;
+    }
+    return canonical !== null && canonical !== blockHash;
   }
 
   /** The transaction is not visible anywhere we can see: only finalized proofs may declare it dead. */

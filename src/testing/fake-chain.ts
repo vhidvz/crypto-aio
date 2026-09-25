@@ -58,6 +58,13 @@ export interface FakeEndpointOptions {
   acceptThenFail?: boolean;
   refuseNext?: string;
   forkFinalized?: boolean;
+  /**
+   * A single endpoint lying about blocks: above this height its block reads
+   * (`fake_getBlock`, `fake_getBlockHash`) serve a private fork, with other hashes and none
+   * of the chain's transactions, and `fake_getTransaction` does not see transactions mined
+   * there. Heights, nonces, balances and finality stay honest.
+   */
+  forkAbove?: number;
 }
 
 export interface FakeChainOptions {
@@ -551,6 +558,13 @@ export class FakeChain {
     const finalizedRaw = view - BigInt(this.finalityDepth);
     const finalized = finalizedRaw > 0n ? finalizedRaw : 0n;
     const arg = (index: number): string => String(params[index] ?? '');
+    const forkAbove =
+      endpoint.forkAbove === undefined ? undefined : BigInt(endpoint.forkAbove);
+    const forked = (height: bigint) => forkAbove !== undefined && height > forkAbove;
+    const hashAt = (block: FakeBlock): string =>
+      forked(block.height)
+        ? sha256Hex(`fork:${forkAbove}:${block.height}:${this.chainId}`)
+        : block.hash;
     switch (method) {
       case 'fake_identity':
         return endpoint.identity ?? this.chainId;
@@ -570,7 +584,7 @@ export class FakeChain {
         const ref = arg(0);
         let block: FakeBlock | undefined;
         if (/^[0-9a-f]{64}$/.test(ref)) {
-          block = this.#blocks.find((b) => b.hash === ref);
+          block = this.#blocks.find((b) => b.hash === ref && !forked(b.height));
         } else if (ref === 'latest') {
           block = this.#blocks[Number(view)];
         } else if (ref === 'finalized') {
@@ -585,7 +599,27 @@ export class FakeChain {
           block = this.#blocks[Number(refHeight)];
         }
         if (!block || block.height > view) return null;
-        return this.#wireBlock(block, params[1] === true);
+        if (!forked(block.height)) return this.#wireBlock(block, params[1] === true);
+        return {
+          height: block.height.toString(),
+          hash: hashAt(block),
+          parentHash: hashAt(this.#blocks[Number(block.height - 1n)] as FakeBlock),
+          timestamp: block.timestamp,
+          txIds: [],
+          ...(params[1] === true ? { txs: [] } : {}),
+        };
+      }
+      case 'fake_getBlockHash': {
+        let height: bigint;
+        try {
+          height = BigInt(arg(0));
+        } catch {
+          throw new RpcFailure('invalid params: fake_getBlockHash height', -32602);
+        }
+        const limit = arg(1) === 'finalized' ? finalized : view;
+        const block =
+          height >= 0n && height <= limit ? this.#blocks[Number(height)] : null;
+        return block ? hashAt(block) : null;
       }
       case 'fake_getBalance': {
         const height = arg(1) === 'finalized' ? finalized : view;
@@ -617,8 +651,12 @@ export class FakeChain {
         }
         return this.#admit(raw);
       }
-      case 'fake_getTransaction':
-        return this.#wireTx(arg(0), view, endpoint.seesMempool !== false);
+      case 'fake_getTransaction': {
+        const wire = this.#wireTx(arg(0), view, endpoint.seesMempool !== false);
+        return wire?.blockHeight !== undefined && forked(BigInt(wire.blockHeight))
+          ? null
+          : wire;
+      }
       case 'fake_getFinalizedTransaction':
         return endpoint.forkFinalized ? null : this.#wireTx(arg(0), finalized, false);
       default:

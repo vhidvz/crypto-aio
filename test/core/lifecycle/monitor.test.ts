@@ -404,6 +404,65 @@ describe('monitor: evidence and the monotonic height guard', () => {
     expect((await stored(env, sub.operationId)).state).toBe('included');
   });
 
+  it('orphans an included transaction on a quorum, never on one endpoint serving a fork (R33)', async () => {
+    const env = await createFakeEnv({ endpoints: ['liar', 'honest'] });
+    const reorgs: AioEvent[] = [];
+    env.aio.on('tx.reorged', (e) => reorgs.push(e));
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    const ref = sub.attempt?.id ?? '';
+    env.chain.mine();
+    await env.run(env.bc.waitForConfirmation(sub.operationId, { confirmations: 1 }));
+    const recorded = env.chain.block(1n)?.hash;
+    env.chain.configureEndpoint('liar', { forkAbove: 0 });
+    expect(await env.run(env.bc.getTransactionStatus(sub.operationId))).toMatchObject({
+      state: 'included',
+      blockHash: recorded,
+    });
+    expect(reorgs).toEqual([]);
+    expect((await stored(env, sub.operationId)).state).toBe('included');
+    env.chain.configureEndpoint('liar', { forkAbove: undefined });
+    env.chain.reorg(1, { drop: [ref] });
+    expect(await env.run(env.bc.getTransactionStatus(sub.operationId))).toMatchObject({
+      state: 'pending',
+      confirmations: 0,
+    });
+    expect((await stored(env, sub.operationId)).state).toBe('submitted');
+    expect(reorgs).toEqual([expect.objectContaining({ previousBlockHash: recorded })]);
+  });
+
+  it('does not follow one endpoint showing a transaction in another block without a quorum (R33)', async () => {
+    const env = await createFakeEnv();
+    const reorgs: AioEvent[] = [];
+    env.aio.on('tx.reorged', (e) => reorgs.push(e));
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.mine();
+    await env.run(env.bc.waitForConfirmation(sub.operationId, { confirmations: 1 }));
+    const { monitor, target } = await monitorOf(env);
+    const { reader } = target.pooled.driver;
+    const lying: ReadTarget = {
+      ...target,
+      pooled: {
+        ...target.pooled,
+        driver: {
+          ...target.pooled.driver,
+          reader: {
+            ...reader,
+            observe: async (...args) => ({
+              ...(await reader.observe(...args)),
+              blockHash: 'f'.repeat(64),
+            }),
+          },
+        },
+      },
+    };
+    const op = await stored(env, sub.operationId);
+    await env.run(monitor.check(lying, op));
+    expect(reorgs).toEqual([]);
+    expect(
+      await env.stores.operations.getObservation(op.activeAttemptId ?? ''),
+    ).toMatchObject({ state: 'included', blockHash: env.chain.block(1n)?.hash });
+  });
+
   it('never overwrites evidence another writer recorded while it was reading (R25)', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));

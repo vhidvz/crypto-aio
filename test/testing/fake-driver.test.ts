@@ -1,4 +1,4 @@
-import type { ChainDriver } from '../../src/core/driver/types';
+import type { ChainDriver, FinalityLevel } from '../../src/core/driver/types';
 import { EventBus } from '../../src/core/events/bus';
 import { noopLogger } from '../../src/core/events/logger';
 import type { NetworkInfo } from '../../src/core/model/chain';
@@ -6,7 +6,11 @@ import type { OrderingData } from '../../src/core/model/ordering';
 import { localSigner } from '../../src/core/signing/local';
 import type { SigningContext } from '../../src/core/signing/types';
 import { HttpTransport } from '../../src/core/transport/http-transport';
-import { FakeChain, type FakeOrdering } from '../../src/testing/fake-chain';
+import {
+  FakeChain,
+  type FakeEndpointOptions,
+  type FakeOrdering,
+} from '../../src/testing/fake-chain';
 import { FakeClock, drive } from '../../src/testing/fake-clock';
 import { FakeFetch, hang, rpcError } from '../../src/testing/fake-fetch';
 import { fakeManifest, fakePlugin } from '../../src/testing/fake-plugin';
@@ -28,13 +32,19 @@ const ctx = {
   unsignedHash: 'h',
 } as SigningContext;
 
-async function setupDriver(ordering: FakeOrdering = 'nonce') {
+async function setupDriver(
+  ordering: FakeOrdering = 'nonce',
+  endpoints: Readonly<Record<string, FakeEndpointOptions>> = { main: {} },
+) {
   const clock = new FakeClock();
   const chain = new FakeChain({ ordering, clock });
-  const url = chain.endpoint('main');
+  const configs = Object.entries(endpoints).map(([name, options]) => ({
+    name,
+    url: chain.endpoint(name, options),
+  }));
   const info = fakePlugin().chains?.find((c) => c.id === CHAIN_OF[ordering]);
   if (!info) throw new Error('missing chain');
-  const transport = new HttpTransport([{ name: 'main', url }], {
+  const transport = new HttpTransport(configs, {
     clock,
     events: new EventBus(clock, noopLogger),
     log: noopLogger,
@@ -208,6 +218,26 @@ describe('fake driver', () => {
       ),
     ).toBe(true);
     expect(await t.run(t.driver.sequence!.pending(t.from))).toBe(1n);
+  });
+
+  it('serves block hashes through the proof quorum (R33)', async () => {
+    const t = await setupDriver('nonce', { liar: {}, honest: {} });
+    t.chain.mine(4);
+    const hash = (height: bigint, level: FinalityLevel) =>
+      t.run(t.driver.proofs.blockHash(height, level));
+    expect(await hash(3n, 'latest')).toBe(t.chain.block(3n)?.hash);
+    expect(await hash(5n, 'latest')).toBeNull();
+    const finalized = t.chain.finalizedHeight();
+    expect(await hash(finalized, 'finalized')).toBe(t.chain.block(finalized)?.hash);
+    expect(await hash(finalized + 1n, 'finalized')).toBeNull();
+    t.chain.configureEndpoint('liar', { forkAbove: 1 });
+    expect((await t.run(t.driver.blocks!.header(3n)))?.hash).not.toBe(
+      t.chain.block(3n)?.hash,
+    );
+    await expect(hash(3n, 'latest')).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+    });
+    expect(await hash(1n, 'latest')).toBe(t.chain.block(1n)?.hash);
   });
 
   it('builds expiring transactions and proves expiry', async () => {
