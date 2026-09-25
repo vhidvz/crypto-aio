@@ -11,11 +11,12 @@ import type { SignedTx, UnsignedTx } from '../../../src/core/model/transaction';
 import { LIBRARIES } from './support/harness';
 import { evmHarness } from './support/context';
 import { signWithKey } from './support/signing';
-import { REVERTER } from './support/node';
+import { GAS_PRICE_ORACLE, REVERTER } from './support/node';
 import { KEY, KEY_ADDRESS, RECIPIENT } from './support/vectors';
 
 const GWEI = 1_000_000_000n;
 const TOKEN = '0x00000000000000000000000000000000000070Ce';
+const tokenAsset = { standard: 'erc20', contract: TOKEN } as const;
 const intent = (extra: Partial<DriverIntent> = {}): DriverIntent => ({
   asset: 'native',
   outputs: [{ to: RECIPIENT, amount: 1_000n }],
@@ -357,6 +358,210 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     expect(
       createEvmReplacement(evmHarness(library, 'arbitrum', 'sepolia').ctx),
     ).toBeUndefined();
+  });
+
+  it('classifies estimate failures before signing, and rethrows transient ones (R72)', async () => {
+    const t = setup();
+    t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
+    const token = (amount: bigint) =>
+      intent({ asset: tokenAsset, outputs: [{ to: RECIPIENT, amount }] });
+    const estimateAnswers = (error: { code: number; message: string }) => {
+      t.node.intercept = (_endpoint, method) =>
+        method === 'eth_estimateGas' ? { error } : undefined;
+    };
+    // R66's VM failures and an exhausted gas allowance fail like a revert.
+    for (const message of [
+      'invalid opcode: INVALID',
+      'out of gas',
+      'gas required exceeds allowance (30000000)',
+    ]) {
+      estimateAnswers({ code: -32000, message });
+      await expect(
+        t.run(t.builder.estimateFee(intent(), t.build())),
+      ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+      // An old token's `assert` shortfall is an invalid opcode: the balance still decides.
+      await expect(
+        t.run(t.builder.estimateFee(token(11n), t.build())),
+      ).rejects.toMatchObject({
+        code: 'INSUFFICIENT_FUNDS',
+        details: { required: '11', available: '10' },
+      });
+    }
+    // A token revert that says "insufficient funds" is a revert first (M2).
+    estimateAnswers({ code: 3, message: 'execution reverted: insufficient funds' });
+    await expect(
+      t.run(t.builder.estimateFee(token(11n), t.build())),
+    ).rejects.toMatchObject({
+      code: 'INSUFFICIENT_FUNDS',
+      details: { required: '11', available: '10' },
+    });
+    await expect(
+      t.run(t.builder.estimateFee(token(10n), t.build())),
+    ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+    // Anything else is the provider's, rethrown unchanged.
+    estimateAnswers({ code: -32000, message: 'header not found' });
+    await expect(t.run(t.builder.estimateFee(intent(), t.build()))).rejects.toMatchObject(
+      {
+        code: 'RPC_ERROR',
+        details: { rpcMessage: 'header not found' },
+      },
+    );
+    estimateAnswers({ code: -32005, message: 'rate limit exceeded' });
+    await expect(t.run(t.builder.estimateFee(intent(), t.build()))).rejects.toMatchObject(
+      { code: 'RATE_LIMITED', retryable: true },
+    );
+  });
+
+  it('refuses a signing digest that is not the payload digest (R72)', async () => {
+    const t = setup();
+    const unsigned = await t.prepare();
+    const [request] = unsigned.signingRequests;
+    const forged: UnsignedTx = {
+      ...unsigned,
+      signingRequests: [{ ...request!, payload: new Uint8Array(32).fill(1) }],
+    };
+    await expect(
+      t.run(t.builder.assemble(forged, await signWithKey(forged))),
+    ).rejects.toMatchObject({ code: 'SIGNING_FAILED' });
+  });
+
+  it('uses an explicit replacement or cancel fee above the bump exactly as given (R72)', async () => {
+    const t = setup();
+    const policy = createEvmReplacement(t.ctx)!;
+    const original = await t.prepare();
+    await t.run(t.broadcaster.broadcast(await t.assemble(original)));
+    const replacement = await t.run(
+      policy.buildReplacement!(
+        original,
+        { maxFeePerGas: 7n * GWEI, maxPriorityFeePerGas: 3n * GWEI, gasLimit: 25_000n },
+        t.build(),
+      ),
+    );
+    expect(replacement.fee).toEqual({
+      kind: 'evm-1559',
+      speed: 'custom',
+      charges: [{ asset: 'native', amount: 25_000n * 7n * GWEI, label: 'network' }],
+      bound: 'upper',
+      details: {
+        gasLimit: 25_000n,
+        maxFeePerGas: 7n * GWEI,
+        maxPriorityFeePerGas: 3n * GWEI,
+        expected: 25_000n * 7n * GWEI,
+      },
+    });
+    expect(await t.run(t.broadcaster.broadcast(await t.assemble(replacement)))).toEqual({
+      kind: 'accepted',
+    });
+    const cancel = await t.run(
+      policy.buildCancel!(replacement, t.build(), {
+        maxFeePerGas: 8n * GWEI,
+        maxPriorityFeePerGas: 4n * GWEI,
+      }),
+    );
+    expect(cancel.fee).toMatchObject({
+      speed: 'custom',
+      details: {
+        gasLimit: 21_000n,
+        maxFeePerGas: 8n * GWEI,
+        maxPriorityFeePerGas: 4n * GWEI,
+      },
+    });
+    expect(await t.run(t.broadcaster.broadcast(await t.assemble(cancel)))).toEqual({
+      kind: 'accepted',
+    });
+  });
+
+  it('replaces an ERC-20 transfer through assemble, keeping its call and gas limit (R72)', async () => {
+    const t = setup();
+    t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
+    const policy = createEvmReplacement(t.ctx)!;
+    const original = await t.prepare(
+      intent({ asset: tokenAsset, outputs: [{ to: RECIPIENT, amount: 10n }] }),
+    );
+    const first = await t.assemble(original);
+    await t.run(t.broadcaster.broadcast(first));
+    const replacement = await t.run(
+      policy.buildReplacement!(original, 'fast', t.build()),
+    );
+    expect(replacement.summary).toEqual(original.summary);
+    expect(replacement.fee.details).toMatchObject({ gasLimit: 61_200n });
+    const replaced = await t.assemble(replacement);
+    expect(await t.run(t.broadcaster.broadcast(replaced))).toEqual({ kind: 'accepted' });
+    t.node.mine();
+    expect(t.node.receipt(replaced.ref.id)?.status).toBe(1);
+    expect(t.node.receipt(first.ref.id)).toBeUndefined();
+    expect(t.node.tokenBalance(TOKEN, RECIPIENT)).toBe(10n);
+  });
+
+  it('recomputes the OP Stack L1 data fee for the bytes of a replacement and a cancel (R72)', async () => {
+    const t = setup('base', 'sepolia', { l1Fee: 777n });
+    const policy = createEvmReplacement(t.ctx)!;
+    const original = await t.prepare();
+    await t.run(t.broadcaster.broadcast(await t.assemble(original)));
+    const asked: string[] = [];
+    t.node.intercept = (_endpoint, method, params) => {
+      const call = params[0] as { to?: string; data?: string };
+      if (
+        method !== 'eth_call' ||
+        call.to?.toLowerCase() !== GAS_PRICE_ORACLE.toLowerCase()
+      )
+        return undefined;
+      asked.push(call.data ?? '');
+      return { result: `0x${888n.toString(16).padStart(64, '0')}` };
+    };
+    const replacement = await t.run(
+      policy.buildReplacement!(original, 'fast', t.build()),
+    );
+    const cancel = await t.run(policy.buildCancel!(replacement, t.build()));
+    for (const built of [replacement, cancel]) {
+      expect(built.fee).toMatchObject({
+        bound: 'expected',
+        charges: [
+          { label: 'network' },
+          { asset: 'native', amount: 888n, label: 'l1-data' },
+        ],
+        details: { l1Fee: 888n },
+      });
+    }
+    expect(asked).toEqual([
+      t.client.abi.encodeGetL1Fee(replacement.payload.data),
+      t.client.abi.encodeGetL1Fee(cancel.payload.data),
+    ]);
+  });
+
+  it('replaces and cancels on a legacy network, naming the gas price (R72)', async () => {
+    const t = setup('bsc', 'testnet');
+    const policy = createEvmReplacement(t.ctx)!;
+    const original = await t.prepare();
+    await t.run(t.broadcaster.broadcast(await t.assemble(original)));
+    const refusal = t.run(policy.buildReplacement!(original, 'normal', t.build()));
+    await expect(refusal).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    await expect(refusal).rejects.toThrow(
+      'a replacement must raise the gas price by at least 10%',
+    );
+    const replacement = await t.run(
+      policy.buildReplacement!(original, 'fast', t.build()),
+    );
+    expect(replacement.fee.details).toEqual({
+      gasLimit: 21_000n,
+      gasPrice: 6_250_000_000n,
+      expected: 21_000n * 6_250_000_000n,
+    });
+    expect(await t.run(t.broadcaster.broadcast(await t.assemble(replacement)))).toEqual({
+      kind: 'accepted',
+    });
+    const cancel = await t.run(policy.buildCancel!(replacement, t.build()));
+    expect(cancel.fee.details).toMatchObject({
+      gasLimit: 21_000n,
+      gasPrice: 6_875_000_000n,
+    });
+    const cancelled = await t.assemble(cancel);
+    expect(await t.run(t.broadcaster.broadcast(cancelled))).toEqual({ kind: 'accepted' });
+    t.node.mine();
+    expect(t.node.receipt(cancelled.ref.id)?.status).toBe(1);
+    expect(t.node.balance(RECIPIENT)).toBe(0n);
   });
 });
 

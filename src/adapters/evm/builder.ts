@@ -24,7 +24,7 @@ import type { FeeEstimateDraft, FeeOverride, FeeSpeed } from '../../core/model/f
 import type { DriverIntent, IntentSummary } from '../../core/model/intent';
 import type { OrderingData } from '../../core/model/ordering';
 import type { UnsignedTx } from '../../core/model/transaction';
-import { fromHex, toHex } from '../../core/util/bytes';
+import { equalBytes, fromHex, toHex } from '../../core/util/bytes';
 import { classifyBroadcastError } from './errors';
 import {
   FEE_HISTORY_BLOCKS,
@@ -41,7 +41,14 @@ import {
   type EvmFeeParams,
 } from './fees';
 import { GAS_PRICE_ORACLE } from './network';
-import { READ, erc20Balance, isRevert, withSignal, type EvmContext } from './reader';
+import {
+  READ,
+  erc20Balance,
+  isExecutionFailure,
+  isRevert,
+  withSignal,
+  type EvmContext,
+} from './reader';
 import type { EvmClient, EvmTxFields } from './types';
 
 /** One transfer: `token` is the ERC-20 contract, absent for the native asset. */
@@ -239,7 +246,15 @@ async function draftFor(
   });
 }
 
-/** The node's gas estimate; a revert or a shortfall becomes a clear pre-signing failure. */
+/** geth's estimate reached its gas cap: the call fails at any gas limit. */
+const GAS_ALLOWANCE = /^gas required exceeds allowance/i;
+
+/**
+ * The node's gas estimate; a failing call or a shortfall becomes a clear pre-signing failure.
+ * R72: a revert, a VM execution failure (R66) or an exhausted gas allowance is the call's own
+ * failure, tested first so that a token's revert text naming "insufficient funds" still gets
+ * the balance check. Any other error is the provider's and is rethrown unchanged.
+ */
 async function estimateGas(
   ctx: EvmContext,
   from: string,
@@ -254,10 +269,17 @@ async function estimateGas(
   } catch (error) {
     const definitive = isCryptoAioError(error, 'RPC_ERROR') && !error.ambiguous;
     const message = definitive ? String(error.details?.rpcMessage ?? error.message) : '';
-    if (/insufficient funds/i.test(message)) {
-      throw new ChainError('INSUFFICIENT_FUNDS', 'insufficient funds for this transfer');
+    const fails =
+      isRevert(error) || isExecutionFailure(error) || GAS_ALLOWANCE.test(message);
+    if (!fails) {
+      if (/insufficient funds/i.test(message)) {
+        throw new ChainError(
+          'INSUFFICIENT_FUNDS',
+          'insufficient funds for this transfer',
+        );
+      }
+      throw error;
     }
-    if (!isRevert(error)) throw error;
     if (transfer.token !== undefined) {
       const available = await erc20Balance(
         ctx.client,
@@ -278,7 +300,7 @@ async function estimateGas(
         );
       }
     }
-    throw new ValidationError('INVALID_INTENT', 'the transfer would revert');
+    throw new ValidationError('INVALID_INTENT', 'the transfer would fail');
   }
 }
 
@@ -372,7 +394,7 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
       const mismatch = () =>
         new SigningError(
           'SIGNING_FAILED',
-          'the unsigned payload does not match its fee and summary',
+          'the unsigned payload or its digest does not match its fee and summary',
         );
       let fields: EvmTxFields;
       try {
@@ -380,7 +402,13 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
       } catch {
         throw mismatch();
       }
-      if (client.serializeUnsigned(fields) !== unsigned.payload.data) throw mismatch();
+      // R72: the signature must be over these fields' digest, or it signs other bytes.
+      if (
+        client.serializeUnsigned(fields) !== unsigned.payload.data ||
+        !equalBytes(request.payload, fromHex(client.unsignedHash(fields)))
+      ) {
+        throw mismatch();
+      }
       const { raw, hash } = client.serializeSigned(fields, {
         r: toHex(signature.bytes.slice(0, 32), true),
         s: toHex(signature.bytes.slice(32), true),
@@ -423,11 +451,10 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
   const { config } = ctx;
   const bump = config.minBumpPercent;
   if (bump === undefined) return undefined;
+  const prices =
+    config.feeModel === 'evm-legacy' ? 'the gas price' : 'the fee cap and the tip';
   const tooLow = (what: string) =>
-    new ChainError(
-      'FEE_TOO_LOW',
-      `${what} must raise the fee cap and the tip by at least ${bump}%`,
-    );
+    new ChainError('FEE_TOO_LOW', `${what} must raise ${prices} by at least ${bump}%`);
   const keyFrom = (previous: UnsignedTx): WalletKey => {
     const request = previous.signingRequests[0];
     if (!request)

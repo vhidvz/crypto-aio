@@ -116,7 +116,7 @@ const VM_FAILURE =
   /^(out of gas|invalid opcode|invalid jump destination|stack (underflow|limit reached)|write protection|return data out of bounds)/i;
 
 /** Whether a definitive (non-ambiguous) JSON-RPC error says the EVM stopped the code. */
-function isExecutionFailure(error: unknown): boolean {
+export function isExecutionFailure(error: unknown): boolean {
   if (!isCryptoAioError(error, 'RPC_ERROR') || error.ambiguous) return false;
   const { rpcMessage } = error.details ?? {};
   return typeof rpcMessage === 'string' && VM_FAILURE.test(rpcMessage);
