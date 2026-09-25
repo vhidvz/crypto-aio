@@ -346,7 +346,14 @@ export interface Stores {
 export type DataClass =
   'secret' | 'sensitive' | 'sensitive-until-broadcast' | 'operational';
 
-/** Field classification so backing stores can apply encryption and retention per field. */
+/**
+ * Field classification so backing stores can apply encryption and retention per field.
+ *
+ * M7: `operation.reservation` and `attempt.ordering` are `sensitive` because an `inputs`
+ * ordering lists UTXO outpoints, which tie a wallet to its coins. A nonce or seqno value
+ * on its own is an operational identifier, like an Operation id: the `nonce.allocated`
+ * and `nonce.gap` events carry it, and logs may too.
+ */
 export const DATA_CLASSIFICATION: {
   readonly operation: Readonly<Record<keyof OperationRecord, DataClass>>;
   readonly attempt: Readonly<Record<keyof AttemptRecord, DataClass>>;
@@ -363,6 +370,7 @@ export const DATA_CLASSIFICATION: {
     outcome: 'operational',
     intent: 'sensitive',
     unsigned: 'sensitive',
+    // `inputs` orderings carry UTXO outpoints; nonce and seqno values are operational (M7).
     reservation: 'sensitive',
     signerTickets: 'sensitive',
     partialSignatures: 'sensitive',
@@ -380,6 +388,7 @@ export const DATA_CLASSIFICATION: {
     id: 'operational',
     ref: 'sensitive-until-broadcast',
     raw: 'sensitive-until-broadcast',
+    // As `operation.reservation` (M7).
     ordering: 'sensitive',
     fee: 'sensitive',
     unsigned: 'sensitive',
