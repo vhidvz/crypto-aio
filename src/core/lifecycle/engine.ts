@@ -912,6 +912,9 @@ export class OperationEngine {
           reservation = await this.nextSeqno(driver.sequence, op);
         } else {
           const pending = await driver.sequence.pending(stored.from);
+          // M9: a quiet wallet (no worker pass, no recovery) is never stuck behind a leaked
+          // value: the cheap check runs first, and a reclaimed value is allocated next.
+          await this.reclaimLeaked(op, lease as LeaseHandle, pending, op.id);
           const nonce = await this.deps.sequences.allocate(
             lease as LeaseHandle,
             key,
@@ -2262,33 +2265,54 @@ export class OperationEngine {
     return this.withAddressLease(
       target,
       op,
-      async (lease) => {
-        const wallet = {
-          namespace: this.deps.namespace,
-          chain: op.context.chain,
-          network: op.context.network,
-          from: op.intent.from,
-        };
-        const key = this.sequenceKeyOf(op);
-        const chainPending = await sequence.pending(op.intent.from);
-        const live = await this.deps.stores.operations.list({
-          ...wallet,
-          states: NON_TERMINAL_STATES,
-        });
-        // Cheap first: with nothing reclaimable, neither the fencing writes nor the
-        // wallet's history are needed (fencing only ever adds held values).
-        const state = await this.deps.stores.sequences.get(key);
-        if (!hasReclaimable(state, chainPending, live.flatMap(heldNonces))) return [];
-        const held: bigint[] = [];
-        for (const record of live)
-          held.push(...heldNonces(await this.fenceStalePrepare(record)));
-        const floor = await this.consumedFloor(wallet, chainPending);
-        await lease?.renew();
-        return this.deps.sequences.reclaim(lease as LeaseHandle, key, floor, held);
-      },
+      async (lease) =>
+        this.reclaimLeaked(
+          op,
+          lease as LeaseHandle,
+          await sequence.pending(op.intent.from),
+        ),
       signal,
       acquireTimeoutMs === undefined ? undefined : { acquireTimeoutMs },
     );
+  }
+
+  /**
+   * The body of `reconcileNonces`, under the held address lease of `op`'s wallet, with the
+   * chain's pending nonce already read. `preparing` is an Operation this lease is preparing
+   * right now (M9, `prepareStage`): it is never fenced, since its own write follows.
+   */
+  protected async reclaimLeaked(
+    op: OperationRecord,
+    lease: LeaseHandle,
+    chainPending: bigint,
+    preparing?: string,
+  ): Promise<readonly bigint[]> {
+    const wallet = {
+      namespace: this.deps.namespace,
+      chain: op.context.chain,
+      network: op.context.network,
+      from: op.intent.from,
+    };
+    const key = this.sequenceKeyOf(op);
+    // Cheap first: with nothing reclaimable, neither the fencing writes nor the wallet's
+    // history are needed (fencing only ever adds held values), and with no value at or
+    // above `chainPending` ever allocated, not even the live Operations.
+    const state = await this.deps.stores.sequences.get(key);
+    if (!state || state.next <= chainPending) return [];
+    const live = await this.deps.stores.operations.list({
+      ...wallet,
+      states: NON_TERMINAL_STATES,
+    });
+    if (!hasReclaimable(state, chainPending, live.flatMap(heldNonces))) return [];
+    const held: bigint[] = [];
+    for (const record of live) {
+      const current =
+        record.id === preparing ? record : await this.fenceStalePrepare(record);
+      held.push(...heldNonces(current));
+    }
+    const floor = await this.consumedFloor(wallet, chainPending);
+    await lease.renew();
+    return this.deps.sequences.reclaim(lease, key, floor, held);
   }
 
   /**

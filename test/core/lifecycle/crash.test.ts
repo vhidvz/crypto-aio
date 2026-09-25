@@ -275,7 +275,8 @@ describe('crash safety', () => {
     ]);
   });
 
-  // Task 26 (carry-forward) reconciles this gap; here the nonce is never handed out twice.
+  // Task 26 reconciles this gap, and since M9 so does the next prepare: the nonce of an
+  // Operation whose only Attempt is proven rejected is reused once, by one live Operation.
   it('never hands out a nonce twice when the process died after the failed write', async () => {
     const { env, faulty, calls, intent } = await crashEnv();
     env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
@@ -294,6 +295,16 @@ describe('crash safety', () => {
     );
     expect(
       (await restarted.stores.operations.get('default', next.operation.id))?.reservation,
+    ).toEqual({ kind: 'nonce', nonce: 0n });
+    const failed = await restarted.stores.operations.getByKey('default', 'k');
+    expect(failed).toMatchObject({ state: 'failed', error: { code: 'TX_REJECTED' } });
+    expect(failed?.attempts).toHaveLength(1);
+    const other = await restarted.run(
+      restarted.bc.prepareTransfer({ to: env.stranger(), amount: 2n }),
+    );
+    expect(
+      (await restarted.stores.operations.get('default', other.operation.id))?.reservation,
     ).toEqual({ kind: 'nonce', nonce: 1n });
+    expect(calls()).toBe(1);
   });
 });

@@ -246,6 +246,43 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
     expect(restarted.chain.nonce(restarted.address)).toBe(1n);
   });
 
+  // M9: a quiet wallet (no worker pass, no recovery) is never stuck behind a leaked nonce.
+  it('reclaims a leaked nonce in the next prepare of a quiet wallet', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({ stores: { operations: faulty } });
+    faulty.crashOn({
+      method: 'update',
+      timing: 'before',
+      when: (args) => (args[2] as OperationPatch | undefined)?.state === 'prepared',
+    });
+    const intent = { to: env.stranger(), amount: 2n };
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'leak' })),
+    ).rejects.toBeInstanceOf(CrashError);
+    expect(await sequenceOf(env)).toMatchObject({ next: 1n, released: [] });
+    const restarted = await env.restart({ killPrevious: true });
+    const sub = await restarted.run(
+      restarted.bc.transfer(
+        { to: restarted.stranger(), amount: 1n },
+        { idempotencyKey: 'next' },
+      ),
+    );
+    expect((await stored(restarted, sub.operationId)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 0n,
+    });
+    restarted.chain.mine();
+    expect(restarted.chain.nonce(restarted.address)).toBe(1n);
+    // The leaked Operation itself still prepares afterwards, on the next value.
+    const leaked = await restarted.run(
+      restarted.bc.transfer(intent, { idempotencyKey: 'leak' }),
+    );
+    expect((await stored(restarted, leaked.operationId)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 1n,
+    });
+  });
+
   it('returns a nonce whose release failed after a terminal write once a gap blocks a transfer', async () => {
     const sequences = new FailingReleaseStore();
     let veto = true;
@@ -259,17 +296,22 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
     });
     const gaps: AioEvent[] = [];
     env.aio.on('nonce.gap', (e) => gaps.push(e));
-    sequences.armed = true;
-    await expect(
-      env.run(env.bc.prepareTransfer({ to: env.stranger(), amount: 1n })),
-    ).rejects.toMatchObject({ code: 'POLICY_REJECTED' });
-    expect(await sequenceOf(env)).toMatchObject({ next: 1n, released: [] });
+    // M9: the blocked transfer is allocated before the leak (a later prepare reclaims it).
     veto = false;
+    const vetoed = { to: env.stranger(), amount: 1n };
+    await env.run(env.bc.prepareTransfer(vetoed, { idempotencyKey: 'vetoed' }));
     const blocked = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
     expect((await stored(env, blocked.operationId)).reservation).toEqual({
       kind: 'nonce',
       nonce: 1n,
     });
+    veto = true;
+    sequences.armed = true;
+    await expect(
+      env.run(env.bc.prepareTransfer(vetoed, { idempotencyKey: 'vetoed' })),
+    ).rejects.toMatchObject({ code: 'POLICY_REJECTED' });
+    expect(await sequenceOf(env)).toMatchObject({ next: 2n, released: [] });
+    veto = false;
     await env.clock.advance(11_000);
     await env.run(env.aio.monitor.runOnce({ workerId: 'w' }));
     expect(gaps).toEqual([
@@ -297,6 +339,12 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
         env.bc.transfer({ to: env.stranger(), amount: 1n }, { idempotencyKey: 'lost' }),
       ),
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    // M9: the blocked transfer is allocated before the leak (a later prepare reclaims it).
+    const blocked = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    expect((await stored(env, blocked.operationId)).reservation).toEqual({
+      kind: 'nonce',
+      nonce: 2n,
+    });
     const lost = await env.stores.operations.getByKey('default', 'lost');
     if (!lost) throw new Error('unreachable');
     // A failure an earlier monitor recorded without releasing the nonce.
@@ -310,11 +358,6 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
       },
       lost.version,
     );
-    const blocked = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
-    expect((await stored(env, blocked.operationId)).reservation).toEqual({
-      kind: 'nonce',
-      nonce: 2n,
-    });
     const report = await env.run(env.aio.operations.recover());
     expect(report).toMatchObject({ failed: 0, reconciled: 1 });
     // 0 was consumed on chain (below chainPending); 2 is held by a live Operation.

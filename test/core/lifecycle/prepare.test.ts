@@ -879,14 +879,15 @@ describe('prepare and abandon invariants', () => {
       { state: 'awaiting-signature' },
       record.version,
     );
+    const reserved = record.reservation;
+    if (reserved?.kind !== 'nonce') throw new Error('unreachable');
     expect((await env.run(env.bc.abandon(operation.id))).state).toBe('abandoned');
-    const next = await env.run(
-      env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }),
+    // Its nonce goes back for reuse. (M9: each prepare above also reclaims the values of
+    // the forced 'failed' and 'expired' Operations, which consumed nothing, so the exact
+    // values depend on the loop.)
+    expect((await env.stores.sequences.get(walletSequenceKey(env)))?.released).toContain(
+      reserved.nonce,
     );
-    expect(await reservationOf(env, next.operation.id)).toEqual({
-      kind: 'nonce',
-      nonce: BigInt(later.length),
-    });
   });
 
   it('allows same-state and state-less updates on a terminal operation', async () => {
