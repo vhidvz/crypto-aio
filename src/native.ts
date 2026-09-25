@@ -11,12 +11,16 @@ import type { ChainId, NativeClientMap } from './core/model/ids';
  * instance the drivers use, so mutating it cannot affect other handles or tenants, and it is
  * reachable only through this function (not through the handle, `JSON` or `inspect`). The
  * library name must match the handle's (`INCOMPATIBLE_SELECTION` otherwise).
+ *
+ * R34: the root container's `close()` releases every client handed out here; after it,
+ * `native()` fails with `INVALID_TRANSITION`, as the handle's own methods do.
  */
 export async function native<
   L extends Extract<keyof NativeClientMap, string>,
   C extends ChainId = ChainId,
 >(handle: Blockchain<C>, library: L): Promise<NativeClientMap[L]> {
   const internals = internalsOf(handle);
+  internals.assertOpen();
   if (internals.selection.library !== library) {
     throw new ConfigError(
       'INCOMPATIBLE_SELECTION',
@@ -26,6 +30,7 @@ export async function native<
   const cached = internals.nativeClients.get(library);
   if (cached !== undefined) return cached as NativeClientMap[L];
   const { driver } = await internals.pooled();
+  internals.assertOpen(); // the root may have closed while this call awaited the driver
   // A concurrent call may have built the client while this one awaited the driver.
   const built = internals.nativeClients.get(library);
   if (built !== undefined) return built as NativeClientMap[L];
@@ -35,7 +40,8 @@ export async function native<
       `library '${library}' exposes no native client`,
     );
   }
-  const client = driver.createNativeClient();
-  internals.nativeClients.set(library, client);
-  return client as NativeClientMap[L];
+  const created = driver.createNativeClient();
+  internals.registerNative(created);
+  internals.nativeClients.set(library, created.client);
+  return created.client as NativeClientMap[L];
 }

@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { inspect } from 'node:util';
 import { Blockchain } from '../../src';
 import { internalsOf } from '../../src/core/blockchain/internal';
+import type { DisposableNativeClient } from '../../src/core/driver/types';
 import { native } from '../../src/native';
 import { createFakeEnv } from '../../src/testing';
 
@@ -123,7 +124,7 @@ describe('architecture: the native escape hatch stays isolated', () => {
     // Both handles run on the very same pooled driver and transport...
     expect(await env.run(internalsOf(twin).pooled())).toBe(pooled);
     const build = jest.spyOn(
-      pooled.driver as { createNativeClient(): unknown },
+      pooled.driver as { createNativeClient(): DisposableNativeClient },
       'createNativeClient',
     );
 
@@ -138,8 +139,8 @@ describe('architecture: the native escape hatch stays isolated', () => {
     expect(again).toBe(mine);
     expect(theirs).not.toBe(mine);
     expect(build).toHaveBeenCalledTimes(2);
-    expect(build.mock.results[0]?.value).toBe(mine);
-    expect(build.mock.results[1]?.value).toBe(theirs);
+    expect(build.mock.results[0]?.value.client).toBe(mine);
+    expect(build.mock.results[1]?.value.client).toBe(theirs);
     expect(reaches(pooled, mine)).toBe(false);
     expect(reaches(pooled, theirs)).toBe(false);
 

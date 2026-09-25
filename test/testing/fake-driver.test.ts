@@ -303,7 +303,9 @@ describe('fake driver', () => {
     expect(
       await t.run(t.driver.blocks!.transactions(header!, { addresses: [stranger] })),
     ).toHaveLength(0);
-    expect(t.driver.createNativeClient?.()).not.toBe(t.driver.createNativeClient?.());
+    expect(t.driver.createNativeClient?.().client).not.toBe(
+      t.driver.createNativeClient?.().client,
+    );
   });
 
   it('keeps a broadcast error ambiguous when an earlier attempt may have been delivered', async () => {

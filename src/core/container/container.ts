@@ -39,7 +39,7 @@ import type { OperationRecord, OperationState, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
 import { systemClock } from '../util/clock';
 import { builtinPlugins } from './builtins';
-import { bindContainer, containerOf, type RootRuntime } from './internals';
+import { bindContainer, closedError, containerOf, type RootRuntime } from './internals';
 import { DriverPool, type PooledDriver } from './pool';
 
 const NAMESPACE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -242,6 +242,8 @@ export class CryptoAio {
       assets: new AssetService(() => runtime.catalogs),
       transport: options.transport ?? {},
       owner: randomId('aio'),
+      closed: false,
+      natives: new Set(),
     };
     this.namespace = namespace;
     this.#bind(runtime, [scopePart(options)], true);
@@ -271,7 +273,16 @@ export class CryptoAio {
       container: this,
       selection,
       nativeClients: new Map(),
+      assertOpen: () => {
+        if (runtime.closed) throw closedError();
+      },
+      registerNative: (native) => {
+        if (runtime.closed) throw closedError();
+        if (native.close) runtime.natives.add(() => native.close?.());
+      },
+      // R34: a closed root refuses work even through a pooled driver this handle holds.
       pooled: () => {
+        if (runtime.closed) return Promise.reject(closedError());
         pooled ??= runtime.pool.get(selection).catch((error: unknown) => {
           pooled = undefined;
           throw error;
@@ -279,6 +290,7 @@ export class CryptoAio {
         return pooled;
       },
       wallet: () => {
+        if (runtime.closed) return Promise.reject(closedError());
         wallet ??= handle
           .pooled()
           .then(({ driver }) =>
@@ -371,10 +383,29 @@ export class CryptoAio {
     };
   }
 
-  /** Closes pooled drivers (root only; scopes share their root's pool). */
+  /**
+   * Closes the root container (R34): runs the `close` of every native client that
+   * `crypto-aio/native` handed out (a failing one is logged by code and skipped), then
+   * closes the pooled drivers. Its handles and `native()` then fail with
+   * `INVALID_TRANSITION`. A scope's `close()` does nothing; scopes share their root's pool.
+   */
   async close(): Promise<void> {
     const internals = containerOf(this);
-    if (internals.isRoot) await internals.runtime.pool.close();
+    if (!internals.isRoot) return;
+    const { runtime } = internals;
+    runtime.closed = true;
+    const natives = [...runtime.natives];
+    runtime.natives.clear();
+    await Promise.all(
+      natives.map(async (close) => {
+        try {
+          await close();
+        } catch (error) {
+          runtime.log.warn('native client close failed', { code: errorCode(error) });
+        }
+      }),
+    );
+    await runtime.pool.close();
   }
 
   #bind(runtime: RootRuntime, layers: readonly ScopeOptions[], isRoot: boolean): void {

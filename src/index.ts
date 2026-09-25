@@ -180,6 +180,7 @@ export type {
   BuildContext,
   ChainDriver,
   ChainReader,
+  DisposableNativeClient,
   DriverBlock,
   DriverContext,
   DriverFactory,

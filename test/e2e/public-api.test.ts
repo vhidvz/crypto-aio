@@ -352,6 +352,77 @@ describe('public API', () => {
       code: 'UNSUPPORTED_CAPABILITY',
     });
   });
+
+  it('closes every native client once with its root, then refuses handle and native() work (R34)', async () => {
+    const env = await createFakeEnv();
+    const scoped = env.aio.scope({}).blockchain({ chain: env.chainId });
+    const mine = await env.run(native(env.bc, 'fake-sdk'));
+    const theirs = await env.run(native(scoped, 'fake-sdk'));
+    await env.run(env.bc.getBlockHeight()); // the handle now holds its pooled driver
+    expect([mine.closes, theirs.closes]).toEqual([0, 0]);
+    await env.run(env.aio.close());
+    expect([mine.closes, theirs.closes]).toEqual([1, 1]);
+    await env.run(env.aio.close());
+    expect([mine.closes, theirs.closes]).toEqual([1, 1]);
+    const refused: (() => Promise<unknown>)[] = [
+      () => native(env.bc, 'fake-sdk'),
+      () => native(env.bc.with({ confirmations: 3 }), 'fake-sdk'),
+      () => env.bc.getBlockHeight(),
+      () => scoped.getBalance(env.address),
+      () => env.bc.getOperation('op_missing'),
+    ];
+    for (const work of refused) {
+      await expect(env.run(work())).rejects.toMatchObject({
+        code: 'INVALID_TRANSITION',
+      });
+    }
+  });
+
+  it('logs a native client that fails to close by code only, and closes the rest (R34)', async () => {
+    const closed: number[] = [];
+    let built = 0;
+    const failing: AdapterManifest = {
+      ...fakeManifest,
+      load: async () => {
+        const factory = await fakeManifest.load();
+        return {
+          create: async (ctx) => ({
+            ...(await factory.create(ctx)),
+            createNativeClient: () => {
+              const id = ++built;
+              return {
+                client: { id },
+                close: async () => {
+                  if (id === 1)
+                    throw new Error('stuck on https://node.test/sk_live_SECRET');
+                  closed.push(id);
+                },
+              };
+            },
+          }),
+        };
+      },
+    };
+    const logs: unknown[][] = [];
+    const env = await createFakeEnv({
+      aio: {
+        logger: createLogger('e2e', (...record) => logs.push(record)),
+        plugins: [{ ...fakePlugin(), adapters: [failing] }],
+      },
+    });
+    await env.run(native(env.bc, 'fake-sdk'));
+    await env.run(native(env.bc.with({ confirmations: 3 }), 'fake-sdk'));
+    await env.run(env.aio.close());
+    expect(closed).toEqual([2]);
+    const warnings = logs.filter(([level]) => level === 'warn');
+    expect(warnings).toEqual([
+      ['warn', 'e2e', 'native client close failed', { code: 'UNKNOWN' }],
+    ]);
+    expect(JSON.stringify(logs)).not.toContain('sk_live_SECRET');
+    await expect(env.run(env.bc.getBlockHeight())).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+    });
+  });
 });
 
 // The store contract suites run from the public testing entry against the public stores.

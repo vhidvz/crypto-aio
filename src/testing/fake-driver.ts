@@ -54,6 +54,8 @@ export interface FakeExt {
 export interface FakeNativeClient {
   readonly id: number;
   readonly settings: Record<string, unknown>;
+  /** How many times the driver's `close` for this client ran (R34). */
+  readonly closes: number;
   rpc<T = unknown>(method: string, params?: unknown[]): Promise<T>;
 }
 
@@ -547,12 +549,24 @@ export const fakeDriverFactory: DriverFactory = {
         },
       } satisfies FakeExt,
       limits: () => ({ maxOutputs: 1 }),
-      createNativeClient: (): FakeNativeClient => ({
-        id: ++nativeClients,
-        settings: {},
-        rpc: <T>(method: string, params: unknown[] = []) =>
-          transport.rpc<T>(method, params),
-      }),
+      createNativeClient: () => {
+        let closes = 0;
+        const client: FakeNativeClient = {
+          id: ++nativeClients,
+          settings: {},
+          get closes() {
+            return closes;
+          },
+          rpc: <T>(method: string, params: unknown[] = []) =>
+            transport.rpc<T>(method, params),
+        };
+        return {
+          client,
+          close: () => {
+            closes += 1;
+          },
+        };
+      },
     };
   },
 };

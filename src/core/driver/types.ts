@@ -244,6 +244,16 @@ export interface DriverLimits {
   readonly maxOutputs: number;
 }
 
+/**
+ * R34: a native SDK client for `crypto-aio/native` and how to release it. `close` frees
+ * what the client holds (sockets, timers, workers); the root container's `close()` runs it
+ * once, before closing its pooled drivers.
+ */
+export interface DisposableNativeClient {
+  readonly client: unknown;
+  close?(): void | Promise<void>;
+}
+
 export interface ChainDriver {
   readonly ordering: OrderingKind;
   readonly capabilities: ReadonlySet<Capability>;
@@ -262,7 +272,7 @@ export interface ChainDriver {
   >;
   limits?(wallet: WalletOptions): DriverLimits;
   /** A fresh, caller-owned SDK client for `crypto-aio/native`; never the pooled one. */
-  createNativeClient?(): unknown;
+  createNativeClient?(): DisposableNativeClient;
   close?(): Promise<void>;
 }
 

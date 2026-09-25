@@ -396,7 +396,7 @@ describe('statusFromObservation', () => {
 });
 
 describe('DriverPool', () => {
-  it('closes and rejects further use with StateError; a handle pooled beforehand is unaffected', async () => {
+  it('closes and rejects further use with StateError, also through a handle pooled beforehand (R34)', async () => {
     const env = await createFakeEnv();
     await env.run(internalsOf(env.bc).pooled());
     await env.aio.close();
@@ -404,7 +404,9 @@ describe('DriverPool', () => {
     await expect(env.run(internalsOf(fresh).pooled())).rejects.toMatchObject({
       code: 'INVALID_TRANSITION',
     });
-    expect(await env.run(env.bc.getBlockHeight())).toBe(0n);
+    await expect(env.run(env.bc.getBlockHeight())).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+    });
   });
 
   it('shares one in-flight creation between concurrent get() calls on the same pool key', async () => {

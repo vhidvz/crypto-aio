@@ -624,7 +624,9 @@ export class Blockchain<C extends ChainId = ChainId> {
 
   /** @internal */
   protected engine(): OperationEngine {
-    return containerOf(internalsOf(this).container).engine();
+    const internals = internalsOf(this);
+    internals.assertOpen();
+    return containerOf(internals.container).engine();
   }
 
   /** @internal */
