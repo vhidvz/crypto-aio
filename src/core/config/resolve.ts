@@ -270,6 +270,16 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
   if (!Number.isInteger(confirmations) || confirmations < 1) {
     throw new ConfigError('CONFIG_INVALID', 'confirmations must be a positive integer');
   }
+  const { maxLagBlocks } = merged;
+  if (
+    maxLagBlocks !== undefined &&
+    (!Number.isSafeInteger(maxLagBlocks) || maxLagBlocks < 0)
+  ) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'maxLagBlocks must be a non-negative integer',
+    );
+  }
   const options = deepFreeze(merged.options ?? {});
   const providerNames = providers.map((p) => p.name);
   const indexerNames = indexers.map((p) => p.name);
@@ -281,6 +291,8 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
       rpc: fingerprint(providers),
       idx: fingerprint(indexers),
       options,
+      // The transport's lag tolerance depends on it (R36); omitted when unset.
+      maxLagBlocks,
     }),
   );
   const configHash = sha256Hex(
@@ -307,6 +319,7 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
     ...(signer ? { signer } : {}),
     options,
     confirmations,
+    ...(maxLagBlocks !== undefined ? { maxLagBlocks } : {}),
     capabilities,
     providerNames,
     indexerNames,

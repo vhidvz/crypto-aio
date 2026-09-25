@@ -105,9 +105,11 @@ export interface Transport {
    */
   highestHeight(): bigint | undefined;
   /**
-   * I2: the lag tolerance in effect (`TransportOptions.maxLagBlocks`, which the driver pool
-   * sets from the network's own when it has one): an endpoint further behind is lagging,
-   * and a view further behind `highestHeight()` is stale.
+   * I2: the lag tolerance in effect (`TransportOptions.maxLagBlocks`). The driver pool
+   * resolves it per R36: the chain's `maxLagBlocks` config, else the root
+   * `transport.maxLagBlocks`, else the plugin network's own, else the built-in default.
+   * An endpoint further behind is lagging, and a view further behind `highestHeight()` is
+   * stale.
    */
   readonly maxLagBlocks: number;
 }

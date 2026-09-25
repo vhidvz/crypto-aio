@@ -62,11 +62,14 @@ export class DriverPool {
 
   async #create(selection: ResolvedSelection): Promise<PooledDriver> {
     const factory = await this.deps.catalogs().adapters.load(selection.manifest);
+    const root = this.deps.transport();
+    // R36, first match wins: the user's per-chain config, the user's root transport option,
+    // the plugin network's own, then (left unset) the transport's built-in default.
+    const maxLagBlocks =
+      selection.maxLagBlocks ?? root.maxLagBlocks ?? selection.network.maxLagBlocks;
     const options: TransportOptions = {
-      ...this.deps.transport(),
-      ...(selection.network.maxLagBlocks !== undefined
-        ? { maxLagBlocks: selection.network.maxLagBlocks }
-        : {}),
+      ...root,
+      ...(maxLagBlocks !== undefined ? { maxLagBlocks } : {}),
     };
     // `poolKey` fingerprints revealed provider URLs and must stay an in-memory map key
     // only (never persisted, emitted or logged); the transport's public id — which flows

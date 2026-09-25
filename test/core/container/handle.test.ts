@@ -19,7 +19,7 @@ import type { Transport } from '../../../src/core/transport/types';
 import { FakeClock } from '../../../src/testing/fake-clock';
 import { fromHex } from '../../../src/core/util/bytes';
 import { fakeAddress } from '../../../src/testing/fake-chain';
-import { createFakeEnv } from '../../../src/testing/env';
+import { createFakeEnv, type FakeChainId, type FakeEnv } from '../../../src/testing/env';
 import { fakeDriverFactory } from '../../../src/testing/fake-driver';
 import { fakePlugin } from '../../../src/testing/fake-plugin';
 import { thrown } from '../../helpers';
@@ -468,6 +468,40 @@ describe('DriverPool', () => {
     });
     await expect(env.run(bc.ready())).resolves.toBe(bc);
     expect(attempts).toBe(2);
+  });
+
+  it('resolves the lag tolerance: per-chain config, then root transport, then the plugin network (R36)', async () => {
+    // Endpoint b is 10 blocks behind a; the fake plugin's network declares maxLagBlocks 2.
+    const endpoints = ['a', { name: 'b', lag: 10 }];
+    const stateOfB = async (env: FakeEnv, bc: Blockchain<FakeChainId>) => {
+      const status = await env.run(bc.getNetworkStatus());
+      const pooled = await env.run(internalsOf(bc).pooled());
+      return [pooled.transport.maxLagBlocks, status.endpoints[1]?.state];
+    };
+    const plugin = await createFakeEnv({ endpoints });
+    plugin.chain.mine(12);
+    expect(await stateOfB(plugin, plugin.bc)).toEqual([2, 'lagging']);
+    const own = plugin.aio.scope({ chains: { fakechain: { maxLagBlocks: 30 } } });
+    expect(await stateOfB(plugin, own.blockchain({ chain: 'fakechain' }))).toEqual([
+      30,
+      'healthy',
+    ]);
+
+    const root = await createFakeEnv({ endpoints, transport: { maxLagBlocks: 20 } });
+    root.chain.mine(12);
+    expect(await stateOfB(root, root.bc)).toEqual([20, 'healthy']);
+    const strict = root.aio.scope({ chains: { fakechain: { maxLagBlocks: 5 } } });
+    expect(await stateOfB(root, strict.blockchain({ chain: 'fakechain' }))).toEqual([
+      5,
+      'lagging',
+    ]);
+    expect(
+      thrown(() =>
+        root.aio
+          .scope({ chains: { fakechain: { maxLagBlocks: -1 } } })
+          .blockchain({ chain: 'fakechain' }),
+      ),
+    ).toMatchObject({ code: 'CONFIG_INVALID' });
   });
 
   it('reports driver limits', async () => {

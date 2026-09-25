@@ -50,6 +50,13 @@ export interface ChainDefaults {
   readonly signer?: string;
   readonly options?: Readonly<Record<string, unknown>>;
   readonly confirmations?: number;
+  /**
+   * R36: this chain's lag tolerance, in blocks. It wins over the root
+   * `transport.maxLagBlocks`, which wins over the plugin network's own, which wins over
+   * the transport's built-in default. An endpoint further behind the best known height is
+   * lagging, and a monitor or scanner view further behind is stale.
+   */
+  readonly maxLagBlocks?: number;
 }
 
 export interface LifecycleOptions {
@@ -154,6 +161,8 @@ export interface ResolvedSelection {
   readonly signer?: { readonly id: string; readonly instance: Signer };
   readonly options: Readonly<Record<string, unknown>>;
   readonly confirmations: number;
+  /** R36: the per-chain `maxLagBlocks` from the `chains` config, when set. */
+  readonly maxLagBlocks?: number;
   readonly capabilities: ReadonlySet<Capability>;
   readonly providerNames: readonly string[];
   readonly indexerNames: readonly string[];
