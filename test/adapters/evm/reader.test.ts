@@ -1,5 +1,6 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { EVM_CHAINS } from '../../../src/adapters/evm/chains';
+import { decodeTransaction } from '../../../src/adapters/evm/decode';
 import {
   FEE_HISTORY_BLOCKS,
   FEE_PERCENTILES,
@@ -14,8 +15,10 @@ import {
   createEvmExt,
   createEvmReader,
   createEvmSequence,
+  finalizedHeight,
   withSignal,
 } from '../../../src/adapters/evm/reader';
+import type { EvmReceipt, EvmTx } from '../../../src/adapters/evm/types';
 import type { ChainInfo, NetworkInfo } from '../../../src/core/model/chain';
 import { LIBRARIES } from './support/harness';
 import { evmHarness, submit } from './support/context';
@@ -27,6 +30,15 @@ const JUNK = '0x0000000000000000000000000000000000000Bad';
 const MONITOR = { purpose: 'monitor', retry: 'safe' };
 const READ = { purpose: 'read', retry: 'safe' };
 const GWEI = 1_000_000_000n;
+const PROOF_TAGS = { purpose: 'proof', retry: 'safe', quorum: 'proof' };
+/** Selector-sharing call target: an address the scripted node runs as a plain call. */
+const OTHER = '0x0000000000000000000000000000000000005151';
+/** Polygon PoS system logs (bor core/bor_fee_log.go), emitted from the MRC20 predeploy. */
+const POLYGON_FEE_EMITTER = '0x0000000000000000000000000000000000001010';
+const LOG_FEE_TRANSFER =
+  '0x4dfe1bbbcf077ddc3e01291eea2d5c70c2b422b415d95645b9adcfd678cb1d63';
+const LOG_TRANSFER = '0xe6497e3ee548a3372136af2fcb0696db31fc6cf20260707645068bd3fe97f3c4';
+const word = (address: string) => `0x${address.slice(2).toLowerCase().padStart(64, '0')}`;
 
 describe('EVM network config', () => {
   const ethereum = EVM_CHAINS[0] as ChainInfo;
@@ -102,6 +114,35 @@ describe('EVM network config', () => {
     }
     // Present means checked, also on a network without replace or cancel.
     expect(() => bump(1.5, 'arbitrum', 'mainnet')).toThrow(invalid(/minBumpPercent/));
+  });
+
+  it('requires a whole number of at least one confirmation (R67)', () => {
+    const avalanche = chain('avalanche');
+    const fuji = avalanche.networks.fuji as NetworkInfo;
+    const confirmations = (value: unknown) =>
+      evmNetworkConfig(avalanche, {
+        ...fuji,
+        finality: { kind: 'confirmations', confirmations: value },
+      } as NetworkInfo);
+    expect(confirmations(1).finality).toEqual({
+      kind: 'confirmations',
+      confirmations: 1,
+    });
+    expect(confirmations(12).finality).toEqual({
+      kind: 'confirmations',
+      confirmations: 12,
+    });
+    for (const value of [0, -1, 1.5, Number.NaN]) {
+      expect(() => confirmations(value)).toThrow(invalid(/confirmations/));
+    }
+  });
+
+  it("marks Polygon PoS networks, whose transactions carry bor's fee log (R69)", () => {
+    for (const chain of EVM_CHAINS)
+      for (const network of Object.values(chain.networks))
+        expect(evmNetworkConfig(chain, network).polygonFeeLog).toBe(
+          chain.id === 'polygon',
+        );
   });
 });
 
@@ -190,7 +231,33 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     ).rejects.toMatchObject({ code: 'RPC_ERROR', retryable: true });
   });
 
-  it('keeps unreadable token data permanent and every other provider failure retryable (R53)', async () => {
+  it("classifies the token's VM execution failures as permanent, other RPC errors as retryable (R66)", async () => {
+    const h = evmHarness(library);
+    const reader = createEvmReader(h.ctx);
+    h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    const failing = async (message: string) => {
+      h.node.intercept = (_e, method) =>
+        method === 'eth_call' ? { error: { code: -32000, message } } : undefined;
+      return h.run(reader.getTokenMetadata!({ standard: 'erc20', contract: TOKEN })).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    };
+    for (const message of ['invalid opcode: INVALID', 'out of gas']) {
+      expect(await failing(message)).toMatchObject({
+        code: 'ASSET_RESOLUTION',
+        retryable: false,
+      });
+    }
+    for (const message of ['execution aborted (timeout = 5s)', 'header not found']) {
+      expect(await failing(message)).toMatchObject({
+        code: 'RPC_ERROR',
+        retryable: true,
+      });
+    }
+  });
+
+  it('keeps unreadable token data permanent and leaves other provider failures as they are (R53, R66)', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
     const metadata = () =>
@@ -226,12 +293,12 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
       code: 'PROVIDER_UNAVAILABLE',
       retryable: true,
     });
-    // So is a misconfigured endpoint, whose error the transport marks non-retryable.
+    // A misconfigured endpoint stays final (transport I10), and is never the token's fault.
     h.node.intercept = undefined;
     h.node.fetch.route('https://main.evm.test/rpc', () => ({ status: 401, text: 'no' }));
     await expect(metadata()).rejects.toMatchObject({
       code: 'PROVIDER_MISCONFIGURED',
-      retryable: true,
+      retryable: false,
     });
   });
 
@@ -258,6 +325,72 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
       code: 'PROVIDER_UNAVAILABLE',
       retryable: true,
     });
+  });
+
+  it('proves a confirmation head under the quorum before trusting it (R67)', async () => {
+    const h = evmHarness(library, 'avalanche', 'fuji', { endpoints: ['a', 'b'] });
+    h.node.mine(4);
+    expect(await h.run(finalizedHeight(h.ctx, PROOF))).toBe(4n);
+    expect(h.calls.map((c) => [c.method, c.tags])).toEqual([
+      ['blockNumber', MONITOR],
+      ['getBlock', PROOF_TAGS],
+    ]);
+    // Endpoint 'a' over-reports its head, with or without a block to show for it.
+    const fake = {
+      number: '0x64',
+      hash: `0x${'11'.repeat(32)}`,
+      parentHash: `0x${'22'.repeat(32)}`,
+      timestamp: '0x1',
+      transactions: [],
+    };
+    for (const block of [fake, null]) {
+      h.node.served.length = 0;
+      h.node.intercept = (endpoint, method, params) => {
+        if (endpoint !== 'a') return undefined;
+        if (method === 'eth_blockNumber') return { result: '0x64' };
+        if (method === 'eth_getBlockByNumber' && params[0] === '0x64')
+          return { result: block };
+        return undefined;
+      };
+      await expect(h.run(finalizedHeight(h.ctx, PROOF))).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+      expect(h.node.served[0]).toEqual({ endpoint: 'a', method: 'eth_blockNumber' });
+    }
+    // The head read carries the proof's signal.
+    h.node.intercept = undefined;
+    h.node.served.length = 0;
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(
+      h.run(finalizedHeight(h.ctx, withSignal(PROOF, aborted.signal))),
+    ).rejects.toBeDefined();
+    expect(h.node.served).toEqual([]);
+  });
+
+  it('reads blocks by height and hash with read tags', async () => {
+    const h = evmHarness(library);
+    const reader = createEvmReader(h.ctx);
+    h.node.fund(KEY_ADDRESS, 10n ** 18n);
+    const hash = await submit(h, 0);
+    h.node.mine();
+    const mined = h.node.block(1n);
+    const expected = {
+      height: 1n,
+      hash: mined?.hash,
+      parentHash: h.node.block(0n)?.hash,
+      timestamp: mined?.timestamp,
+      transactionIds: [hash],
+    };
+    expect(await h.run(reader.getBlock(1n))).toEqual(expected);
+    expect(await h.run(reader.getBlock(mined?.hash as string))).toEqual(expected);
+    expect(await h.run(reader.getBlock(9n))).toBeNull();
+    expect(h.calls.filter((c) => c.method === 'getBlock').map((c) => c.tags)).toEqual([
+      READ,
+      READ,
+      READ,
+    ]);
   });
 
   it('decodes native, token, reverted and pending transactions', async () => {
@@ -330,28 +463,41 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
       decoding: 'complete',
     });
     expect(await h.run(reader.getTransaction(`0x${'ab'.repeat(32)}`))).toBeNull();
+    h.calls.length = 0;
+    await h.run(reader.getTransaction(native));
+    expect(h.calls.map((c) => [c.method, c.tags])).toEqual([
+      ['getTransaction', READ],
+      ['getReceipt', READ],
+    ]);
   });
 
-  it('reports a token transfer that logged no Transfer as failed (R50)', async () => {
+  it('fails a token transfer that logged no Transfer on the verdict path only (R50, R68)', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
     h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6, returnsFalse: true });
-    const hash = await submit(h, 0, {
-      to: TOKEN,
-      value: 0n,
-      gasLimit: 60_000n,
-      data: h.client.abi.encodeTransfer(RECIPIENT, 30n),
-    });
+    const transfer = { value: 0n, gasLimit: 60_000n };
+    const data = h.client.abi.encodeTransfer(RECIPIENT, 30n);
+    const token = await submit(h, 0, { ...transfer, to: TOKEN, data });
+    // A third party's contract call that shares the `transfer(address,uint256)` selector.
+    const other = await submit(h, 1, { ...transfer, to: OTHER, data });
     h.node.mine();
-    const failed = { seen: 'block', success: false, reason: 'token transfer failed' };
-    expect(await h.run(reader.getTransaction(hash))).toMatchObject({
-      observation: failed,
-      transfers: [],
-      decoding: 'partial',
+    const ref = { id: token, idKind: 'tx-hash' as const, canonical: true };
+    expect(await h.run(reader.observe(ref, undefined, undefined))).toMatchObject({
+      seen: 'block',
+      success: false,
+      reason: 'token transfer failed',
     });
-    const ref = { id: hash, idKind: 'tx-hash' as const, canonical: true };
-    expect(await h.run(reader.observe(ref, undefined, undefined))).toMatchObject(failed);
+    // The general decoder reports what the chain reports: the call succeeded, moving nothing.
+    for (const hash of [token, other]) {
+      const decoded = await h.run(reader.getTransaction(hash));
+      expect(decoded).toMatchObject({
+        observation: { seen: 'block', success: true },
+        transfers: [],
+        decoding: 'partial',
+      });
+      expect(decoded?.observation).not.toHaveProperty('reason');
+    }
   });
 
   it('adds the OP Stack L1 data fee to the paid fee', async () => {
@@ -446,5 +592,103 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
         message: 'malformed fee history',
       });
     }
+  });
+
+  it('counts only execution gas: an Arbitrum transfer with L1 gas is complete (D14)', () => {
+    const { abi } = evmHarness(library, 'arbitrum', 'sepolia').client;
+    const hash = `0x${'cd'.repeat(32)}`;
+    const blockHash = `0x${'ef'.repeat(32)}`;
+    const tx: EvmTx = {
+      hash,
+      from: KEY_ADDRESS,
+      to: RECIPIENT,
+      nonce: 0n,
+      value: 1_000n,
+      input: '0x',
+      type: 2,
+      gasLimit: 30_000n,
+      blockHash,
+      blockNumber: 1n,
+    };
+    const receipt = (extra: Partial<EvmReceipt>): EvmReceipt => ({
+      transactionHash: hash,
+      blockHash,
+      blockNumber: 1n,
+      status: 1,
+      from: KEY_ADDRESS,
+      to: RECIPIENT,
+      contractAddress: null,
+      gasUsed: 21_000n,
+      effectiveGasPrice: 10n,
+      logs: [],
+      ...extra,
+    });
+    const l1 = 4_321n;
+    expect(
+      decodeTransaction(abi, tx, receipt({ gasUsed: 21_000n + l1, gasUsedForL1: l1 })),
+    ).toMatchObject({
+      observation: { success: true },
+      fee: [{ asset: 'native', amount: (21_000n + l1) * 10n }],
+      decoding: 'complete',
+    });
+    // Without the L1 part, the same gas means code ran.
+    expect(decodeTransaction(abi, tx, receipt({ gasUsed: 21_000n + l1 })).decoding).toBe(
+      'partial',
+    );
+  });
+
+  it("ignores exactly bor's fee log when deciding whether code ran on Polygon (R69)", async () => {
+    const h = evmHarness(library, 'polygon', 'amoy');
+    const reader = createEvmReader(h.ctx);
+    h.node.fund(KEY_ADDRESS, 10n ** 18n);
+    const hash = await submit(h, 0);
+    h.node.mine();
+    const blockHash = h.node.block(1n)?.hash as string;
+    const log = (emitter: string, topic: string) => ({
+      address: emitter,
+      topics: [topic, word(POLYGON_FEE_EMITTER), word(KEY_ADDRESS), word(RECIPIENT)],
+      data: `0x${'00'.repeat(160)}`,
+      logIndex: '0x0',
+      blockHash,
+      blockNumber: '0x1',
+      transactionHash: hash,
+      removed: false,
+    });
+    const decodingWith = async (logs: readonly object[]) => {
+      h.node.intercept = (_e, method) =>
+        method === 'eth_getTransactionReceipt'
+          ? {
+              result: {
+                transactionHash: hash,
+                blockHash,
+                blockNumber: '0x1',
+                status: '0x1',
+                from: KEY_ADDRESS,
+                to: RECIPIENT,
+                contractAddress: null,
+                gasUsed: '0x5208',
+                effectiveGasPrice: '0x77359400',
+                logs,
+              },
+            }
+          : undefined;
+      return (await h.run(reader.getTransaction(hash)))?.decoding;
+    };
+    const feeLog = log(POLYGON_FEE_EMITTER, LOG_FEE_TRANSFER);
+    expect(await decodingWith([])).toBe('complete');
+    // bor's LogTransfer, and the fee topic from any other emitter, still mean code ran.
+    expect(await decodingWith([log(POLYGON_FEE_EMITTER, LOG_TRANSFER)])).toBe('partial');
+    expect(await decodingWith([log(OTHER, LOG_FEE_TRANSFER)])).toBe('partial');
+    expect(await decodingWith([feeLog])).toBe('complete');
+    // Only on Polygon: the same log elsewhere means code ran.
+    const tx = await h.run(h.client.getTransaction(hash, READ_TAGS));
+    const receipt = await h.run(h.client.getReceipt(hash, READ_TAGS));
+    expect(decodeTransaction(h.client.abi, tx as EvmTx, receipt).decoding).toBe(
+      'partial',
+    );
+    expect(
+      decodeTransaction(h.client.abi, tx as EvmTx, receipt, undefined, h.ctx.config)
+        .decoding,
+    ).toBe('complete');
   });
 });

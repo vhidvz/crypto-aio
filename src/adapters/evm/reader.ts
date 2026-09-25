@@ -57,7 +57,8 @@ export function isRevert(error: unknown): boolean {
 
 /**
  * The highest final block: the `finalized` tag, or the head minus the confirmations. The
- * head is always a single `monitor` read; `tags` apply to the `finalized` block read.
+ * head is a single `monitor` read (with the signal of `tags`); `tags` apply to the
+ * `finalized` block read and, under `proof`, to the quorum read of the head block.
  */
 export async function finalizedHeight(
   ctx: EvmContext,
@@ -65,7 +66,18 @@ export async function finalizedHeight(
 ): Promise<bigint> {
   const { finality } = ctx.config;
   if (finality.kind === 'confirmations') {
-    const head = await ctx.client.blockNumber(MONITOR);
+    const head = await ctx.client.blockNumber(withSignal(MONITOR, tags.signal));
+    // R67: a proof never rests on one endpoint's head. The quorum must hold that block, so
+    // an endpoint that over-reports its head cannot advance the final height.
+    if (tags.purpose === 'proof') {
+      const block = await ctx.client.getBlock(head, tags);
+      if (block?.number !== head) {
+        throw new ProviderError(
+          'PROVIDER_INCONSISTENT',
+          'the endpoints do not agree on the head block',
+        );
+      }
+    }
     const height = head - BigInt(finality.confirmations) + 1n;
     return height < 0n ? 0n : height;
   }
@@ -98,6 +110,17 @@ export function createEvmAddressCodec(client: EvmClient): AddressCodec {
 }
 
 const assetError = (reason: string) => new ValidationError('ASSET_RESOLUTION', reason);
+
+/** geth's texts for an EVM that stopped the called code itself (`core/vm/errors.go`). */
+const VM_FAILURE =
+  /^(out of gas|invalid opcode|invalid jump destination|stack (underflow|limit reached)|write protection|return data out of bounds)/i;
+
+/** Whether a definitive (non-ambiguous) JSON-RPC error says the EVM stopped the code. */
+function isExecutionFailure(error: unknown): boolean {
+  if (!isCryptoAioError(error, 'RPC_ERROR') || error.ambiguous) return false;
+  const { rpcMessage } = error.details ?? {};
+  return typeof rpcMessage === 'string' && VM_FAILURE.test(rpcMessage);
+}
 
 /** An ERC-20 `balanceOf` at `latest`; `ASSET_RESOLUTION` when the contract gives none. */
 export async function erc20Balance(
@@ -139,15 +162,18 @@ function symbolText(client: EvmClient, data: string): string {
 export function createEvmReader(ctx: EvmContext): ChainReader {
   const { client } = ctx;
   /**
-   * N6, R53: a revert is the token's own permanent problem. Every other provider failure
-   * is the node's, so it stays retryable and the core never caches it.
+   * N6, R53, R66: a revert or a VM execution failure is the token's own permanent problem
+   * (`ASSET_RESOLUTION`, which the core caches). Any other JSON-RPC error is the node's, so
+   * it is rethrown retryable. Everything else propagates unchanged: a misconfigured
+   * endpoint stays final (transport I10), and a retryable failure is already retryable.
    */
   const tokenCall = async (contract: string, data: string): Promise<string> => {
     try {
       return await client.call({ to: contract, data }, 'latest', READ);
     } catch (error) {
       if (isRevert(error)) throw assetError('the token contract reverted');
-      if (isCryptoAioError(error) && error.category === 'provider' && !error.retryable) {
+      if (isExecutionFailure(error)) throw assetError('the token contract failed to run');
+      if (isCryptoAioError(error, 'RPC_ERROR')) {
         throw withContext(error, {}, { retryable: true });
       }
       throw error;
@@ -169,7 +195,7 @@ export function createEvmReader(ctx: EvmContext): ChainReader {
       const tx = await client.getTransaction(id, READ);
       if (!tx) return null;
       const receipt = tx.blockHash !== null ? await client.getReceipt(id, READ) : null;
-      return decodeTransaction(client.abi, tx, receipt);
+      return decodeTransaction(client.abi, tx, receipt, undefined, ctx.config);
     },
     observe: async (ref) => {
       const tx = await client.getTransaction(ref.id, MONITOR);

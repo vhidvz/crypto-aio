@@ -32,11 +32,23 @@ export interface EvmNetworkConfig {
   readonly minPriorityFeePerGas: bigint;
   /** OP Stack: transactions also pay an L1 data fee (`GasPriceOracle.getL1Fee`). */
   readonly l1DataFee: boolean;
+  /** Polygon PoS: every fee-paying transaction's receipt carries `POLYGON_FEE_LOG`. */
+  readonly polygonFeeLog: boolean;
   readonly capabilities: ReadonlySet<Capability>;
 }
 
 /** The OP Stack `GasPriceOracle` predeploy. */
 export const GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000F';
+
+/**
+ * R69: the `LogFeeTransfer(address,address,address,uint256,uint256,uint256,uint256,uint256)`
+ * system log that Polygon PoS's client (bor, `core/bor_fee_log.go`) adds to every
+ * fee-paying transaction, emitted from the MRC20 predeploy. It says nothing about code.
+ */
+export const POLYGON_FEE_LOG = {
+  address: '0x0000000000000000000000000000000000001010',
+  topic: '0x4dfe1bbbcf077ddc3e01291eea2d5c70c2b422b415d95645b9adcfd678cb1d63',
+} as const;
 
 function finalityOf(
   policy: FinalityPolicy,
@@ -44,7 +56,12 @@ function finalityOf(
 ): EvmFinality {
   if (policy.kind === 'tag') return { kind: 'tag' };
   if (policy.kind === 'confirmations') {
-    return { kind: 'confirmations', confirmations: policy.confirmations };
+    // R67: the final height is `head - confirmations + 1`, so fewer than one is the future.
+    const confirmations: unknown = policy.confirmations;
+    if (!Number.isSafeInteger(confirmations) || (confirmations as number) < 1) {
+      return fail('finality confirmations must be an integer of at least 1');
+    }
+    return { kind: 'confirmations', confirmations: confirmations as number };
   }
   return fail(
     `finality '${policy.kind}' is not an EVM policy (use 'tag' or 'confirmations')`,
@@ -99,6 +116,7 @@ export function evmNetworkConfig(
     ...(replaces ? { minBumpPercent: network.replacement?.minBumpPercent ?? 10 } : {}),
     minPriorityFeePerGas: (minTip as bigint | undefined) ?? 0n,
     l1DataFee: params.l1DataFee === 'op-stack',
+    polygonFeeLog: chain.id === 'polygon',
     capabilities,
   };
 }

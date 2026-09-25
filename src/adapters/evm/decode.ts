@@ -9,14 +9,16 @@ import type {
   DriverTxObservation,
 } from '../../core/driver/types';
 import { TRANSFER_GAS } from './fees';
-import type { EvmAbi, EvmReceipt, EvmTx } from './types';
+import { POLYGON_FEE_LOG, type EvmNetworkConfig } from './network';
+import type { EvmAbi, EvmLog, EvmReceipt, EvmTx } from './types';
 
 const TRANSFER_SELECTOR = '0xa9059cbb';
 
 /**
  * R50: a token `transfer` call worked only if the token logged a `Transfer` from the sender.
  * ERC-20 requires the event, and some tokens return `false` instead of reverting, so a
- * successful receipt alone would report a transfer that moved nothing.
+ * successful receipt alone would report a transfer that moved nothing. R68: only verdicts
+ * on our own transactions apply it (`evmObservation`, `includedFinal`), never the decoder.
  */
 export function tokenTransferLanded(
   abi: EvmAbi,
@@ -29,24 +31,16 @@ export function tokenTransferLanded(
   );
 }
 
-export function evmObservation(
-  abi: EvmAbi,
-  tx: EvmTx,
-  receipt: EvmReceipt | null,
-): DriverTxObservation {
+/** What the chain reports: where the transaction is, and its receipt's status. */
+function chainObservation(tx: EvmTx, receipt: EvmReceipt | null): DriverTxObservation {
   if (receipt) {
-    const landed = receipt.status === 1 && tokenTransferLanded(abi, tx, receipt);
     return {
       seen: 'block',
       txHash: tx.hash,
       blockHeight: receipt.blockNumber,
       blockHash: receipt.blockHash,
-      success: landed,
-      ...(receipt.status === 0
-        ? { reason: 'reverted' }
-        : landed
-          ? {}
-          : { reason: 'token transfer failed' }),
+      success: receipt.status === 1,
+      ...(receipt.status === 0 ? { reason: 'reverted' } : {}),
     };
   }
   if (tx.blockHash !== null && tx.blockNumber !== null) {
@@ -60,17 +54,49 @@ export function evmObservation(
   return { seen: 'mempool', txHash: tx.hash };
 }
 
-/** Whether contract code ran: calldata, logs, or more execution gas than a plain transfer. */
-function ranCode(tx: EvmTx, receipt: EvmReceipt): boolean {
-  const executionGas = receipt.gasUsed - (receipt.gasUsedForL1 ?? 0n);
-  return tx.input !== '0x' || receipt.logs.length > 0 || executionGas !== TRANSFER_GAS;
+/**
+ * The verdict on one of our own transactions (R68): the chain's status, and a successful
+ * token `transfer` that logged nothing is `success: false` (R50).
+ */
+export function evmObservation(
+  abi: EvmAbi,
+  tx: EvmTx,
+  receipt: EvmReceipt | null,
+): DriverTxObservation {
+  const observation = chainObservation(tx, receipt);
+  if (!receipt || receipt.status === 0 || tokenTransferLanded(abi, tx, receipt)) {
+    return observation;
+  }
+  return { ...observation, success: false, reason: 'token transfer failed' };
 }
 
+const isPolygonFeeLog = (log: EvmLog): boolean =>
+  log.address.toLowerCase() === POLYGON_FEE_LOG.address &&
+  log.topics[0] === POLYGON_FEE_LOG.topic;
+
+/**
+ * Whether contract code ran: calldata, logs, or more execution gas than a plain transfer.
+ * On Polygon PoS, bor's fee log is not a sign of code (R69).
+ */
+function ranCode(tx: EvmTx, receipt: EvmReceipt, polygonFeeLog: boolean): boolean {
+  const executionGas = receipt.gasUsed - (receipt.gasUsedForL1 ?? 0n);
+  const logs = polygonFeeLog
+    ? receipt.logs.filter((log) => !isPolygonFeeLog(log))
+    : receipt.logs;
+  return tx.input !== '0x' || logs.length > 0 || executionGas !== TRANSFER_GAS;
+}
+
+/**
+ * Any transaction as the chain reports it (R68): the receipt's status, never the R50
+ * verdict, so a third party's call that shares the `transfer` selector is not misreported.
+ * Pass the network's config so Polygon PoS's fee log does not make a transfer `partial`.
+ */
 export function decodeTransaction(
   abi: EvmAbi,
   tx: EvmTx,
   receipt: EvmReceipt | null,
   timestamp?: number,
+  network: Pick<EvmNetworkConfig, 'polygonFeeLog'> = { polygonFeeLog: false },
 ): DriverTransaction {
   const transfers: DriverTransfer[] = [];
   const executed = receipt === null || receipt.status === 1;
@@ -100,12 +126,12 @@ export function decodeTransaction(
   const decoding =
     receipt === null
       ? 'partial'
-      : receipt.status === 0 || !ranCode(tx, receipt)
+      : receipt.status === 0 || !ranCode(tx, receipt, network.polygonFeeLog)
         ? 'complete'
         : 'partial';
   return {
     id: tx.hash,
-    observation: evmObservation(abi, tx, receipt),
+    observation: chainObservation(tx, receipt),
     ...(receipt
       ? {
           fee: [
