@@ -205,6 +205,8 @@ export class HttpTransport implements Transport {
   #probes: HealthProbes = {};
   #best: bigint | undefined;
   #highest: bigint | undefined;
+  /** I2: the highest height ever verified by an identity-checked endpoint; never lowered. */
+  #verifiedPeak: bigint | undefined;
   #lastHealthAt = Number.NEGATIVE_INFINITY;
   /** #3 (round 3): set after a refresh where every probe failed, so ensureFreshHealth backs
    * off instead of storming the same down endpoints on every read during an outage. */
@@ -549,6 +551,10 @@ export class HttpTransport implements Transport {
 
   highestHeight(): bigint | undefined {
     return this.#highest;
+  }
+
+  get maxLagBlocks(): number {
+    return this.#opts.maxLagBlocks;
   }
 
   // ---- request orchestration -------------------------------------------------------
@@ -1359,10 +1365,11 @@ export class HttpTransport implements Transport {
       }
       endpoint.identity = 'mismatch';
       // R19 (round 4): a disabled endpoint's height stops counting at once; #best and
-      // #highest are rebuilt from identity-verified endpoints with known heights only.
+      // #highest are rebuilt from identity-verified endpoints with known heights only. I2:
+      // never below a verified peak, even while a verified endpoint's height is unknown.
       endpoint.height = undefined;
       this.#best = this.#verifiedMaxHeight();
-      this.#highest = this.#best;
+      this.#highest = maxHeight(this.#verifiedPeak, this.#best);
       this.#events.emit('provider.misconfigured', {
         transportId: this.id,
         endpointId: endpoint.id,
@@ -1462,7 +1469,10 @@ export class HttpTransport implements Transport {
     const best = this.#verifiedMaxHeight();
     if (best !== undefined) {
       this.#best = best;
-      if (this.#highest === undefined || best > this.#highest) this.#highest = best;
+      this.#highest = maxHeight(this.#highest, best);
+      // I2: with an identity probe, `best` came from identity-verified endpoints only.
+      if (this.#identityProbed())
+        this.#verifiedPeak = maxHeight(this.#verifiedPeak, best);
     }
     for (const status of this.status()) {
       // 'half-open' has no matching value in the provider.health event payload; 'unknown'
@@ -1546,4 +1556,10 @@ export class HttpTransport implements Transport {
     this.#maybeDelivered.add(error);
     return error;
   }
+}
+
+/** The higher of two optional heights. */
+function maxHeight(a: bigint | undefined, b: bigint | undefined): bigint | undefined {
+  if (a === undefined) return b;
+  return b !== undefined && b > a ? b : a;
 }

@@ -4,7 +4,7 @@ import {
   type EndpointCall,
   type EndpointConfig,
 } from '../../../src/core/transport/types';
-import { drive, settle } from '../../../src/testing/fake-clock';
+import { FakeClock, drive, settle } from '../../../src/testing/fake-clock';
 import {
   FakeFetch,
   hang,
@@ -577,6 +577,47 @@ describe('HttpTransport verified-only health heights', () => {
     expect(transport.status().find((s) => s.id === 'b')?.state).toBe('disabled');
     expect(transport.highestHeight()).toBe(100n);
     expect(bHeightCalls()).toBe(0);
+  });
+
+  // I2: the verified high-water mark never drops below a peak an identity-verified endpoint
+  // reported, even when a later mismatch rebuilds it while that endpoint's height is unknown.
+  it('keeps highestHeight at the verified peak when a mismatch rebuilds it', async () => {
+    const C: EndpointConfig = { name: 'c', url: 'https://c.test/rpc' };
+    let aHeightFails = false;
+    let cIdentityCalls = 0;
+    // C's second identity answer (the mismatch) comes 50 ms late: after A's height failed.
+    const late = { clock: undefined as FakeClock | undefined };
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) => {
+        if (method(req) === 'chain_id') return rpcResult(req, '1');
+        return aHeightFails ? { status: 503, text: '' } : rpcResult(req, '100');
+      })
+      .route('https://b.test', (req) =>
+        rpcResult(req, method(req) === 'chain_id' ? '1' : '90'),
+      )
+      .route('https://c.test', async (req) => {
+        if (method(req) !== 'chain_id') return rpcResult(req, '1000000');
+        cIdentityCalls++;
+        if (cIdentityCalls === 1) return { status: 503, text: '' };
+        await late.clock?.sleep(50);
+        return rpcResult(req, '5');
+      });
+    const { transport, clock } = setup([A, B, C], fake, { maxLagBlocks: 5 });
+    late.clock = clock;
+    transport.setProbes(probes);
+    await drive(clock, transport.refreshHealth());
+    expect(transport.highestHeight()).toBe(100n);
+    aHeightFails = true;
+    await clock.advance(20_000);
+    await drive(clock, transport.refreshHealth());
+    expect(transport.status().find((s) => s.id === 'c')?.state).toBe('disabled');
+    expect(transport.highestHeight()).toBe(100n);
+  });
+
+  it('exposes its effective maxLagBlocks (I2)', () => {
+    const fake = new FakeFetch();
+    expect(setup([A], fake).transport.maxLagBlocks).toBe(5);
+    expect(setup([A], fake, { maxLagBlocks: 20 }).transport.maxLagBlocks).toBe(20);
   });
 
   // R19: a height recorded before an identity probe was configured stops counting once its

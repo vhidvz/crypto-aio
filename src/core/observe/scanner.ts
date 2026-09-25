@@ -5,7 +5,7 @@ import type { EventBus } from '../events/bus';
 import type { AssetRef } from '../model/asset';
 import type { Block, Transaction } from '../model/transaction';
 import type { CursorStore, ScanCursor } from '../store/types';
-import type { Transport } from '../transport/types';
+import { isStaleView, type StaleViewSource } from '../transport/stale-view';
 import type { Clock } from '../util/clock';
 
 export interface ScannerOptions {
@@ -63,8 +63,8 @@ export interface ScannerDeps {
   readonly load: () => Promise<{
     readonly mapping: MappingContext;
     readonly blocks: BlockSource;
-    /** The verified height watermark behind the stale-view guard. */
-    readonly transport: Pick<Transport, 'highestHeight' | 'hasProbes'>;
+    /** The verified height watermark and lag tolerance behind the stale-view guard. */
+    readonly transport: StaleViewSource;
   }>;
   readonly cursors: CursorStore;
   readonly events: EventBus;
@@ -82,7 +82,7 @@ interface Step {
 interface Source {
   readonly mapping: MappingContext;
   readonly blocks: BlockSource;
-  readonly transport: Pick<Transport, 'highestHeight' | 'hasProbes'>;
+  readonly transport: StaleViewSource;
   readonly window: number;
   readonly filter: ScanFilter | undefined;
 }
@@ -440,16 +440,12 @@ export class Scanner implements AsyncIterable<ScanEvent> {
     return (await proofs.blockHash(ancestor.height, 'latest')) === ancestor.hash;
   }
 
-  /**
-   * The monitor's stale-view guard: a head more than the lag tolerance behind the transport's
-   * verified height, or no verified height at all while health probes exist, decides nothing.
-   */
+  /** The monitor's stale-view guard (`isStaleView`): a stale view decides nothing. */
   private async staleView(source: Source): Promise<boolean> {
-    const head = await source.mapping.driver.reader.getBlockHeight();
-    const highest = source.transport.highestHeight();
-    if (highest === undefined) return source.transport.hasProbes();
-    const tolerance = BigInt(source.mapping.selection.network.maxLagBlocks ?? 5);
-    return head + tolerance < highest;
+    return isStaleView(
+      source.transport,
+      await source.mapping.driver.reader.getBlockHeight(),
+    );
   }
 
   /** Operational data only: never addresses, amounts or hashes. */

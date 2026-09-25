@@ -24,6 +24,7 @@ import {
   type OperationRecord,
   type Stores,
 } from '../store/types';
+import { isStaleView } from '../transport/stale-view';
 import { randomId } from '../util/bytes';
 import type { Clock } from '../util/clock';
 import {
@@ -205,12 +206,7 @@ export class Monitor {
       pooled.driver.reader.getBlockHeight(),
       pooled.driver.reader.getFinalizedHeight(),
     ]);
-    const highest = pooled.transport.highestHeight();
-    const tolerance = BigInt(target.selection.network.maxLagBlocks ?? 5);
-    // Controller amendment (carry-forward): when probes are configured, an unknown verified
-    // height means the view cannot be judged, so decide nothing.
-    if (highest === undefined ? pooled.transport.hasProbes() : head + tolerance < highest)
-      return { record: op, stale: true }; // stale view: decide nothing
+    if (isStaleView(pooled.transport, head)) return { record: op, stale: true };
     const observations = new Map<string, AttemptObservation>();
     for (const attempt of op.attempts) {
       try {

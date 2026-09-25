@@ -277,6 +277,20 @@ function withHighest(transport: Transport, highest: () => bigint | undefined): T
   });
 }
 
+/** A transport with this effective `maxLagBlocks` and verified height (I2). */
+function withLag(
+  transport: Transport,
+  maxLagBlocks: number,
+  highest: () => bigint | undefined,
+): Transport {
+  return new Proxy(withHighest(transport, highest), {
+    get(real, prop) {
+      if (prop === 'maxLagBlocks') return maxLagBlocks;
+      return Reflect.get(real, prop) as unknown;
+    },
+  });
+}
+
 /** A signed transfer whose only Attempt is proven rejected: the failed write was lost. */
 async function rejectedButLive(options: FakeEnvOptions = {}) {
   const faulty = new FaultyOperationStore(new MemoryOperationStore());
@@ -323,6 +337,25 @@ function holdLease(env: FakeEnv) {
 }
 
 describe('monitor: evidence and the monotonic height guard', () => {
+  it("takes its lag tolerance from the transport's effective maxLagBlocks (I2)", async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.mine();
+    const { monitor, target } = await monitorOf(env);
+    // transport.maxLagBlocks: 20, and this endpoint is 10 blocks behind the verified height.
+    const tolerant: ReadTarget = {
+      ...target,
+      pooled: {
+        ...target.pooled,
+        transport: withLag(target.pooled.transport, 20, () => env.chain.head + 10n),
+      },
+    };
+    const after = await env.run(
+      monitor.check(tolerant, await stored(env, sub.operationId)),
+    );
+    expect(after.state).toBe('included');
+  });
+
   it.each([
     ['no verified height is known', () => undefined],
     ['its head is more than maxLagBlocks behind', (head: bigint) => head + 3n],

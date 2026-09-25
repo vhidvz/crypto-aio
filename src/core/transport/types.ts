@@ -97,8 +97,19 @@ export interface Transport {
   refreshHealth(signal?: AbortSignal): Promise<void>;
   ensureFreshHealth(signal?: AbortSignal): Promise<void>;
   status(): EndpointStatus[];
-  /** Highest block height ever observed (monotonic guard for monitors). */
+  /**
+   * Highest verified block height: a monotonic high-water mark (the stale-view guard of
+   * monitors and scanners). It never drops below a peak an identity-verified endpoint
+   * reported; only a height taken before an identity probe existed stops counting once its
+   * endpoint turns out to serve another network (R19).
+   */
   highestHeight(): bigint | undefined;
+  /**
+   * I2: the lag tolerance in effect (`TransportOptions.maxLagBlocks`, which the driver pool
+   * sets from the network's own when it has one): an endpoint further behind is lagging,
+   * and a view further behind `highestHeight()` is stale.
+   */
+  readonly maxLagBlocks: number;
 }
 
 /** SDKs are configured with this origin; the transport maps it onto real endpoints. */

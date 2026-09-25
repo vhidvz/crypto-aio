@@ -521,7 +521,11 @@ describe('scanner cursor and delivery guarantees', () => {
 });
 
 describe('scanner stale-view guard', () => {
-  it('decides no rollback while the view is behind the verified height, or none is known', async () => {
+  /**
+   * A cursor at h2 whose block was reorged, over a stub transport with this lag tolerance.
+   * I2: the network's own `networkLag` contradicts it and must never be read.
+   */
+  async function reorgedCursor(maxLagBlocks: number, networkLag: number) {
     const clock = new FakeClock();
     const cursors = new MemoryCursorStore();
     const hashes = new Map<bigint, string>([
@@ -529,7 +533,7 @@ describe('scanner stale-view guard', () => {
       [1n, 'h1'],
       [2n, 'h2'],
     ]);
-    let highest: bigint | undefined;
+    const view: { highest: bigint | undefined } = { highest: undefined };
     const header = async (height: bigint): Promise<DriverBlock | null> => {
       const hash = hashes.get(height);
       return hash === undefined
@@ -537,7 +541,10 @@ describe('scanner stale-view guard', () => {
         : { height, hash, parentHash: hashes.get(height - 1n) ?? '' };
     };
     const mapping = {
-      selection: { chain: { id: 'stub' }, network: { id: 'net', maxLagBlocks: 2 } },
+      selection: {
+        chain: { id: 'stub' },
+        network: { id: 'net', maxLagBlocks: networkLag },
+      },
       driver: {
         reader: { getBlockHeight: async () => 2n, getFinalizedHeight: async () => 2n },
         proofs: { blockHash: async (height: bigint) => hashes.get(height) ?? null },
@@ -547,7 +554,11 @@ describe('scanner stale-view guard', () => {
       load: async () => ({
         mapping,
         blocks: { header, transactions: async () => [] },
-        transport: { highestHeight: () => highest, hasProbes: () => true },
+        transport: {
+          highestHeight: () => view.highest,
+          hasProbes: () => true,
+          maxLagBlocks,
+        },
       }),
       cursors,
       events: new EventBus(clock, noopLogger),
@@ -559,16 +570,31 @@ describe('scanner stale-view guard', () => {
     await cursors.put('test:stub:net:k', { height: 2n, hash: 'h2', recent }, null);
     hashes.set(2n, 'h2-reorged');
     const iterator = new Scanner(deps, { cursorKey: 'k' })[Symbol.asyncIterator]();
+    return { clock, view, iterator };
+  }
+
+  it('decides no rollback while the view is behind the verified height, or none is known', async () => {
+    const { clock, view, iterator } = await reorgedCursor(2, 1_000);
     let settled = false;
     const pending = iterator.next().finally(() => {
       settled = true;
     });
     await clock.advance(3_000); // no verified height while probes exist
-    highest = 10n;
+    view.highest = 10n;
     await clock.advance(3_000); // head 2 + tolerance 2 < 10
     expect(settled).toBe(false);
-    highest = 2n;
+    view.highest = 2n;
     expect((await drive(clock, pending, 100)).value).toMatchObject({
+      type: 'rollback',
+      to: { height: 1n, hash: 'h1' },
+    });
+  });
+
+  it("takes its lag tolerance from the transport's effective maxLagBlocks (I2)", async () => {
+    // transport.maxLagBlocks: 20, and this view is 10 blocks behind the verified height.
+    const { clock, view, iterator } = await reorgedCursor(20, 2);
+    view.highest = 12n;
+    expect((await drive(clock, iterator.next(), 100)).value).toMatchObject({
       type: 'rollback',
       to: { height: 1n, hash: 'h1' },
     });
