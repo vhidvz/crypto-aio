@@ -6,7 +6,10 @@ import {
   FEE_PERCENTILES,
   feesFromHistory,
 } from '../../../src/adapters/evm/fees';
-import { evmNetworkConfig } from '../../../src/adapters/evm/network';
+import {
+  evmNetworkConfig,
+  type EvmNetworkConfig,
+} from '../../../src/adapters/evm/network';
 import {
   MONITOR as MONITOR_TAGS,
   PROOF,
@@ -137,10 +140,10 @@ describe('EVM network config', () => {
     }
   });
 
-  it("marks Polygon PoS networks, whose transactions carry bor's fee log (R69)", () => {
+  it("marks Polygon PoS networks, whose receipts carry bor's system logs (R69, R70)", () => {
     for (const chain of EVM_CHAINS)
       for (const network of Object.values(chain.networks))
-        expect(evmNetworkConfig(chain, network).polygonFeeLog).toBe(
+        expect(evmNetworkConfig(chain, network).polygonSystemLogs).toBe(
           chain.id === 'polygon',
         );
   });
@@ -637,24 +640,24 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     );
   });
 
-  it("ignores exactly bor's fee log when deciding whether code ran on Polygon (R69)", async () => {
+  it("ignores exactly bor's system logs on a plain Polygon transfer (R69, R70)", async () => {
     const h = evmHarness(library, 'polygon', 'amoy');
     const reader = createEvmReader(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
     const hash = await submit(h, 0);
     h.node.mine();
     const blockHash = h.node.block(1n)?.hash as string;
-    const log = (emitter: string, topic: string) => ({
+    const log = (emitter: string, topic: string, index = 0) => ({
       address: emitter,
       topics: [topic, word(POLYGON_FEE_EMITTER), word(KEY_ADDRESS), word(RECIPIENT)],
       data: `0x${'00'.repeat(160)}`,
-      logIndex: '0x0',
+      logIndex: `0x${index.toString(16)}`,
       blockHash,
       blockNumber: '0x1',
       transactionHash: hash,
       removed: false,
     });
-    const decodingWith = async (logs: readonly object[]) => {
+    const decodedWith = async (logs: readonly object[]) => {
       h.node.intercept = (_e, method) =>
         method === 'eth_getTransactionReceipt'
           ? {
@@ -672,23 +675,51 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
               },
             }
           : undefined;
-      return (await h.run(reader.getTransaction(hash)))?.decoding;
+      return h.run(reader.getTransaction(hash));
     };
-    const feeLog = log(POLYGON_FEE_EMITTER, LOG_FEE_TRANSFER);
+    const decodingWith = async (logs: readonly object[]) =>
+      (await decodedWith(logs))?.decoding;
+    const transferLog = log(POLYGON_FEE_EMITTER, LOG_TRANSFER, 0);
+    const feeLog = log(POLYGON_FEE_EMITTER, LOG_FEE_TRANSFER, 1);
     expect(await decodingWith([])).toBe('complete');
-    // bor's LogTransfer, and the fee topic from any other emitter, still mean code ran.
-    expect(await decodingWith([log(POLYGON_FEE_EMITTER, LOG_TRANSFER)])).toBe('partial');
-    expect(await decodingWith([log(OTHER, LOG_FEE_TRANSFER)])).toBe('partial');
     expect(await decodingWith([feeLog])).toBe('complete');
-    // Only on Polygon: the same log elsewhere means code ran.
-    const tx = await h.run(h.client.getTransaction(hash, READ_TAGS));
-    const receipt = await h.run(h.client.getReceipt(hash, READ_TAGS));
-    expect(decodeTransaction(h.client.abi, tx as EvmTx, receipt).decoding).toBe(
-      'partial',
-    );
+    // The same topics from any other emitter still mean code ran.
+    expect(await decodingWith([log(OTHER, LOG_FEE_TRANSFER)])).toBe('partial');
+    expect(await decodingWith([log(OTHER, LOG_TRANSFER), feeLog])).toBe('partial');
+    // A plain POL transfer carries both system logs; its value is `tx.value`, and
+    // bor's LogTransfer is never a token movement.
+    const plain = await decodedWith([transferLog, feeLog]);
+    expect(plain?.decoding).toBe('complete');
+    expect(plain?.transfers).toEqual([
+      {
+        locator: 'native',
+        from: [KEY_ADDRESS],
+        to: RECIPIENT,
+        asset: 'native',
+        amount: 1_000n,
+        source: 'native',
+      },
+    ]);
+    // Only on Polygon, and only with no calldata and exactly 21,000 execution gas.
+    const tx = (await h.run(h.client.getTransaction(hash, READ_TAGS))) as EvmTx;
+    const receipt = (await h.run(h.client.getReceipt(hash, READ_TAGS))) as EvmReceipt;
+    expect(receipt.logs).toHaveLength(2);
+    const ethereum = EVM_CHAINS[0] as ChainInfo;
+    const decoding = (
+      t: EvmTx,
+      r: EvmReceipt,
+      network?: Pick<EvmNetworkConfig, 'polygonSystemLogs'>,
+    ) => decodeTransaction(h.client.abi, t, r, undefined, network).decoding;
+    expect(decoding(tx, receipt, h.ctx.config)).toBe('complete');
+    expect(decoding(tx, receipt)).toBe('partial');
     expect(
-      decodeTransaction(h.client.abi, tx as EvmTx, receipt, undefined, h.ctx.config)
-        .decoding,
-    ).toBe('complete');
+      decoding(
+        tx,
+        receipt,
+        evmNetworkConfig(ethereum, ethereum.networks.sepolia as NetworkInfo),
+      ),
+    ).toBe('partial');
+    expect(decoding({ ...tx, input: '0x1234' }, receipt, h.ctx.config)).toBe('partial');
+    expect(decoding(tx, { ...receipt, gasUsed: 21_001n }, h.ctx.config)).toBe('partial');
   });
 });

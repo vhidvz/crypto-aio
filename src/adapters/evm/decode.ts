@@ -9,7 +9,7 @@ import type {
   DriverTxObservation,
 } from '../../core/driver/types';
 import { TRANSFER_GAS } from './fees';
-import { POLYGON_FEE_LOG, type EvmNetworkConfig } from './network';
+import { POLYGON_FEE_LOG, POLYGON_TRANSFER_LOG, type EvmNetworkConfig } from './network';
 import type { EvmAbi, EvmLog, EvmReceipt, EvmTx } from './types';
 
 const TRANSFER_SELECTOR = '0xa9059cbb';
@@ -70,33 +70,38 @@ export function evmObservation(
   return { ...observation, success: false, reason: 'token transfer failed' };
 }
 
-const isPolygonFeeLog = (log: EvmLog): boolean =>
+/** bor's fee log (R69) or native transfer log (R70), from the MRC20 predeploy. */
+const isPolygonSystemLog = (log: EvmLog): boolean =>
   log.address.toLowerCase() === POLYGON_FEE_LOG.address &&
-  log.topics[0] === POLYGON_FEE_LOG.topic;
+  (log.topics[0] === POLYGON_FEE_LOG.topic ||
+    log.topics[0] === POLYGON_TRANSFER_LOG.topic);
 
 /**
  * Whether contract code ran: calldata, logs, or more execution gas than a plain transfer.
- * On Polygon PoS, bor's fee log is not a sign of code (R69).
+ * On Polygon PoS, a plain transfer (no calldata, exactly 21,000 execution gas) also
+ * carries bor's system logs, which are no sign of code (R69, R70): its value is `tx.value`.
  */
-function ranCode(tx: EvmTx, receipt: EvmReceipt, polygonFeeLog: boolean): boolean {
+function ranCode(tx: EvmTx, receipt: EvmReceipt, polygonSystemLogs: boolean): boolean {
   const executionGas = receipt.gasUsed - (receipt.gasUsedForL1 ?? 0n);
-  const logs = polygonFeeLog
-    ? receipt.logs.filter((log) => !isPolygonFeeLog(log))
+  if (tx.input !== '0x' || executionGas !== TRANSFER_GAS) return true;
+  const logs = polygonSystemLogs
+    ? receipt.logs.filter((log) => !isPolygonSystemLog(log))
     : receipt.logs;
-  return tx.input !== '0x' || logs.length > 0 || executionGas !== TRANSFER_GAS;
+  return logs.length > 0;
 }
 
 /**
  * Any transaction as the chain reports it (R68): the receipt's status, never the R50
  * verdict, so a third party's call that shares the `transfer` selector is not misreported.
- * Pass the network's config so Polygon PoS's fee log does not make a transfer `partial`.
+ * Pass the network's config so bor's system logs do not make a plain Polygon transfer
+ * `partial`.
  */
 export function decodeTransaction(
   abi: EvmAbi,
   tx: EvmTx,
   receipt: EvmReceipt | null,
   timestamp?: number,
-  network: Pick<EvmNetworkConfig, 'polygonFeeLog'> = { polygonFeeLog: false },
+  network: Pick<EvmNetworkConfig, 'polygonSystemLogs'> = { polygonSystemLogs: false },
 ): DriverTransaction {
   const transfers: DriverTransfer[] = [];
   const executed = receipt === null || receipt.status === 1;
@@ -126,7 +131,7 @@ export function decodeTransaction(
   const decoding =
     receipt === null
       ? 'partial'
-      : receipt.status === 0 || !ranCode(tx, receipt, network.polygonFeeLog)
+      : receipt.status === 0 || !ranCode(tx, receipt, network.polygonSystemLogs)
         ? 'complete'
         : 'partial';
   return {

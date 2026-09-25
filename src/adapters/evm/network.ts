@@ -32,8 +32,8 @@ export interface EvmNetworkConfig {
   readonly minPriorityFeePerGas: bigint;
   /** OP Stack: transactions also pay an L1 data fee (`GasPriceOracle.getL1Fee`). */
   readonly l1DataFee: boolean;
-  /** Polygon PoS: every fee-paying transaction's receipt carries `POLYGON_FEE_LOG`. */
-  readonly polygonFeeLog: boolean;
+  /** Polygon PoS: receipts carry bor's `POLYGON_FEE_LOG` and `POLYGON_TRANSFER_LOG`. */
+  readonly polygonSystemLogs: boolean;
   readonly capabilities: ReadonlySet<Capability>;
 }
 
@@ -48,6 +48,16 @@ export const GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000F';
 export const POLYGON_FEE_LOG = {
   address: '0x0000000000000000000000000000000000001010',
   topic: '0x4dfe1bbbcf077ddc3e01291eea2d5c70c2b422b415d95645b9adcfd678cb1d63',
+} as const;
+
+/**
+ * R70: bor's `LogTransfer(address,address,address,uint256,uint256,uint256,uint256,uint256)`
+ * system log for a native POL value transfer (`core/evm.go` `Transfer`), from the same
+ * predeploy. Its topic is not ERC-20 `Transfer`'s, so it never decodes as a token movement.
+ */
+export const POLYGON_TRANSFER_LOG = {
+  address: POLYGON_FEE_LOG.address,
+  topic: '0xe6497e3ee548a3372136af2fcb0696db31fc6cf20260707645068bd3fe97f3c4',
 } as const;
 
 function finalityOf(
@@ -116,7 +126,7 @@ export function evmNetworkConfig(
     ...(replaces ? { minBumpPercent: network.replacement?.minBumpPercent ?? 10 } : {}),
     minPriorityFeePerGas: (minTip as bigint | undefined) ?? 0n,
     l1DataFee: params.l1DataFee === 'op-stack',
-    polygonFeeLog: chain.id === 'polygon',
+    polygonSystemLogs: chain.id === 'polygon',
     capabilities,
   };
 }
