@@ -1,5 +1,6 @@
 import { EthersClient } from '../../../../src/adapters/evm/ethers-client';
 import type { EvmClient } from '../../../../src/adapters/evm/types';
+import { Web3Client } from '../../../../src/adapters/evm/web3-client';
 import { EventBus } from '../../../../src/core/events/bus';
 import { noopLogger } from '../../../../src/core/events/logger';
 import type { AioEvent } from '../../../../src/core/events/types';
@@ -9,16 +10,16 @@ import { FakeClock, drive } from '../../../../src/testing/fake-clock';
 import { ScriptedEvmNode, type NodeOptions } from './node';
 
 export type Library = 'ethers' | 'web3';
-/** Task 5 adds 'web3' once `Web3Client` exists. */
-export const LIBRARIES: readonly Library[] = ['ethers'];
+export const LIBRARIES: readonly Library[] = ['ethers', 'web3'];
 
 export function makeClient(
   library: Library,
   transport: Transport,
   chainId: bigint,
 ): EvmClient {
-  if (library !== 'ethers') throw new Error(`no ${library} client yet`);
-  return new EthersClient(transport, chainId);
+  return library === 'ethers'
+    ? new EthersClient(transport, chainId)
+    : new Web3Client(transport, chainId);
 }
 
 /** A scripted node behind a real HttpTransport, with one or more endpoints. */
