@@ -277,3 +277,6 @@ export type { AioEvent, AioEventName, AioEvents } from './core/events/types';
 export { createLogger, noopLogger } from './core/events/logger';
 export type { LogFields, LogLevel, LogWriter, Logger } from './core/events/logger';
 export type { Clock } from './core/util/clock';
+
+// Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/evm`.
+export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './adapters/evm/types';
