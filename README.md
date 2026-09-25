@@ -18,3 +18,11 @@ including the security advisory about credentials that were committed to this re
 Plan 1 is complete: the SDK-free core, a fake chain family and the testing kit
 (`crypto-aio/testing`). The chain families arrive in Plans 2–6; until then, no real
 blockchain is supported.
+
+## Documentation
+
+- [Guides](docs/guides/index.md): what works today, the core concepts and how to use them.
+- [Quick start](docs/guides/quick-start.md): a first transfer on the fake chain in 5
+  minutes. The [tutorial](docs/guides/tutorial.md) then reviews every concept in 10 steps.
+- API reference: run `pnpm doc`, then open `docs/api/index.html`. The generated site
+  includes the guides.
