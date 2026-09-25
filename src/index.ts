@@ -47,7 +47,6 @@ export type {
   Curve,
   GenerateOptions,
   GeneratedSigner,
-  KeySource,
   LocalSignerOptions,
   MnemonicSignerOptions,
 } from './core/signing/local';
