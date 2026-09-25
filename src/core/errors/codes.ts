@@ -13,7 +13,8 @@ interface CodeDefinition {
   readonly retryable: boolean;
 }
 
-export const ERROR_CODES = {
+/** Frozen (M1), with every entry: the table is shared by every error and every caller. */
+export const ERROR_CODES = deepFreezeCodes({
   CONFIG_INVALID: { category: 'config', retryable: false },
   DEPENDENCY_MISSING: { category: 'config', retryable: false },
   INCOMPATIBLE_SELECTION: { category: 'config', retryable: false },
@@ -51,7 +52,12 @@ export const ERROR_CODES = {
   STATE_UNRECORDED: { category: 'state', retryable: true },
   SCANNER_REORG_TOO_DEEP: { category: 'state', retryable: false },
   TIMEOUT: { category: 'timeout', retryable: true },
-} as const satisfies Record<string, CodeDefinition>;
+} as const satisfies Record<string, CodeDefinition>);
+
+function deepFreezeCodes<T extends Record<string, CodeDefinition>>(codes: T): T {
+  for (const definition of Object.values(codes)) Object.freeze(definition);
+  return Object.freeze(codes);
+}
 
 export type ErrorCode = keyof typeof ERROR_CODES;
 

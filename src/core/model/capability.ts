@@ -1,4 +1,4 @@
-export const KNOWN_CAPABILITIES = [
+export const KNOWN_CAPABILITIES = Object.freeze([
   'tokens',
   'memo',
   'batch-transfer',
@@ -11,7 +11,7 @@ export const KNOWN_CAPABILITIES = [
   'contract-read',
   'fee-market-1559',
   'expiry',
-] as const;
+] as const);
 
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 export type Capability = KnownCapability | (string & {});

@@ -3,17 +3,25 @@
 import { inspect } from 'node:util';
 import {
   Amount,
+  BUILTIN_SCHEMES,
   Blockchain,
+  CLEARABLE_FIELDS,
   ChainError,
   CryptoAio,
+  DATA_CLASSIFICATION,
   ERROR_CODES,
+  KNOWN_CAPABILITIES,
   Library,
   MemoryCursorStore,
   MemoryOperationStore,
+  NON_TERMINAL_STATES,
+  OPERATION_PATCH_KEYS,
+  TERMINAL_STATES,
   callbackSigner,
   configure,
   createLogger,
   isCryptoAioError,
+  isTerminal,
   localSigner,
   noopLogger,
   secret,
@@ -114,6 +122,48 @@ describe('public API', () => {
       expect(typeof suite).toBe('function');
     }
     expect(fakePlugin().name).toBe('fake');
+  });
+
+  it('freezes every exported table, deeply (M1)', () => {
+    const tables: Record<string, object> = {
+      ERROR_CODES,
+      NON_TERMINAL_STATES,
+      TERMINAL_STATES,
+      OPERATION_PATCH_KEYS,
+      CLEARABLE_FIELDS,
+      DATA_CLASSIFICATION,
+      BUILTIN_SCHEMES,
+      KNOWN_CAPABILITIES,
+      Library,
+    };
+    const nested = [
+      ...Object.values(ERROR_CODES),
+      ...Object.values(DATA_CLASSIFICATION),
+      ...BUILTIN_SCHEMES,
+    ];
+    for (const [name, table] of Object.entries(tables))
+      expect([name, Object.isFrozen(table)]).toEqual([name, true]);
+    for (const entry of nested) expect(Object.isFrozen(entry)).toBe(true);
+    // Test files are ES modules, so a write to a frozen object throws.
+    const writable = (target: object, key: string | number) => () => {
+      (target as Record<string | number, unknown>)[key] = 'mutated';
+    };
+    expect(writable(ERROR_CODES, 'TIMEOUT')).toThrow(TypeError);
+    expect(writable(ERROR_CODES.TIMEOUT, 'retryable')).toThrow(TypeError);
+    expect(writable(TERMINAL_STATES, 0)).toThrow(TypeError);
+    expect(writable(NON_TERMINAL_STATES, 0)).toThrow(TypeError);
+    expect(writable(OPERATION_PATCH_KEYS, 0)).toThrow(TypeError);
+    expect(writable(CLEARABLE_FIELDS, 0)).toThrow(TypeError);
+    expect(writable(DATA_CLASSIFICATION.operation, 'intent')).toThrow(TypeError);
+    expect(writable(BUILTIN_SCHEMES[0] as object, 'verify')).toThrow(TypeError);
+    expect(writable(KNOWN_CAPABILITIES, 0)).toThrow(TypeError);
+    expect(writable(Library, 'ETHERS')).toThrow(TypeError);
+    expect(() => (TERMINAL_STATES as string[]).push('created')).toThrow(TypeError);
+    expect(ERROR_CODES.TIMEOUT.retryable).toBe(true);
+    expect(DATA_CLASSIFICATION.operation.intent).toBe('sensitive');
+    expect(TERMINAL_STATES).toEqual(['final', 'failed', 'expired', 'abandoned']);
+    expect(TERMINAL_STATES.every(isTerminal)).toBe(true);
+    expect(NON_TERMINAL_STATES.some(isTerminal)).toBe(false);
   });
 
   it('configures the default container with the fake plugin', async () => {

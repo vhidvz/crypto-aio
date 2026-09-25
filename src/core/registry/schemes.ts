@@ -27,7 +27,7 @@ function safely(check: () => boolean): boolean {
 }
 
 /** 32-byte digest, 64-byte compact low-s signature, recovery bit required and checked. */
-export const secp256k1Ecdsa: SignatureScheme = {
+export const secp256k1Ecdsa = Object.freeze<SignatureScheme>({
   id: 'secp256k1-ecdsa',
   publicKeyLength: 33,
   verify: ({ publicKey, payload, signature, recovery }) =>
@@ -42,29 +42,30 @@ export const secp256k1Ecdsa: SignatureScheme = {
         .toRawBytes(true);
       return equalBytes(recovered, publicKey);
     }),
-};
+});
 
 /** BIP340 over a 32-byte message; the request's public key is the (possibly tweaked) x-only key. */
-export const secp256k1Schnorr: SignatureScheme = {
+export const secp256k1Schnorr = Object.freeze<SignatureScheme>({
   id: 'secp256k1-schnorr',
   publicKeyLength: 32,
   verify: ({ publicKey, payload, signature }) =>
     safely(() => payload.length === 32 && schnorr.verify(signature, payload, publicKey)),
-};
+});
 
 /** RFC 8032 strict verification (zip215 disabled). */
-export const ed25519Scheme: SignatureScheme = {
+export const ed25519Scheme = Object.freeze<SignatureScheme>({
   id: 'ed25519',
   publicKeyLength: 32,
   verify: ({ publicKey, payload, signature }) =>
     safely(() => ed25519.verify(signature, payload, publicKey, { zip215: false })),
-};
+});
 
-export const BUILTIN_SCHEMES: readonly SignatureScheme[] = [
+/** Frozen (M1), like each scheme in it. */
+export const BUILTIN_SCHEMES: readonly SignatureScheme[] = Object.freeze([
   secp256k1Ecdsa,
   secp256k1Schnorr,
   ed25519Scheme,
-];
+]);
 
 export class SchemeCatalog {
   readonly #schemes = new Map<string, SignatureScheme>();

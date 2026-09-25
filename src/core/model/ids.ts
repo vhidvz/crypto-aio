@@ -30,13 +30,13 @@ export type ExtOf<C extends ChainId> =
       : unknown
     : unknown;
 
-export const Library = {
+export const Library = Object.freeze({
   ETHERS: 'ethers',
   WEB3: 'web3',
   TRONWEB: 'tronweb',
   BITCOINJS_LIB: 'bitcoinjs-lib',
   SOLANA_WEB3_JS: '@solana/web3.js',
   TON: '@ton/ton',
-} as const;
+} as const);
 
 export type KnownLibrary = (typeof Library)[keyof typeof Library];

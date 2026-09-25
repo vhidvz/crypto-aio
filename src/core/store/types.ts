@@ -24,14 +24,16 @@ export type OperationState =
   | 'expired'
   | 'abandoned';
 
-export const TERMINAL_STATES: ReadonlySet<OperationState> = new Set<OperationState>([
+// The exported tables in this module are frozen (M1): they are shared by every caller.
+
+export const TERMINAL_STATES: readonly OperationState[] = Object.freeze([
   'final',
   'failed',
   'expired',
   'abandoned',
 ]);
 
-export const NON_TERMINAL_STATES: readonly OperationState[] = [
+export const NON_TERMINAL_STATES: readonly OperationState[] = Object.freeze([
   'created',
   'prepared',
   'awaiting-signature',
@@ -39,10 +41,13 @@ export const NON_TERMINAL_STATES: readonly OperationState[] = [
   'submitted',
   'stalled',
   'included',
-];
+]);
+
+/** A private copy taken at load, so `isTerminal` never reads an exported value. */
+const TERMINAL: ReadonlySet<OperationState> = new Set(TERMINAL_STATES);
 
 export function isTerminal(state: OperationState): boolean {
-  return TERMINAL_STATES.has(state);
+  return TERMINAL.has(state);
 }
 
 /** Frozen at Operation creation; later handle or config changes never affect it. */
@@ -128,7 +133,7 @@ export type NewOperation = Omit<
   'version' | 'createdAt' | 'updatedAt' | 'claim'
 >;
 
-export const CLEARABLE_FIELDS = [
+export const CLEARABLE_FIELDS = Object.freeze([
   'outcome',
   'unsigned',
   'reservation',
@@ -138,7 +143,7 @@ export const CLEARABLE_FIELDS = [
   'ambiguous',
   'error',
   'nextCheckAt',
-] as const;
+] as const);
 
 export type ClearableField = (typeof CLEARABLE_FIELDS)[number];
 
@@ -158,7 +163,7 @@ export interface OperationPatch {
 }
 
 /** Runtime whitelist of writable `OperationPatch` fields (everything but `clear`). */
-export const OPERATION_PATCH_KEYS = [
+export const OPERATION_PATCH_KEYS = Object.freeze([
   'state',
   'outcome',
   'unsigned',
@@ -169,7 +174,7 @@ export const OPERATION_PATCH_KEYS = [
   'ambiguous',
   'error',
   'nextCheckAt',
-] as const;
+] as const);
 
 // Compile-time check, in both directions: OPERATION_PATCH_KEYS must list exactly the
 // writable (non-'clear') fields of OperationPatch, so a future field added to one but
@@ -338,8 +343,8 @@ export const DATA_CLASSIFICATION: {
   readonly operation: Readonly<Record<keyof OperationRecord, DataClass>>;
   readonly attempt: Readonly<Record<keyof AttemptRecord, DataClass>>;
   readonly observation: Readonly<Record<keyof AttemptObservation, DataClass>>;
-} = {
-  operation: {
+} = Object.freeze({
+  operation: Object.freeze({
     id: 'operational',
     namespace: 'operational',
     idempotencyKey: 'sensitive',
@@ -362,8 +367,8 @@ export const DATA_CLASSIFICATION: {
     createdAt: 'operational',
     updatedAt: 'operational',
     nextCheckAt: 'operational',
-  },
-  attempt: {
+  }),
+  attempt: Object.freeze({
     id: 'operational',
     ref: 'sensitive-until-broadcast',
     raw: 'sensitive-until-broadcast',
@@ -373,8 +378,8 @@ export const DATA_CLASSIFICATION: {
     purpose: 'operational',
     supersedes: 'operational',
     createdAt: 'operational',
-  },
-  observation: {
+  }),
+  observation: Object.freeze({
     attemptId: 'operational',
     operationId: 'operational',
     state: 'operational',
@@ -390,5 +395,5 @@ export const DATA_CLASSIFICATION: {
     reason: 'sensitive',
     replacedBy: 'operational',
     version: 'operational',
-  },
-};
+  }),
+});
