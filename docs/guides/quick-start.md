@@ -11,18 +11,17 @@ on the fake chain, and see how a real network will be configured.
 
 crypto-aio needs Node.js 22 or later. The API in these guides is version 0.1, which is **not
 on npm yet**. The 0.0.x releases on npm are an older, unrelated API. Until 0.1.0 is
-published, build a package from the repository and install that:
+published, you can build a package from source, but only once the 0.1 work is merged to the
+repository's `main` branch:
 
 ```sh
 git clone https://github.com/vhidvz/crypto-aio.git
-cd crypto-aio && pnpm install && pnpm build && pnpm pack
-# in your project:
-npm install /path/to/crypto-aio/crypto-aio-0.1.0-dev.0.tgz
+cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<version>.tgz
+npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` (or `pnpm add crypto-aio`) is enough.
-
-The package has three entry points:
+Once 0.1.0 is published, `npm install crypto-aio` is enough. The package has three entry
+points:
 
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
@@ -30,7 +29,7 @@ import { createFakeEnv } from 'crypto-aio/testing'; // test kit and the fake cha
 import { native } from 'crypto-aio/native'; // escape hatch to the SDK client
 ```
 
-The package is built as CommonJS, so `const { CryptoAio } = require('crypto-aio')` works too.
+It is built as CommonJS, so `const { CryptoAio } = require('crypto-aio')` works too.
 
 ## Your first program (runs today, on the fake chain)
 
@@ -97,7 +96,9 @@ What happened:
 - `amount: '0.001'` is a decimal string, so it means 0.001 FAKE. A `bigint` would mean base
   units. A JS `number` is rejected.
 - `transfer` created an **Operation**, signed one **Attempt**, stored it, then broadcast it.
-  Calling it again with the key `order-42` returns the same Operation. It never pays twice.
+  Calling it again with the key `order-42` and the same intent returns the same Operation,
+  so it never pays twice. The same key with another intent, such as a new `env.stranger()`
+  address, throws `IDEMPOTENCY_CONFLICT`.
 - `wait({ finality: 'final' })` resolved only on **proven** evidence. That means finalized
   chain data, read with a proof quorum: by default, two healthy endpoints must agree when two
   exist. The fake env has one endpoint.
@@ -105,11 +106,14 @@ What happened:
 ## Configuring a real network (planned)
 
 > **Shape of the API once the adapter ships (planned).** No real chain family ships today.
-> The EVM family (ethers, web3) is planned for Plan 2. This code does not run yet.
+> The EVM family (ethers, web3) is the next one planned. This code does not run yet.
 
 In production, you configure the default container once at startup with `configure`, or
 you create one `new CryptoAio({ namespace })` per tenant. API keys and private keys go in a
-`Secret`, so they never appear in logs, errors or events.
+`Secret`, so they never appear in logs, errors or events. Only in-memory stores ship, so
+production also needs your own durable `OperationStore`, `LockManager`, `SequenceStore` and
+`CursorStore`, passed as `stores` and validated with the contract suites in
+`crypto-aio/testing` ([how](./networks.md#testing-an-adapter-or-a-store)).
 
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
@@ -132,8 +136,8 @@ const eth = Blockchain.create({ chain: 'ethereum' });
 await eth.ready(); // loads the adapter and checks the provider serves the right network
 ```
 
-The names `ethereum`, `ethers` and `alchemy` come from the design spec. The EVM plan (Plan 2)
-fixes the final chain ids, preset names and preset URLs.
+The names `ethereum`, `ethers` and `alchemy` are provisional. The EVM adapter's release fixes
+the final chain ids, preset names and preset URLs.
 
 The configuration shape itself works today. The fake chain takes the same `providers`,
 `signers`, `wallets`, `chains` and `lifecycle` keys; step 10 of
@@ -143,7 +147,7 @@ What is missing is the `ethereum` chain, its driver and the `alchemy` preset.
 ## Next steps
 
 - [Core concepts](./concepts.md): the vocabulary behind this example.
-- [Tutorial](./tutorial.md): ten short, hands-on steps that cover every core concept.
+- [Tutorial](./tutorial.md): ten short, hands-on steps that exercise the main concepts.
 - [Sending and receiving](./transactions.md): withdrawals, deposits, and error handling.
 - [Keys, signers and secrets](./security.md): signers, policy hooks, and a production checklist.
 - [Using any blockchain network](./networks.md): how networks are added, and what is planned.

@@ -18,17 +18,25 @@ systems. It gives you one API for balances, transfers, confirmations and deposit
 chain-specific driver sits under that API. The library makes transfers idempotent and
 crash-safe. It persists every signed transaction before it broadcasts it. Once a transaction
 is signed, the library reports a terminal state, such as final or failed, only with proof
-from finalized chain data.
+from finalized chain data. The one exception is a transaction that nodes reject as never
+valid (`TX_REJECTED`): such bytes can never land, so that verdict needs no chain proof.
 
 ## Status
 
-Plan 1 (the core) is complete. **The only chain family that ships today is the fake family**
-from `crypto-aio/testing`. It is a deterministic, in-memory chain for learning and testing.
-Real chain families are planned:
+The library ships in roadmap milestones called plans. Plan 1, the core, is complete. **The
+only chain family that ships today is the fake family** from `crypto-aio/testing`. It is a
+deterministic, in-memory chain for learning and testing. Real chain families are planned.
+
+**Only in-memory stores ship.** They work in one process and lose everything on restart.
+In production you supply your own `OperationStore`, `LockManager`, `SequenceStore` and
+`CursorStore` (for example on Postgres or Redis), and validate them with the contract suites
+in `crypto-aio/testing`; see [Testing an adapter or a store](./networks.md#testing-an-adapter-or-a-store).
 
 | Area | Status |
 | --- | --- |
-| Core: container, handles, configuration, Operations, idempotency, crash recovery, background workers, scanner, transport, signers, stores | Works today |
+| Core: container, handles, configuration, Operations, idempotency, crash recovery, background workers, scanner, transport, signers | Works today |
+| Store interfaces, in-memory stores and the store contract suites | Works today |
+| Durable stores (Postgres, Redis, …) | Not shipped: bring your own |
 | Fake chain family (`fakechain`, `fakeexpiry`, `fakeseqno`) from `crypto-aio/testing` | Works today |
 | EVM: Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base (ethers, web3) | Planned, Plan 2 |
 | UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Planned, Plan 3 |

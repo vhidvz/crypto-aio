@@ -1,5 +1,5 @@
 ---
-summary: Ten hands-on steps on the fake chain that review every core concept.
+summary: Ten hands-on steps on the fake chain that review the main concepts.
 ---
 
 # Tutorial: review the concepts in 20 minutes
@@ -9,11 +9,10 @@ concept, and a **Check yourself** box. It all runs today on the fake chain, with
 
 ## Before you start
 
-The snippets are Jest test bodies: each `expect` line is something you should observe. The
-repository runs them all with `pnpm test test/docs/tutorial.test.ts`. On the fake chain, time
-moves only when the kit's clock advances: `env.run(promise)` advances it until the promise
-settles. Blocks appear only when you call `env.chain.mine()`. Import these names and define
-two helpers:
+The snippets are Jest test bodies (`pnpm test test/docs/tutorial.test.ts` runs them): each
+`expect` line is something to observe. On the fake chain, time moves only when the kit's clock
+advances, which `env.run(promise)` does until the promise settles, and blocks appear only when
+you call `env.chain.mine()`. Import these names and define two helpers:
 
 ```ts
 import { inspect } from 'node:util';
@@ -242,8 +241,8 @@ expect(env.chain.nonce(env.address)).toBe(5n);
 ```
 
 **Observe:** five concurrent transfers from one address get the nonces 0 to 4, with no gap and
-no duplicate, and all reach `final`. **Concept:** ordering slots. A per-address lease
-(`LockManager`) serializes nonce allocation (`SequenceStore`).
+no duplicate, and all reach `final`. **Concept:** [ordering slot and address lease](./concepts.md#ordering-slot-and-address-lease):
+the lease (`LockManager`) serializes nonce allocation (`SequenceStore`).
 
 > **Check yourself:** (1) Two processes send from the same wallet. What must they share?
 
@@ -323,15 +322,17 @@ expect(restarted.chain.balance(to)).toBe(7n); // paid once
 
 **Observe:** the process dies right after the signed Attempt is stored. The new process
 (`restart({ killPrevious: true })`) resends the stored bytes in `operations.recover()`: signed
-once, paid once. **Concept:** write-ahead signing; recovery never signs and needs no signer.
+once, paid once. **Concept:** write-ahead signing; recovery never signs. What recovery skips,
+and why it needs no signer at all, is in
+[Background workers and startup recovery](./transactions.md#background-workers-and-startup-recovery).
 
-> **Check yourself:** (1) What does `recover()` do with a `prepared` Operation? (2) When
-> should your service call `recover()`?
+> **Check yourself:** (1) Why did the restarted process not sign again? (2) Using that guide
+> section: what does `recover()` do with a `prepared` Operation?
 
 <details><summary>Answers</summary>
 
-(1) It skips it and emits `recovery.skipped`. Resume it by repeating `transfer` with the same
-key, or end it with `abandon`. (2) At startup, before serving. Then start the workers.
+(1) The signed Attempt was stored before the crash, so `recover()` resent its bytes. (2) It
+skips it and emits `recovery.skipped`. Repeat `transfer` with the same key, or `abandon`.
 
 </details>
 
@@ -377,7 +378,8 @@ branch. **Concept:** at-least-once delivery, durable cursors and reorg rollback.
 <details><summary>Answers</summary>
 
 (1) It is delivered again: dedupe on the transfer id (`<txId>:<locator>`). (2) Revert the
-`removed` blocks, then `ack()`. Scan with `mode: 'final'` to credit only final blocks.
+`removed` blocks, then `ack()`. To credit only finalized blocks, see `mode: 'final'` in
+[Receiving](./transactions.md#receiving).
 
 </details>
 

@@ -96,18 +96,22 @@ Workers keep observing it, and `aio.on('operation.stalled', …)` tells you. Wha
 | --- | --- | --- |
 | `bc.rebroadcast(id)` | You fixed the cause (for example topped up the wallet); resends the same bytes | none |
 | `bc.replace(id, { fee })` | The fee was too low; a new Attempt with the same nonce and a higher fee | `replace-fee`, synchronous signer |
-| `bc.cancel(id, { fee? })` | You want to stop the payment; a conflicting self-transfer, `outcome: 'cancelled'` only if it wins at finality | `cancel` |
+| `bc.cancel(id, { fee? })` | You want to stop the payment; a conflicting self-transfer, `outcome: 'cancelled'` only if it wins at finality | `cancel`, synchronous signer |
 | `bc.abandon(id)` | **Not** for `stalled`. Only for `created`, `prepared` or `awaiting-signature` | none |
 
 `replace` is idempotent per fee spec: repeating the same `fee` returns the same replacement.
-To bump again, pass a higher explicit override. `cancel` can lose the race: if the original
-is already mined, it throws `NONCE_CONFLICT`, and the outcome stays `executed`. Replace and
+To bump again, pass a higher explicit override. A repeated `cancel` returns a pending cancel
+unchanged. Only a cancel that a node refused or dropped is bumped, one step per call, and
+passing `fee` always builds a new cancel. `cancel` can lose the race: if the original is
+already mined, it throws `NONCE_CONFLICT`, and the outcome stays `executed`. Replace and
 cancel never happen automatically.
 
-On expiry- and seqno-based chains (planned Tron, Solana and TON; `fakeexpiry` today),
-`bc.rebuild(id)` re-issues an Operation after its expiry is **proven** (`expired`, error
-`TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the Operation. Other chains throw
-`UNSUPPORTED_CAPABILITY`.
+On expiry- and seqno-based chains (planned Tron, Solana and TON; `fakeexpiry` and
+`fakeseqno` today), `bc.rebuild(id)` re-issues an Operation after its expiry is **proven**
+(`expired`, error `TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the Operation. Other
+chains throw `UNSUPPORTED_CAPABILITY`. Replace, cancel and rebuild sign a new Attempt on the
+spot, so they need a synchronous signer: a signer that answers `pending` fails them with
+`SIGNING_FAILED`.
 
 ## Waiting and watching
 
@@ -120,17 +124,22 @@ for await (const { status } of bc.watch(operationId, { signal })) log(status.sta
 const now = await bc.getTransactionStatus(operationId); // one read
 ```
 
-- The `ref` can be an Operation id, an Attempt id or a transaction hash. Any other
-  transaction id works too, but it is unmanaged, so its finality is `observed` only.
-- `waitForConfirmation` rejects with `TX_REVERTED`, `TX_EXPIRED` or `TX_REPLACED` only on
-  proven evidence. On `TIMEOUT` (retryable), nothing changed. Wait again.
+- The `ref` is an Operation id, an Attempt ref (`sub.attempt.id`, the transaction hash) or
+  a transaction hash the monitor has observed. An Attempt's own id (`attempts[i].id`) is not
+  a ref. Any other id is an unmanaged transaction, whose finality is `observed` only.
+- For an Operation, `waitForConfirmation` rejects with the stored failure: `TX_REVERTED`,
+  `TX_EXPIRED` or `TX_REPLACED` on proven evidence, `TX_REJECTED` when every Attempt was
+  rejected, or the code of a failure before signing. An abandoned Operation gives
+  `INVALID_TRANSITION`. An unmanaged transaction rejects with `TX_REVERTED` on observed
+  finality. On `TIMEOUT` (retryable), nothing changed. Wait again.
 - `sub.wait(options)` is the same as `waitForConfirmation(sub.operationId, options)`.
 
 ## Background workers and startup recovery
 
 Nobody needs to wait on an Operation. Workers claim due Operations from the store, observe
 them, rebroadcast dropped ones, report nonce gaps (`nonce.gap`), and apply proven verdicts.
-Any number of processes can run workers on shared stores. Claims are fenced.
+Any number of processes can run workers on shared stores. Each claim carries a token, and a
+worker whose claim expired and was taken over has its writes refused (`FENCING`).
 
 ```ts
 const aio = new CryptoAio({ namespace: 'payments', stores, signers, wallets, chains, providers });
@@ -171,10 +180,12 @@ const scanner = bc.scanner({
   mode: 'final', // only finalized blocks; the default 'head' follows the tip
   filter: { addresses: depositAddresses },
 });
+const mine = new Set(depositAddresses); // canonical strings (see bc.normalizeAddress)
 for await (const event of scanner) {
   if (event.type === 'block') {
     for (const tx of event.transactions)
       for (const transfer of tx.transfers) {
+        if (!mine.has(transfer.to.canonical)) continue; // the filter is a superset
         if (transfer.unresolved) await flagForReview(transfer.id, transfer.unresolved);
         else await creditOnce(transfer.id, transfer.asset, transfer.amount);
       }
@@ -185,12 +196,17 @@ for await (const event of scanner) {
 }
 ```
 
+- **Credit only your own deposits.** `filter.addresses` returns every transaction with a
+  transfer from **or** to one of those addresses, and it may carry other transfers too.
+  Credit only transfers whose `to` is a deposit address, or your own sweeps look like deposits.
 - **At least once.** A block may be delivered again after a crash, so dedupe on
   `transfer.id` (`<txId>:<locator>`).
 - **Rollback.** In `head` mode, a reorg within `reorgWindow` blocks produces a `rollback`
   event to the common ancestor, then the new branch. The scanner checks a stored cursor
   against the canonical chain on restart. It decides a rollback only when a quorum-served
-  block hash confirms it, and never from a stale view.
+  block hash confirms it, and never from a stale view. In `final` mode a rollback can still
+  come from a provider inconsistency, so handle it there too. The mode is not stored with the
+  cursor: a head-mode cursor resumed in `final` mode keeps the blocks it already delivered.
 - **`SCANNER_REORG_TOO_DEEP`.** The chain diverged deeper than the window. The scanner stops
   instead of guessing. Stop crediting, investigate, then reset explicitly: scan under a new
   `cursorKey`, or `put` a checkpoint `{ height, hash, recent }` through your `CursorStore`.
@@ -226,6 +242,7 @@ land.**
 | `INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, `NONCE_TOO_HIGH`, `TX_REFUSED` with state `stalled` | Node refused signed bytes | `rebroadcast` after the fix, `replace` or `cancel`; never a new key |
 | `NONCE_CONFLICT` | A cancel or replacement lost: the original is already mined | Wait for the original |
 | `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure | Reconcile; a new transfer with a new key is safe |
+| `TX_REJECTED` | Nodes rejected every Attempt as never valid; nonce released | Fix the cause; retry with a **new** key |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |
 | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_INCONSISTENT` (not ambiguous) | A read failed | Retry later |

@@ -4,10 +4,9 @@ summary: The vocabulary of crypto-aio, with a small example for each term.
 
 # Core concepts
 
-This page defines the terms the other guides use. The examples use a fake-chain handle `bc`
-(`const env = await createFakeEnv(); const bc = env.bc;`). On the fake chain, wrap each awaited
-call in `env.run(...)`, because the kit's clock moves only then. The [tutorial](./tutorial.md)
-shows how. Examples for real networks are marked planned.
+This page defines the terms the other guides use. The examples use a fake-chain handle
+`bc = env.bc` from `createFakeEnv()`; wrap each awaited call in `env.run(...)`, as the
+[tutorial](./tutorial.md) shows. Examples for real networks are marked planned.
 
 ## The layers
 
@@ -30,13 +29,15 @@ shows how. Examples for real networks are marked planned.
  provider endpoints (RPC and indexer URLs)
 ```
 
-The core never imports a blockchain SDK. Only drivers do, and they are loaded on first use.
+The **engine** runs a transfer: it prepares, signs, stores and broadcasts. The **monitor**
+follows Operations after broadcast, and the **scanner** reads blocks for deposits. The core
+never imports a blockchain SDK. Only drivers do, and they are loaded on first use.
 
 ## Chain, network and library
 
 A **chain** is a blockchain id from the registry. A **network** is one of its deployments.
 A **library** is the SDK the driver uses. A handle is bound to one of each. Today only the fake
-chains exist. Planned examples are `ethereum` with `mainnet` and `ethers` (Plan 2).
+chains exist. Planned examples are `ethereum` with `mainnet` and `ethers`.
 
 ```ts
 [bc.chain, bc.network, bc.library]; // ['fakechain', 'local', 'fake-sdk']
@@ -98,12 +99,8 @@ await bc.transfer({ to, amount: '0.001' }); // the same amount
 A **capability** is a named feature that a handle may support, such as `replace-fee`,
 `block-scan`, `tokens` or `address-history`. It comes from the adapter, the network and the
 configured providers. An unsupported call throws `UnsupportedCapabilityError`
-(`UNSUPPORTED_CAPABILITY`). `KNOWN_CAPABILITIES` lists the built-in names.
-
-```ts
-bc.supports('replace-fee'); // true on fakechain
-bc.supports('tokens'); // false: the fake chain has no tokens
-```
+(`UNSUPPORTED_CAPABILITY`). `KNOWN_CAPABILITIES` lists the built-in names. On fakechain,
+`bc.supports('replace-fee')` is `true` and `bc.supports('tokens')` is `false`.
 
 ## Container, scope and handle
 
@@ -130,17 +127,21 @@ The most specific value wins: **call > handle > scope > root > env > built-ins**
 2. Handle options: `aio.blockchain(…)`, `Blockchain.create(…)` or `with(…)`.
 3. Scopes, the child before its parent.
 4. The root container: `new CryptoAio(…)` or `configure(…)`.
-5. The environment. It carries routing only: network, library, provider name, and RPC or
-   indexer URL (wrapped as a `Secret`). It never carries private keys, mnemonics or signers.
+5. The environment: `CRYPTO_AIO_[<PROFILE>_]<CHAIN>_<KEY>`, such as
+   `CRYPTO_AIO_FAKECHAIN_RPC_URL`, with `CRYPTO_AIO_ENV` naming the profile. It carries
+   routing only: network, library, provider name, and RPC or indexer URL (wrapped as a
+   `Secret`). It never carries private keys, mnemonics or signers.
 6. Built-in defaults: the chain's default network, its first library, and the network's
    default confirmations.
 
-Objects merge key by key. Arrays, such as a provider list, are replaced as a whole. Pass
+How layers merge: `chains.<id>` merges field by field, and its `options` merge deeply.
+`lifecycle` and `hooks` merge key by key. A named entry in `providers`, `wallets` or
+`signers` is **replaced whole**, and arrays, such as a provider list, are replaced too. Pass
 `env: false` to a container to ignore the environment.
 
-```sh
-CRYPTO_AIO_ENV=staging                                        # selects a profile
-CRYPTO_AIO_STAGING_FAKECHAIN_RPC_URL=https://node.internal/rpc  # CRYPTO_AIO_[PROFILE_]<CHAIN>_<KEY>
+```ts
+const aio = new CryptoAio({ wallets: { main: { signer: 'hot', tier: 'hot' } } /* , … */ });
+const warm = aio.scope({ wallets: { main: { tier: 'warm' } } }); // main has no signer here
 ```
 
 ## Operation and Attempt
@@ -160,6 +161,28 @@ const a = await bc.transfer({ to, amount: '0.001' }, { idempotencyKey: 'w-1' });
 const b = await bc.transfer({ to, amount: 100_000n }, { idempotencyKey: 'w-1' });
 // b.operationId === a.operationId: the same intent in another input form
 ```
+
+## Ordering slot and address lease
+
+An **ordering slot** is what orders a wallet's transactions on chain: a nonce (`nonce`
+ordering), a seqno (TON), the inputs a transaction spends (UTXO) or an expiry (Tron, Solana).
+The engine reserves one per Operation when it prepares it, and a replacement reuses it. An
+**address lease** is a short, renewable lock on one sending address. It is held while a slot
+is allocated and signed, so concurrent transfers from one wallet get distinct, consecutive
+nonces ([tutorial step 6](./tutorial.md#step-6-five-concurrent-transfers-get-consecutive-nonces)).
+
+## Stores
+
+The container keeps its state in four stores, passed together as `stores`:
+
+- `OperationStore`: Operations, Attempts, observations, and worker claims.
+- `LockManager`: leases, each with a token that grows on every acquisition (a fencing token).
+- `SequenceStore`: the next nonce or seqno per address, and values released for reuse.
+- `CursorStore`: scanner positions.
+
+A write with an older fencing token or version fails (`FENCING`, `VERSION_CONFLICT`), so a
+paused process never overwrites newer work. Only in-memory stores ship (`createMemoryStores()`);
+they work in one process and lose everything on restart.
 
 ## Operation states
 
@@ -186,8 +209,10 @@ Every status carries its **evidence**:
 - `observed`: the current view of one endpoint. It can change (a reorg, a drop). After
   signing, observed data never makes an Operation terminal.
 - `proven`: finalized chain data read with the proof quorum. Every terminal state after
-  signing needs it. Absence is never proof: `dropped` and `refused` are never terminal. A
-  reorg verdict also needs the proof quorum to serve a different block hash.
+  signing needs it, with one exception: when nodes reject every Attempt as never valid, the
+  Operation fails with `TX_REJECTED` without chain proof, because those bytes can never land.
+  Absence is never proof: `dropped` and `refused` are never terminal. A reorg verdict also
+  needs the proof quorum to serve a different block hash.
 
 `finality` is `none`, `probabilistic` (included) or `final`. Credit deposits and complete
 withdrawals only on `final` with `proven` evidence.
@@ -230,12 +255,11 @@ category and default `retryable` flag.
 
 ## Events and logging
 
-`aio.on(type, handler)` and `aio.onAny(handler)` deliver typed events. Each one carries a
-`type` and an `at` timestamp. The events are `rpc.request`, `rpc.response`, `rpc.error`,
-`provider.health`, `provider.misconfigured`, `provider.inconsistent`, `operation.state`,
-`operation.stalled`, `attempt.state`, `tx.reorged`, `nonce.allocated`, `nonce.gap`,
-`signer.requested`, `signer.completed`, `scanner.block`, `scanner.rollback` and
-`recovery.skipped`.
+`aio.on(type, handler)` and `aio.onAny(handler)` deliver typed events with a `type` and an
+`at` timestamp: `rpc.request`, `rpc.response`, `rpc.error`, `provider.health`,
+`provider.misconfigured`, `provider.inconsistent`, `operation.state`, `operation.stalled`,
+`attempt.state`, `tx.reorged`, `nonce.allocated`, `nonce.gap`, `signer.requested`,
+`signer.completed`, `scanner.block`, `scanner.rollback` and `recovery.skipped`.
 
 Events and logs carry **operational data only**: ids, states, codes, heights, timings and
 sizes. They never carry addresses, amounts, raw transactions, signatures or URLs. The default

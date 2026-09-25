@@ -20,13 +20,13 @@ data and imports no SDK. There are three ways a network becomes available.
 | Solana (@solana/web3.js) | mainnet, devnet, testnet | expiry | Planned, Plan 5 |
 | TON (@ton/ton) | mainnet, testnet | seqno + expiry | Planned, Plan 6 |
 
-Planned families will register themselves in the package's composition root. You will
-install only the SDK you use, for example `npm install crypto-aio ethers`. A missing SDK then
-fails with `DEPENDENCY_MISSING` and the install command. Today, the list of built-in plugins
-is empty. Asking for a planned chain fails with `ConfigError` (`CONFIG_INVALID`, "unknown
-chain").
+Plans 2 to 6 are the next roadmap milestones (see the [status](./index.md#status)). Planned
+families will register themselves in the package's composition root. You will install only
+the SDK you use, for example `npm install crypto-aio ethers`. A missing SDK then fails with
+`DEPENDENCY_MISSING` and the install command. Today, the list of built-in plugins is empty.
+Asking for a planned chain fails with `ConfigError` (`CONFIG_INVALID`, "unknown chain").
 
-## 2. More networks of an existing family (planned with Plan 2)
+## 2. More networks of an existing family (planned with the EVM adapter)
 
 A family driver is written once, and every chain and network it serves is data: a
 `ChainInfo` with its `NetworkInfo` entries. That data holds the chain id or genesis identity,
@@ -35,8 +35,8 @@ rules and explorer templates. Provider presets map `(chain, network, apiKey)` to
 An EVM-compatible chain therefore needs no new adapter. It needs chain and network data, a
 manifest entry that lists the chain for the EVM libraries, and presets.
 
-> **Shape of the API once the adapter ships (planned).** Plan 2 decides how you point the
-> built-in EVM driver at a chain of your own, for example by exposing its driver factory or
+> **Shape of the API once the adapter ships (planned).** The EVM adapter's release decides
+> how you point the built-in EVM driver at a chain of your own, for example by exposing its driver factory or
 > a chain builder.
 
 The registry rules that apply today already set the limits. A chain id registers once (a
@@ -98,8 +98,10 @@ export function acmePlugin(): Plugin {
   return { name: 'acme', chains: [acmechain], adapters: [acmeManifest], presets: [acmeCloud] };
 }
 
-// Types: let handles narrow `chain`, `network` and `library`, and type `native()`.
-// AcmeExt (your `bc.ext.acme` API) and AcmeClient (the SDK client) are your own types.
+// Required: without the ChainRegistry entry, `ChainId` does not include 'acmechain', and
+// `aio.blockchain({ chain: 'acmechain' })` does not compile. FamilyRegistry types
+// `bc.ext.acme` and the library; NativeClientMap types `native()`. AcmeExt and AcmeClient
+// are your own types.
 declare module 'crypto-aio' {
   interface ChainRegistry { acmechain: { family: 'acme'; network: 'mainnet' } }
   interface FamilyRegistry { acme: { library: 'acme-sdk'; ext: AcmeExt } }
@@ -108,7 +110,8 @@ declare module 'crypto-aio' {
 ```
 
 Register it with `new CryptoAio({ plugins: [acmePlugin()] })` or `aio.use(acmePlugin())`.
-Plugins go on a root container only, and a plugin name registers once. A plugin may also
+Plugins go on a root container only. A second plugin with a name already registered is
+ignored silently, so give each plugin a unique name. A plugin may also
 bring `assets` (tokens with aliases, per chain and network) and `schemes`. The built-in
 schemes are `secp256k1-ecdsa`, `secp256k1-schnorr` and `ed25519`.
 
@@ -123,13 +126,14 @@ a `ChainDriver` that implements the ports in `src/core/driver/types.ts`:
 
 | Port | Job |
 | --- | --- |
+| `ordering`, `capabilities` | Required: `'nonce'`, `'seqno'`, `'inputs'` or `'expiry'`, and the capabilities the driver really has |
 | `address` | `validate`, `normalize` (throw `INVALID_ADDRESS`), `fromPublicKey` |
 | `reader` | balance, block height, finalized height, blocks, transactions, `observe(ref)` |
 | `builder` | `estimateFee`, `checkFunds`, `build` (an `UnsignedTx` with signing requests), `assemble` |
 | `broadcaster` | `broadcast` → `accepted`, `already-known`, `refused` (may still land) or `rejected` (never valid) |
 | `proofs` | finalized-state checks behind `proven` verdicts, including `blockHash(height, level)` |
 | `sequence?` | pending and latest nonce or seqno (`nonce` and `seqno` ordering) |
-| `replacement?` | `buildReplacement`, `buildCancel` (capabilities `replace-fee`, `cancel`) |
+| `replacement?` | the `replace` and `cancel` booleans, `buildReplacement`, `buildCancel` (capabilities `replace-fee`, `cancel`) |
 | `blocks?`, `history?` | block source for the scanner (`block-scan`), indexer history (`address-history`) |
 | `ext?`, `limits?`, `createNativeClient?`, `close?` | family extras, output limits, the native client, cleanup |
 
@@ -144,7 +148,8 @@ relies on these rules most:
   `create()`, before any traffic, on every transport you receive. Set an identity probe that
   matches `network.identity`, and a height probe.
 - **Tag reads.** Heights, `observe`, `sequence` and block sources use `purpose: 'monitor'`.
-  The `proofs` methods use `quorum: 'proof'`; the table names the one exception. When
+  The `proofs` methods use `purpose: 'proof'` and `quorum: 'proof'`; the table names the one
+  exception. When
   endpoints disagree, the transport throws a retryable `PROVIDER_INCONSISTENT`, and the core
   decides nothing.
 - **Broadcast is `ambiguous-on-failure`.** Classify a node's answer only when the error is
@@ -158,7 +163,7 @@ relies on these rules most:
 - **Native client.** `createNativeClient()` returns `{ client, close? }`, with a **fresh** SDK
   instance on every call. `CryptoAio.close()` calls `close`.
 - Amounts reach drivers in base units only. `DriverContext` has no asset resolver, and
-  `DriverIntent` carries no decimals. This is open until Plan 4.
+  `DriverIntent` carries no decimals. This is still open and may change.
 
 ## Testing an adapter or a store
 
@@ -170,8 +175,41 @@ The testing kit makes everything deterministic and network-free:
 - `FaultyOperationStore` injects crashes at write boundaries, and `createFakeEnv().restart()`
   simulates a new process.
 
+`createFakeEnv()` runs the fake family only. To test your own adapter, script its node with
+`FakeFetch`, drive time with `FakeClock`, and register your plugin. The RPC method names
+below are the acme driver's own:
+
+```ts
+import { CryptoAio } from 'crypto-aio';
+import { FakeClock, FakeFetch, drive, rpcResult } from 'crypto-aio/testing';
+
+it('reads a balance through the acme driver', async () => {
+  const clock = new FakeClock();
+  const node = new FakeFetch().route('https://acme.test', (request) => {
+    const { method } = request.json<{ method: string }>();
+    if (method === 'acme_chainId') return rpcResult(request, '0x2a'); // identity probe
+    if (method === 'acme_blockNumber') return rpcResult(request, '0x10'); // height probe
+    if (method === 'acme_getBalance') return rpcResult(request, '0x64');
+    throw new Error(`unexpected ${method}`);
+  });
+  const aio = new CryptoAio({
+    env: false,
+    clock,
+    plugins: [acmePlugin()],
+    transport: { fetch: node.fetch },
+    providers: { acme: { endpoints: [{ name: 'main', url: 'https://acme.test' }] } },
+    chains: { acmechain: { provider: 'acme' } },
+  });
+  const bc = aio.blockchain({ chain: 'acmechain' });
+  const balance = await drive(clock, bc.getBalance(someAcmeAddress));
+  expect(balance.amount.base).toBe(100n);
+  await aio.close();
+});
+```
+
 Every store must pass the contract suites. They take your framework's `describe` and `it`,
-so they run under Jest, Vitest or `node:test`:
+so they run under Jest, Vitest or `node:test`. Each `create()` must return a fresh, empty
+store, such as a new schema or key prefix per test:
 
 ```ts
 import {
@@ -188,20 +226,21 @@ describeCursorStoreContract(api, async () => ({ cursors: await pgCursors() }));
 
 `advance(ms)` moves the store's notion of time forward: a fake clock, or a real sleep. The
 suites include stale-worker cases. A worker pauses, its lease expires, another takes over,
-and the stale write must fail with `FENCING` or `VERSION_CONFLICT`. Redis and Postgres stores
-are not part of Plan 1. The suites define what they must do.
+and the stale write must fail with `FENCING` or `VERSION_CONFLICT`. crypto-aio ships only the
+store ports, the in-memory stores and these suites. Durable stores, such as Redis or
+Postgres, are yours to write, and the suites define what they must do.
 
 ## What is stable before 1.0
 
 crypto-aio is pre-1.0 (`0.x`). Breaking changes can happen in a minor release, and they are
-listed in the changelog. The last Plan 1 changes are an example: `Transfer` became a union
+listed in the changelog. Recent changes are an example: `Transfer` became a union
 with an unresolved-asset variant, `TERMINAL_STATES` became an array, and `Scanner` became a
 type-only export (get a scanner from `bc.scanner()`).
 
 | Surface | Expectation |
 | --- | --- |
 | Handle and container API, configuration shape, `Amount` / `Address` / asset model, error codes, event names and payloads, store ports and their contract suites | Intended to stay; changes only for real-adapter findings |
-| Driver port (`ChainDriver` and its sub-ports), `Plugin`, `AdapterManifest`, `DriverContext` | **Likely to change** while Plans 2–6 add real families. It changed in the final Plan 1 wave (`ProofSource.blockHash`, `createNativeClient` returning `{ client, close? }`) and has open questions (M10) |
-| Family `ext` APIs and fee override shapes | Defined by each family's plan |
+| Driver port (`ChainDriver` and its sub-ports), `Plugin`, `AdapterManifest`, `DriverContext` | **Likely to change** while real families are added. It changed recently (`ProofSource.blockHash`, `createNativeClient` returning `{ client, close? }`) and has open questions, such as how drivers get token decimals |
+| Family `ext` APIs and fee override shapes | Defined by each family's adapter |
 | `crypto-aio/testing` | Public and documented; the fake chain's wire protocol is not an API |
 | `crypto-aio/native` | **Outside semver.** The SDK's API is the SDK's |
