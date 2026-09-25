@@ -1,6 +1,9 @@
 /**
- * Type-level registries. Family plugins augment them through declaration merging, e.g.
- * `declare module '.../core/model/ids' { interface ChainRegistry { ethereum: {...} } }`.
+ * Type-level registries. Users and plugins augment them through the package entry, e.g.
+ * `declare module 'crypto-aio' { interface ChainRegistry { ethereum: {...} } }`, and plugins
+ * inside this package augment the entry module (`declare module '../index'`). Never augment
+ * this file directly: an augmentation here and one through the entry are then merged in file
+ * order, and a user's chains can be lost (R37).
  */
 export interface ChainRegistry {}
 export interface FamilyRegistry {}
