@@ -7,15 +7,17 @@ function dependencyError(manifest: AdapterManifest, error: unknown): unknown {
   const code = (error as { code?: unknown } | null)?.code;
   if (code !== 'MODULE_NOT_FOUND' && code !== 'ERR_MODULE_NOT_FOUND') return error;
   const message = error instanceof Error ? error.message : String(error);
-  const named = manifest.peerDependencies.filter(
+  const deps = manifest.peerDependencies.filter(
     (d) => message.includes(`'${d.name}'`) || message.includes(`"${d.name}"`),
   );
-  const deps = named.length > 0 ? named : manifest.peerDependencies;
+  // R80: only a missing peer dependency is the user's to install. Any other missing module
+  // (the adapter's own file, a broken build) keeps its own error.
+  if (deps.length === 0) return error;
   const install = deps.map((d) => `${d.name}@${d.range}`).join(' ');
   return new ConfigError(
     'DEPENDENCY_MISSING',
     `library '${manifest.library}' (${manifest.family}) needs ${deps.map((d) => d.name).join(', ')}; install it: npm i ${install}`,
-    { details: { packages: deps.map((d) => d.name) } },
+    { cause: error, details: { packages: deps.map((d) => d.name) } },
   );
 }
 

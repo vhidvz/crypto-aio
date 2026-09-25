@@ -208,6 +208,22 @@ describe('AdapterCatalog.load', () => {
     expect(attempts).toBe(2);
   });
 
+  it('keeps the missing-module error as the cause of DEPENDENCY_MISSING', async () => {
+    const missing = Object.assign(new Error("Cannot find module 'test-sdk'"), {
+      code: 'MODULE_NOT_FOUND',
+    });
+    const m = manifest({
+      load: async () => {
+        throw missing;
+      },
+    });
+    const error = await createCatalogs()
+      .adapters.load(m)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'DEPENDENCY_MISSING' });
+    expect((error as Error).cause).toBe(missing);
+  });
+
   it('rethrows unrelated load errors untouched', async () => {
     const boom = new Error('syntax error in adapter');
     const m = manifest({
@@ -216,5 +232,22 @@ describe('AdapterCatalog.load', () => {
       },
     });
     await expect(createCatalogs().adapters.load(m)).rejects.toBe(boom);
+  });
+
+  it('rethrows a missing module that is not a peer dependency unchanged, never "install <peer>"', async () => {
+    // A broken build: the adapter module itself is missing, while the SDK is installed.
+    const missing = Object.assign(
+      new Error(
+        "Cannot find module './ethers-client'\nRequire stack:\n- /app/dist/adapters/evm/plugin.js",
+      ),
+      { code: 'MODULE_NOT_FOUND' },
+    );
+    const m = manifest({
+      peerDependencies: [{ name: 'ethers', range: '^6.17.0' }],
+      load: async () => {
+        throw missing;
+      },
+    });
+    await expect(createCatalogs().adapters.load(m)).rejects.toBe(missing);
   });
 });

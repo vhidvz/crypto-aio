@@ -72,8 +72,15 @@ export function evmPlugin(): Plugin {
   };
 }
 
+/** A plugin name: lower-case letters, digits and hyphens, starting with a letter. */
+const PLUGIN_NAME = /^[a-z][a-z0-9-]*$/;
+
 export interface EvmChainPluginOptions {
-  /** A unique plugin name; the manifests register as `evm:<name>/ethers` and `/web3`. */
+  /**
+   * A unique name matching `/^[a-z][a-z0-9-]*$/`. The plugin registers as `evm:<name>`, so
+   * it never collides with a family plugin, and its manifests as `evm:<name>/ethers` and
+   * `evm:<name>/web3`.
+   */
   readonly name: string;
   /** Chains with `family: 'evm'`, nonce ordering and the `secp256k1-ecdsa` scheme. */
   readonly chains: readonly ChainInfo[];
@@ -86,6 +93,13 @@ export interface EvmChainPluginOptions {
  * library. Every network is validated here, so bad data fails at registration.
  */
 export function evmChainPlugin(options: EvmChainPluginOptions): Plugin {
+  if (!PLUGIN_NAME.test(options.name)) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `EVM chain plugin name ${JSON.stringify(options.name)} must match ${String(PLUGIN_NAME)}`,
+    );
+  }
+  const name = `evm:${options.name}`;
   for (const chain of options.chains) {
     const fail = (reason: string): never => {
       throw new ConfigError('CONFIG_INVALID', `EVM chain '${chain.id}': ${reason}`);
@@ -100,10 +114,10 @@ export function evmChainPlugin(options: EvmChainPluginOptions): Plugin {
     for (const network of Object.values(chain.networks)) evmNetworkConfig(chain, network);
   }
   return {
-    name: options.name,
+    name,
     chains: options.chains,
     adapters: evmManifests(
-      `evm:${options.name}`,
+      name,
       options.chains.map((chain) => chain.id),
     ),
     ...(options.presets ? { presets: options.presets } : {}),

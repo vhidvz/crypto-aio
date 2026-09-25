@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { CryptoAio, noopLogger, type ChainInfo } from '../../../src';
 import { EVM_CHAINS } from '../../../src/adapters/evm/chains';
-import { evmChainPlugin } from '../../../src/adapters/evm/index';
+import { EVM_PEER_DEPENDENCIES, evmChainPlugin } from '../../../src/adapters/evm/index';
 import { evmPlugin } from '../../../src/adapters/evm/plugin';
 import { FakeClock, drive } from '../../../src/testing/fake-clock';
+import { fakePlugin } from '../../../src/testing/fake-plugin';
 import { ScriptedEvmNode } from './support/node';
 import { KEY_ADDRESS } from './support/vectors';
 
@@ -96,7 +99,7 @@ describe('the built-in EVM plugin', () => {
     await aio.close();
   });
 
-  it('is data only: registering it loads no SDK', () => {
+  it('lists ethers then web3, each with its own peer dependency, for every built-in chain', () => {
     const plugin = evmPlugin();
     expect(
       plugin.adapters?.map((m) => [m.family, m.library, m.peerDependencies]),
@@ -113,6 +116,22 @@ describe('the built-in EVM plugin', () => {
       'optimism',
       'base',
     ]);
+    expect(plugin.adapters?.[1]?.chains).toEqual(plugin.adapters?.[0]?.chains);
+  });
+
+  it('pins the SDK ranges package.json declares as optional peers and pins for tests', () => {
+    const pkg = JSON.parse(
+      readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'),
+    ) as Record<'peerDependencies' | 'devDependencies', Record<string, string>> & {
+      peerDependenciesMeta: Record<string, { optional?: boolean }>;
+    };
+    const peers = Object.values(EVM_PEER_DEPENDENCIES);
+    expect(peers.map((d) => d.name)).toEqual(['ethers', 'web3']);
+    for (const { name, range } of peers) {
+      expect([name, pkg.peerDependencies[name]]).toEqual([name, range]);
+      expect([name, pkg.peerDependenciesMeta[name]?.optional]).toEqual([name, true]);
+      expect([name, `^${pkg.devDependencies[name]}`]).toEqual([name, range]);
+    }
   });
 });
 
@@ -130,6 +149,53 @@ describe('evmChainPlugin', () => {
     },
     defaultNetwork: 'main',
   };
+
+  it("registers as 'evm:<name>'", () => {
+    expect(evmChainPlugin({ name: 'acme', chains: [acme] }).name).toBe('evm:acme');
+  });
+
+  it.each(['evm', 'fake'])(
+    "registers and serves a chain under a name equal to a built-in family ('%s')",
+    async (name) => {
+      const { aio, node, run } = container(777n, {
+        plugins: [fakePlugin(), evmChainPlugin({ name, chains: [acme] })],
+      });
+      node.fund(KEY_ADDRESS, 7n);
+      const bc = aio.blockchain({
+        chain: 'acmechain' as 'ethereum',
+        network: 'main' as 'mainnet',
+        provider: 'local',
+      });
+      expect(bc.library).toBe('ethers');
+      expect((await run(bc.getBalance(KEY_ADDRESS))).amount.base).toBe(7n);
+      await aio.close();
+    },
+  );
+
+  it.each(['', 'a/b', 'Acme', 'ACME', '1acme', '-acme', 'acme_x', 'evm:acme', 'acme '])(
+    'refuses the plugin name %j',
+    (name) => {
+      expect(() => evmChainPlugin({ name, chains: [acme] })).toThrow(
+        expect.objectContaining({
+          code: 'CONFIG_INVALID',
+          message: expect.stringMatching(/plugin name/),
+        }),
+      );
+    },
+  );
+
+  it('refuses a chain id a built-in chain already has', () => {
+    expect(() =>
+      container(1n, {
+        plugins: [evmChainPlugin({ name: 'x', chains: [{ ...acme, id: 'ethereum' }] })],
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_INVALID',
+        message: "chain 'ethereum' is already registered",
+      }),
+    );
+  });
 
   it('serves a chain of your own with the built-in EVM driver', async () => {
     const { aio, node, run } = container(777n, {
@@ -160,6 +226,14 @@ describe('evmChainPlugin', () => {
     expect(() =>
       evmChainPlugin({ name: 'x', chains: [{ ...acme, ordering: 'expiry' }] }),
     ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
+    for (const schemes of [['ed25519'], ['secp256k1-ecdsa', 'ed25519'], []]) {
+      expect(() => evmChainPlugin({ name: 'x', chains: [{ ...acme, schemes }] })).toThrow(
+        expect.objectContaining({
+          code: 'CONFIG_INVALID',
+          message: "EVM chain 'acmechain': its only scheme must be 'secp256k1-ecdsa'",
+        }),
+      );
+    }
     const bad = {
       ...acme,
       networks: { main: { ...acme.networks.main!, identity: 'acme' } },
