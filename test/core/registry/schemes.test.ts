@@ -114,6 +114,84 @@ describe('ed25519', () => {
   });
 });
 
+describe('malformed input (Task 8)', () => {
+  const key = secp256k1.utils.randomPrivateKey();
+  const payload = sha256(utf8ToBytes('pay'));
+  const ecdsa = secp256k1.sign(payload, key, { lowS: true });
+  const edKey = ed25519.utils.randomPrivateKey();
+  const valid = {
+    'secp256k1-ecdsa': {
+      scheme: secp256k1Ecdsa,
+      input: {
+        publicKey: secp256k1.getPublicKey(key, true),
+        payload,
+        signature: ecdsa.toCompactRawBytes(),
+        recovery: ecdsa.recovery,
+      },
+    },
+    'secp256k1-schnorr': {
+      scheme: secp256k1Schnorr,
+      input: {
+        publicKey: schnorr.getPublicKey(key),
+        payload,
+        signature: schnorr.sign(payload, key),
+      },
+    },
+    ed25519: {
+      scheme: ed25519Scheme,
+      input: {
+        publicKey: ed25519.getPublicKey(edKey),
+        payload,
+        signature: ed25519.sign(payload, edKey),
+      },
+    },
+  };
+  const resized = (bytes: Uint8Array, length: number) => {
+    const out = new Uint8Array(length);
+    out.set(bytes.subarray(0, length));
+    return out;
+  };
+  const garbage = (length: number, seed: number) =>
+    Uint8Array.from({ length }, (_, i) => (i * 31 + seed) & 0xff);
+
+  it.each(Object.entries(valid))(
+    '%s rejects wrong lengths and garbage signatures without throwing',
+    (_, { scheme, input }) => {
+      expect(scheme.verify(input)).toBe(true);
+      const { publicKey, signature } = input;
+      const cases = [
+        { ...input, signature: resized(signature, signature.length - 1) },
+        { ...input, signature: resized(signature, signature.length + 1) },
+        { ...input, signature: new Uint8Array() },
+        { ...input, publicKey: resized(publicKey, publicKey.length - 1) },
+        { ...input, publicKey: resized(publicKey, publicKey.length + 1) },
+        { ...input, publicKey: new Uint8Array() },
+        { ...input, payload: resized(payload, 31) },
+        { ...input, payload: resized(payload, 33) },
+        { ...input, signature: new Uint8Array(signature.length) },
+        { ...input, signature: new Uint8Array(signature.length).fill(0xff) },
+        { ...input, signature: garbage(signature.length, 7) },
+        { ...input, publicKey: garbage(publicKey.length, 3) },
+      ];
+      for (const bad of cases) expect(scheme.verify(bad)).toBe(false);
+    },
+  );
+
+  it('rejects an empty payload for the 32-byte digest schemes', () => {
+    for (const { scheme, input } of [
+      valid['secp256k1-ecdsa'],
+      valid['secp256k1-schnorr'],
+    ])
+      expect(scheme.verify({ ...input, payload: new Uint8Array() })).toBe(false);
+  });
+
+  it('rejects an ecdsa recovery id other than 0 or 1, including values outside 0..3', () => {
+    const { input } = valid['secp256k1-ecdsa'];
+    for (const recovery of [2, 3, 4, -1, 255, 0.5, Number.NaN])
+      expect(secp256k1Ecdsa.verify({ ...input, recovery })).toBe(false);
+  });
+});
+
 describe('SchemeCatalog', () => {
   it('holds built-ins and rejects unknown or duplicate ids', () => {
     const catalog = new SchemeCatalog(BUILTIN_SCHEMES);
