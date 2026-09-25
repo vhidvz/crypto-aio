@@ -21,6 +21,7 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
+      - run: pnpm run doc
   secrets:
     runs-on: ubuntu-latest
     steps:

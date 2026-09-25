@@ -5,5 +5,7 @@
   "excludePrivate": true,
   "excludeProtected": true,
   "readme": "none",
+  "projectDocuments": ["docs/guides/index.md"],
+  "treatWarningsAsErrors": true,
   "intentionallyNotExported": ["ChainEntry"]
 }
