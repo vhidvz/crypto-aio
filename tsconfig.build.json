@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "rootDir": "src", "types": ["node"] },
+  "compilerOptions": { "rootDir": "src", "types": ["node"], "inlineSources": true },
   "include": ["src"]
 }
