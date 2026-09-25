@@ -4,11 +4,12 @@
  *
  * @module crypto-aio
  */
+import { evmPlugin } from './adapters/evm/plugin';
 import { setBuiltinPlugins } from './core/container/builtins';
 import type { Plugin } from './core/registry/plugin';
 
 /** Built-in chain family plugins. Each family plugin module is SDK-free; drivers load lazily. */
-const BUILTIN_PLUGINS: readonly Plugin[] = [];
+const BUILTIN_PLUGINS: readonly Plugin[] = [evmPlugin()];
 setBuiltinPlugins(BUILTIN_PLUGINS);
 
 // Entry points
