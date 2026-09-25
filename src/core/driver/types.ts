@@ -265,7 +265,8 @@ export interface DisposableNativeClient {
  *
  * | Method | Purpose | Retry | Quorum | Returns / throws |
  * | --- | --- | --- | --- | --- |
- * | `reader.getBalance`, `getBlock`, `getTransaction`, `getTokenMetadata` | `read` | `safe` | none | `null` when not found; provider errors propagate |
+ * | `reader.getBalance`, `getBlock`, `getTransaction` | `read` | `safe` | none | `null` when not found; provider errors propagate |
+ * | `reader.getTokenMetadata` | `read` | `safe` | none | N6: a token's own unusable metadata (no contract, a reverting or malformed `decimals`/`symbol`) throws a non-retryable crypto-aio error, e.g. `ValidationError('ASSET_RESOLUTION')`, which the core caches per container; a transient provider failure propagates retryable and is not cached |
  * | `reader.getBlockHeight`, `getFinalizedHeight` | `monitor` | `safe` | none | propagate; they feed the stale-view guards and confirmation depths |
  * | `reader.observe(ref, ordering, from)` | `monitor` | `safe` | none | `{ seen: 'none' }` when not visible; `ordering` and `from` are `undefined` for a transaction the library does not manage |
  * | `sequence.pending`, `sequence.latest` | `monitor` | `safe` | none | propagate |

@@ -41,7 +41,7 @@ import { resolveWallet, type ResolvedWallet } from '../signing/wallet';
 import { createMemoryStores } from '../store/memory';
 import type { OperationRecord, OperationState, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
-import { systemClock } from '../util/clock';
+import { systemClock, type Clock } from '../util/clock';
 import { builtinPlugins } from './builtins';
 import {
   bindContainer,
@@ -53,6 +53,28 @@ import {
 import { DriverPool, type PooledDriver } from './pool';
 
 const NAMESPACE = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** N6: how long `close()` waits for one native client's `close` before moving on. */
+export const NATIVE_CLOSE_TIMEOUT_MS = 5_000;
+
+/** Runs `close`, but gives up waiting after `ms` of `clock` time (the close keeps running). */
+async function closeWithin(
+  close: () => unknown,
+  clock: Clock,
+  ms: number,
+): Promise<'closed' | 'timeout'> {
+  const timer = new AbortController();
+  try {
+    return await Promise.race([
+      Promise.resolve()
+        .then(close)
+        .then(() => 'closed' as const),
+      clock.sleep(ms, timer.signal).then(() => 'timeout' as const),
+    ]);
+  } finally {
+    timer.abort();
+  }
+}
 
 interface ScopeInit {
   readonly parent: CryptoAio;
@@ -485,7 +507,16 @@ export class CryptoAio {
     await Promise.all(
       natives.map(async (close) => {
         try {
-          await close();
+          const outcome = await closeWithin(
+            close,
+            runtime.clock,
+            NATIVE_CLOSE_TIMEOUT_MS,
+          );
+          if (outcome === 'timeout') {
+            runtime.log.warn('native client close timed out', {
+              timeoutMs: NATIVE_CLOSE_TIMEOUT_MS,
+            });
+          }
         } catch (error) {
           runtime.log.warn('native client close failed', { code: errorCode(error) });
         }

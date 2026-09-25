@@ -31,6 +31,13 @@ export interface CallOptions {
   readonly purpose?: RequestPurpose;
   /** Independent healthy endpoints that must agree; `'proof'` uses `proofQuorum`, capped by availability. */
   readonly quorum?: number | 'proof';
+  /**
+   * The part of each endpoint's result that must agree under `quorum` (default: the whole
+   * result). Lets a caller compare consensus facts only, e.g. a block's number, hash and
+   * parent hash, not fields that node implementations format differently. The call still
+   * resolves with the first endpoint's whole result.
+   */
+  readonly quorumKey?: (result: unknown) => unknown;
   /** Send to this many endpoints concurrently (raw-transaction broadcasts). */
   readonly fanout?: number;
   readonly signal?: AbortSignal;

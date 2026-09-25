@@ -663,8 +663,10 @@ export class HttpTransport implements Transport {
           ),
       );
     }
-    const expected = canonicalJson(first.value);
-    if (results.some((r) => canonicalJson(r.value) !== expected)) {
+    const key = (value: T): string =>
+      canonicalJson(options.quorumKey ? options.quorumKey(value) : value);
+    const expected = key(first.value);
+    if (results.some((r) => key(r.value) !== expected)) {
       const endpointIds = results.map((r) => r.endpoint.id);
       this.#events.emit('provider.inconsistent', {
         transportId: this.id,
