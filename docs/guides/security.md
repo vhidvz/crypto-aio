@@ -83,9 +83,10 @@ const custody = callbackSigner({
 ## The `beforeSign` policy hook
 
 `hooks.beforeSign(ctx)` runs once before each signing round, not once per `SigningRequest`:
-one call covers every request of that round. Throw from it to veto. The veto becomes `POLICY_REJECTED`. On a first signing, the Operation fails before anything is signed,
-and its nonce is released. On a replace, cancel or rebuild, only the new Attempt is refused,
-and the existing one stays live.
+one call covers every request of that round. Throw from it to veto. The veto becomes
+`POLICY_REJECTED`. On a first signing, the Operation fails before anything is signed, and its
+nonce is released. On a replace, cancel or rebuild, only the new Attempt is refused, and the
+existing one stays live.
 
 ```ts
 const aio = new CryptoAio({

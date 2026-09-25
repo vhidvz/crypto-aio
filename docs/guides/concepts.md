@@ -177,7 +177,8 @@ The container keeps its state in four stores, passed together as `stores`:
 
 - `OperationStore`: Operations, Attempts, observations, and worker claims.
 - `LockManager`: leases, each with a token that grows on every acquisition (a fencing token).
-- `SequenceStore`: the next nonce or seqno per address, and values released for reuse.
+- `SequenceStore`: the next nonce per address, and nonces released for reuse. Seqno values
+  are read from the chain, not stored.
 - `CursorStore`: scanner positions.
 
 A write with an older fencing token or version fails (`FENCING`, `VERSION_CONFLICT`), so a

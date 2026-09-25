@@ -101,10 +101,10 @@ Workers keep observing it, and `aio.on('operation.stalled', …)` tells you. Wha
 
 `replace` is idempotent per fee spec: repeating the same `fee` returns the same replacement.
 To bump again, pass a higher explicit override. A repeated `cancel` returns a pending cancel
-unchanged. Only a cancel that a node refused or dropped is bumped, one step per call, and
-passing `fee` always builds a new cancel. `cancel` can lose the race: if the original is
-already mined, it throws `NONCE_CONFLICT`, and the outcome stays `executed`. Replace and
-cancel never happen automatically.
+unchanged. Only a cancel that a node refused or dropped is bumped, one step per call. Passing
+`fee` builds a new cancel, but only while no cancel is on chain. `cancel` can lose the race:
+if the original is already mined, it throws `NONCE_CONFLICT`, and the outcome stays
+`executed`. Replace and cancel never happen automatically.
 
 On expiry- and seqno-based chains (planned Tron, Solana and TON; `fakeexpiry` and
 `fakeseqno` today), `bc.rebuild(id)` re-issues an Operation after its expiry is **proven**
