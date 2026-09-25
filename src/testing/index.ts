@@ -2,6 +2,8 @@
  * `crypto-aio/testing`: a deterministic, network-free test kit (fake chain, fetch and clock,
  * a crash-injecting store, a ready-made environment) and the store contract suites that any
  * `OperationStore`, `LockManager`, `SequenceStore` or `CursorStore` implementation must pass.
+ *
+ * @module crypto-aio/testing
  */
 export { FakeClock, drive, settle } from './fake-clock';
 export { FakeFetch, hang, rpcError, rpcResult } from './fake-fetch';

@@ -1,3 +1,9 @@
+/**
+ * `crypto-aio`: the container (`CryptoAio`), the handle (`Blockchain`), the domain model,
+ * errors, signers, stores and the extension points for chain family plugins.
+ *
+ * @module crypto-aio
+ */
 import { setBuiltinPlugins } from './core/container/builtins';
 import type { Plugin } from './core/registry/plugin';
 
