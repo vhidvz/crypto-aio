@@ -5,7 +5,7 @@ import { EventBus } from '../../../../src/core/events/bus';
 import { noopLogger } from '../../../../src/core/events/logger';
 import type { AioEvent } from '../../../../src/core/events/types';
 import { HttpTransport } from '../../../../src/core/transport/http-transport';
-import type { Transport } from '../../../../src/core/transport/types';
+import type { Transport, TransportOptions } from '../../../../src/core/transport/types';
 import { FakeClock, drive } from '../../../../src/testing/fake-clock';
 import { ScriptedEvmNode, type NodeOptions } from './node';
 
@@ -26,6 +26,7 @@ export function makeClient(
 export function nodeTransport(
   options: Omit<NodeOptions, 'clock'>,
   endpoints: readonly string[] = ['main'],
+  transportOptions: Omit<TransportOptions, 'fetch'> = {},
 ) {
   const clock = new FakeClock();
   const node = new ScriptedEvmNode({ ...options, clock });
@@ -38,7 +39,12 @@ export function nodeTransport(
       clock,
       events,
       log: noopLogger,
-      options: { fetch: node.fetch.fetch, baseDelayMs: 1, maxDelayMs: 2 },
+      options: {
+        fetch: node.fetch.fetch,
+        baseDelayMs: 1,
+        maxDelayMs: 2,
+        ...transportOptions,
+      },
     },
   );
   const run = <T>(promise: Promise<T>): Promise<T> => drive(clock, promise);

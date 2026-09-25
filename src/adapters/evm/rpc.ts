@@ -72,16 +72,21 @@ export function quorumKeyFor(method: string): ((result: unknown) => unknown) | u
   }
 }
 
-/** One JSON-RPC call through the transport, under the calling driver method's tags. */
+/**
+ * One JSON-RPC call through the transport, under the calling driver method's tags. A quorum
+ * compares the caller's own `quorumKey` when it gives one, else the method's consensus
+ * facts; a key never travels without a quorum.
+ */
 export function transportCall(
   transport: Transport,
   method: string,
   params: unknown,
   tags: EvmCallTags,
 ): Promise<unknown> {
-  const quorumKey = tags.quorum !== undefined ? quorumKeyFor(method) : undefined;
+  const { quorumKey: own, ...rest } = tags;
+  const quorumKey = rest.quorum !== undefined ? (own ?? quorumKeyFor(method)) : undefined;
   return transport.rpc(method, params ?? [], {
-    ...tags,
+    ...rest,
     ...(quorumKey ? { quorumKey } : {}),
   });
 }

@@ -15,6 +15,7 @@ import {
   transferLogWords,
   uncompressedPublicKey,
 } from './client';
+import { evmDriverFactory } from './driver';
 import { NATIVE_TAGS, throughSdk, transportCall } from './rpc';
 import type { EvmAbi, EvmCallTags, EvmSignature, EvmTxFields } from './types';
 
@@ -199,3 +200,8 @@ export class Web3Client extends EvmClientBase {
     );
   }
 }
+
+/** The `web3` adapter's driver factory; the manifest's `load()` returns it. */
+export const web3DriverFactory = evmDriverFactory(
+  (transport, chainId) => new Web3Client(transport, chainId),
+);

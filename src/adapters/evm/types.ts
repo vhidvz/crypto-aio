@@ -60,10 +60,14 @@ export type EvmFeeOverride =
     }
   | { readonly gasPrice: bigint; readonly gasLimit?: bigint };
 
-/** The transport tags every EVM I/O call carries (R41): purpose, retry, quorum, fanout, signal. */
+/**
+ * The transport tags every EVM I/O call carries (R41): purpose, retry, quorum, fanout,
+ * signal. Under a quorum, `quorumKey` replaces the method's consensus facts (`rpc.ts`) with
+ * the caller's own projection, e.g. a proof's finality attestation (R74).
+ */
 export type EvmCallTags = Pick<
   CallOptions,
-  'purpose' | 'retry' | 'quorum' | 'fanout' | 'signal'
+  'purpose' | 'retry' | 'quorum' | 'quorumKey' | 'fanout' | 'signal'
 >;
 
 /** A block number or a JSON-RPC block tag. */

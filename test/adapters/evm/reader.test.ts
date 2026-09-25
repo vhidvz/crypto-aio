@@ -330,17 +330,19 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     });
   });
 
-  it('proves a confirmation head under the quorum before trusting it (R67)', async () => {
+  it('proves a confirmation height under the quorum before trusting it (R67, R74)', async () => {
     const h = evmHarness(library, 'avalanche', 'fuji', { endpoints: ['a', 'b'] });
     h.node.mine(4);
-    expect(await h.run(finalizedHeight(h.ctx, PROOF))).toBe(4n);
+    // R74: the quorum confirms the block 2 below one endpoint's head, which a peer a block
+    // or two behind still holds; with one confirmation, that block is the final one.
+    expect(await h.run(finalizedHeight(h.ctx, PROOF))).toBe(2n);
     expect(h.calls.map((c) => [c.method, c.tags])).toEqual([
       ['blockNumber', MONITOR],
       ['getBlock', PROOF_TAGS],
     ]);
     // Endpoint 'a' over-reports its head, with or without a block to show for it.
     const fake = {
-      number: '0x64',
+      number: '0x62',
       hash: `0x${'11'.repeat(32)}`,
       parentHash: `0x${'22'.repeat(32)}`,
       timestamp: '0x1',
@@ -351,7 +353,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
       h.node.intercept = (endpoint, method, params) => {
         if (endpoint !== 'a') return undefined;
         if (method === 'eth_blockNumber') return { result: '0x64' };
-        if (method === 'eth_getBlockByNumber' && params[0] === '0x64')
+        if (method === 'eth_getBlockByNumber' && params[0] === '0x62')
           return { result: block };
         return undefined;
       };

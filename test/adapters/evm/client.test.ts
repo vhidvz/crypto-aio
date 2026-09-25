@@ -444,6 +444,19 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     });
   });
 
+  it("lets a caller's own quorum key replace the method's, only under a quorum (R74)", async () => {
+    const { transport, calls } = recording({ eth_getBlockByNumber: null });
+    const client = makeClient(library, transport, 1n);
+    const atLeastTwo = (result: unknown) =>
+      BigInt((result as { number: string }).number) >= 2n;
+    await client.getBlock('finalized', { ...PROOF, quorumKey: atLeastTwo });
+    await client.getBlock('finalized', { ...READ, quorumKey: atLeastTwo });
+    const [attest, read] = calls.map((c) => c.options);
+    expect(attest).toEqual({ ...PROOF, quorumKey: atLeastTwo });
+    expect(read).toEqual(READ);
+    expect(read).not.toHaveProperty('quorumKey');
+  });
+
   it('proves a receipt only when the endpoints agree on its logs (R59)', async () => {
     const t = setup(['a', 'b']);
     t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });

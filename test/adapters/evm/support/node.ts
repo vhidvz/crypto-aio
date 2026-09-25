@@ -228,6 +228,14 @@ export class ScriptedEvmNode {
     );
   }
 
+  /**
+   * What any endpoint answers to `method` with `params`, without recording it: lets an
+   * `intercept` rewrite a call (e.g. serve `finalized` as another height) and answer it.
+   */
+  answer(method: string, params: readonly unknown[]): unknown {
+    return this.#dispatch(method, [...params]);
+  }
+
   /** Accepts a raw transaction as `eth_sendRawTransaction` would, from outside the library. */
   submit(raw: string): string {
     return this.#send(raw);

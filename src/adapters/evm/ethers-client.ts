@@ -29,6 +29,7 @@ import {
   transferLogWords,
   uncompressedPublicKey,
 } from './client';
+import { evmDriverFactory } from './driver';
 import { NATIVE_TAGS, transportCall } from './rpc';
 import type { EvmAbi, EvmCallTags, EvmSignature, EvmTxFields } from './types';
 
@@ -172,3 +173,8 @@ export class EthersClient extends EvmClientBase {
     return { client, close: () => client.destroy() };
   }
 }
+
+/** The `ethers` adapter's driver factory; the manifest's `load()` returns it. */
+export const ethersDriverFactory = evmDriverFactory(
+  (transport, chainId) => new EthersClient(transport, chainId),
+);

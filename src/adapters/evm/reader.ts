@@ -1,7 +1,8 @@
 /**
- * EVM addresses, reads, nonces and the `ext.evm` API. Every call carries the tags of the
- * `ChainDriver` contract table (`src/core/driver/types.ts`): `read` for point queries,
- * `monitor` for heights, observations and nonces.
+ * EVM addresses, reads, nonces, finality and the `ext.evm` API. Every call carries the tags
+ * of the `ChainDriver` contract table (`src/core/driver/types.ts`): `read` for point
+ * queries, `monitor` for heights, observations and nonces, and `proof` for the finality
+ * that proofs attest (R74).
  */
 import type {
   AddressCodec,
@@ -56,30 +57,59 @@ export function isRevert(error: unknown): boolean {
 }
 
 /**
- * The highest final block: the `finalized` tag, or the head minus the confirmations. The
- * head is a single `monitor` read (with the signal of `tags`); `tags` apply to the
- * `finalized` block read and, under `proof`, to the quorum read of the head block.
+ * R74: how many blocks a proof's final height trails the one endpoint that proposed it, so
+ * a quorum peer up to this far behind that endpoint still attests it.
+ */
+export const PEER_SKEW = 2n;
+
+/** `height - depth`, or genesis. */
+const below = (height: bigint, depth: bigint): bigint =>
+  height > depth ? height - depth : 0n;
+
+/**
+ * R74: a quorum key under which every endpoint whose block is at or past `height` agrees,
+ * so honest endpoints at different heights agree, and one that is not there disagrees.
+ * A malformed answer throws, which the transport counts as a disagreement.
+ */
+function atOrPast(height: bigint): (result: unknown) => boolean {
+  return (result) => {
+    if (result === null) return false;
+    const number = (result as { readonly number?: unknown }).number;
+    if (typeof number !== 'string' || !/^0x[0-9a-fA-F]+$/.test(number)) {
+      throw new TypeError('not a block number');
+    }
+    return BigInt(number) >= height;
+  };
+}
+
+/** Whether every quorum endpoint's `finalized` block is at or past `height` (R74). */
+async function finalizedAtOrPast(
+  ctx: EvmContext,
+  height: bigint,
+  tags: EvmCallTags,
+): Promise<boolean> {
+  const block = await ctx.client.getBlock('finalized', {
+    ...tags,
+    quorumKey: atOrPast(height),
+  });
+  // The endpoints agreed on the predicate, so the first one's block states it for all.
+  return block !== null && block.number >= height;
+}
+
+/**
+ * The highest final block as one endpoint sees it: the `finalized` tag, or the head minus
+ * the confirmations; the head is a `monitor` read with the signal of `tags`. Under `proof`,
+ * the height that `provenFinal` attests instead.
  */
 export async function finalizedHeight(
   ctx: EvmContext,
   tags: EvmCallTags,
 ): Promise<bigint> {
+  if (tags.purpose === 'proof') return (await provenFinal(ctx, tags)).height;
   const { finality } = ctx.config;
   if (finality.kind === 'confirmations') {
     const head = await ctx.client.blockNumber(withSignal(MONITOR, tags.signal));
-    // R67: a proof never rests on one endpoint's head. The quorum must hold that block, so
-    // an endpoint that over-reports its head cannot advance the final height.
-    if (tags.purpose === 'proof') {
-      const block = await ctx.client.getBlock(head, tags);
-      if (block?.number !== head) {
-        throw new ProviderError(
-          'PROVIDER_INCONSISTENT',
-          'the endpoints do not agree on the head block',
-        );
-      }
-    }
-    const height = head - BigInt(finality.confirmations) + 1n;
-    return height < 0n ? 0n : height;
+    return below(head, BigInt(finality.confirmations - 1));
   }
   const block = await ctx.client.getBlock('finalized', tags);
   if (!block) {
@@ -89,6 +119,67 @@ export async function finalizedHeight(
     );
   }
   return block.number;
+}
+
+/**
+ * A height that is final on every endpoint of the proof quorum (`tags`), and the quorum's
+ * block at it when the proof read that block anyway. One endpoint's view (a `monitor` read)
+ * only proposes: the height trails it by `PEER_SKEW` blocks, and the quorum attests it. On
+ * tag networks every quorum endpoint's `finalized` block must be at or past it; on
+ * confirmation networks every one must hold the block that confirms it (R67). So an
+ * endpoint that over-reports cannot advance finality, and a peer that trails the proposer
+ * by up to `PEER_SKEW` blocks still agrees (R74).
+ */
+export async function provenFinal(
+  ctx: EvmContext,
+  tags: EvmCallTags,
+): Promise<{ readonly height: bigint; readonly block?: EvmBlock }> {
+  const { finality } = ctx.config;
+  const view = withSignal(MONITOR, tags.signal);
+  if (finality.kind === 'confirmations') {
+    const confirming = below(await ctx.client.blockNumber(view), PEER_SKEW);
+    const block = await ctx.client.getBlock(confirming, tags);
+    if (block?.number !== confirming) {
+      throw new ProviderError(
+        'PROVIDER_INCONSISTENT',
+        'the endpoints do not hold the confirming block',
+      );
+    }
+    const height = below(confirming, BigInt(finality.confirmations - 1));
+    return height === confirming ? { height, block } : { height };
+  }
+  const height = below(await finalizedHeight(ctx, view), PEER_SKEW);
+  if (!(await finalizedAtOrPast(ctx, height, tags))) {
+    throw new ProviderError(
+      'PROVIDER_INCONSISTENT',
+      'the endpoints do not attest the proposed finalized block',
+    );
+  }
+  return { height };
+}
+
+/**
+ * The quorum's block at `height` when `height` is final on every endpoint of the proof
+ * quorum (`tags`), else `null`. Anchored at `height` itself, not at any endpoint's view:
+ * honest endpoints disagree only while `height` is final on one and not yet on another, and
+ * that decides nothing (a retryable `PROVIDER_INCONSISTENT`) (R74).
+ */
+export async function finalBlockAt(
+  ctx: EvmContext,
+  height: bigint,
+  tags: EvmCallTags,
+): Promise<EvmBlock | null> {
+  const { client } = ctx;
+  const { finality } = ctx.config;
+  if (finality.kind === 'tag') {
+    if (!(await finalizedAtOrPast(ctx, height, tags))) return null;
+    return client.getBlock(height, tags);
+  }
+  // The block that gives `height` its confirmations; with one, it is `height`'s own.
+  const depth = BigInt(finality.confirmations - 1);
+  const confirming = await client.getBlock(height + depth, tags);
+  if (confirming === null) return null;
+  return depth === 0n ? confirming : client.getBlock(height, tags);
 }
 
 export function createEvmAddressCodec(client: EvmClient): AddressCodec {
