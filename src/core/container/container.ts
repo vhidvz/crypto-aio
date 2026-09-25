@@ -9,8 +9,10 @@ import type {
   EffectiveOptions,
   HandleConfig,
   HandleOptions,
+  ResolvedSelection,
   ScopeOptions,
 } from '../config/types';
+import type { ChainDriver } from '../driver/types';
 import { ConfigError } from '../errors/error';
 import { EventBus } from '../events/bus';
 import { createLogger } from '../events/logger';
@@ -20,6 +22,7 @@ import {
   errorCode,
   withLifecycleDefaults,
   type OperationTarget,
+  type ReadTarget,
 } from '../lifecycle/engine';
 import { Monitor, type RecoveryReport, type WorkerOptions } from '../lifecycle/monitor';
 import { loadObservations } from '../lifecycle/observations';
@@ -30,6 +33,7 @@ import {
   applyPlugin,
   cloneCatalogs,
   createCatalogs,
+  type Catalogs,
   type Plugin,
 } from '../registry/plugin';
 import { SigningOrchestrator } from '../signing/orchestrator';
@@ -39,7 +43,13 @@ import type { OperationRecord, OperationState, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
 import { systemClock } from '../util/clock';
 import { builtinPlugins } from './builtins';
-import { bindContainer, closedError, containerOf, type RootRuntime } from './internals';
+import {
+  bindContainer,
+  closedError,
+  containerOf,
+  type ContainerInternals,
+  type RootRuntime,
+} from './internals';
 import { DriverPool, type PooledDriver } from './pool';
 
 const NAMESPACE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -120,41 +130,116 @@ function createEngine(
 }
 
 /**
- * R26.3: the wallet-bound target of a stored Operation, rebuilt from its frozen context
- * (chain, network, library, wallet, signer) against the container's current config: its
- * own named providers first, then the current defaults when those no longer resolve
- * (inline configs are recorded by hash only and cannot be rebuilt). The only resolver:
- * workers, recovery and the monitor's all-rejected verdict all use it. The engine checks
- * the resolved wallet still owns the Operation before using it.
+ * R32 (spec §8.7): the signer-free read target of a stored Operation, for every check,
+ * worker pass and recovery read: its chain, network and library over its own named
+ * providers first, then the current defaults when those no longer resolve (inline configs
+ * are recorded by hash only and cannot be rebuilt). No wallet or signer is selected, not
+ * even a chain default one, so a rotated signer, a removed wallet or a hung custody
+ * backend never stops monitoring.
+ */
+async function readTarget(
+  container: CryptoAio,
+  record: OperationRecord,
+): Promise<ReadTarget> {
+  const internals = containerOf(container);
+  const { runtime } = internals;
+  const { chain, network, library } = record.context;
+  const effective = internals.effective();
+  const { wallet: _wallet, signer: _signer, ...defaults } = effective.chains[chain] ?? {};
+  const signerFree = { ...effective, chains: { ...effective.chains, [chain]: defaults } };
+  const select = (provider?: readonly string[]) =>
+    resolveSelection({
+      handle: { chain, network, library, ...(provider ? { provider } : {}) },
+      effective: signerFree,
+      catalogs: runtime.catalogs,
+      log: runtime.log,
+    });
+  const named = record.context.providers.filter((name) => !name.startsWith('inline:'));
+  let selection: ResolvedSelection;
+  try {
+    selection = select(named.length > 0 ? named : undefined);
+  } catch (error) {
+    // Only a config that no longer resolves (e.g. a renamed provider) falls back.
+    if (!(error instanceof ConfigError)) throw error;
+    selection = select();
+  }
+  if (runtime.closed) throw closedError();
+  return { selection, pooled: await runtime.pool.get(selection) };
+}
+
+/**
+ * R32: the wallets the monitor resolved for its writes, cached per container (one public-key
+ * read per wallet selection, not one per pass) and bounded by `lifecycle.signTimeoutMs`. A
+ * failed resolution is not kept. The cache is dropped when the config changes: a container's
+ * layers are frozen, so only a plugin (`use()`, new catalogs and env layer) changes it.
+ */
+function walletCache(
+  runtime: RootRuntime,
+  internals: () => ContainerInternals,
+): (selection: ResolvedSelection, driver: ChainDriver) => Promise<ResolvedWallet> {
+  let catalogs: Catalogs = runtime.catalogs;
+  const wallets = new Map<string, Promise<ResolvedWallet>>();
+  return (selection, driver) => {
+    if (runtime.catalogs !== catalogs) {
+      catalogs = runtime.catalogs;
+      wallets.clear();
+    }
+    const key = selection.configHash;
+    const cached = wallets.get(key);
+    if (cached) return cached;
+    const { effective, signerDeadline } = internals();
+    const resolving = resolveWallet(
+      selection,
+      driver,
+      effective().signers,
+      catalogs.schemes,
+      signerDeadline(),
+    ).catch((error: unknown) => {
+      if (wallets.get(key) === resolving) wallets.delete(key);
+      throw error;
+    });
+    wallets.set(key, resolving);
+    return resolving;
+  };
+}
+
+/**
+ * R26.3/R32: the wallet-bound target of a stored Operation, resolved lazily and only for the
+ * writes that need one: the all-rejected verdict, nonce reconciliation and recovery's
+ * resend. None of them signs, and their address lease is keyed on the Operation itself.
+ * Its frozen context (chain, network, library, wallet, signer) is rebuilt against the
+ * container's current config with its own named providers first; when that no longer
+ * resolves (a renamed provider, a rotated signer), the wallet alone over the current
+ * defaults, with neither the recorded signer nor the providers: the wallet's current
+ * signer, public key or address then stands for it (a watch-only wallet is enough). The
+ * engine checks the resolved wallet still owns the Operation before using it.
  */
 async function operationTarget(
   container: CryptoAio,
   runtime: RootRuntime,
   record: OperationRecord,
+  wallets: (selection: ResolvedSelection, driver: ChainDriver) => Promise<ResolvedWallet>,
 ): Promise<OperationTarget> {
   const { chain, network, library, wallet, signer, providers } = record.context;
-  const base = {
-    chain,
-    network,
-    library,
-    wallet,
-    ...(signer !== undefined ? { signer } : {}),
-  } as HandleConfig<ChainId>;
+  const base = { chain, network, library, wallet } as HandleConfig<ChainId>;
   const named = providers.filter((name) => !name.startsWith('inline:'));
   let handle: Blockchain<ChainId>;
   try {
-    handle = container.blockchain(named.length > 0 ? { ...base, provider: named } : base);
+    handle = container.blockchain({
+      ...base,
+      ...(signer !== undefined ? { signer } : {}),
+      ...(named.length > 0 ? { provider: named } : {}),
+    });
   } catch (error) {
-    // Only a config that no longer resolves (e.g. a renamed provider) falls back.
     if (!(error instanceof ConfigError)) throw error;
     handle = container.blockchain(base);
   }
   const internals = internalsOf(handle);
-  const [pooled, resolved] = await Promise.all([internals.pooled(), internals.wallet()]);
+  const pooled = await internals.pooled();
   return {
     selection: internals.selection,
     pooled,
-    wallet: resolved,
+    wallet: await wallets(internals.selection, pooled.driver),
     assets: runtime.assets,
   };
 }
@@ -299,6 +384,7 @@ export class CryptoAio {
               driver,
               internals.effective().signers,
               runtime.catalogs.schemes,
+              internals.signerDeadline(),
             ),
           )
           .catch((error: unknown) => {
@@ -413,11 +499,16 @@ export class CryptoAio {
     let engine: OperationEngine | undefined;
     let monitor: Monitor | undefined;
     const getEngine = () => (engine ??= createEngine(runtime, effective));
+    const wallets = walletCache(runtime, () => containerOf(this));
     bindContainer(this, {
       runtime,
       layers,
       isRoot,
       effective,
+      signerDeadline: () => ({
+        clock: runtime.clock,
+        timeoutMs: withLifecycleDefaults(effective().lifecycle).signTimeoutMs,
+      }),
       engine: getEngine,
       monitor: () =>
         (monitor ??= new Monitor({
@@ -428,7 +519,8 @@ export class CryptoAio {
           log: runtime.log.child('monitor'),
           namespace: runtime.namespace,
           lifecycle: () => withLifecycleDefaults(effective().lifecycle),
-          resolveTarget: (record) => operationTarget(this, runtime, record),
+          resolveRead: (record) => readTarget(this, record),
+          resolveTarget: (record) => operationTarget(this, runtime, record, wallets),
         })),
     });
   }

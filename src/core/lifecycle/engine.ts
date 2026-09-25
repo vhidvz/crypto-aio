@@ -393,6 +393,7 @@ export class OperationEngine {
       // and a repeat of a `prepared` Operation (e.g. after a lost ack) is authorized again.
       current = await this.withAddressLease(
         target,
+        record,
         async (lease) => {
           let fresh = await this.require(record.id);
           if (fresh.state === 'created') {
@@ -441,7 +442,8 @@ export class OperationEngine {
   ): Promise<OperationRecord> {
     let vetoed: readonly SignerTicket[] = [];
     try {
-      const done = await this.withOperationLease(target, operationId, async (lease) => {
+      const listed = await this.require(operationId);
+      const done = await this.withOperationLease(target, listed, async (lease) => {
         const op = await this.require(operationId);
         this.assertOwnedBy(target, op);
         if (op.state !== 'prepared' && op.state !== 'awaiting-signature') {
@@ -506,7 +508,8 @@ export class OperationEngine {
     target: OperationTarget,
     operationId: string,
   ): Promise<OperationRecord> {
-    return this.withAddressLease(target, async (lease) => {
+    const listed = await this.require(operationId);
+    return this.withAddressLease(target, listed, async (lease) => {
       const op = await this.require(operationId);
       this.assertOwnedBy(target, op);
       if (
@@ -533,7 +536,8 @@ export class OperationEngine {
   async abandon(target: OperationTarget, operationId: string): Promise<OperationRecord> {
     let tickets: readonly SignerTicket[] = [];
     try {
-      return await this.withAddressLease(target, async (lease) => {
+      const listed = await this.require(operationId);
+      return await this.withAddressLease(target, listed, async (lease) => {
         const op = await this.require(operationId);
         this.assertOwnedBy(target, op);
         if (!PRE_SIGNING_STATES.has(op.state)) {
@@ -549,7 +553,7 @@ export class OperationEngine {
           clear: ['partialSignatures', 'signerTickets'],
         });
         tickets = op.signerTickets ?? [];
-        await this.releaseReservation(target, op, lease);
+        await this.releaseReservation(op, lease);
         return next;
       });
     } finally {
@@ -687,7 +691,8 @@ export class OperationEngine {
         `${target.selection.chain.id} transactions do not expire; use replace or cancel`,
       );
     }
-    const done = await this.withOperationLease(target, operationId, async (lease) => {
+    const listed = await this.require(operationId);
+    const done = await this.withOperationLease(target, listed, async (lease) => {
       const op = await this.require(operationId);
       this.assertOwnedBy(target, op);
       const resumed = await this.resumeNewAttempt(target, op, 'rebuild', lease);
@@ -826,14 +831,20 @@ export class OperationEngine {
     }
   }
 
+  /**
+   * The address lease of `op`'s own sending address (R32: keyed on the Operation, never on
+   * the target's wallet, so a write for a stored Operation needs no signer). Any snapshot
+   * of the Operation will do: its chain, network and sender never change.
+   */
   protected withAddressLease<T>(
-    target: OperationTarget,
+    target: ReadTarget,
+    op: OperationRecord,
     fn: (lease: LeaseHandle | undefined) => Promise<T>,
     signal?: AbortSignal,
     options?: { readonly acquireTimeoutMs?: number },
   ): Promise<T> {
     if (!LEASED_ORDERINGS.has(target.pooled.driver.ordering)) return fn(undefined);
-    return this.deps.sequences.withLease(this.sequenceKeyOf(target), fn, signal, options);
+    return this.deps.sequences.withLease(this.sequenceKeyOf(op), fn, signal, options);
   }
 
   /**
@@ -843,27 +854,28 @@ export class OperationEngine {
    * heartbeat) exactly like the address lease; it never guards a sequence write.
    */
   protected withOperationLease<T>(
-    target: OperationTarget,
-    operationId: string,
+    target: ReadTarget,
+    op: OperationRecord,
     fn: (lease: LeaseHandle | undefined) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
     if (LEASED_ORDERINGS.has(target.pooled.driver.ordering)) {
-      return this.withAddressLease(target, fn, signal);
+      return this.withAddressLease(target, op, fn, signal);
     }
     return this.deps.sequences.withLease(
-      `op:${this.deps.namespace}:${operationId}`,
+      `op:${this.deps.namespace}:${op.id}`,
       fn,
       signal,
     );
   }
 
-  protected sequenceKeyOf(target: OperationTarget): string {
+  /** R32: the sequence key of the Operation's own chain, network and sending address. */
+  protected sequenceKeyOf(op: Pick<OperationRecord, 'context' | 'intent'>): string {
     return sequenceKey(
       this.deps.namespace,
-      target.selection.chain.id,
-      target.selection.network.id,
-      target.wallet.address.canonical,
+      op.context.chain,
+      op.context.network,
+      op.intent.from,
     );
   }
 
@@ -884,7 +896,7 @@ export class OperationEngine {
     signal?: AbortSignal,
   ): Promise<OperationRecord> {
     const driver = target.pooled.driver;
-    const key = this.sequenceKeyOf(target);
+    const key = this.sequenceKeyOf(op);
     let reservation: OrderingData | undefined;
     let persisting = false;
     try {
@@ -1015,7 +1027,7 @@ export class OperationEngine {
     }
     const current = await this.withOperationLease(
       target,
-      op.id,
+      op,
       async (lease) => {
         let fresh = await this.require(op.id);
         if (fresh.state === 'created') {
@@ -1351,7 +1363,8 @@ export class OperationEngine {
     fee: FeeSpeed | FeeOverride | undefined,
     build: (previous: UnsignedTx, ctx: BuildContext) => Promise<UnsignedTx>,
   ): Promise<OperationRecord> {
-    const done = await this.withOperationLease(target, operationId, async (lease) => {
+    const listed = await this.require(operationId);
+    const done = await this.withOperationLease(target, listed, async (lease) => {
       let op = await this.require(operationId);
       this.assertOwnedBy(target, op);
       const active = op.attempts.find((a) => a.id === op.activeAttemptId);
@@ -2135,6 +2148,7 @@ export class OperationEngine {
       try {
         return await this.withAddressLease(
           target,
+          op,
           (held) => {
             acquired = true;
             return this.failRejected(target, op, {
@@ -2196,7 +2210,7 @@ export class OperationEngine {
         throw updateError;
       }
       try {
-        await this.releaseReservation(target, current, lease);
+        await this.releaseReservation(current, lease);
       } catch (releaseError) {
         this.deps.log.warn('reservation release failed', {
           operationId: op.id,
@@ -2238,6 +2252,7 @@ export class OperationEngine {
     const { signal, acquireTimeoutMs } = options;
     return this.withAddressLease(
       target,
+      op,
       async (lease) => {
         const wallet = {
           namespace: this.deps.namespace,
@@ -2245,7 +2260,7 @@ export class OperationEngine {
           network: op.context.network,
           from: op.intent.from,
         };
-        const key = this.sequenceKeyOf(target);
+        const key = this.sequenceKeyOf(op);
         const chainPending = await sequence.pending(op.intent.from);
         const live = await this.deps.stores.operations.list({
           ...wallet,
@@ -2419,7 +2434,7 @@ export class OperationEngine {
     lease?: LeaseHandle,
   ): Promise<OperationRecord> {
     if (!lease && LEASED_ORDERINGS.has(target.pooled.driver.ordering)) {
-      return this.withAddressLease(target, (held) =>
+      return this.withAddressLease(target, op, (held) =>
         this.failAfterPrepare(target, op, error, held),
       );
     }
@@ -2438,7 +2453,7 @@ export class OperationEngine {
       clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous'],
     });
     try {
-      await this.releaseReservation(target, op, lease);
+      await this.releaseReservation(op, lease);
     } catch (releaseError) {
       this.deps.log.warn('reservation release failed', {
         operationId: op.id,
@@ -2455,7 +2470,6 @@ export class OperationEngine {
    * leak the nonce (R23), so a missing lease for a nonce is a programming error.
    */
   protected async releaseReservation(
-    target: OperationTarget,
     op: OperationRecord,
     lease: LeaseHandle | undefined,
   ): Promise<void> {
@@ -2468,11 +2482,7 @@ export class OperationEngine {
         { context: { operationId: op.id } },
       );
     }
-    await this.deps.sequences.release(
-      lease,
-      this.sequenceKeyOf(target),
-      reservation.nonce,
-    );
+    await this.deps.sequences.release(lease, this.sequenceKeyOf(op), reservation.nonce);
   }
 
   protected signingContext(

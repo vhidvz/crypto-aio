@@ -217,6 +217,7 @@ export class Blockchain<C extends ChainId = ChainId> {
       driver,
       effective.signers,
       container.runtime.catalogs.schemes,
+      container.signerDeadline(),
     );
     return resolvedWallet.address;
   }

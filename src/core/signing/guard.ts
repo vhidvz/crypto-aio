@@ -1,12 +1,20 @@
 import {
   SigningError,
+  TimeoutError,
   isCryptoAioError,
   type CodesOf,
   type CryptoAioError,
   type ErrorContext,
 } from '../errors/error';
 import { sanitizeError } from '../secret/redact';
+import type { Clock } from '../util/clock';
 import type { KeyRef, Signer } from './types';
+
+/** R32: how long a signer may take to hand out a public key (`lifecycle.signTimeoutMs`). */
+export interface SignerDeadline {
+  readonly clock: Clock;
+  readonly timeoutMs: number;
+}
 
 /*
  * Guards for every call into signer code (local, callback, KMS, HSM, MPC or user-written).
@@ -54,17 +62,23 @@ export function signerSchemes(
   );
 }
 
-/** R9.3: the signer's public key for `scheme`, checked against `length` and copied. */
+/**
+ * R9.3: the signer's public key for `scheme`, checked against `length` and copied. R32:
+ * with a `deadline`, a signer that does not answer in time fails with a retryable TIMEOUT
+ * (its late answer is ignored), so a hung custody backend can never block its caller.
+ */
 export async function signerPublicKey(
   signerId: string,
   signer: Signer,
   scheme: string,
   keyRef: KeyRef | undefined,
   length: number,
+  deadline?: SignerDeadline,
 ): Promise<Uint8Array> {
   let key: unknown;
   try {
-    key = await signer.getPublicKey(scheme, keyRef);
+    const asked = Promise.resolve(signer.getPublicKey(scheme, keyRef));
+    key = deadline ? await withinDeadline(asked, deadline, signerId) : await asked;
   } catch (error) {
     throw signerFailure(
       error,
@@ -80,4 +94,28 @@ export async function signerPublicKey(
     );
   }
   return copy;
+}
+
+/** `work`, or a retryable TIMEOUT once `deadline.timeoutMs` passes first. */
+async function withinDeadline<T>(
+  work: Promise<T>,
+  deadline: SignerDeadline,
+  signerId: string,
+): Promise<T> {
+  const done = new AbortController();
+  // A late rejection must not surface as an unhandled one.
+  work.catch(() => undefined);
+  const expired = deadline.clock.sleep(deadline.timeoutMs, done.signal).then(() => {
+    throw new TimeoutError(
+      'TIMEOUT',
+      `signer '${signerId}' did not provide its public key within lifecycle.signTimeoutMs`,
+      { retryable: true },
+    );
+  });
+  expired.catch(() => undefined);
+  try {
+    return await Promise.race([work, expired]);
+  } finally {
+    done.abort();
+  }
 }

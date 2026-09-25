@@ -1,4 +1,6 @@
 import { internalsOf } from '../../../src/core/blockchain/internal';
+import type { WalletConfig } from '../../../src/core/config/types';
+import { CryptoAio } from '../../../src/core/container/container';
 import { containerOf } from '../../../src/core/container/internals';
 import { ChainError } from '../../../src/core/errors/error';
 import { noopLogger, type Logger } from '../../../src/core/events/logger';
@@ -32,6 +34,7 @@ import {
   type FakeEnvOptions,
 } from '../../../src/testing/env';
 import { REVERT_ADDRESS } from '../../../src/testing/fake-chain';
+import { fakePlugin } from '../../../src/testing/fake-plugin';
 import { CrashError, FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, mineWhile } from './support';
 
@@ -567,6 +570,112 @@ describe('reconciliation fences out a stale prepared write (R29)', () => {
   });
 });
 
+describe('monitoring is signer-free (R32)', () => {
+  it('takes an in-flight operation to final after its signer id is rotated out of config', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    // Another process whose config no longer has signer 'hot': the wallet is watch-only.
+    const rotated = rotatedContainer(env, { main: { address: env.address } });
+    for (let i = 0; i < 20; i++) {
+      env.chain.mine();
+      await env.clock.advance(1_000);
+      await env.run(rotated.monitor.runOnce({ workerId: 'r' }));
+    }
+    expect((await stored(env, sub.operationId)).state).toBe('final');
+  });
+
+  it('recover() still rebroadcasts a signed operation after its signer id is rotated out', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({ stores: { operations: faulty } });
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    await expect(
+      env.run(
+        env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'signed' }),
+      ),
+    ).rejects.toBeInstanceOf(CrashError);
+    const rotated = rotatedContainer(env, { main: { address: env.address } });
+    const report = await env.run(rotated.operations.recover());
+    expect(report).toMatchObject({ rebroadcast: 1, checked: 1, failed: 0 });
+    const signed = await env.stores.operations.getByKey('default', 'signed');
+    expect(signed?.state).toBe('submitted');
+    expect(env.chain.inMempool(signed?.attempts[0]?.ref.id ?? '')).toBe(true);
+  });
+
+  it('never lets a hung getPublicKey stall the checks of a worker pass', async () => {
+    const { signer, hang } = keyReadingSigner();
+    const env = await createFakeEnv({ signer });
+    const first = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    const second = await env.run(env.bc.transfer({ to: env.stranger(), amount: 2n }));
+    hang();
+    env.chain.mine();
+    const started = env.clock.now();
+    // Both Operations share one execution context (configHash).
+    expect(await env.run(env.aio.monitor.runOnce({ workerId: 'w' }))).toBe(2);
+    expect(env.clock.now() - started).toBeLessThan(1_000);
+    expect((await stored(env, first.operationId)).state).toBe('included');
+    expect((await stored(env, second.operationId)).state).toBe('included');
+  });
+
+  it('bounds the wallet a write needs by signTimeoutMs, then leaves the verdict for later', async () => {
+    const { signer, hang } = keyReadingSigner();
+    const { log, warnings } = capturingLogger();
+    const { env, op } = await rejectedButLive({
+      signer,
+      lifecycle: { signTimeoutMs: 5_000 },
+      aio: { logger: log },
+    });
+    hang();
+    const started = env.clock.now();
+    expect(await env.run(env.aio.monitor.runOnce({ workerId: 'w' }))).toBe(1);
+    expect(env.clock.now() - started).toBeLessThan(6_000);
+    const after = await stored(env, op.id);
+    expect(after.state).toBe('signed');
+    expect(after.nextCheckAt).toBeGreaterThan(env.clock.now());
+    expect(warnings).toContainEqual({
+      message: expect.any(String),
+      fields: { operationId: op.id, code: 'TIMEOUT' },
+    });
+  });
+
+  it('resolves the wallet a write needs once per container, and again after a config change', async () => {
+    const { signer, reads } = keyReadingSigner();
+    const env = await createFakeEnv({ signer });
+    env.chain.configureEndpoint('main', { refuseNext: 'insufficient funds' });
+    await expect(
+      env.run(env.bc.transfer({ to: env.stranger(), amount: 3n })),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await env.clock.advance(11_000);
+    const reconcile = jest.spyOn(containerOf(env.aio).engine(), 'reconcileNonces');
+    const before = reads();
+    for (let i = 0; i < 3; i++) {
+      await env.run(env.aio.monitor.runOnce({ workerId: 'w' }));
+      await env.clock.advance(1_000);
+    }
+    // Every pass reconciled the gap (a write), yet the key was read once.
+    expect(reconcile).toHaveBeenCalledTimes(3);
+    expect(reads()).toBe(before + 1);
+    env.aio.use({ name: 'config-change' });
+    await env.run(env.aio.monitor.runOnce({ workerId: 'w' }));
+    expect(reconcile).toHaveBeenCalledTimes(4);
+    expect(reads()).toBe(before + 2);
+  });
+
+  it('does not read the wallet public key on every worker pass', async () => {
+    const { signer, reads } = keyReadingSigner();
+    const env = await createFakeEnv({ signer });
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    const before = reads();
+    for (let i = 0; i < 5; i++) {
+      env.chain.mine();
+      await env.clock.advance(1_000);
+      await env.run(env.aio.monitor.runOnce({ workerId: 'w' }));
+    }
+    expect((await stored(env, sub.operationId)).state).not.toBe('submitted');
+    expect(reads()).toBe(before);
+  });
+});
+
 // ---- helpers --------------------------------------------------------------------------
 
 /** A local signer that records the Operation of every signing call. */
@@ -711,7 +820,7 @@ async function targetOf(env: FakeEnv): Promise<OperationTarget> {
   };
 }
 
-/** The container's engine and stores behind a monitor with its own target resolver. */
+/** The container's engine and stores behind a monitor with its own target resolver (reads and writes). */
 function monitorWith(
   env: FakeEnv,
   resolveTarget: (op: OperationRecord) => Promise<OperationTarget | undefined>,
@@ -725,6 +834,7 @@ function monitorWith(
     log: noopLogger,
     namespace: 'default',
     lifecycle: () => withLifecycleDefaults(internals.effective().lifecycle),
+    resolveRead: resolveTarget,
     resolveTarget,
   });
 }
@@ -803,4 +913,57 @@ class RacingAppendStore extends MemoryOperationStore {
     if (race && current) await this.update(namespace, id, race, current.version);
     return super.appendAttempt(namespace, id, attempt, patch, expectedVersion, fence);
   }
+}
+
+/** A local signer whose public-key reads are counted and can be made to hang forever. */
+function keyReadingSigner(): { signer: Signer; reads: () => number; hang: () => void } {
+  const inner = localSigner.generate({ curves: ['secp256k1'], id: 'hot' }).signer;
+  let reads = 0;
+  let hung = false;
+  const signer = callbackSigner({
+    id: 'hot',
+    schemes: inner.schemes,
+    getPublicKey: (scheme, keyRef) => {
+      reads += 1;
+      return hung
+        ? new Promise<Uint8Array>(() => undefined)
+        : inner.getPublicKey(scheme, keyRef);
+    },
+    sign: (requests, ctx) => inner.sign(requests, ctx),
+  });
+  const hang = () => {
+    hung = true;
+  };
+  return { signer, reads: () => reads, hang };
+}
+
+/**
+ * Another process on `env`'s chain, clock and stores whose config has other wallets and
+ * signers (by default none): e.g. signer 'hot' rotated out.
+ */
+function rotatedContainer(
+  env: FakeEnv,
+  wallets: Readonly<Record<string, WalletConfig>>,
+  signers: Readonly<Record<string, Signer>> = {},
+): CryptoAio {
+  return new CryptoAio({
+    env: false,
+    logger: noopLogger,
+    plugins: [fakePlugin()],
+    clock: env.clock,
+    stores: env.stores,
+    providers: {
+      fake: { endpoints: [{ name: 'main', url: env.chain.endpoint('main') }] },
+    },
+    signers,
+    wallets,
+    chains: { [env.chainId]: { provider: 'fake', wallet: 'main' } },
+    lifecycle: { pollIntervalMs: 1_000, droppedGracePeriodMs: 10_000 },
+    transport: {
+      fetch: env.chain.fetch,
+      baseDelayMs: 1,
+      maxDelayMs: 5,
+      timeoutMs: 5_000,
+    },
+  });
 }

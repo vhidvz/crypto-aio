@@ -778,6 +778,7 @@ describe('the all-rejected verdict runs under the address lease (R26.3)', () => 
       log,
       namespace: 'default',
       lifecycle: () => withLifecycleDefaults(internals.effective().lifecycle),
+      resolveRead: async () => undefined,
       resolveTarget: async () => undefined,
     });
     const { target } = await monitorOf(env);

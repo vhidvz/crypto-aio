@@ -104,6 +104,9 @@ export type TargetResolver = (
   op: OperationRecord,
 ) => Promise<OperationTarget | undefined>;
 
+/** R32: rebuilds the signer-free read target of a stored Operation; see `TargetResolver`. */
+export type ReadResolver = (op: OperationRecord) => Promise<ReadTarget | undefined>;
+
 export interface MonitorDeps {
   readonly engine: OperationEngine;
   readonly stores: Stores;
@@ -112,7 +115,12 @@ export interface MonitorDeps {
   readonly log: Logger;
   readonly namespace: string;
   readonly lifecycle: () => ResolvedLifecycle;
-  /** R26.3: reservation-holding verdicts are applied by the engine on this target. */
+  /** R32: every check, worker pass and recovery read runs on this target (no wallet). */
+  readonly resolveRead: ReadResolver;
+  /**
+   * R26.3/R32: resolved lazily, only for the writes that need a wallet-bound target: the
+   * all-rejected verdict, nonce reconciliation and recovery's resend (none of them signs).
+   */
   readonly resolveTarget: TargetResolver;
 }
 
@@ -393,10 +401,11 @@ export class Monitor {
       this.deps.lifecycle().claimLeaseMs,
       options.batch ?? DEFAULT_BATCH,
     );
-    const resolve = this.#passResolver();
+    const reads = this.#passResolver(this.deps.resolveRead);
+    const writes = this.#passResolver(this.deps.resolveTarget);
     for (const op of claimed) {
       const fence: Fence = { claimToken: (op.claim as OperationClaim).token };
-      if (!signal?.aborted) await this.#process(resolve, op, fence, signal);
+      if (!signal?.aborted) await this.#process(reads, writes, op, fence, signal);
       await this.deps.stores.operations
         .releaseClaim(this.deps.namespace, op.id, fence)
         .catch((error: unknown) =>
@@ -411,7 +420,8 @@ export class Monitor {
 
   /** One claimed Operation of a worker pass (see `runOnce`). */
   async #process(
-    resolve: TargetResolver,
+    reads: ReadResolver,
+    writes: TargetResolver,
     op: OperationRecord,
     fence: Fence,
     signal: AbortSignal | undefined,
@@ -419,10 +429,10 @@ export class Monitor {
     const started = this.deps.clock.now();
     let current: OperationRecord | undefined;
     try {
-      const target = await this.#targetOf(resolve, op);
+      const target = await this.#resolved(reads, op);
       const pass = await this.#checkPass(target, op, fence, signal);
       current = pass.record;
-      if (!pass.stale) await this.#detectNonceGap(target, current);
+      if (!pass.stale) await this.#detectNonceGap(target, current, writes);
     } catch (error) {
       // An abort mid-check is an expected shutdown, not a failure.
       this.deps.log[signal?.aborted ? 'debug' : 'warn'](
@@ -488,7 +498,8 @@ export class Monitor {
       namespace,
       states: NON_TERMINAL_STATES,
     });
-    const resolve = this.#passResolver();
+    const reads = this.#passResolver(this.deps.resolveRead);
+    const writes = this.#passResolver(this.deps.resolveTarget);
     let rebroadcast = 0;
     let checked = 0;
     let skipped = 0;
@@ -514,14 +525,15 @@ export class Monitor {
         continue;
       }
       try {
-        const target = await this.#targetOf(resolve, op);
+        const target = await this.#resolved(reads, op);
         let current = op;
         if (
           op.state === 'signed' ||
           (op.state === 'submitted' && op.ambiguous === true)
         ) {
+          const writer = await this.#resolved(writes, op);
           try {
-            current = await this.deps.engine.rebroadcast(target, op.id);
+            current = await this.deps.engine.rebroadcast(writer, op.id);
           } catch (error) {
             // A refusal or an unknown outcome is recorded on the Operation: check it next.
             if (
@@ -551,8 +563,8 @@ export class Monitor {
     for (const op of wallets.values()) {
       if (signal?.aborted) break;
       try {
-        const target = await this.#targetOf(resolve, op);
-        reconciled += (await this.deps.engine.reconcileNonces(target, op, { signal }))
+        const writer = await this.#resolved(writes, op);
+        reconciled += (await this.deps.engine.reconcileNonces(writer, op, { signal }))
           .length;
       } catch (error) {
         this.deps.log.warn('nonce reconciliation failed', {
@@ -564,23 +576,28 @@ export class Monitor {
     return { rebroadcast, checked, skipped, failed, reconciled };
   }
 
-  /** The resolver for one pass: each execution context's target is rebuilt once. */
-  #passResolver(): TargetResolver {
-    const targets = new Map<string, Promise<OperationTarget | undefined>>();
+  /**
+   * `resolve` for one pass: each execution context's target is rebuilt at most once, and
+   * only when first asked for (R32: a wallet-bound one only by a write that needs it).
+   */
+  #passResolver<T>(
+    resolve: (op: OperationRecord) => Promise<T | undefined>,
+  ): (op: OperationRecord) => Promise<T | undefined> {
+    const targets = new Map<string, Promise<T | undefined>>();
     return (op) => {
       let target = targets.get(op.context.configHash);
       if (!target) {
-        target = this.deps.resolveTarget(op);
+        target = resolve(op);
         targets.set(op.context.configHash, target);
       }
       return target;
     };
   }
 
-  async #targetOf(
-    resolve: TargetResolver,
+  async #resolved<T>(
+    resolve: (op: OperationRecord) => Promise<T | undefined>,
     op: OperationRecord,
-  ): Promise<OperationTarget> {
+  ): Promise<T> {
     const target = await resolve(op);
     if (!target) {
       throw new ConfigError(
@@ -631,9 +648,14 @@ export class Monitor {
    * the chain's pending nonce is still below its own (spec §8.5: a lower nonce is missing
    * even from the mempool, so congestion alone is no gap). It names the live Operation
    * holding the expected nonce, when one exists. Every such pass then reconciles the wallet's nonces, trying the lease
-   * once (never a filler transaction): a leaked value goes back for the next transfer.
+   * once (never a filler transaction): a leaked value goes back for the next transfer. R32:
+   * only that write resolves the wallet-bound target (`writes`).
    */
-  async #detectNonceGap(target: OperationTarget, op: OperationRecord): Promise<void> {
+  async #detectNonceGap(
+    target: ReadTarget,
+    op: OperationRecord,
+    writes: TargetResolver,
+  ): Promise<void> {
     const { sequence } = target.pooled.driver;
     if (op.state !== 'submitted' || op.reservation?.kind !== 'nonce' || !sequence) {
       this.#gaps.delete(op.id);
@@ -677,7 +699,8 @@ export class Monitor {
       });
     }
     try {
-      await this.deps.engine.reconcileNonces(target, op, { acquireTimeoutMs: 0 });
+      const writer = await this.#resolved(writes, op);
+      await this.deps.engine.reconcileNonces(writer, op, { acquireTimeoutMs: 0 });
     } catch (error) {
       const busy = isCryptoAioError(error, 'SEQUENCE_BUSY');
       this.deps.log[busy ? 'debug' : 'warn']('nonce reconciliation did not run', {

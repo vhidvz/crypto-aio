@@ -4,7 +4,7 @@ import { ConfigError } from '../errors/error';
 import { Address } from '../model/address';
 import type { SchemeCatalog } from '../registry/schemes';
 import { fromHex } from '../util/bytes';
-import { signerPublicKey, signerSchemes } from './guard';
+import { signerPublicKey, signerSchemes, type SignerDeadline } from './guard';
 import type { KeyRef, Signer } from './types';
 
 export interface ResolvedWallet {
@@ -36,6 +36,8 @@ export async function resolveWallet(
   driver: ChainDriver,
   signers: Readonly<Record<string, Signer>>,
   schemes: SchemeCatalog,
+  /** R32: bounds each public-key read (`lifecycle.signTimeoutMs`). */
+  deadline?: SignerDeadline,
 ): Promise<ResolvedWallet> {
   const wallet = selection.wallet;
   if (!wallet) {
@@ -61,6 +63,7 @@ export async function resolveWallet(
         scheme,
         keyRef,
         publicKeyLength,
+        deadline,
       );
       keys.push({ scheme, publicKey, ...(keyRef ? { keyRef } : {}) });
     }

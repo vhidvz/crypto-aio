@@ -6,6 +6,7 @@ import type { Logger } from '../events/logger';
 import type { OperationEngine } from '../lifecycle/engine';
 import type { Monitor } from '../lifecycle/monitor';
 import type { Catalogs } from '../registry/plugin';
+import type { SignerDeadline } from '../signing/guard';
 import type { Stores } from '../store/types';
 import type { TransportOptions } from '../transport/types';
 import type { Clock } from '../util/clock';
@@ -47,6 +48,8 @@ export interface ContainerInternals {
   engine(): OperationEngine;
   /** Lazily created per container, on top of its engine. */
   monitor(): Monitor;
+  /** R32: the bound on a signer's public-key read (this container's `signTimeoutMs`). */
+  signerDeadline(): SignerDeadline;
 }
 
 const registry = new WeakMap<object, ContainerInternals>();
