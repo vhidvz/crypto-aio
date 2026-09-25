@@ -168,8 +168,14 @@ export type {
   PreparedOperation,
   Submission,
 } from './core/lifecycle/views';
-export { Scanner } from './core/observe/scanner';
-export type { Checkpoint, ScanEvent, ScannerOptions } from './core/observe/scanner';
+// M2: type only; scanners come from `bc.scanner()`.
+export type {
+  Checkpoint,
+  ScanEvent,
+  ScanEventBody,
+  Scanner,
+  ScannerOptions,
+} from './core/observe/scanner';
 
 // Extension points: drivers, plugins, presets, schemes, stores, transport, events
 export type {

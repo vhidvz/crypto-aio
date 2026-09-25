@@ -45,7 +45,8 @@ export interface Checkpoint {
   readonly hash: string;
 }
 
-type ScanEventBody =
+/** A scan event without its `ack()`: a delivered block, or a rollback to a checkpoint. */
+export type ScanEventBody =
   | {
       readonly type: 'block';
       readonly block: Block;

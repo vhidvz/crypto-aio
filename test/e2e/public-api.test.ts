@@ -29,6 +29,7 @@ import {
   type ScanEvent,
   type Signer,
 } from '../../src';
+import * as publicApi from '../../src';
 import { native } from '../../src/native';
 import {
   CrashError,
@@ -122,6 +123,8 @@ describe('public API', () => {
       expect(typeof suite).toBe('function');
     }
     expect(fakePlugin().name).toBe('fake');
+    // M2: a scanner comes from bc.scanner(); the class is exported as a type only.
+    expect(Object.keys(publicApi)).not.toContain('Scanner');
   });
 
   it('freezes every exported table, deeply (M1)', () => {
