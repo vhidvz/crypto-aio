@@ -1,19 +1,17 @@
 # Changelog
 
-## Unreleased: 0.1.0
+All notable changes to this project will be documented in this file.
 
-### Security advisory
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- Until this release, the repository tracked a `.env` file containing testnet private keys,
-  mnemonics and RPC provider tokens. These credentials remain in the git history and must be
-  treated as compromised. The file is no longer tracked, and CI now refuses tracked env files
-  and scans for secrets.
-- The published npm package was not affected: `files: ["/dist"]` never shipped `.env`.
-- Owner actions outside this codebase: rotate the provider tokens, move any funds held by
-  those keys, and decide whether to rewrite git history.
+## [Unreleased]
 
-### Breaking
+## [1.0.0] - 2026-09-25
 
-- The library is being rebuilt as a blockchain abstraction layer. The 0.0.x `CryptoAio`
-  (chain getters), `Ethereum`, `Tronix`, `*Account`, `*Contract` and `*Transact` APIs are
-  removed. Migration notes are completed with the 0.1.0 release.
+### Added
+
+- initial release 🎉​🎊​.
+
+[unreleased]: https://github.com/vhidvz/crypto-aio/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/vhidvz/crypto-aio/releases/tag/1.0.0
