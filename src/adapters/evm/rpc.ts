@@ -18,6 +18,37 @@ const pick = (value: unknown, keys: readonly string[]): unknown => {
 const BLOCK = ['number', 'hash', 'parentHash', 'timestamp'] as const;
 const RECEIPT = ['transactionHash', 'blockHash', 'blockNumber', 'status'] as const;
 const TX = ['hash', 'blockHash', 'blockNumber', 'from', 'to', 'input', 'nonce'] as const;
+const LOG = ['address', 'topics', 'data', 'logIndex'] as const;
+
+const lowerCased = (value: unknown): unknown =>
+  typeof value === 'string'
+    ? value.toLowerCase()
+    : Array.isArray(value)
+      ? value.map(lowerCased)
+      : value;
+
+/**
+ * R59: a receipt's consensus facts include its logs, since a proven token verdict (R50)
+ * reads them: one endpoint that drops or alters a `Transfer` log must disagree. Hex case is
+ * formatting, not consensus, so each log's facts are compared lower-cased.
+ */
+function receiptKey(result: unknown): unknown {
+  if (result === null || typeof result !== 'object') return result;
+  const logs = (result as Record<string, unknown>).logs;
+  return {
+    ...(pick(result, RECEIPT) as Record<string, unknown>),
+    logs: Array.isArray(logs)
+      ? logs.map((log) => {
+          const facts = pick(log, LOG);
+          return facts !== null && typeof facts === 'object'
+            ? Object.fromEntries(
+                Object.entries(facts).map(([key, value]) => [key, lowerCased(value)]),
+              )
+            : facts;
+        })
+      : null,
+  };
+}
 
 /** The tags of a `crypto-aio/native` client's requests: plain reads. */
 export const NATIVE_TAGS: EvmCallTags = { purpose: 'read', retry: 'safe' };
@@ -33,7 +64,7 @@ export function quorumKeyFor(method: string): ((result: unknown) => unknown) | u
     case 'eth_getBlockByHash':
       return (result) => pick(result as Json, BLOCK);
     case 'eth_getTransactionReceipt':
-      return (result) => pick(result as Json, RECEIPT);
+      return receiptKey;
     case 'eth_getTransactionByHash':
       return (result) => pick(result as Json, TX);
     default:
@@ -56,9 +87,10 @@ export function transportCall(
 }
 
 /**
- * Runs `request` (an SDK call whose bridge ends in `call`) and rethrows the transport's own
- * error when there is one, never an SDK wrapper of it: web3 turns an "execution reverted"
- * error into a `ContractExecutionError`, which would lose the error's code and ambiguity.
+ * Runs `request` (an SDK call whose bridge ends in `call`) and, when its last transport call
+ * failed, rethrows the transport's own error, never an SDK wrapper of it: web3 turns an
+ * "execution reverted" error into a `ContractExecutionError`, which would lose the error's
+ * code and ambiguity. A failure followed by a successful call is forgotten (M2).
  */
 export async function throughSdk<T>(
   request: (call: (method: string, params: unknown) => Promise<unknown>) => Promise<T>,
@@ -68,7 +100,10 @@ export async function throughSdk<T>(
   let failure: { readonly error: unknown } | undefined;
   const call = async (method: string, params: unknown): Promise<unknown> => {
     try {
-      return await transportCall(transport, method, params, tags);
+      const result = await transportCall(transport, method, params, tags);
+      // Only a failure the SDK did not recover from may replace the SDK's own error.
+      failure = undefined;
+      return result;
     } catch (error) {
       failure = { error };
       throw error;

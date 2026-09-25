@@ -9,6 +9,7 @@
  * `TransactionNotFound`) or drop chain fields the fees need (OP `l1Fee`, Arbitrum
  * `gasUsedForL1`). So one driver call is exactly one tagged JSON-RPC request (R41).
  */
+import { secp256k1 } from '@noble/curves/secp256k1';
 import type { DisposableNativeClient } from '../../core/driver/types';
 import { ProviderError, ValidationError } from '../../core/errors/error';
 import type {
@@ -29,6 +30,29 @@ import type {
 
 /** `0x` and 40 hex digits; the checksum is the SDK's to check. */
 export const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * R58: the 65-byte uncompressed form of a secp256k1 public key, accepted only as a 33-byte
+ * compressed key (`0x02`/`0x03`) or a 65-byte `0x04` key that decodes to a point on the
+ * curve. Both clients derive addresses from its result, never from the caller's bytes: an
+ * SDK may read 32 bytes as a *private* key or 64 bytes as an unprefixed public key, and
+ * either would yield an address nobody holds the key to. The error never echoes the input.
+ */
+export function uncompressedPublicKey(publicKey: Uint8Array): Uint8Array {
+  const prefix = publicKey instanceof Uint8Array ? publicKey[0] : undefined;
+  const shaped =
+    ((prefix === 0x02 || prefix === 0x03) && publicKey.length === 33) ||
+    (prefix === 0x04 && publicKey.length === 65);
+  try {
+    if (shaped) return secp256k1.ProjectivePoint.fromHex(publicKey).toRawBytes(false);
+  } catch {
+    // Not a point on the curve.
+  }
+  throw new ValidationError(
+    'INVALID_ADDRESS',
+    'public key must be a 33- or 65-byte secp256k1 point',
+  );
+}
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 const QUANTITY = /^0x[0-9a-fA-F]+$/;
 const DATA = /^0x(?:[0-9a-fA-F]{2})*$/;

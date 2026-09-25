@@ -1,6 +1,9 @@
+import { secp256k1 } from '@noble/curves/secp256k1';
 import { Wallet } from 'ethers';
 import { eth } from 'web3';
-import { quorumKeyFor } from '../../../src/adapters/evm/rpc';
+import { quorumKeyFor, throughSdk } from '../../../src/adapters/evm/rpc';
+import { ProviderError } from '../../../src/core/errors/error';
+import type { CallOptions, Transport } from '../../../src/core/transport/types';
 import { settle } from '../../../src/testing/fake-clock';
 import { LIBRARIES, makeClient, nodeTransport } from './support/harness';
 import { GAS_PRICE_ORACLE, REVERTER, TRANSFER_TOPIC } from './support/node';
@@ -14,7 +17,22 @@ import {
 } from './support/vectors';
 
 const READ = { purpose: 'read', retry: 'safe' } as const;
+const PROOF = { purpose: 'proof', retry: 'safe', quorum: 'proof' } as const;
 const TOKEN = '0x00000000000000000000000000000000000070ce';
+
+/** A transport that records each call's method, params and options, and answers from `answers`. */
+function recording(answers: Readonly<Record<string, unknown>>) {
+  const calls: { method: string; params: unknown; options: CallOptions | undefined }[] =
+    [];
+  const transport = {
+    id: 'recording',
+    rpc: async (method: string, params?: unknown, options?: CallOptions) => {
+      calls.push({ method, params, options });
+      return answers[method];
+    },
+  } as unknown as Transport;
+  return { transport, calls };
+}
 
 async function sdkSigned(library: string, fields: (typeof VECTORS)[number]['fields']) {
   const common = {
@@ -103,6 +121,32 @@ describe.each(LIBRARIES)('EvmClient codec (%s)', (library) => {
     expect(() => client.checksum(badChecksum)).toThrow(
       expect.objectContaining({ code: 'INVALID_ADDRESS' }),
     );
+  });
+
+  it('derives addresses only from 33- or 65-byte on-curve public keys (R58)', () => {
+    const uncompressed = secp256k1.getPublicKey(KEY, false);
+    expect(client.addressFromPublicKey(KEY_PUBLIC)).toBe(KEY_ADDRESS);
+    expect(client.addressFromPublicKey(uncompressed)).toBe(KEY_ADDRESS);
+    const with0x05 = uncompressed.slice();
+    with0x05[0] = 0x05;
+    const offCurve = uncompressed.slice();
+    offCurve[64] = (offCurve[64] as number) ^ 1;
+    for (const bad of [
+      // 32 bytes: the x coordinate of KEY's public key, which an SDK may read as a private key.
+      KEY_PUBLIC.slice(1),
+      // 64 bytes: a raw uncompressed key without its 0x04 prefix.
+      uncompressed.slice(1),
+      with0x05,
+      offCurve,
+      new Uint8Array(0),
+    ]) {
+      expect(() => client.addressFromPublicKey(bad)).toThrow(
+        expect.objectContaining({
+          code: 'INVALID_ADDRESS',
+          message: 'public key must be a 33- or 65-byte secp256k1 point',
+        }),
+      );
+    }
   });
 
   it('does ERC-20 ABI work', () => {
@@ -315,6 +359,143 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     ).rejects.toThrow('stopped');
   });
 
+  it('passes purpose, retry, fanout and signal through, and keys only a quorum', async () => {
+    const { transport, calls } = recording({
+      eth_blockNumber: '0x5',
+      eth_getBlockByNumber: null,
+      eth_getTransactionReceipt: null,
+      eth_sendRawTransaction: `0x${'cd'.repeat(32)}`,
+    });
+    const client = makeClient(library, transport, 1n);
+    const signal = new AbortController().signal;
+    const txHash = `0x${'ab'.repeat(32)}`;
+    await client.blockNumber({ purpose: 'monitor', retry: 'safe', signal });
+    await client.getBlock('latest', READ);
+    await client.getBlock('latest', PROOF);
+    await client.getReceipt(txHash, { purpose: 'proof', retry: 'safe', quorum: 2 });
+    await client.blockNumber(PROOF);
+    await client.sendRawTransaction('0x02c0', {
+      purpose: 'broadcast',
+      retry: 'ambiguous-on-failure',
+      fanout: 2,
+    });
+    expect(calls.map((c) => c.method)).toEqual([
+      'eth_blockNumber',
+      'eth_getBlockByNumber',
+      'eth_getBlockByNumber',
+      'eth_getTransactionReceipt',
+      'eth_blockNumber',
+      'eth_sendRawTransaction',
+    ]);
+    const [monitor, read, proof, receipt, height, broadcast] = calls.map(
+      (c) => c.options,
+    );
+    expect(monitor).toEqual({ purpose: 'monitor', retry: 'safe', signal });
+    expect(monitor?.signal).toBe(signal);
+    expect(read).toEqual(READ);
+    expect(read).not.toHaveProperty('quorumKey');
+    expect(proof).toEqual({ ...PROOF, quorumKey: expect.any(Function) });
+    expect(
+      proof?.quorumKey?.({
+        number: '0x1',
+        hash: '0xa',
+        parentHash: '0xb',
+        timestamp: '0x2',
+        size: '0x9',
+      }),
+    ).toEqual({ number: '0x1', hash: '0xa', parentHash: '0xb', timestamp: '0x2' });
+    expect(receipt).toEqual({
+      purpose: 'proof',
+      retry: 'safe',
+      quorum: 2,
+      quorumKey: expect.any(Function),
+    });
+    expect(receipt?.quorumKey?.({ status: '0x1', logs: [] })).toMatchObject({
+      status: '0x1',
+      logs: [],
+    });
+    // A quorum over a whole quantity needs no key.
+    expect(height).toEqual(PROOF);
+    expect(height).not.toHaveProperty('quorumKey');
+    expect(broadcast).toEqual({
+      purpose: 'broadcast',
+      retry: 'ambiguous-on-failure',
+      fanout: 2,
+    });
+  });
+
+  it('proves a receipt only when the endpoints agree on its logs (R59)', async () => {
+    const t = setup(['a', 'b']);
+    t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    t.node.mintToken(TOKEN, t.wallet.address, 100n);
+    const token = await t.run(
+      t.client.sendRawTransaction(
+        await t.sign(0, {
+          to: TOKEN,
+          value: 0n,
+          gasLimit: 60_000n,
+          data: t.client.abi.encodeTransfer(RECIPIENT, 40n),
+        }),
+        { purpose: 'broadcast' },
+      ),
+    );
+    t.node.mine();
+    const raw = await t.run(
+      t.transport.rpc<
+        Record<string, unknown> & { logs: { address: string; data: string }[] }
+      >('eth_getTransactionReceipt', [token]),
+    );
+    expect(raw.logs).toHaveLength(1);
+    const onB =
+      (result: unknown) =>
+      (endpoint: string, method: string): { result: unknown } | undefined =>
+        endpoint === 'b' && method === 'eth_getTransactionReceipt'
+          ? { result }
+          : undefined;
+    // Case and fields outside the consensus facts may differ between node implementations.
+    t.node.intercept = onB({
+      ...raw,
+      cumulativeGasUsed: '0x1',
+      logs: raw.logs.map((log) => ({
+        ...log,
+        address: log.address.toUpperCase().replace('0X', '0x'),
+        data: log.data.toUpperCase().replace('0X', '0x'),
+        transactionIndex: '0x9',
+      })),
+    });
+    expect(await t.run(t.client.getReceipt(token, PROOF))).toMatchObject({
+      transactionHash: token,
+      status: 1,
+    });
+    // An endpoint that hides the Transfer log disagrees: it can never prove a verdict.
+    t.node.intercept = onB({ ...raw, logs: [] });
+    await expect(t.run(t.client.getReceipt(token, PROOF))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+  });
+
+  it("reads an Arbitrum receipt's gasUsedForL1", async () => {
+    const t = setup();
+    const hash = await t.run(
+      t.client.sendRawTransaction(await t.sign(0), { purpose: 'broadcast' }),
+    );
+    t.node.mine();
+    const plain = await t.run(t.client.getReceipt(hash, READ));
+    expect(plain).not.toHaveProperty('gasUsedForL1');
+    const raw = await t.run(
+      t.transport.rpc<Record<string, unknown>>('eth_getTransactionReceipt', [hash]),
+    );
+    t.node.intercept = (_e, method) =>
+      method === 'eth_getTransactionReceipt'
+        ? { result: { ...raw, gasUsedForL1: '0x1d4c' } }
+        : undefined;
+    expect(await t.run(t.client.getReceipt(hash, READ))).toEqual({
+      ...plain,
+      gasUsedForL1: 7_500n,
+    });
+  });
+
   it('reaches the transport with no real timer and no fake time (R46)', async () => {
     const t = setup();
     const timers = jest.spyOn(global, 'setTimeout');
@@ -390,7 +571,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
 });
 
 describe('quorum keys', () => {
-  it('compare consensus facts of blocks and receipts only', () => {
+  it('compare only the consensus facts of blocks, transactions and receipts with their logs', () => {
     const block = quorumKeyFor('eth_getBlockByNumber');
     expect(
       block?.({
@@ -402,20 +583,41 @@ describe('quorum keys', () => {
       }),
     ).toEqual({ number: '0x1', hash: '0xa', parentHash: '0xb', timestamp: '0x2' });
     expect(block?.(null)).toBeNull();
+    const receipt = quorumKeyFor('eth_getTransactionReceipt');
     expect(
-      quorumKeyFor('eth_getTransactionReceipt')?.({
+      receipt?.({
         transactionHash: '0x1',
         blockHash: '0x2',
         blockNumber: '0x3',
         status: '0x1',
-        logs: [],
+        cumulativeGasUsed: '0x9',
+        logs: [
+          {
+            address: '0x00000000000000000000000000000000000070Ce',
+            topics: ['0xDDF2', '0x0A'],
+            data: '0x2A',
+            logIndex: '0xA',
+            transactionIndex: '0x0',
+            removed: false,
+          },
+        ],
       }),
     ).toEqual({
       transactionHash: '0x1',
       blockHash: '0x2',
       blockNumber: '0x3',
       status: '0x1',
+      logs: [
+        {
+          address: '0x00000000000000000000000000000000000070ce',
+          topics: ['0xddf2', '0x0a'],
+          data: '0x2a',
+          logIndex: '0xa',
+        },
+      ],
     });
+    expect(receipt?.(null)).toBeNull();
+    expect(receipt?.({ status: '0x1' })).toMatchObject({ logs: null });
     expect(
       quorumKeyFor('eth_getTransactionByHash')?.({
         hash: '0x1',
@@ -438,5 +640,56 @@ describe('quorum keys', () => {
       nonce: '0x0',
     });
     expect(quorumKeyFor('eth_getTransactionCount')).toBeUndefined();
+  });
+});
+
+describe('throughSdk', () => {
+  const TAGS = { purpose: 'broadcast', retry: 'ambiguous-on-failure' } as const;
+
+  it("rethrows the transport's own classified error over an SDK wrapper", async () => {
+    const original = new ProviderError('RPC_ERROR', 'execution reverted', {
+      ambiguous: true,
+    });
+    const transport = {
+      rpc: async () => {
+        throw original;
+      },
+    } as unknown as Transport;
+    const failed = await throughSdk(
+      async (call) => {
+        try {
+          return await call('eth_call', []);
+        } catch {
+          throw new Error('an SDK wrapper');
+        }
+      },
+      transport,
+      TAGS,
+    ).catch((error: unknown) => error);
+    expect(failed).toBe(original);
+    expect(failed).toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
+  });
+
+  it("forgets a transport failure once a later call succeeds, and passes the SDK's own error", async () => {
+    let calls = 0;
+    const transport = {
+      rpc: async () => {
+        calls += 1;
+        if (calls === 1) throw new ProviderError('RPC_ERROR', 'a transient failure');
+        return '0x1';
+      },
+    } as unknown as Transport;
+    const sdkOwn = new Error('an SDK decode error');
+    await expect(
+      throughSdk(
+        async (call) => {
+          await call('eth_blockNumber', []).catch(() => undefined);
+          await call('eth_blockNumber', []);
+          throw sdkOwn;
+        },
+        transport,
+        TAGS,
+      ),
+    ).rejects.toBe(sdkOwn);
   });
 });

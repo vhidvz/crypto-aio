@@ -22,7 +22,13 @@ import {
 } from 'ethers';
 import type { DisposableNativeClient } from '../../core/driver/types';
 import type { Transport } from '../../core/transport/types';
-import { ABI_WORD, ADDRESS, EvmClientBase, transferLogWords } from './client';
+import {
+  ABI_WORD,
+  ADDRESS,
+  EvmClientBase,
+  transferLogWords,
+  uncompressedPublicKey,
+} from './client';
 import { NATIVE_TAGS, transportCall } from './rpc';
 import type { EvmAbi, EvmCallTags, EvmSignature, EvmTxFields } from './types';
 
@@ -140,7 +146,7 @@ export class EthersClient extends EvmClientBase {
   }
 
   addressFromPublicKey(publicKey: Uint8Array): string {
-    return computeAddress(hexlify(publicKey));
+    return computeAddress(hexlify(uncompressedPublicKey(publicKey)));
   }
 
   serializeUnsigned(tx: EvmTxFields): string {
