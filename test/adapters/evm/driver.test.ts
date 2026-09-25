@@ -28,6 +28,11 @@ const nonce = (n: bigint) => ({ kind: 'nonce' as const, nonce: n });
 const hex = (value: bigint | number) => `0x${value.toString(16)}`;
 const word = (address: string) => `0x${address.slice(2).toLowerCase().padStart(64, '0')}`;
 const inconsistent = { code: 'PROVIDER_INCONSISTENT', retryable: true };
+const notYetFinal = {
+  code: 'PROVIDER_UNAVAILABLE',
+  retryable: true,
+  message: 'receipt not yet final',
+};
 
 type Harness = ReturnType<typeof evmHarness>;
 
@@ -235,9 +240,10 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     const t = setup();
     const hash = await submit(t, 0);
     t.node.mine();
-    expect(
-      await t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
-    ).toEqual({ included: false });
+    // R77: a receipt in a block that is not final yet decides nothing, never "not included".
+    await expect(
+      t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
+    ).rejects.toMatchObject(notYetFinal);
     expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'latest'))).toBe(
       true,
     );
@@ -567,6 +573,129 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
     ).rejects.toMatchObject(inconsistent);
   });
+
+  it("decides nothing when the quorum sees the receipt but not yet its block's finality (R77)", async () => {
+    // The core's whenAbsent: the slot is proven consumed at finality, then the inclusion
+    // proof may reach endpoints whose finality trails the transaction's block. Answering
+    // "not included" there would prove a final transfer `replaced`.
+    const t = setup();
+    const hash = await submit(t, 0);
+    t.node.mine(3);
+    expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
+      true,
+    );
+    t.node.intercept = (_endpoint, method, params) =>
+      params.includes('finalized')
+        ? {
+            result: t.node.answer(
+              method,
+              params.map((p) => (p === 'finalized' ? '0x0' : p)),
+            ),
+          }
+        : undefined;
+    await expect(
+      t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
+    ).rejects.toMatchObject(notYetFinal);
+    // Confirmation networks: no endpoint holds the block that confirms the receipt's yet.
+    const c = setup('avalanche', 'fuji');
+    const proofs = createEvmProofs({
+      ...c.ctx,
+      config: { ...c.ctx.config, finality: { kind: 'confirmations', confirmations: 3 } },
+    });
+    const pending = await submit(c, 0);
+    c.node.mine(2);
+    await expect(
+      c.run(proofs.includedFinal(ref(pending), nonce(0n), KEY_ADDRESS)),
+    ).rejects.toMatchObject(notYetFinal);
+  });
+
+  it('proves "not included" only when the quorum agrees there is no receipt', async () => {
+    // whenAbsent's other shape: a replacement consumed the slot, and the replaced
+    // transaction has no receipt on any quorum endpoint.
+    const t = setup();
+    const replaced = await submit(t, 0);
+    const winner = await submit(t, 0, {
+      maxFeePerGas: 4_000_000_000n,
+      maxPriorityFeePerGas: 2_000_000_000n,
+    });
+    t.node.mine(3);
+    expect(t.node.receipt(winner)?.blockNumber).toBe(1n);
+    expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
+      true,
+    );
+    expect(
+      await t.run(t.proofs.includedFinal(ref(replaced), nonce(0n), KEY_ADDRESS)),
+    ).toEqual({ included: false });
+    // One endpoint that hides the winner's receipt cannot make it "not included".
+    for (const hider of ['a', 'b']) {
+      t.node.intercept = (endpoint, method) =>
+        endpoint === hider && method === 'eth_getTransactionReceipt'
+          ? { result: null }
+          : undefined;
+      await expect(
+        t.run(t.proofs.includedFinal(ref(winner), nonce(0n), KEY_ADDRESS)),
+      ).rejects.toMatchObject(inconsistent);
+    }
+  });
+
+  it('ignores whatever the first endpoint forges outside the consensus facts', async () => {
+    // A quorum call resolves with the first endpoint's whole answer: a proof may use only
+    // the fields its quorum key compares.
+    const t = setup();
+    t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 100n);
+    const data = t.client.abi.encodeTransfer(RECIPIENT, 10n);
+    const hash = await submit(t, 0, { to: TOKEN, value: 0n, gasLimit: 60_000n, data });
+    t.node.mine(3);
+    const proof = () => t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS));
+    const honest = await proof();
+    expect(honest).toMatchObject({ included: true, success: true, blockHeight: 1n });
+    const forged = `0x${'99'.repeat(32)}`;
+    const forge =
+      (keyed: boolean) =>
+      (endpoint: string, method: string, params: readonly unknown[]) => {
+        if (endpoint !== 'a') return undefined;
+        const real = t.node.answer(method, params);
+        if (real === null || typeof real !== 'object') return undefined;
+        const answer = real as Record<string, unknown>;
+        switch (method) {
+          case 'eth_getTransactionReceipt':
+            return {
+              result: {
+                ...answer,
+                from: OTHER,
+                gasUsed: '0x1',
+                effectiveGasPrice: '0x1',
+                logs: (answer.logs as Record<string, unknown>[]).map((log) => ({
+                  ...log,
+                  transactionHash: forged,
+                  removed: true,
+                })),
+                ...(keyed ? { status: '0x0' } : {}),
+              },
+            };
+          case 'eth_getTransactionByHash':
+            return { result: { ...answer, value: '0x999', gas: '0x1' } };
+          case 'eth_getBlockByNumber':
+            return {
+              result: {
+                ...answer,
+                transactions: [],
+                miner: OTHER,
+                ...(params[0] === 'finalized'
+                  ? { hash: forged, parentHash: forged }
+                  : {}),
+              },
+            };
+          default:
+            return undefined;
+        }
+      };
+    t.node.intercept = forge(false);
+    expect(await proof()).toEqual(honest);
+    t.node.intercept = forge(true);
+    await expect(proof()).rejects.toMatchObject(inconsistent);
+  });
 });
 
 describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
@@ -691,6 +820,41 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
         observation: { seen: 'block', success: true },
         transfers: [],
         decoding: 'partial',
+      },
+    ]);
+  });
+
+  it('keeps contract creations in a filtered scan: only the receipt names the recipient (R78)', async () => {
+    const h = evmHarness(library);
+    const blocks = createEvmBlocks(h.ctx);
+    h.node.fund(KEY_ADDRESS, 10n ** 18n);
+    const hash = await submit(h, 0);
+    h.node.mine();
+    // The scripted node cannot deploy code: serve its transaction as a creation of CREATED.
+    const created = h.client.checksum('0x00000000000000000000000000000000000c0de1');
+    h.node.intercept = (_endpoint, method, params) => {
+      const real = h.node.answer(method, params) as Record<string, unknown> | null;
+      if (real === null) return undefined;
+      if (method === 'eth_getBlockByNumber' && params[1] === true) {
+        const txs = real.transactions as Record<string, unknown>[];
+        return {
+          result: { ...real, transactions: txs.map((tx) => ({ ...tx, to: null })) },
+        };
+      }
+      if (method === 'eth_getTransactionReceipt') {
+        return { result: { ...real, to: null, contractAddress: created.toLowerCase() } };
+      }
+      return undefined;
+    };
+    const header = await h.run(blocks.header(1n));
+    expect(
+      await h.run(blocks.transactions(header!, { addresses: [created] })),
+    ).toMatchObject([
+      {
+        id: hash,
+        transfers: [
+          { locator: 'native', from: [KEY_ADDRESS], to: created, amount: 1_000n },
+        ],
       },
     ]);
   });

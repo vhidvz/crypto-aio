@@ -3,9 +3,9 @@
  * every EVM chain and network; each network's registry data configures it.
  */
 import type { ChainDriver, DriverFactory } from '../../core/driver/types';
-import { ProviderError } from '../../core/errors/error';
 import type { EndpointCall, HealthProbes, Transport } from '../../core/transport/types';
 import { createEvmBroadcaster, createEvmBuilder, createEvmReplacement } from './builder';
+import { quantity } from './client';
 import { evmNetworkConfig } from './network';
 import { createEvmBlocks, createEvmProofs } from './proofs';
 import {
@@ -17,20 +17,15 @@ import {
 } from './reader';
 import type { EvmClient } from './types';
 
-async function quantity(call: EndpointCall, method: string): Promise<bigint> {
-  const value = await call.rpc<unknown>(method);
-  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]+$/.test(value)) {
-    throw new ProviderError('PROVIDER_UNAVAILABLE', `malformed ${method} answer`);
-  }
-  return BigInt(value);
-}
+const probe = async (call: EndpointCall, method: string): Promise<bigint> =>
+  quantity(await call.rpc<unknown>(method), method);
 
 /** R19: identity is the decimal `eth_chainId`; the height is `eth_blockNumber`. */
 function probes(expectedIdentity: string | undefined): HealthProbes {
   return {
-    identity: async (call) => (await quantity(call, 'eth_chainId')).toString(),
+    identity: async (call) => (await probe(call, 'eth_chainId')).toString(),
     ...(expectedIdentity !== undefined ? { expectedIdentity } : {}),
-    height: (call) => quantity(call, 'eth_blockNumber'),
+    height: (call) => probe(call, 'eth_blockNumber'),
   };
 }
 

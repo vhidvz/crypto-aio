@@ -4,10 +4,12 @@
  * choose the final height (R74): a proof attests the fact it needs at that fact's own
  * height, so honest endpoints disagree only while it is final on one and not yet on another,
  * which decides nothing. The block source serves dense heights with native transfers and
- * ERC-20 `Transfer` logs, as the chain reports them (R68).
+ * ERC-20 `Transfer` logs, as the chain reports them (R68). Every error thrown here is a
+ * `PROVIDER_*` code, retryable by the code table: look again later.
  */
 import type { BlockSource, ProofSource } from '../../core/driver/types';
 import { ProviderError } from '../../core/errors/error';
+import { quantity } from './client';
 import { decodeTransaction, tokenTransferLanded } from './decode';
 import {
   MONITOR,
@@ -23,14 +25,10 @@ import type { EvmTx } from './types';
  * R74: a quorum key under which every endpoint whose nonce is past `nonce` agrees. A
  * malformed answer throws, which the transport counts as a disagreement.
  */
-function nonceAbove(nonce: bigint): (result: unknown) => boolean {
-  return (result) => {
-    if (typeof result !== 'string' || !/^0x[0-9a-fA-F]+$/.test(result)) {
-      throw new TypeError('not a nonce');
-    }
-    return BigInt(result) > nonce;
-  };
-}
+const nonceAbove =
+  (nonce: bigint) =>
+  (result: unknown): boolean =>
+    quantity(result, 'nonce') > nonce;
 
 export function createEvmProofs(ctx: EvmContext): ProofSource {
   const { client, config } = ctx;
@@ -49,9 +47,16 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
 
     async includedFinal(ref) {
       const receipt = await client.getReceipt(ref.id, PROOF);
+      // "Not included" only when the quorum agrees there is no receipt at all.
       if (!receipt) return { included: false };
       const final = await finalBlockAt(ctx, receipt.blockNumber, PROOF);
-      if (!final) return { included: false };
+      // R77: the transaction is in a block, just not a final one on these endpoints yet.
+      // "Not included" would let the core prove a final transfer `replaced` (whenAbsent,
+      // after the slot was proven consumed on endpoints whose finality is further along),
+      // so this decides nothing.
+      if (!final) {
+        throw new ProviderError('PROVIDER_UNAVAILABLE', 'receipt not yet final');
+      }
       // The endpoints agree on a receipt from a block that is not the final one at its
       // height: the chain reorganized between the reads, or their receipt index lags. The
       // transaction may be final elsewhere, so this decides nothing (R74).
@@ -70,7 +75,6 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
           throw new ProviderError(
             'PROVIDER_INCONSISTENT',
             'a receipt without its transaction',
-            { retryable: true },
           );
         }
         success = tokenTransferLanded(client.abi, tx, receipt);
@@ -120,9 +124,7 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
 }
 
 const changed = (height: bigint) =>
-  new ProviderError('PROVIDER_INCONSISTENT', `block ${height} changed while scanning`, {
-    retryable: true,
-  });
+  new ProviderError('PROVIDER_INCONSISTENT', `block ${height} changed while scanning`);
 
 export function createEvmBlocks(ctx: EvmContext): BlockSource {
   const { client, config } = ctx;
@@ -154,8 +156,10 @@ export function createEvmBlocks(ctx: EvmContext): BlockSource {
             })
             .map((log) => log.transactionHash),
         );
+        // A contract creation's recipient is only in its receipt, so every creation stays.
         selected = full.transactions.filter(
-          (tx) => watched(tx.from) || watched(tx.to) || tokenTxs.has(tx.hash),
+          (tx) =>
+            tx.to === null || watched(tx.from) || watched(tx.to) || tokenTxs.has(tx.hash),
         );
       }
       const receipts = await Promise.all(

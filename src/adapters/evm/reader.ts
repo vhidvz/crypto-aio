@@ -19,6 +19,7 @@ import {
 import type { Logger } from '../../core/events/logger';
 import type { AssetMetadata, AssetRef, TokenRef } from '../../core/model/asset';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { quantity } from './client';
 import { chainObservation, decodeTransaction, evmObservation } from './decode';
 import type { EvmNetworkConfig } from './network';
 import type { EvmBlock, EvmCallTags, EvmClient, EvmExt } from './types';
@@ -71,16 +72,11 @@ const below = (height: bigint, depth: bigint): bigint =>
  * so honest endpoints at different heights agree, and one that is not there disagrees.
  * A malformed answer throws, which the transport counts as a disagreement.
  */
-function atOrPast(height: bigint): (result: unknown) => boolean {
-  return (result) => {
-    if (result === null) return false;
-    const number = (result as { readonly number?: unknown }).number;
-    if (typeof number !== 'string' || !/^0x[0-9a-fA-F]+$/.test(number)) {
-      throw new TypeError('not a block number');
-    }
-    return BigInt(number) >= height;
-  };
-}
+const atOrPast =
+  (height: bigint) =>
+  (result: unknown): boolean =>
+    result !== null &&
+    quantity((result as { readonly number?: unknown }).number, 'block number') >= height;
 
 /** Whether every quorum endpoint's `finalized` block is at or past `height` (R74). */
 async function finalizedAtOrPast(
@@ -97,15 +93,14 @@ async function finalizedAtOrPast(
 }
 
 /**
- * The highest final block as one endpoint sees it: the `finalized` tag, or the head minus
- * the confirmations; the head is a `monitor` read with the signal of `tags`. Under `proof`,
- * the height that `provenFinal` attests instead.
+ * The highest final block as one endpoint sees it (a `monitor` view): the `finalized` tag,
+ * or the head minus the confirmations; the head read carries the signal of `tags`. Proofs
+ * never use it as a final height: `provenFinal` attests one.
  */
 export async function finalizedHeight(
   ctx: EvmContext,
   tags: EvmCallTags,
 ): Promise<bigint> {
-  if (tags.purpose === 'proof') return (await provenFinal(ctx, tags)).height;
   const { finality } = ctx.config;
   if (finality.kind === 'confirmations') {
     const head = await ctx.client.blockNumber(withSignal(MONITOR, tags.signal));

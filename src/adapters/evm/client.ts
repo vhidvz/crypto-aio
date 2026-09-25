@@ -66,7 +66,12 @@ function malformed(field: string): ProviderError {
   );
 }
 
-function quantity(value: unknown, field: string): bigint {
+/**
+ * A JSON-RPC quantity (`0x` and hex digits) as a bigint. Anything else throws a retryable
+ * `PROVIDER_UNAVAILABLE` naming `field`: the one check of every hex quantity the driver
+ * reads, quorum keys and health probes included (a key that throws is a disagreement).
+ */
+export function quantity(value: unknown, field: string): bigint {
   if (typeof value !== 'string' || !QUANTITY.test(value)) throw malformed(field);
   return BigInt(value);
 }

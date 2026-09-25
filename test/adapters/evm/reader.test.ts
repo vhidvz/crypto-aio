@@ -18,7 +18,7 @@ import {
   createEvmExt,
   createEvmReader,
   createEvmSequence,
-  finalizedHeight,
+  provenFinal,
   withSignal,
 } from '../../../src/adapters/evm/reader';
 import type { EvmReceipt, EvmTx } from '../../../src/adapters/evm/types';
@@ -335,7 +335,10 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     h.node.mine(4);
     // R74: the quorum confirms the block 2 below one endpoint's head, which a peer a block
     // or two behind still holds; with one confirmation, that block is the final one.
-    expect(await h.run(finalizedHeight(h.ctx, PROOF))).toBe(2n);
+    expect(await h.run(provenFinal(h.ctx, PROOF))).toEqual({
+      height: 2n,
+      block: expect.objectContaining({ number: 2n, hash: h.node.block(2n)?.hash }),
+    });
     expect(h.calls.map((c) => [c.method, c.tags])).toEqual([
       ['blockNumber', MONITOR],
       ['getBlock', PROOF_TAGS],
@@ -357,7 +360,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
           return { result: block };
         return undefined;
       };
-      await expect(h.run(finalizedHeight(h.ctx, PROOF))).rejects.toMatchObject({
+      await expect(h.run(provenFinal(h.ctx, PROOF))).rejects.toMatchObject({
         code: 'PROVIDER_INCONSISTENT',
         retryable: true,
       });
@@ -369,7 +372,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     const aborted = new AbortController();
     aborted.abort();
     await expect(
-      h.run(finalizedHeight(h.ctx, withSignal(PROOF, aborted.signal))),
+      h.run(provenFinal(h.ctx, withSignal(PROOF, aborted.signal))),
     ).rejects.toBeDefined();
     expect(h.node.served).toEqual([]);
   });
