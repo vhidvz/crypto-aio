@@ -113,7 +113,10 @@ export interface ChainReader {
   getFinalizedHeight(): Promise<bigint>;
   getBlock(ref: bigint | string): Promise<DriverBlock | null>;
   getTransaction(id: string): Promise<DriverTransaction | null>;
-  /** Current view of an Attempt (uses `purpose: 'monitor'` reads). */
+  /**
+   * Current view of an Attempt (uses `purpose: 'monitor'` reads). `ordering` and `from` are
+   * `undefined` for a transaction the library does not manage (a status lookup by id).
+   */
   observe(
     ref: AttemptRef,
     ordering: OrderingData | undefined,
@@ -254,6 +257,42 @@ export interface DisposableNativeClient {
   close?(): void | Promise<void>;
 }
 
+/**
+ * The driver port. I4: every method's contract, as the core relies on it. Purpose, retry
+ * class and quorum are the `CallOptions` a driver passes to its `Transport` (defaults:
+ * purpose `read`, retry `safe`, no quorum). A `monitor` or `proof` read only goes to
+ * endpoints that are not lagging.
+ *
+ * | Method | Purpose | Retry | Quorum | Returns / throws |
+ * | --- | --- | --- | --- | --- |
+ * | `reader.getBalance`, `getBlock`, `getTransaction`, `getTokenMetadata` | `read` | `safe` | none | `null` when not found; provider errors propagate |
+ * | `reader.getBlockHeight`, `getFinalizedHeight` | `monitor` | `safe` | none | propagate; they feed the stale-view guards and confirmation depths |
+ * | `reader.observe(ref, ordering, from)` | `monitor` | `safe` | none | `{ seen: 'none' }` when not visible; `ordering` and `from` are `undefined` for a transaction the library does not manage |
+ * | `sequence.pending`, `sequence.latest` | `monitor` | `safe` | none | propagate |
+ * | `proofs.*` (`finalizedHead`, `includedFinal`, `slotConsumed`, `expired`, `blockHash`) | `proof` | `safe` | `'proof'` | endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, and the core then decides nothing. Only `slotConsumed(…, 'latest')` may be a single `monitor` read: the core records it as observed evidence |
+ * | `broadcaster.broadcast` | `broadcast` | `ambiguous-on-failure` | none (passes `fanout` and `signal` through) | classifies a definitive `RPC_ERROR` into a `BroadcastResult`; rethrows an ambiguous one (`error.ambiguous`) and every other failure unclassified |
+ * | `builder.estimateFee`, `checkFunds`, `build` | `read` | `safe` | none | `ValidationError` / `UnsupportedCapabilityError` for an intent it cannot build |
+ * | `builder.assemble` | no I/O | – | – | `SigningError('SIGNING_FAILED')` when a signature is missing |
+ * | `replacement.buildReplacement`, `buildCancel` | `read` | `safe` | none | `ChainError('FEE_TOO_LOW')` below the network's bump; `buildCancel` honours a given `fee` and never substitutes its own |
+ * | `blocks.header` | `monitor` | `safe` | none | `null` while the height is not visible |
+ * | `blocks.transactions` | `monitor` | `safe` | none | retryable `PROVIDER_INCONSISTENT` when the block at `block.height` no longer has `block.hash` |
+ * | `history.list` | `read` (indexer transport when configured) | `safe` | none | propagate |
+ * | `createNativeClient` | no I/O | – | – | a fresh SDK instance on every call, never the pooled one |
+ *
+ * Further rules:
+ * - `BlockSource` heights are dense: every height up to the head has one block, and
+ *   `header(h)` is `null` only while `h` is not visible, never for a skipped slot.
+ * - A provider must serve headers at least about 2 × `reorgWindow` below the head. A new
+ *   cursor loads `reorgWindow` blocks below its start, and a rollback refills its window
+ *   below the common ancestor.
+ * - `ScanFilter.addresses`: when non-empty, return at least every transaction with a transfer
+ *   from or to one of them; empty (`[]`) or absent means no filter. `ScanFilter.assets` is a
+ *   hint only: a driver may narrow by it or ignore it, and the core does not filter again.
+ * - `fee.details.requestedFee` is reserved. On replacements the core records the requested
+ *   fee spec there (R30), so a driver never sets or reads it.
+ * - M10 (open; Plan 4 decides): `DriverContext` has no asset resolver and `DriverIntent`
+ *   carries no decimals. Amounts reach drivers in base units only.
+ */
 export interface ChainDriver {
   readonly ordering: OrderingKind;
   readonly capabilities: ReadonlySet<Capability>;
@@ -271,7 +310,10 @@ export interface ChainDriver {
     Record<string, Readonly<Record<string, (...args: never[]) => Promise<unknown>>>>
   >;
   limits?(wallet: WalletOptions): DriverLimits;
-  /** A fresh, caller-owned SDK client for `crypto-aio/native`; never the pooled one. */
+  /**
+   * A fresh, caller-owned SDK client for `crypto-aio/native`: a new SDK instance on every
+   * call, never the pooled one.
+   */
   createNativeClient?(): DisposableNativeClient;
   close?(): Promise<void>;
 }
@@ -281,6 +323,9 @@ export interface ChainDriver {
  * other traffic, on every `Transport` it receives here — including `indexer`, when present.
  * `setProbes` resets health/identity state, so calling it again later, or skipping it on one
  * of the two transports, leaves that transport's health checks silently unconfigured.
+ *
+ * M10 (open; Plan 4 decides): there is no asset resolver here, and `DriverIntent` carries no
+ * decimals.
  */
 export interface DriverContext {
   readonly chain: ChainInfo;
