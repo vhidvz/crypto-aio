@@ -42,14 +42,12 @@ import type {
 } from '../signing/types';
 import type { ResolvedWallet } from '../signing/wallet';
 import {
-  NON_TERMINAL_STATES,
   isTerminal,
   type AttemptPurpose,
   type AttemptRecord,
   type ClearableField,
   type ExecutionContext,
   type Fence,
-  type OperationFilter,
   type OperationPatch,
   type OperationRecord,
   type OperationState,
@@ -61,7 +59,6 @@ import { canonicalJson, sha256Hex } from '../util/json';
 import {
   CHAIN_EVIDENCE_STATES,
   CONFLICTABLE_STATES,
-  CONSUMED_FAILURES,
   LEASED_ORDERINGS,
   LIVE_STATES,
   NODE_REFUSED_STATES,
@@ -72,8 +69,6 @@ import {
   awaitsBroadcast,
   cancelBase,
   errorCode,
-  hasReclaimable,
-  heldNonces,
   isDefinitive,
   isRefusal,
   mayBeLive,
@@ -90,6 +85,7 @@ import {
   type ObservationDeps,
   type ObservationPatch,
 } from './observations';
+import * as reconcile from './reconcile';
 
 /** What read-only lifecycle work (monitoring, waiting) needs: no wallet required. */
 export interface ReadTarget {
@@ -675,7 +671,13 @@ export class OperationEngine {
           const pending = await driver.sequence.pending(stored.from);
           // M9: a quiet wallet (no worker pass, no recovery) is never stuck behind a leaked
           // value: the cheap check runs first, and a reclaimed value is allocated next.
-          await this.reclaimLeaked(op, lease as LeaseHandle, pending, op.id);
+          await reconcile.reclaimLeaked(
+            this.reconciler(),
+            op,
+            lease as LeaseHandle,
+            pending,
+            op.id,
+          );
           const nonce = await this.deps.sequences.allocate(
             lease as LeaseHandle,
             key,
@@ -1997,124 +1999,26 @@ export class OperationEngine {
     });
   }
 
-  /**
-   * Nonce reconciliation, never a filler transaction (spec). Under the address lease,
-   * returns to `released` every value in [floor, next) that no live Operation of
-   * `op`'s wallet reserves, so the next allocation reuses it and the transfers waiting
-   * behind the gap can land; `floor` is `consumedFloor` (never below a nonce the chain
-   * consumed at finality), and the wallet's history is read only when some value is
-   * reclaimable at all. It closes the leaks a release cannot: a crash between
-   * allocation and the `prepared` write, a store failure inside a release after a terminal
-   * write, and a failure recorded without a release. R29: every live `created` Operation
-   * without a reservation is fenced first (`fenceStalePrepare`), so a `prepared` write
-   * still in flight from a lapsed lease can never land on a released value (a legitimate
-   * transfer re-reads its Operation under the lease). Returns the reclaimed values. The
-   * lease wait is bounded by `signal` and `acquireTimeoutMs` (`0` tries once); a busy lease
-   * rejects with SEQUENCE_BUSY. A target whose wallet does not own `op` is refused
-   * (INVALID_INTENT): its lease guards another sequence.
-   */
+  /** Nonce reconciliation under the address lease; see `reconcileNonces` in `./reconcile`. */
   async reconcileNonces(
     target: OperationTarget,
     op: OperationRecord,
     options: { readonly signal?: AbortSignal; readonly acquireTimeoutMs?: number } = {},
   ): Promise<readonly bigint[]> {
-    const { driver } = target.pooled;
-    const sequence = driver.sequence;
-    if (driver.ordering !== 'nonce' || !sequence) return [];
-    this.assertOwnedBy(target, op);
-    const { signal, acquireTimeoutMs } = options;
-    return this.withAddressLease(
-      target,
-      op,
-      async (lease) =>
-        this.reclaimLeaked(
-          op,
-          lease as LeaseHandle,
-          await sequence.pending(op.intent.from),
-        ),
-      signal,
-      acquireTimeoutMs === undefined ? undefined : { acquireTimeoutMs },
-    );
+    return reconcile.reconcileNonces(this.reconciler(), target, op, options);
   }
 
-  /**
-   * The body of `reconcileNonces`, under the held address lease of `op`'s wallet, with the
-   * chain's pending nonce already read. `preparing` is an Operation this lease is preparing
-   * right now (M9, `prepareStage`): it is never fenced, since its own write follows.
-   */
-  protected async reclaimLeaked(
-    op: OperationRecord,
-    lease: LeaseHandle,
-    chainPending: bigint,
-    preparing?: string,
-  ): Promise<readonly bigint[]> {
-    const wallet = {
-      namespace: this.deps.namespace,
-      chain: op.context.chain,
-      network: op.context.network,
-      from: op.intent.from,
+  /** M11: the engine's steps that `./reconcile` runs, bound to this engine. */
+  protected reconciler(): reconcile.Reconciler {
+    return {
+      deps: this.deps,
+      update: (op, patch) => this.update(op, patch),
+      require: (operationId) => this.require(operationId),
+      sequenceKeyOf: (op) => this.sequenceKeyOf(op),
+      assertOwnedBy: (target, op) => this.assertOwnedBy(target, op),
+      withAddressLease: (target, op, fn, signal, options) =>
+        this.withAddressLease(target, op, fn, signal, options),
     };
-    const key = this.sequenceKeyOf(op);
-    // Cheap first: with nothing reclaimable, neither the fencing writes nor the wallet's
-    // history are needed (fencing only ever adds held values), and with no value at or
-    // above `chainPending` ever allocated, not even the live Operations.
-    const state = await this.deps.stores.sequences.get(key);
-    if (!state || state.next <= chainPending) return [];
-    const live = await this.deps.stores.operations.list({
-      ...wallet,
-      states: NON_TERMINAL_STATES,
-    });
-    if (!hasReclaimable(state, chainPending, live.flatMap(heldNonces))) return [];
-    const held: bigint[] = [];
-    for (const record of live) {
-      const current =
-        record.id === preparing ? record : await this.fenceStalePrepare(record);
-      held.push(...heldNonces(current));
-    }
-    const floor = await this.consumedFloor(wallet, chainPending);
-    await lease.renew();
-    return this.deps.sequences.reclaim(lease, key, floor, held);
-  }
-
-  /**
-   * The lowest value reconciliation may reclaim: `chainPending` (a lagging endpoint can
-   * under-report it), raised above every nonce the chain consumed at finality, i.e. those
-   * of `final` Operations and of failures proven on chain (`TX_REVERTED`, `TX_REPLACED`).
-   * A rejection, a failure before signing or an abandoned Operation consumed nothing.
-   */
-  protected async consumedFloor(
-    wallet: Omit<OperationFilter, 'states' | 'limit'>,
-    chainPending: bigint,
-  ): Promise<bigint> {
-    let floor = chainPending;
-    const history = await this.deps.stores.operations.list({
-      ...wallet,
-      states: ['final', 'failed'],
-    });
-    for (const record of history) {
-      if (record.state === 'failed' && !CONSUMED_FAILURES.has(record.error?.code ?? ''))
-        continue;
-      for (const nonce of heldNonces(record)) if (nonce >= floor) floor = nonce + 1n;
-    }
-    return floor;
-  }
-
-  /**
-   * R29: a `created` Operation without a reservation may still have a `prepared` write in
-   * flight from a process whose lease lapsed (it allocated a nonce, renewed, then stalled).
-   * A no-effect compare-and-set at the listed version makes that stale write lose its own
-   * compare-and-set, so it can never land a reservation on a value this reconciliation
-   * releases. After a lost compare-and-set the re-read Operation is returned, and any
-   * reservation it now shows counts as held. Other Operations are returned as listed.
-   */
-  protected async fenceStalePrepare(record: OperationRecord): Promise<OperationRecord> {
-    if (record.state !== 'created' || record.reservation !== undefined) return record;
-    try {
-      return await this.update(record, { clear: ['error'] });
-    } catch (error) {
-      if (!isCryptoAioError(error, 'VERSION_CONFLICT')) throw error;
-      return this.require(record.id);
-    }
   }
 
   protected async everyAttemptRejected(op: OperationRecord): Promise<boolean> {
