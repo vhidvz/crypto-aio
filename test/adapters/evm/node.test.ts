@@ -5,6 +5,10 @@ import { REVERTER, ScriptedEvmNode, TRANSFER_TOPIC } from './support/node';
 const alice = new Wallet(`0x${'11'.repeat(32)}`);
 const bob = new Wallet(`0x${'22'.repeat(32)}`).address;
 const TOKEN = '0x00000000000000000000000000000000000070ce';
+const ETH = 10n ** 18n;
+/** Calldata for ERC-20 `transfer(to, amount)`. */
+const transferData = (to: string, amount: bigint) =>
+  `0xa9059cbb${to.slice(2).toLowerCase().padStart(64, '0')}${amount.toString(16).padStart(64, '0')}`;
 
 function setup() {
   const node = new ScriptedEvmNode({ chainId: 11155111n, clock: new FakeClock() });
@@ -123,7 +127,7 @@ describe('ScriptedEvmNode', () => {
     const { node, rpc, sign } = setup();
     node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
     node.mintToken(TOKEN, alice.address, 500n);
-    const data = `0xa9059cbb${bob.slice(2).toLowerCase().padStart(64, '0')}${200n.toString(16).padStart(64, '0')}`;
+    const data = transferData(bob, 200n);
     const token = await rpc<string>('eth_sendRawTransaction', [
       await sign(0, { to: TOKEN, value: 0n, data, gasLimit: 60_000n }),
     ]);
@@ -159,5 +163,88 @@ describe('ScriptedEvmNode', () => {
     node.reorg(1, [hash]);
     node.mine();
     expect(await rpc('eth_getTransactionByHash', [hash])).toBeNull();
+  });
+
+  it("stops mining a sender's transactions at the first it cannot pay for (M1)", async () => {
+    const { node, rpc, sign } = setup();
+    const send = async (nonce: number, value: bigint) =>
+      rpc<string>('eth_sendRawTransaction', [await sign(nonce, { value })]);
+    const first = await send(0, ETH / 2n);
+    const second = await send(1, (ETH * 6n) / 10n);
+    const third = await send(2, ETH / 10n);
+    node.mine();
+    expect(node.receipt(first)?.status).toBe(1);
+    expect(node.nonce(alice.address)).toBe(1n);
+    expect([node.receipt(second), node.receipt(third)]).toEqual([undefined, undefined]);
+    expect([node.inMempool(second), node.inMempool(third)]).toEqual([true, true]);
+    expect(node.balance(bob)).toBe(ETH / 2n);
+  });
+
+  it("accepts a replacement at exactly geth's floored bump threshold (M2)", async () => {
+    const { rpc, sign } = setup();
+    const fees = async (maxFeePerGas: bigint, maxPriorityFeePerGas: bigint) =>
+      rpc<string>('eth_sendRawTransaction', [
+        await sign(0, { maxFeePerGas, maxPriorityFeePerGas }),
+      ]);
+    await fees(1_000_000_005n, 5n);
+    // geth: floor(1_000_000_005 * 110 / 100) = 1_100_000_005; floor(5 * 110 / 100) = 5.
+    await expect(fees(1_100_000_004n, 6n)).rejects.toThrow(
+      'replacement transaction underpriced',
+    );
+    await expect(fees(1_100_000_005n, 6n)).resolves.toMatch(/^0x/);
+  });
+
+  it('refuses a reorg deeper than the chain or past the finalized block (M3)', () => {
+    const { node } = setup();
+    node.mine();
+    expect(() => node.reorg(2)).toThrow('deeper than the chain');
+    expect(node.head).toBe(1n);
+    node.mine(4);
+    expect(node.finalized).toBe(3n);
+    expect(() => node.reorg(3)).toThrow('would drop the finalized block');
+    expect(node.head).toBe(5n);
+  });
+
+  it('never moves the finalized block backwards (M3)', async () => {
+    const { node, rpc } = setup();
+    node.mine(5);
+    node.reorg(2);
+    expect(node.head).toBe(3n);
+    expect(node.finalized).toBe(3n);
+    expect(await rpc('eth_getBlockByNumber', ['finalized', false])).toMatchObject({
+      number: '0x3',
+    });
+    expect(() => node.reorg(1)).toThrow('would drop the finalized block');
+    node.mine();
+    expect(node.finalized).toBe(3n);
+    node.mine(2);
+    expect(node.finalized).toBe(4n);
+    node.finalizedDepth = 10;
+    expect(node.finalized).toBe(4n);
+  });
+
+  it('runs a transaction out of gas: status 0, the whole limit paid, nothing moved (M4)', async () => {
+    const { node, rpc, sign } = setup();
+    node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    node.mintToken(TOKEN, alice.address, 500n);
+    const hash = await rpc<string>('eth_sendRawTransaction', [
+      await sign(0, {
+        to: TOKEN,
+        value: 0n,
+        data: transferData(bob, 200n),
+        gasLimit: 21_000n,
+      }),
+    ]);
+    node.mine();
+    expect(await rpc('eth_getTransactionReceipt', [hash])).toMatchObject({
+      status: '0x0',
+      gasUsed: '0x5208',
+      logs: [],
+    });
+    expect(node.tokenBalance(TOKEN, alice.address)).toBe(500n);
+    expect(node.tokenBalance(TOKEN, bob)).toBe(0n);
+    expect(node.nonce(alice.address)).toBe(1n);
+    // 21,000 gas at base fee 1 gwei + tip 1 gwei.
+    expect(node.balance(alice.address)).toBe(ETH - 21_000n * 2_000_000_000n);
   });
 });

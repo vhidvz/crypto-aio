@@ -121,8 +121,10 @@ export class ScriptedEvmNode {
   readonly options: Required<Omit<NodeOptions, 'l1Fee'>> & { readonly l1Fee?: bigint };
   /** JSON-RPC methods each endpoint served, in order. */
   readonly served: { endpoint: string; method: string }[] = [];
-  finalizedDepth: number;
   intercept: Intercept | undefined;
+  #finalizedDepth: number;
+  /** The finalized height never moves backwards: a reorg or a deeper depth keeps it here. */
+  #finalizedFloor = 0n;
   readonly #tokens = new Map<string, Token>();
   readonly #blocks: Block[] = [];
   readonly #states: State[] = [];
@@ -145,8 +147,18 @@ export class ScriptedEvmNode {
       minBumpPercent: 10,
       ...options,
     };
-    this.finalizedDepth = this.options.finalizedDepth;
+    this.#finalizedDepth = this.options.finalizedDepth;
     this.#seal([]);
+  }
+
+  /** Blocks between the head and the `finalized` block; changing it never unfinalizes one. */
+  get finalizedDepth(): number {
+    return this.#finalizedDepth;
+  }
+
+  set finalizedDepth(depth: number) {
+    this.#finalizedFloor = this.finalized;
+    this.#finalizedDepth = depth;
   }
 
   /** Registers an endpoint URL served by this node. */
@@ -161,8 +173,8 @@ export class ScriptedEvmNode {
   }
 
   get finalized(): bigint {
-    const height = this.head - BigInt(this.finalizedDepth);
-    return height < 0n ? 0n : height;
+    const height = this.head - BigInt(this.#finalizedDepth);
+    return height > this.#finalizedFloor ? height : this.#finalizedFloor;
   }
 
   block(height: bigint): Block | undefined {
@@ -229,8 +241,19 @@ export class ScriptedEvmNode {
   /**
    * Drops the last `depth` blocks and their state; their transactions return to the
    * mempool, except `drop`. The next `mine()` builds a fork with different block hashes.
+   * Throws, changing nothing, when `depth` exceeds the head or would drop the finalized block
+   * (deeper than `finalizedDepth`, or below the finalized height an earlier reorg kept).
    */
   reorg(depth: number, drop: readonly string[] = []): void {
+    if (BigInt(depth) > this.head) {
+      throw new Error(
+        `reorg(${depth}) is deeper than the chain: the head is ${this.head}`,
+      );
+    }
+    if (depth > this.#finalizedDepth || this.head - BigInt(depth) < this.finalized) {
+      throw new Error(`reorg(${depth}) would drop the finalized block ${this.finalized}`);
+    }
+    this.#finalizedFloor = this.finalized;
     this.#fork += 1;
     const removed = this.#blocks.splice(this.#blocks.length - depth, depth);
     this.#states.splice(this.#states.length - depth, depth);
@@ -267,9 +290,15 @@ export class ScriptedEvmNode {
     const number = BigInt(this.#blocks.length);
     const included: string[] = [];
     const executed: Receipt[] = [];
+    // Once a sender's transaction cannot execute, its later nonces wait too: no nonce gap.
+    const stalled = new Set<string>();
     for (const tx of candidates) {
+      if (stalled.has(tx.from)) continue;
       const receipt = this.#execute(tx);
-      if (!receipt) continue;
+      if (!receipt) {
+        stalled.add(tx.from);
+        continue;
+      }
       this.#mempool.delete(tx.hash);
       included.push(tx.hash);
       executed.push(receipt);
@@ -299,18 +328,25 @@ export class ScriptedEvmNode {
     return capped < tx.maxFee ? capped : tx.maxFee;
   }
 
-  /** Applies `tx` to the state; `undefined` when it cannot pay (it stays in the mempool). */
+  /**
+   * Applies `tx` to the state; `undefined` when its nonce is not the account's next one or it
+   * cannot pay (it stays in the mempool).
+   */
   #execute(tx: NodeTx): Receipt | undefined {
+    if (tx.nonce !== this.nonce(tx.from)) return undefined;
     const price = this.#price(tx);
     const token = this.#tokens.get(lower(tx.to));
     const reverts = lower(tx.to) === lower(REVERTER);
-    const gasUsed = reverts ? 30_000n : token ? 51_000n : 21_000n;
+    const needed = reverts ? 30_000n : token ? 51_000n : 21_000n;
+    // Out of gas: the whole limit is used and paid for, and the transaction moves nothing.
+    const outOfGas = needed > tx.gasLimit;
+    const gasUsed = outOfGas ? tx.gasLimit : needed;
     const fee = gasUsed * price + (this.options.l1Fee ?? 0n);
     if (this.balance(tx.from) < fee + (reverts ? 0n : tx.value)) return undefined;
     credit(this.#state, tx.from, -fee);
     this.#state.nonces.set(lower(tx.from), tx.nonce + 1n);
     const base = { tx, gasUsed, price };
-    if (reverts) return { ...base, status: 0, logs: [] };
+    if (reverts || outOfGas) return { ...base, status: 0, logs: [] };
     if (token && tx.data.startsWith(SELECTOR.transfer)) {
       const [to, amount] = abi.decode(
         ['address', 'uint256'],
@@ -442,6 +478,9 @@ export class ScriptedEvmNode {
     const legacy = tx.type !== 2;
     const maxFee = (legacy ? tx.gasPrice : tx.maxFeePerGas) as bigint;
     const tip = (legacy ? tx.gasPrice : tx.maxPriorityFeePerGas) as bigint;
+    // These two answers are geth's execution-path texts, not its pool texts. They are kept
+    // on purpose: the address-bearing "insufficient funds" text makes the R24 redaction
+    // tests stricter.
     if (!legacy && maxFee < this.options.baseFee)
       throw new RpcFailure(-32000, 'max fee per gas less than block base fee');
     const cost = tx.value + tx.gasLimit * maxFee + (this.options.l1Fee ?? 0n);
@@ -452,14 +491,15 @@ export class ScriptedEvmNode {
       );
     }
     const bump = BigInt(100 + this.options.minBumpPercent);
+    const threshold = (old: bigint) => (old * bump) / 100n;
     for (const other of this.#mempool.values()) {
       if (other.from !== from || other.nonce !== nonce) continue;
-      // geth: each price strictly higher, and at least minBumpPercent higher.
+      // geth: each price strictly higher, and at least floor(old * (100 + bump) / 100).
       if (
         maxFee <= other.maxFee ||
         tip <= other.tip ||
-        maxFee * 100n < other.maxFee * bump ||
-        tip * 100n < other.tip * bump
+        maxFee < threshold(other.maxFee) ||
+        tip < threshold(other.tip)
       ) {
         throw new RpcFailure(-32000, 'replacement transaction underpriced');
       }
