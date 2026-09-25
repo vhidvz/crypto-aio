@@ -3,7 +3,7 @@
  * bound with the `expected` cost in the details, overrides, and replacement bumps. Pure
  * functions over plain data; the driver does the I/O.
  */
-import { ValidationError } from '../../core/errors/error';
+import { ProviderError, ValidationError } from '../../core/errors/error';
 import type { FeeEstimateDraft, FeeOverride, FeeSpeed } from '../../core/model/fee';
 import type { EvmFeeDetails, EvmFeeHistory } from './types';
 
@@ -38,6 +38,7 @@ const GAS_HEADROOM_PERCENT = 120n;
 
 const ceilDiv = (a: bigint, b: bigint): bigint => (a + b - 1n) / b;
 const max = (a: bigint, b: bigint): bigint => (a > b ? a : b);
+const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
 
 /** The lower median; `0n` for no values. */
 export function median(values: readonly bigint[]): bigint {
@@ -46,18 +47,30 @@ export function median(values: readonly bigint[]): bigint {
   return sorted[Math.floor((sorted.length - 1) / 2)] as bigint;
 }
 
+const malformedHistory = () =>
+  new ProviderError('PROVIDER_UNAVAILABLE', 'malformed fee history');
+
 /**
  * EIP-1559 prices for `speed`: the tip is the median, over the window, of the speed's
- * percentile (at least `minTip`); the cap allows the next base fee to double.
+ * percentile (at least `minTip`); the cap allows the next base fee to double. A history
+ * without the next base fee, or with a reward row shorter than `FEE_PERCENTILES`, is a
+ * retryable `PROVIDER_UNAVAILABLE`.
  */
 export function feesFromHistory(
   history: EvmFeeHistory,
   speed: FeeSpeed,
   minTip: bigint,
 ): { readonly params: EvmFeeParams; readonly baseFeePerGas: bigint } {
-  const baseFeePerGas = history.baseFeePerGas[history.baseFeePerGas.length - 1] ?? 0n;
+  const baseFeePerGas = history.baseFeePerGas[history.baseFeePerGas.length - 1];
+  if (baseFeePerGas === undefined) throw malformedHistory();
   const index = SPEED_INDEX[speed];
-  const tip = max(median(history.reward.map((row) => row[index] ?? 0n)), minTip);
+  const tips = history.reward.map((row) => {
+    const tip = row[index];
+    if (row.length < FEE_PERCENTILES.length || tip === undefined)
+      throw malformedHistory();
+    return tip;
+  });
+  const tip = max(median(tips), minTip);
   return {
     params: {
       type: 'eip1559',
@@ -131,7 +144,8 @@ export function feeDraft(
     params.type === 'eip1559' && extra.baseFeePerGas !== undefined
       ? min(params.maxFeePerGas, extra.baseFeePerGas + params.maxPriorityFeePerGas)
       : cap;
-  const details: EvmFeeDetails = {
+  // `satisfies` checks the shape and keeps a literal type the draft's record accepts.
+  const details = {
     gasLimit,
     ...(params.type === 'eip1559'
       ? {
@@ -144,7 +158,7 @@ export function feeDraft(
       : { gasPrice: params.gasPrice }),
     ...(extra.l1Fee !== undefined ? { l1Fee: extra.l1Fee } : {}),
     expected: gasLimit * expectedPrice + (extra.l1Fee ?? 0n),
-  };
+  } satisfies EvmFeeDetails;
   return {
     kind: params.type === 'eip1559' ? 'evm-1559' : 'evm-legacy',
     speed,
@@ -156,12 +170,8 @@ export function feeDraft(
     ],
     // The L1 data fee moves with L1 prices until inclusion, so it is only expected.
     bound: extra.l1Fee !== undefined ? 'expected' : 'upper',
-    details: { ...details },
+    details,
   };
-}
-
-function min(a: bigint, b: bigint): bigint {
-  return a < b ? a : b;
 }
 
 /** The gas limit and prices a fee draft's details hold. */
