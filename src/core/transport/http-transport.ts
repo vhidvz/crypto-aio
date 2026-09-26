@@ -745,17 +745,29 @@ export class HttpTransport implements Transport {
     work: Work<T>,
   ): Promise<T> {
     const timeoutMs = options.timeoutMs ?? endpoint.timeoutMs ?? this.#opts.timeoutMs;
+    // A17: a first-use identity probe takes its own token (#direct), so it runs before this
+    // request takes one: the probe and the request never leave back to back. When it fails,
+    // the request takes no token, and the failure is thrown inside the `try` below, where
+    // the check always ran, so its message, cause and breaker bookkeeping are unchanged.
+    const identityFailure = await this.#identityFirst(
+      endpoint,
+      timeoutMs,
+      options.signal,
+    );
     // M3/#2 (round 2): the token-bucket wait runs before the per-attempt deadline is armed,
     // with its own timeoutMs-bounded budget. A wait that times out (or that the caller
     // aborts) never touches the breaker and is never tagged ambiguous — no fetch has
     // happened yet.
-    await this.#takeToken(endpoint, timeoutMs, options.signal);
+    if (identityFailure === undefined) {
+      await this.#takeToken(endpoint, timeoutMs, options.signal);
+    }
     const { signal, cancel } = this.#deadline(timeoutMs, options.signal);
     const started = this.#clock.now();
     // #8 (round 2): only set once THIS attempt's own onAttempt() call ran, so only this
     // attempt may release a half-open probe slot it actually claimed.
     let ownsProbe = false;
     try {
+      if (identityFailure !== undefined) throw identityFailure;
       await this.#ensureIdentity(endpoint, signal);
       // #4 (round 3): onAttempt() itself reports whether this attempt claimed the slot.
       ownsProbe = endpoint.breaker.onAttempt();
@@ -796,6 +808,29 @@ export class HttpTransport implements Transport {
         retryable: failure.retryable,
       });
       throw failure;
+    } finally {
+      cancel();
+    }
+  }
+
+  /**
+   * A17: runs a pending first-use identity check under its own deadline, before the request
+   * takes its token, and returns its failure (M2) for `#attempt` to throw where the check
+   * always ran. Only the caller's abort propagates from here.
+   */
+  async #identityFirst(
+    endpoint: Endpoint,
+    timeoutMs: number,
+    outer?: AbortSignal,
+  ): Promise<unknown> {
+    if (!this.#identityProbed() || endpoint.identity !== 'unchecked') return undefined;
+    const { signal, cancel } = this.#deadline(timeoutMs, outer);
+    try {
+      await this.#ensureIdentity(endpoint, signal);
+      return undefined;
+    } catch (error) {
+      if (outer?.aborted) throw outer.reason;
+      return error;
     } finally {
       cancel();
     }
@@ -1058,20 +1093,27 @@ export class HttpTransport implements Transport {
     return (mode === 'text' ? text : json) as T;
   }
 
+  /**
+   * The probes' single-attempt calls. A17: each request first takes a token from the
+   * endpoint's own bucket, bounded by the probe's deadline (`signal`), so probes and
+   * requests share one rate limit and a rate-limited endpoint never answers a probe 429.
+   */
   #direct(endpoint: Endpoint, signal: AbortSignal): EndpointCall {
     return {
-      rpc: <T>(method: string, params?: unknown) => {
+      rpc: async <T>(method: string, params?: unknown) => {
         const id = ++this.#rpcId;
         const body = serializeJson({ jsonrpc: '2.0', id, method, params: params ?? [] });
+        await endpoint.bucket?.take(signal);
         return this.#rpcOnce<T>(endpoint, method, id, body, signal);
       },
-      http: <T>(request: HttpRequest) => {
+      http: async <T>(request: HttpRequest) => {
         const bodyText =
           request.body === undefined
             ? undefined
             : typeof request.body === 'string'
               ? request.body
               : serializeJson(request.body);
+        await endpoint.bucket?.take(signal);
         return this.#httpOnce<T>(endpoint, request, bodyText, signal);
       },
     };

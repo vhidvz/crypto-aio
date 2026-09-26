@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The proof contract (`ProofSource`): on a proof path, only a definitive negative answer
   says "no". Every other RPC error, such as state not available or an index still being
   built, is a retryable `PROVIDER_UNAVAILABLE` that decides nothing.
+- Health probes wait for their endpoint's rate-limit tokens, and a first-use identity probe
+  goes before the request's own token, so a keyless 1 request/second endpoint stays healthy.
 
 ## [0.1.0] - Unreleased
 
