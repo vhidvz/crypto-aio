@@ -38,117 +38,121 @@ const STATE_UNAVAILABLE =
   /missing trie node|historical state .* not available|header not found|state (is )?not available|pruned/i;
 
 /**
- * R85: a read of finalized state that the node does not hold decides nothing. Its answer is
- * a definitive `RPC_ERROR`, which is not retryable; here it becomes a retryable
- * `PROVIDER_UNAVAILABLE` (look again later, or elsewhere), so no caller takes it for an
- * answer and the monitor keeps watching. Any other error passes unchanged.
+ * R85, R86 (lesson 18): the boundary of every proof. Only a definitive negative answer may
+ * say "no", and a JSON-RPC error answer is none: state the node does not hold, an index it
+ * is still building (geth's "transaction indexing is in progress"), or any other error,
+ * ambiguous or not. Every `RPC_ERROR` becomes a retryable `PROVIDER_UNAVAILABLE` (look again
+ * later, or elsewhere) that carries it as its cause, so no caller takes it for an answer and
+ * the monitor keeps watching. Every other error passes unchanged: `PROVIDER_MISCONFIGURED`
+ * stays final, and aborts and foreign errors stay what they are.
  */
-async function finalState<T>(read: () => Promise<T>): Promise<T> {
+async function undecided<T>(proof: () => Promise<T>): Promise<T> {
   try {
-    return await read();
+    return await proof();
   } catch (error) {
-    if (
-      isCryptoAioError(error, 'RPC_ERROR') &&
-      !error.ambiguous &&
-      STATE_UNAVAILABLE.test(String(error.details?.rpcMessage ?? ''))
-    ) {
-      throw new ProviderError('PROVIDER_UNAVAILABLE', 'finalized state not available', {
-        cause: error,
-      });
-    }
-    throw error;
+    if (!isCryptoAioError(error, 'RPC_ERROR')) throw error;
+    const message = String(error.details?.rpcMessage ?? error.message);
+    throw new ProviderError(
+      'PROVIDER_UNAVAILABLE',
+      STATE_UNAVAILABLE.test(message)
+        ? 'finalized state not available'
+        : 'the endpoints gave no answer',
+      { cause: error },
+    );
   }
 }
 
 export function createEvmProofs(ctx: EvmContext): ProofSource {
   const { client } = ctx;
   return {
-    async finalizedHead() {
-      const { height, block } = await provenFinal(ctx, PROOF);
-      const final = block ?? (await client.getBlock(height, PROOF));
-      if (!final) {
-        throw new ProviderError(
-          'PROVIDER_UNAVAILABLE',
-          'the endpoints serve no finalized block',
-        );
-      }
-      return { height: final.number, hash: final.hash, timestamp: final.timestamp };
-    },
-
-    async includedFinal(ref) {
-      const receipt = await client.getReceipt(ref.id, PROOF);
-      // "Not included" only when the quorum agrees there is no receipt at all.
-      if (!receipt) return { included: false };
-      const final = await finalBlockAt(ctx, receipt.blockNumber, PROOF);
-      // R77: the transaction is in a block, just not a final one on these endpoints yet.
-      // "Not included" would let the core prove a final transfer `replaced` (whenAbsent,
-      // after the slot was proven consumed on endpoints whose finality is further along),
-      // so this decides nothing.
-      if (!final) {
-        throw new ProviderError('PROVIDER_UNAVAILABLE', 'receipt not yet final');
-      }
-      // The endpoints agree on a receipt from a block that is not the final one at its
-      // height: the chain reorganized between the reads, or their receipt index lags. The
-      // transaction may be final elsewhere, so this decides nothing (R74).
-      if (final.hash !== receipt.blockHash) {
-        throw new ProviderError(
-          'PROVIDER_INCONSISTENT',
-          'the receipt is not in the final block at its height',
-        );
-      }
-      let success = receipt.status === 1;
-      if (success) {
-        // R50: a token transfer that logged nothing moved nothing (read from the ref alone).
-        // The core proves only its own Attempts, so this is always a verdict (R68).
-        const tx = await client.getTransaction(ref.id, PROOF);
-        if (!tx) {
+    finalizedHead: () =>
+      undecided(async () => {
+        const { height, block } = await provenFinal(ctx, PROOF);
+        const final = block ?? (await client.getBlock(height, PROOF));
+        if (!final) {
           throw new ProviderError(
-            'PROVIDER_INCONSISTENT',
-            'a receipt without its transaction',
+            'PROVIDER_UNAVAILABLE',
+            'the endpoints serve no finalized block',
           );
         }
-        success = tokenTransferLanded(client.abi, tx, receipt);
-      }
-      return {
-        included: true,
-        success,
-        blockHeight: receipt.blockNumber,
-        blockHash: receipt.blockHash,
-        txHash: receipt.transactionHash,
-      };
-    },
+        return { height: final.number, hash: final.hash, timestamp: final.timestamp };
+      }),
 
-    async slotConsumed(ordering, from, level) {
-      if (ordering.kind !== 'nonce') return false;
-      if (level === 'latest') {
-        return (
-          (await client.getTransactionCount(from, 'latest', MONITOR)) > ordering.nonce
-        );
-      }
-      // R85: the nonce at a height the quorum attests final (one endpoint's view proposes
-      // it, trailed by PEER_SKEW), on tag and confirmation networks alike. State at a final
-      // height never changes, so honest endpoints agree however their heads move, and one
-      // that over-reports its finalized block cannot advance the height (R74). A number,
-      // not the `finalized` tag: some nodes (BSC's) serve no state at the tag.
-      const { height } = await provenFinal(ctx, PROOF);
-      const count = await finalState(() =>
-        client.getTransactionCount(from, height, {
+    includedFinal: (ref) =>
+      undecided(async () => {
+        const receipt = await client.getReceipt(ref.id, PROOF);
+        // "Not included" only when the quorum agrees there is no receipt at all.
+        if (!receipt) return { included: false };
+        const final = await finalBlockAt(ctx, receipt.blockNumber, PROOF);
+        // R77: the transaction is in a block, just not a final one on these endpoints yet.
+        // "Not included" would let the core prove a final transfer `replaced` (whenAbsent,
+        // after the slot was proven consumed on endpoints whose finality is further along),
+        // so this decides nothing.
+        if (!final) {
+          throw new ProviderError('PROVIDER_UNAVAILABLE', 'receipt not yet final');
+        }
+        // The endpoints agree on a receipt from a block that is not the final one at its
+        // height: the chain reorganized between the reads, or their receipt index lags. The
+        // transaction may be final elsewhere, so this decides nothing (R74).
+        if (final.hash !== receipt.blockHash) {
+          throw new ProviderError(
+            'PROVIDER_INCONSISTENT',
+            'the receipt is not in the final block at its height',
+          );
+        }
+        let success = receipt.status === 1;
+        if (success) {
+          // R50: a token transfer that logged nothing moved nothing (read from the ref
+          // alone). The core proves only its own Attempts, so this is always a verdict (R68).
+          const tx = await client.getTransaction(ref.id, PROOF);
+          if (!tx) {
+            throw new ProviderError(
+              'PROVIDER_INCONSISTENT',
+              'a receipt without its transaction',
+            );
+          }
+          success = tokenTransferLanded(client.abi, tx, receipt);
+        }
+        return {
+          included: true,
+          success,
+          blockHeight: receipt.blockNumber,
+          blockHash: receipt.blockHash,
+          txHash: receipt.transactionHash,
+        };
+      }),
+
+    slotConsumed: (ordering, from, level) =>
+      undecided(async () => {
+        if (ordering.kind !== 'nonce') return false;
+        if (level === 'latest') {
+          return (
+            (await client.getTransactionCount(from, 'latest', MONITOR)) > ordering.nonce
+          );
+        }
+        // R85: the nonce at a height the quorum attests final (one endpoint's view proposes
+        // it, trailed by PEER_SKEW), on tag and confirmation networks alike. State at a final
+        // height never changes, so honest endpoints agree however their heads move, and one
+        // that over-reports its finalized block cannot advance the height (R74). A number,
+        // not the `finalized` tag: some nodes (BSC's) serve no state at the tag.
+        const { height } = await provenFinal(ctx, PROOF);
+        const count = await client.getTransactionCount(from, height, {
           ...PROOF,
           quorumKey: nonceAbove(ordering.nonce),
-        }),
-      );
-      return count > ordering.nonce;
-    },
+        });
+        return count > ordering.nonce;
+      }),
 
     // Nonce ordering: an EVM transaction never expires.
     expired: async () => false,
 
-    async blockHash(height, level) {
-      if (level === 'finalized') {
-        return (await finalBlockAt(ctx, height, PROOF))?.hash ?? null;
-      }
-      return (await client.getBlock(height, PROOF))?.hash ?? null;
-    },
+    blockHash: (height, level) =>
+      undecided(async () => {
+        if (level === 'finalized') {
+          return (await finalBlockAt(ctx, height, PROOF))?.hash ?? null;
+        }
+        return (await client.getBlock(height, PROOF))?.hash ?? null;
+      }),
   };
 }
 

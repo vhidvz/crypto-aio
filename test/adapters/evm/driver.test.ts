@@ -4,6 +4,7 @@ import { createEvmBlocks, createEvmProofs } from '../../../src/adapters/evm/proo
 import { createEvmReader } from '../../../src/adapters/evm/reader';
 import { web3DriverFactory } from '../../../src/adapters/evm/web3-client';
 import type { ChainDriver } from '../../../src/core/driver/types';
+import { ProviderError } from '../../../src/core/errors/error';
 import { noopLogger } from '../../../src/core/events/logger';
 import type { ChainInfo, NetworkInfo } from '../../../src/core/model/chain';
 import type {
@@ -32,6 +33,13 @@ const notYetFinal = {
   code: 'PROVIDER_UNAVAILABLE',
   retryable: true,
   message: 'receipt not yet final',
+};
+/** Lesson 18: an error answer to a proof read is no negative proof, so it decides nothing. */
+const noAnswer = {
+  code: 'PROVIDER_UNAVAILABLE',
+  retryable: true,
+  message: 'the endpoints gave no answer',
+  cause: expect.objectContaining({ code: 'RPC_ERROR' }),
 };
 
 type Harness = ReturnType<typeof evmHarness>;
@@ -234,6 +242,20 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     const h = evmHarness(library, chain, network, { endpoints: ['a', 'b'] });
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
     return { ...h, proofs: createEvmProofs(h.ctx) };
+  }
+
+  /** `endpoint` answers `method` (at block parameter `at`, when given) with a JSON-RPC error. */
+  function rpcError(
+    t: ReturnType<typeof setup>,
+    endpoint: string,
+    method: string,
+    message: string,
+    at?: unknown,
+  ): void {
+    t.node.intercept = (e, m, params) =>
+      e === endpoint && m === method && (at === undefined || params[0] === at)
+        ? { error: { code: -32000, message } }
+        : undefined;
   }
 
   it('proves inclusion only at finality, and slot consumption by any transaction', async () => {
@@ -785,14 +807,112 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
         });
       }
     }
-    // Any other answer is the node's own definitive error, passed on unchanged.
+    // Lesson 18: any other error answer is no negative proof either, at either level. It
+    // decides nothing, and carries the node's own error as its cause.
     t.node.intercept = (_endpoint, method) =>
       method === 'eth_getTransactionCount'
         ? { error: { code: -32602, message: 'invalid argument 1: hex number > 64 bits' } }
         : undefined;
-    await expect(
-      t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
-    ).rejects.toMatchObject({ code: 'RPC_ERROR', retryable: false });
+    for (const level of ['finalized', 'latest'] as const) {
+      await expect(
+        t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, level)),
+      ).rejects.toMatchObject({
+        ...noAnswer,
+        cause: expect.objectContaining({
+          code: 'RPC_ERROR',
+          retryable: false,
+          details: expect.objectContaining({ rpcCode: -32602 }),
+        }),
+      });
+    }
+  });
+
+  it('decides nothing on any JSON-RPC error while proving inclusion (lesson 18)', async () => {
+    const t = setup();
+    const hash = await submit(t, 0);
+    t.node.mine(3);
+    const proof = () => t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS));
+    const reads: [string, string, unknown?][] = [
+      // geth, while it builds its transaction index.
+      ['eth_getTransactionReceipt', 'transaction indexing is in progress'],
+      ['eth_getBlockByNumber', 'internal error', 'finalized'],
+      ['eth_getBlockByNumber', 'internal error', '0x1'],
+      ['eth_getTransactionByHash', 'internal error'],
+    ];
+    for (const failing of ['a', 'b']) {
+      for (const [method, message, at] of reads) {
+        rpcError(t, failing, method, message, at);
+        await expect(proof()).rejects.toMatchObject(noAnswer);
+      }
+    }
+    t.node.intercept = undefined;
+    expect(await proof()).toMatchObject({ included: true, success: true });
+  });
+
+  it('decides nothing on any JSON-RPC error while reading a block hash (lesson 18)', async () => {
+    const t = setup();
+    t.node.mine(4);
+    const reads: [unknown, bigint, 'finalized' | 'latest'][] = [
+      ['0x3', 3n, 'latest'],
+      ['finalized', 2n, 'finalized'],
+      ['0x2', 2n, 'finalized'],
+    ];
+    for (const failing of ['a', 'b']) {
+      for (const [at, height, level] of reads) {
+        rpcError(t, failing, 'eth_getBlockByNumber', 'internal error', at);
+        await expect(t.run(t.proofs.blockHash(height, level))).rejects.toMatchObject(
+          noAnswer,
+        );
+      }
+    }
+    t.node.intercept = undefined;
+    expect(await t.run(t.proofs.blockHash(2n, 'finalized'))).toBe(t.node.block(2n)?.hash);
+  });
+
+  it('decides nothing on any JSON-RPC error while proving the finalized head (lesson 18)', async () => {
+    const t = setup();
+    t.node.mine(4);
+    for (const failing of ['a', 'b']) {
+      for (const at of ['finalized', '0x0']) {
+        rpcError(t, failing, 'eth_getBlockByNumber', 'internal error', at);
+        await expect(t.run(t.proofs.finalizedHead())).rejects.toMatchObject(noAnswer);
+      }
+    }
+    t.node.intercept = undefined;
+    expect((await t.run(t.proofs.finalizedHead())).height).toBe(0n);
+  });
+
+  it('passes a PROVIDER_MISCONFIGURED, and every other error, through unchanged (lesson 18)', async () => {
+    const t = setup();
+    const hash = await submit(t, 0);
+    t.node.mine(3);
+    const failures: unknown[] = [
+      new ProviderError('PROVIDER_MISCONFIGURED', 'endpoint rejected the credentials'),
+      new ProviderError('PROVIDER_INCONSISTENT', 'the endpoints disagree'),
+      new DOMException('aborted', 'AbortError'),
+      new Error('foreign'),
+    ];
+    for (const failure of failures) {
+      // Every read of the client fails with `failure`.
+      const client = new Proxy(t.ctx.client, {
+        get: (target, prop, receiver) => {
+          const value = Reflect.get(target, prop, receiver) as unknown;
+          return typeof value === 'function' ? () => Promise.reject(failure) : value;
+        },
+      });
+      const proofs = createEvmProofs({ ...t.ctx, client });
+      const proving: (() => Promise<unknown>)[] = [
+        () => proofs.finalizedHead(),
+        () => proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS),
+        () => proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'),
+        () => proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'latest'),
+        () => proofs.blockHash(1n, 'finalized'),
+        () => proofs.blockHash(1n, 'latest'),
+      ];
+      for (const proof of proving) {
+        await expect(t.run(proof())).rejects.toBe(failure);
+      }
+    }
   });
 
   it('never lets one endpoint over-reporting its finalized height advance the nonce read (R85)', async () => {
