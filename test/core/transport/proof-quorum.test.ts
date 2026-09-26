@@ -482,6 +482,20 @@ describe('proof quorum health misses (P25-R10)', () => {
     expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
   });
 
+  it('counts only usable endpoints when no refresh can see a dead endpoint (P25-R11)', async () => {
+    const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
+      failureThreshold: 1,
+    });
+    // An identity probe without an expected identity checks nothing, and there is no height
+    // probe: a refresh does no I/O, so no miss is ever recorded.
+    transport.setProbes({ identity: identity.identity });
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    await expect(proof()).resolves.toBe('fact');
+    expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
+  });
+
   it("never counts a joined identity check that a request's shorter deadline ended", async () => {
     let identityCalls = 0;
     const fake = new FakeFetch();

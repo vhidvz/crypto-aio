@@ -935,13 +935,14 @@ export class HttpTransport implements Transport {
    * A quorum read's endpoints: `sized`, which the quorum's size counts, and `inRange`, the
    * only ones asked.
    *
-   * `sized` (A14/A24, handoff N5; P25-R8, R9, R10): for a proof quorum (`proof`, see
-   * `isProofQuorum`) with any probe configured, every endpoint not proven mismatched,
+   * `sized` (A14/A24, handoff N5; P25-R8, R9, R10, R11): for a proof quorum (`proof`, see
+   * `isProofQuorum`) whose refreshes can see a dead endpoint (a height probe, or an
+   * identity probe with an expected identity), every endpoint not proven mismatched,
    * whatever its height, identity state (confirmed, not yet checked or identity-throttled)
    * or breaker state, until `HEALTH_MISS_LIMIT` health refreshes in a row, at most one per
    * `healthIntervalMs`, failed its identity or height probe (a sustained outage). Such an
    * endpoint cannot be asked, so it makes the read decide nothing rather than letting fewer
-   * endpoints decide it. With no probe configured, or for another quorum, it is the usable
+   * endpoints decide it. Otherwise (no such probe, or another quorum) it is the usable
    * endpoints (the prior, weaker rule).
    *
    * `inRange`: the usable endpoints (breaker, identity, throttle). For a monitor or proof
@@ -961,12 +962,13 @@ export class HttpTransport implements Transport {
     readonly inRange: Endpoint[];
   } {
     const usable = this.#usable();
-    // P25-R10/I1: with no probe at all, nothing ever records a miss, so counting endpoints
-    // that cannot answer would stall proofs for good; the count is then the usable
-    // endpoints (the prior, weaker rule: a liar can prove alone once the honest endpoints'
-    // breakers open). Families set probes (R19).
+    // P25-R10/I1, P25-R11: when no refresh can see a dead endpoint (no probe, or only an
+    // identity probe without an expected identity, where #refresh does no I/O), nothing
+    // ever records a miss, so counting endpoints that cannot answer would stall proofs for
+    // good; the count is then the usable endpoints (the prior, weaker rule: a liar can
+    // prove alone once the honest endpoints' breakers open). Families set probes (R19).
     const sized =
-      proof && this.hasProbes()
+      proof && (this.#probes.height !== undefined || this.#identityProbed())
         ? this.#endpoints.filter(
             (e) => e.identity !== 'mismatch' && e.healthMisses < HEALTH_MISS_LIMIT,
           )
