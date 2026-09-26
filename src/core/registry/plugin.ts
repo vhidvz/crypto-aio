@@ -1,4 +1,5 @@
 import type { AdapterManifest } from '../driver/types';
+import { ConfigError } from '../errors/error';
 import type { ChainInfo } from '../model/chain';
 import { AdapterCatalog } from './adapters';
 import { AssetCatalog, type AssetRegistration } from './assets';
@@ -22,7 +23,8 @@ export interface Catalogs {
   readonly adapters: AdapterCatalog;
   readonly presets: PresetCatalog;
   readonly schemes: SchemeCatalog;
-  readonly plugins: Set<string>;
+  /** A18: every registered plugin by name, to tell a repeat from a different plugin. */
+  readonly plugins: Map<string, Plugin>;
 }
 
 export function createCatalogs(): Catalogs {
@@ -32,7 +34,7 @@ export function createCatalogs(): Catalogs {
     adapters: new AdapterCatalog(),
     presets: new PresetCatalog(),
     schemes: new SchemeCatalog(BUILTIN_SCHEMES),
-    plugins: new Set(),
+    plugins: new Map(),
   };
 }
 
@@ -43,13 +45,23 @@ export function cloneCatalogs(catalogs: Catalogs): Catalogs {
     adapters: catalogs.adapters.clone(),
     presets: catalogs.presets.clone(),
     schemes: catalogs.schemes.clone(),
-    plugins: new Set(catalogs.plugins),
+    plugins: new Map(catalogs.plugins),
   };
 }
 
-/** Registers a plugin; applying the same plugin name twice is a no-op. */
+/**
+ * Registers a plugin. A18: registering the same plugin again (`samePlugin`) is a no-op, so
+ * `use()` stays idempotent; a different plugin under a registered name is `CONFIG_INVALID`.
+ */
 export function applyPlugin(catalogs: Catalogs, plugin: Plugin): void {
-  if (catalogs.plugins.has(plugin.name)) return;
+  const registered = catalogs.plugins.get(plugin.name);
+  if (registered) {
+    if (samePlugin(registered, plugin)) return;
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `plugin '${plugin.name}' is already registered with a different definition`,
+    );
+  }
   for (const scheme of plugin.schemes ?? []) catalogs.schemes.register(scheme);
   for (const chain of plugin.chains ?? []) {
     for (const scheme of chain.schemes) catalogs.schemes.get(scheme);
@@ -65,5 +77,48 @@ export function applyPlugin(catalogs: Catalogs, plugin: Plugin): void {
     catalogs.chains.network(asset.chain, asset.network);
     catalogs.assets.register(asset);
   }
-  catalogs.plugins.add(plugin.name);
+  catalogs.plugins.set(plugin.name, plugin);
+}
+
+/**
+ * A18/A25 (D6): whether two plugins are the same: the same object, or structurally equal
+ * data around the same functions. Functions and class instances match only themselves (a
+ * closure over other values, or a bound function, is another function), so a factory
+ * such as `evmPlugin()` keeps its functions at module level to stay idempotent.
+ */
+export function samePlugin(a: Plugin, b: Plugin): boolean {
+  return sameShape(a, b, 0);
+}
+
+function sameShape(a: unknown, b: unknown, depth: number): boolean {
+  if (Object.is(a, b)) return true;
+  if (depth > 64) return false;
+  if (typeof a === 'function' || typeof b === 'function') return false;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, i) => sameShape(item, b[i], depth + 1))
+    );
+  }
+  const proto = Object.getPrototypeOf(a) as unknown;
+  if (
+    (proto !== Object.prototype && proto !== null) ||
+    Object.getPrototypeOf(b) !== proto
+  ) {
+    return false;
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every(
+      (key) => Object.hasOwn(right, key) && sameShape(left[key], right[key], depth + 1),
+    )
+  );
 }

@@ -25,6 +25,23 @@ export const EVM_PEER_DEPENDENCIES: Readonly<Record<'ethers' | 'web3', PeerDepen
     web3: { name: 'web3', range: '^4.16.0' },
   };
 
+/**
+ * A25: the manifests' `load` functions, shared by every `evmManifests(...)` call, so that
+ * registering `evmPlugin()` or the same `evmChainPlugin(...)` again is the same plugin.
+ * Each `require`s its client module, and with it the SDK, only when called.
+ */
+const loadEthers = async (): Promise<DriverFactory> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('./ethers-client') as typeof import('./ethers-client');
+  return mod.ethersDriverFactory;
+};
+
+const loadWeb3 = async (): Promise<DriverFactory> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('./web3-client') as typeof import('./web3-client');
+  return mod.web3DriverFactory;
+};
+
 /** The `ethers` and `web3` manifests for `chains`, keyed `<family>/<library>`. */
 export function evmManifests(
   family: string,
@@ -37,11 +54,7 @@ export function evmManifests(
       chains,
       capabilities: EVM_CAPABILITIES,
       peerDependencies: [EVM_PEER_DEPENDENCIES.ethers],
-      load: async (): Promise<DriverFactory> => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const mod = require('./ethers-client') as typeof import('./ethers-client');
-        return mod.ethersDriverFactory;
-      },
+      load: loadEthers,
     },
     {
       family,
@@ -49,11 +62,7 @@ export function evmManifests(
       chains,
       capabilities: EVM_CAPABILITIES,
       peerDependencies: [EVM_PEER_DEPENDENCIES.web3],
-      load: async (): Promise<DriverFactory> => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const mod = require('./web3-client') as typeof import('./web3-client');
-        return mod.web3DriverFactory;
-      },
+      load: loadWeb3,
     },
   ];
 }

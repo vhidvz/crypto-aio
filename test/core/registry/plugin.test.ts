@@ -4,6 +4,8 @@ import {
   applyPlugin,
   cloneCatalogs,
   createCatalogs,
+  samePlugin,
+  type Plugin,
 } from '../../../src/core/registry/plugin';
 import type { ProviderPreset } from '../../../src/core/registry/providers';
 import { reveal, secret } from '../../../src/core/secret/secret';
@@ -249,5 +251,92 @@ describe('AdapterCatalog.load', () => {
       },
     });
     await expect(createCatalogs().adapters.load(m)).rejects.toBe(missing);
+  });
+});
+
+describe('duplicate plugin names (A18, A25)', () => {
+  // A factory that reuses its functions, as the built-in ones do: fresh objects around the
+  // same function objects.
+  const shared = manifest();
+  const supports: ProviderPreset['supports'] = (c, n) =>
+    c === 'testchain' && n === 'local';
+  const build = (overrides: Partial<Plugin> = {}): Plugin => ({
+    name: 'test',
+    chains: [{ ...chain, networks: { ...chain.networks } }],
+    adapters: [{ ...shared }],
+    presets: [{ ...acme, supports }],
+    ...overrides,
+  });
+
+  it('accepts the same plugin again, and a structurally identical one, as a no-op', () => {
+    const catalogs = createCatalogs();
+    const plugin = build();
+    applyPlugin(catalogs, plugin);
+    applyPlugin(catalogs, plugin);
+    applyPlugin(catalogs, build());
+    expect(catalogs.chains.list().map((c) => c.id)).toEqual(['testchain']);
+  });
+
+  it('refuses a different plugin under a registered name, leaving the catalogs as they were', () => {
+    const catalogs = createCatalogs();
+    applyPlugin(catalogs, build());
+    const other = [
+      { name: 'test' },
+      build({ chains: [{ ...chain, nativeAsset: { symbol: 'TST', decimals: 6 } }] }),
+      build({
+        adapters: [
+          manifest({
+            load: async () => {
+              throw new Error('another driver');
+            },
+          }),
+        ],
+      }),
+    ];
+    for (const plugin of other) {
+      expect(thrown(() => applyPlugin(catalogs, plugin))).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message: "plugin 'test' is already registered with a different definition",
+      });
+    }
+    expect(catalogs.chains.get('testchain').nativeAsset.decimals).toBe(18);
+  });
+
+  it('refuses two plugins whose closures capture different values (A25)', () => {
+    const presetFor = (url: string): ProviderPreset => ({
+      ...acme,
+      endpoints: () => [{ url }],
+    });
+    const catalogs = createCatalogs();
+    applyPlugin(catalogs, build({ presets: [presetFor('https://a.test')] }));
+    expect(
+      thrown(() =>
+        applyPlugin(catalogs, build({ presets: [presetFor('https://b.test')] })),
+      ),
+    ).toMatchObject({ code: 'CONFIG_INVALID' });
+  });
+
+  it('compares data structurally, and functions and class instances by identity (A25)', () => {
+    const withValue = (value: unknown) =>
+      ({ name: 'p', chains: [value] }) as unknown as Plugin;
+    const same = () => 1;
+    function bound(this: unknown): unknown {
+      return this;
+    }
+    const pattern = /x/;
+    expect(samePlugin(withValue(same), withValue(same))).toBe(true);
+    expect(
+      samePlugin(
+        withValue(() => 1),
+        withValue(() => 1),
+      ),
+    ).toBe(false);
+    expect(samePlugin(withValue(bound.bind(1)), withValue(bound.bind(2)))).toBe(false);
+    expect(samePlugin(withValue(pattern), withValue(pattern))).toBe(true);
+    expect(samePlugin(withValue(/x/), withValue(/x/))).toBe(false);
+    expect(samePlugin(withValue({ a: 1n }), withValue({ a: 1n }))).toBe(true);
+    expect(samePlugin(withValue({ a: 1 }), withValue({ a: 1, b: undefined }))).toBe(
+      false,
+    );
   });
 });

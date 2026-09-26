@@ -8,6 +8,8 @@ import { FakeClock, drive } from '../../../src/testing/fake-clock';
 import { fakePlugin } from '../../../src/testing/fake-plugin';
 import { ScriptedEvmNode } from './support/node';
 import { KEY_ADDRESS } from './support/vectors';
+import { samePlugin } from '../../../src/core/registry/plugin';
+import { thrown } from '../../helpers';
 
 function container(
   chainId: bigint,
@@ -135,6 +137,20 @@ describe('the built-in EVM plugin', () => {
   });
 });
 
+describe('the built-in EVM plugin registered again (A18)', () => {
+  it('keeps use() idempotent for the same plugin, built-ins included', async () => {
+    // The composition root already registered evmPlugin(); these are fresh copies of it.
+    expect(samePlugin(evmPlugin(), evmPlugin())).toBe(true);
+    const { aio } = container(1n, { plugins: [evmPlugin()] });
+    expect(() => aio.use(evmPlugin())).not.toThrow();
+    expect(thrown(() => aio.use({ name: 'evm' }))).toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: "plugin 'evm' is already registered with a different definition",
+    });
+    await aio.close();
+  });
+});
+
 describe('evmChainPlugin', () => {
   const acme: ChainInfo = {
     ...(EVM_CHAINS[0] as ChainInfo),
@@ -152,6 +168,15 @@ describe('evmChainPlugin', () => {
 
   it("registers as 'evm:<name>'", () => {
     expect(evmChainPlugin({ name: 'acme', chains: [acme] }).name).toBe('evm:acme');
+  });
+
+  it('registers the same custom chain plugin twice as a no-op, and refuses another under its name (A18)', async () => {
+    const { aio } = container(777n);
+    aio.use(evmChainPlugin({ name: 'acme', chains: [acme] }));
+    expect(() => aio.use(evmChainPlugin({ name: 'acme', chains: [acme] }))).not.toThrow();
+    const other = evmChainPlugin({ name: 'acme', chains: [{ ...acme, id: 'acme2' }] });
+    expect(thrown(() => aio.use(other))).toMatchObject({ code: 'CONFIG_INVALID' });
+    await aio.close();
   });
 
   it.each(['evm', 'fake'])(

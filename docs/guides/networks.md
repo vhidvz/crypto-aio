@@ -166,8 +166,12 @@ declare module 'crypto-aio' {
 ```
 
 Register it with `new CryptoAio({ plugins: [acmePlugin()] })` or `aio.use(acmePlugin())`.
-Plugins go on a root container only. A second plugin with a name already registered is
-ignored silently, so give each plugin a unique name. A plugin may also bring `assets` (tokens
+Plugins go on a root container only. Registering the same plugin again does nothing, so
+`use()` is safe to repeat, and so does a fresh `acmePlugin()` that builds the same data around
+the same functions. Define `load` and every other function once, at module level, as above: a
+plugin whose functions are rebuilt on each call, or capture other values, is a different
+plugin. A different plugin under a name already registered throws `CONFIG_INVALID`, so give
+each plugin a unique name (custom EVM chains register as `evm:<name>`). A plugin may also bring `assets` (tokens
 with aliases, per chain and network) and `schemes`. The built-in schemes are
 `secp256k1-ecdsa`, `secp256k1-schnorr` and `ed25519`.
 

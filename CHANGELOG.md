@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuild in that case is refused and its Operation is unchanged. The testing kit's `expiry`
   fake chain, which signs identical transfers into identical bytes, shows it. Durable stores:
   `findByRef` must be read-your-writes consistent across processes.
+- A plugin registered under a name that a different plugin already holds throws
+  `CONFIG_INVALID` (it was silently ignored). Registering the same plugin again stays a no-op;
+  a plugin whose functions are rebuilt on each call is a different plugin.
 
 ## [0.1.0] - Unreleased
 
