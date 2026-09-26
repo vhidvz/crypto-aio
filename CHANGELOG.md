@@ -83,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `OperationStore` contract suite now checks that `putObservation` replaces the whole
   observation, and that a field left out or set to `undefined` reads back `undefined`
   (never `null`).
+- An Operation whose signed transaction is identical to another Operation's fails with
+  `NONCE_CONFLICT` (`details.heldBy`) before anything is sent; a replacement, cancel or
+  rebuild in that case is refused and its Operation is unchanged. The testing kit's `expiry`
+  fake chain, which signs identical transfers into identical bytes, shows it. Durable stores:
+  `findByRef` must be read-your-writes consistent across processes.
 
 ## [0.1.0] - Unreleased
 

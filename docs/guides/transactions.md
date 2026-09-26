@@ -311,6 +311,8 @@ land.**
 | `INSUFFICIENT_FUNDS`, `POLICY_REJECTED` with state `failed` | Failed before signing; nonce released | Fix the cause; retry with a **new** key |
 | `INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, `NONCE_TOO_HIGH`, `TX_REFUSED` with state `stalled` | Node refused signed bytes | `rebroadcast` after the fix, `replace` or `cancel`; never a new key |
 | `NONCE_CONFLICT` | A cancel or replacement lost: the original is already mined | Wait for the original |
+| `NONCE_CONFLICT` with `details.heldBy` | The signed transaction is identical to another Operation's, so it would pay once for both; nothing was sent. From `transfer` the Operation is `failed`; from `replace`, `cancel` or `rebuild` it is unchanged | `transfer`: retry with a **new** key. `replace` or `cancel`: use another fee spec. `rebuild`: rebuild later. A later build (a new block, or the driver's build variant) gives different bytes |
+| `SEQUENCE_BUSY`: "another operation is recording the same transaction; retry" | Another process is recording an identical transaction right now; nothing was recorded | Repeat with the **same** key |
 | `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure. For `TX_REPLACED`, another transaction is final in the slot | Reconcile; a new transfer with a new key is safe, except for an EVM token `TX_REVERTED` whose receipt succeeded: value may have moved, so check the chain first ([EVM token verdicts](#waiting-and-watching)) |
 | `TX_REJECTED` | Nodes rejected every Attempt as never valid; nonce released | Fix the cause; retry with a **new** key |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |

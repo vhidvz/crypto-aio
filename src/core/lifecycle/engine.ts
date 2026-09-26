@@ -24,7 +24,7 @@ import {
 } from '../model/intent';
 import type { FeeOverride, FeeSpeed } from '../model/fee';
 import { mutuallyExclusive, type OrderingData } from '../model/ordering';
-import type { UnsignedTx } from '../model/transaction';
+import type { AttemptRef, UnsignedTx } from '../model/transaction';
 import { reservedInputs, seqnoHolder } from '../ordering/reservations';
 import {
   sequenceKey,
@@ -1041,6 +1041,9 @@ export class OperationEngine {
    * here, with one explicit exception: a `rebuild` Attempt reopens an `expired` Operation
    * (Task 27; `rebuild` re-proves every earlier Attempt dead under the lease first). It is
    * the only way out of a terminal state; `update` refuses every other.
+   *
+   * A15: an Attempt whose ref another Operation of the namespace holds is never appended
+   * (`withRefFree`); an original one fails its Operation and keeps its nonce (M6).
    */
   protected async appendSigned(
     target: OperationTarget,
@@ -1070,25 +1073,43 @@ export class OperationEngine {
       ...(supersedes !== undefined ? { supersedes } : {}),
       createdAt: this.deps.clock.now(),
     };
-    await lease?.renew();
     let next: OperationRecord;
     try {
-      next = await this.deps.stores.operations.appendAttempt(
-        this.deps.namespace,
-        op.id,
-        attempt,
-        {
-          state: 'signed',
-          // R26.1: scheduled from the moment signed bytes exist, so the Operation stays
-          // claimable whatever moves it next (a read-only pass never schedules).
-          nextCheckAt: attempt.createdAt,
-          // M1: a rebuild takes a new slot (seqno); the reservation follows it.
-          ...(purpose === 'rebuild' ? { reservation: unsigned.ordering } : {}),
-          clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous', 'error'],
-        },
-        op.version,
+      // M5: the held lease is renewed inside the ref lease, right before the write.
+      next = await this.withRefFree(op, attempt.ref, lease, () =>
+        this.deps.stores.operations.appendAttempt(
+          this.deps.namespace,
+          op.id,
+          attempt,
+          {
+            state: 'signed',
+            // R26.1: scheduled from the moment signed bytes exist, so the Operation stays
+            // claimable whatever moves it next (a read-only pass never schedules).
+            nextCheckAt: attempt.createdAt,
+            // M1: a rebuild takes a new slot (seqno); the reservation follows it.
+            ...(purpose === 'rebuild' ? { reservation: unsigned.ordering } : {}),
+            clear: [
+              'unsigned',
+              'partialSignatures',
+              'signerTickets',
+              'ambiguous',
+              'error',
+            ],
+          },
+          op.version,
+        ),
       );
     } catch (error) {
+      // A15: another Operation holds this ref. Nothing was recorded or sent. An original
+      // Attempt's Operation fails here, before any signed bytes exist on record; a
+      // replacement, cancel or rebuild is dropped and its Operation keeps the active Attempt.
+      if (isCryptoAioError(error) && REF_HELD.has(error)) {
+        if (purpose === 'original') {
+          // M6: its nonce, if any, is kept: identical bytes of another Operation use it.
+          await this.failAfterPrepare(target, op, error, lease, { release: false });
+        }
+        throw error;
+      }
       // R24: another writer changed the Operation first (e.g. appended its own Attempt).
       // These bytes were never persisted or sent, so they are dropped; the caller goes on
       // from the stored Operation instead of surfacing the conflict. Lost-CAS contract:
@@ -1113,6 +1134,50 @@ export class OperationEngine {
     }
     if (next.state !== op.state) this.emitState(next, op.state);
     return next;
+  }
+
+  /**
+   * A15: runs `append` only when no other Operation of this namespace holds `ref`, live or
+   * terminal (D4: a terminal holder's bytes are already on chain, so a second Operation
+   * would inherit its outcome). The check and the append run under a short lease on the
+   * ref, so two processes sharing the lock manager cannot both pass it (D5; A27: it also
+   * needs `findByRef` to see every committed append). The held `lease` is renewed inside
+   * it, right before the write (M5, R23). A ref lease still held elsewhere after
+   * `leaseMs / 3` is `SEQUENCE_BUSY` with its own fixed text (M7).
+   */
+  protected async withRefFree<T>(
+    op: OperationRecord,
+    ref: AttemptRef,
+    lease: LeaseHandle | undefined,
+    append: () => Promise<T>,
+  ): Promise<T> {
+    let entered = false;
+    try {
+      return await this.deps.sequences.withLease(
+        `ref:${this.deps.namespace}:${ref.id}`,
+        async () => {
+          entered = true;
+          const holder = await this.deps.stores.operations.findByRef(
+            this.deps.namespace,
+            ref.id,
+          );
+          if (holder && holder.id !== op.id) throw refHeld(op.id, holder.id);
+          await lease?.renew();
+          return append();
+        },
+        undefined,
+        { acquireTimeoutMs: Math.max(1, Math.floor(this.deps.lifecycle().leaseMs / 3)) },
+      );
+    } catch (error) {
+      if (!entered && isCryptoAioError(error, 'SEQUENCE_BUSY')) {
+        throw new StateError(
+          'SEQUENCE_BUSY',
+          'another operation is recording the same transaction; retry',
+          { retryable: true, context: { operationId: op.id } },
+        );
+      }
+      throw error;
+    }
   }
 
   protected activeAttempt(op: OperationRecord): AttemptRecord {
@@ -2132,17 +2197,19 @@ export class OperationEngine {
    * slow policy hook or signer outlived it), nothing is written, the Operation keeps its
    * state, its next repeat retries under a fresh lease, and the original `error` is
    * rethrown. Returning means the terminal write landed; a failed release after it is only
-   * logged (callers rethrow their own error either way). Logs carry codes only.
+   * logged (callers rethrow their own error either way). Logs carry codes only. With
+   * `release: false` (A15, M6) the nonce is kept: signed bytes of another Operation may use it.
    */
   protected async failAfterPrepare(
     target: OperationTarget,
     op: OperationRecord,
     error: unknown,
     lease?: LeaseHandle,
+    options: { readonly release?: boolean } = {},
   ): Promise<OperationRecord> {
     if (!lease && LEASED_ORDERINGS.has(target.pooled.driver.ordering)) {
       return this.withAddressLease(target, op, (held) =>
-        this.failAfterPrepare(target, op, error, held),
+        this.failAfterPrepare(target, op, error, held, options),
       );
     }
     try {
@@ -2156,10 +2223,21 @@ export class OperationEngine {
     }
     const failed = await this.update(op, {
       state: 'failed',
-      // Its callers pass a veto or a signing failure: nothing was signed or sent.
+      // Its callers pass a veto, a signing failure or a held ref (A15): nothing was sent.
       error: serializeError(error, 'SIGNING_FAILED'),
       clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous'],
     });
+    if (options.release === false) {
+      // M6: signed bytes of another Operation may use this nonce, so it is not released
+      // here; nonce reconciliation reclaims it if it is really unused.
+      if (op.reservation?.kind === 'nonce') {
+        this.deps.log.warn('reservation kept after a refused attempt', {
+          operationId: op.id,
+          code: errorCode(error),
+        });
+      }
+      return failed;
+    }
     try {
       await this.releaseReservation(op, lease);
     } catch (releaseError) {
@@ -2260,4 +2338,21 @@ export class OperationEngine {
     }
     return op;
   }
+}
+
+/** A15: the refusals `withRefFree` throws, recognised by identity, never by code. */
+const REF_HELD = new WeakSet<object>();
+
+/**
+ * A15: the signed Attempt's ref is already held by another Operation of the namespace. A
+ * `NONCE_CONFLICT` (this Operation's slot is taken), with a fixed message (R24).
+ */
+function refHeld(operationId: string, heldBy: string): ChainError {
+  const error = new ChainError(
+    'NONCE_CONFLICT',
+    "the signed transaction is identical to another operation's",
+    { context: { operationId }, details: { heldBy } },
+  );
+  REF_HELD.add(error);
+  return error;
 }

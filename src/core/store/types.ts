@@ -252,7 +252,13 @@ export interface OperationStore {
   create(operation: NewOperation): Promise<CreateResult>;
   get(namespace: string, id: string): Promise<OperationRecord | null>;
   getByKey(namespace: string, idempotencyKey: string): Promise<OperationRecord | null>;
-  /** Finds by an Attempt ref id or by an observed canonical tx hash. */
+  /**
+   * Finds by an Attempt ref id or by an observed canonical tx hash. A27: the engine's
+   * AttemptRef guard (A15) relies on this read being read-your-writes consistent across
+   * every process that shares the store: it must see any `appendAttempt` that another store
+   * instance committed before it was called (no read replica, no eventually consistent
+   * index).
+   */
   findByRef(namespace: string, refOrTxHash: string): Promise<OperationRecord | null>;
   /**
    * Compare-and-set on `expectedVersion`, optionally fenced. Every successful update bumps

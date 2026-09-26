@@ -290,6 +290,12 @@ and the stale write must fail with `FENCING` or `VERSION_CONFLICT`. crypto-aio s
 store ports, the in-memory stores and these suites. Durable stores, such as Redis or
 Postgres, are yours to write, and the suites define what they must do.
 
+One expectation reaches beyond the suites, which test one store instance: `findByRef` is
+read-your-writes consistent across every process that shares the store. It sees any
+`appendAttempt` another instance committed before the call, so no read replica or
+eventually consistent index may serve it. The guard that stops two Operations from
+recording the same transaction relies on it.
+
 Never store a key set to `undefined` as a value, such as `NULL`, whether it is in an
 `OperationStore` patch or in an observation:
 
