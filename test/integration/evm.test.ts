@@ -8,7 +8,7 @@
  * The finalized-state probe (R78) reads account state at the finalized block, as the proofs
  * do before they call an Attempt replaced. On OP Stack and Arbitrum chains that block lies
  * far below the head, beyond a non-archive node's recent-state window, so the endpoint may
- * not serve it. The probe passes either way, but a failure must be a classified crypto-aio
+ * not serve it. The probe passes either way, but a failure must be a retryable crypto-aio
  * error, never a verdict; it logs one line saying which it was.
  */
 import {
@@ -49,9 +49,7 @@ suite(`EVM integration on ${chain}:${network} (%s)`, (library) => {
       const status = await bc.getNetworkStatus();
       expect(status.height).toBeGreaterThan(0n);
       expect(status.finalizedHeight).toBeGreaterThan(0n);
-      // The status reads both heights at once, and where the latest block is final
-      // (Avalanche) one can land between the reads: compare with a later head.
-      expect(status.finalizedHeight).toBeLessThanOrEqual(await bc.getBlockHeight());
+      expect(status.finalizedHeight).toBeLessThanOrEqual(status.height);
       const block = await bc.getBlock(status.finalizedHeight);
       expect(block?.hash).toMatch(/^0x[0-9a-f]{64}$/);
       expect((await bc.getBalance(ZERO)).amount.asset.id).toBe(
@@ -87,8 +85,9 @@ suite(`EVM integration on ${chain}:${network} (%s)`, (library) => {
       }
       const { error } = outcome;
       if (!isCryptoAioError(error)) throw error;
-      // A thrown provider error is no verdict; the URL (a Secret when given) never shows.
-      expect(error.category).toBe('provider');
+      // R85: a node without that state decides nothing (a retryable provider error); the
+      // URL (a Secret when given) never shows.
+      expect([error.category, error.retryable]).toEqual(['provider', true]);
       if (url) expect(error.message.includes(url)).toBe(false);
       console.info(
         `${label}: the endpoint does not serve the finalized state (${error.code}): ${error.message}`,

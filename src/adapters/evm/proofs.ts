@@ -8,7 +8,7 @@
  * `PROVIDER_*` code, retryable by the code table: look again later.
  */
 import type { BlockSource, ProofSource } from '../../core/driver/types';
-import { ProviderError } from '../../core/errors/error';
+import { ProviderError, isCryptoAioError } from '../../core/errors/error';
 import { quantity } from './client';
 import { decodeTransaction, tokenTransferLanded } from './decode';
 import {
@@ -30,8 +30,38 @@ const nonceAbove =
   (result: unknown): boolean =>
     quantity(result, 'nonce') > nonce;
 
+/**
+ * R85: node texts for state it does not hold: pruned, beyond its recent-state window, or
+ * not served at a tag (geth, op-geth, Nitro, BSC, Erigon, Reth, Besu wordings).
+ */
+const STATE_UNAVAILABLE =
+  /missing trie node|historical state .* not available|header not found|state (is )?not available|pruned/i;
+
+/**
+ * R85: a read of finalized state that the node does not hold decides nothing. Its answer is
+ * a definitive `RPC_ERROR`, which is not retryable; here it becomes a retryable
+ * `PROVIDER_UNAVAILABLE` (look again later, or elsewhere), so no caller takes it for an
+ * answer and the monitor keeps watching. Any other error passes unchanged.
+ */
+async function finalState<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (
+      isCryptoAioError(error, 'RPC_ERROR') &&
+      !error.ambiguous &&
+      STATE_UNAVAILABLE.test(String(error.details?.rpcMessage ?? ''))
+    ) {
+      throw new ProviderError('PROVIDER_UNAVAILABLE', 'finalized state not available', {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+}
+
 export function createEvmProofs(ctx: EvmContext): ProofSource {
-  const { client, config } = ctx;
+  const { client } = ctx;
   return {
     async finalizedHead() {
       const { height, block } = await provenFinal(ctx, PROOF);
@@ -95,19 +125,18 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
           (await client.getTransactionCount(from, 'latest', MONITOR)) > ordering.nonce
         );
       }
-      // R74: every quorum endpoint states whether the slot is consumed in its own final
-      // state. That flips once, when the consuming transaction becomes final there, so
-      // honest endpoints disagree only then (deciding nothing), and one that over-reports
-      // its finalized block cannot consume the slot alone. Confirmation networks have no
-      // tag: they read the nonce at the height the quorum attests.
-      const at =
-        config.finality.kind === 'tag'
-          ? 'finalized'
-          : (await provenFinal(ctx, PROOF)).height;
-      const count = await client.getTransactionCount(from, at, {
-        ...PROOF,
-        quorumKey: nonceAbove(ordering.nonce),
-      });
+      // R85: the nonce at a height the quorum attests final (one endpoint's view proposes
+      // it, trailed by PEER_SKEW), on tag and confirmation networks alike. State at a final
+      // height never changes, so honest endpoints agree however their heads move, and one
+      // that over-reports its finalized block cannot advance the height (R74). A number,
+      // not the `finalized` tag: some nodes (BSC's) serve no state at the tag.
+      const { height } = await provenFinal(ctx, PROOF);
+      const count = await finalState(() =>
+        client.getTransactionCount(from, height, {
+          ...PROOF,
+          quorumKey: nonceAbove(ordering.nonce),
+        }),
+      );
       return count > ordering.nonce;
     },
 

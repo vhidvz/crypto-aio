@@ -262,6 +262,44 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect(env.node.balance(RECIPIENT)).toBe(5n);
   });
 
+  it('keeps waiting while the node holds no finalized state for an absent transaction (R85)', async () => {
+    const env = await createEvmEnv({ library });
+    const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: 5n }));
+    const ref = sub.attempt?.id ?? '';
+    // The node lost sight of the transaction and holds no state below its head, so the
+    // monitor's proof that the slot is not consumed at finality cannot be read.
+    let refused = 0;
+    env.node.intercept = (_endpoint, method, params) => {
+      if (method === 'eth_getTransactionByHash' && params[0] === ref) {
+        return { result: null };
+      }
+      if (
+        method === 'eth_getTransactionCount' &&
+        params[1] !== 'latest' &&
+        params[1] !== 'pending'
+      ) {
+        refused += 1;
+        return { error: { code: -32000, message: 'missing trie node' } };
+      }
+      return undefined;
+    };
+    const status = await env.run(env.bc.getTransactionStatus(sub.operationId));
+    expect(status).toMatchObject({ evidence: 'observed' });
+    expect(refused).toBe(1);
+    let settled = false;
+    const waiting = env.bc.waitForConfirmation(sub.operationId, { finality: 'final' });
+    waiting.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    for (let i = 0; i < 20; i++) await env.clock.advance(1_000);
+    expect([settled, refused > 1]).toEqual([false, true]);
+    env.node.intercept = undefined;
+    const final = await env.mineWhile(waiting);
+    expect(final.operation?.state).toBe('final');
+    expect(env.node.balance(RECIPIENT)).toBe(5n);
+  });
+
   describe('crash and recovery', () => {
     async function crashEnv() {
       const { signer, calls } = countingSigner();

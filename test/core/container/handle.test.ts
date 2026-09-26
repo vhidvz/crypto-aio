@@ -226,6 +226,18 @@ describe('Blockchain handle', () => {
     ]);
   });
 
+  it('never reports a finalized height above the head it reports (R85)', async () => {
+    const env = await createFakeEnv();
+    env.chain.mine(10);
+    const { driver } = await env.run(internalsOf(env.bc).pooled());
+    // The heights are two reads: a block can land between them, or they can reach
+    // endpoints at different heights. Where the latest block is final (Avalanche), the
+    // finalized height then passes the head.
+    driver.reader.getFinalizedHeight = async () => 11n;
+    const status = await env.run(env.bc.getNetworkStatus());
+    expect([status.height, status.finalizedHeight]).toEqual([10n, 10n]);
+  });
+
   it('estimates fees as Amounts in the fee asset', async () => {
     const env = await createFakeEnv();
     const fee = await env.run(env.bc.estimateFee({ to: env.stranger(), amount: '1' }));

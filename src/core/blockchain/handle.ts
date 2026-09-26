@@ -444,7 +444,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     const pooled = await internalsOf(this).pooled();
     await pooled.transport.refreshHealth();
     if (pooled.indexer) await pooled.indexer.refreshHealth();
-    const [height, finalizedHeight] = await Promise.all([
+    const [height, finalized] = await Promise.all([
       pooled.driver.reader.getBlockHeight(),
       pooled.driver.reader.getFinalizedHeight(),
     ]);
@@ -452,7 +452,10 @@ export class Blockchain<C extends ChainId = ChainId> {
       chain: this.chain,
       network: this.network,
       height,
-      finalizedHeight,
+      // R85: two reads, possibly from different endpoints, with blocks landing between
+      // them: where the latest block is final, the finalized height can pass the head read.
+      // Every height below a final one is final, so the clamp keeps the status true.
+      finalizedHeight: finalized > height ? height : finalized,
       endpoints: pooled.transport.status(),
       indexers: pooled.indexer?.status() ?? [],
     };

@@ -266,6 +266,8 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       t.calls.every((c) => c.tags.purpose === 'proof' && c.tags.quorum === 'proof'),
     ).toBe(true);
     expect(new Set(t.node.served.map((s) => s.endpoint))).toEqual(new Set(['a', 'b']));
+    // R85: the nonce is read at the proposed finalized height less PEER_SKEW (block 1 here).
+    t.node.mine(2);
     t.calls.length = 0;
     expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
       true,
@@ -273,9 +275,16 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await t.run(t.proofs.slotConsumed(nonce(1n), KEY_ADDRESS, 'finalized'))).toBe(
       false,
     );
-    expect(
-      t.calls.every((c) => c.tags.purpose === 'proof' && c.tags.quorum === 'proof'),
-    ).toBe(true);
+    // One endpoint's view only proposes the height (a monitor read); the quorum decides.
+    const proof = [
+      ['getBlock', 'monitor', undefined],
+      ['getBlock', 'proof', 'proof'],
+      ['getTransactionCount', 'proof', 'proof'],
+    ];
+    expect(t.calls.map((c) => [c.method, c.tags.purpose, c.tags.quorum])).toEqual([
+      ...proof,
+      ...proof,
+    ]);
     expect(await t.run(t.proofs.expired(nonce(0n)))).toBe(false);
   });
 
@@ -409,9 +418,11 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       expect(
         await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
       ).toBe(true);
-      await expect(
-        t.run(t.proofs.slotConsumed(nonce(1n), KEY_ADDRESS, 'finalized')),
-      ).rejects.toMatchObject(inconsistent);
+      // R85: both endpoints read the nonce at the one attested height (2, or 1 when 'a'
+      // lags), where nonce 1 is not consumed yet: nothing is proven, whatever their views.
+      expect(
+        await t.run(t.proofs.slotConsumed(nonce(1n), KEY_ADDRESS, 'finalized')),
+      ).toBe(false);
       expect(
         await t.run(t.proofs.slotConsumed(nonce(2n), KEY_ADDRESS, 'finalized')),
       ).toBe(false);
@@ -440,9 +451,11 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       await expect(
         t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
       ).rejects.toMatchObject(inconsistent);
-      await expect(
-        t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
-      ).rejects.toMatchObject(inconsistent);
+      // R85: the nonce is read at the height the quorum attests (0), which the liar cannot
+      // advance: the slot is not proven consumed.
+      expect(
+        await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
+      ).toBe(false);
       await expect(t.run(t.proofs.blockHash(1n, 'finalized'))).rejects.toMatchObject(
         inconsistent,
       );
@@ -580,7 +593,8 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     // "not included" there would prove a final transfer `replaced`.
     const t = setup();
     const hash = await submit(t, 0);
-    t.node.mine(3);
+    // Block 1 is final at the proposed height less PEER_SKEW (R85).
+    t.node.mine(5);
     expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
       true,
     );
@@ -618,7 +632,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       maxFeePerGas: 4_000_000_000n,
       maxPriorityFeePerGas: 2_000_000_000n,
     });
-    t.node.mine(3);
+    t.node.mine(5);
     expect(t.node.receipt(winner)?.blockNumber).toBe(1n);
     expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
       true,
@@ -695,6 +709,146 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await proof()).toEqual(honest);
     t.node.intercept = forge(true);
     await expect(proof()).rejects.toMatchObject(inconsistent);
+  });
+
+  /** Records the block parameter of every nonce read, by endpoint, around `intercept`. */
+  function nonceReads(t: ReturnType<typeof setup>, intercept = t.node.intercept) {
+    const reads: [string, unknown][] = [];
+    t.node.intercept = (endpoint, method, params) => {
+      if (method === 'eth_getTransactionCount') reads.push([endpoint, params[1]]);
+      return intercept?.(endpoint, method, params);
+    };
+    return reads;
+  }
+
+  it('reads the nonce at an attested height, so a node that serves no state at the tag still proves it (R85)', async () => {
+    const t = setup();
+    await submit(t, 0);
+    t.node.mine(5);
+    // bnbchain's public nodes answer state reads at the `finalized` and `safe` tags so,
+    // while serving the same state by number.
+    const reads = nonceReads(t, (_endpoint, method, params) =>
+      method === 'eth_getTransactionCount' &&
+      (params[1] === 'finalized' || params[1] === 'safe')
+        ? { error: { code: -32000, message: 'missing trie node' } }
+        : undefined,
+    );
+    t.calls.length = 0;
+    expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
+      true,
+    );
+    // One endpoint's finalized block proposes (3), trailed by PEER_SKEW (1); the quorum
+    // attests it, then reads the nonce there.
+    expect(t.calls.map((c) => [c.method, c.tags.purpose, c.tags.quorum])).toEqual([
+      ['getBlock', 'monitor', undefined],
+      ['getBlock', 'proof', 'proof'],
+      ['getTransactionCount', 'proof', 'proof'],
+    ]);
+    expect(await t.run(t.proofs.slotConsumed(nonce(1n), KEY_ADDRESS, 'finalized'))).toBe(
+      false,
+    );
+    expect(reads).toEqual([
+      ['a', '0x1'],
+      ['b', '0x1'],
+      ['a', '0x1'],
+      ['b', '0x1'],
+    ]);
+  });
+
+  it('decides nothing when a quorum endpoint does not hold the finalized state (R85)', async () => {
+    const t = setup();
+    await submit(t, 0);
+    t.node.mine(5);
+    const texts = [
+      'missing trie node',
+      'missing trie node 6b3f0e (path ) <nil>',
+      'historical state 78a623931a1572accf29e587178165d2707eb480e210fb468756699abbe3edf4 is not available',
+      'header not found',
+      'world state not available',
+      'state is not available',
+      'state at block #1 is pruned',
+    ];
+    for (const failing of ['a', 'b']) {
+      for (const message of texts) {
+        t.node.intercept = (endpoint, method, params) =>
+          endpoint === failing &&
+          method === 'eth_getTransactionCount' &&
+          params[1] !== 'latest'
+            ? { error: { code: -32000, message } }
+            : undefined;
+        await expect(
+          t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
+        ).rejects.toMatchObject({
+          code: 'PROVIDER_UNAVAILABLE',
+          retryable: true,
+          message: 'finalized state not available',
+        });
+      }
+    }
+    // Any other answer is the node's own definitive error, passed on unchanged.
+    t.node.intercept = (_endpoint, method) =>
+      method === 'eth_getTransactionCount'
+        ? { error: { code: -32602, message: 'invalid argument 1: hex number > 64 bits' } }
+        : undefined;
+    await expect(
+      t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
+    ).rejects.toMatchObject({ code: 'RPC_ERROR', retryable: false });
+  });
+
+  it('never lets one endpoint over-reporting its finalized height advance the nonce read (R85)', async () => {
+    const t = setup();
+    t.node.finalizedDepth = 6;
+    await submit(t, 0);
+    t.node.mine(5);
+    expect(t.node.finalized).toBe(0n);
+    for (const liar of ['a', 'b']) {
+      // The liar reports its head (block 5) as final: 3 blocks past PEER_SKEW's reach.
+      finalityLag(t, liar, -5n);
+      const reads = nonceReads(t);
+      const consumed = t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'));
+      if (liar === 'a') {
+        // It proposes: its honest peer refuses to attest the height (3), so no nonce is read.
+        await expect(consumed).rejects.toMatchObject(inconsistent);
+        expect(reads).toEqual([]);
+      } else {
+        // The honest proposal (0) stands, where the slot is not consumed: nothing is proven.
+        expect(await consumed).toBe(false);
+        expect(reads).toEqual([
+          ['a', '0x0'],
+          ['b', '0x0'],
+        ]);
+      }
+    }
+  });
+
+  it('reads the nonce at one attested height while the head moves, never a false negative (R85)', async () => {
+    const t = setup();
+    t.node.mine(2);
+    const hash = await submit(t, 0);
+    t.node.mine(2);
+    expect([t.node.receipt(hash)?.blockNumber, t.node.finalized]).toEqual([3n, 2n]);
+    // A block lands between the two endpoints' nonce reads of every proof.
+    const reads = nonceReads(t, (endpoint, method) => {
+      if (endpoint === 'b' && method === 'eth_getTransactionCount') t.node.mine();
+      return undefined;
+    });
+    // The slot is consumed in block 3, which turns final on the node mid-proof: at the
+    // attested height (the finalized block 2, less PEER_SKEW) it is not, so nothing is
+    // proven, and the endpoints agree whatever their views.
+    expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
+      false,
+    );
+    t.node.mine(2);
+    // Once the attested height reaches block 3, the moving head cannot hide the consumption.
+    expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
+      true,
+    );
+    expect(reads).toEqual([
+      ['a', '0x0'],
+      ['b', '0x0'],
+      ['a', '0x3'],
+      ['b', '0x3'],
+    ]);
   });
 });
 
