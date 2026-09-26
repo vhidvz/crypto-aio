@@ -689,9 +689,12 @@ export class HttpTransport implements Transport {
       );
     }
     const results: { endpoint: Endpoint; value: T }[] = [];
+    // P25-R10: under a proof quorum, one endpoint's definitive error is its answer, not
+    // yet the quorum's: it is kept, and the other endpoints are still asked.
+    const refusals: { endpoint: Endpoint; error: CryptoAioError }[] = [];
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
-    while (results.length < needed) {
+    while (results.length + refusals.length < needed) {
       const endpoint = eligible().find((e) => !tried.has(e.id));
       if (!endpoint) break;
       tried.add(endpoint.id);
@@ -702,12 +705,12 @@ export class HttpTransport implements Transport {
         });
       } catch (error) {
         const { failure, definitive } = this.#endpointFailure(error, options);
-        if (definitive) throw failure;
-        last = failure;
+        if (!definitive) last = failure;
+        else if (proof) refusals.push({ endpoint, error: failure });
+        else throw failure;
       }
     }
-    const first = results[0];
-    if (!first || results.length < needed) {
+    if (results.length + refusals.length < needed) {
       throw this.#externalize(
         last ??
           new ProviderError(
@@ -717,23 +720,47 @@ export class HttpTransport implements Transport {
           ),
       );
     }
+    const [refusal] = refusals;
+    if (refusal) {
+      // P25-R10: a definitive error decides only when every endpoint of the quorum returned
+      // an equivalent one; a refusal against an answer, or unlike refusals, decide nothing.
+      if (
+        results.length === 0 &&
+        refusals.every((r) => sameRefusal(r.error, refusal.error))
+      ) {
+        throw refusal.error;
+      }
+      throw this.#inconsistent(
+        label,
+        [...results, ...refusals].map((r) => r.endpoint.id),
+      );
+    }
+    const [answer] = results;
     if (
+      !answer ||
       !quorumAgrees(
         results.map((r) => r.value),
         options.quorumKey,
       )
     ) {
-      const endpointIds = results.map((r) => r.endpoint.id);
-      this.#events.emit('provider.inconsistent', {
-        transportId: this.id,
-        method: label,
-        endpointIds,
-      });
-      throw new ProviderError('PROVIDER_INCONSISTENT', `endpoints disagree on ${label}`, {
-        context: { transportId: this.id },
-      });
+      throw this.#inconsistent(
+        label,
+        results.map((r) => r.endpoint.id),
+      );
     }
-    return first.value;
+    return answer.value;
+  }
+
+  /** A quorum whose endpoints disagree: a retryable `PROVIDER_INCONSISTENT`, announced. */
+  #inconsistent(label: string, endpointIds: string[]): ProviderError {
+    this.#events.emit('provider.inconsistent', {
+      transportId: this.id,
+      method: label,
+      endpointIds,
+    });
+    return new ProviderError('PROVIDER_INCONSISTENT', `endpoints disagree on ${label}`, {
+      context: { transportId: this.id },
+    });
   }
 
   async #fanout<T>(
@@ -1801,12 +1828,21 @@ function stringifyData(data: unknown): string {
 }
 
 /**
- * P25-R10/I3: whether a quorum read is held to the proof rules (P25-R8/R9 sizing): every
+ * P25-R10/I3: whether a quorum read is held to the proof rules (P25-R8/R9 sizing, and a
+ * definitive error decides only when the whole quorum returns it alike): every
  * `quorum: 'proof'` read, whatever its purpose (EVM token metadata is read under 'read'
  * and cached), and any quorum read under a monitor or proof purpose.
  */
 function isProofQuorum(purpose: RequestPurpose, options: CallOptions): boolean {
   return options.quorum === 'proof' || purpose === 'monitor' || purpose === 'proof';
+}
+
+/**
+ * P25-R10: whether two definitive errors are the same answer: the same code and, for a
+ * JSON-RPC error, the same `rpcCode`.
+ */
+function sameRefusal(a: CryptoAioError, b: CryptoAioError): boolean {
+  return a.code === b.code && a.details?.rpcCode === b.details?.rpcCode;
 }
 
 /** A14: the highest height at least two endpoints have reached (the second-highest). */

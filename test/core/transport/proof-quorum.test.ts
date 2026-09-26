@@ -5,6 +5,7 @@ import { drive, settle } from '../../../src/testing/fake-clock';
 import {
   FakeFetch,
   hang,
+  rpcError,
   rpcResult,
   type FakeRequest,
 } from '../../../src/testing/fake-fetch';
@@ -479,5 +480,68 @@ describe('proof quorum health misses (P25-R10)', () => {
     // The weaker, prior rule: once b's breaker opens, b no longer counts.
     await expect(proof()).resolves.toBe('fact');
     expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
+  });
+});
+
+// P25-R10: under a proof quorum, one endpoint's definitive error decides only when the
+// quorum's endpoints all return an equivalent one (the same rpcCode, else the same code);
+// otherwise the read decides nothing, and the other endpoints are still asked.
+describe('proof quorum and definitive errors (P25-R10)', () => {
+  const REVERT = { code: 3, message: 'execution reverted' };
+  /** Endpoints at height 100 answering 'fin' with `replies`: a JSON-RPC error or a result. */
+  function refusing(replies: Record<string, { code: number; message: string } | string>) {
+    const fake = new FakeFetch();
+    for (const [name, reply] of Object.entries(replies)) {
+      fake.route(`https://${name}.test`, (req) => {
+        if (method(req) === 'height') return rpcResult(req, '100');
+        return typeof reply === 'string'
+          ? rpcResult(req, reply)
+          : rpcError(req, reply.code, reply.message);
+      });
+    }
+    return { fake, finCalls: counter(fake, 'fin') };
+  }
+
+  it("never lets one endpoint's revert decide against an honest answer", async () => {
+    for (const shape of [
+      { quorum: 'proof' },
+      { purpose: 'read', quorum: 'proof' },
+    ] as const) {
+      const { fake, finCalls } = refusing({ liar: REVERT, honest: 'fact' });
+      const { transport, clock, seen } = setup(
+        [endpoint('liar', 0), endpoint('honest', 1)],
+        fake,
+      );
+      transport.setProbes(probes);
+      await expect(drive(clock, transport.rpc('fin', [], shape))).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+      expect([finCalls('liar'), finCalls('honest')]).toEqual([1, 1]);
+      expect(seen.filter((e) => e.type === 'provider.inconsistent')).toHaveLength(1);
+    }
+  });
+
+  it('decides a definitive error the whole quorum returns alike', async () => {
+    const { fake, finCalls } = refusing({ a: REVERT, b: REVERT });
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    transport.setProbes(probes);
+    await expect(
+      drive(clock, transport.rpc('fin', [], { quorum: 'proof' })),
+    ).rejects.toMatchObject({ code: 'RPC_ERROR', retryable: false });
+    expect([finCalls('a'), finCalls('b')]).toEqual([1, 1]);
+  });
+
+  it('decides nothing when the definitive errors differ', async () => {
+    const { fake, finCalls } = refusing({
+      a: REVERT,
+      b: { code: -32000, message: 'header not found' },
+    });
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    transport.setProbes(probes);
+    await expect(
+      drive(clock, transport.rpc('fin', [], { quorum: 'proof' })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    expect([finCalls('a'), finCalls('b')]).toEqual([1, 1]);
   });
 });

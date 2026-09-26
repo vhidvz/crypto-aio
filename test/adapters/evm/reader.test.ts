@@ -278,6 +278,23 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
+  it("never lets one endpoint's revert fail a token for good (P25-R10)", async () => {
+    const h = evmHarness(library, 'ethereum', 'sepolia', { endpoints: ['a', 'b'] });
+    const reader = createEvmReader(h.ctx);
+    h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    // One endpoint, asked first or second, reverts every call; the other answers honestly.
+    // The permanent, cached ASSET_RESOLUTION would take both endpoints' revert.
+    for (const liar of ['a', 'b']) {
+      h.node.intercept = (endpoint, method) =>
+        endpoint === liar && method === 'eth_call'
+          ? { error: { code: 3, message: 'execution reverted', data: '0x' } }
+          : undefined;
+      await expect(
+        h.run(reader.getTokenMetadata!({ standard: 'erc20', contract: TOKEN })),
+      ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    }
+  });
+
   it('classifies token metadata failures: permanent for the token, retryable for the node (N6)', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);

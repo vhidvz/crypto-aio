@@ -49,6 +49,16 @@ const noAnswer = {
   message: 'the endpoints gave no answer',
   cause: expect.objectContaining({ code: 'RPC_ERROR' }),
 };
+/**
+ * P25-R10: one quorum endpoint's error answer against the other's answer is a disagreement,
+ * which decides nothing too; the proof boundary's own wording (lesson 18, R85) applies when
+ * every quorum endpoint returns the error alike (`failing` is `'both'`).
+ */
+const disputed = { code: 'PROVIDER_INCONSISTENT', retryable: true };
+/** The endpoints a test makes fail: one by name, or every one (`'both'`). */
+const FAILING = ['a', 'b', 'both'] as const;
+const fails = (failing: string, endpoint: string) =>
+  failing === 'both' || endpoint === failing;
 
 type Harness = ReturnType<typeof evmHarness>;
 
@@ -286,7 +296,10 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     return { ...h, proofs: createEvmProofs(h.ctx) };
   }
 
-  /** `endpoint` answers `method` (at block parameter `at`, when given) with a JSON-RPC error. */
+  /**
+   * `endpoint` (`'both'`: every endpoint) answers `method` (at block parameter `at`, when
+   * given) with a JSON-RPC error.
+   */
   function rpcError(
     t: ReturnType<typeof setup>,
     endpoint: string,
@@ -295,7 +308,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     at?: unknown,
   ): void {
     t.node.intercept = (e, m, params) =>
-      e === endpoint && m === method && (at === undefined || params[0] === at)
+      fails(endpoint, e) && m === method && (at === undefined || params[0] === at)
         ? { error: { code: -32000, message } }
         : undefined;
   }
@@ -880,25 +893,31 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     const hash = await submit(t, 0);
     t.node.mine(8);
     const proof = () => t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS));
-    for (const failing of ['a', 'b']) {
+    for (const failing of FAILING) {
       // A node that pruned the state below its recent window.
       unindexed(t, [hash], (e, method, params) =>
-        e === failing && method === 'eth_getTransactionCount' && params[1] !== hex(7n)
+        fails(failing, e) && method === 'eth_getTransactionCount' && params[1] !== hex(7n)
           ? { error: { code: -32000, message: 'missing trie node' } }
           : undefined,
       );
-      await expect(proof()).rejects.toMatchObject({
-        code: 'PROVIDER_UNAVAILABLE',
-        retryable: true,
-        message: 'finalized state not available',
-      });
+      await expect(proof()).rejects.toMatchObject(
+        failing === 'both'
+          ? {
+              code: 'PROVIDER_UNAVAILABLE',
+              retryable: true,
+              message: 'finalized state not available',
+            }
+          : disputed,
+      );
       // A node without eth_getBlockReceipts.
       unindexed(t, [hash], (e, method) =>
-        e === failing && method === 'eth_getBlockReceipts'
+        fails(failing, e) && method === 'eth_getBlockReceipts'
           ? { error: { code: -32601, message: 'the method does not exist' } }
           : undefined,
       );
-      await expect(proof()).rejects.toMatchObject(noAnswer);
+      await expect(proof()).rejects.toMatchObject(
+        failing === 'both' ? noAnswer : disputed,
+      );
     }
     // The endpoints agree the block's receipts are gone, or that no transaction in it used
     // the nonce (an EIP-7702 authorization consumes one without a transaction from it).
@@ -1257,21 +1276,25 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       'state is not available',
       'state at block #1 is pruned',
     ];
-    for (const failing of ['a', 'b']) {
+    for (const failing of FAILING) {
       for (const message of texts) {
         t.node.intercept = (endpoint, method, params) =>
-          endpoint === failing &&
+          fails(failing, endpoint) &&
           method === 'eth_getTransactionCount' &&
           params[1] !== 'latest'
             ? { error: { code: -32000, message } }
             : undefined;
         await expect(
           t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
-        ).rejects.toMatchObject({
-          code: 'PROVIDER_UNAVAILABLE',
-          retryable: true,
-          message: 'finalized state not available',
-        });
+        ).rejects.toMatchObject(
+          failing === 'both'
+            ? {
+                code: 'PROVIDER_UNAVAILABLE',
+                retryable: true,
+                message: 'finalized state not available',
+              }
+            : disputed,
+        );
       }
     }
     // Lesson 18: any other error answer is no negative proof either, at either level. It
@@ -1306,10 +1329,12 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       ['eth_getBlockByNumber', 'internal error', '0x1'],
       ['eth_getTransactionByHash', 'internal error'],
     ];
-    for (const failing of ['a', 'b']) {
+    for (const failing of FAILING) {
       for (const [method, message, at] of reads) {
         rpcError(t, failing, method, message, at);
-        await expect(proof()).rejects.toMatchObject(noAnswer);
+        await expect(proof()).rejects.toMatchObject(
+          failing === 'both' ? noAnswer : disputed,
+        );
       }
     }
     t.node.intercept = undefined;
@@ -1324,11 +1349,11 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       ['finalized', 2n, 'finalized'],
       ['0x2', 2n, 'finalized'],
     ];
-    for (const failing of ['a', 'b']) {
+    for (const failing of FAILING) {
       for (const [at, height, level] of reads) {
         rpcError(t, failing, 'eth_getBlockByNumber', 'internal error', at);
         await expect(t.run(t.proofs.blockHash(height, level))).rejects.toMatchObject(
-          noAnswer,
+          failing === 'both' ? noAnswer : disputed,
         );
       }
     }
@@ -1339,10 +1364,16 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
   it('decides nothing on any JSON-RPC error while proving the finalized head (lesson 18)', async () => {
     const t = setup();
     t.node.mine(4);
-    for (const failing of ['a', 'b']) {
+    for (const failing of FAILING) {
       for (const at of ['finalized', '0x0']) {
         rpcError(t, failing, 'eth_getBlockByNumber', 'internal error', at);
-        await expect(t.run(t.proofs.finalizedHead())).rejects.toMatchObject(noAnswer);
+        // The `finalized` tag is first one endpoint's view, a monitor read by the first
+        // endpoint (a) that only proposes (R74) and is no quorum, so its error keeps the
+        // proof boundary's wording; the quorum's own reads dispute a lone error.
+        const proposer = failing === 'a' && at === 'finalized';
+        await expect(t.run(t.proofs.finalizedHead())).rejects.toMatchObject(
+          failing === 'both' || proposer ? noAnswer : disputed,
+        );
       }
     }
     t.node.intercept = undefined;
