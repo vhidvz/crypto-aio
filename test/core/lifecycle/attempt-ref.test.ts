@@ -7,12 +7,14 @@ import { sequenceKey } from '../../../src/core/ordering/sequence';
 import type { SignedTx, UnsignedTx } from '../../../src/core/model/transaction';
 import type { SignatureBundle } from '../../../src/core/signing/types';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
+import { ctx } from '../signing/fixtures';
+import { mineWhile } from './support';
 
 const NS = 'default';
 const record = (env: FakeEnv, id: string) => env.stores.operations.get(NS, id);
 
-/** A driver that signs every later Attempt into the transaction id `id`. */
-async function signInto(env: FakeEnv, id: string): Promise<void> {
+/** A driver that signs every later Attempt into the transaction id `id`, until restored. */
+async function signInto(env: FakeEnv, id: string): Promise<() => void> {
   const { driver } = await env.run(internalsOf(env.bc).pooled());
   const assemble = driver.builder.assemble.bind(driver.builder);
   Object.assign(driver.builder, {
@@ -24,6 +26,14 @@ async function signInto(env: FakeEnv, id: string): Promise<void> {
       return { ...signed, ref: { ...signed.ref, id } };
     },
   });
+  return () => {
+    Object.assign(driver.builder, { assemble });
+  };
+}
+
+/** The ref id of `operationId`'s first Attempt. */
+async function refOf(env: FakeEnv, operationId: string): Promise<string> {
+  return (await record(env, operationId))?.attempts[0]?.ref.id ?? '';
 }
 
 describe('Attempt ref uniqueness (A15)', () => {
@@ -125,7 +135,7 @@ describe('Attempt ref uniqueness (A15)', () => {
     const a = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 5n }, { idempotencyKey: 'a' }),
     );
-    await signInto(env, (await record(env, a.operationId))?.attempts[0]?.ref.id ?? '');
+    const restore = await signInto(env, await refOf(env, a.operationId));
     await expect(
       env.run(
         env.bc.transfer({ to: env.stranger(), amount: 6n }, { idempotencyKey: 'b' }),
@@ -140,6 +150,14 @@ describe('Attempt ref uniqueness (A15)', () => {
       sequenceKey(NS, 'fakechain', 'local', from),
     );
     expect(sequence?.released ?? []).not.toContain(nonce);
+    // Nothing used it, so nonce reconciliation reclaims it for the next transfer.
+    restore();
+    const c = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n }, { idempotencyKey: 'c' }),
+    );
+    expect(c.state).toBe('submitted');
+    const stored = await record(env, c.operationId);
+    expect(stored?.reservation).toEqual({ kind: 'nonce', nonce });
   });
 
   it('reports a ref lease held elsewhere as SEQUENCE_BUSY with its own text (M7)', async () => {
@@ -160,5 +178,101 @@ describe('Attempt ref uniqueness (A15)', () => {
       env.bc.transfer({ to, amount: 5n }, { idempotencyKey: 'k' }),
     );
     expect(repeat.state).toBe('submitted');
+  });
+
+  it('drops a cancel whose ref another Operation holds, keeping the active Attempt', async () => {
+    const env = await createFakeEnv();
+    const a = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 5n }, { idempotencyKey: 'a' }),
+    );
+    const b = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 6n }, { idempotencyKey: 'b' }),
+    );
+    await signInto(env, await refOf(env, a.operationId));
+    const before = await record(env, b.operationId);
+    await expect(env.run(env.bc.cancel(b.operationId))).rejects.toMatchObject({
+      code: 'NONCE_CONFLICT',
+      details: { heldBy: a.operationId },
+    });
+    const after = await record(env, b.operationId);
+    expect(after?.attempts).toHaveLength(1);
+    expect(after).toMatchObject({
+      state: before?.state,
+      activeAttemptId: before?.activeAttemptId,
+    });
+  });
+
+  it('drops a rebuild whose ref another Operation holds; the Operation stays expired', async () => {
+    const env = await createFakeEnv({
+      ordering: 'expiry',
+      lifecycle: { rebroadcastIntervalMs: 10_000_000 },
+    });
+    const sub = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 7n }, { idempotencyKey: 's' }),
+    );
+    env.chain.dropFromMempool(sub.attempt?.id ?? '');
+    await expect(
+      mineWhile(env, env.bc.waitForConfirmation(sub.operationId, { finality: 'final' })),
+    ).rejects.toMatchObject({ code: 'TX_EXPIRED' });
+    const other = await env.run(
+      env.bc.transfer({ to: env.stranger(), amount: 8n }, { idempotencyKey: 'o' }),
+    );
+    await signInto(env, await refOf(env, other.operationId));
+    const before = await record(env, sub.operationId);
+    expect(before?.state).toBe('expired');
+    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
+      code: 'NONCE_CONFLICT',
+      details: { heldBy: other.operationId },
+    });
+    const after = await record(env, sub.operationId);
+    expect(after?.attempts).toHaveLength(1);
+    expect(after).toMatchObject({
+      state: 'expired',
+      activeAttemptId: before?.activeAttemptId,
+    });
+  });
+
+  it('fails a submitSignatures whose signed transaction another Operation holds', async () => {
+    const env = await createFakeEnv({ ordering: 'expiry' });
+    const to = env.stranger();
+    const first = await env.run(
+      env.bc.transfer({ to, amount: 5n }, { idempotencyKey: 'k1' }),
+    );
+    const prepared = await env.run(
+      env.bc.prepareTransfer({ to, amount: 5n }, { idempotencyKey: 'k2' }),
+    );
+    const signed = await env.signer.sign(prepared.unsigned?.signingRequests ?? [], ctx);
+    if (signed.status !== 'signed') throw new Error('unreachable');
+    await expect(
+      env.run(env.bc.submitSignatures(prepared.operation.id, signed.signatures)),
+    ).rejects.toMatchObject({
+      code: 'NONCE_CONFLICT',
+      details: { heldBy: first.operationId },
+    });
+    expect(await record(env, prepared.operation.id)).toMatchObject({
+      state: 'failed',
+      attempts: [],
+      error: { code: 'NONCE_CONFLICT' },
+    });
+    expect((await record(env, first.operationId))?.attempts).toHaveLength(1);
+  });
+
+  it('lets exactly one of two concurrent duplicates in one process record the ref', async () => {
+    const env = await createFakeEnv({ ordering: 'expiry' });
+    const to = env.stranger();
+    const results = await env.run(
+      Promise.allSettled([
+        env.bc.transfer({ to, amount: 5n }, { idempotencyKey: 'd1' }),
+        env.bc.transfer({ to, amount: 5n }, { idempotencyKey: 'd2' }),
+      ]),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const refused = results.find((r) => r.status === 'rejected');
+    expect(refused?.status === 'rejected' && refused.reason).toMatchObject({
+      code: 'NONCE_CONFLICT',
+    });
+    const holders = await env.stores.operations.list({ namespace: NS });
+    expect(holders.filter((op) => op.attempts.length > 0)).toHaveLength(1);
+    expect(holders.filter((op) => op.state === 'failed')).toHaveLength(1);
   });
 });

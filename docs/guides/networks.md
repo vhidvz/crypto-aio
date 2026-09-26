@@ -294,7 +294,9 @@ One expectation reaches beyond the suites, which test one store instance: `findB
 read-your-writes consistent across every process that shares the store. It sees any
 `appendAttempt` another instance committed before the call, so no read replica or
 eventually consistent index may serve it. The guard that stops two Operations from
-recording the same transaction relies on it.
+recording the same transaction relies on it. Its guarantee also assumes that `appendAttempt`
+completes within `lifecycle.leaseMs`, since the ref lease is not renewed. A slower store
+weakens it.
 
 Never store a key set to `undefined` as a value, such as `NULL`, whether it is in an
 `OperationStore` patch or in an observation:
