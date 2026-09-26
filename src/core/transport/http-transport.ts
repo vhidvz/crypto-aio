@@ -50,8 +50,7 @@ type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 
 const MAX_RETRY_AFTER_MS = 60_000;
 /** A24/P25-R8: consecutive failed health refreshes (identity or height probe) after which an
- * endpoint stops counting toward a quorum's size, as an open breaker does (a sustained
- * outage, not a hiccup). */
+ * endpoint stops counting toward a proof quorum's size (a sustained outage, not a hiccup). */
 const UNKNOWN_HEIGHT_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
 /** N1: statuses that must never carry a body on the Response passed back to the SDK. */
@@ -654,12 +653,13 @@ export class HttpTransport implements Transport {
   ): Promise<T> {
     const requested =
       options.quorum === 'proof' ? this.#opts.proofQuorum : (options.quorum ?? 1);
-    // N3 (round 2, item 5): sized from the full candidate set (breaker/identity), not
-    // the rate-limit-filtered eligible set — a required endpoint being rate-limited must not
-    // silently shrink the quorum. A required endpoint that's rate-limited therefore fails
-    // the call with a retryable error instead of resolving from fewer endpoints than needed.
-    // A14/P25-R8: nor may lag, an unknown height or an unconfirmed identity shrink it
-    // (#quorumCandidates), so one liar is never alone.
+    // N3 (round 2, item 5): sized from the full candidate set, not the rate-limit-filtered
+    // eligible set — a required endpoint being rate-limited must not silently shrink the
+    // quorum. A required endpoint that's rate-limited therefore fails the call with a
+    // retryable error instead of resolving from fewer endpoints than needed.
+    // A14/P25-R8/P25-R9: nor may lag, an unknown height, an unconfirmed identity or an open
+    // breaker shrink a monitor or proof quorum (#quorumCandidates), so one liar is never
+    // alone.
     const needed = Math.max(
       1,
       Math.min(requested, this.#quorumCandidates(purpose).sized.length),
@@ -894,13 +894,14 @@ export class HttpTransport implements Transport {
   }
 
   /**
-   * A14/A24 (handoff N5), P25-R8: a monitor or proof quorum read's endpoints. `sized` counts
-   * every endpoint not proven mismatched whose breaker is closed, lagging or not, with an
-   * unknown height, and verified or not (a not-yet-checked or identity-throttled one too),
-   * until `UNKNOWN_HEIGHT_LIMIT` health refreshes in a row failed its identity or height
-   * probe (a sustained outage, then treated like an open breaker). Only `inRange` endpoints
-   * are asked, so such an endpoint makes the read decide nothing rather than letting fewer
-   * endpoints decide it. With a height probe, `inRange` is the endpoints with a known height
+   * A14/A24 (handoff N5), P25-R8, P25-R9: a monitor or proof quorum read's endpoints.
+   * `sized` counts every endpoint not proven mismatched: lagging or not, with an unknown
+   * height, verified or not (a not-yet-checked or identity-throttled one too) and whatever
+   * its breaker's state, until `UNKNOWN_HEIGHT_LIMIT` health refreshes in a row failed its
+   * identity or height probe (a sustained outage). Only `inRange` endpoints, all usable
+   * (breaker, identity, throttle), are asked, so such an endpoint makes the read decide
+   * nothing rather than letting fewer endpoints decide it. With a height probe, `inRange` is
+   * the endpoints with a known height
    * (only a verified one has one, R19) at most `maxLagBlocks` behind the corroborated
    * height, the highest height at least two of them have reached, so one endpoint that
    * over-reports its head can never mark honest ones as lagging. Without one, it is every
@@ -915,10 +916,7 @@ export class HttpTransport implements Transport {
       return { sized: usable, inRange: usable };
     }
     const sized = this.#endpoints.filter(
-      (e) =>
-        e.identity !== 'mismatch' &&
-        e.breaker.canRequest() &&
-        e.heightMisses < UNKNOWN_HEIGHT_LIMIT,
+      (e) => e.identity !== 'mismatch' && e.heightMisses < UNKNOWN_HEIGHT_LIMIT,
     );
     if (!this.#probes.height) return { sized, inRange: usable };
     const known = usable.filter((e) => e.height !== undefined);

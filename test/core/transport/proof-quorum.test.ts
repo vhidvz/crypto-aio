@@ -46,7 +46,8 @@ const probes = {
 /**
  * Endpoints answering the identity probe's `chain_id` from `ids` (read live; `'down'`
  * answers HTTP 503, `'hang'` never answers), the height probe from `heights` (default
- * '100') and 'fin' from `answers` (default 'fact').
+ * '100') and every other request from `answers` (default 'fact'; read live, `'down'`
+ * answers HTTP 503).
  */
 function identified(
   ids: Record<string, string>,
@@ -61,7 +62,8 @@ function identified(
         return ids[name] === 'hang' ? hang(signal) : rpcResult(req, ids[name]);
       }
       if (method(req) === 'height') return rpcResult(req, heights[name] ?? '100');
-      return rpcResult(req, answers[name] ?? 'fact');
+      const answer = answers[name] ?? 'fact';
+      return answer === 'down' ? { status: 503, text: '' } : rpcResult(req, answer);
     });
   }
   return { fake, finCalls: counter(fake, 'fin'), idCalls: counter(fake, 'chain_id') };
@@ -165,7 +167,7 @@ describe('proof quorum and height exclusion (A14)', () => {
     expect(finCalls('liar')).toBe(0);
   });
 
-  it('treats an endpoint whose height probe failed three refreshes in a row like an open breaker (A24)', async () => {
+  it('stops counting an endpoint whose height probe failed three refreshes in a row (A24)', async () => {
     const heights = { a: '100', b: 'down' };
     const { fake, finCalls } = network(heights);
     const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
@@ -335,5 +337,42 @@ describe('proof quorum and unverified identities (A24, P25-R8)', () => {
     await clock.advance(HEALTH_INTERVAL_MS);
     await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
     expect([finCalls('liar'), finCalls('honest')]).toEqual([1, 1]);
+  });
+
+  // P25-R9: request failures that open an honest endpoint's breaker never shrink the count
+  // either; an open breaker only stops the endpoint answering.
+  it("never lets a verified liar prove alone while an honest endpoint's breaker is open (P25-R9)", async () => {
+    const answers: Record<string, string> = { honest: 'down', liar: 'forged' };
+    const { fake, finCalls } = identified(
+      { honest: '1', liar: '1' },
+      { liar: '1000000' },
+      answers,
+    );
+    const openMs = 30_000;
+    const { transport, clock } = setup(
+      [endpoint('honest', 0), endpoint('liar', 1)],
+      fake,
+      { maxLagBlocks: 5, failureThreshold: 2, openMs },
+    );
+    transport.setProbes({ ...probes, ...identity });
+    await drive(clock, transport.refreshHealth());
+    // Two plain reads fail on honest and fail over to the liar: honest's breaker opens.
+    for (let read = 1; read <= 2; read++) await drive(clock, transport.rpc('x'));
+    expect(transport.status().find((s) => s.id === 'honest')?.state).toBe('open');
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    await expect(proof()).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(finCalls('liar')).toBe(0);
+    // honest recovers: its half-open breaker lets the proof through, and its answer closes
+    // the breaker and contradicts the liar's.
+    answers.honest = 'fact';
+    await clock.advance(openMs);
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+    expect([finCalls('honest'), finCalls('liar')]).toEqual([1, 1]);
+    // With its breaker closed, honest is back in service for every proof read.
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+    expect([finCalls('honest'), finCalls('liar')]).toEqual([2, 2]);
   });
 });

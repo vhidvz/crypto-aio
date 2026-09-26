@@ -48,13 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On an endpoint's first use, the `rpc.error` event's `latencyMs` and the endpoint's
   `latencyMs` in `status()` no longer include the identity check.
 - A quorum read is never asked of fewer endpoints than the quorum because of height lag, an
-  unknown height or an identity not yet confirmed. Lag is measured against a height two
-  endpoints reached. An endpoint keeps counting until its identity is proven mismatched or
-  three health refreshes in a row fail its identity or height probe, but only a confirmed,
-  in-range endpoint answers; otherwise the read decides nothing (a retryable
-  `PROVIDER_UNAVAILABLE`). This costs liveness: proofs wait until enough endpoints are
-  confirmed and in range, including at startup. With two endpoints, one that lags or whose
-  identity probe fails now delays proofs instead of being dropped.
+  unknown height, an identity not yet confirmed or an open circuit breaker. Lag is measured
+  against a height two endpoints reached. An endpoint keeps counting until its identity is
+  proven mismatched or three health refreshes in a row fail its identity or height probe,
+  but only a confirmed, in-range endpoint whose breaker lets requests through answers;
+  otherwise the read decides nothing (a retryable `PROVIDER_UNAVAILABLE`). This costs
+  liveness: proofs wait until enough endpoints are confirmed, in range and past their
+  breaker's open period (`openMs`), including at startup. With two endpoints, one that lags,
+  whose identity probe fails or whose requests keep failing now delays proofs instead of
+  being dropped.
 
 ## [0.1.0] - Unreleased
 
