@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   waits at least until each bucket has refilled the probes' tokens plus one.
 - On an endpoint's first use, the `rpc.error` event's `latencyMs` and the endpoint's
   `latencyMs` in `status()` no longer include the identity check.
+- A quorum read is never asked of fewer endpoints than the quorum because of height lag or an
+  unknown height. Lag is measured against a height two endpoints reached, and an endpoint
+  whose height probe failed keeps counting until three refreshes in a row fail; otherwise the
+  read decides nothing (a retryable `PROVIDER_UNAVAILABLE`). With two endpoints, a lagging
+  one now delays proofs until it catches up instead of being dropped.
 
 ## [0.1.0] - Unreleased
 

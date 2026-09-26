@@ -480,31 +480,39 @@ describe('HttpTransport health refresh concurrency', () => {
   });
 
   // I8: once a height probe is configured, proof reads exclude both a lagging endpoint and
-  // one whose height is unknown (its probe failed), the same way.
+  // one whose height is unknown (its probe failed), the same way. A14: lag is measured
+  // against the corroborated height, so it takes two endpoints at the head (a and d) for b
+  // to lag; one endpoint alone never decides that.
   it('excludes both a lagging endpoint and an unknown-height endpoint from proof reads', async () => {
     const C: EndpointConfig = { name: 'c', url: 'https://c.test/rpc' };
+    const D: EndpointConfig = { name: 'd', url: 'https://d.test/rpc' };
     const fake = new FakeFetch()
       .route('https://a.test', (req) =>
-        rpcResult(req, method(req) === 'height' ? '100' : 'from-a'),
+        rpcResult(req, method(req) === 'height' ? '100' : 'fact'),
       )
       .route('https://b.test', (req) =>
         rpcResult(req, method(req) === 'height' ? '90' : 'from-b'),
       )
       .route('https://c.test', (req) =>
         method(req) === 'height' ? { status: 503, text: '' } : rpcResult(req, 'from-c'),
+      )
+      .route('https://d.test', (req) =>
+        rpcResult(req, method(req) === 'height' ? '100' : 'fact'),
       );
-    const { transport, clock } = setup([A, B, C], fake, { maxLagBlocks: 5 });
+    const { transport, clock } = setup([A, B, C, D], fake, { maxLagBlocks: 5 });
     transport.setProbes({
       height: async (call) => BigInt(await call.rpc<string>('height')),
     });
     await drive(clock, transport.refreshHealth());
     await expect(drive(clock, transport.rpc('x', [], { quorum: 'proof' }))).resolves.toBe(
-      'from-a',
+      'fact',
     );
     // Neither b (lagging) nor c (unknown height) were asked for the proof read itself, only
-    // for the height probe during refreshHealth().
+    // for the height probe during refreshHealth(); a and d were.
     expect(fake.callsTo('https://b.test')).toHaveLength(1);
     expect(fake.callsTo('https://c.test')).toHaveLength(1);
+    expect(fake.callsTo('https://a.test')).toHaveLength(2);
+    expect(fake.callsTo('https://d.test')).toHaveLength(2);
   });
 });
 

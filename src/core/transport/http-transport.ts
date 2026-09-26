@@ -49,6 +49,9 @@ type Mode = 'rpc' | 'json' | 'text';
 type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 
 const MAX_RETRY_AFTER_MS = 60_000;
+/** A24: consecutive failed height probes after which an endpoint stops counting toward a
+ * quorum's size, as an open breaker does (a sustained outage, not a hiccup). */
+const UNKNOWN_HEIGHT_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
 /** N1: statuses that must never carry a body on the Response passed back to the SDK. */
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
@@ -83,6 +86,8 @@ interface Endpoint {
   /** Earliest time this endpoint may be picked again, from Retry-After or backoff (I9). */
   notBefore: number;
   height?: bigint;
+  /** A24: health refreshes in a row whose height probe failed; 0 once a height reads. */
+  heightMisses: number;
   latencyMs?: number;
   failures: number;
   /** P25-R6/M1: tokens this endpoint's probes have taken from its bucket, ever. */
@@ -314,6 +319,7 @@ export class HttpTransport implements Transport {
           : {}),
         identity: 'unchecked',
         notBefore: Number.NEGATIVE_INFINITY,
+        heightMisses: 0,
         failures: 0,
         probeTokens: 0,
       };
@@ -505,6 +511,7 @@ export class HttpTransport implements Transport {
       endpoint.identityCheck = undefined;
       endpoint.identityRetryAt = undefined;
       endpoint.height = undefined;
+      endpoint.heightMisses = 0;
     }
   }
 
@@ -645,15 +652,24 @@ export class HttpTransport implements Transport {
   ): Promise<T> {
     const requested =
       options.quorum === 'proof' ? this.#opts.proofQuorum : (options.quorum ?? 1);
-    // N3 (round 2, item 5): sized from the full candidate set (breaker/identity/lag), not
+    // N3 (round 2, item 5): sized from the full candidate set (breaker/identity), not
     // the rate-limit-filtered eligible set — a required endpoint being rate-limited must not
     // silently shrink the quorum. A required endpoint that's rate-limited therefore fails
     // the call with a retryable error instead of resolving from fewer endpoints than needed.
-    const needed = Math.max(1, Math.min(requested, this.#candidates(purpose).length));
+    // A14: nor may lag shrink it (#quorumCandidates), so one height liar is never alone.
+    const needed = Math.max(
+      1,
+      Math.min(requested, this.#quorumCandidates(purpose).sized.length),
+    );
+    const eligible = (): Endpoint[] => {
+      const now = this.#clock.now();
+      return this.#quorumCandidates(purpose).inRange.filter((e) => e.notBefore <= now);
+    };
     // #5 (round 3): if fewer endpoints are eligible right now than needed, fail fast —
     // before querying any of them — instead of querying what's available and discovering
-    // the shortfall only afterward.
-    if (this.#eligible(purpose).length < needed) {
+    // the shortfall only afterward. A14: this is also where lag that leaves too few
+    // endpoints decides nothing (retryable).
+    if (eligible().length < needed) {
       throw this.#externalize(
         new ProviderError(
           'PROVIDER_UNAVAILABLE',
@@ -666,7 +682,7 @@ export class HttpTransport implements Transport {
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
     while (results.length < needed) {
-      const endpoint = this.#eligible(purpose).find((e) => !tried.has(e.id));
+      const endpoint = eligible().find((e) => !tried.has(e.id));
       if (!endpoint) break;
       tried.add(endpoint.id);
       try {
@@ -867,7 +883,47 @@ export class HttpTransport implements Transport {
   /** Endpoints that are structurally usable for `purpose` (breaker, identity, lag/height),
    * ignoring any per-endpoint rate-limit wait (I9). */
   #candidates(purpose: RequestPurpose): Endpoint[] {
+    // M4: a single proof read measures lag as a quorum read does, against the corroborated
+    // height, so one over-reporting endpoint never leaves itself the only candidate.
+    if (purpose === 'proof') return this.#quorumCandidates(purpose).inRange;
+    const strict = purpose === 'monitor';
+    return this.#usable().filter((e) => !strict || !this.#excludedForHeight(e));
+  }
+
+  /**
+   * A14/A24 (handoff N5): a quorum read's endpoints. `sized` is every identity-verified
+   * usable endpoint, lagging or not, and with an unknown height too: such an endpoint is
+   * never asked (it cannot be lag-checked), so the read decides nothing, until
+   * `UNKNOWN_HEIGHT_LIMIT` refreshes in a row failed to read its height (a sustained outage,
+   * then treated like an open breaker). `inRange` is the endpoints with a known height at
+   * most `maxLagBlocks` behind the corroborated height, the highest height at least two of
+   * them have reached, so one endpoint that over-reports its head can never mark honest
+   * ones as lagging.
+   */
+  #quorumCandidates(purpose: RequestPurpose): {
+    readonly sized: Endpoint[];
+    readonly inRange: Endpoint[];
+  } {
+    const usable = this.#usable();
     const strict = purpose === 'monitor' || purpose === 'proof';
+    if (!strict || !this.#probes.height) return { sized: usable, inRange: usable };
+    const verified = (e: Endpoint) => !this.#identityProbed() || e.identity === 'ok';
+    const sized = usable.filter(
+      (e) =>
+        e.height !== undefined || (verified(e) && e.heightMisses < UNKNOWN_HEIGHT_LIMIT),
+    );
+    const known = usable.filter((e) => e.height !== undefined);
+    const reference = corroboratedHeight(known);
+    const lag = BigInt(this.#opts.maxLagBlocks);
+    const inRange =
+      reference === undefined
+        ? known
+        : known.filter((e) => reference - (e.height as bigint) <= lag);
+    return { sized, inRange };
+  }
+
+  /** Endpoints that pass the identity, identity-throttle and breaker filters, best first. */
+  #usable(): Endpoint[] {
     const now = this.#clock.now();
     return this.#endpoints
       .filter(
@@ -876,8 +932,7 @@ export class HttpTransport implements Transport {
           // N2 (round 2, item 4): an identity-throttled endpoint is excluded the same way a
           // rate-limited one is — never picked, and a throttle hit never reaches the breaker.
           (e.identityRetryAt === undefined || e.identityRetryAt <= now) &&
-          e.breaker.canRequest() &&
-          (!strict || !this.#excludedForHeight(e)),
+          e.breaker.canRequest(),
       )
       .sort(
         (a, b) =>
@@ -1540,13 +1595,18 @@ export class HttpTransport implements Transport {
               probe(this.#direct(endpoint, deadline)),
               deadline,
             );
+            endpoint.heightMisses = 0;
           }
           anySucceeded = true;
         } catch (error) {
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
           // instead of leaving it stale, so the endpoint counts as unknown.
           endpoint.height = undefined;
+          // A24/N1: a joined identity check its request's caller aborted learned nothing
+          // about the endpoint, so it is no miss. The height probe itself runs only under
+          // this refresh's own deadline (I8), so no caller can abort it.
           if (this.#abandonedChecks.has(error as object)) anyAbandoned = true;
+          else endpoint.heightMisses += 1;
           // R18 (round 3): #refresh never does breaker bookkeeping — no onAttempt, onSuccess,
           // onFailure or onAbandon. A probe failure here only affects height/identity state,
           // never endpoint.breaker or endpoint.failures. The breaker tracks request traffic.
@@ -1669,6 +1729,15 @@ function stringifyData(data: unknown): string {
   return JSON.stringify(data, (_key, value: unknown) =>
     typeof value === 'bigint' ? value.toString() : value,
   );
+}
+
+/** A14: the highest height at least two endpoints have reached (the second-highest). */
+function corroboratedHeight(endpoints: readonly Endpoint[]): bigint | undefined {
+  const heights = endpoints
+    .map((e) => e.height)
+    .filter((h): h is bigint => h !== undefined)
+    .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
+  return heights[1];
 }
 
 /** The higher of two optional heights. */
