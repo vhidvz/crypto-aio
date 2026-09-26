@@ -194,6 +194,16 @@ describe('public API', () => {
     expect(balance.amount.format()).toBe('0.00001 FAKE');
   });
 
+  it('registers the same plugin again as a no-op, so use() is safe to repeat (A18)', async () => {
+    const aio = new CryptoAio({
+      env: false,
+      logger: noopLogger,
+      plugins: [fakePlugin(), fakePlugin()],
+    });
+    expect(() => aio.use(fakePlugin())).not.toThrow();
+    await aio.close();
+  });
+
   it('runs a full transfer lifecycle to proven finality', async () => {
     const env = await createFakeEnv();
     const recipient = env.stranger();

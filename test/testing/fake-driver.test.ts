@@ -14,6 +14,7 @@ import {
 import { FakeClock, drive } from '../../src/testing/fake-clock';
 import { FakeFetch, hang, rpcError, rpcResult } from '../../src/testing/fake-fetch';
 import { fakeManifest, fakePlugin } from '../../src/testing/fake-plugin';
+import { samePlugin } from '../../src/core/registry/plugin';
 
 const CHAIN_OF: Record<FakeOrdering, string> = {
   nonce: 'fakechain',
@@ -456,5 +457,11 @@ describe('fake driver', () => {
     expect(await broadcast()).toEqual({ kind: 'accepted' });
     t.chain.mine();
     expect(await broadcast()).toEqual({ kind: 'already-known' });
+  });
+});
+
+describe('fakePlugin', () => {
+  it('builds the same plugin on every call, so registering it again is a no-op (A18, A25)', () => {
+    expect(samePlugin(fakePlugin(), fakePlugin())).toBe(true);
   });
 });

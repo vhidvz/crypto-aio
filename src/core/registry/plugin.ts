@@ -84,7 +84,9 @@ export function applyPlugin(catalogs: Catalogs, plugin: Plugin): void {
  * A18/A25 (D6): whether two plugins are the same: the same object, or structurally equal
  * data around the same functions. Functions and class instances match only themselves (a
  * closure over other values, or a bound function, is another function), so a factory
- * such as `evmPlugin()` keeps its functions at module level to stay idempotent.
+ * such as `evmPlugin()` keeps its functions at module level to stay idempotent. Data is
+ * every own enumerable key, symbols included, and every array index: a hole matches only
+ * a hole (P25-R17).
  */
 export function samePlugin(a: Plugin, b: Plugin): boolean {
   return sameShape(a, b, 0);
@@ -102,7 +104,8 @@ function sameShape(a: unknown, b: unknown, depth: number): boolean {
       Array.isArray(a) &&
       Array.isArray(b) &&
       a.length === b.length &&
-      a.every((item, i) => sameShape(item, b[i], depth + 1))
+      // Every index: `every` would skip a's holes.
+      [...a.keys()].every((i) => i in a === i in b && sameShape(a[i], b[i], depth + 1))
     );
   }
   const proto = Object.getPrototypeOf(a) as unknown;
@@ -112,13 +115,22 @@ function sameShape(a: unknown, b: unknown, depth: number): boolean {
   ) {
     return false;
   }
-  const left = a as Record<string, unknown>;
-  const right = b as Record<string, unknown>;
-  const keys = Object.keys(left);
+  const left = a as Record<PropertyKey, unknown>;
+  const right = b as Record<PropertyKey, unknown>;
+  const keys = dataKeys(left);
   return (
-    keys.length === Object.keys(right).length &&
+    keys.length === dataKeys(right).length &&
     keys.every(
-      (key) => Object.hasOwn(right, key) && sameShape(left[key], right[key], depth + 1),
+      (key) =>
+        Object.prototype.propertyIsEnumerable.call(right, key) &&
+        sameShape(left[key], right[key], depth + 1),
     )
+  );
+}
+
+/** An object's own enumerable keys, symbols included. */
+function dataKeys(value: object): (string | symbol)[] {
+  return Reflect.ownKeys(value).filter((key) =>
+    Object.prototype.propertyIsEnumerable.call(value, key),
   );
 }

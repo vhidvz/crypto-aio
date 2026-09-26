@@ -283,6 +283,8 @@ describe('duplicate plugin names (A18, A25)', () => {
     const other = [
       { name: 'test' },
       build({ chains: [{ ...chain, nativeAsset: { symbol: 'TST', decimals: 6 } }] }),
+      // A fresh chain id: refused before it is registered, so no partial registration.
+      build({ chains: [{ ...chain, id: 'otherchain' }] }),
       build({
         adapters: [
           manifest({
@@ -300,6 +302,7 @@ describe('duplicate plugin names (A18, A25)', () => {
       });
     }
     expect(catalogs.chains.get('testchain').nativeAsset.decimals).toBe(18);
+    expect(catalogs.chains.list().map((c) => c.id)).toEqual(['testchain']);
   });
 
   it('refuses two plugins whose closures capture different values (A25)', () => {
@@ -316,9 +319,10 @@ describe('duplicate plugin names (A18, A25)', () => {
     ).toMatchObject({ code: 'CONFIG_INVALID' });
   });
 
+  const withValue = (value: unknown) =>
+    ({ name: 'p', chains: [value] }) as unknown as Plugin;
+
   it('compares data structurally, and functions and class instances by identity (A25)', () => {
-    const withValue = (value: unknown) =>
-      ({ name: 'p', chains: [value] }) as unknown as Plugin;
     const same = () => 1;
     function bound(this: unknown): unknown {
       return this;
@@ -338,5 +342,25 @@ describe('duplicate plugin names (A18, A25)', () => {
     expect(samePlugin(withValue({ a: 1 }), withValue({ a: 1, b: undefined }))).toBe(
       false,
     );
+  });
+
+  it('sees symbol keys, non-enumerable keys and array holes, both ways (P25-R17)', () => {
+    const both = (x: unknown, y: unknown) => [
+      samePlugin(withValue(x), withValue(y)),
+      samePlugin(withValue(y), withValue(x)),
+    ];
+    const tag = Symbol('tag');
+    expect(both({ [tag]: 1 }, { [tag]: 1 })).toEqual([true, true]);
+    expect(both({ [tag]: 1 }, { [tag]: 2 })).toEqual([false, false]);
+    expect(both({ [tag]: 1 }, {})).toEqual([false, false]);
+    // A hidden 'a' is not data: { b: 1 } with it is not { a: 1 }.
+    const hidden = Object.defineProperty({ b: 1 }, 'a', { value: 1, enumerable: false });
+    expect(both({ a: 1 }, hidden)).toEqual([false, false]);
+    // eslint-disable-next-line no-sparse-arrays
+    const holey = [, 1];
+    // eslint-disable-next-line no-sparse-arrays
+    expect(both(holey, [, 1])).toEqual([true, true]);
+    expect(both(holey, [99, 1])).toEqual([false, false]);
+    expect(both(holey, [undefined, 1])).toEqual([false, false]);
   });
 });
