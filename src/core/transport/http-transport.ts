@@ -1593,8 +1593,12 @@ export class HttpTransport implements Transport {
   }
 }
 
-/** A12: JSON-RPC error data as text; a revived `bigint` is written as a decimal string. */
+/**
+ * A12: JSON-RPC error data as text; a revived `bigint` is written as a decimal string, and
+ * a top-level one as its bare digits, as a plain number would be.
+ */
 function stringifyData(data: unknown): string {
+  if (typeof data === 'bigint') return data.toString();
   return JSON.stringify(data, (_key, value: unknown) =>
     typeof value === 'bigint' ? value.toString() : value,
   );

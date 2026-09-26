@@ -19,6 +19,8 @@ const EXACT = {
   exp: 1e21,
   list: [9_007_199_254_740_993n],
 };
+/** An integer literal longer than the 80 digits the flag revives (P25-R4). */
+const TOO_LONG = '9'.repeat(100);
 
 /** A JSON-RPC answer written as raw text, so its numbers are exactly what a node sends. */
 const rpcAnswer = (request: FakeRequest, result: string) => ({
@@ -43,7 +45,7 @@ describe('exact JSON integers (A12)', () => {
     expect(typeof parseJson('12345678901234567890.5', true)).toBe('number');
   });
 
-  it('takes the fast path only when no literal can leave the safe range (M3)', () => {
+  it('the fast path never skips a 16-digit literal (M3)', () => {
     expect(parseJson('[900719925474099]', true)).toEqual([900_719_925_474_099]);
     expect(parseJson('[9007199254740991]', true)).toEqual([9_007_199_254_740_991]);
     expect(parseJson('[9007199254740993]', true)).toEqual([9_007_199_254_740_993n]);
@@ -51,6 +53,37 @@ describe('exact JSON integers (A12)', () => {
       id: '1234567890123456',
       n: 7,
     });
+  });
+
+  it('revives at most 80 digits, sign excluded, and refuses a longer integer literal', () => {
+    const u256Max = 2n ** 256n - 1n; // 78 digits
+    expect(parseJson(`[${u256Max}]`, true)).toEqual([u256Max]);
+    expect(parseJson(`[${'9'.repeat(80)}]`, true)).toEqual([BigInt('9'.repeat(80))]);
+    expect(parseJson(`[-${'9'.repeat(80)}]`, true)).toEqual([-BigInt('9'.repeat(80))]);
+    expect(() => parseJson(`[${'9'.repeat(81)}]`, true)).toThrow(SyntaxError);
+    expect(() => parseJson(`[-${TOO_LONG}]`, true)).toThrow(SyntaxError);
+    // Opt-in: without the flag a long literal parses as before.
+    expect(parseJson(`[${TOO_LONG}]`)).toEqual([1e100]);
+  });
+
+  it('refuses a multi-megabyte integer literal in bounded time', () => {
+    // 2 MB of digits: an uncapped BigInt() of it takes about half a second.
+    const huge = `{"lamports":${'9'.repeat(2_000_000)}}`;
+    let fastest = Number.POSITIVE_INFINITY;
+    let error: unknown;
+    for (let run = 0; run < 3; run += 1) {
+      const started = performance.now();
+      try {
+        parseJson(huge, true);
+        error = undefined;
+      } catch (caught) {
+        error = caught;
+      }
+      fastest = Math.min(fastest, performance.now() - started);
+    }
+    // The best of three runs, so a GC pause or a busy worker cannot flake it.
+    expect(fastest).toBeLessThan(50);
+    expect(error).toBeInstanceOf(SyntaxError);
   });
 
   it('applies to rpc and rpcRaw answers with the flag, and never without it', async () => {
@@ -85,6 +118,20 @@ describe('exact JSON integers (A12)', () => {
     expect(fake.calls).toHaveLength(2);
   });
 
+  it('answers a too-long integer literal as a malformed body: a retryable PROVIDER_UNAVAILABLE', async () => {
+    const fake = new FakeFetch().route('https://a.test', (req) =>
+      rpcAnswer(req, TOO_LONG),
+    );
+    const { transport, clock } = setup([A], fake);
+    await expect(
+      drive(clock, transport.rpc('m', [], { exactIntegers: true })),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: expect.stringMatching(/non-JSON body/),
+    });
+  });
+
   it('lets quorum keys see the revived values', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', (req) => rpcAnswer(req, BODY))
@@ -104,6 +151,24 @@ describe('exact JSON integers (A12)', () => {
     );
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen.every((value) => value === 18_446_744_073_709_551_615n)).toBe(true);
+  });
+
+  it('counts a quorum key that JSON.stringifies revived values as a disagreement', async () => {
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) => rpcAnswer(req, BODY))
+      .route('https://b.test', (req) => rpcAnswer(req, BODY));
+    const { transport, clock } = setup([A, B], fake);
+    const stringKey = (result: unknown) => JSON.stringify(result);
+    // Without the flag the same key agrees; with it, JSON.stringify throws on a bigint.
+    await expect(
+      drive(clock, transport.rpc('m', [], { quorum: 2, quorumKey: stringKey })),
+    ).resolves.toMatchObject({ lamports: 18_446_744_073_709_552_000 });
+    await expect(
+      drive(
+        clock,
+        transport.rpc('m', [], { exactIntegers: true, quorum: 2, quorumKey: stringKey }),
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
   it('tells apart answers that round to the same number', async () => {
@@ -142,17 +207,35 @@ describe('exact JSON integers (A12)', () => {
 });
 
 describe('exact JSON integers in JSON-RPC errors (A12)', () => {
-  it('keeps a revived error data field a definitive RPC_ERROR', async () => {
-    const fake = new FakeFetch().route('https://a.test', (req) => ({
-      text: `{"jsonrpc":"2.0","id":${req.json<{ id: number }>().id},"error":{"code":-32002,"message":"simulation failed","data":{"lamports":18446744073709551615}}}`,
+  /** A definitive JSON-RPC error whose `data` is the raw JSON text given. */
+  const rpcError = (data: string) =>
+    new FakeFetch().route('https://a.test', (req) => ({
+      text: `{"jsonrpc":"2.0","id":${req.json<{ id: number }>().id},"error":{"code":-32002,"message":"simulation failed","data":${data}}}`,
       headers: { 'content-type': 'application/json' },
     }));
-    const { transport, clock } = setup([A], fake);
+
+  it('keeps a revived error data field a definitive RPC_ERROR', async () => {
+    const { transport, clock } = setup(
+      [A],
+      rpcError('{"lamports":18446744073709551615}'),
+    );
     await expect(
       drive(clock, transport.rpc('m', [], { exactIntegers: true })),
     ).rejects.toMatchObject({
       code: 'RPC_ERROR',
+      retryable: false,
       details: { rpcData: '{"lamports":"18446744073709551615"}' },
+    });
+  });
+
+  it('writes a top-level revived error data as its bare decimal digits', async () => {
+    const { transport, clock } = setup([A], rpcError('18446744073709551615'));
+    await expect(
+      drive(clock, transport.rpc('m', [], { exactIntegers: true })),
+    ).rejects.toMatchObject({
+      code: 'RPC_ERROR',
+      retryable: false,
+      details: { rpcData: '18446744073709551615' },
     });
   });
 });

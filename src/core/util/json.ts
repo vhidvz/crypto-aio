@@ -56,11 +56,17 @@ function canonicalize(value: unknown, seen: WeakSet<object>): unknown {
   }
 }
 
+/** P25-R4: the longest integer literal `parseJson` revives, in digits without the sign. */
+const MAX_EXACT_DIGITS = 80;
+
 /**
  * `JSON.parse`, optionally exact for integers (A12): with `exactIntegers`, every integer
  * literal outside the safe range becomes a `bigint` read from its source text (Node ≥ 22
  * `JSON.parse` source text access), so a u64 amount is never rounded. Safe integers,
  * fractions and exponents stay numbers, so answers keep their shape for ordinary values.
+ * With the flag, an integer literal longer than 80 digits (sign excluded) is malformed and
+ * throws a `SyntaxError`, as `JSON.parse` does: no amount is that long (u256 has 78 digits),
+ * and `BigInt()` of a multi-megabyte literal would take seconds.
  */
 export function parseJson(text: string, exactIntegers = false): unknown {
   // A run of 16 digits is the shortest literal that can leave the safe range; without one,
@@ -68,13 +74,20 @@ export function parseJson(text: string, exactIntegers = false): unknown {
   if (!exactIntegers || !/\d{16}/.test(text)) return JSON.parse(text);
   return JSON.parse(
     text,
-    (_key: string, value: unknown, context?: { readonly source?: string }) =>
-      typeof value === 'number' &&
-      !Number.isSafeInteger(value) &&
-      context?.source !== undefined &&
-      /^-?\d+$/.test(context.source)
-        ? BigInt(context.source)
-        : value,
+    (_key: string, value: unknown, context?: { readonly source?: string }) => {
+      const source = context?.source;
+      if (
+        typeof value !== 'number' ||
+        Number.isSafeInteger(value) ||
+        source === undefined ||
+        !/^-?\d+$/.test(source)
+      )
+        return value;
+      const digits = source.startsWith('-') ? source.length - 1 : source.length;
+      if (digits > MAX_EXACT_DIGITS)
+        throw new SyntaxError(`integer literal longer than ${MAX_EXACT_DIGITS} digits`);
+      return BigInt(source);
+    },
   );
 }
 
