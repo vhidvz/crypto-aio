@@ -429,6 +429,46 @@ describe('proof quorum health misses (P25-R10)', () => {
     expect(idCalls('b')).toBe(4);
   });
 
+  it("sizes a proof quorum read under purpose 'read' the same way (token metadata) (I3)", async () => {
+    const { fake, finCalls } = identified(
+      { honest: '1', liar: '1' },
+      { liar: '1000000' },
+      { honest: 'down', liar: 'forged' },
+    );
+    const { transport, clock } = setup(
+      [endpoint('honest', 0), endpoint('liar', 1)],
+      fake,
+      { maxLagBlocks: 5, failureThreshold: 2 },
+    );
+    transport.setProbes({ ...probes, ...identity });
+    await drive(clock, transport.refreshHealth());
+    for (let read = 1; read <= 2; read++) await drive(clock, transport.rpc('x'));
+    expect(transport.status().find((s) => s.id === 'honest')?.state).toBe('open');
+    await expect(
+      drive(clock, transport.rpc('fin', [], { purpose: 'read', quorum: 'proof' })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(finCalls('liar')).toBe(0);
+  });
+
+  it("refreshes health for a proof quorum read under purpose 'read', so a dead endpoint still leaves (I3)", async () => {
+    const ids = { a: '1', b: '1' };
+    const answers: Record<string, string> = {};
+    const { fake } = identified(ids, {}, answers);
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    transport.setProbes(identity);
+    const metadata = () =>
+      drive(clock, transport.rpc('fin', [], { purpose: 'read', quorum: 'proof' }));
+    await expect(metadata()).resolves.toBe('fact');
+    ids.b = 'down';
+    answers.b = 'down';
+    for (let miss = 1; miss <= 2; miss++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
+      await expect(metadata()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    }
+    await clock.advance(HEALTH_INTERVAL_MS);
+    await expect(metadata()).resolves.toBe('fact');
+  });
+
   it('counts only usable endpoints when no probe is configured, so proofs never stall (I1)', async () => {
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
     const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {

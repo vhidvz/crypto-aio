@@ -601,7 +601,9 @@ export class HttpTransport implements Transport {
   async #run<T>(label: string, options: CallOptions, work: Work<T>): Promise<T> {
     const purpose: RequestPurpose =
       options.purpose ?? (options.quorum !== undefined ? 'proof' : 'read');
-    if (purpose === 'monitor' || purpose === 'proof')
+    // P25-R10/I3: a proof quorum under purpose 'read' counts endpoints by health too, so it
+    // keeps health fresh as well; otherwise a dead endpoint would never miss and stall it.
+    if (purpose === 'monitor' || purpose === 'proof' || options.quorum === 'proof')
       await this.ensureFreshHealth(options.signal);
     if (options.quorum !== undefined) return this.#quorum(label, purpose, options, work);
     if ((options.fanout ?? 1) > 1) return this.#fanout(label, purpose, options, work);
@@ -661,15 +663,17 @@ export class HttpTransport implements Transport {
     // quorum. A required endpoint that's rate-limited therefore fails the call with a
     // retryable error instead of resolving from fewer endpoints than needed.
     // A14/P25-R8/P25-R9: nor may lag, an unknown height, an unconfirmed identity or an open
-    // breaker shrink a monitor or proof quorum (#quorumCandidates), so one liar is never
-    // alone.
+    // breaker shrink a proof quorum (#quorumCandidates), so one liar is never alone.
+    const proof = isProofQuorum(purpose, options);
     const needed = Math.max(
       1,
-      Math.min(requested, this.#quorumCandidates(purpose).sized.length),
+      Math.min(requested, this.#quorumCandidates(purpose, proof).sized.length),
     );
     const eligible = (): Endpoint[] => {
       const now = this.#clock.now();
-      return this.#quorumCandidates(purpose).inRange.filter((e) => e.notBefore <= now);
+      return this.#quorumCandidates(purpose, proof).inRange.filter(
+        (e) => e.notBefore <= now,
+      );
     };
     // #5 (round 3): if fewer endpoints are eligible right now than needed, fail fast —
     // before querying any of them — instead of querying what's available and discovering
@@ -891,7 +895,7 @@ export class HttpTransport implements Transport {
   #candidates(purpose: RequestPurpose): Endpoint[] {
     // M4: a single proof read measures lag as a quorum read does, against the corroborated
     // height, so one over-reporting endpoint never leaves itself the only candidate.
-    if (purpose === 'proof') return this.#quorumCandidates(purpose).inRange;
+    if (purpose === 'proof') return this.#quorumCandidates(purpose, true).inRange;
     const strict = purpose === 'monitor';
     return this.#usable().filter((e) => !strict || !this.#excludedForHeight(e));
   }
@@ -910,24 +914,26 @@ export class HttpTransport implements Transport {
    * over-reports its head can never mark honest ones as lagging. Without one, it is every
    * usable endpoint, each identity-checked before it answers.
    */
-  #quorumCandidates(purpose: RequestPurpose): {
+  #quorumCandidates(
+    purpose: RequestPurpose,
+    proof: boolean,
+  ): {
     readonly sized: Endpoint[];
     readonly inRange: Endpoint[];
   } {
     const usable = this.#usable();
-    if (purpose !== 'monitor' && purpose !== 'proof') {
-      return { sized: usable, inRange: usable };
-    }
     // P25-R10/I1: with no probe at all, nothing ever records a miss, so counting endpoints
     // that cannot answer would stall proofs for good; the count is then the usable
     // endpoints (the prior, weaker rule: a liar can prove alone once the honest endpoints'
     // breakers open). Families set probes (R19).
-    const sized = this.hasProbes()
-      ? this.#endpoints.filter(
-          (e) => e.identity !== 'mismatch' && e.healthMisses < HEALTH_MISS_LIMIT,
-        )
-      : usable;
-    if (!this.#probes.height) return { sized, inRange: usable };
+    const sized =
+      proof && this.hasProbes()
+        ? this.#endpoints.filter(
+            (e) => e.identity !== 'mismatch' && e.healthMisses < HEALTH_MISS_LIMIT,
+          )
+        : usable;
+    const strict = purpose === 'monitor' || purpose === 'proof';
+    if (!strict || !this.#probes.height) return { sized, inRange: usable };
     const known = usable.filter((e) => e.height !== undefined);
     const reference = corroboratedHeight(known);
     const lag = BigInt(this.#opts.maxLagBlocks);
@@ -1792,6 +1798,15 @@ function stringifyData(data: unknown): string {
   return JSON.stringify(data, (_key, value: unknown) =>
     typeof value === 'bigint' ? value.toString() : value,
   );
+}
+
+/**
+ * P25-R10/I3: whether a quorum read is held to the proof rules (P25-R8/R9 sizing): every
+ * `quorum: 'proof'` read, whatever its purpose (EVM token metadata is read under 'read'
+ * and cached), and any quorum read under a monitor or proof purpose.
+ */
+function isProofQuorum(purpose: RequestPurpose, options: CallOptions): boolean {
+  return options.quorum === 'proof' || purpose === 'monitor' || purpose === 'proof';
 }
 
 /** A14: the highest height at least two endpoints have reached (the second-highest). */
