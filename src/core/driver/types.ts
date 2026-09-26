@@ -100,7 +100,13 @@ export interface DriverBlock {
 
 export interface AddressCodec {
   validate(address: string): boolean;
-  /** Throws `ValidationError('INVALID_ADDRESS')`. */
+  /**
+   * Throws `ValidationError('INVALID_ADDRESS')`. The returned `variant` is part of the
+   * intent hash: it must hold only JSON scalars (strings, finite numbers, booleans, `null`)
+   * and should contain only semantic fields that change what the transfer does (for example
+   * TON's `bounceable`), never encoding-only choices, so two spellings of one recipient
+   * with the same meaning hash the same.
+   */
   normalize(address: string): NormalizedAddress;
   fromPublicKey(publicKey: Uint8Array, wallet?: WalletOptions): NormalizedAddress;
   readonly format?: AddressFormatter;

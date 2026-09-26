@@ -1,6 +1,14 @@
 export interface NormalizedAddress {
   readonly canonical: string;
   readonly display: string;
+  /**
+   * Chain-specific meaning of a recipient address. It reaches drivers in
+   * `DriverOutput.variant` and is part of the intent hash, so it must hold only JSON scalars
+   * (strings, finite numbers, booleans, `null`) under string keys, and should contain only
+   * semantic fields that change what the transfer does (for example TON's `bounceable`),
+   * never encoding-only choices such as a display alphabet. Omit it, or leave it empty,
+   * when the address has no such meaning: an empty variant is no variant.
+   */
   readonly variant?: Readonly<Record<string, unknown>>;
 }
 

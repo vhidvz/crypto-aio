@@ -89,12 +89,15 @@ export function toStoredIntent(intent: NormalizedIntent): StoredIntent {
     assetId: intent.asset.id,
     asset: intent.asset.ref,
     // P6-1: a variant is kept (and so hashed) only when the address has one, so intents of
-    // chains without variants hash exactly as before.
-    outputs: intent.outputs.map((o) => ({
-      to: o.to.canonical,
-      amount: o.amount.base,
-      ...(o.to.variant ? { variant: plainVariant(o.to.variant) } : {}),
-    })),
+    // chains without variants hash exactly as before. P25-R13: an empty variant is none.
+    outputs: intent.outputs.map((o) => {
+      const variant = o.to.variant ? plainVariant(o.to.variant) : undefined;
+      return {
+        to: o.to.canonical,
+        amount: o.amount.base,
+        ...(variant && Object.keys(variant).length > 0 ? { variant } : {}),
+      };
+    }),
     from: intent.from.canonical,
     ...(intent.memo !== undefined ? { memo: intent.memo } : {}),
     fee: intent.fee,
@@ -127,24 +130,27 @@ export function intentHash(chain: string, network: string, intent: StoredIntent)
 
 /**
  * M11: a copy of an address variant that holds plain JSON values only (strings, finite
- * numbers, booleans, null), so the stored intent stays plain data (R11) and hashes stably.
- * The message names no address.
+ * numbers, booleans, null) under string keys, so the stored intent stays plain data (R11)
+ * and hashes stably. A symbol key is refused (P25-R13): the hash would not see it. The
+ * message names no address.
  */
 function plainVariant(
   variant: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
-  for (const value of Object.values(variant)) {
-    const plain =
-      value === null ||
-      typeof value === 'string' ||
-      typeof value === 'boolean' ||
-      (typeof value === 'number' && Number.isFinite(value));
-    if (!plain) {
-      throw new ValidationError(
-        'INVALID_ADDRESS',
-        'an address variant may hold only strings, finite numbers, booleans and null',
-      );
-    }
+  const plain =
+    Object.getOwnPropertySymbols(variant).length === 0 &&
+    Object.values(variant).every(
+      (value) =>
+        value === null ||
+        typeof value === 'string' ||
+        typeof value === 'boolean' ||
+        (typeof value === 'number' && Number.isFinite(value)),
+    );
+  if (!plain) {
+    throw new ValidationError(
+      'INVALID_ADDRESS',
+      'an address variant may hold only string keys with strings, finite numbers, booleans or null',
+    );
   }
   return { ...variant };
 }

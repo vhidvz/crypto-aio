@@ -142,7 +142,7 @@ describe('output variants (A8, P6-1)', () => {
 
   it('leaves the intent hash of outputs without a variant unchanged', () => {
     // Frozen from the code before A8: an output without a variant hashes exactly as before.
-    // EVM, UTXO and Solana addresses carry none; Tron's is derived from `canonical` (D9).
+    // EVM and Solana carry none; Tron's `hex` and UTXO's `type` are derived from `canonical`.
     const cases: readonly (readonly [string, string, string, string])[] = [
       [
         'ethereum',
@@ -171,7 +171,7 @@ describe('output variants (A8, P6-1)', () => {
     ];
     for (const [chain, to, from, hash] of cases) {
       const intent = stored(chain, to, from);
-      expect(intent.outputs[0]).toEqual({ to, amount: 1234n });
+      expect(intent.outputs[0]).toStrictEqual({ to, amount: 1234n });
       expect(intentHash(chain, 'mainnet', intent)).toBe(hash);
     }
   });
@@ -189,6 +189,16 @@ describe('output variants (A8, P6-1)', () => {
     expect(hashes.size).toBe(3);
   });
 
+  it('treats an empty variant as none, and refuses an undefined value (P25-R13)', () => {
+    const raw = `0:${'ef'.repeat(32)}`;
+    const plain = stored('ton', raw, raw);
+    const empty = stored('ton', raw, raw, {});
+    expect(empty.outputs[0]).toStrictEqual({ to: raw, amount: 1234n });
+    expect(intentHash('ton', 'mainnet', empty)).toBe(intentHash('ton', 'mainnet', plain));
+    const error = thrown(() => stored('ton', raw, raw, { bounceable: undefined }));
+    expect(error).toMatchObject({ code: 'INVALID_ADDRESS' });
+  });
+
   it("stores a copy of the address's variant, holding plain values only (M11)", () => {
     const raw = `0:${'cd'.repeat(32)}`;
     const variant = { bounceable: true, testOnly: false, urlSafe: true };
@@ -201,7 +211,12 @@ describe('output variants (A8, P6-1)', () => {
     });
     expect(intent.outputs[0]?.variant).toEqual(variant);
     expect(intent.outputs[0]?.variant).not.toBe(address.variant);
-    for (const bad of [{ nested: { a: 1 } }, { bytes: new Uint8Array(1) }, { big: 1n }]) {
+    for (const bad of [
+      { nested: { a: 1 } },
+      { bytes: new Uint8Array(1) },
+      { big: 1n },
+      { [Symbol('s')]: 1 },
+    ]) {
       const error = thrown(() => stored('ton', raw, raw, bad));
       expect(error).toMatchObject({ code: 'INVALID_ADDRESS' });
       expect(String((error as Error).message)).not.toContain('cdcd');
