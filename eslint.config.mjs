@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint';
 const SDKS = ['ethers', 'web3', 'tronweb', 'bitcoinjs-lib', '@solana/*', '@ton/*'];
 
 export default defineConfig(
-  { ignores: ['dist/**', 'docs/**', 'coverage/**', 'node_modules/**'] },
+  {
+    ignores: ['dist/**', 'docs/**', 'coverage/**', 'node_modules/**', '.superpowers/**'],
+  },
   js.configs.recommended,
   tseslint.configs.recommended,
   prettier,
