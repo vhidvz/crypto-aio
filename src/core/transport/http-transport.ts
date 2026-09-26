@@ -49,8 +49,9 @@ type Mode = 'rpc' | 'json' | 'text';
 type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 
 const MAX_RETRY_AFTER_MS = 60_000;
-/** A24: consecutive failed height probes after which an endpoint stops counting toward a
- * quorum's size, as an open breaker does (a sustained outage, not a hiccup). */
+/** A24/P25-R8: consecutive failed health refreshes (identity or height probe) after which an
+ * endpoint stops counting toward a quorum's size, as an open breaker does (a sustained
+ * outage, not a hiccup). */
 const UNKNOWN_HEIGHT_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
 /** N1: statuses that must never carry a body on the Response passed back to the SDK. */
@@ -86,7 +87,8 @@ interface Endpoint {
   /** Earliest time this endpoint may be picked again, from Retry-After or backoff (I9). */
   notBefore: number;
   height?: bigint;
-  /** A24: health refreshes in a row whose height probe failed; 0 once a height reads. */
+  /** A24/P25-R8: health refreshes in a row whose identity or height probe failed; 0 once a
+   * refresh's probes succeed (a caller-aborted identity check is neither, N1). */
   heightMisses: number;
   latencyMs?: number;
   failures: number;
@@ -656,7 +658,8 @@ export class HttpTransport implements Transport {
     // the rate-limit-filtered eligible set — a required endpoint being rate-limited must not
     // silently shrink the quorum. A required endpoint that's rate-limited therefore fails
     // the call with a retryable error instead of resolving from fewer endpoints than needed.
-    // A14: nor may lag shrink it (#quorumCandidates), so one height liar is never alone.
+    // A14/P25-R8: nor may lag, an unknown height or an unconfirmed identity shrink it
+    // (#quorumCandidates), so one liar is never alone.
     const needed = Math.max(
       1,
       Math.min(requested, this.#quorumCandidates(purpose).sized.length),
@@ -891,27 +894,33 @@ export class HttpTransport implements Transport {
   }
 
   /**
-   * A14/A24 (handoff N5): a quorum read's endpoints. `sized` is every identity-verified
-   * usable endpoint, lagging or not, and with an unknown height too: such an endpoint is
-   * never asked (it cannot be lag-checked), so the read decides nothing, until
-   * `UNKNOWN_HEIGHT_LIMIT` refreshes in a row failed to read its height (a sustained outage,
-   * then treated like an open breaker). `inRange` is the endpoints with a known height at
-   * most `maxLagBlocks` behind the corroborated height, the highest height at least two of
-   * them have reached, so one endpoint that over-reports its head can never mark honest
-   * ones as lagging.
+   * A14/A24 (handoff N5), P25-R8: a monitor or proof quorum read's endpoints. `sized` counts
+   * every endpoint not proven mismatched whose breaker is closed, lagging or not, with an
+   * unknown height, and verified or not (a not-yet-checked or identity-throttled one too),
+   * until `UNKNOWN_HEIGHT_LIMIT` health refreshes in a row failed its identity or height
+   * probe (a sustained outage, then treated like an open breaker). Only `inRange` endpoints
+   * are asked, so such an endpoint makes the read decide nothing rather than letting fewer
+   * endpoints decide it. With a height probe, `inRange` is the endpoints with a known height
+   * (only a verified one has one, R19) at most `maxLagBlocks` behind the corroborated
+   * height, the highest height at least two of them have reached, so one endpoint that
+   * over-reports its head can never mark honest ones as lagging. Without one, it is every
+   * usable endpoint, each identity-checked before it answers.
    */
   #quorumCandidates(purpose: RequestPurpose): {
     readonly sized: Endpoint[];
     readonly inRange: Endpoint[];
   } {
     const usable = this.#usable();
-    const strict = purpose === 'monitor' || purpose === 'proof';
-    if (!strict || !this.#probes.height) return { sized: usable, inRange: usable };
-    const verified = (e: Endpoint) => !this.#identityProbed() || e.identity === 'ok';
-    const sized = usable.filter(
+    if (purpose !== 'monitor' && purpose !== 'proof') {
+      return { sized: usable, inRange: usable };
+    }
+    const sized = this.#endpoints.filter(
       (e) =>
-        e.height !== undefined || (verified(e) && e.heightMisses < UNKNOWN_HEIGHT_LIMIT),
+        e.identity !== 'mismatch' &&
+        e.breaker.canRequest() &&
+        e.heightMisses < UNKNOWN_HEIGHT_LIMIT,
     );
+    if (!this.#probes.height) return { sized, inRange: usable };
     const known = usable.filter((e) => e.height !== undefined);
     const reference = corroboratedHeight(known);
     const lag = BigInt(this.#opts.maxLagBlocks);
@@ -1595,8 +1604,10 @@ export class HttpTransport implements Transport {
               probe(this.#direct(endpoint, deadline)),
               deadline,
             );
-            endpoint.heightMisses = 0;
           }
+          // P25-R8: identity and height failures feed one counter, which a refresh whose
+          // probes all succeeded (with no height probe, the identity alone) resets.
+          endpoint.heightMisses = 0;
           anySucceeded = true;
         } catch (error) {
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
