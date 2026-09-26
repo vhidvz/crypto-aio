@@ -17,7 +17,7 @@ const pick = (value: unknown, keys: readonly string[]): unknown => {
 
 const BLOCK = ['number', 'hash', 'parentHash', 'timestamp'] as const;
 const RECEIPT = ['transactionHash', 'blockHash', 'blockNumber', 'status'] as const;
-const TX = ['hash', 'blockHash', 'blockNumber', 'from', 'to', 'input', 'nonce'] as const;
+const TX = ['hash', 'blockHash', 'blockNumber', 'from', 'to', 'nonce'] as const;
 const LOG = ['address', 'topics', 'data', 'logIndex'] as const;
 
 const lowerCased = (value: unknown): unknown =>
@@ -38,6 +38,27 @@ function lowerCasedFacts(value: unknown, keys: readonly string[]): unknown {
 }
 
 /**
+ * R94: a transaction's calldata as the client reads it: `input`, or `data` on older nodes,
+ * lower-cased. The token verdict decodes it (R50, R89), so a key must compare it under
+ * either name, or a first endpoint answering with `data` could alter it unseen.
+ */
+function calldataOf(tx: unknown): unknown {
+  if (tx === null || typeof tx !== 'object') return null;
+  const { input, data } = tx as Record<string, unknown>;
+  return lowerCased(input ?? data ?? null);
+}
+
+/** A transaction's `keys`, lower-cased when `lower`, and its calldata as `input` (R94). */
+function txFacts(tx: unknown, keys: readonly string[], lower: boolean): unknown {
+  if (tx === null || typeof tx !== 'object') return tx;
+  const facts = (lower ? lowerCasedFacts(tx, keys) : pick(tx, keys)) as Record<
+    string,
+    unknown
+  >;
+  return { ...facts, input: calldataOf(tx) };
+}
+
+/**
  * R59: a receipt's consensus facts include its logs, since a proven token verdict (R50)
  * reads them: one endpoint that drops or alters a `Transfer` log must disagree. Hex case is
  * formatting, not consensus, so each log's facts are compared lower-cased.
@@ -51,7 +72,7 @@ function receiptKey(result: unknown): unknown {
   };
 }
 
-const BLOCK_TX = ['hash', 'from', 'nonce', 'to', 'input'] as const;
+const BLOCK_TX = ['hash', 'from', 'nonce', 'to'] as const;
 
 /**
  * R88: the consensus facts of a block read with its transactions to find the one that
@@ -64,7 +85,7 @@ export function blockTransactionsKey(result: unknown): unknown {
   return {
     ...(lowerCasedFacts(result, ['number', 'hash']) as Record<string, unknown>),
     transactions: Array.isArray(txs)
-      ? txs.map((tx) => lowerCasedFacts(tx, BLOCK_TX))
+      ? txs.map((tx) => txFacts(tx, BLOCK_TX, true))
       : null,
   };
 }
@@ -98,7 +119,7 @@ export function quorumKeyFor(method: string): ((result: unknown) => unknown) | u
     case 'eth_getBlockReceipts':
       return (result) => (Array.isArray(result) ? result.map(receiptKey) : result);
     case 'eth_getTransactionByHash':
-      return (result) => pick(result as Json, TX);
+      return (result) => txFacts(result, TX, false);
     default:
       return undefined;
   }

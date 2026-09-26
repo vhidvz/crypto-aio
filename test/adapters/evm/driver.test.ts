@@ -1094,6 +1094,53 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ]);
   });
 
+  it('compares calldata named `input` or `data`, so no first endpoint forges the token call (R94)', async () => {
+    const t = setup();
+    // The token pays another address than the call names: the verdict is `failed`.
+    t.node.deployToken(TOKEN, { symbol: 'MIS', decimals: 6, payTo: OTHER });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 100n);
+    const call = t.client.abi.encodeTransfer(RECIPIENT, 10n);
+    const hash = await submit(t, 0, {
+      to: TOKEN,
+      value: 0n,
+      gasLimit: 60_000n,
+      data: call,
+    });
+    t.node.mine(5);
+    const prove = () => t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS));
+    expect(await prove()).toMatchObject({ included: true, success: false });
+    // Both endpoints name the calldata `data`, as older nodes do; `forger` also names the
+    // address the token paid as the recipient, which would make the verdict `executed`.
+    const forged = t.client.abi.encodeTransfer(OTHER, 10n);
+    const asData = (forger: string | undefined) => (endpoint: string, tx: unknown) => {
+      const { input, ...rest } = tx as Record<string, unknown>;
+      if (rest.hash !== hash) return tx;
+      return { ...rest, data: endpoint === forger ? forged : input };
+    };
+    const byHash =
+      (forger?: string): Intercept =>
+      (endpoint, method, params) =>
+        method === 'eth_getTransactionByHash'
+          ? { result: asData(forger)(endpoint, t.node.answer(method, params)) }
+          : undefined;
+    const inBlock =
+      (forger?: string): Intercept =>
+      (endpoint, method, params) =>
+        rewrittenBlock(t, endpoint, 1n, (txs) =>
+          txs.map((tx) => asData(forger)(endpoint, tx) as Record<string, unknown>),
+        )(endpoint, method, params);
+    // The transaction read by hash, and block C of the nonce lookup (the index lost it).
+    for (const read of [byHash, inBlock]) {
+      const lookup = read === byHash ? undefined : [hash];
+      const serve = (intercept: Intercept) =>
+        lookup ? unindexed(t, lookup, intercept) : (t.node.intercept = intercept);
+      serve(read());
+      expect(await prove()).toMatchObject({ included: true, success: false });
+      serve(read('a'));
+      await expect(prove()).rejects.toMatchObject(inconsistent);
+    }
+  });
+
   it('ignores whatever the first endpoint forges outside the consensus facts', async () => {
     // A quorum call resolves with the first endpoint's whole answer: a proof may use only
     // the fields its quorum key compares.
