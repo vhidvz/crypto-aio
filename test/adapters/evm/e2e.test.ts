@@ -32,7 +32,15 @@ const legacyChain: ChainInfo = {
 
 describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
   it('runs a native transfer to proven finality on the finalized tag', async () => {
-    const env = await createEvmEnv({ library });
+    // The finalized tag trails the head by 6 blocks, so a confirmation rule would end early.
+    const env = await createEvmEnv({ library, node: { finalizedDepth: 6 } });
+    // The `finalized` tag reads: the node's finalized height when each was served.
+    const tagReads: bigint[] = [];
+    env.node.intercept = (_endpoint, method, params) => {
+      if (method === 'eth_getBlockByNumber' && params[0] === 'finalized')
+        tagReads.push(env.node.finalized);
+      return undefined;
+    };
     const sub = await env.run(
       env.bc.transfer({ to: RECIPIENT, amount: '0.001' }, { idempotencyKey: 'n1' }),
     );
@@ -42,6 +50,10 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     });
     expect(env.node.inMempool(sub.attempt?.id ?? '')).toBe(true);
     const final = await env.mineWhile(sub.wait({ finality: 'final' }));
+    // R75: final once the finalized tag reached the transaction's block, and not before.
+    const block = env.node.receipt(sub.attempt?.id ?? '')?.blockNumber ?? 0n;
+    expect(tagReads.at(-1)).toBeGreaterThanOrEqual(block);
+    expect(env.node.head - block).toBeGreaterThanOrEqual(6n);
     expect(final.status).toMatchObject({
       state: 'final',
       evidence: 'proven',
@@ -61,6 +73,8 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       library,
       chain: 'legacychain',
       network: 'main',
+      // A tag rule would wait 20 blocks: only the confirmation rule ends within 10.
+      node: { finalizedDepth: 20 },
       plugins: [evmChainPlugin({ name: 'legacy', chains: [legacyChain] })],
     });
     const fee = await env.run(env.bc.estimateFee({ to: RECIPIENT, amount: 1n }));
@@ -72,11 +86,11 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: 1n }));
     env.node.mine();
     await env.run(sub.wait({ confirmations: 1 }));
-    const final = await env.mineWhile(sub.wait({ finality: 'final' }));
+    const final = await env.mineWhile(sub.wait({ finality: 'final' }), 10);
+    // R75: final once the quorum holds the block that gives it 3 confirmations (h + 2).
+    const block = env.node.receipt(sub.attempt?.id ?? '')?.blockNumber ?? 0n;
     expect(final.status.confirmations).toBeGreaterThanOrEqual(3);
-    expect(
-      env.node.head - (env.node.receipt(sub.attempt?.id ?? '')?.blockNumber ?? 0n),
-    ).toBeGreaterThanOrEqual(2n);
+    expect(env.node.head - block).toBeGreaterThanOrEqual(2n);
   });
 
   it('lands five concurrent transfers from one address on consecutive nonces', async () => {
@@ -148,6 +162,14 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     );
     const cancelled = await env.run(env.bc.cancel(sub.operationId));
     expect(cancelled.attempts.map((a) => a.purpose)).toEqual(['original', 'cancel']);
+    // The cancel as broadcast: zero value, to the sender itself.
+    const sent = env.node.answer('eth_getTransactionByHash', [
+      cancelled.attempts[1]?.ref.id,
+    ]) as { readonly to: string; readonly value: string } | null;
+    expect([sent?.to.toLowerCase(), sent?.value]).toEqual([
+      env.address.toLowerCase(),
+      '0x0',
+    ]);
     const final = await env.mineWhile(cancelled.wait({ finality: 'final' }));
     expect(final.operation).toMatchObject({ state: 'final', outcome: 'cancelled' });
     expect(env.node.balance(RECIPIENT)).toBe(0n);
@@ -256,6 +278,8 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       await expect(
         env.run(env.bc.transfer({ to: RECIPIENT, amount: 3n }, { idempotencyKey: 'k' })),
       ).rejects.toBeInstanceOf(CrashError);
+      // Before the kill: a thrown store write leaves no timer armed (the fence, not this
+      // pin, is what makes the restart safe).
       expect(env.clock.pending).toBe(0);
       const stored = await env.stores.operations.getByKey('default', 'k');
       const ref = stored?.attempts[0]?.ref.id ?? '';
@@ -288,7 +312,9 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       ).rejects.toMatchObject({ code: 'STATE_UNRECORDED', ambiguous: true });
       const stored = await env.stores.operations.getByKey('default', 'k');
       const ref = stored?.attempts[0]?.ref.id ?? '';
-      // The crash boundary: signed and sent, but `submitted` never written.
+      // The crash boundary: signed and sent, but `submitted` never written. `pending` is
+      // taken before the kill: a thrown store write leaves no timer armed (the fence, not
+      // this pin, is what makes the restart safe).
       expect([stored?.state, env.node.inMempool(ref), env.clock.pending]).toEqual([
         'signed',
         true,
@@ -301,8 +327,8 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       const sub = await env.run(
         restarted.bc.transfer({ to: RECIPIENT, amount: 3n }, { idempotencyKey: 'k' }),
       );
-      expect(sub.state).toBe('submitted');
-      expect(calls()).toBe(1);
+      // Recovered, not rebuilt: the same Attempt, signed once.
+      expect([sub.state, sub.attempt?.id, calls()]).toEqual(['submitted', ref, 1]);
     });
 
     it('resumes a prepared transfer and keeps its nonce for it', async () => {
@@ -311,6 +337,8 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       await expect(
         env.run(env.bc.transfer({ to: RECIPIENT, amount: 3n }, { idempotencyKey: 'k' })),
       ).rejects.toBeInstanceOf(CrashError);
+      // Before the kill: a thrown store write leaves no timer armed (the fence, not this
+      // pin, is what makes the restart safe).
       expect(env.clock.pending).toBe(0);
       expect((await env.stores.operations.getByKey('default', 'k'))?.state).toBe(
         'prepared',

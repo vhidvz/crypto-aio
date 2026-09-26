@@ -123,7 +123,7 @@ export async function createEvmEnv(options: EvmEnvOptions) {
 
   const run = <T>(promise: Promise<T>, stepMs = 100): Promise<T> =>
     drive(clock, promise, stepMs);
-  /** Mines one block per fake second until `promise` settles. */
+  /** Mines one block per fake second until `promise` settles; throws after `maxSteps`. */
   const mineWhile = async <T>(promise: Promise<T>, maxSteps = 600): Promise<T> => {
     let done = false;
     const tracked = promise.finally(() => {
@@ -134,6 +134,7 @@ export async function createEvmEnv(options: EvmEnvOptions) {
       node.mine();
       await clock.advance(1_000);
     }
+    if (!done) throw new Error(`did not settle within ${maxSteps} blocks`);
     return tracked;
   };
   let generation: Generation = { alive: true };
