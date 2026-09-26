@@ -1097,13 +1097,15 @@ export class HttpTransport implements Transport {
    * The probes' single-attempt calls. A17: each request first takes a token from the
    * endpoint's own bucket, bounded by the probe's deadline (`signal`), so probes and
    * requests share one rate limit and a rate-limited endpoint never answers a probe 429.
+   * The probe takes it with priority, ahead of requests already waiting (M1), so a queue of
+   * requests never starves it past its deadline into an unknown height.
    */
   #direct(endpoint: Endpoint, signal: AbortSignal): EndpointCall {
     return {
       rpc: async <T>(method: string, params?: unknown) => {
         const id = ++this.#rpcId;
         const body = serializeJson({ jsonrpc: '2.0', id, method, params: params ?? [] });
-        await endpoint.bucket?.take(signal);
+        await endpoint.bucket?.take(signal, true);
         return this.#rpcOnce<T>(endpoint, method, id, body, signal);
       },
       http: async <T>(request: HttpRequest) => {
@@ -1113,7 +1115,7 @@ export class HttpTransport implements Transport {
             : typeof request.body === 'string'
               ? request.body
               : serializeJson(request.body);
-        await endpoint.bucket?.take(signal);
+        await endpoint.bucket?.take(signal, true);
         return this.#httpOnce<T>(endpoint, request, bodyText, signal);
       },
     };

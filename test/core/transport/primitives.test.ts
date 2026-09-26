@@ -79,6 +79,38 @@ describe('TokenBucket', () => {
     expect(taken).toBe(true);
   });
 
+  it('gives the next token to a priority taker ahead of waiting ordinary takers (A17)', async () => {
+    const clock = new FakeClock();
+    const bucket = new TokenBucket(1, 1, clock);
+    expect(bucket.tryTake()).toBe(true);
+    const order: string[] = [];
+    void bucket.take().then(() => order.push('first'));
+    void bucket.take().then(() => order.push('second'));
+    await settle();
+    void bucket.take(undefined, true).then(() => order.push('probe'));
+    await clock.advance(1_000);
+    await settle();
+    expect(order).toEqual(['probe']);
+    await clock.advance(1_000);
+    await settle();
+    expect(order).toEqual(['probe', 'first']);
+  });
+
+  it('lets ordinary takers go again once a priority taker gives up (A17)', async () => {
+    const clock = new FakeClock();
+    const bucket = new TokenBucket(1, 1, clock);
+    expect(bucket.tryTake()).toBe(true);
+    let taken = false;
+    void bucket.take().then(() => (taken = true));
+    const probe = new AbortController();
+    const gaveUp = bucket.take(probe.signal, true).catch(() => 'gave up');
+    probe.abort();
+    await expect(gaveUp).resolves.toBe('gave up');
+    await clock.advance(1_000);
+    await settle();
+    expect(taken).toBe(true);
+  });
+
   it('rejects non-positive rates', () => {
     expect(thrown(() => new TokenBucket(0, 1, new FakeClock()))).toMatchObject({
       code: 'CONFIG_INVALID',

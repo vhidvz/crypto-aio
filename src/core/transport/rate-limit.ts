@@ -4,6 +4,8 @@ import type { Clock } from '../util/clock';
 export class TokenBucket {
   #tokens: number;
   #updatedAt: number;
+  /** Priority takers waiting now (A17). */
+  #priorityWaiting = 0;
 
   constructor(
     private readonly rps: number,
@@ -31,8 +33,20 @@ export class TokenBucket {
     return this.#tokens >= 1 ? 0 : Math.ceil(((1 - this.#tokens) * 1_000) / this.rps);
   }
 
-  async take(signal?: AbortSignal): Promise<void> {
-    while (!this.tryTake()) await this.clock.sleep(this.msUntilToken(), signal);
+  /**
+   * Waits for a token. A17: a `priority` taker (a health probe) goes ahead of every waiting
+   * ordinary taker, which leaves the next token to it, so a queue of requests never starves
+   * a probe past its deadline. Every token is still taken here: priority only reorders.
+   */
+  async take(signal?: AbortSignal, priority = false): Promise<void> {
+    if (priority) this.#priorityWaiting += 1;
+    try {
+      while ((!priority && this.#priorityWaiting > 0) || !this.tryTake()) {
+        await this.clock.sleep(this.msUntilToken(), signal);
+      }
+    } finally {
+      if (priority) this.#priorityWaiting -= 1;
+    }
   }
 
   #refill(): void {

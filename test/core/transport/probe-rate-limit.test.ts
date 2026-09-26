@@ -3,7 +3,7 @@
 // endpoint was excluded for an unknown height).
 import type { EndpointConfig, HealthProbes } from '../../../src/core/transport/types';
 import type { FakeClock } from '../../../src/testing/fake-clock';
-import { drive } from '../../../src/testing/fake-clock';
+import { drive, settle } from '../../../src/testing/fake-clock';
 import { FakeFetch, rpcResult, type FakeRequest } from '../../../src/testing/fake-fetch';
 import { setup } from './support';
 
@@ -86,6 +86,25 @@ describe('health probes inside the rate limit (A17)', () => {
     await expect(
       drive(clock, transport.rpc('x', [], { purpose: 'monitor' })),
     ).resolves.toBe('ok');
+    await drive(clock, Promise.allSettled(reads));
+    expect(state.limited).toBe(0);
+  });
+
+  it('puts probes ahead of reads already waiting for tokens (M1: no probe starvation)', async () => {
+    const { fake, state } = oneRequestPerSecond();
+    const { transport, clock } = setup([LIMITED], fake);
+    state.clock = clock;
+    transport.setProbes(both);
+    await drive(clock, transport.refreshHealth());
+    // Identity is confirmed, so these reads go straight to the bucket and wait there before
+    // the next refresh's height probe does: at 1 request/second, 80 of them outlast its
+    // 15-second deadline unless the probe goes first.
+    const reads = Array.from({ length: 80 }, () => transport.rpc('r'));
+    await settle();
+    const started = clock.now();
+    await drive(clock, transport.refreshHealth());
+    expect(clock.now() - started).toBeLessThanOrEqual(1_000);
+    expect(transport.status()[0]).toMatchObject({ state: 'healthy', height: 100n });
     await drive(clock, Promise.allSettled(reads));
     expect(state.limited).toBe(0);
   });
