@@ -65,6 +65,10 @@ export interface DriverTxObservation {
   readonly blockHash?: string;
   /** For included transactions: false when execution failed or reverted. */
   readonly success?: boolean;
+  /**
+   * P6-2: with `success: false`, why, as a short fixed text (R24: no addresses, amounts or
+   * node text). The monitor records it on the observation (`TxStatus.reason`).
+   */
   readonly reason?: string;
 }
 
@@ -197,6 +201,8 @@ export interface ProofSource {
         readonly blockHeight: bigint;
         readonly blockHash: string;
         readonly txHash: string;
+        /** P6-2: with `success: false`, a short fixed text (R24), recorded as proven. */
+        readonly reason?: string;
       }
   >;
   /** Whether the ordering slot (nonce/seqno/an input) is consumed by ANY transaction at `level`. */

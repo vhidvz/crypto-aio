@@ -14,10 +14,11 @@ import { sequenceKey } from '../../../src/core/ordering/sequence';
 import { secret } from '../../../src/core/secret/secret';
 import { localSigner } from '../../../src/core/signing/local';
 import { MemoryOperationStore } from '../../../src/core/store/memory';
-import type {
-  Fence,
-  OperationPatch,
-  OperationRecord,
+import {
+  DATA_CLASSIFICATION,
+  type Fence,
+  type OperationPatch,
+  type OperationRecord,
 } from '../../../src/core/store/types';
 import type { Transport } from '../../../src/core/transport/types';
 import { REVERT_ADDRESS, fakeAddress, signFake } from '../../../src/testing/fake-chain';
@@ -1163,5 +1164,140 @@ describe('monitor: fix round 4', () => {
       fields: { operationId: op.id, code: 'SEQUENCE_BUSY' },
     });
     ctl.abort();
+  });
+});
+
+describe('failure reasons (A9, P6-2)', () => {
+  /** The handle's driver, with a fixed reason on every failed observation and proof. */
+  function withReasons(target: ReadTarget): ReadTarget {
+    const { reader, proofs } = target.pooled.driver;
+    return {
+      ...target,
+      pooled: {
+        ...target.pooled,
+        driver: {
+          ...target.pooled.driver,
+          reader: {
+            ...reader,
+            observe: async (ref, ordering, from) => ({
+              ...(await reader.observe(ref, ordering, from)),
+              reason: 'transfer bounced',
+            }),
+          },
+          proofs: {
+            ...proofs,
+            includedFinal: async (ref, ordering, from) => {
+              const proof = await proofs.includedFinal(ref, ordering, from);
+              return proof.included ? { ...proof, reason: 'transfer bounced' } : proof;
+            },
+          },
+        },
+      },
+    };
+  }
+
+  it('records the driver reason of an observed, then a proven, failure', async () => {
+    const env = await createFakeEnv();
+    const events: unknown[] = [];
+    env.aio.onAny((event) => events.push(event));
+    const sub = await env.run(env.bc.transfer({ to: REVERT_ADDRESS, amount: 5n }));
+    const { monitor, target } = await monitorOf(env);
+    const reasoned = withReasons(target);
+    env.chain.mine();
+    await env.run(monitor.check(reasoned, await stored(env, sub.operationId)));
+    const attemptId = (await stored(env, sub.operationId)).activeAttemptId ?? '';
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'failed',
+      evidence: 'observed',
+      reason: 'transfer bounced',
+    });
+    for (let i = 0; i < 5; i++) env.chain.mine();
+    const done = await env.run(
+      monitor.check(reasoned, await stored(env, sub.operationId)),
+    );
+    expect(done.state).toBe('failed');
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'failed',
+      evidence: 'proven',
+      reason: 'transfer bounced',
+    });
+    expect(await env.run(env.bc.getTransactionStatus(sub.operationId))).toMatchObject({
+      state: 'failed',
+      reason: 'transfer bounced',
+    });
+    // A9: reasons are stored as sensitive data and never emitted.
+    expect(DATA_CLASSIFICATION.observation.reason).toBe('sensitive');
+    const emitted = JSON.stringify(events, (_key, value: unknown) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    );
+    expect(emitted).not.toContain('transfer bounced');
+  });
+
+  it('never records a reason for a transaction that succeeded', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    const { monitor, target } = await monitorOf(env);
+    const reasoned = withReasons(target);
+    for (let i = 0; i < 6; i++) env.chain.mine();
+    await env.run(monitor.check(reasoned, await stored(env, sub.operationId)));
+    const done = await env.run(
+      monitor.check(reasoned, await stored(env, sub.operationId)),
+    );
+    expect(done.state).toBe('final');
+    const observation = await env.stores.operations.getObservation(
+      done.activeAttemptId ?? '',
+    );
+    expect(observation?.state).toBe('final');
+    expect(observation?.reason).toBeUndefined();
+  });
+
+  it('clears a refusal reason once the transaction is proven final (M8)', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.dropFromMempool(sub.attempt?.id ?? '');
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(env.run(env.bc.rebroadcast(sub.operationId))).rejects.toMatchObject({
+      code: 'TX_REFUSED',
+    });
+    const attemptId = (await stored(env, sub.operationId)).activeAttemptId ?? '';
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'refused',
+      reason: 'invalid signature',
+    });
+    expect((await env.run(env.bc.rebroadcast(sub.operationId))).state).toBe('submitted');
+    for (let i = 0; i < 6; i++) env.chain.mine();
+    const { monitor, target } = await monitorOf(env);
+    await env.run(monitor.check(target, await stored(env, sub.operationId)));
+    const done = await env.run(monitor.check(target, await stored(env, sub.operationId)));
+    expect(done.state).toBe('final');
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'final',
+      reason: undefined,
+    });
+    expect(
+      (await env.run(env.bc.getTransactionStatus(sub.operationId))).reason,
+    ).toBeUndefined();
+  });
+
+  it('clears a failure reason when a reorg takes the transaction out of its block (M8)', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: REVERT_ADDRESS, amount: 5n }));
+    const { monitor, target } = await monitorOf(env);
+    const reasoned = withReasons(target);
+    env.chain.mine();
+    await env.run(monitor.check(reasoned, await stored(env, sub.operationId)));
+    const attemptId = (await stored(env, sub.operationId)).activeAttemptId ?? '';
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'failed',
+      reason: 'transfer bounced',
+    });
+    // Another block now holds that height, and the transaction is in none.
+    env.chain.reorg(1, { drop: [sub.attempt?.id ?? ''] });
+    env.chain.mine();
+    await env.run(monitor.check(reasoned, await stored(env, sub.operationId)));
+    const after = await env.stores.operations.getObservation(attemptId);
+    expect(after?.state).toMatch(/^(pending|dropped)$/);
+    expect(after?.blockHash).toBeUndefined();
+    expect(after?.reason).toBeUndefined();
   });
 });

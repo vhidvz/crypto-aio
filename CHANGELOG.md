@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DriverOutput` and `DriverIntent.outputs[i].variant`: the recipient address's variant (TON's
   bounce flag) reaches drivers and is part of the intent hash. Outputs without a variant hash
   as before.
+- `TxStatus.reason` for on-chain failures: a driver may return a short fixed `reason` from
+  `observe` and `ProofSource.includedFinal`.
 
 ### Changed
 
@@ -74,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - These cost liveness: proofs wait until enough endpoints are confirmed, in range and past
   their breaker's open period (`openMs`), including at startup, and a dead endpoint holds
   them back for up to three health intervals.
+- An observation clears an earlier failure or refusal reason once the transaction succeeds or
+  leaves its block.
 
 ## [0.1.0] - Unreleased
 

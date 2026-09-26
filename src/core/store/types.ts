@@ -271,6 +271,12 @@ export interface OperationStore {
     fence?: Fence,
   ): Promise<OperationRecord>;
   getObservation(attemptId: string): Promise<AttemptObservation | null>;
+  /**
+   * Stores `observation` as the whole new record, version-checked. An optional field absent
+   * from it (a cleared `reason`, `blockHash` or `blockHeight`) is gone afterwards: a store
+   * must replace the record, never merge fields into the old one. The monitor relies on
+   * this to clear stale values (A9, M9).
+   */
   putObservation(
     observation: Omit<AttemptObservation, 'version'>,
     expectedVersion: number | null,

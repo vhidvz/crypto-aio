@@ -402,6 +402,9 @@ export class Monitor {
         blockHeight: seen.blockHeight,
         blockHash: seen.blockHash,
         ...(seen.txHash !== undefined ? { txHash: seen.txHash } : {}),
+        // P6-2: why an included transaction failed, as the driver's fixed text (R24); any
+        // earlier reason (a refusal, an old failure) is cleared otherwise (M8).
+        reason: seen.success === false ? seen.reason : undefined,
         firstSeenAt: current?.firstSeenAt ?? now,
         lastSeenAt: now,
       };
@@ -417,10 +420,13 @@ export class Monitor {
         signal?.throwIfAborted();
         reorgedFrom = current.blockHash;
       }
+      // M8: out of a block, an earlier failure's reason no longer applies (a refusal keeps
+      // its own, below).
       const cleared: ObservationPatch = {
         blockHash: undefined,
         blockHeight: undefined,
         confirmations: 0,
+        reason: undefined,
       };
       patch =
         seen.seen === 'mempool'
@@ -495,6 +501,7 @@ export class Monitor {
       blockHash: proof.blockHash,
       txHash: proof.txHash,
       confirmations: depth(head, proof.blockHeight),
+      reason: failureReason(proof),
     };
   }
 
@@ -555,6 +562,7 @@ export class Monitor {
           blockHeight: proof.blockHeight,
           blockHash: proof.blockHash,
           txHash: proof.txHash,
+          reason: failureReason(proof),
         };
       }
       return { state: deadSlot ? 'replaced' : 'expired', evidence: 'proven' };
@@ -562,7 +570,9 @@ export class Monitor {
     if (slotted && (await read(() => proofs.slotConsumed(ordering, from, 'latest')))) {
       return { state: 'replaced', evidence: 'observed' };
     }
-    if (current?.state === 'refused') return { state: 'refused', evidence: 'observed' };
+    if (current?.state === 'refused') {
+      return { state: 'refused', evidence: 'observed', reason: current.reason };
+    }
     const since = current?.lastSeenAt ?? current?.lastBroadcastAt ?? attempt.createdAt;
     const dropped = now - since >= this.deps.lifecycle().droppedGracePeriodMs;
     return { state: dropped ? 'dropped' : 'pending', evidence: 'observed' };
@@ -767,4 +777,12 @@ function unmanagedFinal({ status, record }: Snapshot): boolean {
 function depth(head: bigint, height: bigint): number {
   const d = head - height + 1n;
   return d > 0n ? Number(d) : 0;
+}
+
+/** P6-2: a proven failure's fixed reason (R24); a success clears any earlier reason (M8). */
+function failureReason(proof: {
+  readonly success: boolean;
+  readonly reason?: string;
+}): string | undefined {
+  return proof.success ? undefined : proof.reason;
 }
