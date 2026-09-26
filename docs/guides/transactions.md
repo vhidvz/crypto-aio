@@ -156,13 +156,16 @@ const now = await bc.getTransactionStatus(operationId); // one read
   finality. On `TIMEOUT` (retryable), nothing changed. Wait again.
 - `sub.wait(options)` is the same as `waitForConfirmation(sub.operationId, options)`.
 - **EVM token verdicts.** An Operation's ERC-20 `transfer` counts as executed only if the
-  token contract logged a `Transfer` from the sender, as ERC-20 requires. A token that
-  returns `false` instead of reverting, or moves value without logging that `Transfer`, is
-  reported failed (`TX_REVERTED`) **although its receipt succeeded, so value may have
-  moved.** Before you pay again, check the chain: `bc.getTransaction(attempt.ref.id)` shows
-  the receipt's own status (`status.state` is `included` when it succeeded, `failed` when it
-  reverted), or read the recipient's token balance. Only your own Operations get this
-  verdict; `getTransaction` and scans show the chain's view.
+  token contract logged a `Transfer` from the sender to the recipient, of a positive amount
+  (of any amount for a zero-amount transfer), as ERC-20 requires. The recipient and amount
+  are read from the signed call. A fee-on-transfer token that delivers less than asked still
+  counts. A token that returns `false` instead of reverting, logs its `Transfer` to another
+  address or of nothing, or moves value without logging it, is reported failed
+  (`TX_REVERTED`) **although its receipt succeeded, so value may have moved.** Before you
+  pay again, check the chain: `bc.getTransaction(attempt.ref.id)` shows the receipt's own
+  status (`status.state` is `included` when it succeeded, `failed` when it reverted), or
+  read the recipient's token balance. Only your own Operations get this verdict;
+  `getTransaction` and scans show the chain's view.
 - **EVM proofs.** An Attempt whose transaction disappears is settled only once its nonce is
   proven used at a final height, read by block number (BSC's public nodes serve no state at
   the `finalized` tag). An endpoint without that state, such as a non-archive L2 node, makes

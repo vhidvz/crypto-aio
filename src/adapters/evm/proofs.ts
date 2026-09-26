@@ -206,8 +206,9 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
         }
         let success = receipt.status === 1;
         if (success) {
-          // R50: a token transfer that logged nothing moved nothing (read from the ref
-          // alone). The core proves only its own Attempts, so this is always a verdict (R68).
+          // R50, R89: a token transfer that logged no transfer to its recipient paid it
+          // nothing (read from the ref alone, the call's arguments from its keyed calldata).
+          // The core proves only its own Attempts, so this is always a verdict (R68).
           const tx = await client.getTransaction(ref.id, PROOF);
           if (!tx) {
             throw new ProviderError(

@@ -8,6 +8,7 @@ import type {
   DriverTransfer,
   DriverTxObservation,
 } from '../../core/driver/types';
+import { ABI_WORD, ADDRESS_WORD } from './client';
 import { TRANSFER_GAS } from './fees';
 import { POLYGON_FEE_LOG, POLYGON_TRANSFER_LOG, type EvmNetworkConfig } from './network';
 import type { EvmAbi, EvmLog, EvmReceipt, EvmTx } from './types';
@@ -15,10 +16,33 @@ import type { EvmAbi, EvmLog, EvmReceipt, EvmTx } from './types';
 const TRANSFER_SELECTOR = '0xa9059cbb';
 
 /**
- * R50: a token `transfer` call worked only if the token logged a `Transfer` from the sender.
- * ERC-20 requires the event, and some tokens return `false` instead of reverting, so a
- * successful receipt alone would report a transfer that moved nothing. R68: only verdicts
- * on our own transactions apply it (`evmObservation`, `includedFinal`), never the decoder.
+ * R89: the recipient (lower-cased) and amount of an ERC-20 `transfer(address,uint256)`
+ * call: the selector, then two ABI words. `null` for any other calldata.
+ */
+function transferCall(
+  input: string,
+): { readonly to: string; readonly amount: bigint } | null {
+  const to = `0x${input.slice(10, 74)}`;
+  const amount = `0x${input.slice(74)}`;
+  if (
+    !input.startsWith(TRANSFER_SELECTOR) ||
+    !ADDRESS_WORD.test(to) ||
+    !ABI_WORD.test(amount)
+  ) {
+    return null;
+  }
+  return { to: `0x${to.slice(26)}`.toLowerCase(), amount: BigInt(amount) };
+}
+
+/**
+ * R50, R89 (the board's phantom-success rule, final wording): a token `transfer` call worked
+ * only if the token logged a `Transfer` from the sender to the call's recipient, of a
+ * positive amount whenever the call asked for one. ERC-20 requires the event, and some tokens
+ * return `false` instead of reverting, so a successful receipt alone would report a transfer
+ * that moved nothing; a log to anyone else, or of nothing, pays the recipient nothing either.
+ * A fee-on-transfer token logs less than asked, and still counts. The call's arguments come
+ * from its signed calldata. R68: only verdicts on our own transactions apply it
+ * (`evmObservation`, `includedFinal`), never the decoder.
  */
 export function tokenTransferLanded(
   abi: EvmAbi,
@@ -26,9 +50,17 @@ export function tokenTransferLanded(
   receipt: EvmReceipt,
 ): boolean {
   if (tx.to === null || !tx.input.startsWith(TRANSFER_SELECTOR)) return true;
-  return receipt.logs.some(
-    (log) => log.address === tx.to && abi.decodeTransfer(log)?.from === tx.from,
-  );
+  const call = transferCall(tx.input);
+  if (!call) return false;
+  return receipt.logs.some((log) => {
+    const transfer = log.address === tx.to ? abi.decodeTransfer(log) : null;
+    return (
+      transfer !== null &&
+      transfer.from === tx.from &&
+      transfer.to.toLowerCase() === call.to &&
+      (call.amount === 0n || transfer.amount > 0n)
+    );
+  });
 }
 
 /** What the chain reports: where the transaction is, and its receipt's status. */
@@ -59,7 +91,7 @@ export function chainObservation(
 
 /**
  * The verdict on one of our own transactions (R68): the chain's status, and a successful
- * token `transfer` that logged nothing is `success: false` (R50).
+ * token `transfer` that logged no transfer to its recipient is `success: false` (R50, R89).
  */
 export function evmObservation(
   abi: EvmAbi,

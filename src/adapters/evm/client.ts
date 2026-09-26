@@ -99,7 +99,7 @@ function object(value: unknown, field: string): Json {
 /** One ABI word: 32 bytes. */
 export const ABI_WORD = /^0x[0-9a-fA-F]{64}$/;
 /** An ABI-encoded address: 12 zero bytes, then 20 address bytes. */
-const ADDRESS_WORD = /^0x0{24}[0-9a-fA-F]{40}$/;
+export const ADDRESS_WORD = /^0x0{24}[0-9a-fA-F]{40}$/;
 
 /**
  * The three ABI words of an ERC-20 `Transfer` log (`from`, `to`, amount), or `null`. Anyone

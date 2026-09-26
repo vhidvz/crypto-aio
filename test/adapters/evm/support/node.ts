@@ -47,7 +47,16 @@ interface Token {
   readonly decimals?: number;
   /** A non-reverting token: a short `transfer` returns false, moves nothing, logs nothing. */
   readonly returnsFalse?: boolean;
+  /** A broken token: a `transfer` pays (and logs a transfer to) this address instead. */
+  readonly payTo?: string;
+  /** A broken token: a `transfer` moves nothing and logs a zero-amount transfer. */
+  readonly logsZero?: boolean;
+  /** A fee-on-transfer token: keeps this percent for `FEE_SINK`, logging both transfers. */
+  readonly feePercent?: bigint;
 }
+
+/** Where a fee-on-transfer token sends its fee. */
+export const FEE_SINK = '0x000000000000000000000000000000000000fee5';
 
 interface State {
   readonly balances: Map<string, bigint>;
@@ -362,20 +371,23 @@ export class ScriptedEvmNode {
       ) as unknown as [string, bigint];
       if (this.tokenBalance(tx.to, tx.from) < amount)
         return { ...base, status: token.returnsFalse ? 1 : 0, logs: [] };
-      mint(this.#state, tx.to, tx.from, -amount);
-      mint(this.#state, tx.to, to, amount);
       const topic = (address: string) => abi.encode(['address'], [address]);
-      return {
-        ...base,
-        status: 1,
-        logs: [
-          {
-            address: getAddress(tx.to),
-            topics: [TRANSFER_TOPIC, topic(tx.from), topic(to)],
-            data: abi.encode(['uint256'], [amount]),
-          },
-        ],
+      const pay = (payee: string, value: bigint): Log => {
+        mint(this.#state, tx.to, tx.from, -value);
+        mint(this.#state, tx.to, payee, value);
+        return {
+          address: getAddress(tx.to),
+          topics: [TRANSFER_TOPIC, topic(tx.from), topic(payee)],
+          data: abi.encode(['uint256'], [value]),
+        };
       };
+      const fee = (amount * (token.feePercent ?? 0n)) / 100n;
+      const logs = token.logsZero
+        ? [pay(to, 0n)]
+        : fee > 0n
+          ? [pay(FEE_SINK, fee), pay(to, amount - fee)]
+          : [pay(token.payTo ?? to, amount)];
+      return { ...base, status: 1, logs };
     }
     credit(this.#state, tx.from, -tx.value);
     credit(this.#state, tx.to, tx.value);

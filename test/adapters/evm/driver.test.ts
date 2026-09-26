@@ -461,6 +461,55 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect((await t.run(reader.getTransaction(hash)))?.transfers).toEqual([]);
   });
 
+  it('counts a token transfer executed only if it logged a positive amount to the recipient (R89)', async () => {
+    const t = setup();
+    const reader = createEvmReader(t.ctx);
+    // [token, what its `transfer` does, the amount asked, the verdict]
+    const cases: [string, Record<string, unknown>, bigint, boolean][] = [
+      ['0x00000000000000000000000000000000000070c1', { payTo: OTHER }, 10n, false],
+      ['0x00000000000000000000000000000000000070c2', { logsZero: true }, 10n, false],
+      // The recipient gets less than asked, and the fee's own log comes first.
+      ['0x00000000000000000000000000000000000070c3', { feePercent: 10n }, 10n, true],
+      // A zero-amount call logs a zero-amount transfer, as ERC-20 requires.
+      ['0x00000000000000000000000000000000000070c4', {}, 0n, true],
+    ];
+    const hashes: string[] = [];
+    for (const [i, [token, behaviour, amount]] of cases.entries()) {
+      t.node.deployToken(token, { symbol: 'TKN', decimals: 6, ...behaviour });
+      t.node.mintToken(token, KEY_ADDRESS, 100n);
+      const data = t.client.abi.encodeTransfer(RECIPIENT, amount);
+      hashes.push(await submit(t, i, { to: token, value: 0n, gasLimit: 60_000n, data }));
+    }
+    // Final at the proven height (the finalized block less PEER_SKEW) for the R88 path too.
+    t.node.mine(5);
+    expect(t.node.tokenBalance(cases[2]?.[0] as string, RECIPIENT)).toBe(9n);
+    for (const [i, [, , , executed]] of cases.entries()) {
+      const hash = hashes[i] as string;
+      expect(t.node.receipt(hash)?.status).toBe(1);
+      expect(
+        await t.run(reader.observe(ref(hash), nonce(BigInt(i)), KEY_ADDRESS)),
+      ).toEqual(
+        expect.objectContaining({
+          success: executed,
+          ...(executed ? {} : { reason: 'token transfer failed' }),
+        }),
+      );
+      expect(
+        await t.run(t.proofs.includedFinal(ref(hash), nonce(BigInt(i)), KEY_ADDRESS)),
+      ).toMatchObject({ included: true, success: executed });
+      // R88: the same verdict when the endpoints' index lost the transaction.
+      unindexed(t, [hash]);
+      expect(
+        await t.run(t.proofs.includedFinal(ref(hash), nonce(BigInt(i)), KEY_ADDRESS)),
+      ).toMatchObject({ included: true, success: executed });
+      t.node.intercept = undefined;
+      // The chain's view (R68): every transfer the token logged, whatever the verdict.
+      expect((await t.run(reader.getTransaction(hash)))?.observation).toMatchObject({
+        success: true,
+      });
+    }
+  });
+
   it("reaches a proof while two endpoints' finalized heads differ by a block (R74)", async () => {
     const t = setup();
     const hash = await submit(t, 0);
