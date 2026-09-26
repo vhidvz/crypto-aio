@@ -245,6 +245,14 @@ function symbolText(client: EvmClient, data: string): string {
   }
 }
 
+/**
+ * M4: token metadata is read under the proof quorum, stricter than the contract table's
+ * minimum. The core caches it for the container's life, and one endpoint's wrong `decimals`
+ * (a lagging, misrouted or buggy backend) would mis-scale every amount by orders of
+ * magnitude until restart. `decimals` never changes, so honest endpoints always agree.
+ */
+const METADATA: EvmCallTags = { ...READ, quorum: 'proof' };
+
 export function createEvmReader(ctx: EvmContext): ChainReader {
   const { client } = ctx;
   /**
@@ -255,7 +263,7 @@ export function createEvmReader(ctx: EvmContext): ChainReader {
    */
   const tokenCall = async (contract: string, data: string): Promise<string> => {
     try {
-      return await client.call({ to: contract, data }, 'latest', READ);
+      return await client.call({ to: contract, data }, 'latest', METADATA);
     } catch (error) {
       if (isRevert(error)) throw assetError('the token contract reverted');
       if (isExecutionFailure(error)) throw assetError('the token contract failed to run');

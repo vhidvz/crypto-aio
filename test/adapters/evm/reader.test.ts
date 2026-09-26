@@ -216,6 +216,48 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     expect(h.calls.every((c) => c.tags.purpose === 'read')).toBe(true);
   });
 
+  it('reads token metadata under the proof quorum: no one endpoint scales amounts (R91 M4)', async () => {
+    const h = evmHarness(library, 'ethereum', 'sepolia', { endpoints: ['a', 'b'] });
+    const reader = createEvmReader(h.ctx);
+    h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    const metadata = () =>
+      h.run(reader.getTokenMetadata!({ standard: 'erc20', contract: TOKEN }));
+    expect(await metadata()).toEqual({ symbol: 'TKN', decimals: 6 });
+    const tags = { purpose: 'read', retry: 'safe', quorum: 'proof' };
+    expect(h.calls.map((c) => [c.method, c.tags])).toEqual([
+      ['call', tags],
+      ['call', tags],
+    ]);
+    const callers = h.node.served.filter((s) => s.method === 'eth_call');
+    expect(new Set(callers.map((s) => s.endpoint))).toEqual(new Set(['a', 'b']));
+    // A lagging, misrouted or buggy backend answers for another token.
+    h.node.deployToken(JUNK, { symbol: 'JUNK', decimals: 18 });
+    const lies: [string, string][] = [
+      [h.client.abi.encodeDecimals(), `0x${(18).toString(16).padStart(64, '0')}`],
+      [
+        h.client.abi.encodeSymbol(),
+        h.node.answer('eth_call', [
+          { to: JUNK, data: h.client.abi.encodeSymbol() },
+          'latest',
+        ]) as string,
+      ],
+    ];
+    for (const liar of ['a', 'b']) {
+      for (const [call, answer] of lies) {
+        h.node.intercept = (endpoint, method, params) =>
+          endpoint === liar &&
+          method === 'eth_call' &&
+          (params[0] as { data?: string }).data === call
+            ? { result: answer }
+            : undefined;
+        await expect(metadata()).rejects.toMatchObject({
+          code: 'PROVIDER_INCONSISTENT',
+          retryable: true,
+        });
+      }
+    }
+  });
+
   it('classifies token metadata failures: permanent for the token, retryable for the node (N6)', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
