@@ -14,7 +14,9 @@
 
 **Plan series:** Plan 1 (core, merged), Plan 2 (EVM), **Plan 2.5 (core prerequisites for Plans 3–6; Task 0 below is lifted into it, ruling A11)**, Plans 3–6 (UTXO, Tron, **Solana: this document**, TON), Plan 7 (release).
 
-**Executes after:** Plan 2 is merged into `main` and Plan 2.5 is merged (Task 0's `CallOptions.exactIntegers` and Plan 2 Task 11's `src/testing/generation.ts` must exist). Work on a branch from `main` named `feat/plan-5-solana`.
+**Executes after:** Plan 2 is merged into `main` (its Task 11 provides `src/testing/generation.ts`) and Plan 2.5 is merged: Task 0's `CallOptions.exactIntegers`, A14 (a height liar cannot shrink the proof quorum), A15 (no two live Operations share an `AttemptRef`) and A17 (health probes respect rate limits). Work on a branch from `main` named `feat/plan-5-solana`.
+
+**Pre-flight review applied** (`preflight-plan-5.md`: 1 Critical, 5 Important, 12 Minor): C1 → D7 and Task 8 (the window scan); I1 → D6, Tasks 4, 8, 10 and the guide; I2 → D14 and Task 5; I3 → D4 and Task 6; I4 → D13 and Tasks 5, 8; I5 → Task 9; M1–M12 as noted in each task.
 
 ## Global Constraints
 
@@ -34,7 +36,7 @@
 - "Events carry only `operational`-class data … Raw transactions, signatures, signing payloads, addresses, amounts and memos are never emitted by default." Broadcast reasons are short, fixed literals (R24).
 - "`bigint` always means base units." Lamports, token amounts, compute units and micro-lamport prices are `bigint`; u64 JSON numbers are parsed exactly (Task 0).
 - Every I/O call carries the tags of the `ChainDriver` contract table (purpose, retry class, quorum, fanout, signal); no driver request path waits on a real timer (lesson 1); the Tasks 3, 8 and 10 I/O suites must pass 100 consecutive runs.
-- Proofs follow lesson 17's final form (ruling R75): each fact is attested at its own height with a monotone predicate or a finality-scoped read; no endpoint proposes a height; a stale answer decides nothing; "not included" only when provably caught up (lesson 16).
+- Proofs follow lesson 17's final form (ruling R75): each fact is attested at its own height with a monotone predicate or a finality-scoped read; no endpoint proposes a height; a stale answer decides nothing; "not included" only when provably caught up (lesson 16, sharpened: a load-balanced URL is not monotone, so every read that proves absence must certify itself).
 - "Unit tests make no network calls; a guard fails any test that tries." "Integration (opt-in): `CRYPTO_AIO_INTEGRATION=1` runs read-only testnet checks." Environment variables carry flags and routing only, never keys.
 - Process: TDD for every module (red, green, commit); stage explicit paths only; never stage `.claude/`, `.superpowers/` or `.env`; never push. **Before every commit run `pnpm format && pnpm lint && pnpm typecheck && pnpm test`** (add `pnpm doc` when exports or docs change). Prettier may reflow code copied from this plan; that is expected. All subagents run on opus (R21).
 - Every commit message ends with the trailer `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
@@ -43,11 +45,11 @@
 
 These five inputs are the most likely to bite a real user, and no spec example exercises them. Each has a pinned test in the task named.
 
-1. **A transfer that looks dead to one endpoint but can still land.** A lagging endpoint, a pruned ledger or the ~200 ms movement of the finalized head must never produce a proven `expired` (or `included: false`) while the transaction's blockhash is still valid on some honest node. Expected: nothing is decided until every quorum endpoint has finalized past `lastValidBlockHeight` and still holds the start of the window. Pinned in Task 8 ("answers "not included" only past the window with the window on record", "attests expiry with a predicate at its own height") and Task 10 ("never calls an expired-looking transfer dead while it can still land").
+1. **A transfer that looks dead to one endpoint but can still land, or did land.** A lagging, pruned, snapshot-jumped or storage-gapped backend, often behind a single load-balanced URL (quorum 1), or the ~200 ms movement of the finalized head, must never produce `included: false` or a proven `expired` while the transaction could be in the chain. Expected: nothing is decided until the finalized chain is past `lastValidBlockHeight` (so the window's last block, `lastValidBlockHeight + 1`, is final) and every block of the window has been read under finality, height by height and parent by parent, without the transaction. Pinned in Task 8 ("never answers "not included" for a landed transfer when a backend lags", "never answers "not included" when a backend's ledger lacks the transaction's block", "proves a transfer included at lastValidBlockHeight + 1 as included, never absent", "answers "not included" only past the window…") and Task 10 ("never calls an expired-looking transfer dead while it can still land", "ends final, never expired, when the transfer lands at lastValidBlockHeight + 1").
 2. **Two honest providers formatting the same finalized transaction differently** (`jsonParsed` variance: `uiAmount` as `null`, no `owner` on token balances, `stackHeight: null`, extra `costUnits`, other log lines, `blockTime: null`) must still reach the proof quorum, while a different token amount decides nothing (`PROVIDER_INCONSISTENT`, retryable). Pinned in Task 2 ("ignores formatting that honest providers differ on", "disagrees on any fact a verdict reads") and Task 8 ("agrees across formatting differences and decides nothing on a different fact").
-3. **Two Operations with identical intents** (same sender, recipient, amount, memo and fee speed, built on the same blockhash) would sign byte-identical messages and share one signature: one payment silently lost. Expected: two different signatures and two payments. Pinned in Task 7 ("gives two identical Operations different bytes") and Task 10 ("keeps two identical Operations apart").
-4. **A recipient or amount that would lose funds or fail after signing:** SOL to a program-owned account, SPL to a token account instead of its owner, a new account below the rent-exempt minimum, a frozen token account, or a sender left between 0 and its rent-exempt minimum. Expected: a pre-signing refusal (`INVALID_INTENT`, `INVALID_AMOUNT`, or `INSUFFICIENT_FUNDS` with `{ required, available }`), nothing signed. Pinned in Task 7 ("refuses recipients that would lose the funds", "keeps the sender at zero or above the rent-exempt minimum").
-5. **Skipped slots under a scanner.** Heights must stay dense: every height up to the head has one block, `header(h)` is `null` only while `h` is not visible, and a block over skipped slots links to its parent. Pinned in Task 6 ("maps every height to its block, skipping empty slots") and Task 8 ("scans dense heights over skipped slots, filtered by address, without votes").
+3. **Two Operations with identical intents** (same sender, recipient, amount, memo and fee, built on the same blockhash) would sign byte-identical messages and share one signature: one payment silently lost. Expected: two different signatures and two payments (build variants, D10; ruling A15's core guard behind them). Pinned in Task 7 ("gives two identical Operations different bytes", "honours an explicit price exactly, and varies every build's limit") and Task 10 ("keeps two identical Operations apart").
+4. **A recipient or amount that would lose funds or fail after signing:** SOL to a program-owned account, SPL to a token account instead of its owner or to a program id, a new account below the rent-exempt minimum, a frozen token account, or a sender left between 0 and its rent-exempt minimum. Expected: a pre-signing refusal (`INVALID_INTENT`, `INVALID_AMOUNT`, or `INSUFFICIENT_FUNDS` with `{ required, available }`), nothing signed. Pinned in Task 7 ("refuses recipients that would lose the funds", "keeps the sender at zero or above the rent-exempt minimum").
+5. **Skipped slots and ledger gaps under a scanner.** Heights must stay dense: every height up to the head has one block, `header(h)` is `null` only while `h` is not visible (never for a pruned height, which is a retryable error), a list with a gap is refused, and a block over skipped slots links to its parent. Pinned in Task 6 ("maps every height to its block, skipping empty slots", "refuses a list that leaves out a block, and caches nothing from it", "answers a height a pruned endpoint no longer holds with a retryable error, in bounded calls") and Task 8 ("scans dense heights over skipped slots, filtered by address, without votes").
 
 ## Decisions recorded by the plan author
 
@@ -56,33 +58,35 @@ The common brief (lessons 1–17, with lesson 17 in its final form) and the scop
 - **D1. One JSON-RPC request per driver call; the SDK does codec work only (lesson 1).** Every driver request is `rpc.ts`'s `call(transport, method, params, tags)`, one `transport.rpc` call with the tags of the calling `ChainDriver` method. `@solana/web3.js` compiles legacy messages, derives associated token addresses and provides the native `Connection`; it never sends a driver request. web3.js's `Connection` retries HTTP 429 on a real `setTimeout` and would hide the tags, so it stays off the request path; a `setTimeout` spy pins this (Task 8). Cost: none; the SDK's request plumbing is not needed.
 - **D2. Legacy messages, one signer, SDK-free wire format.** The unsigned payload is the legacy message (base64). The only required signer is the sender, who is also the fee payer, so there is one `ed25519` signing request (`payloadKind: 'message'`, the message bytes). `assemble` writes the signed transaction itself (compact-u16 signature count, signatures, message: `wire.ts`), after checking that the message header's signer keys equal the requests' public keys; no SDK parses our own bytes. The Attempt ref is the base58 first signature (`idKind: 'signature'`, canonical). Versioned (v0) transactions are decoded when received, never built. Cost: address lookup tables are unavailable (not needed for one-output transfers).
 - **D3. Blockhash and preflight at `confirmed`.** `getLatestBlockhash` and `sendTransaction`'s `preflightCommitment` both use `confirmed` (Solana's confirmation guide). During authoring, devnet refused a transaction built on a `confirmed` blockhash with "Blockhash not found" under the default `finalized` preflight. Cost: a blockhash from a `confirmed` block that is later abandoned expires unused; `rebuild` recovers.
-- **D4. Dense heights are block heights (handoff §3); the driver maps them to slots.** `HeightIndex` resolves a height by anchoring on the endpoint's head block (`getSlot` + `getBlock`) and counting back through `getBlocks`, which lists produced slots only. A height at or below the endpoint's finalized height resolves on the finalized chain, and the pairs from it upward are cached (8,192 per driver; immutable chain data, spec §7), so a forward scan costs one `getBlock` per height. `reader.getBlock` takes a height; a string (a blockhash) throws `UNSUPPORTED_CAPABILITY`, since Solana has no block-by-hash RPC. No core change (ruling: adapter-local mapping accepted). Cost: a scan far below the head resolves in 500,000-slot windows.
+- **D4. Dense heights are block heights (handoff §3); the driver maps them to slots, and believes only verified pairs (I3).** `HeightIndex` resolves a height by anchoring on the endpoint's head block (`getSlot` + `getBlock`) and counting back through `getBlocks`, which lists produced slots only. A list can have gaps (a ledger jump to a snapshot, a long-term-storage gap, pruning), so a page is believed only after a read of its first block confirms the counted height; a list with a gap is `PROVIDER_INCONSISTENT` and caches nothing. A height at or below the endpoint's finalized height resolves on the finalized chain, and verified pairs from it upward are cached (8,192 per driver; immutable chain data, spec §7), so a forward scan costs one `getBlock` per height. The downward search is bounded (16 pages of 500,000 slots); a height the endpoint no longer holds is a retryable `PROVIDER_UNAVAILABLE` (decides nothing), never `null`, which means only "not visible yet". The RPC codes are split: "not yet" (`-32004`, `-32014`, `-32016`) → `null`; "gone" (`-32001`, `-32009`, `-32011`, `-32019`) → retryable error; "skipped" (`-32007`, which agave also answers for a slot missing after a ledger jump to a snapshot) for a listed slot → `PROVIDER_INCONSISTENT` (retryable, decides nothing), and the cache is dropped. `reader.getBlock` takes a height; a string (a blockhash) throws `UNSUPPORTED_CAPABILITY`, since Solana has no block-by-hash RPC. No core change (ruling: adapter-local mapping accepted). Cost: one extra `getBlock` per page; a scan more than about 8 M slots below the head decides nothing.
 - **D5. The scripted Solana node is test-only** (`test/adapters/solana/support/node.ts`), as Plan 2 D5. It decodes transactions with `@solana/web3.js` and verifies signatures with `@noble/curves`, so shipping it in `crypto-aio/testing` would make the testing kit depend on an optional peer. Its fidelity rules are listed in its header and pinned by `node.test.ts` (lesson 8). Cost: users script their own node for their tests.
-- **D6. Proofs in lesson 17's final form.** `expired(ordering)` is one quorum read of `getBlockHeight({ commitment: 'finalized' })` keyed on the monotone predicate `height > lastValidHeight`. `includedFinal` is a finality-scoped quorum read of `getTransaction(signature, { commitment: 'finalized' })` keyed on the consensus facts a verdict reads, then the including block by slot at `finalized`. `blockHash(h, level)` quorum-reads `getBlock(slot, { commitment })` keyed on consensus fields, after (for `finalized`) the predicate "my finalized height ≥ h". `finalizedHead()` is the one unanchored head: one endpoint's finalized height minus a peer skew of 2, then attested. `slotConsumed` is always `false` (expiry ordering has no slot another transaction could consume). Cost: a lagging peer delays verdicts by a poll.
-- **D7. "Not included" is strict (lesson 16, R76).** `includedFinal` answers `{ included: false }` only after (1) every quorum endpoint has finalized past `lastValidHeight` (the predicate read), (2) every quorum endpoint serves the finalized block at the window's first height, `lastValidHeight − 149` (its ledger still holds the window), and (3) a second finalized `getTransaction` quorum read still finds nothing. Anything short of that throws a retryable `PROVIDER_UNAVAILABLE`, which decides nothing. An endpoint without transaction history (`-32011`) or a pruned one (`-32001`) decides nothing. Cost: an Operation stays unresolved while every configured endpoint lacks the window's history.
+- **D6. Proofs in lesson 17's final form; the window ends at `lastValidBlockHeight + 1` (I1).** agave checks a blockhash's age against the including block's *parent* (a bank registers its own hash only after its transactions ran), so a transaction whose `lastValidBlockHeight` is `L` can land in block `L + 1`; the window is `L − 149 … L + 1` (151 blocks). `expired(ordering)` is one quorum read of `getBlockHeight({ commitment: 'finalized' })` keyed on the monotone predicate `height > L`, which holds exactly when block `L + 1` is final. `includedFinal` is a finality-scoped quorum read of `getTransaction(signature, { commitment: 'finalized' })` keyed on the consensus facts a verdict reads, then the including block by slot at `finalized`; an unfinalized or stale answer decides nothing. `blockHash(h, level)` quorum-reads `getBlock(slot, { commitment })` keyed on consensus fields, after (for `finalized`) the predicate "my finalized height ≥ h". `finalizedHead()` is the one unanchored head: one endpoint's finalized height minus a peer skew of 2, then attested. `slotConsumed` is always `false` (expiry ordering has no slot another transaction could consume), which closes R76's composed-call window for Solana. Cost: a lagging peer delays verdicts by a poll.
+- **D7. "Not included" is proven by reading the window, block by block (C1, lesson 16 sharpened).** An index that shows nothing proves nothing: behind one load-balanced URL, `getTransaction` can reach a backend that lags, was pruned (Ankr keeps about 16 hours), jumped to a snapshot, or swallows a long-term-storage error, and agave 4.3.0 ignores `getTransaction`'s `minContextSlot`. So `includedFinal` answers `{ included: false }` only after: (1) the finalized `getTransaction` quorum read found nothing; (2) the predicate "finalized height > `L`" holds (block `L + 1` is final); (3) the window's first and last blocks are attested by height; (4) `getBlocks` over their slots, at `finalized` with `minContextSlot`, lists exactly one slot per height (151); (5) every block is read whole (`transactionDetails: 'signatures'`) under the proof quorum, sits at the next height, names the previous block as its parent, and ends at the attested last block, and none holds the signature. Every block read certifies itself, so a lagging, pruned or gapped backend can only answer "not available", which decides nothing. A block that holds the transaction while the index showed nothing is `PROVIDER_INCONSISTENT` (a stale answer, lesson 17). A proven absence is remembered per driver (1,024 entries, immutable chain data), so `rebuild`'s re-proof costs one read. Cost: about 152 quorum block reads (0.1–0.3 MB each on mainnet) once per Attempt that really expired unlanded; with one provider, everything that provider answers is trusted, so proven expiry wants two independent providers (the guide says so), and A14 guards the quorum.
 - **D8. Library policies for the clusters.** `finality: { kind: 'commitment', level: 'finalized' }`; `defaultConfirmations: 1` (a default `waitForConfirmation` waits for inclusion; credit on `final`); `reorgWindow: 64`; `maxLagBlocks: 150` (a blockhash lives 150 blocks, so an endpoint further behind cannot judge expiry). The driver never reads `maxLagBlocks` (the pool resolves it, R36). Cost: a user may override per chain (R36).
 - **D9. Fees.** The `network` charge is the signature fee the node quotes for the exact message (`getFeeForMessage`, minus our priority fee); the `priority` charge is `ceil(price × limit / 1e6)`; a created recipient account adds a `rent` charge (`getMinimumBalanceForRentExemption(165)`). Speeds take the 25th, 50th and 75th nearest-rank percentile of `getRecentPrioritizationFees` over the accounts the transaction writes. The limit is the simulated usage plus 20% and 1,000 units (`simulateTransaction`, `sigVerify: false`, `replaceRecentBlockhash: true`), or 200,000 per instruction when a simulation fails (for example an unfunded sender, which `checkFunds` then explains). `bound` is `exact`, or `upper` when rent is charged (someone else may create the account first). Overrides: `{ computeUnitPrice, computeUnitLimit? }`. Cost: two extra reads per estimate; percentiles are a library policy.
-- **D10. Build variants against identical transfers (Review Focus 3; defense in depth next to ruling A15's core guard).** Each estimate draws a variant from a per-driver counter with a crypto-random start (0 to 1,023,999): 0–1,023 extra compute units on the limit and, for a speed, 0–999 extra micro-lamports on the price (at most about one lamport per 1,000 compute units). The variant lives in `fee.details`, so `build` reproduces it and the estimate stays exact. An explicit override is used exactly (no variant on the price). Cost: up to about 25 lamports more priority fee on a token transfer.
-- **D11. Pre-signing refusals that protect funds (Review Focus 4).** SOL to an account that exists and is executable or not owned by the System Program: `INVALID_INTENT` ("the recipient is a program-owned account"); SPL to a token account (classic or Token-2022 owner) instead of its owner: `INVALID_INTENT`; SOL to a missing account below `getMinimumBalanceForRentExemption(0)`: `INVALID_AMOUNT`; a frozen source or recipient token account, or a recipient token account for another mint or owner: `INVALID_INTENT`. `checkFunds` keeps the sender at 0 or at least the rent-exempt minimum (the runtime refuses anything in between). To fund a program account deliberately, use `crypto-aio/native`. Cost: those sends need the native client.
+- **D10. Build variants against identical transfers (Review Focus 3; defense in depth next to ruling A15's core guard).** Each estimate draws a variant from a per-driver counter with a crypto-random start (0 to 1,023,999): 0–1,023 extra compute units on the limit, an explicit limit included (M3), and, for a speed, 0–999 extra micro-lamports on the price (at most about one lamport per 1,000 compute units). An explicit price is used exactly. The variant lives in `fee.details`, so `build` reproduces it and the estimate stays exact. At the protocol maximum limit (1,400,000) no variant fits, and A15 is the only guard. Cost: up to about 25 lamports more priority fee on a token transfer; an explicit fee pays for up to 1,023 more compute units.
+- **D11. Pre-signing refusals that protect funds (Review Focus 4).** SOL to an account that exists and is executable or not owned by the System Program: `INVALID_INTENT` ("the recipient is a program-owned account"); SPL to a program id (M4: "the recipient is a program; send to a wallet or a PDA owner") or to a token account (classic or Token-2022 owner) instead of its owner: `INVALID_INTENT`; SOL to a missing account below `getMinimumBalanceForRentExemption(0)`: `INVALID_AMOUNT`; a frozen source or recipient token account, or a recipient token account for another mint or owner: `INVALID_INTENT`. `checkFunds` keeps the sender at 0 or at least the rent-exempt minimum (the runtime refuses anything in between). To fund a program account deliberately, use `crypto-aio/native`. Cost: those sends need the native client.
 - **D12. SPL scope.** Classic Token program only; a Token-2022 mint is `UNSUPPORTED_CAPABILITY` (spec §15). `getBalance(owner, spl)` sums every classic token account the owner holds for the mint; a transfer spends only the owner's associated token account, so `checkFunds` reports that account's balance as `available`. `ext.solana.getTokenAccounts(owner, mint?)` lists them. An unregistered mint's symbol is the first 8 characters of its address (SPL mints carry no symbol; metadata is display only, spec §6.2). Cost: tokens held outside the ATA must be moved by the owner first.
-- **D13. Decoding.** System `transfer`, `transferWithSeed`, `createAccount`, `createAccountWithSeed` and classic Token `transfer`/`transferChecked`, outer and inner (`source: 'internal'` for inner). Token transfers name the token accounts' owners (from the token balances), falling back to the token accounts, as `partial`, when a node omits owners. Every lamport and token balance change must be explained by the decoded moves and the fee, else `partial` (spec §15). A memo is attached to the transfers only when the transaction has exactly one. Failed transactions report the fee and no transfers (lesson 15). Vote transactions are skipped by the block source. Cost: other value-moving instructions (stake, close account) make a transaction `partial`.
-- **D14. The phantom-success guard (lessons 7 and 15).** On verdict paths only (`observe` with an ordering, and `includedFinal`), a transaction whose classic token transfers authorized by the sender do not show in the pre/post token balances is `success: false` (`reason: 'token transfer failed'`). The SPL Token program has no success-without-transfer path, so honest answers always pass; the guard stops a node's inconsistent answer from becoming a proven `executed`. General decoding reports the chain's own status. Cost: none for honest nodes.
-- **D15. Broadcast classification (lesson 3).** `already-known`: "Transaction simulation failed: This transaction has already been processed". `rejected` (only bytes invalid by construction on every node): the anchored signature-verification texts under codes `-32002` and `-32003`. `refused` with `INSUFFICIENT_FUNDS`: the anchored debit, fee, rent and "custom program error: 0x1" / "insufficient funds for instruction" texts (error 1 is insufficient funds in both the System and Token programs). Everything else, including "Blockhash not found" (a lagging node may not know it yet), undeserializable bytes and version or size limits, is `refused` `TX_REFUSED` with a fixed reason. Only a definitive, non-ambiguous `RPC_ERROR` is classified (R16/R17). Cost: an unlisted permanent text is reported refused (the safe direction).
+- **D13. Decoding, and a scan filter that never drops a deposit (I4).** System `transfer`, `transferWithSeed`, `createAccount`, `createAccountWithSeed` and classic Token `transfer`/`transferChecked`, outer and inner (`source: 'internal'` for inner). Token transfers name the token accounts' owners (from the token balances), falling back to the token accounts, as `partial`, when a node omits owners. Every lamport and token balance change must be explained by the decoded moves and the fee, else `partial` (spec §15). A memo is attached to the transfers only when the transaction has exactly one. Failed transactions report the fee and no transfers (lesson 15). Vote transactions are skipped by the block source. The address filter is a conservative superset (handoff §3, "at least every transaction"): a decoded transfer names a watched address; a watched account's lamports changed; a token balance owned by a watched address changed, or one with no owner reported changed; or the transaction is `partial` and names a watched account. Cost: other value-moving instructions (stake, close account, Token-2022) make a transaction `partial`, and the filter returns a few transactions that turn out unrelated.
+- **D14. The phantom-success guard, in the board's final wording (lessons 7 and 15; I2).** On verdict paths only (`observe` with an ordering, and `includedFinal`), a transaction that carries token instructions counts as executed only when the balances show a transfer **from the sender's account to the intended recipient's account of a positive amount**; the exact amount is not required (fee-on-transfer tokens exist). The intended recipient is the destination of the sender's own signed instruction, which its signature makes authentic (as the EVM verdict trusts calldata). A zero-amount record, a failed transaction, or no transfer by the sender at all is `success: false` (`reason: 'token transfer failed'`); missing evidence (no token balances, an unparsed token instruction, accounts missing from the keys) decides nothing (retryable `PROVIDER_UNAVAILABLE`), never a proven `failed`. A native transfer's verdict is the chain's own status. General decoding reports the chain's own status and the amounts that actually moved. Cost: none for honest nodes.
+- **D15. Broadcast classification (lesson 3).** `already-known`: "Transaction simulation failed: This transaction has already been processed". `rejected` (only bytes invalid by construction on every node): the anchored signature-verification texts under codes `-32002` and `-32003` (agave ≥ 4.0 answers `-32002` under preflight; `-32003` is kept for older nodes, harmless; with `skipPreflight` agave forwards a bad signature unverified, and the leader drops it, M1). `refused` with `INSUFFICIENT_FUNDS`: the anchored debit, fee, rent and "custom program error: 0x1" / "insufficient funds for instruction" texts (error 1 is insufficient funds in both the System and Token programs). Everything else, including "Blockhash not found" (a lagging node may not know it yet), undeserializable bytes and version or size limits, is `refused` `TX_REFUSED` with a fixed reason. Only a definitive, non-ambiguous `RPC_ERROR` is classified (R16/R17). Cost: an unlisted permanent text is reported refused (the safe direction); a first broadcast answered "Blockhash not found" by a lagging endpoint stalls until `rebroadcast` or expiry (M5, documented).
 - **D16. Memos** are at most 256 UTF-8 bytes (a library policy well inside the 1,232-byte packet limit) and must be well-formed text (no lone UTF-16 surrogate); otherwise `INVALID_INTENT`. Memos are never logged (spec §12 classifies them sensitive). Cost: longer memos need the native client.
-- **D17. History.** `getSignaturesForAddress` (newest first, at most 1,000 per page, `before` = the cursor), then `getTransaction` for each signature. The indexer transport is used when configured (handoff §3). An SPL deposit into an existing associated token account names the token account, not the owner, so it appears in the token account's history (listed by `ext.solana.getTokenAccounts`), not the owner's; the block scanner matches owners. Cost: one request per history item.
+- **D17. History.** `getSignaturesForAddress` (newest first, at most 1,000 per page, `before` = the cursor), then `getTransaction` for each signature. A backend that does not know the cursor answers `-32020`, which is a retryable `PROVIDER_UNAVAILABLE` (M2: another backend may). The indexer transport is used when configured (handoff §3). An SPL deposit into an existing associated token account names the token account, not the owner, so it appears in the token account's history (listed by `ext.solana.getTokenAccounts`), not the owner's; the block scanner matches owners. History and proofs reach back only as far as the provider's ledger (Ankr: about 16 hours); older history decides nothing. Cost: one request per history item.
 - **D18. The identity guard (lesson 5).** A Solana transaction embeds no cluster id; its recent blockhash binds it to one cluster. So: the genesis-hash identity probe runs on every transport, including the indexer, before any traffic (M12, R19); the blockhash is read only through identity-checked endpoints; `assemble` refuses a message whose signer keys differ from the signing requests. Cost: none.
 - **D19. Exact u64 integers (P5-A, ruling A12).** Solana sends lamports as JSON numbers; above 2^53 − 1 (≈ 9 M SOL) `JSON.parse` rounds them. Task 0 adds `CallOptions.exactIntegers` to the core (lifted into Plan 2.5), and every Solana call sets it. A rounded number is refused as malformed. Cost: one core option (a Plan 7 changelog item).
 - **D20. The Jest workspace override (P5-B, ruling A13).** `pnpm-workspace.yaml` overrides `rpc-websockets>uuid` to `^11.1.1` (CommonJS and ESM), so Jest 30 on Node 22 can load `@solana/web3.js` 1.99.0. It affects only this workspace's installs. Cost: none for consumers; users need Node ≥ 22.12 (documented).
-- **D21. Crash tests use `fenceGeneration` with `restart({ killPrevious: true })`** (handoff R20, ruling A5): `test/adapters/solana/support/env.ts` consumes `src/testing/generation.ts`, which Plan 2 Task 11 creates. Cost: none (Plan 2.5 runs after Plan 2).
+- **D21. Crash tests use `fenceGeneration` with `restart({ killPrevious: true })`** (handoff R20, ruling A5, Plan 2 Task 11's notes): `test/adapters/solana/support/env.ts` consumes `src/testing/generation.ts`, keeps the raw clock, stores and signer counter, never closes a killed container, and the first crash test pins that a call on the dead handle never settles (M11). Cost: none.
 - **D22. Guides are edited by hand**, not run through Prettier (as Plan 2 D16). `README.md` and `CHANGELOG.md` stay Prettier-clean.
-- **D23. Integration routing.** `CRYPTO_AIO_IT_SOLANA_NETWORK` (`mainnet`, `devnet` (default) or `testnet`) and `CRYPTO_AIO_IT_SOLANA_RPC_URL` (default: the `public` preset). During authoring the test passed live on devnet and testnet; the authoring machine's Node could not connect to `api.mainnet.solana.com` (curl could; its genesis hash is in the appendix).
+- **D23. Integration routing.** `CRYPTO_AIO_IT_SOLANA_NETWORK` (`mainnet`, `devnet` (default) or `testnet`) and `CRYPTO_AIO_IT_SOLANA_RPC_URL` (default: the `public` preset). The test pauses 2 s between steps, because the public endpoints are rate-limited and, until A17 lands, health probes do not wait for the limit. During authoring it passed live on mainnet, devnet and testnet (Agave 4.3.0).
 
 ## Proposals and rulings this plan builds on
 
-- **P5-A → A12 (accepted, in Plan 2.5):** `CallOptions.exactIntegers`. Task 0 below is its self-contained specification, marked "(lifted into Plan 2.5)". Tasks 2–10 consume it.
+- **P5-A → A12 (accepted and amended, in Plan 2.5):** `CallOptions.exactIntegers` on `rpc`, `rpcRaw` and `http`. Task 0 below is its self-contained specification, marked "(lifted into Plan 2.5)", written on Plan 4's `parseJson` helper so the two Task 0s merge into one implementation. Tasks 2–10 consume it.
 - **P5-B → A13 (accepted, here):** the `pnpm-workspace.yaml` override of Task 3.
 - **Lesson 17, final form (R75, binding):** D6. **Lesson 16:** D7. **R76** (the core's `whenAbsent` composes two proof calls): D7 keeps "not included" strict to shrink its window.
-- **A5:** crash tests consume `fenceGeneration` (D21). **A14** (N5, a height liar shrinking the proof quorum) and **A15** (a core guard against two Operations sharing an `AttemptRef`) land in Plan 2.5; D10 stays as defense in depth.
+- **A5:** crash tests consume `fenceGeneration` (D21). **A14** (N5, a height liar shrinking the proof quorum), **A15** (a core guard against two Operations sharing an `AttemptRef`) and **A17** (health probes respect rate limits) land in Plan 2.5; D10 stays as defense in depth.
+- **Plan 2 Task 10's final family shape** (R79–R82): Task 9 follows it (`SOLANA_PEER_DEPENDENCIES` keyed by library, per-manifest lazy tests, the peer-pin test, the SDK-free main-entry guard, `USE_ACME` in both file orders, bare peer names).
+- **The phantom-success rule, final wording:** D14.
 - Adapter-local dense heights: accepted with no core change (D4).
 
 ## File Structure
@@ -114,7 +118,7 @@ src/
     proofs.ts     ProofSource (lesson 17 final form) and BlockSource
     history.ts    AddressHistorySource (getSignaturesForAddress)
     driver.ts     solanaDriverFactory(makeCodec): probes, ports, capabilities
-    plugin.ts     solanaPlugin, solanaManifest, SOLANA_PEER_DEPENDENCY (SDK-free)
+    plugin.ts     solanaPlugin, solanaManifest, SOLANA_PEER_DEPENDENCIES (SDK-free)
     index.ts      `crypto-aio/solana`: public constants and types; NativeClientMap augmentation
 test/
   core/transport/exact-integers.test.ts                       (Task 0)
@@ -126,7 +130,7 @@ test/
     support/fixtures.ts  a real devnet transferChecked transaction (jsonParsed)
     support/env.ts       createSolanaEnv, countingSigner (fenced restarts)
     data, keys, programs, policy, codec, node, decode, heights, reader, builder, driver,
-    plugin, dependency, e2e (.test.ts)
+    plugin, dependency, lazy, e2e (.test.ts)
   integration/solana.test.ts                                   opt-in, read-only
   architecture/registry-augmentation.test.ts                   MODIFY: Solana typing
 package.json, pnpm-lock.yaml, pnpm-workspace.yaml, typedoc.json   MODIFY
@@ -148,7 +152,7 @@ Only `web3.ts` imports the SDK at runtime (and `index.ts` imports its *types* fo
 | 6 | `heights.ts`, `reader.ts` | Tasks 2–5 | — |
 | 7 | `builder.ts` (builder, broadcaster) | Tasks 2–6 | — |
 | 8 | `proofs.ts`, `history.ts`, `driver.ts`, `web3DriverFactory` | Tasks 2–7 | Plan 2 Task 9's factory shape |
-| 9 | plugin, `crypto-aio/solana`, composition root, packaging | Task 8 | Plan 2 Task 10's entry, manifests, `DEPENDENCY_MISSING` text |
+| 9 | plugin, `crypto-aio/solana`, composition root, packaging, lazy and peer-pin tests | Task 8 | Plan 2 Task 10's final shape (R79–R82) |
 | 10 | end-to-end suite | everything | Plan 2 Task 11's `src/testing/generation.ts` |
 | 11 | opt-in integration test | public API | Plan 2 Task 12's routing pattern |
 | 12 | guides, README, CHANGELOG | shipped behaviour | Plan 2 Task 13's guide layout |
@@ -159,21 +163,24 @@ Tasks 1, 2 and 5 are pure and can be reviewed independently; Tasks 3–4 are tes
 
 ### Task 0: Exact u64 integers in the transport (lifted into Plan 2.5)
 
-This task is self-contained so the controller can lift it into Plan 2.5 (ruling A11). If Plan 2.5 has already delivered it, verify that `test/core/transport/exact-integers.test.ts` exists and passes, and skip to Task 1.
+This task is self-contained so the controller can lift it into Plan 2.5 (ruling A11). **It merges with Plan 4's Task 0 into one Plan 2.5 implementation** (M12): both use the same `parseJson(text, exactIntegers)` helper in `src/core/util/json.ts` and the same `CallOptions.exactIntegers` field with the same doc comment; Plan 4's specifies `http`, this one `rpc`, `rpcRaw` and `http`, and whichever lands first adds the field and the helper. Both create `test/core/transport/exact-integers.test.ts`: Plan 2.5 keeps one file with both plans' assertions. If Plan 2.5 has already delivered all of this, verify that its test pins `rpc`, `rpcRaw`, `http` and quorum keys, and skip to Task 1.
 
 **Files:**
-- Modify: `src/core/transport/types.ts` (`CallOptions`), `src/core/transport/http-transport.ts` (`rpc`, `rpcRaw`, `http`, `#rpcOnce`, `#httpOnce`, `#exchange`)
+- Modify: `src/core/util/json.ts` (add `parseJson`), `src/core/transport/types.ts` (`CallOptions.exactIntegers`), `src/core/transport/http-transport.ts` (thread the flag from `rpc`, `rpcRaw` and `http` to the JSON parse)
 - Test: `test/core/transport/exact-integers.test.ts`
 
 **Interfaces:**
-- Consumes: `HttpTransport`, `CallOptions`, `FakeFetch`, the transport test `setup` helper (Plan 1).
-- Produces: `CallOptions.exactIntegers?: boolean` (default `false`). When `true`, `Transport.rpc`, `rpcRaw` and `http` parse the answer body with a reviver that turns every integer literal outside ±(2^53 − 1) into an exact `bigint`; safe integers stay numbers, floats and exponents are untouched, and a `quorumKey` sees the revived values. Without the flag nothing changes. Consumers: every Solana call (Task 2's `call`); Plan 4 adopts it for Tron amounts (ruling A12).
+- Consumes: `HttpTransport`, `CallOptions`, `FakeFetch`, `drive`, the transport test `setup` helper (Plan 1); Node ≥ 22 `JSON.parse` source-text access.
+- Produces:
+  - `parseJson(text: string, exactIntegers?: boolean): unknown` in `src/core/util/json.ts`: with the flag, every integer literal outside `Number.MIN_SAFE_INTEGER..MAX_SAFE_INTEGER` becomes a `bigint` read from its source text; safe integers, fractions and exponents are unchanged.
+  - `CallOptions.exactIntegers?: boolean` (default `false`). `Transport.rpc`, `rpcRaw` and `http` parse the answer with it; a `quorumKey` sees the revived values. The health probes (`#direct`) keep plain parsing. Consumers: every Solana call (Task 2's `call`); Plan 4 for Tron amounts (ruling A12).
 
 **Review points:**
-- The reviver only fires for `number`s that are not safe integers *and* whose source text is a plain integer literal; `1e21` and `1.5` stay numbers.
-- The flag reaches all three request paths (`rpc`, `rpcRaw`, `http`), never the health probes (`#direct`).
-- It relies on Node ≥ 22's `JSON.parse` source-text access (the reviver's third argument), which the `engines` floor guarantees.
-- A Plan 7 changelog item: a new `CallOptions` field.
+- Opt-in: without the flag every answer parses exactly as before.
+- Only integer literals outside the safe range become bigints; `1.5`, `1e21` and safe integers keep their type.
+- The flag reaches all three request paths, never the probes; the `http` assertion uses its own endpoint, so it pins parsing, not failover (M6).
+- A quorum over revived values compares exact integers (`canonicalJson` encodes bigints).
+- A Plan 7 changelog item: "`CallOptions.exactIntegers` (A12)".
 
 - [ ] **Step 1: Write the failing test**
 
@@ -181,65 +188,75 @@ This task is self-contained so the controller can lift it into Plan 2.5 (ruling 
 
 ```ts
 import type { EndpointConfig } from '../../../src/core/transport/types';
+import { parseJson } from '../../../src/core/util/json';
 import { drive } from '../../../src/testing/fake-clock';
 import { FakeFetch, type FakeRequest } from '../../../src/testing/fake-fetch';
 import { setup } from './support';
 
 const A: EndpointConfig = { name: 'a', url: 'https://a.test/rpc' };
 const B: EndpointConfig = { name: 'b', url: 'https://b.test/rpc' };
+const C: EndpointConfig = { name: 'c', url: 'https://c.test' };
+const BODY =
+  '{"lamports":18446744073709551615,"small":5,"negative":-9007199254740993,"float":1.5,"exp":1e21,"list":[9007199254740993]}';
+const EXACT = {
+  lamports: 18_446_744_073_709_551_615n,
+  small: 5,
+  negative: -9_007_199_254_740_993n,
+  float: 1.5,
+  exp: 1e21,
+  list: [9_007_199_254_740_993n],
+};
 
 /** A JSON-RPC answer written as raw text, so its numbers are exactly what a node sends. */
-const raw = (request: FakeRequest, result: string) => ({
+const rpcAnswer = (request: FakeRequest, result: string) => ({
   text: `{"jsonrpc":"2.0","id":${request.json<{ id: number }>().id},"result":${result}}`,
   headers: { 'content-type': 'application/json' },
 });
 
-describe('HttpTransport exact integers (P5-A)', () => {
-  const body =
-    '{"lamports":18446744073709551615,"small":5,"negative":-9007199254740993,"float":1.5,"exp":1e21,"list":[9007199254740993]}';
-  const fake = new FakeFetch()
-    .route('https://a.test', (req) => raw(req, body))
-    .route('https://b.test', (req) => raw(req, body))
-    .route('https://c.test', () => ({
-      text: body,
-      headers: { 'content-type': 'application/json' },
-    }));
-
-  it('keeps integers beyond 2^53 − 1 exact as bigints, and everything else as it was', async () => {
-    const { transport, clock } = setup([A], fake);
-    expect(await drive(clock, transport.rpc('m', [], { exactIntegers: true }))).toEqual({
-      lamports: 18_446_744_073_709_551_615n,
-      small: 5,
-      negative: -9_007_199_254_740_993n,
-      float: 1.5,
-      exp: 1e21,
-      list: [9_007_199_254_740_993n],
-    });
-    // Without the flag nothing changes: the value is rounded, as JSON.parse does.
-    const lossy = await drive(clock, transport.rpc<{ lamports: unknown }>('m', []));
-    expect(lossy.lamports).toBe(18_446_744_073_709_552_000);
+describe('exact JSON integers (P5-A, A12)', () => {
+  it('parseJson revives integers beyond 2^53 − 1 as bigints, and only them', () => {
+    expect(parseJson(BODY, true)).toEqual(EXACT);
+    expect((parseJson(BODY) as { lamports: unknown }).lamports).toBe(
+      18_446_744_073_709_552_000,
+    );
   });
 
-  it('applies to rpcRaw and http, and quorum keys see the exact values', async () => {
-    const { transport, clock } = setup(
-      [A, B, { name: 'c', url: 'https://c.test' }],
-      fake,
+  it('applies to rpc and rpcRaw answers with the flag, and never without it', async () => {
+    const fake = new FakeFetch().route('https://a.test', (req) => rpcAnswer(req, BODY));
+    const { transport, clock } = setup([A], fake);
+    expect(await drive(clock, transport.rpc('m', [], { exactIntegers: true }))).toEqual(
+      EXACT,
     );
+    const lossy = await drive(clock, transport.rpc<{ lamports: unknown }>('m', []));
+    expect(lossy.lamports).toBe(18_446_744_073_709_552_000);
     expect(
       await drive(
         clock,
         transport.rpcRaw({ jsonrpc: '2.0', id: 1, method: 'm' }, { exactIntegers: true }),
       ),
     ).toMatchObject({ result: { lamports: 18_446_744_073_709_551_615n } });
+  });
+
+  it('applies to http answers (their own endpoint: this pins parsing, not failover)', async () => {
+    const fake = new FakeFetch().route('https://c.test', () => ({
+      text: BODY,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const { transport, clock } = setup([C], fake);
     expect(
       await drive(
         clock,
-        transport.http<{ lamports: unknown }>(
-          { method: 'GET', path: '/x' },
-          { exactIntegers: true },
-        ),
+        transport.http({ method: 'GET', path: '/x' }, { exactIntegers: true }),
       ),
-    ).toMatchObject({ lamports: 18_446_744_073_709_551_615n });
+    ).toEqual(EXACT);
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it('lets quorum keys see the revived values', async () => {
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) => rpcAnswer(req, BODY))
+      .route('https://b.test', (req) => rpcAnswer(req, BODY));
+    const { transport, clock } = setup([A, B], fake);
     const seen: unknown[] = [];
     await drive(
       clock,
@@ -261,133 +278,86 @@ describe('HttpTransport exact integers (P5-A)', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `pnpm jest test/core/transport/exact-integers.test.ts`
-Expected: FAIL: TypeScript reports "Object literal may only specify known properties, and 'exactIntegers' does not exist in type 'CallOptions'".
+Expected: FAIL: `parseJson` is not exported from `src/core/util/json`.
 
-- [ ] **Step 3: Add the option**
+- [ ] **Step 3: Add the parser**
+
+In `src/core/util/json.ts`, add before `export function sha256Hex(`:
+
+```ts
+/**
+ * `JSON.parse`, optionally exact for integers (A12): with `exactIntegers`, every integer
+ * literal outside the safe range becomes a `bigint` read from its source text (Node ≥ 22
+ * `JSON.parse` source text access), so a u64 amount is never rounded. Safe integers stay
+ * numbers, so answers keep their shape for ordinary values.
+ */
+export function parseJson(text: string, exactIntegers = false): unknown {
+  if (!exactIntegers) return JSON.parse(text);
+  return JSON.parse(
+    text,
+    (_key: string, value: unknown, context?: { readonly source?: string }) =>
+      typeof value === 'number' &&
+      !Number.isSafeInteger(value) &&
+      context?.source !== undefined &&
+      /^-?\d+$/.test(context.source)
+        ? BigInt(context.source)
+        : value,
+  );
+}
+```
+
+- [ ] **Step 4: Add the option**
 
 In `src/core/transport/types.ts`, insert before `/** Send to this many endpoints concurrently (raw-transaction broadcasts). */`:
 
 ```ts
   /**
-   * P5-A: parse the answer's JSON with integer literals outside the safe integer range
-   * (±(2^53 − 1)) as exact `bigint`s instead of rounded numbers. Safe integers stay
-   * numbers, so answers keep their shape. For chains that send u64 amounts as JSON numbers
-   * (Solana lamports, Tron sun). A quorum key sees the revived values.
+   * A12: parse JSON answers with exact integers: an integer outside the safe range becomes a
+   * `bigint` instead of a rounded number (`rpc`, `rpcRaw` and `http`). A quorum key sees the
+   * revived values.
    */
   readonly exactIntegers?: boolean;
 ```
 
-- [ ] **Step 4: Parse exactly when asked**
+- [ ] **Step 5: Thread it through `rpc`, `rpcRaw` and `http`**
 
-In `src/core/transport/http-transport.ts`, insert after `type Mode = 'rpc' | 'json' | 'text';`:
+In `src/core/transport/http-transport.ts`:
 
-```ts
-
-/**
- * P5-A: `JSON.parse` reviver that keeps integer literals beyond the safe range exact. Uses
- * the source text Node ≥ 22's `JSON.parse` passes as the reviver's third argument.
- */
-function exactIntegers(
-  _key: string,
-  value: unknown,
-  context?: { source?: string },
-): unknown {
-  if (
-    typeof value === 'number' &&
-    !Number.isSafeInteger(value) &&
-    context?.source !== undefined &&
-    /^-?(0|[1-9][0-9]*)$/.test(context.source)
-  ) {
-    return BigInt(context.source);
-  }
-  return value;
-}
-```
-
-In `rpc()`, replace
-
-```ts
-    const body = serializeJson({ jsonrpc: '2.0', id, method, params });
-    return this.#run(method, options, (endpoint, signal) =>
-      this.#rpcOnce<T>(endpoint, method, id, body, signal),
-    );
-```
-
-with
-
-```ts
-    const body = serializeJson({ jsonrpc: '2.0', id, method, params });
-    const exact = options.exactIntegers === true;
-    return this.#run(method, options, (endpoint, signal) =>
-      this.#rpcOnce<T>(endpoint, method, id, body, signal, exact),
-    );
-```
-
-In `rpcRaw()`, replace the `#exchange` call's last argument line `'rpc',` (inside `this.#run(label, options, async (endpoint, signal) => {`) with
-
-```ts
-        'rpc',
+1. Change `import { canonicalJson } from '../util/json';` to `import { canonicalJson, parseJson } from '../util/json';`.
+2. In `rpc()`, change `this.#rpcOnce<T>(endpoint, method, id, body, signal),` to `this.#rpcOnce<T>(endpoint, method, id, body, signal, options.exactIntegers),`.
+3. In `rpcRaw()`, the `this.#exchange(…)` call ends with the argument `'rpc',`; add after it:
+   ```ts
         label,
-        options.exactIntegers === true,
-```
-
-In `http()`, replace
-
-```ts
-      (endpoint, signal) => this.#httpOnce<T>(endpoint, request, bodyText, signal),
-```
-
-with
-
-```ts
+        options.exactIntegers,
+   ```
+4. In `http()`, change `(endpoint, signal) => this.#httpOnce<T>(endpoint, request, bodyText, signal),` to:
+   ```ts
       (endpoint, signal) =>
-        this.#httpOnce<T>(
-          endpoint,
-          request,
-          bodyText,
-          signal,
-          options.exactIntegers === true,
-        ),
-```
-
-In `#rpcOnce`, add the parameter `exact = false,` after `signal: AbortSignal,`, and replace its `#exchange` call's last argument line `'rpc',` with
-
-```ts
-      'rpc',
+        this.#httpOnce<T>(endpoint, request, bodyText, signal, options.exactIntegers),
+   ```
+5. Give `#rpcOnce` a last parameter `exactIntegers = false,` (after `signal: AbortSignal,`), and add after its `#exchange` call's `'rpc',` argument:
+   ```ts
       method,
-      exact,
-```
-
-In `#httpOnce`, add the parameter `exact = false,` after `signal: AbortSignal,`, and add `exact,` as the last argument of its `#exchange` call, after the `` `${request.method} ${request.path}`, `` line.
-
-In `#exchange`, add the parameter `exact = false,` after `errorLabel: string = label,`, and replace
-
-```ts
-        json = text.length > 0 ? JSON.parse(text) : null;
-```
-
-with
-
-```ts
-        json =
-          text.length > 0 ? JSON.parse(text, exact ? exactIntegers : undefined) : null;
-```
+      exactIntegers,
+   ```
+6. Give `#httpOnce` a last parameter `exactIntegers = false,` (after `signal: AbortSignal,`), and pass `exactIntegers,` as the last argument of its `this.#exchange(…)` call, after the `` `${request.method} ${request.path}`, `` error label.
+7. Give `#exchange` a last parameter `exactIntegers = false,` (after `errorLabel: string = label,`), and replace `json = text.length > 0 ? JSON.parse(text) : null;` with `json = text.length > 0 ? parseJson(text, exactIntegers) : null;`.
 
 `#direct` (health probes) keeps calling `#rpcOnce` and `#httpOnce` without the flag.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `pnpm jest test/core/transport`
-Expected: PASS: every transport suite, including 2 new tests in `exact-integers.test.ts`.
+Expected: PASS: every transport suite, including 4 new tests in `exact-integers.test.ts`.
 
-- [ ] **Step 6: Check and commit**
+- [ ] **Step 7: Check and commit**
 
 Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm doc`
-Expected: all green; `pnpm doc` 0 warnings (the new field has a doc comment).
+Expected: all green; `pnpm doc` 0 warnings.
 
 ```bash
-git add src/core/transport/types.ts src/core/transport/http-transport.ts test/core/transport/exact-integers.test.ts
-git commit -m "feat(core): exact u64 integers in transport answers (CallOptions.exactIntegers)
+git add src/core/util/json.ts src/core/transport/types.ts src/core/transport/http-transport.ts test/core/transport/exact-integers.test.ts
+git commit -m "feat(core): exact JSON integers for rpc, rpcRaw and http answers (A12)
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
@@ -1429,13 +1399,14 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 0 (`CallOptions.exactIntegers`); Task 1 (`SolanaCallTags`, `Commitment`, `SolanaFeeDetails`, `SolanaFeeOverride`, `DEFAULT_INSTRUCTION_COMPUTE_UNITS`, `MAX_COMPUTE_UNIT_LIMIT`); `Transport`, `ProviderError`, `ValidationError`, `isCryptoAioError`, `canonicalJson`, `BroadcastResult`, `FeeEstimateDraft`.
 - Produces:
-  - `rpc.ts`: tag constants `READ`, `MONITOR`, `PROOF`, `BROADCAST`, `withSignal(tags, signal?)`; `RPC_CODES`; `rpcCode(error)`, `rpcMessage(error)`, `isNotAvailable(error)`; error makers `notYet(what)` (retryable `PROVIDER_UNAVAILABLE`), `malformed(what)` (retryable `PROVIDER_UNAVAILABLE`), `inconsistent(what)` (retryable `PROVIDER_INCONSISTENT`); validators `u64(value, what)`, `amountString(value, what)`, `contextValue(result, what)`, `blockHeader(result): BlockHeader { blockhash, previousBlockhash, parentSlot, blockHeight, blockTime? }`; `quorumKeyFor(method)`; `call(transport, method, params, tags)` (sets `exactIntegers: true`; a caller `quorumKey` in the tags replaces the method's default); `headerOptions(commitment)`, `parsedOptions(commitment)`.
+  - `rpc.ts`: tag constants `READ`, `MONITOR`, `PROOF`, `BROADCAST`, `withSignal(tags, signal?)`; `RPC_CODES` (incl. `FILTER_TRANSACTION_NOT_FOUND: -32020`); `rpcCode(error)`, `rpcMessage(error)`; the split "cannot show it" predicates (I3) `isNotYet` (`-32004`, `-32014`, `-32016`), `isGone` (`-32001`, `-32009`, `-32011`, `-32019`), `isSkipped` (`-32007`) and their union `isNotAvailable`; error makers `notYet(what)` and `gone(what)` (retryable `PROVIDER_UNAVAILABLE`), `malformed(what)` (retryable `PROVIDER_UNAVAILABLE`), `inconsistent(what)` (retryable `PROVIDER_INCONSISTENT`); validators `u64(value, what)`, `amountString(value, what)`, `contextValue(result, what)`, `blockHeader(result): BlockHeader { blockhash, previousBlockhash, parentSlot, blockHeight, blockTime? }`; `pick(value, keys)` and `BLOCK_FIELDS` (a block's consensus fields); `quorumKeyFor(method)`; `call(transport, method, params, tags)` (sets `exactIntegers: true`; a caller `quorumKey` in the tags replaces the method's default); `headerOptions(commitment)`, `parsedOptions(commitment)`.
   - `fees.ts`: `SPEED_PERCENTILE`, `computeUnitLimitFor(units)`, `fallbackComputeUnitLimit(instructions)`, `VARIANTS`, `variantOffsets(variant)`, `variantCounter(start)`, `priorityFee(price, limit)`, `priceForSpeed(recent, speed)`, `parseOverride(fee)`, `feeDraft(speed, details)`, `detailsOf(fee)`, `lamportsCharged(fee)`.
   - `errors.ts`: `classifyBroadcastError(code, message): BroadcastResult` (frozen results).
 
 **Review points:**
 - Every call sets `exactIntegers: true` (D19) and passes the caller's tags unchanged; a caller `quorumKey` wins (lesson 17 plumbing).
-- The `getTransaction` quorum key covers every field a verdict reads (slot, error, signatures, account keys, token balances, token-transfer instructions) and ignores formatting (lesson 2, R59); a throwing key counts as a disagreement.
+- The `getTransaction` quorum key covers every field a verdict reads (slot, error, signatures, account keys, token balances, token-transfer instructions) and ignores formatting, including the order of the token balances (lesson 2, R59, M7); a throwing key counts as a disagreement.
+- "Not yet" and "gone" are distinct (I3): only "not yet" may become `null` downstream.
 - `rejected` only for the two anchored signature texts under their own codes; the default is `TX_REFUSED` with a fixed reason; no reason carries an address or amount (lesson 3, R24).
 - "Not available" codes are matched only on definitive, non-ambiguous `RPC_ERROR`s.
 - Fee math is bigint only; the priority fee rounds up; overrides reject unknown keys and out-of-range values.
@@ -1465,7 +1436,10 @@ import {
   blockHeader,
   call,
   contextValue,
+  isGone,
   isNotAvailable,
+  isNotYet,
+  isSkipped,
   quorumKeyFor,
   rpcCode,
   u64,
@@ -1511,10 +1485,19 @@ describe('Solana answers', () => {
     ).toThrow(expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE' }));
   });
 
-  it('treats only definitive "cannot show it" codes as not available', () => {
+  it('treats only definitive "cannot show it" codes as not available, split by meaning (I3)', () => {
     for (const code of [-32001, -32004, -32007, -32009, -32011, -32014, -32016, -32019]) {
       expect(isNotAvailable(rpcError(code, 'x'))).toBe(true);
     }
+    const kinds = (code: number) =>
+      [isNotYet, isGone, isSkipped].map((is) => is(rpcError(code, 'x')));
+    expect([-32004, -32014, -32016].map(kinds)).toEqual(
+      Array(3).fill([true, false, false]),
+    );
+    expect([-32001, -32009, -32011, -32019].map(kinds)).toEqual(
+      Array(4).fill([false, true, false]),
+    );
+    expect(kinds(-32007)).toEqual([false, false, true]);
     expect(isNotAvailable(rpcError(-32004, 'x', true))).toBe(false);
     expect(isNotAvailable(rpcError(-32002, 'x'))).toBe(false);
     expect(isNotAvailable(new ProviderError('PROVIDER_UNAVAILABLE', 'down'))).toBe(false);
@@ -1663,6 +1646,15 @@ describe('quorum keys (lesson 2, Review Focus 2)', () => {
       null;
     (other as Record<string, unknown>).blockTime = null;
     expect(canonicalJson(key(other))).toBe(canonicalJson(key(base())));
+    // M7: another implementation may list token balances in another order.
+    const second = { accountIndex: 0, mint: 'M', uiTokenAmount: { amount: '1' } };
+    const ordered = base({
+      postTokenBalances: [second, ...(base().meta.postTokenBalances as object[])],
+    });
+    const reordered = base({
+      postTokenBalances: [...(base().meta.postTokenBalances as object[]), second],
+    });
+    expect(canonicalJson(key(reordered))).toBe(canonicalJson(key(ordered)));
   });
 
   it('disagrees on any fact a verdict reads', () => {
@@ -1955,17 +1947,21 @@ export const RPC_CODES = Object.freeze({
   BLOCK_STATUS_NOT_AVAILABLE_YET: -32014,
   MIN_CONTEXT_SLOT_NOT_REACHED: -32016,
   LONG_TERM_STORAGE_UNREACHABLE: -32019,
+  FILTER_TRANSACTION_NOT_FOUND: -32020,
 });
 
-/** Answers meaning "this endpoint cannot show that (yet)": they never decide anything. */
-const NOT_AVAILABLE = new Set<number>([
-  RPC_CODES.BLOCK_CLEANED_UP,
+/** "Not yet": the endpoint has not reached that slot or state. */
+const NOT_YET = new Set<number>([
   RPC_CODES.BLOCK_NOT_AVAILABLE,
-  RPC_CODES.SLOT_SKIPPED,
-  RPC_CODES.LONG_TERM_STORAGE_SLOT_SKIPPED,
-  RPC_CODES.TRANSACTION_HISTORY_NOT_AVAILABLE,
   RPC_CODES.BLOCK_STATUS_NOT_AVAILABLE_YET,
   RPC_CODES.MIN_CONTEXT_SLOT_NOT_REACHED,
+]);
+
+/** "No longer, or never here": pruned, not in long-term storage, or no history at all. */
+const GONE = new Set<number>([
+  RPC_CODES.BLOCK_CLEANED_UP,
+  RPC_CODES.LONG_TERM_STORAGE_SLOT_SKIPPED,
+  RPC_CODES.TRANSACTION_HISTORY_NOT_AVAILABLE,
   RPC_CODES.LONG_TERM_STORAGE_UNREACHABLE,
 ]);
 
@@ -1981,11 +1977,28 @@ export function rpcMessage(error: CryptoAioError): string {
   return String(error.details?.rpcMessage ?? error.message);
 }
 
-/** Whether `error` is an endpoint saying it cannot show the block or history (yet). */
-export function isNotAvailable(error: unknown): boolean {
+const hasCode = (error: unknown, codes: ReadonlySet<number>): boolean => {
   const code = rpcCode(error);
-  return code !== undefined && NOT_AVAILABLE.has(code);
-}
+  return code !== undefined && codes.has(code);
+};
+
+/** The endpoint has not reached that block or state yet (`null`, decides nothing). */
+export const isNotYet = (error: unknown): boolean => hasCode(error, NOT_YET);
+
+/** The endpoint no longer holds that block or history, or never did (decides nothing). */
+export const isGone = (error: unknown): boolean => hasCode(error, GONE);
+
+/** The endpoint says the slot holds no block (`-32007`). */
+export const isSkipped = (error: unknown): boolean =>
+  rpcCode(error) === RPC_CODES.SLOT_SKIPPED;
+
+/** Any answer meaning "this endpoint cannot show that": it never decides anything. */
+export const isNotAvailable = (error: unknown): boolean =>
+  isNotYet(error) || isGone(error) || isSkipped(error);
+
+/** A retryable error that decides nothing: the endpoint no longer holds what was asked. */
+export const gone = (what: string) =>
+  new ProviderError('PROVIDER_UNAVAILABLE', `the endpoint no longer holds ${what}`);
 
 /** A retryable error that decides nothing: the endpoints cannot show this yet. */
 export const notYet = (what: string) =>
@@ -2062,13 +2075,19 @@ export function blockHeader(result: unknown): BlockHeader {
   };
 }
 
-const pick = (value: unknown, keys: readonly string[]): unknown => {
+export const pick = (value: unknown, keys: readonly string[]): unknown => {
   const object = record(value);
   if (!object) return value;
   return Object.fromEntries(keys.map((key) => [key, object[key] ?? null]));
 };
 
-const BLOCK = ['blockhash', 'previousBlockhash', 'parentSlot', 'blockHeight'] as const;
+/** The consensus fields of a block header, compared under a quorum. */
+export const BLOCK_FIELDS = [
+  'blockhash',
+  'previousBlockhash',
+  'parentSlot',
+  'blockHeight',
+] as const;
 
 /** The token-program instructions (outer and inner) projected to what a verdict reads. */
 function tokenInstructions(tx: Record<string, unknown>): unknown[] {
@@ -2100,16 +2119,19 @@ function tokenInstructions(tx: Record<string, unknown>): unknown[] {
   });
 }
 
+/** Token balances by account index (M7: providers may list them in another order). */
 const tokenBalances = (list: unknown): unknown =>
   Array.isArray(list)
-    ? list.map((entry) => {
-        const balance = record(entry);
-        return {
-          accountIndex: balance?.accountIndex ?? null,
-          mint: balance?.mint ?? null,
-          amount: record(balance?.uiTokenAmount)?.amount ?? null,
-        };
-      })
+    ? list
+        .map((entry) => {
+          const balance = record(entry);
+          return {
+            accountIndex: balance?.accountIndex ?? null,
+            mint: balance?.mint ?? null,
+            amount: record(balance?.uiTokenAmount)?.amount ?? null,
+          };
+        })
+        .sort((a, b) => Number(a.accountIndex) - Number(b.accountIndex))
     : null;
 
 /**
@@ -2145,7 +2167,7 @@ function transactionKey(result: unknown): unknown {
 export function quorumKeyFor(method: string): ((result: unknown) => unknown) | undefined {
   switch (method) {
     case 'getBlock':
-      return (result) => pick(result, BLOCK);
+      return (result) => pick(result, BLOCK_FIELDS);
     case 'getTransaction':
       return transactionKey;
     default:
@@ -2228,7 +2250,7 @@ export function fallbackComputeUnitLimit(instructions: number): bigint {
 }
 
 /**
- * Build variants (Plan 5 D-uniqueness): identical intents built on the same blockhash would
+ * Build variants (Plan 5 D10): identical intents built on the same blockhash would
  * sign byte-identical messages, so a second Operation would silently share the first one's
  * signature and one payment would be lost. Each estimate therefore adds a variant to the
  * compute-unit limit (0 to 1,023 units) and, for a speed, to the price (0 to 999
@@ -2493,7 +2515,8 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - Test support `vectors.ts`: `KEY`, `KEY_PUBLIC`, `KEY_ADDRESS`, `RECIPIENT_KEY`, `RECIPIENT`, `MINT`, `sign(message, key?)`, `compileLegacy(payer, blockhash, instructions)` (an independent encoder).
 
 **Review points:**
-- The SDK is pinned exactly (`1.99.0`) as a devDependency and offered as an optional peer (`^1.99.0`); `dependencies` is unchanged.
+- The SDK is pinned exactly (`1.99.0`) as a devDependency and offered as an optional peer (`^1.99.0`); `dependencies` is unchanged. Task 9's peer-pin test checks all three against `SOLANA_PEER_DEPENDENCIES`.
+- `web3.ts` imports the SDK by its bare peer name, `@solana/web3.js` (R80: the core's `DEPENDENCY_MISSING` matches that name).
 - The override is the only change to `pnpm-workspace.yaml` (ruling A13); the lockfile shows `rpc-websockets@9.3.9` → `uuid@11.1.1`. The "Ignored build scripts: bufferutil, utf-8-validate" warning is expected (optional native `ws` add-ons); do not approve them.
 - The frozen vectors match the independent encoder byte for byte and verify under `@noble/curves` (lesson 11); the SDK re-parses our signed layout unchanged.
 - No SDK object leaves `web3.ts` except the native `Connection` (R11).
@@ -2513,13 +2536,13 @@ overrides:
 Run: `pnpm add -D -E @solana/web3.js@1.99.0`
 Expected: `devDependencies` gains `"@solana/web3.js": "1.99.0"`; `pnpm-lock.yaml` gains an `overrides:` block with `rpc-websockets>uuid: ^11.1.1`, `@solana/web3.js@1.99.0`, `rpc-websockets@9.3.9` depending on `uuid: 11.1.1`; pnpm warns "Ignored build scripts: bufferutil, utf-8-validate".
 
-In `package.json`, add to `"peerDependencies"` (after the entries Plan 2 added):
+In `package.json`, add as the first entry of `"peerDependencies"` (keys stay alphabetical, before Plan 2's `ethers`):
 
 ```json
     "@solana/web3.js": "^1.99.0",
 ```
 
-and to `"peerDependenciesMeta"`:
+and as the first entry of `"peerDependenciesMeta"`:
 
 ```json
     "@solana/web3.js": { "optional": true },
@@ -2948,14 +2971,15 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 3 (`createWeb3Codec`, `signedTransaction`, vectors), `FakeFetch`, `FakeClock`, `HttpTransport`, `EventBus`; `@solana/web3.js` (`VersionedTransaction`, `VersionedMessage`, `PublicKey`) to decode, `@noble/curves` to verify.
 - Produces (test support, used by Tasks 6–10):
-  - `ScriptedSolanaNode({ clock, genesisHash?, finalizedDepth? = 2, blockhashValidity? = 150, prioritizationFees? })`: `endpoint(name, { lag?, firstAvailableHeight? })`, `produce(n)`, `skip(n)`, `reorg(depth, drop?)`, `fund`, `setAccount`, `createMint(mint, decimals, program?)`, `mintTo(mint, owner, amount, { frozen? })`, `balance`, `account`, `tokenBalance`, `rent(bytes)`, `inMempool`, `drop`, `sendCount`, `landed(signature)`, `submit(base64, { skipPreflight? })`, `answer(endpoint, method, params)`, `head`, `finalized`, `block(height)`, `served`, `intercept`; `associatedAddress(owner, mint, program?)`; program-id constants.
-  - `harness.ts`: `type Endpoint`, `nodeTransport(options?, endpoints?)` → `{ clock, node, transport, run, seen }`; `recording(transport)` → `{ transport, calls: { method, tags, params }[] }` (tags without `signal`, `quorumKey`, `exactIntegers`).
+  - `ScriptedSolanaNode({ clock, genesisHash?, finalizedDepth? = 2, blockhashValidity? = 150, prioritizationFees? })`: `endpoint(name, EndpointOptions | BalancedOptions)` with `EndpointOptions { lag?, firstAvailableHeight?, missingHeights? }` and `BalancedOptions { backends: EndpointOptions[] }` (a load-balanced URL: each request is served by the next backend, deterministically), `produce(n)`, `skip(n)`, `reorg(depth, drop?)`, `fund`, `setAccount`, `createMint(mint, decimals, program?)`, `mintTo(mint, owner, amount, { frozen? })`, `balance`, `account`, `tokenBalance`, `rent(bytes)`, `inMempool`, `drop`, `sendCount`, `landed(signature)`, `submit(base64, { skipPreflight? })`, `answer(endpoint, method, params)`, `head`, `finalized`, `block(height)`, `served`, `intercept`; `associatedAddress(owner, mint, program?)`; program-id constants.
+  - `harness.ts`: `type Endpoint` (a name, or a name with `EndpointOptions` or `BalancedOptions`), `nodeTransport(options?, endpoints?)` → `{ clock, node, transport, run, seen }`; `recording(transport)` → `{ transport, calls: { method, tags, params }[] }` (tags without `signal`, `quorumKey`, `exactIntegers`).
   - `tx.ts`: `codec`, `signedTx(blockhash, instructions, { payer?, key? })` → base64 wire bytes.
 
 **Review points (lesson 8: the node must follow the real node's rules):**
 - Dense heights over skipped slots; `finalized` is `finalizedDepth` heights below the head and never moves back after a fork; forks never cut below it.
-- A blockhash is valid for 150 blocks after its own; `getLatestBlockhash` states `lastValidBlockHeight = height + 150`; an expired transaction never lands (not even with `skipPreflight`).
-- Preflight defaults to `finalized` (so a `confirmed` blockhash is "not found" there, D3); "already been processed" for a landed signature; signature failures are `-32002` under preflight, `-32003` without.
+- A blockhash's age is checked against the including block's parent (agave, I1): `getLatestBlockhash` states `lastValidBlockHeight = height + 150`, a transaction can land up to `lastValidBlockHeight + 1`, and never later (not even with `skipPreflight`).
+- Preflight defaults to `finalized` (so a `confirmed` blockhash is "not found" there, D3); "already been processed" for a landed signature; a bad signature is `-32002` under preflight; with `skipPreflight` the bytes are forwarded unverified and never land (M1).
+- A load-balanced URL rotates its backends per request; a missing height answers `-32009`, is left out of `getBlocks`, and hides its transactions (C1's test double); `getBlocks` honours `minContextSlot` (`-32016`); an unknown history cursor is `-32020` (M2); `getBlock` with `transactionDetails: 'signatures'` lists the signatures.
 - Fees: 5,000 lamports per signature plus `ceil(price × limit / 1e6)`, charged even when execution fails; compute limits enforced (a starved transaction lands failed).
 - Rent: new accounts and the fee payer end at 0 or at least `(128 + bytes) × 5,080` lamports (today's devnet and mainnet value, Appendix A); zero-lamport accounts disappear.
 - Token rules: mint and decimals checks (errors 0x12, 0x3), owner check (0x4), frozen (0x11), insufficient (0x1); the associated token account's address is checked; `CreateIdempotent` is a no-op on an existing account.
@@ -3063,7 +3087,7 @@ describe('the scripted Solana node', () => {
     );
   });
 
-  it('includes a transaction only while its blockhash is valid, and states lastValidBlockHeight', async () => {
+  it('includes a transaction up to lastValidBlockHeight + 1, never later (I1)', async () => {
     const { node, rpc, tx, send } = setup({ blockhashValidity: 3 });
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.produce(1);
@@ -3076,11 +3100,18 @@ describe('the scripted Solana node', () => {
     expect((await send(raw)).result).toEqual(expect.any(String));
     node.produce(1);
     expect(node.balance(RECIPIENT)).toBe(1_000_000_000n);
-    // Signed at height 1, it can land up to height 4; at height 5 it is dead.
-    const late = tx([systemTransfer(KEY_ADDRESS, RECIPIENT, 7n)], {
+    // Signed at height 1 (lastValidBlockHeight 4): agave checks the blockhash's age against
+    // the including block's parent, so it can still land at height 5; at height 6 it is dead.
+    const edge = tx([systemTransfer(KEY_ADDRESS, RECIPIENT, 7n)], {
       blockhash: node.block(1n)?.hash,
     });
-    node.produce(3);
+    const late = tx([systemTransfer(KEY_ADDRESS, RECIPIENT, 8n)], {
+      blockhash: node.block(1n)?.hash,
+    });
+    node.produce(2);
+    const edgeId = (await send(edge, { skipPreflight: true })).result as string;
+    node.produce(1);
+    expect(node.landed(edgeId)?.block.height).toBe(5n);
     expect((await send(late)).error?.message).toBe(
       'Transaction simulation failed: Blockhash not found',
     );
@@ -3109,7 +3140,7 @@ describe('the scripted Solana node', () => {
     expect(node.sendCount(id)).toBe(3);
   });
 
-  it('verifies signatures: -32002 under preflight, -32003 without', async () => {
+  it('verifies signatures under preflight (-32002); without it, forwards bytes that never land (M1)', async () => {
     const { node, tx, send } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.produce(1);
@@ -3121,10 +3152,13 @@ describe('the scripted Solana node', () => {
       message:
         'Transaction simulation failed: Transaction did not pass signature verification',
     });
-    expect((await send(forged, { skipPreflight: true })).error).toEqual({
-      code: -32003,
-      message: 'Transaction signature verification failure',
-    });
+    const id = (await send(forged, { skipPreflight: true })).result as string;
+    node.produce(1);
+    expect([node.landed(id), node.inMempool(id), node.sendCount(id)]).toEqual([
+      undefined,
+      false,
+      2,
+    ]);
   });
 
   it('charges 5,000 lamports per signature plus the priority fee, even when execution fails', async () => {
@@ -3271,6 +3305,67 @@ describe('the scripted Solana node', () => {
       await call(pruned, 'getBalance', [KEY_ADDRESS, { commitment: 'confirmed' }]),
     ).toContain('"value":1152921504606846976');
   });
+
+  it('serves a load-balanced URL from its backends in turn, gaps and all', async () => {
+    const node = new ScriptedSolanaNode({ clock: new FakeClock() });
+    const url = node.endpoint('lb', {
+      backends: [{}, { lag: 2, missingHeights: [3n] }],
+    });
+    node.fund(KEY_ADDRESS, 10_000_000_000n);
+    node.produce(1);
+    const id = node.submit(
+      signedTx(node.head.hash, [systemTransfer(KEY_ADDRESS, RECIPIENT, 1_000_000_000n)]),
+    );
+    node.produce(1);
+    node.produce(4);
+    const call = async (method: string, params: unknown[]) =>
+      JSON.parse(
+        await (
+          await node.fetch.fetch(url, {
+            method: 'POST',
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+          })
+        ).text(),
+      ) as { result?: unknown; error?: { code: number } };
+    const heights = [
+      (await call('getBlockHeight', [{ commitment: 'confirmed' }])).result,
+      (await call('getBlockHeight', [{ commitment: 'confirmed' }])).result,
+    ];
+    expect(heights).toEqual([6, 4]);
+    const header = { commitment: 'confirmed', transactionDetails: 'none' };
+    expect((await call('getBlock', [2, header])).result).toMatchObject({
+      blockHeight: 2,
+    });
+    // The second backend's ledger lacks height 3.
+    expect((await call('getBlock', [3, header])).error?.code).toBe(-32009);
+    expect(
+      (await call('getBlocks', [0, 10, { commitment: 'confirmed' }])).result,
+    ).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(
+      (await call('getBlocks', [0, 10, { commitment: 'confirmed' }])).result,
+    ).toEqual([0, 1, 2, 4]);
+    const options = {
+      encoding: 'jsonParsed',
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    };
+    expect((await call('getTransaction', [id, options])).result).toMatchObject({
+      slot: 2,
+    });
+    expect((await call('getTransaction', [id, options])).result).toMatchObject({
+      slot: 2,
+    });
+  });
+
+  it('answers an unknown history cursor with -32020 (M2)', async () => {
+    const { node, rpc } = setup();
+    node.fund(KEY_ADDRESS, 10_000_000_000n);
+    node.produce(1);
+    const before = '1'.repeat(64);
+    expect(
+      (await rpc('getSignaturesForAddress', [KEY_ADDRESS, { before }])).error,
+    ).toEqual({ code: -32020, message: `Transaction ${before} not found` });
+  });
 });
 ```
 
@@ -3335,6 +3430,16 @@ export interface EndpointOptions {
   readonly lag?: number;
   /** Blocks below this height were pruned from this endpoint's ledger. */
   readonly firstAvailableHeight?: number;
+  /**
+   * Heights this endpoint's ledger lacks (a jump to a snapshot, a long-term-storage gap):
+   * `getBlock` answers -32009, `getBlocks` omits them, and their transactions are not found.
+   */
+  readonly missingHeights?: readonly bigint[];
+}
+
+/** A URL behind a load balancer: each request is served by the next backend in turn. */
+export interface BalancedOptions {
+  readonly backends: readonly EndpointOptions[];
 }
 
 interface Account {
@@ -3392,6 +3497,7 @@ interface View {
   readonly head: Block;
   readonly finalized: Block;
   readonly firstAvailable: bigint;
+  readonly missing: ReadonlySet<bigint>;
 }
 
 class RpcFailure extends Error {
@@ -3506,7 +3612,8 @@ export class ScriptedSolanaNode {
   readonly #bySlot = new Map<bigint, Block>();
   readonly #mempool = new Map<string, Decoded>();
   readonly #sends = new Map<string, number>();
-  readonly #endpoints = new Map<string, EndpointOptions>();
+  readonly #endpoints = new Map<string, readonly EndpointOptions[]>();
+  readonly #turns = new Map<string, number>();
   #nextSlot = 1n;
   #fork = 0;
   #finalizedFloor = 0n;
@@ -3549,10 +3656,13 @@ export class ScriptedSolanaNode {
     this.#push(genesis);
   }
 
-  /** The endpoint URL for `name` (a lagging or pruned endpoint serves an older view). */
-  endpoint(name: string, options: EndpointOptions = {}): string {
+  /**
+   * The endpoint URL for `name`: a lagging, pruned or gapped endpoint serves its own view,
+   * and a load-balanced one (`{ backends }`) serves each request from the next backend.
+   */
+  endpoint(name: string, options: EndpointOptions | BalancedOptions = {}): string {
     const url = `https://${name}.solana.test/`;
-    this.#endpoints.set(name, options);
+    this.#endpoints.set(name, 'backends' in options ? options.backends : [options]);
     this.fetch.route(url, (request) => this.#serve(name, request));
     return url;
   }
@@ -3698,13 +3808,14 @@ export class ScriptedSolanaNode {
 
   /** The node's own answer to `method` at `endpoint`, as plain JSON (for intercept tests). */
   answer(endpoint: string, method: string, params: readonly unknown[]): unknown {
-    return JSON.parse(toJson(this.#method(endpoint, method, params))) as unknown;
+    const view = this.#view(this.#endpoints.get(endpoint)?.[0] ?? {});
+    return JSON.parse(toJson(this.#method(view, method, params))) as unknown;
   }
 
   /** Submits base64 bytes as `sendTransaction` would, with preflight at `confirmed`. */
   submit(base64: string, options: { skipPreflight?: boolean } = {}): string {
     try {
-      return this.#send(this.#view('main'), [
+      return this.#send(this.#view({}), [
         base64,
         { encoding: 'base64', preflightCommitment: 'confirmed', ...options },
       ]);
@@ -3764,12 +3875,15 @@ export class ScriptedSolanaNode {
     return false;
   }
 
-  /** A blockhash is valid in the block at `height` when its block is at most `validity`
-   *  heights older and known to `bank`. */
+  /**
+   * A blockhash is valid in the block at `height` while its age against that block's
+   * PARENT is at most `validity` (agave registers a block's own hash only after its
+   * transactions ran): so a transaction can land up to `lastValidBlockHeight + 1` (I1).
+   */
   #blockhashValid(tx: Decoded, bank: Block, height: bigint): void {
     const hash = tx.message.recentBlockhash;
     const origin = this.#blocks.find((b) => b.hash === hash && b.height <= bank.height);
-    if (!origin || height - origin.height > this.validity) {
+    if (!origin || height - 1n - origin.height > this.validity) {
       throw new TxError('BlockhashNotFound', 'Blockhash not found', true);
     }
   }
@@ -4092,8 +4206,15 @@ export class ScriptedSolanaNode {
 
   // ---- views ---------------------------------------------------------------------------
 
-  #view(endpoint: string): View {
-    const options = this.#endpoints.get(endpoint) ?? {};
+  /** The next backend's options for `endpoint` (load-balanced endpoints rotate). */
+  #backend(endpoint: string): EndpointOptions {
+    const backends = this.#endpoints.get(endpoint) ?? [{}];
+    const turn = this.#turns.get(endpoint) ?? 0;
+    this.#turns.set(endpoint, turn + 1);
+    return backends[turn % backends.length] as EndpointOptions;
+  }
+
+  #view(options: EndpointOptions): View {
     const lag = BigInt(options.lag ?? 0);
     const headHeight = this.head.height - lag;
     const head = this.#blocks[Number(headHeight < 0n ? 0n : headHeight)] as Block;
@@ -4104,7 +4225,13 @@ export class ScriptedSolanaNode {
       head,
       finalized: this.#blocks[Number(height < 0n ? 0n : height)] as Block,
       firstAvailable: BigInt(options.firstAvailableHeight ?? 0),
+      missing: new Set(options.missingHeights ?? []),
     };
+  }
+
+  /** Whether the view's ledger holds the block at `height`. */
+  #holds(view: View, height: bigint): boolean {
+    return height >= view.firstAvailable && !view.missing.has(height);
   }
 
   #bank(view: View, commitment: unknown): Block {
@@ -4127,7 +4254,8 @@ export class ScriptedSolanaNode {
     const intercepted = this.intercept?.(endpoint, body.method, params);
     if (intercepted) return reply(intercepted);
     try {
-      return reply({ result: this.#method(endpoint, body.method, params) });
+      const view = this.#view(this.#backend(endpoint));
+      return reply({ result: this.#method(view, body.method, params) });
     } catch (error) {
       if (error instanceof RpcFailure) {
         return reply({
@@ -4142,8 +4270,7 @@ export class ScriptedSolanaNode {
     }
   }
 
-  #method(endpoint: string, method: string, params: readonly unknown[]): unknown {
-    const view = this.#view(endpoint);
+  #method(view: View, method: string, params: readonly unknown[]): unknown {
     const config = (i: number) => (params[i] ?? {}) as Record<string, unknown>;
     const context = (bank: Block) => ({ apiVersion: '4.3.0', slot: bank.slot });
     switch (method) {
@@ -4298,9 +4425,8 @@ export class ScriptedSolanaNode {
     const tx = this.#parseRaw(params[0]);
     this.#sends.set(tx.signature, this.sendCount(tx.signature) + 1);
     if (options.skipPreflight === true) {
-      if (!this.#verify(tx)) {
-        throw new RpcFailure(-32003, 'Transaction signature verification failure');
-      }
+      // agave forwards unverified bytes; a leader drops a bad signature, so it never lands.
+      if (!this.#verify(tx)) return tx.signature;
     } else {
       const bank = this.#bank(view, options.preflightCommitment ?? 'finalized');
       const fail = (error: TxError) =>
@@ -4348,13 +4474,17 @@ export class ScriptedSolanaNode {
     );
     if (end - start > 500_000n)
       throw new RpcFailure(-32602, 'Slot range too large; max 500000');
+    const minContextSlot = ((params[2] ?? {}) as Record<string, unknown>).minContextSlot;
+    if (typeof minContextSlot === 'number' && BigInt(minContextSlot) > bank.slot) {
+      throw new RpcFailure(-32016, 'Minimum context slot has not been reached');
+    }
     return this.#blocks
       .filter(
         (b) =>
           b.slot >= start &&
           b.slot <= end &&
           b.slot <= bank.slot &&
-          b.height >= view.firstAvailable,
+          this.#holds(view, b.height),
       )
       .map((b) => b.slot);
   }
@@ -4373,6 +4503,12 @@ export class ScriptedSolanaNode {
       throw new RpcFailure(
         -32001,
         `Block ${slot} cleaned up, does not exist on node. First available block: ${view.firstAvailable}`,
+      );
+    }
+    if (view.missing.has(block.height)) {
+      throw new RpcFailure(
+        -32009,
+        `Slot ${slot} was skipped, or missing in long-term storage`,
       );
     }
     return block;
@@ -4396,6 +4532,9 @@ export class ScriptedSolanaNode {
       previousBlockhash: block.previousBlockhash,
     };
     if (options.transactionDetails === 'none') return header;
+    if (options.transactionDetails === 'signatures') {
+      return { ...header, signatures: block.txs.map((t) => t.tx.signature) };
+    }
     if (options.encoding !== 'jsonParsed')
       throw new RpcFailure(-32602, 'Invalid params: encoding');
     return { ...header, transactions: block.txs.map((t) => this.#renderTx(t)) };
@@ -4419,7 +4558,7 @@ export class ScriptedSolanaNode {
       throw new RpcFailure(-32602, 'Invalid params: encoding');
     const bank = this.#bank(view, options.commitment);
     const found = this.#find(params[0] as string, bank);
-    if (!found || found.block.height < view.firstAvailable) return null;
+    if (!found || !this.#holds(view, found.block.height)) return null;
     return {
       slot: found.block.slot,
       blockTime: found.block.blockTime,
@@ -4437,13 +4576,16 @@ export class ScriptedSolanaNode {
     const all: { block: Block; executed: Executed }[] = [];
     for (let h = Number(bank.height); h >= Number(view.firstAvailable); h--) {
       const block = this.#blocks[h] as Block;
+      if (!this.#holds(view, block.height)) continue;
       for (const executed of [...block.txs].reverse()) {
         if (executed.tx.keys.includes(address)) all.push({ block, executed });
       }
     }
     let start = 0;
     if (typeof options.before === 'string') {
-      start = all.findIndex((e) => e.executed.tx.signature === options.before) + 1;
+      const at = all.findIndex((e) => e.executed.tx.signature === options.before);
+      if (at < 0) throw new RpcFailure(-32020, `Transaction ${options.before} not found`);
+      start = at + 1;
     }
     return all.slice(start, start + limit).map(({ block, executed }) => ({
       blockTime: block.blockTime,
@@ -4633,9 +4775,15 @@ import type { AioEvent } from '../../../../src/core/events/types';
 import { HttpTransport } from '../../../../src/core/transport/http-transport';
 import type { Transport } from '../../../../src/core/transport/types';
 import { FakeClock, drive } from '../../../../src/testing/fake-clock';
-import { ScriptedSolanaNode, type EndpointOptions, type NodeOptions } from './node';
+import {
+  ScriptedSolanaNode,
+  type BalancedOptions,
+  type EndpointOptions,
+  type NodeOptions,
+} from './node';
 
-export type Endpoint = string | ({ readonly name: string } & EndpointOptions);
+export type Endpoint =
+  string | ({ readonly name: string } & (EndpointOptions | BalancedOptions));
 
 /** A scripted node behind a real HttpTransport, with one or more endpoints. */
 export function nodeTransport(
@@ -4690,7 +4838,7 @@ export function recording(transport: Transport) {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm jest test/adapters/solana/node.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Check and commit**
 
@@ -4714,15 +4862,16 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 1 (program ids), Task 2 (`u64`, `amountString`, `malformed`); `DriverTransaction`, `DriverTransfer`, `canonicalJson`.
 - Produces:
-  - `ParsedTransaction { signature, keys, err, fee, preBalances, postBalances, preTokens, postTokens, instructions, version, slot?, blockTime? }` and `parseTransaction(value)`: validates a `jsonParsed` transaction (from `getTransaction` or a block's list); any malformed part is a retryable `PROVIDER_UNAVAILABLE`.
+  - `ParsedTransaction { signature, keys, err, fee, preBalances, postBalances, preTokens, postTokens, tokenBalances: 'present' | 'absent', instructions, version, slot?, blockTime? }` and `parseTransaction(value)`: validates a `jsonParsed` transaction (from `getTransaction` or a block's list); any malformed part is a retryable `PROVIDER_UNAVAILABLE`.
   - `decodeTransaction(parsed, place: BlockPlace { height, hash, blockTime? }): DriverTransaction`: transfers with locators `ix:<outer>` and `ix:<outer>.<inner>`, `decoding: 'partial'` when balances are not explained (spec §15), the chain's own status (lesson 15), `details: { slot, version, err? }`.
-  - `isVote(parsed)`, `touches(tx, addresses)` (the scan filter), `tokenTransfersLanded(parsed, from)` (lesson 7, verdict paths only).
+  - `isVote(parsed)`; `touches(decoded, parsed, addresses)`, the scan filter, a conservative superset (I4, D13); `tokenTransfersLanded(parsed, from)`, the phantom-success guard in the final wording (I2, D14; verdict paths only; throws a retryable `PROVIDER_UNAVAILABLE` on missing evidence).
 
 **Review points:**
 - Reconciliation covers every account: lamports (fee on account 0 plus decoded moves) and token balances; anything unexplained is `partial`, never silently `complete`.
 - Token transfers name owners, not token accounts; missing owners fall back to token accounts as `partial`.
 - Token-2022 instructions are not decoded (spec §15), and so the transaction is `partial`.
-- `tokenTransfersLanded` judges only transfers authorized by `from`; a failed transaction never lands.
+- `tokenTransfersLanded` follows the final wording: a transfer from the sender to the intended recipient of a positive amount, never the exact amount; missing evidence decides nothing (never a proven `failed`); seeing no transfer by the sender never passes; a failed transaction never lands.
+- `touches` never drops a transaction that moves value to a watched address, even when decoding cannot attribute it (I4).
 - The fixture is public chain data; no private data enters the repository.
 
 - [ ] **Step 1: Write the failing test**
@@ -4975,7 +5124,8 @@ function nativeTx(meta: Json = {}, instructions?: unknown[]): Json {
 
 describe('Solana transaction decoding', () => {
   it('decodes a real devnet SPL transfer, with owners and the memo, as complete', () => {
-    const decoded = decodeTransaction(parseTransaction(DEVNET_TRANSFER_CHECKED), PLACE);
+    const parsed = parseTransaction(DEVNET_TRANSFER_CHECKED);
+    const decoded = decodeTransaction(parsed, PLACE);
     expect(decoded).toEqual({
       id: '4DETGWWsC9zQ83YrU5EyYJmAgaug1dDas7cLWBVRBnvxxfo8Knfm4osJbmN4fXnrHZLFJmrPn8XbpcnTWWQsixv',
       observation: {
@@ -5005,10 +5155,10 @@ describe('Solana transaction decoding', () => {
       details: { slot: 504_092_431n, version: 0 },
     });
     expect(
-      touches(decoded, new Set(['75AjMdh7Gn1TLigfze541AVJGJ4TyqBEaRZk3pozfBza'])),
+      touches(decoded, parsed, new Set(['75AjMdh7Gn1TLigfze541AVJGJ4TyqBEaRZk3pozfBza'])),
     ).toBe(true);
     expect(
-      touches(decoded, new Set(['DeJGcDqExnXDaMc2TX4bG9A5hRQ5SPxszsb37Zq4kNj3'])),
+      touches(decoded, parsed, new Set(['DeJGcDqExnXDaMc2TX4bG9A5hRQ5SPxszsb37Zq4kNj3'])),
     ).toBe(false);
   });
 
@@ -5199,27 +5349,80 @@ describe('Solana transaction decoding', () => {
   });
 });
 
-describe('tokenTransfersLanded (lesson 7, verdict paths only)', () => {
-  const owner = '8sh86hmWL4ka7U44dFn3U72ZagLsAME4iRMwajfgR8QT';
-
-  it('holds when the balances show the transfer, and fails when they do not', () => {
-    expect(tokenTransfersLanded(parseTransaction(DEVNET_TRANSFER_CHECKED), owner)).toBe(
+describe('the scan filter is a superset (I4)', () => {
+  it('keeps a deposit it cannot attribute, and drops an unrelated transaction', () => {
+    // B gained lamports no decoded instruction explains (e.g. a closed token account).
+    const unexplained = nativeTx({ postBalances: [94_000, 1_500, 1] });
+    const parsed = parseTransaction(unexplained);
+    const decoded = decodeTransaction(parsed, PLACE);
+    expect(decoded.decoding).toBe('partial');
+    expect(touches(decoded, parsed, new Set(['B']))).toBe(true);
+    expect(touches(decoded, parsed, new Set(['Z']))).toBe(false);
+    // A token balance with no owner reported changed: it cannot be attributed, so it stays.
+    const ownerless = clone(DEVNET_TRANSFER_CHECKED) as unknown as {
+      meta: { preTokenBalances: Json[]; postTokenBalances: Json[] };
+    };
+    for (const list of [
+      ownerless.meta.preTokenBalances,
+      ownerless.meta.postTokenBalances,
+    ]) {
+      for (const balance of list) delete balance.owner;
+    }
+    const noOwner = parseTransaction(ownerless);
+    expect(touches(decodeTransaction(noOwner, PLACE), noOwner, new Set(['Z']))).toBe(
       true,
     );
-    const tampered = clone(DEVNET_TRANSFER_CHECKED) as unknown as {
-      meta: { postTokenBalances: { uiTokenAmount: { amount: string } }[] };
+  });
+});
+
+describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict paths only)', () => {
+  const owner = '8sh86hmWL4ka7U44dFn3U72ZagLsAME4iRMwajfgR8QT';
+  type Fixture = {
+    meta: {
+      err: unknown;
+      preTokenBalances?: unknown;
+      postTokenBalances: { uiTokenAmount: { amount: string } }[];
     };
-    (
-      tampered.meta.postTokenBalances[1] as { uiTokenAmount: { amount: string } }
-    ).uiTokenAmount.amount = '372685000';
-    expect(tokenTransfersLanded(parseTransaction(tampered), owner)).toBe(false);
-    // Somebody else's authority: not ours to judge.
-    expect(tokenTransfersLanded(parseTransaction(tampered), 'Someone')).toBe(true);
-    const failed = clone(DEVNET_TRANSFER_CHECKED) as unknown as {
-      meta: { err: unknown };
-    };
+    transaction: { message: { instructions: Record<string, unknown>[] } };
+  };
+  const fixture = () => clone(DEVNET_TRANSFER_CHECKED) as unknown as Fixture;
+  const landed = (tx: unknown, from = owner) =>
+    tokenTransfersLanded(parseTransaction(tx), from);
+
+  it('needs a transfer from the sender to the recipient of a positive amount, not the exact one', () => {
+    expect(landed(DEVNET_TRANSFER_CHECKED)).toBe(true);
+    // The recipient got less than the instruction said (a fee-on-transfer token): it moved.
+    const less = fixture();
+    less.meta.postTokenBalances[1]!.uiTokenAmount.amount = '372685001';
+    expect(landed(less)).toBe(true);
+    // The recipient got nothing: failed.
+    const nothing = fixture();
+    nothing.meta.postTokenBalances[1]!.uiTokenAmount.amount = '372685000';
+    expect(landed(nothing)).toBe(false);
+    // Seeing no transfer from the sender never passes.
+    expect(landed(DEVNET_TRANSFER_CHECKED, 'Someone')).toBe(false);
+    // A failed transaction moved nothing.
+    const failed = fixture();
     failed.meta.err = { InstructionError: [2, { Custom: 1 }] };
-    expect(tokenTransfersLanded(parseTransaction(failed), owner)).toBe(false);
+    expect(landed(failed)).toBe(false);
+    // A native transfer: the chain's status is the verdict.
+    expect(landed(nativeTx(), 'A')).toBe(true);
+  });
+
+  it('decides nothing on missing evidence: no token balances, an unparsed instruction', () => {
+    const noBalances = fixture();
+    delete noBalances.meta.preTokenBalances;
+    expect(() => landed(noBalances)).toThrow(
+      expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE', retryable: true }),
+    );
+    const unparsed = fixture();
+    const instruction = unparsed.transaction.message.instructions[2]!;
+    delete instruction.parsed;
+    instruction.data = '3ck7szVs';
+    instruction.accounts = [];
+    expect(() => landed(unparsed)).toThrow(
+      expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE', retryable: true }),
+    );
   });
 });
 ```
@@ -5249,10 +5452,11 @@ import {
   MEMO_PROGRAM,
   MEMO_V1_PROGRAM,
   SYSTEM_PROGRAM,
+  TOKEN_2022_PROGRAM,
   TOKEN_PROGRAM,
   VOTE_PROGRAM,
 } from './programs';
-import { amountString, malformed, u64 } from './rpc';
+import { amountString, malformed, notYet, u64 } from './rpc';
 
 type Json = Record<string, unknown>;
 
@@ -5288,6 +5492,8 @@ export interface ParsedTransaction {
   readonly postBalances: readonly bigint[];
   readonly preTokens: ReadonlyMap<number, TokenBalance>;
   readonly postTokens: ReadonlyMap<number, TokenBalance>;
+  /** Whether the node reported token balances at all (both arrays present). */
+  readonly tokenBalances: 'present' | 'absent';
   readonly instructions: readonly Instruction[];
   readonly version: 'legacy' | number;
   readonly slot?: bigint;
@@ -5371,6 +5577,10 @@ export function parseTransaction(value: unknown): ParsedTransaction {
     postBalances: balances(meta.postBalances),
     preTokens: tokenBalances(meta.preTokenBalances),
     postTokens: tokenBalances(meta.postTokenBalances),
+    tokenBalances:
+      Array.isArray(meta.preTokenBalances) && Array.isArray(meta.postTokenBalances)
+        ? 'present'
+        : 'absent',
     instructions: [...outer, ...inner],
     version,
     ...(tx.slot !== undefined ? { slot: u64(tx.slot, 'slot') } : {}),
@@ -5599,47 +5809,86 @@ export function decodeTransaction(
   };
 }
 
-/** Whether a transfer names one of `addresses` (a scan filter; empty means all). */
-export function touches(tx: DriverTransaction, addresses: ReadonlySet<string>): boolean {
-  return tx.transfers.some(
+/**
+ * The scan filter (handoff §3: "at least every transaction with a transfer from or to"
+ * the addresses), a conservative superset (I4): a decoded transfer names a watched
+ * address; a watched account's lamports changed; a token balance owned by a watched
+ * address changed, or one with no owner reported changed (it cannot be attributed); or the
+ * decoding is partial and a watched address is among the account keys.
+ */
+export function touches(
+  decoded: DriverTransaction,
+  tx: ParsedTransaction,
+  addresses: ReadonlySet<string>,
+): boolean {
+  const named = decoded.transfers.some(
     (transfer) =>
       addresses.has(transfer.to) || transfer.from.some((f) => addresses.has(f)),
   );
+  if (named) return true;
+  const keyed = tx.keys.some((key) => addresses.has(key));
+  const lamportsMoved = tx.keys.some(
+    (key, i) => addresses.has(key) && tx.preBalances[i] !== tx.postBalances[i],
+  );
+  if (lamportsMoved || (decoded.decoding === 'partial' && keyed)) return true;
+  const indices = new Set([...tx.preTokens.keys(), ...tx.postTokens.keys()]);
+  for (const index of indices) {
+    const pre = tx.preTokens.get(index);
+    const post = tx.postTokens.get(index);
+    if ((pre?.amount ?? 0n) === (post?.amount ?? 0n)) continue;
+    const owner = post?.owner ?? pre?.owner;
+    if (owner === undefined || addresses.has(owner)) return true;
+  }
+  return false;
 }
 
 /**
- * Lesson 7 on verdict paths: every classic token transfer `from` authorized must show in the
- * token balances (the source down and the destination up by what the transfers predict).
- * The SPL Token program has no success-without-transfer path, so this holds for every
- * honest answer; it guards the proven verdict against a node answer that says otherwise.
+ * The phantom-success guard (lessons 7 and 15; the board's final wording), for verdict
+ * paths only: a token transfer counts as executed only when the balances show a transfer
+ * from the sender's account to the intended recipient's account of a positive amount. The
+ * exact amount is not required (fee-on-transfer tokens exist). The intended recipient is
+ * the destination of the sender's own signed instruction. Missing evidence (no token
+ * balances, an unparsed instruction, accounts not in the keys) decides nothing (a
+ * retryable `PROVIDER_UNAVAILABLE`); seeing no transfer never passes.
  */
 export function tokenTransfersLanded(tx: ParsedTransaction, from: string): boolean {
   if (tx.err !== null) return false;
-  const moves = tx.instructions.flatMap((ix) => {
-    const move = tokenMove(ix);
-    return move ? [move] : [];
-  });
-  const ours = moves.filter((move) => move.authority === from);
-  if (ours.length === 0) return true;
-  const expected = tokenDeltas(tx, moves);
-  if (!expected) return false;
-  for (const move of ours) {
-    for (const address of [move.source, move.destination]) {
-      const index = tx.keys.indexOf(address);
-      const actual =
-        (tx.postTokens.get(index)?.amount ?? 0n) -
-        (tx.preTokens.get(index)?.amount ?? 0n);
-      if (actual !== (expected.get(index) ?? 0n)) return false;
-    }
+  const tokenInstructions = tx.instructions.filter(
+    (ix) =>
+      !ix.inner &&
+      (ix.programId === TOKEN_PROGRAM || ix.programId === TOKEN_2022_PROGRAM),
+  );
+  // A native transfer: the chain's own status is the verdict.
+  if (tokenInstructions.length === 0) return true;
+  if (tokenInstructions.some((ix) => !ix.info)) {
+    throw notYet('the parsed token instructions');
   }
-  return true;
+  const ours = tokenInstructions.flatMap((ix) => {
+    const move = tokenMove(ix);
+    return move && move.authority === from ? [move] : [];
+  });
+  if (ours.length === 0) return false;
+  if (tx.tokenBalances === 'absent') throw notYet('the token balances');
+  const delta = (address: string): bigint => {
+    const index = tx.keys.indexOf(address);
+    if (index < 0) throw notYet('the accounts of the token transfer');
+    return (
+      (tx.postTokens.get(index)?.amount ?? 0n) - (tx.preTokens.get(index)?.amount ?? 0n)
+    );
+  };
+  return ours.every((move) => {
+    // A zero-amount record moved nothing; a transfer to itself cannot show in balances.
+    if (move.amount === 0n) return false;
+    if (move.source === move.destination) return true;
+    return delta(move.source) < 0n && delta(move.destination) > 0n;
+  });
 }
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm jest test/adapters/solana/decode.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Check and commit**
 
@@ -5668,7 +5917,8 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `harness.ts` gains `solanaHarness({ endpoints?, node? })` → `{ …nodeTransport, ctx, calls, keys, from }` (devnet, a fixed variant of 0).
 
 **Review points:**
-- Heights: `getBlockHeight` at `confirmed` (head) and `finalized`; both are `monitor` reads; blocks by height via the index, checked against the height they claim (a contradiction is `PROVIDER_INCONSISTENT` and forgets the cached pair).
+- Heights: `getBlockHeight` at `confirmed` (head) and `finalized`; both are `monitor` reads; blocks by height via the index, checked against the height they claim (a contradiction is `PROVIDER_INCONSISTENT` and drops the cache).
+- I3: no pair is cached before a read of its page's first block confirms the counted height; the downward search is bounded; a pruned endpoint answers a retryable error, never `null`; `forget()` clears the whole cache.
 - `getTokenMetadata` (lesson 13): a missing mint, another program's account or unparsable data is `ASSET_RESOLUTION`; Token-2022 is `UNSUPPORTED_CAPABILITY`; a definitive node error becomes retryable; `PROVIDER_MISCONFIGURED` and retryable errors propagate unchanged.
 - `observe` applies the landing guard only with an ordering (lesson 15; Plan 2's Task 8 note); a malformed id is `{ seen: 'none' }` with no request.
 - `getBalance(owner, spl)` sums every classic token account of the owner for the mint (D12); lamports above 2^53 are exact (D19).
@@ -5692,10 +5942,16 @@ import type { NetworkInfo } from '../../../../src/core/model/chain';
 import { HttpTransport } from '../../../../src/core/transport/http-transport';
 import type { Transport } from '../../../../src/core/transport/types';
 import { FakeClock, drive } from '../../../../src/testing/fake-clock';
-import { ScriptedSolanaNode, type EndpointOptions, type NodeOptions } from './node';
+import {
+  ScriptedSolanaNode,
+  type BalancedOptions,
+  type EndpointOptions,
+  type NodeOptions,
+} from './node';
 import { KEY_ADDRESS, KEY_PUBLIC } from './vectors';
 
-export type Endpoint = string | ({ readonly name: string } & EndpointOptions);
+export type Endpoint =
+  string | ({ readonly name: string } & (EndpointOptions | BalancedOptions));
 
 /** A scripted node behind a real HttpTransport, with one or more endpoints. */
 export function nodeTransport(
@@ -5830,7 +6086,7 @@ describe('dense heights over slots (Review Focus 5)', () => {
     expect(calls.filter((c) => c.method === 'getBlocks').length).toBeLessThanOrEqual(3);
   });
 
-  it('refuses an endpoint whose block list contradicts its head, and forgets a bad pair', async () => {
+  it('refuses a block list that does not end at its anchor', async () => {
     const { node, run, index } = setup();
     node.produce(6);
     node.intercept = (_endpoint, method) =>
@@ -5839,14 +6095,43 @@ describe('dense heights over slots (Review Focus 5)', () => {
       code: 'PROVIDER_INCONSISTENT',
       retryable: true,
     });
-    // A list that leaves out slot 2 is believed for finalized heights (one endpoint's
-    // view), until a later read contradicts it and the caller forgets the pair.
+  });
+
+  it('refuses a list that leaves out a block, and caches nothing from it (I3)', async () => {
+    const { node, run, index, calls } = setup();
+    node.produce(6);
+    // A ledger gap: slot 2 missing from the list shifts every counted height.
     node.intercept = (_endpoint, method) =>
       method === 'getBlocks' ? { result: [0, 1, 3, 4] } : undefined;
-    expect(await run(index.slotAt(2n, 'finalized', MONITOR))).toBe(1n);
-    index.forget(2n);
+    await expect(run(index.slotAt(2n, 'finalized', MONITOR))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
     node.intercept = undefined;
+    calls.length = 0;
     expect(await run(index.slotAt(2n, 'finalized', MONITOR))).toBe(node.block(2n)?.slot);
+    // Nothing was cached from the gapped list: the good answer needed a fresh list.
+    expect(calls.map((c) => c.method)).toContain('getBlocks');
+  });
+
+  it('answers a height a pruned endpoint no longer holds with a retryable error, in bounded calls', async () => {
+    const t = nodeTransport({}, [{ name: 'pruned', firstAvailableHeight: 40 }]);
+    const { transport, calls } = recording(t.transport);
+    const index = new HeightIndex(transport);
+    for (let i = 0; i < 60; i++) {
+      t.node.produce();
+      if (i % 4 === 0) t.node.skip(1);
+    }
+    await expect(t.run(index.slotAt(10n, 'finalized', MONITOR))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(calls.length).toBeLessThanOrEqual(8);
+    // A held height still resolves; a height not produced yet is null.
+    expect(await t.run(index.slotAt(45n, 'finalized', MONITOR))).toBe(
+      t.node.block(45n)?.slot,
+    );
+    expect(await t.run(index.slotAt(1_000n, 'confirmed', MONITOR))).toBeNull();
   });
 });
 ```
@@ -6153,17 +6438,24 @@ Expected: FAIL: "Cannot find module '../../../src/adapters/solana/heights'" (and
  * `getBlocks`, which lists the produced slots of a range: anchored on a known block at
  * the head, the block `k` places before it in that list is `k` heights lower.
  *
- * Finalized pairs never change, so they are cached (spec §7 allows caches of immutable chain
- * data); a sequential scan then costs one `getBlock` per height. Every read is a single
- * endpoint's view (lesson 17): verdicts quorum-read the block at the resolved slot.
+ * A list can have gaps (a ledger jump to a snapshot, a long-term-storage gap, pruning), so
+ * no pair is believed until a read of the list's first block confirms its height (I3). Only
+ * finalized, verified pairs are cached (immutable chain data, spec §7), which makes a
+ * forward scan cost one `getBlock` per height. A height the endpoint no longer holds is a
+ * retryable error that decides nothing, never `null` (`null` means "not visible yet").
+ * Every read is a single endpoint's view (lesson 17): verdicts quorum-read the block at the
+ * resolved slot.
  */
 import type { Transport } from '../../core/transport/types';
 import {
   blockHeader,
   call,
+  gone,
   headerOptions,
   inconsistent,
-  isNotAvailable,
+  isGone,
+  isNotYet,
+  isSkipped,
   malformed,
   notYet,
   u64,
@@ -6173,7 +6465,9 @@ import type { Commitment, SolanaCallTags } from './types';
 
 /** `getBlocks` accepts at most this many slots per call (agave). */
 const MAX_RANGE = 500_000n;
-/** Finalized height → slot pairs kept per driver. */
+/** At most this many `getBlocks` pages below the head (about 8 M slots). */
+const MAX_PAGES = 16;
+/** Verified finalized height → slot pairs kept per driver. */
 const CACHE_SIZE = 8_192;
 
 export interface HeadBlock {
@@ -6197,11 +6491,14 @@ export class HeightIndex {
     );
     const header = await this.header(slot, commitment, tags);
     if (!header) throw notYet(`the ${commitment} head block`);
-    this.#remember(commitment, header.blockHeight, slot);
     return { slot, header };
   }
 
-  /** The block at `slot`, or `null` when the endpoint cannot show it at `commitment`. */
+  /**
+   * The block at `slot`, or `null` while the endpoint has not reached it at `commitment`.
+   * A pruned or missing block is a retryable error (decides nothing); a slot the endpoint
+   * calls skipped means a list named a slot with no block, so the cache is dropped.
+   */
   async header(
     slot: bigint,
     commitment: Commitment,
@@ -6216,7 +6513,12 @@ export class HeightIndex {
         tags,
       );
     } catch (error) {
-      if (isNotAvailable(error)) return null;
+      if (isNotYet(error)) return null;
+      if (isGone(error)) throw gone(`the block at slot ${slot}`);
+      if (isSkipped(error)) {
+        this.forget();
+        throw inconsistent(`slot ${slot} holds no block`);
+      }
       throw error;
     }
     return result === null ? null : blockHeader(result);
@@ -6225,8 +6527,7 @@ export class HeightIndex {
   /**
    * The slot of the block at `height` on the endpoint's chain at `commitment`, or `null`
    * while that chain has no block at `height` yet. A `confirmed` lookup at or below the
-   * endpoint's finalized height resolves on the finalized chain, which fills the cache, so a
-   * scanner walking forward costs one `getBlock` per height.
+   * endpoint's finalized height resolves on the finalized chain, which fills the cache.
    */
   async slotAt(
     height: bigint,
@@ -6237,25 +6538,27 @@ export class HeightIndex {
     const cached = this.#final.get(height);
     if (cached !== undefined) return cached;
     const final = await this.head('finalized', tags);
-    if (height <= final.header.blockHeight)
+    if (height <= final.header.blockHeight) {
       return this.#resolve(height, final, 'finalized', tags);
+    }
     if (commitment === 'finalized') return null;
-    return this.#resolve(height, await this.head('confirmed', tags), 'confirmed', tags);
+    const top = await this.head('confirmed', tags);
+    if (height > top.header.blockHeight) return null;
+    return this.#resolve(height, top, 'confirmed', tags);
   }
 
-  /** Counts back from `top` through `getBlocks` to the block at `height`. */
+  /** Counts back from `top` through verified `getBlocks` pages to the block at `height`. */
   async #resolve(
     height: bigint,
     top: HeadBlock,
     commitment: Commitment,
     tags: SolanaCallTags,
-  ): Promise<bigint | null> {
+  ): Promise<bigint> {
     let anchorSlot = top.slot;
     let anchorHeight = top.header.blockHeight;
-    if (height > anchorHeight) return null;
     if (height === anchorHeight) return anchorSlot;
     let span = anchorHeight - height + (anchorHeight - height) / 4n + 64n;
-    for (;;) {
+    for (let page = 0; page < MAX_PAGES; page++) {
       if (span > MAX_RANGE) span = MAX_RANGE;
       const from = anchorSlot > span ? anchorSlot - span : 0n;
       const slots = await this.#blocks(from, anchorSlot, commitment, tags);
@@ -6263,20 +6566,30 @@ export class HeightIndex {
       if (slots[last] !== anchorSlot) {
         throw inconsistent(`getBlocks does not end at slot ${anchorSlot}`);
       }
+      // A list that adds nothing below its anchor: the endpoint holds nothing older.
+      if (last === 0) throw gone(`the block at height ${height}`);
+      // I3: the list's first block must sit exactly `last` heights below the anchor, or
+      // the list has a gap; nothing from it is believed or cached.
+      const firstHeight = anchorHeight - BigInt(last);
+      const first = await this.header(slots[0] as bigint, commitment, tags);
+      if (!first) throw notYet(`the block at slot ${slots[0]}`);
+      if (first.blockHeight !== firstHeight) {
+        throw inconsistent(`the blocks listed below slot ${anchorSlot} have a gap`);
+      }
       slots.forEach((slot, i) => {
-        const at = anchorHeight - BigInt(last - i);
+        const at = firstHeight + BigInt(i);
         // Keep the pairs a forward scan from `height` needs next.
         if (at >= height && at < height + BigInt(CACHE_SIZE)) {
           this.#remember(commitment, at, slot);
         }
       });
-      const back = anchorHeight - height;
-      if (back <= BigInt(last)) return slots[last - Number(back)] as bigint;
-      if (from === 0n) return null;
-      anchorHeight -= BigInt(last);
+      if (height >= firstHeight) return slots[Number(height - firstHeight)] as bigint;
+      if (from === 0n) throw gone(`the block at height ${height}`);
+      anchorHeight = firstHeight;
       anchorSlot = slots[0] as bigint;
       span *= 2n;
     }
+    throw gone(`the block at height ${height} (too far below the head)`);
   }
 
   async #blocks(
@@ -6302,9 +6615,9 @@ export class HeightIndex {
     return slots;
   }
 
-  /** Drops a cached pair a later read contradicted (a lying or broken endpoint's answer). */
-  forget(height: bigint): void {
-    this.#final.delete(height);
+  /** Drops every cached pair: a later read contradicted one (cheap to rebuild). */
+  forget(): void {
+    this.#final.clear();
   }
 
   #remember(commitment: Commitment, height: bigint, slot: bigint): void {
@@ -6558,7 +6871,7 @@ export async function blockAtHeight(
   const header = await ctx.heights.header(slot, 'confirmed', tags);
   if (!header) return null;
   if (header.blockHeight !== height) {
-    ctx.heights.forget(height);
+    ctx.heights.forget();
     throw inconsistent(`the block at slot ${slot} is not at height ${height}`);
   }
   return { slot, block: driverBlock(height, header) };
@@ -6737,7 +7050,7 @@ export function createSolanaExt(ctx: SolanaContext): SolanaExt {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `pnpm jest test/adapters/solana/heights.test.ts test/adapters/solana/reader.test.ts`
-Expected: PASS, 13 tests (4 + 9). "maps every height to its block, skipping empty slots" pins Review Focus 5.
+Expected: PASS, 15 tests (6 + 9). "maps every height to its block, skipping empty slots", "refuses a list that leaves out a block, and caches nothing from it" and "answers a height a pruned endpoint no longer holds with a retryable error, in bounded calls" pin Review Focus 5.
 
 - [ ] **Step 7: Check and commit**
 
@@ -6760,7 +7073,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Tasks 1–6; `TxBuilder`, `Broadcaster`, `WalletKey`, `DriverIntent`, `UnsignedTx`, `SignedTx`, `isFeeSpeed`, `assetId`, `equalBytes`.
 - Produces: `createSolanaBuilder(ctx): TxBuilder` and `createSolanaBroadcaster(ctx): Broadcaster`.
-  - `estimateFee(intent)`: needs no key (a watch-only wallet can estimate); checks the recipient (D11) and the memo (D16); prices (D9) with a build variant (D10); returns `feeDraft(...)`.
+  - `estimateFee(intent)`: needs no key (a watch-only wallet can estimate); checks the recipient (D11, including M4's program ids for SPL) and the memo (D16); prices (D9) with a build variant on every limit, an explicit one included (D10, M3); returns `feeDraft(...)`.
   - `checkFunds(intent, fee)`: the token balance of the sender's associated token account (frozen → `INVALID_INTENT`) and the lamports for fees, amount and the rent reserve; `{ ok: false, asset, required, available }` otherwise.
   - `build(intent, fee, ctx)`: the ed25519 key for `from` (`SIGNER_UNAVAILABLE` otherwise), the budget, the transfer and memo instructions, a fresh `confirmed` blockhash; `UnsignedTx { payload: { encoding: 'base64', data: message }, signingRequests: [{ id: 's0', scheme: 'ed25519', payload: message, payloadKind: 'message', publicKey, keyRef? }], ordering: { kind: 'expiry', lastValidHeight }, fee, summary }`; refuses a transaction over 1,232 bytes.
   - `assemble(unsigned, signatures)`: `SignedTx { raw: { encoding: 'base64' }, ref: { id: base58(signature 0), idKind: 'signature', canonical: true } }`; `SIGNING_FAILED` for a missing or malformed signature or a message whose signers differ from the requests.
@@ -6898,7 +7211,7 @@ describe('Solana fee estimates', () => {
     });
   });
 
-  it('honours an explicit fee exactly, and varies speed-based builds', async () => {
+  it("honours an explicit price exactly, and varies every build's limit (D10, M3)", async () => {
     const h = setup();
     const custom = await h.run(
       h.builder.estimateFee(
@@ -6923,6 +7236,17 @@ describe('Solana fee estimates', () => {
       computeUnitLimit: 1_543n,
       computeUnitPrice: 17n,
     });
+    // An explicit limit gets the variant too, so identical overrides differ; its price not.
+    const explicit = await h.run(
+      createSolanaBuilder(varied).estimateFee(
+        intent({ fee: { computeUnitPrice: 2_000_000n, computeUnitLimit: 20_000n } }),
+        h.build,
+      ),
+    );
+    expect(explicit.details).toMatchObject({
+      computeUnitPrice: 2_000_000n,
+      computeUnitLimit: 20_004n,
+    });
     await expect(
       h.run(h.builder.estimateFee(intent({ fee: { gasPrice: 1n } }), h.build)),
     ).rejects.toMatchObject({
@@ -6931,7 +7255,7 @@ describe('Solana fee estimates', () => {
   });
 });
 
-describe('refusals before signing (Review Focus 3)', () => {
+describe('refusals before signing (Review Focus 4)', () => {
   it('refuses recipients that would lose the funds', async () => {
     const h = setup();
     h.node.setAccount(RECIPIENT, {
@@ -6941,6 +7265,21 @@ describe('refusals before signing (Review Focus 3)', () => {
     await expect(h.run(h.builder.estimateFee(intent(), h.build))).rejects.toMatchObject({
       code: 'INVALID_INTENT',
       message: 'the recipient is a program-owned account',
+    });
+    // M4: SPL to a program id, whose token account nobody could ever sign for.
+    await expect(
+      h.run(
+        h.builder.estimateFee(
+          intent({
+            asset: SPL,
+            outputs: [{ to: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', amount: 1n }],
+          }),
+          h.build,
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      message: 'the recipient is a program; send to a wallet or a PDA owner',
     });
     const tokenAccount = associatedAddress(KEY_ADDRESS, MINT);
     await expect(
@@ -7458,6 +7797,10 @@ async function planTransfer(
   }
   const mint = mintOf(intent.asset);
   const decimals = await mintDecimals(ctx, mint, READ);
+  // M4: nobody can sign for a program's associated token account.
+  if (recipient?.executable) {
+    throw invalid('the recipient is a program; send to a wallet or a PDA owner');
+  }
   if (
     recipient &&
     (recipient.owner === TOKEN_PROGRAM || recipient.owner === TOKEN_2022_PROGRAM)
@@ -7596,18 +7939,20 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
           priceForSpeed(recent, intent.fee as 'slow' | 'normal' | 'fast') + variant.price;
       }
       const { blockhash } = await latestBlockhash(ctx, READ);
-      let limit = override?.computeUnitLimit;
-      if (limit === undefined) {
+      let base = override?.computeUnitLimit;
+      if (base === undefined) {
         const units = await simulatedUnits(ctx, plan, price, list, blockhash);
-        const base =
+        base =
           units === null
             ? fallbackComputeUnitLimit(list.length)
             : computeUnitLimitFor(units);
-        limit =
-          base + variant.limit > MAX_COMPUTE_UNIT_LIMIT
-            ? MAX_COMPUTE_UNIT_LIMIT
-            : base + variant.limit;
       }
+      // D10, M3: every build varies the limit, an explicit one included (the price of an
+      // explicit fee is kept exactly); at the protocol maximum no variant fits.
+      const limit =
+        base + variant.limit > MAX_COMPUTE_UNIT_LIMIT
+          ? MAX_COMPUTE_UNIT_LIMIT
+          : base + variant.limit;
       const message = ctx.codec.compileMessage(
         plan.from,
         blockhash,
@@ -7833,7 +8178,7 @@ export function createSolanaBroadcaster(ctx: SolanaContext): Broadcaster {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm jest test/adapters/solana/builder.test.ts`
-Expected: PASS, 12 tests. "refuses recipients that would lose the funds" and "keeps the sender at zero or above the rent-exempt minimum" pin Review Focus 4; "gives two identical Operations different bytes" pins Review Focus 3.
+Expected: PASS, 12 tests. "refuses recipients that would lose the funds" and "keeps the sender at zero or above the rent-exempt minimum" pin Review Focus 4; "gives two identical Operations different bytes" and "honours an explicit price exactly, and varies every build's limit" pin Review Focus 3.
 
 - [ ] **Step 5: Check and commit**
 
@@ -7857,14 +8202,15 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Tasks 1–7; `ProofSource`, `BlockSource`, `AddressHistorySource`, `ChainDriver`, `DriverFactory`, `HealthProbes`, `EndpointCall`, `randomBytes`.
 - Produces:
-  - `proofs.ts`: `BLOCKHASH_VALIDITY = 150n`, `PEER_SKEW = 2n`; `createSolanaProofs(ctx)` (D6, D7): `finalizedHead`, `includedFinal`, `slotConsumed` (always `false`), `expired`, `blockHash`; every proof read under `PROOF` tags; `createSolanaBlocks(ctx)`: `header(height)` (dense, `monitor`) and `transactions(block, filter?)` (the full `jsonParsed` block at `confirmed`, votes skipped, the address filter matching transfer parties, a changed block → retryable `PROVIDER_INCONSISTENT`).
-  - `history.ts`: `MAX_HISTORY_PAGE = 1_000`; `createSolanaHistory(ctx)` (D17).
+  - `proofs.ts`: `BLOCKHASH_VALIDITY = 150n`, `PEER_SKEW = 2n`, `windowOf(lastValidHeight)` → `{ first, end }` (`lastValidHeight − 149` … `lastValidHeight + 1`, I1); `createSolanaProofs(ctx)` (D6, D7): `finalizedHead`, `includedFinal` (a positive answer from the finalized `getTransaction`; a negative one only from the window scan, C1, remembered per driver), `slotConsumed` (always `false`), `expired`, `blockHash`; every proof read under `PROOF` tags; `createSolanaBlocks(ctx)`: `header(height)` (dense, `monitor`) and `transactions(block, filter?)` (the full `jsonParsed` block at `confirmed`, votes skipped, the superset address filter of Task 5, a changed block → retryable `PROVIDER_INCONSISTENT`, a pruned one → retryable `PROVIDER_UNAVAILABLE`).
+  - `history.ts`: `MAX_HISTORY_PAGE = 1_000`; `createSolanaHistory(ctx)` (D17; `-32020` → retryable, M2).
   - `driver.ts`: `solanaDriverFactory(makeCodec: (transport) => SolanaCodec): DriverFactory`: validates the network, calls `setProbes` exactly once on the transport and on the indexer before any traffic (identity `getGenesisHash`, height `getBlockHeight` at `confirmed`, R19, M12), builds the context (a random variant start), and assembles `{ ordering: 'expiry', capabilities, address, reader, builder, broadcaster, proofs, blocks, history, ext: { solana: { getTokenAccounts } }, limits: () => ({ maxOutputs: 1 }), createNativeClient }` (no `sequence`, no `replacement`).
   - `web3.ts`: `web3DriverFactory = solanaDriverFactory(createWeb3Codec)`, which Task 9's manifest `load()` returns (Plan 2 Task 9's shape: the factory lives in `driver.ts`; the client module exports `<library>DriverFactory`; `driver.ts` imports no client).
 
 **Review points:**
 - Lesson 17 final form: no endpoint proposes a height for a verdict. `expired` is one predicate read; a lagging peer throws a retryable `PROVIDER_INCONSISTENT`; an endpoint that has not finalized a block answers nothing and decides nothing.
-- Lesson 16 / R76: "not included" needs the predicate past `lastValidHeight`, the window's first block on every quorum endpoint, and a second empty finalized read; a pruned or history-less endpoint decides nothing.
+- Lesson 16 sharpened / C1: "not included" comes only from reading every block of the window (151 blocks, through `lastValidBlockHeight + 1`) under finality, each certifying its height and its parent; a lagging, pruned or gapped backend behind one load-balanced URL decides nothing; the tests use **one** endpoint (quorum 1). A block that holds the transaction while the index did not is `PROVIDER_INCONSISTENT`.
+- I1: a transaction included at `lastValidBlockHeight + 1` is proven included.
 - Proven inclusion reads the transaction and its block at `finalized` under the quorum (lesson 2 keys), and applies the landing guard (lesson 7).
 - `setProbes` once per transport, before traffic (M12), pinned with a counting Proxy; the driver never reads `maxLagBlocks` (R36).
 - No request path waits on a real timer (lesson 1): a `setTimeout` spy and the 100-run step.
@@ -7930,6 +8276,39 @@ async function driverFor(
 }
 
 type Harness = Awaited<ReturnType<typeof driverFor>>;
+
+const SOL = 1_000_000_000n;
+
+/** A System transfer signed at the head but not sent: its bytes and expiry ordering. */
+function heldBack(h: Harness, lamports = SOL) {
+  const raw = signedTx(h.node.head.hash, [
+    systemTransfer(KEY_ADDRESS, RECIPIENT, lamports),
+  ]);
+  const last = h.node.head.height + 150n;
+  const ordering: OrderingData = { kind: 'expiry', lastValidHeight: last };
+  return { raw, last, ordering };
+}
+
+/** Produces blocks until the node's head is at `height`. */
+function produceTo(h: Harness, height: bigint): void {
+  while (h.node.head.height < height) h.node.produce();
+}
+
+/** Runs `includedFinal` `times` times; every answer or retryable error it gave. */
+async function verdicts(h: Harness, id: string, ordering: OrderingData, times = 6) {
+  const out: unknown[] = [];
+  for (let i = 0; i < times; i++) {
+    try {
+      out.push(
+        await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      );
+    } catch (error) {
+      expect(error).toMatchObject({ retryable: true });
+      out.push('decides nothing');
+    }
+  }
+  return out;
+}
 
 /** A System transfer signed at the head; returns its signature and expiry ordering. */
 function transfer(
@@ -8195,6 +8574,20 @@ describe('Solana proofs', () => {
     }
   });
 
+  it('proves a transfer included at lastValidBlockHeight + 1 as included, never absent (I1)', async () => {
+    const h = await driverFor(['main']);
+    h.node.produce(2);
+    const { raw, last, ordering } = heldBack(h);
+    produceTo(h, last);
+    const id = h.node.submit(raw, { skipPreflight: true });
+    h.node.produce(3);
+    expect(h.node.landed(id)?.block.height).toBe(last + 1n);
+    expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
+    expect(
+      await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+    ).toMatchObject({ included: true, success: true, blockHeight: last + 1n });
+  });
+
   it('attests expiry with a predicate at its own height: a lagging peer decides nothing (lesson 17)', async () => {
     const h = await driverFor(['a', { name: 'b', lag: 3 }]);
     h.node.produce(2);
@@ -8213,6 +8606,78 @@ describe('Solana proofs', () => {
     expect(h.calls.map((c) => [c.method, c.tags.purpose, c.tags.quorum])).toEqual([
       ['getBlockHeight', 'proof', 'proof'],
     ]);
+  });
+
+  describe('"not included" behind one URL (C1: one endpoint, quorum 1)', () => {
+    it('never answers "not included" for a landed transfer when a backend lags', async () => {
+      const h = await driverFor([{ name: 'lb', backends: [{}, { lag: 20 }] }]);
+      h.node.produce(2);
+      const { raw, last, ordering } = heldBack(h);
+      produceTo(h, last - 3n);
+      const id = h.node.submit(raw);
+      h.node.produce(1);
+      expect(h.node.landed(id)?.block.height).toBe(last - 2n);
+      produceTo(h, last + 30n);
+      const answers = await verdicts(h, id, ordering);
+      expect(answers).not.toContainEqual({ included: false });
+      expect(answers).toContainEqual(expect.objectContaining({ included: true }));
+    });
+
+    it('never answers "not included" when a backend\'s ledger lacks the transaction\'s block', async () => {
+      // The gap covers the block that holds the transaction (filled in once it lands).
+      const single: bigint[] = [];
+      const balanced: bigint[] = [];
+      for (const endpoint of [
+        { name: 'gapped', missingHeights: single },
+        { name: 'lb', backends: [{}, { missingHeights: balanced }] },
+      ]) {
+        const h = await driverFor([endpoint]);
+        h.node.produce(2);
+        const { raw, last, ordering } = heldBack(h);
+        const id = h.node.submit(raw);
+        h.node.produce(1);
+        const height = h.node.landed(id)?.block.height as bigint;
+        single.push(height);
+        balanced.push(height);
+        produceTo(h, last + 5n);
+        const answers = await verdicts(h, id, ordering);
+        expect(answers).not.toContainEqual({ included: false });
+      }
+    });
+
+    it('still proves an honest window without the transaction, once, and remembers it', async () => {
+      const h = await driverFor(['main']);
+      h.node.produce(2);
+      const { raw, last, ordering } = heldBack(h);
+      const id = h.node.submit(raw);
+      h.node.drop(id);
+      produceTo(h, last + 1n);
+      // The window's last block (lastValid + 1) is not final yet: nothing is decided.
+      await expect(
+        h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      produceTo(h, last + 3n);
+      h.calls.length = 0;
+      expect(
+        await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).toEqual({ included: false });
+      // One block read per height of the window (151), each with its signatures.
+      const scanned = h.calls.filter(
+        (c) =>
+          c.method === 'getBlock' &&
+          (c.params as [number, { transactionDetails?: string }])[1]
+            .transactionDetails === 'signatures',
+      );
+      expect(scanned).toHaveLength(151);
+      expect(
+        scanned.every((c) => c.tags.purpose === 'proof' && c.tags.quorum === 'proof'),
+      ).toBe(true);
+      h.calls.length = 0;
+      expect(
+        await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).toEqual({ included: false });
+      expect(h.calls.map((c) => c.method)).toEqual(['getTransaction']);
+    });
   });
 
   it('serves block hashes by level, null above the head or the finalized block (R33)', async () => {
@@ -8323,6 +8788,60 @@ describe('the Solana block source', () => {
     });
   });
 
+  it('returns a transaction whose deposit it cannot attribute (I4: a superset filter)', async () => {
+    const h = await driverFor(['main']);
+    h.node.produce(2);
+    const header = await h.run(h.driver.blocks!.header(2n));
+    const credit = (to: string) => ({
+      meta: {
+        err: null,
+        fee: 5000,
+        preBalances: [10_000, 0, 1],
+        postBalances: [4_000, 1_000, 1],
+        preTokenBalances: [],
+        postTokenBalances: [],
+        innerInstructions: [],
+      },
+      transaction: {
+        signatures: [`Sig${to}`],
+        message: {
+          accountKeys: [{ pubkey: 'Payer' }, { pubkey: to }, { pubkey: 'SomeProgram' }],
+          instructions: [
+            { programId: 'SomeProgram', accounts: ['Payer', to], data: '1' },
+          ],
+        },
+      },
+    });
+    h.node.intercept = (endpoint, method, params) => {
+      if (method !== 'getBlock') return undefined;
+      if ((params[1] as { transactionDetails?: string }).transactionDetails !== 'full') {
+        return undefined;
+      }
+      const block = h.node.answer(endpoint, method, params) as {
+        transactions: unknown[];
+      };
+      block.transactions.push(credit(RECIPIENT), credit('Unrelated'));
+      return { result: block };
+    };
+    const found = await h.run(
+      h.driver.blocks!.transactions(header!, { addresses: [RECIPIENT] }),
+    );
+    expect(found.map((tx) => [tx.id, tx.decoding])).toEqual([
+      [`Sig${RECIPIENT}`, 'partial'],
+    ]);
+  });
+
+  it('decides nothing when a backend does not know the history cursor (M2)', async () => {
+    const h = await driverFor(['main']);
+    h.node.intercept = (_endpoint, method) =>
+      method === 'getSignaturesForAddress'
+        ? { error: { code: -32020, message: 'Transaction x not found' } }
+        : undefined;
+    await expect(
+      h.run(h.driver.history!.list(RECIPIENT, { limit: 2, cursor: '1'.repeat(64) })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+  });
+
   it('pages address history newest first, with the chain’s own status', async () => {
     const h = await driverFor(['main']);
     h.node.produce(1);
@@ -8363,9 +8882,12 @@ Expected: FAIL: TypeScript reports that `'../../../src/adapters/solana/web3'` ha
  * proposes. "My finalized height is past H" is a quorum read of
  * `getBlockHeight({ commitment: 'finalized' })` keyed on `height > H`; the block at a height
  * is a quorum read of `getBlock(slot, { commitment: 'finalized' })` keyed on its consensus
- * fields, so an endpoint that has not finalized it answers nothing and decides nothing. A
- * transaction is proven absent only once the endpoints have finalized past its
- * `lastValidBlockHeight` and still hold the start of its window (lesson 16).
+ * fields, so an endpoint that has not finalized it answers nothing and decides nothing.
+ *
+ * A transaction is proven absent (lesson 16) only by reading every block of its window
+ * under finality: each block certifies its own height and its parent's hash, so a lagging,
+ * pruned, snapshot-jumped or long-term-storage-gapped backend behind a load-balanced URL
+ * can only answer "not available" (decides nothing), never a short window (C1).
  */
 import type { BlockSource, DriverBlock, ProofSource } from '../../core/driver/types';
 import {
@@ -8378,16 +8900,21 @@ import {
 import { isSignature } from './keys';
 import { blockAtHeight, type SolanaContext } from './reader';
 import {
+  BLOCK_FIELDS,
   MONITOR,
   PROOF,
   blockHeader,
   call,
   headerOptions,
+  gone,
   inconsistent,
+  isGone,
   isNotAvailable,
+  isSkipped,
   malformed,
   notYet,
   parsedOptions,
+  pick,
   u64,
   type BlockHeader,
 } from './rpc';
@@ -8395,6 +8922,24 @@ import type { Commitment } from './types';
 
 /** A blockhash is valid for this many blocks after its own (agave `MAX_PROCESSING_AGE`). */
 export const BLOCKHASH_VALIDITY = 150n;
+
+/**
+ * The heights that can hold a transaction whose blockhash gives `lastValidBlockHeight`:
+ * from the block after the blockhash's own, through `lastValidBlockHeight + 1`. agave checks
+ * a blockhash's age against the including block's PARENT, so the block after
+ * `lastValidBlockHeight` still accepts it (I1).
+ */
+export function windowOf(lastValidHeight: bigint): {
+  readonly first: bigint;
+  readonly end: bigint;
+} {
+  const first =
+    lastValidHeight > BLOCKHASH_VALIDITY ? lastValidHeight - BLOCKHASH_VALIDITY + 1n : 0n;
+  return { first, end: lastValidHeight + 1n };
+}
+
+/** Signatures proven absent from their finalized windows, kept per driver (spec §7). */
+const ABSENT_MEMO = 1_024;
 
 /** Library policy: an unanchored head trails one endpoint's view by this peer skew. */
 export const PEER_SKEW = 2n;
@@ -8451,16 +8996,104 @@ async function attestedBlock(
       PROOF,
     );
   } catch (error) {
+    if (isSkipped(error)) {
+      // The slot came from a list that named a slot with no block.
+      ctx.heights.forget();
+      throw inconsistent(`slot ${slot} holds no block`);
+    }
     if (isNotAvailable(error)) return null;
     throw error;
   }
   if (result === null) return null;
   const header = blockHeader(result);
   if (header.blockHeight !== height) {
-    ctx.heights.forget(height);
+    ctx.heights.forget();
     throw inconsistent(`the block at slot ${slot} is not at height ${height}`);
   }
   return { slot, header };
+}
+
+/**
+ * Whether `signature` is in none of the finalized blocks of its window (C1, lesson 16).
+ * The window's first and last blocks are attested by height; `getBlocks` must list exactly
+ * one slot per height between them; every block is read whole (its signatures) under the
+ * proof quorum and must sit at the next height with the previous block as its parent. A
+ * gap, a pruned block or a lagging backend answers "not available" and decides nothing.
+ * `false` means a block holds the transaction.
+ */
+async function absentFromWindow(
+  ctx: SolanaContext,
+  signature: string,
+  lastValidHeight: bigint,
+): Promise<boolean> {
+  const { first, end } = windowOf(lastValidHeight);
+  const top = await attestedBlock(ctx, end, 'finalized');
+  const bottom = await attestedBlock(ctx, first, 'finalized');
+  if (!top || !bottom) throw notYet('the transaction window');
+  const listKey = (result: unknown): unknown => {
+    if (!Array.isArray(result)) throw malformed('getBlocks');
+    return result.map(String);
+  };
+  let listed: unknown;
+  try {
+    listed = await call(
+      ctx.transport,
+      'getBlocks',
+      [
+        Number(bottom.slot),
+        Number(top.slot),
+        { commitment: 'finalized', minContextSlot: Number(top.slot) },
+      ],
+      { ...PROOF, quorumKey: listKey },
+    );
+  } catch (error) {
+    if (isNotAvailable(error)) throw notYet('every block of the window');
+    throw error;
+  }
+  if (!Array.isArray(listed) || BigInt(listed.length) !== end - first + 1n) {
+    throw notYet('every block of the window');
+  }
+  const holds = (result: unknown): boolean | null => {
+    const list = (result as { signatures?: unknown } | null)?.signatures;
+    return Array.isArray(list) ? list.includes(signature) : null;
+  };
+  const blockKey = (result: unknown): unknown => ({
+    ...(pick(result, BLOCK_FIELDS) as object),
+    holds: holds(result),
+  });
+  let parent: string | undefined;
+  for (const [i, value] of listed.entries()) {
+    let block: unknown;
+    try {
+      block = await call(
+        ctx.transport,
+        'getBlock',
+        [
+          Number(u64(value, 'getBlocks slot')),
+          { ...headerOptions('finalized'), transactionDetails: 'signatures' },
+        ],
+        { ...PROOF, quorumKey: blockKey },
+      );
+    } catch (error) {
+      if (isNotAvailable(error)) throw notYet('a block of the window');
+      throw error;
+    }
+    const found = holds(block);
+    if (found === null) throw notYet('a block of the window');
+    const header = blockHeader(block);
+    if (
+      header.blockHeight !== first + BigInt(i) ||
+      (parent !== undefined && header.previousBlockhash !== parent)
+    ) {
+      throw inconsistent('the window is not one chain of blocks');
+    }
+    if (found) return false;
+    parent = header.blockhash;
+  }
+  if (parent !== top.header.blockhash) {
+    throw inconsistent('the window does not end at its attested block');
+  }
+  return true;
 }
 
 /** The quorum's finalized transaction (`null`: every endpoint agrees it has none). */
@@ -8479,6 +9112,7 @@ async function finalTransaction(ctx: SolanaContext, signature: string): Promise<
 }
 
 export function createSolanaProofs(ctx: SolanaContext): ProofSource {
+  const absent = new Set<string>();
   const included = async (result: unknown, signature: string, from: string) => {
     const parsed = parseTransaction(result);
     if (parsed.signature !== signature || parsed.slot === undefined) {
@@ -8527,22 +9161,28 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
     async includedFinal(ref, ordering, from) {
       // A malformed signature can never be on chain.
       if (!isSignature(ref.id)) return { included: false };
-      const first = await finalTransaction(ctx, ref.id);
-      if (first !== null) return included(first, ref.id, from);
-      // Lesson 16: absence counts only past the window, with the window still on record.
+      const found = await finalTransaction(ctx, ref.id);
+      if (found !== null) return included(found, ref.id, from);
+      // Lesson 16: an index that shows nothing proves nothing; only the window can.
       if (ordering.kind !== 'expiry' || ordering.lastValidHeight === undefined) {
         throw notYet('proof that the transaction is absent');
       }
       const last = ordering.lastValidHeight;
-      const start = last > BLOCKHASH_VALIDITY ? last - BLOCKHASH_VALIDITY + 1n : 0n;
+      const key = `${ref.id}:${last}`;
+      if (absent.has(key)) return { included: false };
+      // The window's last block (lastValidBlockHeight + 1, I1) is final everywhere.
       if (!(await finalizedPast(ctx, last))) {
         throw notYet('finality past the transaction window');
       }
-      if (!(await attestedBlock(ctx, start, 'finalized'))) {
-        throw notYet('the start of the transaction window');
+      if (!(await absentFromWindow(ctx, ref.id, last))) {
+        throw inconsistent(
+          'a block of the window holds a transaction its index does not show',
+        );
       }
-      const again = await finalTransaction(ctx, ref.id);
-      return again === null ? { included: false } : included(again, ref.id, from);
+      absent.add(key);
+      if (absent.size > ABSENT_MEMO)
+        absent.delete(absent.values().next().value as string);
+      return { included: false };
     },
 
     // Expiry ordering has no slot that another transaction could consume.
@@ -8590,6 +9230,7 @@ export function createSolanaBlocks(ctx: SolanaContext): BlockSource {
           MONITOR,
         );
       } catch (error) {
+        if (isGone(error)) throw gone(`the block at height ${block.height}`);
         if (isNotAvailable(error)) throw changed(block.height);
         throw error;
       }
@@ -8606,7 +9247,7 @@ export function createSolanaBlocks(ctx: SolanaContext): BlockSource {
         const parsed = parseTransaction(entry);
         if (isVote(parsed)) return [];
         const decoded = decodeTransaction(parsed, place);
-        return !wanted || touches(decoded, wanted) ? [decoded] : [];
+        return !wanted || touches(decoded, parsed, wanted) ? [decoded] : [];
       });
     },
   };
@@ -8624,11 +9265,11 @@ export function createSolanaBlocks(ctx: SolanaContext): BlockSource {
  * owner's history holds only the transactions that name the owner itself.
  */
 import type { AddressHistorySource, DriverTransaction } from '../../core/driver/types';
-import { ValidationError } from '../../core/errors/error';
+import { ProviderError, ValidationError } from '../../core/errors/error';
 import { decodeTransaction } from './decode';
 import { isSignature } from './keys';
 import { readTransaction, type SolanaContext } from './reader';
-import { READ, call, inconsistent, malformed } from './rpc';
+import { READ, RPC_CODES, call, inconsistent, malformed, rpcCode } from './rpc';
 
 /** `getSignaturesForAddress` returns at most this many signatures per call (agave). */
 export const MAX_HISTORY_PAGE = 1_000;
@@ -8640,19 +9281,32 @@ export function createSolanaHistory(ctx: SolanaContext): AddressHistorySource {
         throw new ValidationError('INVALID_INTENT', 'not a Solana history cursor');
       }
       const size = Math.min(limit, MAX_HISTORY_PAGE);
-      const result = await call(
-        ctx.transport,
-        'getSignaturesForAddress',
-        [
-          address,
-          {
-            limit: size,
-            commitment: 'confirmed',
-            ...(cursor !== undefined ? { before: cursor } : {}),
-          },
-        ],
-        READ,
-      );
+      let result: unknown;
+      try {
+        result = await call(
+          ctx.transport,
+          'getSignaturesForAddress',
+          [
+            address,
+            {
+              limit: size,
+              commitment: 'confirmed',
+              ...(cursor !== undefined ? { before: cursor } : {}),
+            },
+          ],
+          READ,
+        );
+      } catch (error) {
+        // M2: a backend that does not hold the cursor's transaction (another backend
+        // behind a load balancer, or a pruned one) decides nothing.
+        if (rpcCode(error) === RPC_CODES.FILTER_TRANSACTION_NOT_FOUND) {
+          throw new ProviderError(
+            'PROVIDER_UNAVAILABLE',
+            'the endpoint does not know the history cursor',
+          );
+        }
+        throw error;
+      }
       if (!Array.isArray(result)) throw malformed('getSignaturesForAddress');
       const signatures = result.map((entry: unknown) => {
         const signature = (entry as { signature?: unknown } | null)?.signature;
@@ -8783,7 +9437,7 @@ export const web3DriverFactory = solanaDriverFactory(createWeb3Codec);
 - [ ] **Step 6: Run the test to verify it passes**
 
 Run: `pnpm jest test/adapters/solana/driver.test.ts`
-Expected: PASS, 12 tests. "answers "not included" only past the window with the window on record" and "attests expiry with a predicate at its own height" pin Review Focus 1; "agrees across formatting differences and decides nothing on a different fact" pins Review Focus 2; "scans dense heights over skipped slots, filtered by address, without votes" pins Review Focus 5.
+Expected: PASS, 18 tests. The three "not included behind one URL" tests, "proves a transfer included at lastValidBlockHeight + 1 as included, never absent", "answers "not included" only past the window…" and "attests expiry with a predicate at its own height" pin Review Focus 1; "agrees across formatting differences and decides nothing on a different fact" pins Review Focus 2; "scans dense heights over skipped slots, filtered by address, without votes" pins Review Focus 5; "returns a transaction whose deposit it cannot attribute" pins I4.
 
 - [ ] **Step 7: Prove determinism (lesson 1)**
 
@@ -8807,29 +9461,35 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Create: `src/adapters/solana/plugin.ts`, `src/adapters/solana/index.ts`
 - Modify: `src/index.ts`, `package.json` (`exports`, `typesVersions`), `typedoc.json` (`entryPoints`), `test/architecture/registry-augmentation.test.ts`
-- Test: `test/adapters/solana/plugin.test.ts`, `test/adapters/solana/dependency.test.ts`
+- Test: `test/adapters/solana/plugin.test.ts`, `test/adapters/solana/dependency.test.ts`, `test/adapters/solana/lazy.test.ts`
 
 **Interfaces:**
 - Consumes: `SOLANA_CHAIN`, `SOLANA_PRESETS`, `SOLANA_TOKENS`, `SOLANA_CAPABILITIES` (Task 1); `web3DriverFactory` (Task 8); `Plugin`, `AdapterManifest`, `PeerDependency`, `setBuiltinPlugins`; Plan 2 Task 10's entry shape.
 - Produces:
-  - `plugin.ts`: `SOLANA_PEER_DEPENDENCY` (`@solana/web3.js` `^1.99.0`), `solanaManifest` (family `solana`, library `@solana/web3.js`, chains `['solana']`, `load()` `require()`s `./web3`), `solanaPlugin(): Plugin` (name `solana`).
-  - `crypto-aio/solana` (`src/adapters/solana/index.ts`): `SOLANA_PEER_DEPENDENCY`, `SOLANA_CAPABILITIES`, the types `SolanaExt`, `SolanaFeeDetails`, `SolanaFeeOverride`, `SolanaTokenAccount`, and the `NativeClientMap` augmentation (`'@solana/web3.js': Connection`).
+  - `plugin.ts`: `SOLANA_PEER_DEPENDENCIES: Readonly<Record<'@solana/web3.js', PeerDependency>>`, keyed by library (Plan 2 Task 10's shape); `solanaManifest` (family `solana`, library `@solana/web3.js`, chains `['solana']`, `peerDependencies: [SOLANA_PEER_DEPENDENCIES['@solana/web3.js']]`, `load()` `require()`s `./web3`), `solanaPlugin(): Plugin` (name `solana`).
+  - `crypto-aio/solana` (`src/adapters/solana/index.ts`): `SOLANA_PEER_DEPENDENCIES`, `SOLANA_CAPABILITIES`, the types `SolanaExt`, `SolanaFeeDetails`, `SolanaFeeOverride`, `SolanaTokenAccount`, and the `NativeClientMap` augmentation (`'@solana/web3.js': Connection`).
   - `crypto-aio` registers `solanaPlugin()` as a built-in (after `evmPlugin()`).
 
 No `solanaChainPlugin` (a Solana network of your own, like Plan 2's `evmChainPlugin`) is offered: spec §2 lists the three clusters. A local test validator has its own genesis hash, so the identity check refuses it on the built-in chain; see Unresolved assumptions.
 
-**Review points:**
-- The plugin module is SDK-free; only `load()` requires `./web3`; the built entry loads no SDK (`node -e` check below).
-- A missing SDK fails `ready()` with `DEPENDENCY_MISSING` and `npm i @solana/web3.js@^1.99.0` (the core's message, Plan 2 Task 10's shape).
-- Augmentations go through the entry module (R37); `dist/index.d.ts` never names the SDK.
-- `pnpm doc` stays green with the new entry point (R55).
+**Review points (Plan 2 Task 10's final shape, R79–R82):**
+- The plugin module is SDK-free; only `load()` requires `./web3`, which imports the SDK by its bare peer name (R80); the built entry loads no SDK (`node -e` check below).
+- `lazy.test.ts`: importing `crypto-aio` and `crypto-aio/solana` loads no SDK; each manifest's `load()`, in a module registry of its own, loads exactly its `peerDependencies` names.
+- `plugin.test.ts` pins `SOLANA_PEER_DEPENDENCIES` to `package.json` per entry: peer range, `peerDependenciesMeta[name].optional`, and `^devDependencies[name]` (R82).
+- A missing SDK fails `ready()` with `DEPENDENCY_MISSING` and `npm i @solana/web3.js@^1.99.0` (the core's message).
+- Augmentations go through the entry module (R37), tested with `USE_ACME` in both file orders; `dist/index.d.ts` never names the SDK, and the main-entry guard type-checks `crypto-aio` with `@solana/web3.js` hidden, with a control proving it is hidden.
+- `typesVersions` keys stay alphabetical; `pnpm doc` stays green with the new entry point (R55).
+- R79 (`<family>ChainPlugin` naming) does not apply: there is no Solana chain plugin.
 
 - [ ] **Step 1: Write the failing tests**
 
 `test/adapters/solana/plugin.test.ts`:
 
 ```ts
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { CryptoAio, noopLogger } from '../../../src';
+import { SOLANA_PEER_DEPENDENCIES } from '../../../src/adapters/solana/index';
 import { solanaPlugin } from '../../../src/adapters/solana/plugin';
 import { FakeClock, drive } from '../../../src/testing/fake-clock';
 import { ScriptedSolanaNode } from './support/node';
@@ -8926,6 +9586,21 @@ describe('the built-in Solana plugin', () => {
     ]);
     expect(plugin.chains?.map((c) => c.id)).toEqual(['solana']);
   });
+
+  it('pins the SDK range package.json declares as an optional peer and pins for tests (R82)', () => {
+    const pkg = JSON.parse(
+      readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'),
+    ) as Record<'peerDependencies' | 'devDependencies', Record<string, string>> & {
+      peerDependenciesMeta: Record<string, { optional?: boolean }>;
+    };
+    const peers = Object.values(SOLANA_PEER_DEPENDENCIES);
+    expect(peers.length).toBeGreaterThan(0);
+    for (const { name, range } of peers) {
+      expect([name, pkg.peerDependencies[name]]).toEqual([name, range]);
+      expect([name, pkg.peerDependenciesMeta[name]?.optional]).toEqual([name, true]);
+      expect([name, `^${pkg.devDependencies[name]}`]).toEqual([name, range]);
+    }
+  });
 });
 ```
 
@@ -8960,16 +9635,90 @@ describe('a missing Solana SDK', () => {
 });
 ```
 
-In `test/architecture/registry-augmentation.test.ts`, add to `OPTIONS.paths`, after the `'crypto-aio/evm'` entry Plan 2 added:
+`test/adapters/solana/lazy.test.ts` (ported from `test/adapters/evm/lazy.test.ts`):
 
 ```ts
-    'crypto-aio/solana': [join(ROOT, 'src', 'adapters', 'solana', 'index.ts')],
+// Lazy loading (spec §4): only a manifest's `load()` may require an SDK. Each check runs in
+// a fresh module registry where requiring `@solana/web3.js` is recorded, then served as usual.
+import { solanaPlugin } from '../../../src/adapters/solana/plugin';
+
+type Entry = typeof import('../../../src');
+type SolanaEntry = typeof import('../../../src/adapters/solana');
+type SolanaPlugin = typeof import('../../../src/adapters/solana/plugin');
+
+const SDKS = ['@solana/web3.js'] as const;
+
+/** The SDKs `run` requires, in order, in a module registry of its own. */
+function requiredSdks(run: () => void): string[] {
+  const loaded: string[] = [];
+  jest.isolateModules(() => {
+    for (const sdk of SDKS) {
+      jest.doMock(sdk, () => {
+        loaded.push(sdk);
+        return jest.requireActual(sdk);
+      });
+    }
+    run();
+  });
+  return loaded;
+}
+
+describe('lazy loading of the Solana SDK', () => {
+  it('imports crypto-aio and crypto-aio/solana without loading @solana/web3.js', () => {
+    const loaded = requiredSdks(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const entry = require('../../../src') as Entry;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const solana = require('../../../src/adapters/solana') as SolanaEntry;
+      // Both entries are usable: the family is registered and its constants are there.
+      new entry.CryptoAio({
+        env: false,
+        providers: { local: { endpoints: [{ url: 'https://node.invalid/rpc' }] } },
+      }).blockchain({ chain: 'solana', provider: 'local' });
+      expect(solana.SOLANA_CAPABILITIES).toContain('expiry');
+    });
+    expect(loaded).toEqual([]);
+  });
+
+  // Each manifest loads in a registry of its own, so no SDK can hide behind an earlier load.
+  const manifests = (solanaPlugin().adapters ?? []).map((m) => ({
+    library: m.library,
+    names: m.peerDependencies.map((d) => d.name),
+  }));
+
+  it('has a manifest to check', () => {
+    expect(manifests.length).toBeGreaterThan(0);
+  });
+
+  it.each(manifests)(
+    "the $library manifest's load() loads exactly its peer dependencies",
+    async ({ library, names }) => {
+      let pending: Promise<unknown> | undefined;
+      const loaded = requiredSdks(() => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const fresh = require('../../../src/adapters/solana/plugin') as SolanaPlugin;
+        pending = fresh
+          .solanaPlugin()
+          .adapters?.find((m) => m.library === library)
+          ?.load();
+      });
+      expect(pending).toBeDefined();
+      await pending;
+      expect(loaded).toEqual(names);
+    },
+  );
+});
 ```
 
-and append at the end of the file:
+In `test/architecture/registry-augmentation.test.ts` (Plan 2 Task 10's final shape; R82), make these edits:
+
+1. In `OPTIONS.paths`, after the `'crypto-aio/native'` entry, add:
+   ```ts
+    'crypto-aio/solana': [join(ROOT, 'src', 'adapters', 'solana', 'index.ts')],
+   ```
+2. Insert before `/** A consumer of the main entry only; a user with no SDK installed at all. */` (it compiles `USE_SOLANA` with `AUGMENT` and `USE_ACME` in both file orders, so a `NativeClientMap` augmentation aimed at `ids` would be caught):
 
 ```ts
-
 /** The Solana family is typed from the entry; its SDK client from `crypto-aio/solana`. */
 const USE_SOLANA = `
 import { CryptoAio, type SolanaFeeOverride } from 'crypto-aio';
@@ -8988,10 +9737,18 @@ export async function accounts(): Promise<readonly { readonly amount: bigint }[]
 `;
 
 describe('Solana registry augmentation (R37)', () => {
-  it('types the Solana chain, networks, library, ext and native client', () => {
-    expect(compile({ 'augment.ts': AUGMENT, 'solana.ts': USE_SOLANA }).errors).toEqual(
-      [],
+  it('types the Solana chain, networks, library, ext and native client, in both file orders', () => {
+    const first = compile({
+      'augment.ts': AUGMENT,
+      'solana.ts': USE_SOLANA,
+      'acme.ts': USE_ACME,
+    });
+    expect(first.errors).toEqual([]);
+    const second = compile(
+      { 'acme.ts': USE_ACME, 'solana.ts': USE_SOLANA, 'augment.ts': AUGMENT },
+      first.program,
     );
+    expect(second.errors).toEqual([]);
   }, 120_000);
 
   it('rejects a network or library the Solana family does not have', () => {
@@ -9008,10 +9765,60 @@ describe('Solana registry augmentation (R37)', () => {
 });
 ```
 
+3. Replace the `USE_MAIN` constant (with its doc comment) with:
+
+```ts
+/** A consumer of the main entry only; a user with no SDK installed at all. */
+const USE_MAIN = `
+import {
+  CryptoAio,
+  type EvmExt,
+  type EvmFeeDetails,
+  type EvmFeeOverride,
+  type SolanaExt,
+  type SolanaFeeDetails,
+  type SolanaFeeOverride,
+  type SolanaTokenAccount,
+} from 'crypto-aio';
+const aio = new CryptoAio({ env: false });
+export const eth = aio.blockchain({ chain: 'ethereum', network: 'sepolia' });
+export const ext: EvmExt = eth.ext;
+export const fee: EvmFeeOverride = { gasPrice: 1n };
+export type Details = EvmFeeDetails;
+export const sol = aio.blockchain({ chain: 'solana', network: 'devnet' });
+export const solanaExt: SolanaExt = sol.ext;
+export const solanaFee: SolanaFeeOverride = { computeUnitPrice: 1n };
+export type SolanaDetails = SolanaFeeDetails;
+export type Account = SolanaTokenAccount;
+`;
+```
+
+4. In `declarations()`, add `join(ROOT, 'src', 'adapters', 'solana', 'index.ts'),` to `entries`, after the EVM entry.
+5. In `withoutSdks`, add `'crypto-aio/solana': [join(DTS, 'adapters', 'solana', 'index.d.ts')],` to `paths` after `'crypto-aio/evm'`, and widen `hidden` to:
+   ```ts
+  hidden: /[\\/]node_modules[\\/](ethers|web3|@solana[\\/]web3\.js)[\\/]/,
+   ```
+6. In the last `describe` (`'the main entry names no SDK (spec §5.6)'`), append after the EVM control test:
+
+```ts
+  it('control: `crypto-aio/solana` does need the SDK types, so @solana/web3.js really is unresolvable', () => {
+    const { everywhere } = compile(
+      { 'main.ts': `${USE_MAIN}import 'crypto-aio/solana';\n` },
+      undefined,
+      withoutSdks(dts),
+    );
+    expect(everywhere()).toEqual([
+      expect.stringMatching(
+        /__dts__\/adapters\/solana\/index\.d\.ts: Cannot find module '@solana\/web3\.js'/,
+      ),
+    ]);
+  }, 120_000);
+```
+
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `pnpm jest test/adapters/solana/plugin.test.ts test/adapters/solana/dependency.test.ts test/architecture/registry-augmentation.test.ts`
-Expected: FAIL: `plugin.test.ts` cannot find `../../../src/adapters/solana/plugin`; `dependency.test.ts` fails with `unknown chain 'solana'`; the new augmentation tests fail on `'crypto-aio/solana'`.
+Expected: FAIL: `plugin.test.ts` and `lazy.test.ts` cannot find `../../../src/adapters/solana/plugin`; `dependency.test.ts` fails with `unknown chain 'solana'`; the new augmentation tests fail on `'crypto-aio/solana'`.
 
 - [ ] **Step 3: Write the plugin and the entry**
 
@@ -9034,10 +9841,11 @@ import { SOLANA_CAPABILITIES } from './network';
 import { SOLANA_PRESETS } from './presets';
 import { SOLANA_TOKENS } from './tokens';
 
-/** The SDK version this adapter is validated against (spec §16). */
-export const SOLANA_PEER_DEPENDENCY: PeerDependency = Object.freeze({
-  name: '@solana/web3.js',
-  range: '^1.99.0',
+/** The SDK versions this adapter is validated against (spec §16), keyed by library. */
+export const SOLANA_PEER_DEPENDENCIES: Readonly<
+  Record<'@solana/web3.js', PeerDependency>
+> = Object.freeze({
+  '@solana/web3.js': Object.freeze({ name: '@solana/web3.js', range: '^1.99.0' }),
 });
 
 export const solanaManifest: AdapterManifest = Object.freeze({
@@ -9045,7 +9853,7 @@ export const solanaManifest: AdapterManifest = Object.freeze({
   library: '@solana/web3.js',
   chains: Object.freeze(['solana']),
   capabilities: SOLANA_CAPABILITIES,
-  peerDependencies: Object.freeze([SOLANA_PEER_DEPENDENCY]),
+  peerDependencies: Object.freeze([SOLANA_PEER_DEPENDENCIES['@solana/web3.js']]),
   load: async (): Promise<DriverFactory> => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('./web3') as typeof import('./web3');
@@ -9084,7 +9892,7 @@ declare module '../../index' {
   }
 }
 
-export { SOLANA_PEER_DEPENDENCY } from './plugin';
+export { SOLANA_PEER_DEPENDENCIES } from './plugin';
 export { SOLANA_CAPABILITIES } from './network';
 export type {
   SolanaExt,
@@ -9123,7 +9931,7 @@ In `package.json`, add to `"exports"` after the `"./evm"` entry:
     "./solana": { "types": "./dist/adapters/solana/index.d.ts", "default": "./dist/adapters/solana/index.js" },
 ```
 
-and to `"typesVersions"."*"`, after the `"evm"` entry:
+and to `"typesVersions"."*"`, keeping its keys alphabetical (`evm`, `native`, `solana`, `testing`), between `"native"` and `"testing"`:
 
 ```json
       "solana": ["dist/adapters/solana/index.d.ts"],
@@ -9133,8 +9941,8 @@ In `typedoc.json`, append `"src/adapters/solana/index.ts"` to `"entryPoints"`.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `pnpm jest test/adapters/solana/plugin.test.ts test/adapters/solana/dependency.test.ts test/architecture/registry-augmentation.test.ts`
-Expected: PASS: 3 + 1 plugin and dependency tests, and the augmentation suite with 2 new tests.
+Run: `pnpm jest test/adapters/solana/plugin.test.ts test/adapters/solana/dependency.test.ts test/adapters/solana/lazy.test.ts test/architecture/registry-augmentation.test.ts`
+Expected: PASS: 4 plugin, 1 dependency and 3 lazy tests, and the augmentation suite with 3 new tests.
 
 - [ ] **Step 7: Check, build and commit**
 
@@ -9142,7 +9950,7 @@ Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm build && p
 Expected: all green; `pnpm doc` 0 errors and 0 warnings; `dist/adapters/solana/index.d.ts` exists; `grep -c "solana/web3" dist/index.d.ts` prints `0`; `node -e "require('./dist/index.js'); console.log(Object.keys(require.cache).some((k) => k.includes('@solana/web3.js')))"` prints `false`.
 
 ```bash
-git add src/adapters/solana/plugin.ts src/adapters/solana/index.ts src/index.ts package.json typedoc.json test/adapters/solana/plugin.test.ts test/adapters/solana/dependency.test.ts test/architecture/registry-augmentation.test.ts
+git add src/adapters/solana/plugin.ts src/adapters/solana/index.ts src/index.ts package.json typedoc.json test/adapters/solana/plugin.test.ts test/adapters/solana/dependency.test.ts test/adapters/solana/lazy.test.ts test/architecture/registry-augmentation.test.ts
 git commit -m "feat(solana): register the Solana family and publish crypto-aio/solana
 
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
@@ -9155,17 +9963,19 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Test: `test/adapters/solana/e2e.test.ts`
 
 **Interfaces:**
-- Consumes: everything above through the public API: `CryptoAio`, `Blockchain`, `native`, `FaultyOperationStore`, `CrashError`, `MemoryOperationStore`, `ScriptedSolanaNode`; `fenceGeneration` from `src/testing/generation.ts` (Plan 2 Task 11, ruling A5: `fenceGeneration({ clock, fetch, stores, signers }, generation)` returns the fenced `{ clock, fetch, stores, signers }`).
-- Produces (test support): `countingSigner(): { signer, calls() }` (the test key, counting `sign` calls); `createSolanaEnv({ node?, endpoints?, fund?, stores?, signer?, lifecycle? })` → `{ aio, bc, node, clock, stores, address, run, produceWhile, restart }`; `restart({ killPrevious })` builds a new container over the same stores, node and clock, and with `killPrevious` fences the old generation (handoff R20).
+- Consumes: everything above through the public API: `CryptoAio`, `Blockchain`, `native`, `FaultyOperationStore`, `CrashError`, `MemoryOperationStore`, `ScriptedSolanaNode`; `fenceGeneration` from `src/testing/generation.ts` (Plan 2 Task 11, rulings A5 and R71: `fenceGeneration({ clock, fetch, stores, signers }, generation)` returns the fenced `{ clock, fetch, stores, signers }`).
+- Produces (test support): `countingSigner(): { signer, calls() }` (the test key, counting `sign` calls); `createSolanaEnv({ node?, endpoints?, fund?, stores?, signer?, lifecycle? })` → `{ aio, bc, node, clock, stores, address, run, produceWhile, restart }` (`aio` and `bc` are the current generation's); `restart({ killPrevious })` builds a new container over the same raw stores, node and clock, and with `killPrevious` fences the old generation (handoff R20); a killed container is never closed (its fenced calls never settle).
 
 No production code changes in this task: the suite proves Tasks 0–9 work together through the engine, the monitor, recovery and the scanner. A failure here is a defect in Tasks 0–9: fix it in the owning module (and extend that task's unit test), never by loosening this suite.
 
 **Review points:**
 - Crash tests use `restart({ killPrevious: true })` (R20, A5); nothing is signed twice (`calls()`); recovery rebroadcasts the stored bytes ("already processed" when they landed).
-- Expiry is proven only on finalized state past `lastValidBlockHeight` and only then allows `rebuild` (spec §8.6); a lagging endpoint keeps it unproven (Review Focus 1).
+- Expiry is proven only once block `lastValidBlockHeight + 1` is final and every block of the window has been read without the transaction (D7), and only then allows `rebuild` (spec §8.6); a lagging endpoint keeps it unproven (Review Focus 1).
 - Two identical intents give two payments (Review Focus 3); five concurrent transfers need no lease (expiry ordering).
 - A refused transfer (funds spent elsewhere) stalls, keeps its bytes, and lands after a top-up and `rebroadcast` (spec §8.2).
-- A fork that drops the transaction emits `tx.reorged`, the orphan check reads both endpoints, and the transfer still finalizes once.
+- A fork (M11, Plan 2 Task 11's pattern): while one endpoint still serves the orphaned block at the fixed height, the quorum disagrees (`provider.inconsistent` naming both endpoints) and nothing is decided (no `tx.reorged`, no resend); once both serve the new block, the reorg is decided and the transfer finalizes once.
+- The first crash test pins that a call on the dead handle never settles (M11).
+- A transfer that lands at `lastValidBlockHeight + 1`, with the monitor polling throughout, ends `final`, never `expired` (I1).
 - The deposit scan resolves SOL and SPL transfers and reports an unusable mint as an `UnresolvedTransfer` (R35).
 
 - [ ] **Step 1: Write the test support**
@@ -9494,25 +10304,95 @@ describe('Solana end to end', () => {
     expect(env.node.balance(RECIPIENT)).toBe(2n * SOL);
   });
 
-  it('survives a fork that drops the transaction, with the orphan check read from both endpoints', async () => {
+  it('decides a fork only when both endpoints serve the new block at the height (M11)', async () => {
     const env = await createSolanaEnv({ endpoints: ['a', 'b'] });
     const reorgs: AioEvent[] = [];
     env.aio.on('tx.reorged', (e) => reorgs.push(e));
+    const disagreements: AioEvent[] = [];
+    env.aio.on('provider.inconsistent', (e) => disagreements.push(e));
     const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: SOL }));
+    const ref = sub.attempt?.id ?? '';
     env.node.produce(1);
     await env.run(env.bc.waitForConfirmation(sub.operationId, { confirmations: 1 }));
-    env.node.reorg(1);
-    env.node.served.length = 0;
-    const final = await env.produceWhile(
-      env.bc.waitForConfirmation(sub.operationId, { finality: 'final' }),
-    );
+    const orphan = env.node.landed(ref)?.block;
+    if (!orphan) throw new Error('not landed');
+    env.node.reorg(1, [ref]);
+    env.node.produce(1);
+    const replacement = env.node.block(orphan.height);
+    expect(replacement?.hash).not.toBe(orphan.hash);
+    // The orphan check reads the block at the recorded height (lesson 17) from both
+    // endpoints. While b still serves the orphaned block there, the quorum disagrees, which
+    // decides nothing: no reorg, no resend.
+    let bLags = true;
+    env.node.intercept = (endpoint, method, params) =>
+      bLags &&
+      endpoint === 'b' &&
+      method === 'getBlock' &&
+      Number(params[0]) === Number(replacement?.slot)
+        ? {
+            result: {
+              blockHeight: Number(orphan.height),
+              blockTime: orphan.blockTime,
+              blockhash: orphan.hash,
+              parentSlot: Number(orphan.parentSlot),
+              previousBlockhash: orphan.previousBlockhash,
+            },
+          }
+        : undefined;
+    const waiting = env.bc.waitForConfirmation(sub.operationId, { finality: 'final' });
+    waiting.catch(() => undefined);
+    for (let i = 0; i < 10; i++) {
+      env.node.produce();
+      await env.clock.advance(1_000);
+    }
+    expect([reorgs.length, env.node.sendCount(ref)]).toEqual([0, 1]);
+    expect(disagreements.length).toBeGreaterThan(0);
+    for (const event of disagreements) {
+      expect(event).toMatchObject({
+        method: 'getBlock',
+        endpointIds: ['node/a', 'node/b'],
+      });
+    }
+    bLags = false;
+    const final = await env.produceWhile(waiting);
     expect(final.operation?.state).toBe('final');
-    expect(reorgs.length).toBeGreaterThanOrEqual(1);
-    expect(
-      new Set(
-        env.node.served.filter((s) => s.method === 'getBlock').map((s) => s.endpoint),
-      ),
-    ).toEqual(new Set(['a', 'b']));
+    expect(reorgs[0]).toMatchObject({
+      operationId: sub.operationId,
+      previousBlockHash: orphan.hash,
+    });
+    expect(env.node.sendCount(ref)).toBeGreaterThanOrEqual(2);
+    expect(env.node.balance(RECIPIENT)).toBe(SOL);
+  });
+
+  it('ends final, never expired, when the transfer lands at lastValidBlockHeight + 1 (I1)', async () => {
+    const env = await createSolanaEnv();
+    const sub = await env.run(
+      env.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'edge' }),
+    );
+    const ref = sub.attempt?.id ?? '';
+    const op = await env.stores.operations.getByKey('default', 'edge');
+    const attempt = op?.attempts[0];
+    const last =
+      attempt?.ordering.kind === 'expiry'
+        ? (attempt.ordering.lastValidHeight as bigint)
+        : 0n;
+    // Held back from every leader until its last block, then sent once; the monitor polls
+    // (and resends) all along, and must never prove it expired.
+    env.node.drop(ref);
+    env.node.intercept = (_e, method) =>
+      method === 'sendTransaction' ? { result: ref } : undefined;
+    const waiting = sub.wait({ finality: 'final' });
+    waiting.catch(() => undefined);
+    while (env.node.head.height < last) {
+      env.node.produce();
+      await env.clock.advance(400);
+    }
+    env.node.intercept = undefined;
+    env.node.submit(attempt?.raw.data ?? '', { skipPreflight: true });
+    env.node.produce(1);
+    expect(env.node.landed(ref)?.block.height).toBe(last + 1n);
+    const final = await env.produceWhile(waiting);
+    expect(final.status).toMatchObject({ state: 'final', blockHeight: last + 1n });
     expect(env.node.balance(RECIPIENT)).toBe(SOL);
   });
 
@@ -9535,13 +10415,21 @@ describe('Solana end to end', () => {
       const stored = await env.stores.operations.getByKey('default', 'k');
       const ref = stored?.attempts[0]?.ref.id ?? '';
       expect([stored?.state, env.node.sendCount(ref)]).toEqual(['signed', 0]);
+      const dead = env.bc;
       const restarted = env.restart({ killPrevious: true });
+      // M11: the crashed process is dead: nothing on its handle settles any more.
+      let deadSettled = false;
+      void dead.getBlockHeight().then(
+        () => (deadSettled = true),
+        () => (deadSettled = true),
+      );
       const sub = await env.run(
         restarted.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'k' }),
       );
       expect([sub.state, sub.attempt?.id, calls()]).toEqual(['submitted', ref, 1]);
       await env.produceWhile(sub.wait({ finality: 'final' }));
       expect(env.node.balance(RECIPIENT)).toBe(SOL);
+      expect(deadSettled).toBe(false);
     });
 
     it('recovers a broadcast that was never recorded: the node answers "already processed"', async () => {
@@ -9677,7 +10565,7 @@ describe('Solana end to end', () => {
 - [ ] **Step 3: Run it**
 
 Run: `pnpm jest test/adapters/solana/e2e.test.ts`
-Expected: PASS, 14 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 4: Prove determinism (lesson 1)**
 
@@ -9708,6 +10596,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Review points:**
 - No key or funded account is needed; the test never broadcasts.
 - It does not assume that a finalized height read after a head height is lower: behind a load balancer, or with sub-second finality, two reads are not ordered (observed during authoring on mainnet and testnet).
+- It pauses 2 s between steps: the public endpoints are rate-limited and, until A17 lands, health probes do not wait for the limit (M12).
 
 - [ ] **Step 1: Write the test**
 
@@ -9734,6 +10623,11 @@ const SYSTEM = '11111111111111111111111111111111';
 const SENDER = '77PLe4JWFMyQgaUNhWLPA6fsGKGNoGapd2XrbpC2Jhxa';
 const RECIPIENT = '6zYdUwXJR5fhQJazDByGv4PsNrdaNhoruAR5kekA7rGs';
 const suite = enabled ? describe : describe.skip;
+/**
+ * The public endpoints allow about 40 requests per 10 s per method, and until ruling A17
+ * lands the health probes do not wait for the rate limit: pause between steps.
+ */
+const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 2_000));
 
 suite(`Solana integration on ${network}`, () => {
   it('checks the genesis hash, then reads heights, a final block and balances', async () => {
@@ -9741,6 +10635,7 @@ suite(`Solana integration on ${network}`, () => {
     try {
       const bc = aio.blockchain({ chain: 'solana', network, provider });
       await bc.ready();
+      await pause();
       const status = await bc.getNetworkStatus();
       expect(status.height).toBeGreaterThan(0n);
       expect(status.finalizedHeight).toBeGreaterThan(0n);
@@ -9748,15 +10643,18 @@ suite(`Solana integration on ${network}`, () => {
       // finalized height can read above a confirmed height read a moment earlier.
       const gap = status.height - status.finalizedHeight;
       expect(gap < 1_000n && gap > -1_000n).toBe(true);
+      await pause();
       const block = await bc.getBlock(status.finalizedHeight - 10n);
       expect(block?.height).toBe(status.finalizedHeight - 10n);
       expect(block?.hash).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
       const next = await bc.getBlock(status.finalizedHeight - 9n);
       expect(next?.parentHash).toBe(block?.hash);
+      await pause();
       expect((await bc.getBalance(SYSTEM)).amount.asset.id).toBe(
         `solana:${network}/native`,
       );
       // A fee needs no signer and no funds (the simulation fails; the limit falls back).
+      await pause();
       const fee = await bc.estimateFee({
         to: RECIPIENT,
         amount: 1_000_000n,
@@ -9767,7 +10665,7 @@ suite(`Solana integration on ${network}`, () => {
     } finally {
       await aio.close();
     }
-  }, 120_000);
+  }, 180_000);
 });
 ```
 
@@ -9779,7 +10677,7 @@ Expected: `Tests: 1 skipped, 1 total`.
 - [ ] **Step 3: Run it live (optional, needs network)**
 
 Run: `CRYPTO_AIO_INTEGRATION=1 pnpm jest test/integration/solana.test.ts` (and with `CRYPTO_AIO_IT_SOLANA_NETWORK=testnet`)
-Expected: PASS, 1 test each. During authoring it passed on devnet and testnet against the public endpoints (Agave 4.3.0). If an endpoint blocks your network, set `CRYPTO_AIO_IT_SOLANA_RPC_URL`. This step never runs in CI.
+Expected: PASS, 1 test each. During authoring it passed on mainnet, devnet and testnet against the public endpoints (Agave 4.3.0). If an endpoint blocks your network, set `CRYPTO_AIO_IT_SOLANA_RPC_URL` (and, behind a proxy, `NODE_USE_ENV_PROXY=1`). This step never runs in CI.
 
 - [ ] **Step 4: Check and commit**
 
@@ -9807,6 +10705,7 @@ Edit the guides by hand and do not run Prettier on them (D22). If another family
 **Review points:**
 - Every statement matches the shipped behaviour and Appendix A (genesis hashes, presets per cluster, limits).
 - The Node ≥ 22.12 note for `@solana/web3.js` 1.99 is present (ruling A13).
+- The pre-flight corrections are present (M9): landing up to `lastValidBlockHeight + 1` (I1), expiry proven only over the whole window and the two-provider advice (C1), the explicit-limit variant (M3), the `blockhash not found` stall (M5), SPL to a program refused (M4), the scan's `partial` superset (I4), provider retention, and the lossy `Connection`.
 - `pnpm doc` resolves the new `networks.md#solana-networks` anchor.
 
 - [ ] **Step 1: Apply the edits**
@@ -9937,26 +10836,43 @@ crypto-aio: `npm install @solana/web3.js`. Version 1.99 needs Node ≥ 22.12.
   `UNSUPPORTED_CAPABILITY`. Tokens move between associated token accounts; `getBalance` sums
   every token account the owner holds for the mint, and `bc.ext.solana.getTokenAccounts(owner,
   mint?)` lists them.
-- **Checks before signing.** SOL to a program-owned account, SPL to a token account instead
-  of its owner, a new account below the rent-exempt minimum, a frozen token account, and a
-  transfer that would leave the sender between 0 and its rent-exempt minimum are refused
-  before anything is signed. To fund a program account on purpose, use `native()`.
+- **Checks before signing.** SOL to a program-owned account, SPL to a program (send to a
+  wallet or a PDA owner instead) or to a token account instead of its owner, a new account
+  below the rent-exempt minimum, a frozen token account, and a transfer that would leave the
+  sender between 0 and its rent-exempt minimum are refused before anything is signed. To fund
+  a program account on purpose, use `native()`.
 - **Fees.** `solana` fees have a `network` charge (the signature fee the node quotes), a
   `priority` charge (compute-unit price × limit) and, when an account is created, `rent`.
   Speeds take the 25th, 50th and 75th percentile of recent prioritization fees; the limit is a
   simulation plus 20%. Override with `{ computeUnitPrice, computeUnitLimit? }`
-  (`SolanaFeeOverride`, micro-lamports per compute unit). Each build varies the compute
-  budget slightly, so two identical transfers never share a signature.
+  (`SolanaFeeOverride`, micro-lamports per compute unit). Each build adds up to 1,023 units
+  to the limit, an explicit limit included (an explicit price is kept exactly), so two
+  identical transfers do not share a signature. At the 1,400,000-unit maximum no variant
+  fits, and the library refuses a second Operation that would share a signature.
 - **Memos.** Up to 256 UTF-8 bytes, through the Memo program. A received memo is attached to
   a transaction's transfers when the transaction has exactly one.
-- **Expiry instead of replacement.** A transaction is valid until its `lastValidBlockHeight`,
-  150 blocks after its blockhash. The monitor resends the same bytes while it can still land.
-  It becomes `expired` (`TX_EXPIRED`) only once every proof endpoint has finalized past that
-  height and still holds the transaction's window; then `bc.rebuild(id)` signs a new one.
-  There is no replace or cancel.
+- **Expiry instead of replacement.** A transaction can land up to the block after its
+  `lastValidBlockHeight` (150 blocks after its blockhash). The monitor resends the same bytes
+  while it can still land. It becomes `expired` (`TX_EXPIRED`) only once every proof endpoint
+  has finalized that last block and serves every block of the window without the
+  transaction; then `bc.rebuild(id)` signs a new one. There is no replace or cancel.
+- **Configure two providers for proven expiry.** Each proof is a quorum over your endpoints,
+  and an endpoint is a URL: a single URL, load-balanced or not, is trusted for everything it
+  answers. A backend that lags or lacks blocks never decides anything, but only a second,
+  independent provider guards against one that answers wrongly.
+- **A `blockhash not found` refusal.** An endpoint that lags behind the one that served the
+  blockhash refuses the first broadcast, and the Operation is `stalled`. While the blockhash
+  is valid, `bc.rebroadcast(id)` retries it; otherwise it expires and `bc.rebuild(id)` signs a
+  new one.
 - **Finality and scanning.** `final` is the `finalized` commitment. Heights are block
-  heights, not slots, so skipped slots never leave a gap in scans or confirmations. Endpoints
-  need transaction history (`getTransaction`, `getSignaturesForAddress`); every preset has it.
+  heights, not slots, so skipped slots never leave a gap in scans or confirmations. A scan
+  reports every transaction that may move funds for a watched address; one it cannot fully
+  attribute is reported as `partial` rather than dropped.
+- **Retention.** Endpoints need transaction history (`getTransaction`,
+  `getSignaturesForAddress`), and providers keep different amounts: Ankr documents about 16
+  hours of ledger, and Infura's Solana access is limited to select customers. History ends at
+  a provider's retention, and a proof about blocks older than it decides nothing (the call
+  waits and retries) rather than guessing.
 - **History** comes from the RPC (`getSignaturesForAddress`), newest first, without an
   indexer. An SPL deposit into an existing token account appears in that account's history,
   not the owner's.
@@ -9971,6 +10887,8 @@ crypto-aio: `npm install @solana/web3.js`. Version 1.99 needs Node ≥ 22.12.
 
 `native(bc, '@solana/web3.js')` returns a `Connection` wired to the same transport (HTTP
 JSON-RPC only: subscriptions have no bridge). Import `crypto-aio/solana` once to type it.
+The `Connection` parses JSON itself, so numbers above 2^53 are rounded there; the driver's
+own reads keep u64 amounts exact.
 ````
 
 8. In `docs/guides/transactions.md`, replace:
@@ -10054,7 +10972,7 @@ Expected: both files use Prettier code style; TypeDoc reports 0 errors and 0 war
 - [ ] **Step 3: Run the whole branch's checks**
 
 Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm doc`
-Expected: all green: the earlier suites plus the new ones (120 new tests), 1 Solana integration test skipped, `dist/adapters/solana/` built, TypeDoc clean.
+Expected: all green: the earlier suites plus the new ones (140 new tests, 136 if Plan 2.5 already delivered Task 0's four), 1 Solana integration test skipped, `dist/adapters/solana/` built, TypeDoc clean. During authoring, on Plan 2's `7bec7eb`: 1,152 passed and 1 skipped.
 
 - [ ] **Step 4: Commit**
 
@@ -10073,27 +10991,30 @@ Each risk names the protocol pitfall and where the plan handles it.
 
 | Risk | What goes wrong | How the plan handles it |
 |---|---|---|
-| **Blockhash expiry versus "may still land"** | A transaction looks gone (no mempool on Solana; `getTransaction` is `null`) while it can still be included until `lastValidBlockHeight`; calling it dead lets the user rebuild and pay twice. | Expiry is proven only by a quorum predicate "finalized height > `lastValidHeight`" (D6), and "not included" additionally needs the window's first block on every quorum endpoint and a second empty finalized read (D7). Anything else is retryable and decides nothing. Pinned: Task 8 (two tests), Task 10 ("never calls an expired-looking transfer dead"). |
+| **Blockhash expiry versus "may still land"** | A transaction looks gone (no mempool on Solana; `getTransaction` is `null`) while it can still be included, up to block `lastValidBlockHeight + 1` (agave compares the blockhash's age against the including block's parent, I1); calling it dead lets the user rebuild and pay twice. | The window is `L − 149 … L + 1` (D6). Expiry is proven only once block `L + 1` is final (a quorum predicate) and every block of the window has been read under the proof quorum, self-certified by height and parent link, without the signature (D7). Anything else is retryable and decides nothing. Pinned: Task 4 (the node lands at `L + 1`), Task 8 (included at `L + 1`; the one-endpoint gap tests), Task 10 ("never calls an expired-looking transfer dead", "ends final, never expired, when the transfer lands at lastValidBlockHeight + 1"). |
 | **Moving finalized head** | Finality advances every ~200 ms (Alpenglow-era clusters); two honest endpoints rarely agree on "the finalized block", and one endpoint ahead of its peer could push finality to its own head. | Lesson 17 final form: predicates and finality-scoped reads at the fact's own height; no endpoint proposes a height; `finalizedHead` trails a peer skew (D6). Observed live: a finalized height read later can exceed a confirmed height read earlier (Task 11 tolerates it). |
 | **Durable nonces** | A durable-nonce transaction never expires by block height, which breaks expiry proofs. | Out of scope (spec §20): the builder only uses recent blockhashes; received durable-nonce transactions are decoded like any other. |
-| **Rebroadcasting identical bytes** | Resending a landed transaction must not look like a failure; resending an expired one must not look permanent. | "This transaction has already been processed" is `already-known`; "Blockhash not found" is `refused` (a lagging node may not know it yet), never `rejected` (D15). The monitor resends while `dropped` (spec §8.8). Pinned: Task 7 (broadcaster), Task 10 (rebroadcast and recovery tests). |
-| **Identical transfers share a signature** | Deterministic ed25519 over the same message and blockhash: a second Operation silently tracks the first one's payment. | Build variants (D10), plus the core guard of ruling A15 (Plan 2.5). Pinned: Task 7, Task 10 (Review Focus 3). |
+| **Rebroadcasting identical bytes** | Resending a landed transaction must not look like a failure; resending an expired one must not look permanent. | "This transaction has already been processed" is `already-known`; "Blockhash not found" is `refused` (a lagging node may not know it yet), never `rejected` (D15). The monitor resends while `dropped` (spec §8.8). A first broadcast refused that way leaves the Operation `stalled` until the user calls `bc.rebroadcast(id)` or expiry is proven (M5; the guide says so). Pinned: Task 7 (broadcaster), Task 10 (rebroadcast and recovery tests). |
+| **Identical transfers share a signature** | Deterministic ed25519 over the same message and blockhash: a second Operation silently tracks the first one's payment. | Build variants on the compute-unit limit, an explicit limit included (D10, M3), plus the core guard of ruling A15 (Plan 2.5), which is the only guard at the 1,400,000-unit maximum. Pinned: Task 7, Task 10 (Review Focus 3). |
 | **Recipient ATA races** | Between the estimate and landing, someone may create the recipient's token account (the rent is then not charged) or close it (the transfer fails). | `CreateIdempotent` succeeds either way, and the `rent` charge is an `upper` bound. A closed account makes the transfer fail at preflight: `refused` → `stalled`, then expiry and `rebuild`, which re-reads the account (D11). |
 | **Accounts below the rent-exempt minimum** | A new account funded below the minimum, or a sender left between 0 and its minimum, fails with "insufficient funds for rent" after signing. | Checked before signing (D11): `INVALID_AMOUNT` for a new recipient, `INSUFFICIENT_FUNDS` with `{ required, available }` for the sender. The minimum is read from the node (it changed in 2026: 650,240 lamports for an empty account). Pinned: Task 7 (Review Focus 4); the node models it (Task 4). |
-| **A system transfer to a program-owned account** | SOL sent to a token account, a stake account or a program's data account may be stranded. | Refused before signing unless the recipient is a system-owned account (D11); SPL to a token account instead of its owner is refused too. |
+| **A transfer to a program or a program-owned account** | SOL sent to a token account, a stake account or a program's data account may be stranded; tokens sent to a program id land in an associated token account nobody can sign for. | Refused before signing unless the recipient is a system-owned account (D11); SPL to a token account instead of its owner, or to an executable account (M4), is refused too. Pinned: Task 7 (Review Focus 4). |
 | **`jsonParsed` differences across providers** | Honest providers differ in `uiAmount` (float or `null`), `owner`/`programId` on token balances, `stackHeight`, `costUnits`, logs, `blockTime`; a whole-object quorum would never agree. | Quorum keys compare only the facts a verdict reads (lesson 2): slot, error, signatures, keys, token amounts, token-transfer instructions. Pinned: Task 2, Task 8 (Review Focus 2). |
 | **Skipped slots and dense heights** | Slots are not heights; a scanner or confirmation count over slots would see gaps or skip blocks. | Block heights everywhere; the height index maps them to slots (D4). Pinned: Task 6, Task 8 (Review Focus 5). |
 | **u64 lamports as JSON numbers** | Balances above 2^53 − 1 lamports are rounded by `JSON.parse`. | Every call sets `exactIntegers` (Task 0, D19); a rounded number is refused. Pinned: Tasks 0, 2, 5, 6. |
-| **Pruned ledgers and history-less endpoints** | An endpoint without transaction history, or with a pruned ledger, answers `null` for a transaction that did land. | "Not available" codes decide nothing; "not included" needs the window's first block on every quorum endpoint (D7). History reads rely on transaction history, which every preset has. |
-| **Phantom success** | A node answer that says a token transfer succeeded while the balances do not show it. | The landing guard on verdict paths (D14); general decoding reports the chain's own status. |
-| **Load-balanced public endpoints** | `api.mainnet.solana.com` is a load-balanced cluster: consecutive reads may come from different backends. | Every verdict is one quorum read of a fixed fact; single reads only feed observed (non-terminal) states and the stale-view guard. |
+| **Pruned ledgers, snapshot jumps and history gaps** | An endpoint without transaction history, with a pruned ledger (Ankr keeps about 16 hours), started from a snapshot, or with a long-term-storage gap answers `null` for a transaction that did land, and its `getBlocks` lists can skip heights. | "Gone" codes decide nothing (D4); a `getBlocks` page is believed only after its first block's height is read (I3); "not included" reads every block of the window (D7), so a gapped backend yields "not available", never `{ included: false }`. History ends at the provider's retention (guide). Pinned: Task 6 (the gap and pruned-endpoint tests), Task 8 (one gapped endpoint, single and load-balanced). |
+| **Phantom success** | A node answer that says a token transfer succeeded while the balances do not show it. | The landing guard on verdict paths (D14): a token transfer from the sender's account to the recipient's, of any positive amount; seeing no such transfer never passes; missing token balances or keys decide nothing (retryable), never a proven `failed`. General decoding reports the chain's own status. Pinned: Task 5 ("needs a transfer from the sender to the recipient of a positive amount, not the exact one", "decides nothing on missing evidence"). |
+| **Load-balanced endpoints** | `api.mainnet.solana.com` and every provider URL are load-balanced: consecutive reads may reach different backends, one lagging, pruned or gapped, so an endpoint is not monotone and one "held" block says nothing about the next read. | A positive verdict is one quorum read of a fixed fact; "not included" is a chain of self-certifying block reads, each of which can only fail to decide (D7); single reads only feed observed (non-terminal) states and the stale-view guard. With one URL, everything that URL answers is trusted, so the guide advises two independent providers. Pinned: Task 4 (the balanced node model), Task 8 (one load-balanced endpoint with a gapped backend never yields `{ included: false }` or a proven `expired`). |
+| **Scan filters that drop deposits** | A block scan that keeps only transactions it can attribute to a watched address would miss a deposit whose token owner is not in the balances or whose instruction is not parsed. | The filter is a superset (I4): a named transfer, a lamport change on a watched key, a token balance change whose owner is watched or missing, or any partly decoded transaction with a watched key; what cannot be attributed is reported as `partial`, never dropped. Pinned: Task 5, Task 8. |
 
 ## Unresolved assumptions
 
 Each item gives the default chosen and what it costs if wrong.
 
-- **Ledger coverage by one block (D7).** "The window's first block is on every quorum endpoint" is taken as proof that each endpoint's transaction-status data covers the window. Agave purges blocks and statuses together, oldest first, but a BigTable-backed endpoint swallows a BigTable read error in `getSignatureStatuses`/`getTransaction` as "not found". The finalized `getTransaction` quorum read makes a single faulty endpoint disagree, and the recheck after the coverage reads narrows the window. Cost if wrong: a proven `expired` for a transaction that landed, if every quorum endpoint fails the same history read at once. Mitigated further by R76's strictness and A14.
-- **Separate quorum reads may reach different endpoint sets** (R76's family analogue). The predicate, coverage and recheck reads are separate calls; with three or more healthy endpoints the transport may pick different pairs. Default: accepted (with two endpoints the sets are identical). Cost: the narrow window R76 names.
+- **One provider is trusted for everything it answers (D7, A14).** The window scan makes every lagging, pruned or gapped backend fail to decide, but a provider that serves a well-formed, self-consistent block without a transaction it did include cannot be caught by reading it alone. Default: the proof quorum (A14 keeps a height liar from shrinking it), and the guide advises two independent providers for proven expiry. Cost if wrong: with one dishonest provider, a proven `expired` for a transaction that landed.
+- **Provider retention.** Ankr documents a ledger of about 100 M slots (about 16 hours); Infura's Solana access is limited to select customers; others vary. Default: a read below a provider's retention is "gone" and decides nothing (D4, D7), and history ends there (guide). Cost: an `expired` proof, or a scan, older than the retention waits until the user adds an archival provider.
+- **`getTransaction` ignores `minContextSlot` on agave 4.3.0** (verified live; `getBlocks` honours it). Default: nothing relies on it; `getBlocks` sets it as a cheap first filter, and the block reads self-certify. Cost: none.
+- **Health probes and rate limits (A17).** Until Plan 2.5's A17 lands, probes do not wait for a public endpoint's rate limit. Default: Task 11 pauses 2 s between steps. Cost: a flaky live run, never CI.
 - **Priority-fee percentiles and the compute margin** (D9) are library policy, not chain facts; a congested account may need `fast` or an explicit price. Cost: an Attempt expires unlanded and needs `rebuild`.
 - **A simulation failure uses the runtime default limit** (200,000 per instruction). Cost: a higher priority fee for such a transfer (the price is usually 0 in that case).
 - **The rent-exempt minimum is read per estimate**; the scripted node models today's value (5,080 lamports per byte including the 128-byte overhead). Cost: none for the driver; the node's constant would need an update if rent changes again.
@@ -10101,25 +11022,27 @@ Each item gives the default chosen and what it costs if wrong.
 - **Node ≥ 22.12 for `@solana/web3.js` 1.99** (A13). Cost: users on 22.0–22.11 cannot load the SDK (`DEPENDENCY_MISSING` is not what they see; the require fails with Node's ESM error). Documented.
 - **No Solana network of your own** (no `solanaChainPlugin`). Cost: a local test validator cannot be used through the built-in chain; a later plan can add a chain plugin as Plan 2 did.
 - **`-32005` (node unhealthy) is `RATE_LIMITED`.** The core transport maps JSON-RPC `-32005` to `RATE_LIMITED` (an EVM convention); on Solana it means "node unhealthy / behind". Default: accepted, since both are retryable with backoff and fail over. Cost: an event names a rate limit that is really a lagging node.
-- **`api.mainnet.solana.com` from Node.** The authoring machine's Node could not connect to it (curl could, and returned the genesis hash); devnet and testnet passed live. Cost: none expected; the integration test takes an explicit URL.
+- **Live endpoints.** Task 11 passed on mainnet, devnet and testnet during authoring (after the pre-flight review; earlier, the authoring machine's Node could not reach mainnet). Cost: none expected; the integration test takes an explicit URL.
 
 ## Merge notes
 
 Plan 2 is merged and Plan 2.5 has landed before this plan executes (ruling A11). Branch from `main`. Shared files, and how the changes combine:
 
-- **`src/core/transport/{types,http-transport}.ts`** (Task 0): lifted into Plan 2.5. If Plan 2.5 delivered it, skip Task 0 and keep the rest unchanged; if its final API differs (a different option name), rename the one `exactIntegers: true` in `rpc.ts`'s `call()` and the Task 0 test reference.
-- **`package.json` and `pnpm-lock.yaml`** (Tasks 3, 9): add `@solana/web3.js` next to Plan 2's `ethers` and `web3` in `devDependencies`, `peerDependencies` and `peerDependenciesMeta`; add `./solana` after `./evm` in `exports` and `typesVersions`. Regenerate the lockfile only with pnpm 10.5.2 (`pnpm add`), one plan at a time; if another family merged first, rebase and rerun `pnpm install` rather than hand-merging the lockfile.
+- **`src/core/util/json.ts`, `src/core/transport/{types,http-transport}.ts`** (Task 0): lifted into Plan 2.5 and merged there with Plan 4's Task 0 into one implementation: one `parseJson(text, exactIntegers)` helper, one `CallOptions.exactIntegers` field, and one `test/core/transport/exact-integers.test.ts` holding both plans' assertions (M12). If Plan 2.5 delivered it, skip Task 0 and keep the rest unchanged; if its final API differs (a different option name), rename the one `exactIntegers: true` in `rpc.ts`'s `call()` and the harness's `recording` filter.
+- **`includedFinal`'s reason (M10, A9).** Once Plan 2.5 lets `includedFinal` carry `reason`, the included branch passes `'transaction failed'` or `'token transfer failed'` through, and the core puts it on the proven `failed` (P6-2). One line in `proofs.ts`; no test changes beyond asserting the reason.
+- **`package.json` and `pnpm-lock.yaml`** (Tasks 3, 9): add `@solana/web3.js` next to Plan 2's `ethers` and `web3` in `devDependencies`, `peerDependencies` and `peerDependenciesMeta` (keys alphabetical); add `./solana` after `./evm` in `exports`. `typesVersions` keys are alphabetical (R81), so `solana` sits between `native` and `testing`: a merge hotspot when several families land, resolved by keeping the keys sorted. Regenerate the lockfile only with pnpm 10.5.2 (`pnpm add`), one plan at a time; if another family merged first, rebase and rerun `pnpm install` rather than hand-merging the lockfile.
 - **`pnpm-workspace.yaml`** (Task 3): Plan 5 is the only plan that touches it (A13).
 - **`src/index.ts`** (Tasks 1, 9): type exports after Plan 2's EVM exports; `solanaPlugin()` after `evmPlugin()` in `BUILTIN_PLUGINS`. Other families append theirs; order is registration order only (no cross-family dependency).
 - **`typedoc.json`** (Task 9): append the Solana entry after Plan 2's EVM entry.
-- **`test/architecture/registry-augmentation.test.ts`** (Task 9): one path entry after `'crypto-aio/evm'` and one appended `describe`; independent of other families' additions.
+- **`test/architecture/registry-augmentation.test.ts`** (Task 9): the six edits are anchored on Plan 2's final file (`7bec7eb`): a path entry after `'crypto-aio/evm'`, `USE_SOLANA` checked with `USE_ACME` in both file orders, the `USE_MAIN` and `declarations` extensions, the `withoutSdks` path, the widened `hidden` regex, and one appended control test. Another family adds its own lines beside them; where two families extend the same regex or list, keep both.
+- **`test/adapters/solana/lazy.test.ts` and the peer-pin test** (Task 9): Solana's own files, in Plan 2's final family shape (R79–R82); nothing shared.
 - **Guides, `README.md`, `CHANGELOG.md`** (Task 12): anchored on Plan 2 Task 13's text; where another family already rewrote a sentence, add Solana to it (Task 12's note).
-- **`src/testing/generation.ts`**: consumed, not changed (Plan 2 Task 11, A5).
+- **`src/testing/generation.ts`**: consumed, not changed (Plan 2 Task 11, A5, R71; validated against Plan 2's own file at `7bec7eb`).
 - No other `src/core/**` or `src/testing/**` file changes.
 
 ## Appendix A: Verified data (lesson 12)
 
-Every item below was checked against the named source while this plan was written (25 September 2026). `chains.ts`, `presets.ts`, `tokens.ts` and `programs.ts` contain nothing else, apart from the library policies of D8, D9, D10 and D16.
+Every item below was checked against the named source while this plan was written (25 September 2026); the rows the pre-flight review added or corrected were checked again on 26 September 2026. `chains.ts`, `presets.ts`, `tokens.ts` and `programs.ts` contain nothing else, apart from the library policies of D8, D9, D10 and D16.
 
 | Item | Value in the plan | Source |
 | --- | --- | --- |
@@ -10130,6 +11053,8 @@ Every item below was checked against the named source while this plan was writte
 | Alchemy | `https://solana-mainnet.g.alchemy.com/v2/<key>`, `https://solana-devnet.g.alchemy.com/v2/<key>`; no testnet | https://www.alchemy.com/docs/reference/node-supported-chains |
 | Infura | `https://solana-mainnet.infura.io/v3/<key>`, `https://solana-devnet.infura.io/v3/<key>` ("Testnet (Devnet)"); no testnet | https://docs.infura.io/get-started/endpoints/ |
 | Ankr | `https://rpc.ankr.com/solana/<key>`, `https://rpc.ankr.com/solana_devnet/<key>`; no testnet path | https://www.ankr.com/docs/llms-full.txt |
+| Ankr retention | about 16 hours of transaction history ("RPC nodes are configured with a ledger size of ~100M, which retains approximately the last 16 hours of transaction history") | https://www.ankr.com/docs/rpc-service/chains/chains-api/solana/ |
+| Infura access | "Solana access is currently limited to select customers." | https://docs.infura.io/get-started/endpoints/ |
 | Explorer templates | `https://explorer.solana.com/tx/{id}`, `/address/{address}`; `?cluster=devnet`, `?cluster=testnet` | Tether's USDT link (`explorer.solana.com/address/<mint>`, below); Solana Explorer transaction URLs with `?cluster=devnet` (solana.com search results); `explorer.solana.com/epoch/357?cluster=testnet` (github.com/solana-foundation/explorer issue #213) |
 | USDC mints | mainnet `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`, devnet `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` | https://developers.circle.com/stablecoins/usdc-contract-addresses ("Solana", "Solana Devnet") |
 | USDT mint | mainnet `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB`; none listed for devnet or testnet | https://tether.to/en/supported-protocols/ ("Solana Token via Solana Blockchain") |
@@ -10141,16 +11066,18 @@ Every item below was checked against the named source while this plan was writte
 | Token account layout | 165 bytes: mint 0–31, owner 32–63, amount u64 at 64, state at 108 (1 initialized, 2 frozen); mint: decimals at 44, initialized at 45 | a live devnet token account and the devnet USDC mint (`programs.test.ts` fixtures) |
 | SPL Token errors | `InsufficientFunds` 1, `MintMismatch` 3, `OwnerMismatch` 4, `AccountFrozen` 17 (0x11), `MintDecimalsMismatch` 18 (0x12) | https://github.com/solana-program/token/blob/main/interface/src/error.rs |
 | Fees | 5,000 lamports per signature; priority fee `ceil(compute_unit_price × compute_unit_limit / 1,000,000)`, charged on the requested limit; max 1,400,000 CU per transaction; default 200,000 per instruction | https://solana.com/docs/core/fees; devnet transaction above: fee 10,001 = 2 × 5,000 + ceil(1 × 20,000 / 10^6) |
-| Blockhash validity | a transaction is expired once the block height exceeds `lastValidBlockHeight`; `lastValidBlockHeight` = the blockhash's block height + 150 | https://solana.com/developers/guides/advanced/confirmation; live: `getLatestBlockhash` slot 504092289 had `lastValidBlockHeight` 491344822 and that block's `blockHeight` was 491344672 |
+| Blockhash validity | `lastValidBlockHeight` = the blockhash's block height + 150; a transaction can still land in block `lastValidBlockHeight + 1` (I1), so the window is `L − 149 … L + 1` (151 blocks) | agave `v4.3.0` `accounts-db/src/blockhash_queue.rs` (`is_hash_index_valid`: `last_hash_index - hash_index <= max_age`), `runtime/src/bank.rs` (`register_tick` registers the bank's own blockhash only at the block boundary, after its transactions ran, so a block checks age against its parent; `get_blockhash_last_valid_block_height` = `block_height + max_processing_age − age`); https://solana.com/developers/guides/advanced/confirmation ("151 blockhashes … considered 'recent enough'"); live: `getLatestBlockhash` slot 504092289 had `lastValidBlockHeight` 491344822 and that block's `blockHeight` was 491344672 |
 | Commitments for blockhash and preflight | `confirmed`, with `preflightCommitment` equal to it | https://solana.com/developers/guides/advanced/confirmation; devnet refused a `confirmed` blockhash under the default preflight ("Blockhash not found") |
 | Transaction size limit | 1,232 bytes | https://solana.com/docs/core/transactions |
 | Rent-exempt minimums (today) | 650,240 lamports for 0 bytes, 1,488,440 for 165, 1,066,800 for 82 (= (128 + bytes) × 5,080) | live `getMinimumBalanceForRentExemption` on devnet (0, 82, 165) and mainnet (0) |
 | Error texts | `TransactionError` and `InstructionError` displays; sendTransaction's "Transaction simulation failed: {err}" | https://github.com/anza-xyz/solana-sdk (`transaction-error/src/lib.rs`, `instruction-error/src/lib.rs`), https://github.com/anza-xyz/agave (`rpc/src/rpc.rs`); live devnet answers for blockhash-not-found, signature failure and undeserializable bytes |
-| JSON-RPC server codes | `-32001` cleaned up, `-32002` preflight failure, `-32003` signature verification, `-32004` block not available, `-32005` node unhealthy, `-32007`/`-32009` slot skipped, `-32011` history not available, `-32014` status not yet available, `-32016` min context slot, `-32019` long-term storage unreachable | https://github.com/anza-xyz/agave/blob/master/rpc-client-api/src/custom_error.rs |
+| JSON-RPC server codes | `-32001` cleaned up, `-32002` preflight failure, `-32003` signature verification (older agave; 4.3.0 reports it under `-32002`), `-32004` block not available, `-32005` node unhealthy, `-32007` slot skipped or missing after a ledger jump to a snapshot, `-32009` slot skipped or missing in long-term storage, `-32011` history not available, `-32014` status not yet available, `-32016` min context slot, `-32019` long-term storage unreachable, `-32020` transaction not found (an unknown `before` cursor) | https://github.com/anza-xyz/agave/blob/master/rpc-client-api/src/custom_error.rs; live devnet: `getSignaturesForAddress` with an unknown `before` → `-32020 "Transaction … not found"` |
+| `minContextSlot` | `getBlocks` honours it (`-32016 "Minimum context slot has not been reached"`); `getTransaction` on agave 4.3.0 ignores it and returns the transaction | live devnet, 26 September 2026 (agave 4.3.0) |
+| `skipPreflight` with a bad signature | returns the signature; the leader drops the bytes (M1) | agave `v4.3.0` `rpc/src/rpc.rs` `send_transaction` (signatures verified only without `skip_preflight`); pre-flight review, live devnet |
 | RPC limits | `getBlocks` range 500,000 slots; `getSignaturesForAddress` limit 1,000 | https://github.com/anza-xyz/agave/blob/master/rpc-client-types/src/request.rs |
 | History search needs transaction history | `searchTransactionHistory` / `getTransaction` → `-32011` without it | agave `rpc/src/rpc.rs` (`check_if_transaction_history_enabled`) |
 | SDK version | `@solana/web3.js` 1.99.0 (latest 1.x, 2026-09-08); `rpc-websockets` 9.3.9 → `uuid@^14` (ESM-only); 9.3.10 deprecated | `npm view @solana/web3.js`, `npm view rpc-websockets` |
-| Node versions on public clusters | Agave 4.3.0 on devnet and testnet | live `getVersion` / `apiVersion` |
+| Node versions on public clusters | Agave 4.3.0 on mainnet, devnet and testnet | live `getVersion` / `apiVersion` |
 
 ## Appendix B: Left out, because it could not be verified or is out of scope
 
@@ -10162,9 +11089,11 @@ Every item below was checked against the named source while this plan was writte
 
 ## Appendix C: How this plan was validated
 
-- Every code block was written and run in a scratch copy of the worktree (`.superpowers/scratch/repo`, git-ignored), with `@solana/web3.js` 1.99.0 and the uuid override installed. The final state: `tsc --noEmit` clean, ESLint clean, `pnpm doc` 0 warnings, the whole suite 982 tests (981 passed, 1 integration skipped), `dist/index.js` loads no SDK.
-- The tasks were replayed in order on a fresh copy of the baseline (`replay.sh`): after each task the tree typechecked and every test so far passed (Task 0: 2, 1: 12, 2: 26, 3: 5, 4: 9, 5: 9, 6: 13, 7: 12, 8: 12, 9: 6, 10: 14 new tests; Task 11: 1 skipped).
+- Every code block was written and run in a scratch copy of Plan 2's final tree (`git archive` of `feat/plan-2-evm` at `7bec7eb`, whose own suite is 1,012 tests), with `@solana/web3.js` 1.99.0 and the uuid override installed (`.superpowers/scratch/repo2`, git-ignored). The final state: `tsc --noEmit` clean, ESLint clean, `pnpm doc` 0 warnings, the whole suite 1,153 tests (1,152 passed, 1 integration skipped), `dist/index.d.ts` names no SDK and `dist/index.js` loads none.
+- The tasks were replayed in order on a fresh copy of that baseline (`replay2.sh`): after each task the tree typechecked, linted and every test so far passed (new tests: Task 0: 4, 1: 12, 2: 26, 3: 5, 4: 11, 5: 11, 6: 15, 7: 12, 8: 18, 9: 11 plus the extended augmentation suite, 10: 15; Task 11: 1 skipped).
+- Task 0's textual edit steps, applied to Plan 2's files and formatted with Prettier, reproduce the validated `json.ts`, `types.ts` and `http-transport.ts` byte for byte.
 - The dependency step was replayed with pnpm 10.5.2 in a copy of `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml`: the lockfile records the override, `rpc-websockets@9.3.9` resolves `uuid@11.1.1`, and `pnpm install --frozen-lockfile` succeeds.
 - The driver, codec and end-to-end suites passed 100 consecutive runs.
-- The integration test passed live against devnet and testnet.
-- `src/testing/generation.ts` was a local stand-in with P3-A's exact shape (Plan 2 Task 11 provides it).
+- A mutation check: restoring the old "one held block proves coverage" composition fails two of Task 8's one-endpoint tests.
+- The integration test passed live against mainnet, devnet and testnet (agave 4.3.0).
+- `src/testing/generation.ts` is Plan 2's own file (Task 11, at `7bec7eb`); the crash tests never close a killed container and pin that a call on the dead handle never settles.
