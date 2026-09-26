@@ -1,0 +1,158 @@
+// A12 (P5-A, amended): opt-in exact JSON integers on every JSON-bodied transport call.
+import type { EndpointConfig } from '../../../src/core/transport/types';
+import { parseJson } from '../../../src/core/util/json';
+import { drive } from '../../../src/testing/fake-clock';
+import { FakeFetch, type FakeRequest } from '../../../src/testing/fake-fetch';
+import { setup } from './support';
+
+const A: EndpointConfig = { name: 'a', url: 'https://a.test/rpc' };
+const B: EndpointConfig = { name: 'b', url: 'https://b.test/rpc' };
+const C: EndpointConfig = { name: 'c', url: 'https://c.test' };
+const D: EndpointConfig = { name: 'd', url: 'https://d.test' };
+const BODY =
+  '{"lamports":18446744073709551615,"small":5,"negative":-9007199254740993,"float":1.5,"exp":1e21,"list":[9007199254740993]}';
+const EXACT = {
+  lamports: 18_446_744_073_709_551_615n,
+  small: 5,
+  negative: -9_007_199_254_740_993n,
+  float: 1.5,
+  exp: 1e21,
+  list: [9_007_199_254_740_993n],
+};
+
+/** A JSON-RPC answer written as raw text, so its numbers are exactly what a node sends. */
+const rpcAnswer = (request: FakeRequest, result: string) => ({
+  text: `{"jsonrpc":"2.0","id":${request.json<{ id: number }>().id},"result":${result}}`,
+  headers: { 'content-type': 'application/json' },
+});
+/** A REST answer written as raw text. */
+const restAnswer = (text: string) => ({
+  text,
+  headers: { 'content-type': 'application/json' },
+});
+
+describe('exact JSON integers (A12)', () => {
+  it('parseJson revives integers outside the safe range as bigints, and only them', () => {
+    expect(parseJson(BODY, true)).toEqual(EXACT);
+    const lossy = parseJson(BODY) as { lamports: unknown; list: unknown[] };
+    expect(lossy.lamports).toBe(18_446_744_073_709_552_000);
+    expect(lossy.list).toEqual([9_007_199_254_740_992]);
+    expect(parseJson('-9007199254740993', true)).toBe(-9_007_199_254_740_993n);
+    expect(parseJson('9007199254740991', true)).toBe(9_007_199_254_740_991);
+    expect(parseJson('1e30', true)).toBe(1e30);
+    expect(typeof parseJson('12345678901234567890.5', true)).toBe('number');
+  });
+
+  it('takes the fast path only when no literal can leave the safe range (M3)', () => {
+    expect(parseJson('[900719925474099]', true)).toEqual([900_719_925_474_099]);
+    expect(parseJson('[9007199254740991]', true)).toEqual([9_007_199_254_740_991]);
+    expect(parseJson('[9007199254740993]', true)).toEqual([9_007_199_254_740_993n]);
+    expect(parseJson('{"id":"1234567890123456","n":7}', true)).toEqual({
+      id: '1234567890123456',
+      n: 7,
+    });
+  });
+
+  it('applies to rpc and rpcRaw answers with the flag, and never without it', async () => {
+    const fake = new FakeFetch().route('https://a.test', (req) => rpcAnswer(req, BODY));
+    const { transport, clock } = setup([A], fake);
+    expect(await drive(clock, transport.rpc('m', [], { exactIntegers: true }))).toEqual(
+      EXACT,
+    );
+    const lossy = await drive(clock, transport.rpc<{ lamports: unknown }>('m', []));
+    expect(lossy.lamports).toBe(18_446_744_073_709_552_000);
+    expect(
+      await drive(
+        clock,
+        transport.rpcRaw({ jsonrpc: '2.0', id: 1, method: 'm' }, { exactIntegers: true }),
+      ),
+    ).toMatchObject({ result: { lamports: 18_446_744_073_709_551_615n } });
+    expect(
+      await drive(clock, transport.rpcRaw({ jsonrpc: '2.0', id: 1, method: 'm' })),
+    ).toMatchObject({ result: { lamports: 18_446_744_073_709_552_000 } });
+  });
+
+  it('applies to http answers (their own endpoint: this pins parsing, not failover)', async () => {
+    const fake = new FakeFetch().route('https://c.test', () => restAnswer(BODY));
+    const { transport, clock } = setup([C], fake);
+    const request = { method: 'POST' as const, path: '/wallet/getaccount', body: {} };
+    expect(await drive(clock, transport.http(request, { exactIntegers: true }))).toEqual(
+      EXACT,
+    );
+    expect(await drive(clock, transport.http(request))).toMatchObject({
+      lamports: 18_446_744_073_709_552_000,
+    });
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it('lets quorum keys see the revived values', async () => {
+    const fake = new FakeFetch()
+      .route('https://a.test', (req) => rpcAnswer(req, BODY))
+      .route('https://b.test', (req) => rpcAnswer(req, BODY));
+    const { transport, clock } = setup([A, B], fake);
+    const seen: unknown[] = [];
+    await drive(
+      clock,
+      transport.rpc('m', [], {
+        exactIntegers: true,
+        quorum: 2,
+        quorumKey: (result) => {
+          seen.push((result as { lamports: unknown }).lamports);
+          return result;
+        },
+      }),
+    );
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen.every((value) => value === 18_446_744_073_709_551_615n)).toBe(true);
+  });
+
+  it('tells apart answers that round to the same number', async () => {
+    const fake = new FakeFetch()
+      .route('https://c.test', () => restAnswer('{"balance":18446744073709551615}'))
+      .route('https://d.test', () => restAnswer('{"balance":18446744073709551614}'));
+    const { transport, clock } = setup([C, D], fake);
+    const request = { method: 'POST' as const, path: '/x', body: {} };
+    // Both round to 18446744073709552000: a lossy quorum agrees on the wrong value.
+    await expect(
+      drive(clock, transport.http(request, { quorum: 'proof' })),
+    ).resolves.toEqual({ balance: 18_446_744_073_709_552_000 });
+    await expect(
+      drive(clock, transport.http(request, { quorum: 'proof', exactIntegers: true })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+  });
+
+  it('keeps health probes on plain parsing', async () => {
+    const fake = new FakeFetch().route('https://a.test', (req) =>
+      rpcAnswer(req, '18446744073709551615'),
+    );
+    const { transport, clock } = setup([A], fake);
+    const probed: unknown[] = [];
+    transport.setProbes({
+      height: async (call) => {
+        probed.push(await call.rpc('height'));
+        return 1n;
+      },
+    });
+    await drive(
+      clock,
+      transport.rpc('m', [], { purpose: 'monitor', exactIntegers: true }),
+    );
+    expect(probed).toEqual([18_446_744_073_709_552_000]);
+  });
+});
+
+describe('exact JSON integers in JSON-RPC errors (A12)', () => {
+  it('keeps a revived error data field a definitive RPC_ERROR', async () => {
+    const fake = new FakeFetch().route('https://a.test', (req) => ({
+      text: `{"jsonrpc":"2.0","id":${req.json<{ id: number }>().id},"error":{"code":-32002,"message":"simulation failed","data":{"lamports":18446744073709551615}}}`,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const { transport, clock } = setup([A], fake);
+    await expect(
+      drive(clock, transport.rpc('m', [], { exactIntegers: true })),
+    ).rejects.toMatchObject({
+      code: 'RPC_ERROR',
+      details: { rpcData: '{"lamports":"18446744073709551615"}' },
+    });
+  });
+});

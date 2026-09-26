@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type exports `EvmExt`, `EvmFeeDetails` and `EvmFeeOverride`.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
+- `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers
+  beyond 2^53 − 1 as `bigint`, so amounts are never rounded and a quorum compares them exactly.
 
 ### Changed
 

@@ -13,7 +13,7 @@ import { redactText } from '../secret/redact';
 import { REDACTED, reveal } from '../secret/secret';
 import { randomId } from '../util/bytes';
 import type { Clock } from '../util/clock';
-import { canonicalJson } from '../util/json';
+import { canonicalJson, parseJson } from '../util/json';
 import { backoffDelay, parseRetryAfter } from './backoff';
 import { CircuitBreaker } from './circuit';
 import { TokenBucket } from './rate-limit';
@@ -328,7 +328,7 @@ export class HttpTransport implements Transport {
     const id = ++this.#rpcId;
     const body = serializeJson({ jsonrpc: '2.0', id, method, params });
     return this.#run(method, options, (endpoint, signal) =>
-      this.#rpcOnce<T>(endpoint, method, id, body, signal),
+      this.#rpcOnce<T>(endpoint, method, id, body, signal, options.exactIntegers),
     );
   }
 
@@ -342,6 +342,8 @@ export class HttpTransport implements Transport {
         this.#jsonPost(endpoint.url, body),
         signal,
         'rpc',
+        label,
+        options.exactIntegers,
       );
       return json;
     });
@@ -366,7 +368,8 @@ export class HttpTransport implements Transport {
     return this.#run(
       routeLabel(request.method, request.route),
       options,
-      (endpoint, signal) => this.#httpOnce<T>(endpoint, request, bodyText, signal),
+      (endpoint, signal) =>
+        this.#httpOnce<T>(endpoint, request, bodyText, signal, options.exactIntegers),
     );
   }
 
@@ -1002,6 +1005,7 @@ export class HttpTransport implements Transport {
     id: number,
     body: string,
     signal: AbortSignal,
+    exactIntegers = false,
   ): Promise<T> {
     const { json } = await this.#exchange(
       endpoint,
@@ -1009,6 +1013,8 @@ export class HttpTransport implements Transport {
       this.#jsonPost(endpoint.url, body),
       signal,
       'rpc',
+      method,
+      exactIntegers,
     );
     return this.#unwrapRpc<T>(endpoint, method, id, json);
   }
@@ -1018,6 +1024,7 @@ export class HttpTransport implements Transport {
     request: HttpRequest,
     bodyText: string | undefined,
     signal: AbortSignal,
+    exactIntegers = false,
   ): Promise<T> {
     const query = request.query
       ? new URLSearchParams({ ...request.query }).toString()
@@ -1046,6 +1053,7 @@ export class HttpTransport implements Transport {
       // Error message text keeps the real path (unchanged, existing behaviour); only the
       // event label above is route-based to avoid leaking identifiers into events.
       `${request.method} ${request.path}`,
+      exactIntegers,
     );
     return (mode === 'text' ? text : json) as T;
   }
@@ -1081,6 +1089,7 @@ export class HttpTransport implements Transport {
     signal: AbortSignal,
     mode: Mode,
     errorLabel: string = label,
+    exactIntegers = false,
   ): Promise<{ text: string; json: unknown }> {
     const started = this.#clock.now();
     const response = await this.#fetch(request.url, {
@@ -1096,7 +1105,7 @@ export class HttpTransport implements Transport {
     let json: unknown;
     if (mode !== 'text' || !response.ok) {
       try {
-        json = text.length > 0 ? JSON.parse(text) : null;
+        json = text.length > 0 ? parseJson(text, exactIntegers) : null;
       } catch {
         if (response.ok) {
           // I4: an unparseable 2xx body is inherently ambiguous — the server accepted the
@@ -1264,7 +1273,7 @@ export class HttpTransport implements Transport {
           ? undefined
           : this.#scrub(
               endpoint,
-              typeof rawData === 'string' ? rawData : JSON.stringify(rawData),
+              typeof rawData === 'string' ? rawData : stringifyData(rawData),
             ).slice(0, 512);
       const details = {
         rpcCode: code,
@@ -1582,6 +1591,13 @@ export class HttpTransport implements Transport {
     this.#maybeDelivered.add(error);
     return error;
   }
+}
+
+/** A12: JSON-RPC error data as text; a revived `bigint` is written as a decimal string. */
+function stringifyData(data: unknown): string {
+  return JSON.stringify(data, (_key, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value,
+  );
 }
 
 /** The higher of two optional heights. */

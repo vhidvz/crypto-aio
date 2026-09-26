@@ -56,6 +56,28 @@ function canonicalize(value: unknown, seen: WeakSet<object>): unknown {
   }
 }
 
+/**
+ * `JSON.parse`, optionally exact for integers (A12): with `exactIntegers`, every integer
+ * literal outside the safe range becomes a `bigint` read from its source text (Node ≥ 22
+ * `JSON.parse` source text access), so a u64 amount is never rounded. Safe integers,
+ * fractions and exponents stay numbers, so answers keep their shape for ordinary values.
+ */
+export function parseJson(text: string, exactIntegers = false): unknown {
+  // A run of 16 digits is the shortest literal that can leave the safe range; without one,
+  // the reviver (about 7 times slower on large bodies) cannot change anything.
+  if (!exactIntegers || !/\d{16}/.test(text)) return JSON.parse(text);
+  return JSON.parse(
+    text,
+    (_key: string, value: unknown, context?: { readonly source?: string }) =>
+      typeof value === 'number' &&
+      !Number.isSafeInteger(value) &&
+      context?.source !== undefined &&
+      /^-?\d+$/.test(context.source)
+        ? BigInt(context.source)
+        : value,
+  );
+}
+
 export function sha256Hex(input: string | Uint8Array): string {
   return bytesToHex(sha256(typeof input === 'string' ? utf8ToBytes(input) : input));
 }

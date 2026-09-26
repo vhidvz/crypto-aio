@@ -39,6 +39,12 @@ export interface CallOptions {
    * as a disagreement (a retryable `PROVIDER_INCONSISTENT`).
    */
   readonly quorumKey?: (result: unknown) => unknown;
+  /**
+   * A12: parse JSON answers with exact integers: an integer outside the safe range becomes a
+   * `bigint` instead of a rounded number (`rpc`, `rpcRaw` and `http`; health probes always
+   * parse plainly). A quorum key sees the revived values.
+   */
+  readonly exactIntegers?: boolean;
   /** Send to this many endpoints concurrently (raw-transaction broadcasts). */
   readonly fanout?: number;
   readonly signal?: AbortSignal;
