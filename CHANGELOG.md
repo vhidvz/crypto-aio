@@ -43,7 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built, is a retryable `PROVIDER_UNAVAILABLE` that decides nothing.
 - Health probes wait for their endpoint's rate-limit tokens, ahead of requests already
   waiting, and a first-use identity probe goes before the request's own token, so a keyless
-  1 request/second endpoint stays healthy.
+  1 request/second endpoint stays healthy. After a fully failed health refresh, the next one
+  waits at least until each bucket has refilled the probes' tokens plus one.
+- On an endpoint's first use, the `rpc.error` event's `latencyMs` and the endpoint's
+  `latencyMs` in `status()` no longer include the identity check.
 
 ## [0.1.0] - Unreleased
 

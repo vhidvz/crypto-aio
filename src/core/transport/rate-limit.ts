@@ -37,6 +37,7 @@ export class TokenBucket {
    * Waits for a token. A17: a `priority` taker (a health probe) goes ahead of every waiting
    * ordinary taker, which leaves the next token to it, so a queue of requests never starves
    * a probe past its deadline. Every token is still taken here: priority only reorders.
+   * Takers of the same kind (priority or ordinary) are served in wake order, not in a queue.
    */
   async take(signal?: AbortSignal, priority = false): Promise<void> {
     if (priority) this.#priorityWaiting += 1;
@@ -47,6 +48,11 @@ export class TokenBucket {
     } finally {
       if (priority) this.#priorityWaiting -= 1;
     }
+  }
+
+  /** How long the bucket takes to refill `tokens` tokens (P25-R6/M1). */
+  refillMs(tokens: number): number {
+    return Math.ceil((tokens * 1_000) / this.rps);
   }
 
   #refill(): void {

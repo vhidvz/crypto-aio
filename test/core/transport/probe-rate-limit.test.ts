@@ -80,6 +80,9 @@ describe('health probes inside the rate limit (A17)', () => {
     const { transport, clock } = setup([LIMITED], fake);
     state.clock = clock;
     transport.setProbes(both);
+    // These reads wait on the shared first-use identity check, not on the bucket, so the
+    // height probe gets the first refilled token here. The bucket-level starvation pin is the
+    // next test, 'puts probes ahead of reads already waiting for tokens'.
     const reads = Array.from({ length: 80 }, () => transport.rpc('r'));
     await drive(clock, transport.refreshHealth());
     expect(transport.status()[0]).toMatchObject({ state: 'healthy', height: 100n });
@@ -129,4 +132,41 @@ describe('health probes inside the rate limit (A17)', () => {
     // No token was spent on the request: it never waited out the 1-second refill.
     expect(clock.now() - started).toBeLessThan(1_000);
   });
+
+  // A monitor asks every `cadenceMs`, so each ask re-runs the failing refresh once its backoff
+  // ends; with a 1-second backoff its probe would take every token of the 0.2 rps bucket.
+  // 5 000 ms is the bucket's own refill period: a refresh then starts at the very moment a
+  // token refills, so the floor must leave one token beyond the probes' own for the reads.
+  it.each([1_000, 5_000])(
+    'floors the failed-refresh backoff so plain reads still get tokens (P25-R6 M1, monitor every %i ms)',
+    async (cadenceMs) => {
+      const methods: string[] = [];
+      const fake = new FakeFetch().route('https://a.test', (req) => {
+        methods.push(method(req));
+        return method(req) === 'height'
+          ? { status: 503, text: '' }
+          : rpcResult(req, 'ok');
+      });
+      const { transport, clock } = setup([{ ...LIMITED, rateLimit: { rps: 0.2 } }], fake);
+      transport.setProbes({
+        height: async (call) => BigInt(await call.rpc<string>('height')),
+      });
+      let watching = true;
+      const monitor = (async () => {
+        while (watching) {
+          await transport.rpc('m', [], { purpose: 'monitor' }).catch(() => undefined);
+          await clock.sleep(cadenceMs);
+        }
+      })();
+      await settle();
+      const reads = Array.from({ length: 4 }, () => transport.rpc('r'));
+      const settled = await drive(clock, Promise.allSettled(reads));
+      watching = false;
+      await drive(clock, monitor);
+      expect(settled).toEqual(
+        Array.from({ length: 4 }, () => ({ status: 'fulfilled', value: 'ok' })),
+      );
+      expect(methods.filter((name) => name === 'height').length).toBeGreaterThan(1);
+    },
+  );
 });

@@ -85,6 +85,8 @@ interface Endpoint {
   height?: bigint;
   latencyMs?: number;
   failures: number;
+  /** P25-R6/M1: tokens this endpoint's probes have taken from its bucket, ever. */
+  probeTokens: number;
 }
 
 export interface HttpTransportDeps {
@@ -313,6 +315,7 @@ export class HttpTransport implements Transport {
         identity: 'unchecked',
         notBefore: Number.NEGATIVE_INFINITY,
         failures: 0,
+        probeTokens: 0,
       };
     });
   }
@@ -1105,7 +1108,7 @@ export class HttpTransport implements Transport {
       rpc: async <T>(method: string, params?: unknown) => {
         const id = ++this.#rpcId;
         const body = serializeJson({ jsonrpc: '2.0', id, method, params: params ?? [] });
-        await endpoint.bucket?.take(signal, true);
+        await this.#probeToken(endpoint, signal);
         return this.#rpcOnce<T>(endpoint, method, id, body, signal);
       },
       http: async <T>(request: HttpRequest) => {
@@ -1115,10 +1118,17 @@ export class HttpTransport implements Transport {
             : typeof request.body === 'string'
               ? request.body
               : serializeJson(request.body);
-        await endpoint.bucket?.take(signal, true);
+        await this.#probeToken(endpoint, signal);
         return this.#httpOnce<T>(endpoint, request, bodyText, signal);
       },
     };
+  }
+
+  /** A17: a probe call's token, taken with priority; P25-R6/M1 counts it for #refresh. */
+  async #probeToken(endpoint: Endpoint, signal: AbortSignal): Promise<void> {
+    if (!endpoint.bucket) return;
+    await endpoint.bucket.take(signal, true);
+    endpoint.probeTokens += 1;
   }
 
   async #exchange(
@@ -1494,6 +1504,7 @@ export class HttpTransport implements Transport {
     const probe = this.#probes.height;
     const identityProbed = this.#identityProbed();
     const targets = this.#endpoints.filter((e) => e.identity !== 'mismatch');
+    const tokensBefore = targets.map((e) => e.probeTokens);
     // I8 round 2: only a refresh where at least one endpoint's probe(s) actually succeeded
     // counts as fresh (see #lastHealthAt below).
     let anySucceeded = false;
@@ -1574,11 +1585,23 @@ export class HttpTransport implements Transport {
     // storm, so a fully-failed refresh instead sets a short backoff.
     // #4 (round 4): a refresh with an endpoint left unattempted (a joined identity check its
     // caller aborted) never arms the backoff, so the next read re-probes it.
+    // P25-R6/M1: the backoff is floored at the time each endpoint's bucket needs to refill
+    // the tokens this refresh's probes took from it plus one, so repeated failing probes
+    // (which take their tokens with priority) never take every token of a slow bucket. The
+    // extra token keeps a window where only requests may take one: without it, a refresh
+    // that starts as a token refills ties with the requests waiting for it.
     if (anySucceeded) {
       this.#lastHealthAt = this.#clock.now();
     } else if (!anyAbandoned) {
+      let refillMs = 0;
+      targets.forEach((e, i) => {
+        const taken = e.probeTokens - (tokensBefore[i] ?? e.probeTokens);
+        if (e.bucket && taken > 0)
+          refillMs = Math.max(refillMs, e.bucket.refillMs(taken + 1));
+      });
       this.#nextRefreshAt =
-        this.#clock.now() + Math.min(this.#opts.healthIntervalMs, 1_000);
+        this.#clock.now() +
+        Math.max(Math.min(this.#opts.healthIntervalMs, 1_000), refillMs);
     }
   }
 
