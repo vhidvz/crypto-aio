@@ -119,6 +119,7 @@ export type {
 } from './core/model/ids';
 export type {
   DriverIntent,
+  DriverOutput,
   IntentSummary,
   StoredIntent,
   TransferIntent,

@@ -34,10 +34,21 @@ export interface NormalizedIntent {
   readonly fee: FeeSpeed | FeeOverride;
 }
 
+/**
+ * One output as drivers receive it. `variant` is the recipient address's chain-specific
+ * meaning (`Address.variant`), present only when its chain has one, e.g. TON's
+ * `bounceable` flag (spec §6.4: the intent's `to` variant decides bounce behaviour).
+ */
+export interface DriverOutput {
+  readonly to: string;
+  readonly amount: bigint;
+  readonly variant?: Readonly<Record<string, unknown>>;
+}
+
 /** What drivers receive: canonical strings and base units only. */
 export interface DriverIntent {
   readonly asset: AssetRef;
-  readonly outputs: readonly { readonly to: string; readonly amount: bigint }[];
+  readonly outputs: readonly DriverOutput[];
   readonly from: string;
   readonly memo?: string;
   readonly fee: FeeSpeed | FeeOverride;
@@ -77,7 +88,13 @@ export function toStoredIntent(intent: NormalizedIntent): StoredIntent {
   return {
     assetId: intent.asset.id,
     asset: intent.asset.ref,
-    outputs: intent.outputs.map((o) => ({ to: o.to.canonical, amount: o.amount.base })),
+    // P6-1: a variant is kept (and so hashed) only when the address has one, so intents of
+    // chains without variants hash exactly as before.
+    outputs: intent.outputs.map((o) => ({
+      to: o.to.canonical,
+      amount: o.amount.base,
+      ...(o.to.variant ? { variant: plainVariant(o.to.variant) } : {}),
+    })),
     from: intent.from.canonical,
     ...(intent.memo !== undefined ? { memo: intent.memo } : {}),
     fee: intent.fee,
@@ -106,4 +123,28 @@ export function intentHash(chain: string, network: string, intent: StoredIntent)
       fee: intent.fee,
     }),
   );
+}
+
+/**
+ * M11: a copy of an address variant that holds plain JSON values only (strings, finite
+ * numbers, booleans, null), so the stored intent stays plain data (R11) and hashes stably.
+ * The message names no address.
+ */
+function plainVariant(
+  variant: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  for (const value of Object.values(variant)) {
+    const plain =
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value));
+    if (!plain) {
+      throw new ValidationError(
+        'INVALID_ADDRESS',
+        'an address variant may hold only strings, finite numbers, booleans and null',
+      );
+    }
+  }
+  return { ...variant };
 }

@@ -113,3 +113,98 @@ describe('intent helpers', () => {
     });
   });
 });
+
+describe('output variants (A8, P6-1)', () => {
+  const on = (chain: string): AssetInfo => ({
+    id: `${chain}:mainnet/native`,
+    chain,
+    network: 'mainnet',
+    ref: 'native',
+    metadata: { symbol: 'X', decimals: 6 },
+  });
+  const stored = (chain: string, to: string, from: string, variant?: object) =>
+    toStoredIntent({
+      asset: on(chain),
+      outputs: [
+        {
+          to: new Address(chain, {
+            canonical: to,
+            display: to,
+            ...(variant ? { variant: variant as Record<string, unknown> } : {}),
+          }),
+          amount: Amount.fromBase(1234n, on(chain)),
+        },
+      ],
+      from: new Address(chain, { canonical: from, display: from }),
+      memo: 'm',
+      fee: 'normal',
+    });
+
+  it('leaves the intent hash of outputs without a variant unchanged', () => {
+    // Frozen from the code before A8: an output without a variant hashes exactly as before.
+    // EVM, UTXO and Solana addresses carry none; Tron's is derived from `canonical` (D9).
+    const cases: readonly (readonly [string, string, string, string])[] = [
+      [
+        'ethereum',
+        '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        '0x0000000000000000000000000000000000000001',
+        '3b4bc23689ba35bccff579071773602e547c796ebb3b1f2cc230ed0ca18b5aea',
+      ],
+      [
+        'bitcoin',
+        'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq',
+        'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
+        '1ad44b6ebad925bfd80e4380db5802ec14a92480f1a0ed1b70f1edb48317864b',
+      ],
+      [
+        'tron',
+        'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+        'TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7',
+        '57a9a67fddd48de43a513210a0c072e81074c2007c6c32f9ff89e0d8b984297c',
+      ],
+      [
+        'solana',
+        'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+        '11111111111111111111111111111111',
+        'c2955f1688bc0cc1c162bb64f2b1d763bb3954046528da5ad72ad12c198be4d0',
+      ],
+    ];
+    for (const [chain, to, from, hash] of cases) {
+      const intent = stored(chain, to, from);
+      expect(intent.outputs[0]).toEqual({ to, amount: 1234n });
+      expect(intentHash(chain, 'mainnet', intent)).toBe(hash);
+    }
+  });
+
+  it('carries a variant to drivers as a plain copy and hashes it', () => {
+    const raw = `0:${'ab'.repeat(32)}`;
+    const variant = { bounceable: false, testOnly: false, urlSafe: true };
+    const plain = stored('ton', raw, raw);
+    const nonBounceable = stored('ton', raw, raw, variant);
+    const bounceable = stored('ton', raw, raw, { ...variant, bounceable: true });
+    expect(nonBounceable.outputs[0]).toEqual({ to: raw, amount: 1234n, variant });
+    const hashes = new Set(
+      [plain, nonBounceable, bounceable].map((i) => intentHash('ton', 'mainnet', i)),
+    );
+    expect(hashes.size).toBe(3);
+  });
+
+  it("stores a copy of the address's variant, holding plain values only (M11)", () => {
+    const raw = `0:${'cd'.repeat(32)}`;
+    const variant = { bounceable: true, testOnly: false, urlSafe: true };
+    const address = new Address('ton', { canonical: raw, display: raw, variant });
+    const intent = toStoredIntent({
+      asset: on('ton'),
+      outputs: [{ to: address, amount: Amount.fromBase(1n, on('ton')) }],
+      from: address,
+      fee: 'normal',
+    });
+    expect(intent.outputs[0]?.variant).toEqual(variant);
+    expect(intent.outputs[0]?.variant).not.toBe(address.variant);
+    for (const bad of [{ nested: { a: 1 } }, { bytes: new Uint8Array(1) }, { big: 1n }]) {
+      const error = thrown(() => stored('ton', raw, raw, bad));
+      expect(error).toMatchObject({ code: 'INVALID_ADDRESS' });
+      expect(String((error as Error).message)).not.toContain('cdcd');
+    }
+  });
+});

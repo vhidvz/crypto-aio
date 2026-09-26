@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   elsewhere (a `RawTx`, such as a PSBT) where the chain's driver implements the optional
   `TxBuilder.signaturesFrom` port. Only its signatures are used, each verified against its
   stored request.
+- `DriverOutput` and `DriverIntent.outputs[i].variant`: the recipient address's variant (TON's
+  bounce flag) reaches drivers and is part of the intent hash. Outputs without a variant hash
+  as before.
 
 ### Changed
 
