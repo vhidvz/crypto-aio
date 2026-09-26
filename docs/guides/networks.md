@@ -30,8 +30,10 @@ the EVM family, register in the package's composition root. Install only the SDK
 One EVM driver serves every chain below, with either library: `ethers` (v6, the default) or
 `web3` (v4). ChainSafe sunset web3.js in 2025, and 4.16.0 is its last release, with no
 further fixes. crypto-aio keeps it working and tested, but prefer `ethers` for new work.
-[Sending and receiving](./transactions.md) covers EVM fees, replacements, verdicts, scans
-and proofs, and [Keys, signers and secrets](./security.md) the ethers and web3 clients.
+[Sending and receiving](./transactions.md) covers EVM [fees](./transactions.md#fees),
+replacements, [token verdicts and proofs](./transactions.md#waiting-and-watching) and
+[scans](./transactions.md#receiving); [Keys, signers and secrets](./security.md) covers the
+ethers and web3 clients.
 
 | Chain | Networks (chain id) | Fees | Finality | Replace / cancel |
 | --- | --- | --- | --- | --- |
@@ -201,6 +203,11 @@ relies on these rules most:
   The `proofs` methods use `purpose: 'proof'` and `quorum: 'proof'`; the table names the one
   exception. When endpoints disagree, the transport throws a retryable
   `PROVIDER_INCONSISTENT`, and the core decides nothing.
+- **A proof says "no" only on a definitive negative.** On a proof path (`proofs.*`), only a
+  definitive negative proof may answer "no" (`included: false`, a slot not consumed, a
+  `null` block hash). Every other RPC error, including state or history not available,
+  pruned data, an index still being built, or an endpoint's non-definitive error, must throw
+  a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, which decides nothing.
 - **Broadcast is `ambiguous-on-failure`.** Classify a node's answer only when the error is
   not ambiguous. Rethrow an ambiguous `RPC_ERROR` unclassified, even if it reads like "nonce
   too low". Keep refusal reasons short and address-free.

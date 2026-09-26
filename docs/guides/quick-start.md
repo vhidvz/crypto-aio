@@ -20,9 +20,11 @@ cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<ve
 npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` is enough. Install only the SDK you use
-next to it, for example `npm install ethers` for EVM chains. A missing SDK fails with
-`DEPENDENCY_MISSING` and the exact install command. The package has four entry points:
+Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM family is on `main` and
+in the next release. Install only the SDK you use next to the package: `npm install ethers`,
+or `npm install web3` and `library: 'web3'` on the handle, since ethers is the default. A
+missing SDK fails with `DEPENDENCY_MISSING` and the exact install command. The package has
+four entry points:
 
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
@@ -145,10 +147,10 @@ the library proves finality or a failure. With one endpoint, the proof quorum is
 The chains are `ethereum` (`mainnet`, `sepolia`, `hoodi`), `bsc` (`mainnet`, `testnet`),
 `polygon` (`mainnet`, `amoy`), `avalanche` (`mainnet`, `fuji`), `arbitrum`, `optimism` and
 `base` (`mainnet`, `sepolia`). The presets are `alchemy`, `infura` and `ankr` (with an
-`apiKey`), and `public` for the operator-run endpoints some chains document. `public` is not
-for production; a handle with no provider configured falls back to it where it serves the
-network, with a logged warning. [Using any blockchain network](./networks.md#evm-networks)
-lists what each network supports.
+`apiKey`), and `public` for the free public endpoints some chains' documentation lists. It
+is not for production; a handle with no provider configured falls back to it where it serves
+the network, with a logged warning.
+[Using any blockchain network](./networks.md#evm-networks) lists what each network supports.
 
 A first read needs no key and no signer:
 

@@ -46,8 +46,9 @@ in `crypto-aio/testing`; see [Testing an adapter or a store](./networks.md#testi
 | Solana (@solana/web3.js) | Planned, Plan 5 |
 | TON (@ton/ton) | Planned, Plan 6 |
 
-`Blockchain.create({ chain: 'ethereum', provider: … })` works once the SDK is installed
-(`npm install ethers`, or `web3`); see
+`Blockchain.create({ chain: 'ethereum', provider: … })` works once the SDK is installed:
+`npm install ethers`, or `npm install web3` and `library: 'web3'` on the handle, since ethers
+is the default; see
 [Configuring a real network](./quick-start.md#configuring-a-real-network-evm). A chain of a
 planned family, such as `bitcoin`, still fails with `ConfigError` (`CONFIG_INVALID`,
 "unknown chain"). In these guides, an example for a planned family is marked **"shape of the

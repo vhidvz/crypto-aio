@@ -10,7 +10,10 @@ import type { EndpointConfig } from '../../core/transport/types';
 
 type Table = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
-/** Operator-run public endpoints named in each chain's own documentation. */
+/**
+ * Free public endpoints named in each chain's own documentation: the chain operator's, or a
+ * third party's where the docs list one (Polygon's are drpc's).
+ */
 const PUBLIC: Table = {
   bsc: {
     mainnet: 'https://bsc-dataseed.bnbchain.org',

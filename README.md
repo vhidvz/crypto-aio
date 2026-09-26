@@ -15,9 +15,10 @@ All-In-One Crypto-Currency for Backend
 library is being rebuilt as a blockchain abstraction layer. See [CHANGELOG.md](CHANGELOG.md),
 including the security advisory about credentials that were committed to this repository.
 
-Plans 1 and 2 are complete: the SDK-free core, the testing kit (`crypto-aio/testing`) and
+Plan 1 is complete: the SDK-free core and the testing kit (`crypto-aio/testing`). Plan 2,
 the EVM family (Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism and
-Base, through ethers or web3). Bitcoin, Tron, Solana and TON arrive in Plans 3–6.
+Base, through ethers or web3), is complete on `main` and ships in the next release. Bitcoin,
+Tron, Solana and TON arrive in Plans 3–6.
 
 ## Documentation
 

@@ -41,13 +41,13 @@ signs twice.
 ### Fees
 
 `fee` is a speed (`'slow'`, `'normal'` (the default) or `'fast'`) or a family-specific
-override object. The fake chain takes `fee: { fee: 5n }`. EVM networks take
-`{ maxFeePerGas, maxPriorityFeePerGas, gasLimit? }` (`evm-1559`) or `{ gasPrice, gasLimit? }`
-(`evm-legacy`), as bigints in wei (`EvmFeeOverride`). Each planned family defines its own
-override fields with its adapter. Override amounts must be bigints or decimal strings, never
-numbers (`INVALID_INTENT`). The fee is part of the `intentHash`, and an override is hashed as
-written: `{ fee: 1n }` and `{ fee: '1' }` are different intents. Retry in the same form, or you
-get `IDEMPOTENCY_CONFLICT`.
+override object, whose fields each family's adapter defines. Override amounts must be
+bigints or decimal strings, never numbers (`INVALID_INTENT`). The fake chain takes
+`fee: { fee: 5n }`. EVM networks take `{ maxFeePerGas, maxPriorityFeePerGas, gasLimit? }`
+(`evm-1559`) or `{ gasPrice, gasLimit? }` (`evm-legacy`) in wei (`EvmFeeOverride`), as
+bigints only: a decimal string gives `INVALID_INTENT` there. The fee is part of the
+`intentHash`, and an override is hashed as written: `{ fee: 1n }` and `{ fee: '1' }` are
+different intents. Retry in the same form, or you get `IDEMPOTENCY_CONFLICT`.
 
 ```ts
 const estimate = await bc.estimateFee({ to, amount: '0.25', fee: 'fast' });
@@ -59,13 +59,14 @@ feeTotal(estimate, 'fakechain:local/native'); // Amount | undefined
 On `evm-1559` networks, `slow`, `normal` and `fast` take the median, over the last 15
 blocks, of the 10th, 25th or 50th percentile tip (at least the network's floor, 25 gwei on
 Polygon mainnet), and the fee cap allows the base fee to double. On `evm-legacy` networks
-they scale `eth_gasPrice` by 100%, 110% or 125%. The gas
-limit is the node's estimate, plus 20% for anything but a plain transfer. The `network`
-charge is an `upper` bound, and `details.expected` (`EvmFeeDetails`) the likely cost. On OP
-Stack chains the L1 data fee is a separate `l1-data` charge, and the bound is `expected`,
-since that fee moves with L1 prices. An override's `gasLimit` skips `eth_estimateGas`, the
-check that refuses a call that would fail: a token transfer that reverts for a reason other
-than a low balance is then signed, broadcast, and burns its gas.
+they scale `eth_gasPrice` by 100%, 110% or 125%. The gas limit is the node's estimate,
+plus 20% for anything but a plain transfer. The `network` charge is an `upper` bound, and
+`details.expected` (`EvmFeeDetails`) the likely cost. On OP Stack chains the L1 data fee is a
+separate `l1-data` charge, and the bound is `expected`, since that fee moves with L1 prices.
+An override's `gasLimit` skips `eth_estimateGas`, the check that refuses a call that would
+fail: any call that would revert or run out of gas, such as a token transfer or a payment
+to a contract that refuses it, is then signed, broadcast, and burns its gas. The balance
+check still runs.
 
 ### Cold, offline and asynchronous signing
 
@@ -157,13 +158,17 @@ const now = await bc.getTransactionStatus(operationId); // one read
 - **EVM token verdicts.** An Operation's ERC-20 `transfer` counts as executed only if the
   token contract logged a `Transfer` from the sender, as ERC-20 requires. A token that
   returns `false` instead of reverting, or moves value without logging that `Transfer`, is
-  reported failed (`TX_REVERTED`). This applies to your own Operations only: `getTransaction`
-  and scans show the receipt's status as the chain reports it.
+  reported failed (`TX_REVERTED`) **although its receipt succeeded, so value may have
+  moved.** Before you pay again, check the chain: `bc.getTransaction(attempt.ref.id)` shows
+  the receipt's own status (`status.state` is `included` when it succeeded, `failed` when it
+  reverted), or read the recipient's token balance. Only your own Operations get this
+  verdict; `getTransaction` and scans show the chain's view.
 - **EVM proofs.** An Attempt whose transaction disappears is settled only once its nonce is
   proven used at a final height, read by block number (BSC's public nodes serve no state at
   the `finalized` tag). An endpoint without that state, such as a non-archive L2 node, makes
   the proof decide nothing (a retryable `PROVIDER_UNAVAILABLE`) until endpoints that serve it
-  answer. With one endpoint the proof quorum is 1, so configure two or more providers.
+  answer; so does any other JSON-RPC error on a proof read, since only a definitive answer
+  proves "no". With one endpoint the proof quorum is 1, so configure two or more providers.
 
 ## Background workers and startup recovery
 
@@ -279,7 +284,7 @@ land.**
 | `INSUFFICIENT_FUNDS`, `POLICY_REJECTED` with state `failed` | Failed before signing; nonce released | Fix the cause; retry with a **new** key |
 | `INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, `NONCE_TOO_HIGH`, `TX_REFUSED` with state `stalled` | Node refused signed bytes | `rebroadcast` after the fix, `replace` or `cancel`; never a new key |
 | `NONCE_CONFLICT` | A cancel or replacement lost: the original is already mined | Wait for the original |
-| `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure | Reconcile; a new transfer with a new key is safe |
+| `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure | Reconcile; a new transfer with a new key is safe, except for an EVM token `TX_REVERTED` whose receipt succeeded: value may have moved, so check the chain first ([EVM token verdicts](#waiting-and-watching)) |
 | `TX_REJECTED` | Nodes rejected every Attempt as never valid; nonce released | Fix the cause; retry with a **new** key |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |

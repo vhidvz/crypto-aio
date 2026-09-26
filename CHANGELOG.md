@@ -20,7 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including `blockHash`; block scanning of native transfers and ERC-20 `Transfer` logs.
 - The `public`, `alchemy`, `infura` and `ankr` provider presets, and USDT and USDC by alias.
 - The `crypto-aio/evm` entry: `evmChainPlugin` for EVM chains of your own, registered as
-  `evm:<name>`, and the SDK types for `native(bc, 'ethers')` and `native(bc, 'web3')`.
+  `evm:<name>`; `EVM_CAPABILITIES` and `EVM_PEER_DEPENDENCIES`; and the SDK types for
+  `native(bc, 'ethers')` and `native(bc, 'web3')`.
+- `bc.ext.evm.getNonce(address, 'latest' | 'pending')`.
+- Typed `ChainRegistry` entries for the seven EVM chains and their networks, and the root
+  type exports `EvmExt`, `EvmFeeDetails` and `EvmFeeOverride`.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 
@@ -32,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container; any other failure is looked up again.
 - Closing a container waits at most 5 seconds for each native client to close.
 - `getNetworkStatus()` never reports a finalized height above the head height.
+- The proof contract (`ProofSource`): on a proof path, only a definitive negative answer
+  says "no". Every other RPC error, such as state not available or an index still being
+  built, is a retryable `PROVIDER_UNAVAILABLE` that decides nothing.
 
 ## [0.1.0] - Unreleased
 
@@ -72,4 +79,5 @@ adapters are planned.
   `*Contract` and `*Transact`. The library was rebuilt; migration notes follow with the
   release.
 
+[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/v0.0.2...HEAD
 [0.1.0]: https://github.com/vhidvz/crypto-aio/compare/v0.0.2...HEAD
