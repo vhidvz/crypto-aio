@@ -51,7 +51,7 @@ type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 const MAX_RETRY_AFTER_MS = 60_000;
 /** A24/P25-R8: consecutive failed health refreshes (identity or height probe) after which an
  * endpoint stops counting toward a proof quorum's size (a sustained outage, not a hiccup). */
-const UNKNOWN_HEIGHT_LIMIT = 3;
+const HEALTH_MISS_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
 /** N1: statuses that must never carry a body on the Response passed back to the SDK. */
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
@@ -88,7 +88,7 @@ interface Endpoint {
   height?: bigint;
   /** A24/P25-R8: health refreshes in a row whose identity or height probe failed; 0 once a
    * refresh's probes succeed (a caller-aborted identity check is neither, N1). */
-  heightMisses: number;
+  healthMisses: number;
   latencyMs?: number;
   failures: number;
   /** P25-R6/M1: tokens this endpoint's probes have taken from its bucket, ever. */
@@ -320,7 +320,7 @@ export class HttpTransport implements Transport {
           : {}),
         identity: 'unchecked',
         notBefore: Number.NEGATIVE_INFINITY,
-        heightMisses: 0,
+        healthMisses: 0,
         failures: 0,
         probeTokens: 0,
       };
@@ -512,7 +512,7 @@ export class HttpTransport implements Transport {
       endpoint.identityCheck = undefined;
       endpoint.identityRetryAt = undefined;
       endpoint.height = undefined;
-      endpoint.heightMisses = 0;
+      endpoint.healthMisses = 0;
     }
   }
 
@@ -897,7 +897,7 @@ export class HttpTransport implements Transport {
    * A14/A24 (handoff N5), P25-R8, P25-R9: a monitor or proof quorum read's endpoints.
    * `sized` counts every endpoint not proven mismatched: lagging or not, with an unknown
    * height, verified or not (a not-yet-checked or identity-throttled one too) and whatever
-   * its breaker's state, until `UNKNOWN_HEIGHT_LIMIT` health refreshes in a row failed its
+   * its breaker's state, until `HEALTH_MISS_LIMIT` health refreshes in a row failed its
    * identity or height probe (a sustained outage). Only `inRange` endpoints, all usable
    * (breaker, identity, throttle), are asked, so such an endpoint makes the read decide
    * nothing rather than letting fewer endpoints decide it. With a height probe, `inRange` is
@@ -916,7 +916,7 @@ export class HttpTransport implements Transport {
       return { sized: usable, inRange: usable };
     }
     const sized = this.#endpoints.filter(
-      (e) => e.identity !== 'mismatch' && e.heightMisses < UNKNOWN_HEIGHT_LIMIT,
+      (e) => e.identity !== 'mismatch' && e.healthMisses < HEALTH_MISS_LIMIT,
     );
     if (!this.#probes.height) return { sized, inRange: usable };
     const known = usable.filter((e) => e.height !== undefined);
@@ -1605,7 +1605,7 @@ export class HttpTransport implements Transport {
           }
           // P25-R8: identity and height failures feed one counter, which a refresh whose
           // probes all succeeded (with no height probe, the identity alone) resets.
-          endpoint.heightMisses = 0;
+          endpoint.healthMisses = 0;
           anySucceeded = true;
         } catch (error) {
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
@@ -1615,7 +1615,7 @@ export class HttpTransport implements Transport {
           // about the endpoint, so it is no miss. The height probe itself runs only under
           // this refresh's own deadline (I8), so no caller can abort it.
           if (this.#abandonedChecks.has(error as object)) anyAbandoned = true;
-          else endpoint.heightMisses += 1;
+          else endpoint.healthMisses += 1;
           // R18 (round 3): #refresh never does breaker bookkeeping — no onAttempt, onSuccess,
           // onFailure or onAbandon. A probe failure here only affects height/identity state,
           // never endpoint.breaker or endpoint.failures. The breaker tracks request traffic.
