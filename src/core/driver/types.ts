@@ -158,7 +158,12 @@ export interface Broadcaster {
 
 export type FinalityLevel = 'latest' | 'finalized';
 
-/** Finalized-state checks behind `proven` verdicts; implementations use quorum reads. */
+/**
+ * Finalized-state checks behind `proven` verdicts; implementations use quorum reads.
+ * Lesson 18: only a definitive negative proof answers "no". Every other RPC error (state or
+ * history not available, pruned data, indexing in progress, a non-definitive error) throws
+ * a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, which decides nothing.
+ */
 export interface ProofSource {
   finalizedHead(): Promise<{
     readonly height: bigint;
@@ -270,7 +275,7 @@ export interface DisposableNativeClient {
  * | `reader.getBlockHeight`, `getFinalizedHeight` | `monitor` | `safe` | none | propagate; they feed the stale-view guards and confirmation depths |
  * | `reader.observe(ref, ordering, from)` | `monitor` | `safe` | none | `{ seen: 'none' }` when not visible; `ordering` and `from` are `undefined` for a transaction the library does not manage |
  * | `sequence.pending`, `sequence.latest` | `monitor` | `safe` | none | propagate |
- * | `proofs.*` (`finalizedHead`, `includedFinal`, `slotConsumed`, `expired`, `blockHash`) | `proof` | `safe` | `'proof'` | endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, and the core then decides nothing. Only `slotConsumed(…, 'latest')` may be a single `monitor` read: the core records it as observed evidence |
+ * | `proofs.*` (`finalizedHead`, `includedFinal`, `slotConsumed`, `expired`, `blockHash`) | `proof` | `safe` | `'proof'` | endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, and the core then decides nothing. Lesson 18: only a definitive negative proof answers "no"; every other RPC error throws retryable `PROVIDER_UNAVAILABLE`, which decides nothing (see below). Only `slotConsumed(…, 'latest')` may be a single `monitor` read: the core records it as observed evidence |
  * | `broadcaster.broadcast` | `broadcast` | `ambiguous-on-failure` | none (passes `fanout` and `signal` through) | classifies a definitive `RPC_ERROR` into a `BroadcastResult`; rethrows an ambiguous one (`error.ambiguous`) and every other failure unclassified |
  * | `builder.estimateFee`, `checkFunds`, `build` | `read` | `safe` | none | `ValidationError` / `UnsupportedCapabilityError` for an intent it cannot build |
  * | `builder.assemble` | no I/O | – | – | `SigningError('SIGNING_FAILED')` when a signature is missing |
@@ -281,6 +286,12 @@ export interface DisposableNativeClient {
  * | `createNativeClient` | no I/O | – | – | a fresh SDK instance on every call, never the pooled one |
  *
  * Further rules:
+ * - Lesson 18, widened: on a proof path (`proofs.*`), only a definitive negative proof may
+ *   answer "no" (`included: false`, a slot not consumed, a `null` block hash). Every other
+ *   RPC error, including state or history not available, pruned data, an index still being
+ *   built ("transaction indexing is in progress"), or an endpoint's non-definitive error,
+ *   must surface as a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, which decides
+ *   nothing: the core looks again later and never takes it for an answer.
  * - `BlockSource` heights are dense: every height up to the head has one block, and
  *   `header(h)` is `null` only while `h` is not visible, never for a skipped slot.
  * - A provider must serve headers at least about 2 × `reorgWindow` below the head. A new
