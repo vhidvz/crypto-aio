@@ -481,6 +481,45 @@ describe('proof quorum health misses (P25-R10)', () => {
     await expect(proof()).resolves.toBe('fact');
     expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
   });
+
+  it("never counts a joined identity check that a request's shorter deadline ended", async () => {
+    let identityCalls = 0;
+    const fake = new FakeFetch();
+    for (const name of ['a', 'b']) {
+      fake.route(`https://${name}.test`, (req, signal) => {
+        if (method(req) === 'chain_id') {
+          if (name === 'b' && ++identityCalls === 1) return hang(signal);
+          return rpcResult(req, '1');
+        }
+        if (method(req) !== 'height') return rpcResult(req, 'fact');
+        return name === 'a' ? rpcResult(req, '100') : { status: 503, text: '' };
+      });
+    }
+    const finCalls = counter(fake, 'fin');
+    const { transport, clock } = setup([endpoint('b', 0), endpoint('a', 1)], fake);
+    transport.setProbes({ ...probes, ...identity });
+    // A read with a short timeout starts b's first-use identity check, a refresh joins it,
+    // and the read's own deadline ends it long before the refresh's: not a miss.
+    const request = transport.rpc('x', [], { timeoutMs: 50 });
+    await settle();
+    const joined = transport.refreshHealth();
+    await settle();
+    await expect(drive(clock, request)).resolves.toBe('fact');
+    await drive(clock, joined);
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    // Two genuine failed refreshes, one health interval apart (past b's identity throttle):
+    // b (identity now confirmed, height unreadable) still counts.
+    for (let refresh = 1; refresh <= 2; refresh++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
+      await drive(clock, transport.refreshHealth());
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    }
+    expect(identityCalls).toBe(2);
+    await clock.advance(HEALTH_INTERVAL_MS);
+    await drive(clock, transport.refreshHealth());
+    await expect(proof()).resolves.toBe('fact');
+    expect([finCalls('a'), finCalls('b')]).toEqual([1, 0]);
+  });
 });
 
 // P25-R10: under a proof quorum, one endpoint's definitive error decides only when the

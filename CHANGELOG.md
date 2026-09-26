@@ -47,16 +47,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   waits at least until each bucket has refilled the probes' tokens plus one.
 - On an endpoint's first use, the `rpc.error` event's `latencyMs` and the endpoint's
   `latencyMs` in `status()` no longer include the identity check.
-- A quorum read is never asked of fewer endpoints than the quorum because of height lag, an
-  unknown height, an identity not yet confirmed or an open circuit breaker. Lag is measured
-  against a height two endpoints reached. An endpoint keeps counting until its identity is
-  proven mismatched or three health refreshes in a row fail its identity or height probe,
-  but only a confirmed, in-range endpoint whose breaker lets requests through answers;
-  otherwise the read decides nothing (a retryable `PROVIDER_UNAVAILABLE`). This costs
-  liveness: proofs wait until enough endpoints are confirmed, in range and past their
-  breaker's open period (`openMs`), including at startup. With two endpoints, one that lags,
-  whose identity probe fails or whose requests keep failing now delays proofs instead of
-  being dropped.
+- A proof quorum (every `quorum: 'proof'` read, whatever its `purpose`, and any quorum read
+  for a monitor or proof purpose) is never asked of fewer endpoints than the quorum because
+  of height lag, an unknown height, an identity not yet confirmed or an open circuit
+  breaker. An endpoint keeps counting until its identity is proven mismatched or three
+  health refreshes in a row, at most one per `healthIntervalMs`, fail its identity or height
+  probe (with an identity probe alone, each refresh re-probes a confirmed identity). Only a
+  confirmed, in-range endpoint whose breaker lets requests through answers; otherwise the
+  read decides nothing (a retryable `PROVIDER_UNAVAILABLE`). A `quorum: 'proof'` read keeps
+  health fresh under any purpose. With no probe configured, the quorum counts only the
+  usable endpoints, as before, so a chain family sets its probes.
+- Lag is measured against the second-highest known height, so one endpoint that
+  over-reports its head never marks honest ones as lagging. With two endpoints that
+  excludes neither, so a proof read should be anchored to a block height.
+- In a proof quorum, a definitive error decides only when every endpoint of the quorum
+  returns an equivalent one (the same JSON-RPC error code, else the same error code);
+  against an answer, or a different error, the read decides nothing (a retryable
+  `PROVIDER_INCONSISTENT`). One endpoint's revert therefore never fails a token for good.
+- These cost liveness: proofs wait until enough endpoints are confirmed, in range and past
+  their breaker's open period (`openMs`), including at startup, and a dead endpoint holds
+  them back for up to three health intervals.
 
 ## [0.1.0] - Unreleased
 

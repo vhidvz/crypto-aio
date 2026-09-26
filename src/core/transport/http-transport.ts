@@ -230,6 +230,10 @@ export class HttpTransport implements Transport {
    * aborting — they say nothing about the endpoint, so a refresh that joined one counts the
    * endpoint as not attempted rather than failed. */
   readonly #abandonedChecks = new WeakSet<object>();
+  /** P25-R10: identity-check failures caused by the owning request's own deadline (possibly
+   * a caller-shortened `timeoutMs`); a refresh that joined one learned nothing under its
+   * own deadline, so it is no health miss. */
+  readonly #timedOutChecks = new WeakSet<object>();
   readonly #clock: Clock;
   readonly #events: EventBus;
   readonly #log: Logger;
@@ -928,18 +932,26 @@ export class HttpTransport implements Transport {
   }
 
   /**
-   * A14/A24 (handoff N5), P25-R8, P25-R9: a monitor or proof quorum read's endpoints.
-   * `sized` counts every endpoint not proven mismatched: lagging or not, with an unknown
-   * height, verified or not (a not-yet-checked or identity-throttled one too) and whatever
-   * its breaker's state, until `HEALTH_MISS_LIMIT` health refreshes in a row failed its
-   * identity or height probe (a sustained outage). Only `inRange` endpoints, all usable
-   * (breaker, identity, throttle), are asked, so such an endpoint makes the read decide
-   * nothing rather than letting fewer endpoints decide it. With a height probe, `inRange` is
-   * the endpoints with a known height
-   * (only a verified one has one, R19) at most `maxLagBlocks` behind the corroborated
-   * height, the highest height at least two of them have reached, so one endpoint that
-   * over-reports its head can never mark honest ones as lagging. Without one, it is every
-   * usable endpoint, each identity-checked before it answers.
+   * A quorum read's endpoints: `sized`, which the quorum's size counts, and `inRange`, the
+   * only ones asked.
+   *
+   * `sized` (A14/A24, handoff N5; P25-R8, R9, R10): for a proof quorum (`proof`, see
+   * `isProofQuorum`) with any probe configured, every endpoint not proven mismatched,
+   * whatever its height, identity state (confirmed, not yet checked or identity-throttled)
+   * or breaker state, until `HEALTH_MISS_LIMIT` health refreshes in a row, at most one per
+   * `healthIntervalMs`, failed its identity or height probe (a sustained outage). Such an
+   * endpoint cannot be asked, so it makes the read decide nothing rather than letting fewer
+   * endpoints decide it. With no probe configured, or for another quorum, it is the usable
+   * endpoints (the prior, weaker rule).
+   *
+   * `inRange`: the usable endpoints (breaker, identity, throttle). For a monitor or proof
+   * purpose with a height probe, only those with a known height (only a confirmed endpoint
+   * has one, R19) at most `maxLagBlocks` behind the corroborated height, the second-highest
+   * known height, so one endpoint that over-reports its head never marks honest ones as
+   * lagging. With two known heights the corroborated height is the lower one, so the lag
+   * filter excludes neither: it takes three endpoints to exclude a lagging one, and a proof
+   * read should be anchored to a height (asked at an explicit block), so a lagging endpoint
+   * disagrees or errs instead of answering for an older state.
    */
   #quorumCandidates(
     purpose: RequestPurpose,
@@ -1569,6 +1581,7 @@ export class HttpTransport implements Transport {
       }
       const failure = this.#identityProbeFailed(endpoint, error, signal);
       if (callerAborted) this.#abandonedChecks.add(failure);
+      else if (signal.aborted) this.#timedOutChecks.add(failure);
       throw failure;
     }
   }
@@ -1698,10 +1711,15 @@ export class HttpTransport implements Transport {
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
           // instead of leaving it stale, so the endpoint counts as unknown.
           endpoint.height = undefined;
-          // A24/N1: a joined identity check its request's caller aborted learned nothing
-          // about the endpoint, so it is no miss. The height probe itself runs only under
-          // this refresh's own deadline (I8), so no caller can abort it.
-          if (this.#abandonedChecks.has(error as object)) anyAbandoned = true;
+          // A24/N1, P25-R10: only a failure under this refresh's own deadline is a miss. A
+          // joined identity check that its request's caller aborted, or that the request's
+          // own (possibly caller-shortened) deadline ended while this refresh's had not,
+          // learned nothing here, so it counts as not attempted. The height probe itself
+          // runs only under this refresh's own deadline (I8).
+          const foreign =
+            this.#abandonedChecks.has(error as object) ||
+            (this.#timedOutChecks.has(error as object) && !deadline.aborted);
+          if (foreign) anyAbandoned = true;
           else this.#recordMiss(endpoint);
           // R18 (round 3): #refresh never does breaker bookkeeping — no onAttempt, onSuccess,
           // onFailure or onAbandon. A probe failure here only affects height/identity state,

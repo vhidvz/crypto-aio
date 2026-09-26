@@ -29,7 +29,16 @@ export interface TransportOptions {
 export interface CallOptions {
   readonly retry?: RetryClass;
   readonly purpose?: RequestPurpose;
-  /** Independent healthy endpoints that must agree; `'proof'` uses `proofQuorum`, capped by availability. */
+  /**
+   * Independent endpoints that must agree; `'proof'` uses `proofQuorum`, capped by the
+   * endpoints the quorum counts. A proof quorum (`'proof'` under any purpose, or any quorum
+   * for a monitor or proof purpose) with probes configured counts every endpoint not proven
+   * mismatched until three health refreshes in a row, at most one per `healthIntervalMs`,
+   * fail its probes, even while it cannot answer, so a shortfall decides nothing (a
+   * retryable `PROVIDER_UNAVAILABLE`); any other quorum counts the usable endpoints. In a
+   * proof quorum, a definitive error decides only when every endpoint asked returns an
+   * equivalent one; otherwise the read is a retryable `PROVIDER_INCONSISTENT`.
+   */
   readonly quorum?: number | 'proof';
   /**
    * The part of each endpoint's result that must agree under `quorum` (default: the whole
