@@ -46,6 +46,13 @@ export interface TxStatus {
   readonly blockHash?: string;
   readonly blockHeight?: bigint;
   readonly finality: Finality;
+  /**
+   * Why the transaction did not go through. Present only with `failed`, `refused` or
+   * `rejected`. It is either a broadcast's refusal or rejection text, or the chain
+   * driver's text for an on-chain failure. It is a short, fixed text with no addresses,
+   * amounts or node detail (R24). It is `sensitive` data, so it never appears in events
+   * or logs.
+   */
   readonly reason?: string;
   readonly replacedBy?: string;
 }

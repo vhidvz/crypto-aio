@@ -84,7 +84,10 @@ export function statusFromObservation(
       ...(observation.blockHash !== undefined
         ? { blockHash: observation.blockHash }
         : {}),
-      ...(observation.reason !== undefined ? { reason: observation.reason } : {}),
+      // P25-R15: as the monitor records it, a reason only with a failure.
+      ...(observation.success === false && observation.reason !== undefined
+        ? { reason: observation.reason }
+        : {}),
     };
   }
   return {

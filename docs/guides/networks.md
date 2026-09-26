@@ -290,13 +290,13 @@ and the stale write must fail with `FENCING` or `VERSION_CONFLICT`. crypto-aio s
 store ports, the in-memory stores and these suites. Durable stores, such as Redis or
 Postgres, are yours to write, and the suites define what they must do.
 
-A key set to `undefined` means the key is absent, whether it is in an `OperationStore`
-patch or in an observation. Never store it as a value, such as `NULL`:
+Never store a key set to `undefined` as a value, such as `NULL`, whether it is in an
+`OperationStore` patch or in an observation:
 
 - In an `update` or `appendAttempt` patch, the stored field keeps its value. Only `clear`
   removes a field.
 - `putObservation` replaces the whole observation, so a field that is left out or set to
-  `undefined` is gone and reads back as `undefined`. The core relies on this to clear a
+  `undefined` reads back `undefined` (never `null`). The core relies on this to clear a
   stale failure reason or an orphaned block.
 
 ## What is stable before 1.0

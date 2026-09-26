@@ -20,6 +20,7 @@ import type {
   SequenceState,
 } from '../store/types';
 import { canonicalJson } from '../util/json';
+import type { ObservationPatch } from './observations';
 
 /*
  * The engine's pure rules (M11): lifecycle defaults, error serialization, and the state
@@ -138,6 +139,18 @@ export function mayBeLive(observation: AttemptObservation | null): boolean {
       observation.state === 'mempool' ||
       observation.state === 'dropped')
   );
+}
+
+/**
+ * A send that may have delivered the bytes (accepted, already known or ambiguous): a
+ * missing, `refused` or `dropped` observation becomes `pending`, and a refusal's reason no
+ * longer applies (M8, P25-R14/R15). Stronger evidence (chain or proven states) is left
+ * alone (R24). The one rule for every such send, so they cannot drift apart.
+ */
+export function pendingAfterSend(current: AttemptObservation | null): ObservationPatch {
+  return current === null || current.state === 'refused' || current.state === 'dropped'
+    ? { state: 'pending', reason: undefined }
+    : {};
 }
 
 /** Every nonce a live Operation holds: its reservation, unsigned payload and Attempts. */

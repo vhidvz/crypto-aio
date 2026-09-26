@@ -273,7 +273,7 @@ export function describeOperationStoreContract(
     });
 
     api.it(
-      'replaces an observation whole: a key left out or set to undefined reads back absent',
+      'replaces an observation whole: a key left out or set to undefined reads back undefined (never null)',
       async () => {
         // M9, P25-R14: the core clears a stale reason or block by leaving it out or setting
         // it to undefined. A store that merged records, or kept undefined as a value such as

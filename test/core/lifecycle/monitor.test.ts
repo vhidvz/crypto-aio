@@ -2,6 +2,7 @@ import { secp256k1 } from '@noble/curves/secp256k1';
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { containerOf } from '../../../src/core/container/internals';
 import type { ChainReader, ProofSource } from '../../../src/core/driver/types';
+import { ProviderError } from '../../../src/core/errors/error';
 import { noopLogger, type Logger } from '../../../src/core/events/logger';
 import type { AioEvent } from '../../../src/core/events/types';
 import {
@@ -1323,5 +1324,141 @@ describe('failure reasons (A9, P6-2)', () => {
     expect(after?.state).toMatch(/^(pending|dropped)$/);
     expect(after?.blockHash).toBeUndefined();
     expect(after?.reason).toBeUndefined();
+  });
+
+  it('clears a refusal reason once an ambiguous rebroadcast revives the Attempt (P25-R15 I1)', async () => {
+    const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.dropFromMempool(sub.attempt?.id ?? '');
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(env.run(env.bc.rebroadcast(sub.operationId))).rejects.toMatchObject({
+      code: 'TX_REFUSED',
+    });
+    const attemptId = (await stored(env, sub.operationId)).activeAttemptId ?? '';
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'refused',
+      reason: 'invalid signature',
+    });
+    // The node admits the bytes, then the send fails: the outcome is ambiguous.
+    env.chain.configureEndpoint('main', { acceptThenFail: true });
+    await expect(env.run(env.bc.rebroadcast(sub.operationId))).rejects.toMatchObject({
+      ambiguous: true,
+    });
+    // No monitor pass has run since: this is what the ambiguous send wrote.
+    const observation = await env.stores.operations.getObservation(attemptId);
+    expect(observation?.state).toBe('pending');
+    expect(observation?.reason).toBeUndefined();
+    const view = await env.run(env.bc.getOperation(sub.operationId));
+    const status = view?.attempts.find((attempt) => attempt.id === attemptId)?.status;
+    expect(status?.state).toBe('pending');
+    expect(status?.reason).toBeUndefined();
+  });
+
+  it('keeps a refusal reason while the Attempt is refused, and clears it once its bytes are mined (P25-R15 M1)', async () => {
+    const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
+    env.chain.configureEndpoint('main', { acceptThenFail: true });
+    const intent = { to: env.stranger(), amount: 3n };
+    await expect(
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'late' })),
+    ).rejects.toMatchObject({ ambiguous: true });
+    const op = await env.stores.operations.getByKey('default', 'late');
+    const attempt = op?.attempts[0];
+    if (!op || !attempt) throw new Error('unreachable');
+    env.chain.dropFromMempool(attempt.ref.id);
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(env.run(env.bc.rebroadcast(op.id))).rejects.toMatchObject({
+      code: 'TX_REFUSED',
+    });
+    const { monitor, target } = await monitorOf(env);
+    await env.run(monitor.check(target, await stored(env, op.id)));
+    expect(await env.stores.operations.getObservation(attempt.id)).toMatchObject({
+      state: 'refused',
+      reason: 'invalid signature',
+    });
+    // The ambiguous send reached the network: the bytes come back without a rebroadcast.
+    env.chain.submit(attempt.raw.data);
+    env.chain.mine();
+    await env.run(monitor.check(target, await stored(env, op.id)));
+    const included = await env.stores.operations.getObservation(attempt.id);
+    expect(included?.state).toBe('included');
+    expect(included?.reason).toBeUndefined();
+    for (let i = 0; i < 5; i++) env.chain.mine();
+    const done = await env.run(monitor.check(target, await stored(env, op.id)));
+    expect(done.state).toBe('final');
+    const final = await env.stores.operations.getObservation(attempt.id);
+    expect(final).toMatchObject({ state: 'final', evidence: 'proven' });
+    expect(final?.reason).toBeUndefined();
+  });
+
+  it('clears a refusal reason when the winner proves the Attempt replaced (P25-R15 M2)', async () => {
+    const env = await createFakeEnv({ chain: { minFee: 10n } });
+    await expect(
+      env.run(
+        env.bc.transfer(
+          { to: env.stranger(), amount: 7n, fee: { fee: 1n } },
+          { idempotencyKey: 'cheap' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
+    const stalled = await env.stores.operations.getByKey('default', 'cheap');
+    const loser = stalled?.attempts[0];
+    if (!stalled || !loser) throw new Error('unreachable');
+    expect((await env.stores.operations.getObservation(loser.id))?.reason).toEqual(
+      expect.any(String),
+    );
+    const replaced = await env.run(env.bc.replace(stalled.id, { fee: 'normal' }));
+    for (let i = 0; i < 6; i++) env.chain.mine();
+    // The loser's own read fails, so only the winner's link settles it.
+    const { monitor, target } = await monitorOf(env);
+    const { reader } = target.pooled.driver;
+    const blind: ReadTarget = {
+      ...target,
+      pooled: {
+        ...target.pooled,
+        driver: {
+          ...target.pooled.driver,
+          reader: {
+            ...reader,
+            observe: async (ref, ordering, from) => {
+              if (ref.id === loser.ref.id)
+                throw new ProviderError('PROVIDER_UNAVAILABLE', 'unavailable');
+              return reader.observe(ref, ordering, from);
+            },
+          },
+        },
+      },
+    };
+    const done = await env.run(monitor.check(blind, await stored(env, stalled.id)));
+    expect(done.state).toBe('final');
+    const observation = await env.stores.operations.getObservation(loser.id);
+    expect(observation).toMatchObject({
+      state: 'replaced',
+      evidence: 'proven',
+      replacedBy: replaced.attempt?.id,
+    });
+    expect(observation?.reason).toBeUndefined();
+  });
+
+  it('reports an unmanaged transaction reason only when it failed (P25-R15 M3)', async () => {
+    const env = await createFakeEnv();
+    const key = secp256k1.utils.randomPrivateKey();
+    const from = fakeAddress(secp256k1.getPublicKey(key, true));
+    env.chain.fund(from, 100n);
+    const send = (to: string, nonce: string) =>
+      env.chain.submit(
+        signFake({ chainId: 'fake-local', from, to, amount: '1', fee: '1', nonce }, key),
+      );
+    const succeeded = send(env.stranger(), '0');
+    const reverted = send(REVERT_ADDRESS, '1');
+    env.chain.mine(2);
+    const { monitor, target } = await monitorOf(env);
+    const reasoned = withReasons(target);
+    const ok = await env.run(monitor.status(reasoned, succeeded));
+    expect(ok.status.state).toBe('included');
+    expect(ok.status.reason).toBeUndefined();
+    expect((await env.run(monitor.status(reasoned, reverted))).status).toMatchObject({
+      state: 'failed',
+      reason: 'transfer bounced',
+    });
   });
 });

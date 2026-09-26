@@ -72,6 +72,7 @@ import {
   isDefinitive,
   isRefusal,
   mayBeLive,
+  pendingAfterSend,
   rehydrateError,
   sameFeeSpec,
   serializeError,
@@ -1719,13 +1720,10 @@ export class OperationEngine {
       });
     // First, and on its own: the observation is the may-be-live marker (R25) a later
     // rejection must see, whatever happens to the Operation write below. As in `accept()`,
-    // a missing, `refused` or `dropped` one becomes `pending`: this send may have delivered
-    // the bytes. Stronger evidence (chain or proven states) is never overwritten (R24).
+    // this send may have delivered the bytes (`pendingAfterSend`).
     await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
       lastBroadcastAt: now,
-      ...(current === null || current.state === 'refused' || current.state === 'dropped'
-        ? { state: 'pending' as const }
-        : {}),
+      ...pendingAfterSend(current),
     })).catch(logFailure);
     // R26.2: re-derived after a lost compare-and-set (e.g. a worker's claim mid-broadcast).
     await this.updateAfterBroadcast(op, (current) =>
@@ -1797,10 +1795,7 @@ export class OperationEngine {
       await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
         lastBroadcastAt: now,
         ...(acknowledged ? { firstSeenAt: current?.firstSeenAt ?? now } : {}),
-        // P25-R14: back to `pending`, a refusal's reason no longer applies (M8).
-        ...(current === null || current.state === 'refused' || current.state === 'dropped'
-          ? { state: 'pending' as const, reason: undefined }
-          : {}),
+        ...pendingAfterSend(current),
       }));
       // R26.2: re-derived from the stored Operation after a lost compare-and-set. An
       // unscheduled one is scheduled, since a read-only pass may have moved it meanwhile.

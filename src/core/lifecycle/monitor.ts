@@ -588,6 +588,8 @@ export class Monitor {
     const { winner } = evaluation;
     if (winner) {
       // The winner consumed the ordering slot: every other Attempt is proven replaced by it.
+      // As in `whenAbsent`, a proven `replaced` carries no reason: a refusal's no longer
+      // applies (M8, P25-R15).
       const linked = (o: AttemptObservation | null | undefined) =>
         isSettled(o) && !(o?.state === 'replaced' && o.replacedBy === undefined);
       for (const attempt of op.attempts) {
@@ -595,7 +597,12 @@ export class Monitor {
         await writeObservation(this.observationDeps, attempt, op.id, (stored) =>
           linked(stored)
             ? undefined
-            : { state: 'replaced', evidence: 'proven', replacedBy: winner.ref.id },
+            : {
+                state: 'replaced',
+                evidence: 'proven',
+                replacedBy: winner.ref.id,
+                reason: undefined,
+              },
         );
       }
     }
