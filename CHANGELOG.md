@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers
   beyond 2^53 − 1 as `bigint`, so amounts are never rounded and a quorum compares them exactly.
+- `Blockchain.submitSignatures(operationId, signed)` also takes a whole transaction signed
+  elsewhere (a `RawTx`, such as a PSBT) where the chain's driver implements the optional
+  `TxBuilder.signaturesFrom` port. Only its signatures are used, each verified against its
+  stored request.
 
 ### Changed
 

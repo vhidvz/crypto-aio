@@ -5,8 +5,10 @@ import type { BroadcastResult, DriverLimits, WalletOptions } from '../driver/typ
 import {
   ConfigError,
   ProviderError,
+  StateError,
   UnsupportedCapabilityError,
   ValidationError,
+  isCryptoAioError,
 } from '../errors/error';
 import { Address } from '../model/address';
 import { Amount } from '../model/amount';
@@ -483,12 +485,57 @@ export class Blockchain<C extends ChainId = ChainId> {
     return this.submission(await this.engine().transfer(target, intent, options));
   }
 
+  /**
+   * Completes an Operation that awaits signatures, with signature bundles or with the whole
+   * payload signed elsewhere (A6), e.g. a signed PSBT: the driver extracts its signatures
+   * (`TxBuilder.signaturesFrom`), and each is verified against the stored request exactly
+   * like a bundle. `UNSUPPORTED_CAPABILITY` when the chain's driver cannot read one.
+   */
   async submitSignatures(
     operationId: string,
-    signatures: readonly SignatureBundle[],
+    signatures: readonly SignatureBundle[] | RawTx,
   ): Promise<Submission> {
+    const target = await this.target();
+    let bundles: readonly SignatureBundle[];
+    if (Array.isArray(signatures)) {
+      bundles = signatures;
+    } else {
+      if (!isRawTx(signatures)) {
+        throw new ValidationError(
+          'INVALID_INTENT',
+          'signatures must be signature bundles or a signed payload { encoding, data }',
+        );
+      }
+      const { builder } = target.pooled.driver;
+      if (!builder.signaturesFrom) {
+        throw new UnsupportedCapabilityError(
+          'UNSUPPORTED_CAPABILITY',
+          `${this.chain} cannot read a signed payload; submit signature bundles`,
+        );
+      }
+      // M8: ownership first, so another wallet's Operation never reaches the driver.
+      const record = await this.engine().requireOwned(target, operationId);
+      if (!record.unsigned) {
+        throw new StateError(
+          'INVALID_TRANSITION',
+          `operation '${operationId}' has no transaction awaiting signatures`,
+          { context: { operationId } },
+        );
+      }
+      try {
+        bundles = builder.signaturesFrom(record.unsigned, signatures);
+      } catch (error) {
+        // M10: a driver's own classified error passes through; a foreign one (an SDK's
+        // parse error, which may quote the payload) becomes a fixed text with no cause.
+        if (isCryptoAioError(error)) throw error;
+        throw new ValidationError(
+          'INVALID_INTENT',
+          'the signed payload could not be read',
+        );
+      }
+    }
     return this.submission(
-      await this.engine().submitSignatures(await this.target(), operationId, signatures),
+      await this.engine().submitSignatures(target, operationId, bundles),
     );
   }
 
@@ -706,4 +753,14 @@ export class Blockchain<C extends ChainId = ChainId> {
       },
     };
   }
+}
+
+/** A6/M8: the shape of a signed payload (`RawTx`), checked at run time. */
+function isRawTx(value: unknown): value is RawTx {
+  if (value === null || typeof value !== 'object') return false;
+  const { encoding, data } = value as { encoding?: unknown; data?: unknown };
+  return (
+    (encoding === 'hex' || encoding === 'base64' || encoding === 'json') &&
+    typeof data === 'string'
+  );
 }

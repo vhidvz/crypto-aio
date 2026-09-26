@@ -143,6 +143,14 @@ export interface TxBuilder {
     unsigned: UnsignedTx,
     signatures: readonly SignatureBundle[],
   ): Promise<SignedTx>;
+  /**
+   * P3-B (A6): the signatures a payload signed elsewhere carries for `unsigned`'s requests,
+   * e.g. a PSBT a cold signer returned. No I/O. Throws `ValidationError('INVALID_INTENT')`
+   * when `signed` is not the prepared transaction. Only signature bytes are taken from it:
+   * the core verifies each one against its stored request (R9), as for any bundle. A request
+   * without a signature in `signed` is left out (a partial set).
+   */
+  signaturesFrom?(unsigned: UnsignedTx, signed: RawTx): readonly SignatureBundle[];
 }
 
 export interface Broadcaster {
@@ -279,6 +287,7 @@ export interface DisposableNativeClient {
  * | `broadcaster.broadcast` | `broadcast` | `ambiguous-on-failure` | none (passes `fanout` and `signal` through) | classifies a definitive `RPC_ERROR` into a `BroadcastResult`; rethrows an ambiguous one (`error.ambiguous`) and every other failure unclassified |
  * | `builder.estimateFee`, `checkFunds`, `build` | `read` | `safe` | none | `ValidationError` / `UnsupportedCapabilityError` for an intent it cannot build |
  * | `builder.assemble` | no I/O | – | – | `SigningError('SIGNING_FAILED')` when a signature is missing |
+ * | `builder.signaturesFrom` (optional) | no I/O | – | – | `ValidationError('INVALID_INTENT')` when the signed payload is not the prepared transaction |
  * | `replacement.buildReplacement`, `buildCancel` | `read` | `safe` | none | `ChainError('FEE_TOO_LOW')` below the network's bump; `buildCancel` honours a given `fee` and never substitutes its own |
  * | `blocks.header` | `monitor` | `safe` | none | `null` while the height is not visible |
  * | `blocks.transactions` | `monitor` | `safe` | none | retryable `PROVIDER_INCONSISTENT` when the block at `block.height` no longer has `block.hash` |

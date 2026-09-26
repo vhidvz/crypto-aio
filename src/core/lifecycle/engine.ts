@@ -505,6 +505,19 @@ export class OperationEngine {
     return record;
   }
 
+  /**
+   * A6/M8: the Operation, checked to belong to this handle's chain, network and wallet
+   * before anything reads its payload (e.g. `submitSignatures` with a signed payload).
+   */
+  async requireOwned(
+    target: OperationTarget,
+    operationId: string,
+  ): Promise<OperationRecord> {
+    const op = await this.require(operationId);
+    this.assertOwnedBy(target, op);
+    return op;
+  }
+
   // ---- shared building blocks ----------------------------------------------------------
 
   protected async open(

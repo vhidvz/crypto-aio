@@ -90,6 +90,15 @@ Operation in `awaiting-signature` in the same way. Finish it with `submitSignatu
 `abandon(operationId)`. `abandon` works only before anything is signed. It releases the
 nonce and cancels pending signer tickets.
 
+Where the chain's driver can read one, `submitSignatures` also takes the whole transaction
+signed elsewhere, for example a PSBT back from a hardware wallet:
+`cold.submitSignatures(prepared.operation.id, { encoding: 'base64', data: signedPsbt })`. The
+driver extracts the signatures, and only their bytes are used: the core verifies each one
+against its stored request, exactly like a bundle. A payload that is not the prepared
+transaction is `INVALID_INTENT`, and a chain whose driver cannot read one throws
+`UNSUPPORTED_CAPABILITY` (submit bundles there). The Operation must belong to the handle's
+chain, network and wallet, as for bundles.
+
 ## Lifecycle and `stalled`
 
 ```text
