@@ -100,6 +100,8 @@ export interface EvmTx {
 
 export interface EvmFullBlock extends Omit<EvmBlock, 'transactions'> {
   readonly transactions: readonly EvmTx[];
+  /** The block's 256-byte log bloom, when the node serves a well-formed one. */
+  readonly logsBloom?: string;
 }
 
 export interface EvmLog {

@@ -56,6 +56,7 @@ export function uncompressedPublicKey(publicKey: Uint8Array): Uint8Array {
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 const QUANTITY = /^0x[0-9a-fA-F]+$/;
 const DATA = /^0x(?:[0-9a-fA-F]{2})*$/;
+const BLOOM = /^0x[0-9a-fA-F]{512}$/;
 
 type Json = Record<string, unknown>;
 
@@ -306,11 +307,16 @@ export abstract class EvmClientBase implements EvmClient {
     );
     if (result === null) return null;
     const json = object(result, 'block');
+    const { logsBloom } = json;
     return {
       ...this.#header(json),
       transactions: this.#list(json.transactions, 'block transactions').map((t) =>
         this.#tx(object(t, 'transaction')),
       ),
+      // Only a hint for scans (R90): a missing or malformed bloom may hold anything.
+      ...(typeof logsBloom === 'string' && BLOOM.test(logsBloom)
+        ? { logsBloom: logsBloom.toLowerCase() }
+        : {}),
     };
   }
 

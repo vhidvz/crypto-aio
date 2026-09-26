@@ -7,6 +7,8 @@
  * ERC-20 `Transfer` logs, as the chain reports them (R68). Every error thrown here is a
  * `PROVIDER_*` code, retryable by the code table: look again later.
  */
+import { keccak_256 } from '@noble/hashes/sha3';
+import { hexToBytes } from '@noble/hashes/utils';
 import type { BlockSource, ProofSource } from '../../core/driver/types';
 import { ProviderError, isCryptoAioError } from '../../core/errors/error';
 import type { OrderingData } from '../../core/model/ordering';
@@ -21,7 +23,7 @@ import {
   type EvmContext,
 } from './reader';
 import { blockTransactionsKey } from './rpc';
-import type { EvmTx } from './types';
+import type { EvmClient, EvmFullBlock, EvmLog, EvmReceipt, EvmTx } from './types';
 
 /**
  * R74: a quorum key under which every endpoint whose nonce is past `nonce` agrees. A
@@ -264,8 +266,96 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
 const changed = (height: bigint) =>
   new ProviderError('PROVIDER_INCONSISTENT', `block ${height} changed while scanning`);
 
+/**
+ * R90: whether a block's `logsBloom` may hold `value` (a log's address or topic), by the
+ * yellow paper's M3:2048: three bits, each the low 11 bits of a byte pair of the value's
+ * keccak-256. `false` is definitive; `true` may be a false positive. No bloom may hold
+ * anything.
+ */
+export function mayHold(bloom: string | undefined, value: string): boolean {
+  if (bloom === undefined) return true;
+  const hash = keccak_256(hexToBytes(value.slice(2)));
+  for (let i = 0; i < 6; i += 2) {
+    const bit = (((hash[i] as number) << 8) | (hash[i + 1] as number)) & 2047;
+    // Bit 0 is the last byte's lowest bit.
+    const byte = 255 - (bit >> 3);
+    const bits = Number.parseInt(bloom.slice(2 + 2 * byte, 4 + 2 * byte), 16);
+    if ((bits & (1 << (bit & 7))) === 0) return false;
+  }
+  return true;
+}
+
+/** JSON-RPC's "method not found": a node without `eth_getBlockReceipts`. */
+const methodMissing = (error: unknown): boolean =>
+  isCryptoAioError(error, 'RPC_ERROR') && error.details?.rpcCode === -32601;
+
+type Receipts = ReadonlyMap<string, EvmReceipt>;
+
+/**
+ * R90: every receipt of `block` in one call, by transaction hash. The node reads them by
+ * block, never through a log or transaction index that may lag. `undefined` when the node
+ * does not serve `eth_getBlockReceipts`.
+ */
+async function blockReceipts(
+  client: EvmClient,
+  block: EvmFullBlock,
+): Promise<Receipts | undefined> {
+  let receipts: readonly EvmReceipt[] | null;
+  try {
+    receipts = await client.getBlockReceipts(block.hash, MONITOR);
+  } catch (error) {
+    if (methodMissing(error)) return undefined;
+    throw error;
+  }
+  if (receipts === null) throw changed(block.number);
+  return new Map(receipts.map((receipt) => [receipt.transactionHash, receipt]));
+}
+
+/** The fallback: one `eth_getTransactionReceipt` per transaction. */
+async function receiptsOf(client: EvmClient, txs: readonly EvmTx[]): Promise<Receipts> {
+  const receipts = await Promise.all(
+    txs.map((tx) => client.getReceipt(tx.hash, MONITOR)),
+  );
+  return new Map(
+    receipts.flatMap((receipt, i) =>
+      receipt ? [[txs[i]?.hash as string, receipt]] : [],
+    ),
+  );
+}
+
+/**
+ * The logs of every transaction of `block`. A receipt missing, or from another block, could
+ * hide a deposit, so it fails the scan retryably instead.
+ */
+function blockLogs(block: EvmFullBlock, receipts: Receipts): readonly EvmLog[] {
+  return block.transactions.flatMap((tx) => {
+    const receipt = receipts.get(tx.hash);
+    if (receipt?.blockHash !== block.hash) throw changed(block.number);
+    return receipt.logs;
+  });
+}
+
 export function createEvmBlocks(ctx: EvmContext): BlockSource {
   const { client, config } = ctx;
+  /**
+   * The block's `Transfer` logs without block receipts (R90): `eth_getLogs`, which a lagging
+   * log index answers empty without an error. So when it answers nothing while the header's
+   * bloom may hold the topic, every transaction's receipt is read before the empty answer
+   * is trusted: any call may have logged one.
+   */
+  const transferLogs = async (
+    block: EvmFullBlock,
+  ): Promise<{ readonly logs: readonly EvmLog[]; readonly receipts?: Receipts }> => {
+    const topic = client.abi.transferTopic;
+    const logs = await client.getLogs(
+      { blockHash: block.hash, topics: [topic] },
+      MONITOR,
+    );
+    if (logs.length > 0 || !mayHold(block.logsBloom, topic)) return { logs };
+    const receipts = await receiptsOf(client, block.transactions);
+    return { logs: blockLogs(block, receipts), receipts };
+  };
+
   return {
     async header(height) {
       const block = await client.getBlock(height, MONITOR);
@@ -275,15 +365,16 @@ export function createEvmBlocks(ctx: EvmContext): BlockSource {
     async transactions(block, filter) {
       const full = await client.getBlockWithTransactions(block.height, MONITOR);
       if (!full || full.hash !== block.hash) throw changed(block.height);
+      // R90: one call for every receipt of the block, filtered scans included.
+      let receipts = await blockReceipts(client, full);
       let selected: readonly EvmTx[] = full.transactions;
       if (filter?.addresses?.length) {
         const wanted = new Set(filter.addresses.map((a) => a.toLowerCase()));
         const watched = (address: string | null) =>
           address !== null && wanted.has(address.toLowerCase());
-        const logs = await client.getLogs(
-          { blockHash: block.hash, topics: [client.abi.transferTopic] },
-          MONITOR,
-        );
+        let logs: readonly EvmLog[];
+        if (receipts) logs = blockLogs(full, receipts);
+        else ({ logs, receipts } = await transferLogs(full));
         const tokenTxs = new Set(
           logs
             .filter((log) => {
@@ -300,11 +391,9 @@ export function createEvmBlocks(ctx: EvmContext): BlockSource {
             tx.to === null || watched(tx.from) || watched(tx.to) || tokenTxs.has(tx.hash),
         );
       }
-      const receipts = await Promise.all(
-        selected.map((tx) => client.getReceipt(tx.hash, MONITOR)),
-      );
-      return selected.map((tx, i) => {
-        const receipt = receipts[i] ?? null;
+      receipts ??= await receiptsOf(client, selected);
+      return selected.map((tx) => {
+        const receipt = receipts.get(tx.hash);
         if (!receipt || receipt.blockHash !== block.hash) throw changed(block.height);
         // The chain's view (R68), with the network's config so bor's system logs do not
         // make a plain Polygon transfer `partial` (R69, R70).

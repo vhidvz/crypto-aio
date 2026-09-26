@@ -4,7 +4,15 @@
  * receipts and logs, a `finalized` head and per-block state snapshots for reorgs. Its
  * wire format follows the Ethereum JSON-RPC spec: hex quantities, 0x-hex data.
  */
-import { AbiCoder, Transaction, getAddress, id } from 'ethers';
+import {
+  AbiCoder,
+  Transaction,
+  getAddress,
+  getBytes,
+  hexlify,
+  id,
+  keccak256,
+} from 'ethers';
 import type { FakeClock } from '../../../../src/testing/fake-clock';
 import {
   FakeFetch,
@@ -108,6 +116,20 @@ export type Intercept = (
 ) => { result: unknown } | { error: { code: number; message: string } } | undefined;
 
 const lower = (address: string) => address.toLowerCase();
+
+/** The yellow paper's M3:2048 bloom of `logs`: each address and topic sets three bits. */
+function bloomOf(logs: readonly Log[]): string {
+  const bloom = new Uint8Array(256);
+  for (const value of logs.flatMap((log) => [log.address, ...log.topics])) {
+    const hash = getBytes(keccak256(value));
+    for (let i = 0; i < 6; i += 2) {
+      const bit = (((hash[i] as number) << 8) | (hash[i + 1] as number)) & 2047;
+      const byte = 255 - (bit >> 3);
+      bloom[byte] = (bloom[byte] as number) | (1 << (bit & 7));
+    }
+  }
+  return hexlify(bloom);
+}
 
 function credit(state: State, address: string, wei: bigint): void {
   const key = lower(address);
@@ -426,6 +448,9 @@ export class ScriptedEvmNode {
       nonce: '0x0000000000000000',
       difficulty: '0x0',
       size: hex(1_000 + block.txs.length),
+      logsBloom: bloomOf(
+        block.txs.flatMap((hash) => this.#receipts.get(hash)?.logs ?? []),
+      ),
       transactions: block.txs.map((hash) => (full ? this.#txJson(hash) : hash)),
     };
   }
@@ -460,7 +485,7 @@ export class ScriptedEvmNode {
       effectiveGasPrice: hex(r.price),
       status: hex(r.status),
       type: hex(r.tx.type),
-      logsBloom: `0x${'00'.repeat(256)}`,
+      logsBloom: bloomOf(r.logs),
       ...(this.options.l1Fee !== undefined ? { l1Fee: hex(this.options.l1Fee) } : {}),
       logs: this.#logsOf(r),
     };

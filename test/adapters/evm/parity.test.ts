@@ -115,6 +115,7 @@ describe('EthersClient and Web3Client parity', () => {
         latest: await client.getBlock('latest', tags),
         full: await client.getBlockWithTransactions(1n, tags),
         receipt: await client.getReceipt(block?.transactions[0] ?? '', tags),
+        receipts: await client.getBlockReceipts(block?.hash ?? '', tags),
         history: await client.feeHistory(1, 'latest', [10, 50], tags),
         nonce: await client.getTransactionCount(wallet.address, 'finalized', tags),
       };

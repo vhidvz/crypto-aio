@@ -4,10 +4,12 @@ import {
   consumptionHeight,
   createEvmBlocks,
   createEvmProofs,
+  mayHold,
 } from '../../../src/adapters/evm/proofs';
 import { createEvmReader } from '../../../src/adapters/evm/reader';
 import { web3DriverFactory } from '../../../src/adapters/evm/web3-client';
-import type { ChainDriver } from '../../../src/core/driver/types';
+import { validator } from 'web3';
+import type { ChainDriver, DriverBlock } from '../../../src/core/driver/types';
 import { ProviderError } from '../../../src/core/errors/error';
 import { noopLogger } from '../../../src/core/events/logger';
 import type { ChainInfo, NetworkInfo } from '../../../src/core/model/chain';
@@ -1380,14 +1382,13 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
       transactionHash: hash,
       removed: false,
     });
+    const withSystemLogs = (receipt: object) => ({
+      ...receipt,
+      logs: [systemLog(LOG_TRANSFER, 0), systemLog(LOG_FEE_TRANSFER, 1)],
+    });
     h.node.intercept = (_endpoint, method, params) =>
-      method === 'eth_getTransactionReceipt'
-        ? {
-            result: {
-              ...(h.node.answer(method, params) as object),
-              logs: [systemLog(LOG_TRANSFER, 0), systemLog(LOG_FEE_TRANSFER, 1)],
-            },
-          }
+      method === 'eth_getBlockReceipts'
+        ? { result: (h.node.answer(method, params) as object[]).map(withSystemLogs) }
         : undefined;
     const header = await h.run(blocks.header(1n));
     expect(await h.run(blocks.transactions(header!))).toMatchObject([
@@ -1436,8 +1437,13 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
           result: { ...real, transactions: txs.map((tx) => ({ ...tx, to: null })) },
         };
       }
-      if (method === 'eth_getTransactionReceipt') {
-        return { result: { ...real, to: null, contractAddress: created.toLowerCase() } };
+      const creation = (receipt: object) => ({
+        ...receipt,
+        to: null,
+        contractAddress: created.toLowerCase(),
+      });
+      if (method === 'eth_getBlockReceipts') {
+        return { result: (real as unknown as object[]).map(creation) };
       }
       return undefined;
     };
@@ -1452,5 +1458,133 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
         ],
       },
     ]);
+  });
+
+  /** Block 1: a native transfer to RECIPIENT, then a token deposit to OTHER. */
+  async function depositBlock(h: Harness) {
+    const blocks = createEvmBlocks(h.ctx);
+    h.node.fund(KEY_ADDRESS, 10n ** 18n);
+    h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    h.node.mintToken(TOKEN, KEY_ADDRESS, 100n);
+    const native = await submit(h, 0);
+    const data = h.client.abi.encodeTransfer(OTHER, 7n);
+    const token = await submit(h, 1, { to: TOKEN, value: 0n, gasLimit: 60_000n, data });
+    h.node.mine();
+    const header = (await h.run(blocks.header(1n))) as DriverBlock;
+    h.calls.length = 0;
+    const scan = async (addresses?: readonly string[]) =>
+      (await h.run(blocks.transactions(header, addresses && { addresses }))).map(
+        (tx) => tx.id,
+      );
+    return { blocks, native, token, scan };
+  }
+
+  it("reads each block's receipts in one call, filtered or not (R90)", async () => {
+    const h = evmHarness(library);
+    const { native, token, scan } = await depositBlock(h);
+    expect(await scan()).toEqual([native, token]);
+    expect(await scan([OTHER])).toEqual([token]);
+    const perBlock = [
+      ['getBlockWithTransactions', 'monitor'],
+      ['getBlockReceipts', 'monitor'],
+    ];
+    expect(h.calls.map((c) => [c.method, c.tags.purpose])).toEqual([
+      ...perBlock,
+      ...perBlock,
+    ]);
+  });
+
+  it('finds a token deposit while the log index lags (R90)', async () => {
+    const h = evmHarness(library);
+    const { token, scan } = await depositBlock(h);
+    // Hosted providers serve eth_getLogs from an index that may not have this block yet.
+    h.node.intercept = (_endpoint, method) =>
+      method === 'eth_getLogs' ? { result: [] } : undefined;
+    expect(await scan([OTHER])).toEqual([token]);
+    // Block receipts that leave a transaction out could hide a deposit: retry instead.
+    h.node.intercept = (_endpoint, method, params) =>
+      method === 'eth_getBlockReceipts'
+        ? { result: (h.node.answer(method, params) as object[]).slice(0, 1) }
+        : undefined;
+    await expect(scan([OTHER])).rejects.toMatchObject(inconsistent);
+  });
+
+  it('falls back to eth_getLogs, checked against the block bloom, without block receipts (R90)', async () => {
+    const h = evmHarness(library);
+    const { native, token, scan } = await depositBlock(h);
+    let lagging = false;
+    h.node.intercept = (_endpoint, method) =>
+      method === 'eth_getBlockReceipts'
+        ? {
+            error: {
+              code: -32601,
+              message: 'the method does not exist/is not available',
+            },
+          }
+        : lagging && method === 'eth_getLogs'
+          ? { result: [] }
+          : undefined;
+    const methods = () => h.calls.splice(0).map((c) => c.method);
+    const fallback = ['getBlockWithTransactions', 'getBlockReceipts'];
+    // Unfiltered: one receipt per transaction.
+    expect(await scan()).toEqual([native, token]);
+    expect(methods()).toEqual([...fallback, 'getReceipt', 'getReceipt']);
+    // Filtered: the block's Transfer logs, then the selected transactions' receipts.
+    expect(await scan([OTHER])).toEqual([token]);
+    expect(methods()).toEqual([...fallback, 'getLogs', 'getReceipt']);
+    // The log index answers nothing, but the bloom says the block may hold a Transfer: every
+    // transaction's receipt is read before the empty answer is trusted.
+    lagging = true;
+    expect(await scan([OTHER])).toEqual([token]);
+    expect(methods()).toEqual([...fallback, 'getLogs', 'getReceipt', 'getReceipt']);
+    // ...and a receipt the node does not serve there could hide one: retry instead.
+    h.node.intercept = (_endpoint, method, params) =>
+      method === 'eth_getBlockReceipts'
+        ? {
+            error: {
+              code: -32601,
+              message: 'the method does not exist/is not available',
+            },
+          }
+        : method === 'eth_getLogs' ||
+            (method === 'eth_getTransactionReceipt' && params[0] === native)
+          ? { result: method === 'eth_getLogs' ? [] : null }
+          : undefined;
+    await expect(scan([OTHER])).rejects.toMatchObject(inconsistent);
+    methods();
+    // A block whose bloom holds no Transfer: the empty answer stands.
+    await submit(h, 2);
+    h.node.mine();
+    const plain = (await h.run(createEvmBlocks(h.ctx).header(2n))) as DriverBlock;
+    methods();
+    expect(
+      await h.run(createEvmBlocks(h.ctx).transactions(plain, { addresses: [OTHER] })),
+    ).toEqual([]);
+    expect(methods()).toEqual([...fallback, 'getLogs']);
+  });
+
+  it('reads a block bloom as web3 does (R90)', async () => {
+    const h = evmHarness(library);
+    await depositBlock(h);
+    const { logsBloom } = h.node.answer('eth_getBlockByNumber', ['0x1', false]) as {
+      readonly logsBloom: string;
+    };
+    const values = [
+      h.client.abi.transferTopic,
+      TOKEN,
+      word(KEY_ADDRESS),
+      word(OTHER),
+      word(RECIPIENT),
+      LOG_TRANSFER,
+      OTHER,
+      ...Array.from({ length: 32 }, (_, i) => word(hex(i + 1))),
+    ];
+    const verdicts = values.map((value) => mayHold(logsBloom, value));
+    expect(verdicts).toEqual(
+      values.map((value) => validator.isInBloom(logsBloom, value)),
+    );
+    expect(verdicts.slice(0, 5)).toEqual([true, true, true, true, false]);
+    expect(verdicts.filter((v) => !v).length).toBeGreaterThan(30);
+    expect(mayHold(`0x${'00'.repeat(256)}`, h.client.abi.transferTopic)).toBe(false);
   });
 });

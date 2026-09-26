@@ -270,10 +270,12 @@ for await (const event of scanner) {
 - **EVM.** Blocks carry native transfers and ERC-20 `Transfer` logs. A transaction that ran
   contract code is `decoding: 'partial'`: internal transfers need traces, which are out of
   scope. A plain POL transfer on Polygon is `complete`, because bor's system logs are ignored
-  for it. An unfiltered scan reads one receipt per transaction (`eth_getBlockReceipts` is a
-  later optimization). A filtered scan finds token transfers in one endpoint's `eth_getLogs`
-  answer, so an endpoint whose log index lags misses them without an error. For token
-  deposits, prefer an unfiltered scan: it reads every receipt, and a missing one is retried.
+  for it. A scan, filtered or not, reads each block's receipts in one `eth_getBlockReceipts`
+  call and takes token transfers from them, never from a log index that may lag. Without
+  that method, an unfiltered scan reads one receipt per transaction, and a filtered one asks
+  `eth_getLogs`. When that answers nothing but the block's bloom may hold a `Transfer`, the
+  scan reads every receipt of the block before it trusts the empty answer. So for deposit
+  scanning, prefer endpoints that serve `eth_getBlockReceipts`.
 
 ### Address history (`address-history`)
 
