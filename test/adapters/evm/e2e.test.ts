@@ -1,5 +1,11 @@
 import { Interface, Wallet } from 'ethers';
-import type { AioEvent, ChainInfo, OperationPatch, ScanEvent } from '../../../src';
+import type {
+  AioEvent,
+  ChainInfo,
+  OperationPatch,
+  ScanEvent,
+  Signer,
+} from '../../../src';
 import { EVM_CHAINS } from '../../../src/adapters/evm/chains';
 import { evmChainPlugin } from '../../../src/adapters/evm/plugin';
 import { MemoryOperationStore } from '../../../src/core/store/memory';
@@ -430,6 +436,49 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       );
       // Recovered, not rebuilt: the same Attempt, signed once.
       expect([sub.state, sub.attempt?.id, calls()]).toEqual(['submitted', ref, 1]);
+    });
+
+    it('takes over the address lease of a process killed mid-sign, then signs once more (R91 M6)', async () => {
+      const counting = countingSigner();
+      const signedAt: number[] = [];
+      const signer: Signer = {
+        ...counting.signer,
+        sign: (requests, ctx) => {
+          signedAt.push(env.clock.now());
+          // The first process dies while its signer works: that call never returns.
+          return signedAt.length === 1
+            ? new Promise<never>(() => undefined)
+            : counting.signer.sign(requests, ctx);
+        },
+      };
+      const env = await createEvmEnv({ library, signer });
+      const leaseMs = 30_000; // createEvmEnv's lifecycle
+      const intent = { to: RECIPIENT, amount: 3n };
+      const startedAt = env.clock.now();
+      let firstSettled = false;
+      void env.bc.transfer(intent, { idempotencyKey: 'k' }).then(
+        () => (firstSettled = true),
+        () => (firstSettled = true),
+      );
+      for (let i = 0; i < 1_000 && signedAt.length === 0; i++) await env.clock.advance(1);
+      expect(signedAt).toHaveLength(1);
+      const killedAt = env.clock.now();
+      // Killed while signing: no store write or timer of the dead process settles, so its
+      // address lease is never released, only left to expire.
+      const restarted = await env.restart({ killPrevious: true });
+      const retried = restarted.bc.transfer(intent, { idempotencyKey: 'k' });
+      await env.clock.advance(leaseMs / 2);
+      expect(signedAt).toHaveLength(1);
+      const sub = await env.run(retried);
+      expect(sub.state).toBe('submitted');
+      expect(signedAt).toHaveLength(2);
+      expect((signedAt[1] as number) - startedAt).toBeGreaterThanOrEqual(leaseMs);
+      expect((signedAt[1] as number) - killedAt).toBeLessThanOrEqual(leaseMs + 5_000);
+      const final = await env.mineWhile(sub.wait({ finality: 'final' }));
+      expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+      expect(final.operation?.attempts).toHaveLength(1);
+      expect([signedAt.length, counting.calls(), firstSettled]).toEqual([2, 1, false]);
+      expect(env.node.balance(RECIPIENT)).toBe(3n);
     });
 
     it('resumes a prepared transfer and keeps its nonce for it', async () => {
