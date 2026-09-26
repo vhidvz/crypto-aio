@@ -18,6 +18,8 @@
 
 **Pre-flight review applied** (`preflight-plan-5.md`: 1 Critical, 5 Important, 12 Minor): C1 → D7 and Task 8 (the window scan); I1 → D6, Tasks 4, 8, 10 and the guide; I2 → D14 and Task 5; I3 → D4 and Task 6; I4 → D13 and Tasks 5, 8; I5 → Task 9; M1–M12 as noted in each task.
 
+**Re-review applied** (`preflight-plan-5.md`, "Re-review"; lesson 18 widened): R1 → `undecided` in Task 2, used by Tasks 6 and 8 (no RPC error on a proof path is a verdict; the node models agave's BigTable `getBlocks` failure); R2 → Task 8's one-endpoint C1 tests, each failing against the old composition, plus the hidden-index regression; R3 → D14 and Task 5 (token instructions with none by the sender decide nothing); R4 → D13 and Task 5 (no token balances: a token program that ran keeps the transaction).
+
 ## Global Constraints
 
 - Runtime: "Node.js ≥ 22, backend only" (`engines.node >= 22`). Toolchain pinned: "TypeScript 5.9", "Jest 30 + ts-jest", "ESLint 9 flat config". `@solana/web3.js` 1.99 needs Node ≥ 22.12 at runtime (its `rpc-websockets` → `uuid@14` is ESM-only and loads through `require(esm)`); the workspace override of Task 3 keeps Jest working (ruling A13).
@@ -45,11 +47,11 @@
 
 These five inputs are the most likely to bite a real user, and no spec example exercises them. Each has a pinned test in the task named.
 
-1. **A transfer that looks dead to one endpoint but can still land, or did land.** A lagging, pruned, snapshot-jumped or storage-gapped backend, often behind a single load-balanced URL (quorum 1), or the ~200 ms movement of the finalized head, must never produce `included: false` or a proven `expired` while the transaction could be in the chain. Expected: nothing is decided until the finalized chain is past `lastValidBlockHeight` (so the window's last block, `lastValidBlockHeight + 1`, is final) and every block of the window has been read under finality, height by height and parent by parent, without the transaction. Pinned in Task 8 ("never answers "not included" for a landed transfer when a backend lags", "never answers "not included" when a backend's ledger lacks the transaction's block", "proves a transfer included at lastValidBlockHeight + 1 as included, never absent", "answers "not included" only past the window…") and Task 10 ("never calls an expired-looking transfer dead while it can still land", "ends final, never expired, when the transfer lands at lastValidBlockHeight + 1").
+1. **A transfer that looks dead to one endpoint but can still land, or did land.** A lagging, pruned, snapshot-jumped or storage-gapped backend, often behind a single load-balanced URL (quorum 1), or the ~200 ms movement of the finalized head, must never produce `included: false` or a proven `expired` while the transaction could be in the chain. Expected: nothing is decided until the finalized chain is past `lastValidBlockHeight` (so the window's last block, `lastValidBlockHeight + 1`, is final) and every block of the window has been read under finality, height by height and parent by parent, without the transaction. Pinned in Task 8 ("never answers "not included" for a landed transfer when a backend lags", "never answers "not included" when a backend's ledger lacks the transaction's block", "never answers "not included" when the index hides a transaction the window holds", "decides nothing when long-term storage fails below the local ledger", "proves a transfer included at lastValidBlockHeight + 1 as included, never absent", "answers "not included" only past the window…") and Task 10 ("never calls an expired-looking transfer dead while it can still land", "ends final, never expired, when the transfer lands at lastValidBlockHeight + 1").
 2. **Two honest providers formatting the same finalized transaction differently** (`jsonParsed` variance: `uiAmount` as `null`, no `owner` on token balances, `stackHeight: null`, extra `costUnits`, other log lines, `blockTime: null`) must still reach the proof quorum, while a different token amount decides nothing (`PROVIDER_INCONSISTENT`, retryable). Pinned in Task 2 ("ignores formatting that honest providers differ on", "disagrees on any fact a verdict reads") and Task 8 ("agrees across formatting differences and decides nothing on a different fact").
 3. **Two Operations with identical intents** (same sender, recipient, amount, memo and fee, built on the same blockhash) would sign byte-identical messages and share one signature: one payment silently lost. Expected: two different signatures and two payments (build variants, D10; ruling A15's core guard behind them). Pinned in Task 7 ("gives two identical Operations different bytes", "honours an explicit price exactly, and varies every build's limit") and Task 10 ("keeps two identical Operations apart").
 4. **A recipient or amount that would lose funds or fail after signing:** SOL to a program-owned account, SPL to a token account instead of its owner or to a program id, a new account below the rent-exempt minimum, a frozen token account, or a sender left between 0 and its rent-exempt minimum. Expected: a pre-signing refusal (`INVALID_INTENT`, `INVALID_AMOUNT`, or `INSUFFICIENT_FUNDS` with `{ required, available }`), nothing signed. Pinned in Task 7 ("refuses recipients that would lose the funds", "keeps the sender at zero or above the rent-exempt minimum").
-5. **Skipped slots and ledger gaps under a scanner.** Heights must stay dense: every height up to the head has one block, `header(h)` is `null` only while `h` is not visible (never for a pruned height, which is a retryable error), a list with a gap is refused, and a block over skipped slots links to its parent. Pinned in Task 6 ("maps every height to its block, skipping empty slots", "refuses a list that leaves out a block, and caches nothing from it", "answers a height a pruned endpoint no longer holds with a retryable error, in bounded calls") and Task 8 ("scans dense heights over skipped slots, filtered by address, without votes").
+5. **Skipped slots and ledger gaps under a scanner.** Heights must stay dense: every height up to the head has one block, `header(h)` is `null` only while `h` is not visible (never for a pruned height, which is a retryable error), a list with a gap is refused, and a block over skipped slots links to its parent. Pinned in Task 6 ("maps every height to its block, skipping empty slots", "refuses a list that leaves out a block, and caches nothing from it", "answers a height a pruned endpoint no longer holds with a retryable error, in bounded calls", "turns any other RPC error into a retryable one that decides nothing") and Task 8 ("scans dense heights over skipped slots, filtered by address, without votes").
 
 ## Decisions recorded by the plan author
 
@@ -58,17 +60,17 @@ The common brief (lessons 1–17, with lesson 17 in its final form) and the scop
 - **D1. One JSON-RPC request per driver call; the SDK does codec work only (lesson 1).** Every driver request is `rpc.ts`'s `call(transport, method, params, tags)`, one `transport.rpc` call with the tags of the calling `ChainDriver` method. `@solana/web3.js` compiles legacy messages, derives associated token addresses and provides the native `Connection`; it never sends a driver request. web3.js's `Connection` retries HTTP 429 on a real `setTimeout` and would hide the tags, so it stays off the request path; a `setTimeout` spy pins this (Task 8). Cost: none; the SDK's request plumbing is not needed.
 - **D2. Legacy messages, one signer, SDK-free wire format.** The unsigned payload is the legacy message (base64). The only required signer is the sender, who is also the fee payer, so there is one `ed25519` signing request (`payloadKind: 'message'`, the message bytes). `assemble` writes the signed transaction itself (compact-u16 signature count, signatures, message: `wire.ts`), after checking that the message header's signer keys equal the requests' public keys; no SDK parses our own bytes. The Attempt ref is the base58 first signature (`idKind: 'signature'`, canonical). Versioned (v0) transactions are decoded when received, never built. Cost: address lookup tables are unavailable (not needed for one-output transfers).
 - **D3. Blockhash and preflight at `confirmed`.** `getLatestBlockhash` and `sendTransaction`'s `preflightCommitment` both use `confirmed` (Solana's confirmation guide). During authoring, devnet refused a transaction built on a `confirmed` blockhash with "Blockhash not found" under the default `finalized` preflight. Cost: a blockhash from a `confirmed` block that is later abandoned expires unused; `rebuild` recovers.
-- **D4. Dense heights are block heights (handoff §3); the driver maps them to slots, and believes only verified pairs (I3).** `HeightIndex` resolves a height by anchoring on the endpoint's head block (`getSlot` + `getBlock`) and counting back through `getBlocks`, which lists produced slots only. A list can have gaps (a ledger jump to a snapshot, a long-term-storage gap, pruning), so a page is believed only after a read of its first block confirms the counted height; a list with a gap is `PROVIDER_INCONSISTENT` and caches nothing. A height at or below the endpoint's finalized height resolves on the finalized chain, and verified pairs from it upward are cached (8,192 per driver; immutable chain data, spec §7), so a forward scan costs one `getBlock` per height. The downward search is bounded (16 pages of 500,000 slots); a height the endpoint no longer holds is a retryable `PROVIDER_UNAVAILABLE` (decides nothing), never `null`, which means only "not visible yet". The RPC codes are split: "not yet" (`-32004`, `-32014`, `-32016`) → `null`; "gone" (`-32001`, `-32009`, `-32011`, `-32019`) → retryable error; "skipped" (`-32007`, which agave also answers for a slot missing after a ledger jump to a snapshot) for a listed slot → `PROVIDER_INCONSISTENT` (retryable, decides nothing), and the cache is dropped. `reader.getBlock` takes a height; a string (a blockhash) throws `UNSUPPORTED_CAPABILITY`, since Solana has no block-by-hash RPC. No core change (ruling: adapter-local mapping accepted). Cost: one extra `getBlock` per page; a scan more than about 8 M slots below the head decides nothing.
+- **D4. Dense heights are block heights (handoff §3); the driver maps them to slots, and believes only verified pairs (I3).** `HeightIndex` resolves a height by anchoring on the endpoint's head block (`getSlot` + `getBlock`) and counting back through `getBlocks`, which lists produced slots only. A list can have gaps (a ledger jump to a snapshot, a long-term-storage gap, pruning), so a page is believed only after a read of its first block confirms the counted height; a list with a gap is `PROVIDER_INCONSISTENT` and caches nothing. A height at or below the endpoint's finalized height resolves on the finalized chain, and verified pairs from it upward are cached (8,192 per driver; immutable chain data, spec §7), so a forward scan costs one `getBlock` per height. The downward search is bounded (16 pages of 500,000 slots); a height the endpoint no longer holds is a retryable `PROVIDER_UNAVAILABLE` (decides nothing), never `null`, which means only "not visible yet". The RPC codes are split: "not yet" (`-32004`, `-32014`, `-32016`) → `null`; "gone" (`-32001`, `-32009`, `-32011`, `-32019`) → retryable error; "skipped" (`-32007`, which agave also answers for a slot missing after a ledger jump to a snapshot) for a listed slot → `PROVIDER_INCONSISTENT` (retryable, decides nothing), and the cache is dropped. `reader.getBlock` takes a height; a string (a blockhash) throws `UNSUPPORTED_CAPABILITY`, since Solana has no block-by-hash RPC. Any other RPC error from `header` or `getBlocks` decides nothing too (lesson 18 widened, R1: proofs reach the index), for example `-32602 "BigTable query failed"` from `getBlocks` below a backend's local ledger. No core change (ruling: adapter-local mapping accepted). Cost: one extra `getBlock` per page; a scan more than about 8 M slots below the head decides nothing.
 - **D5. The scripted Solana node is test-only** (`test/adapters/solana/support/node.ts`), as Plan 2 D5. It decodes transactions with `@solana/web3.js` and verifies signatures with `@noble/curves`, so shipping it in `crypto-aio/testing` would make the testing kit depend on an optional peer. Its fidelity rules are listed in its header and pinned by `node.test.ts` (lesson 8). Cost: users script their own node for their tests.
 - **D6. Proofs in lesson 17's final form; the window ends at `lastValidBlockHeight + 1` (I1).** agave checks a blockhash's age against the including block's *parent* (a bank registers its own hash only after its transactions ran), so a transaction whose `lastValidBlockHeight` is `L` can land in block `L + 1`; the window is `L − 149 … L + 1` (151 blocks). `expired(ordering)` is one quorum read of `getBlockHeight({ commitment: 'finalized' })` keyed on the monotone predicate `height > L`, which holds exactly when block `L + 1` is final. `includedFinal` is a finality-scoped quorum read of `getTransaction(signature, { commitment: 'finalized' })` keyed on the consensus facts a verdict reads, then the including block by slot at `finalized`; an unfinalized or stale answer decides nothing. `blockHash(h, level)` quorum-reads `getBlock(slot, { commitment })` keyed on consensus fields, after (for `finalized`) the predicate "my finalized height ≥ h". `finalizedHead()` is the one unanchored head: one endpoint's finalized height minus a peer skew of 2, then attested. `slotConsumed` is always `false` (expiry ordering has no slot another transaction could consume), which closes R76's composed-call window for Solana. Cost: a lagging peer delays verdicts by a poll.
-- **D7. "Not included" is proven by reading the window, block by block (C1, lesson 16 sharpened).** An index that shows nothing proves nothing: behind one load-balanced URL, `getTransaction` can reach a backend that lags, was pruned (Ankr keeps about 16 hours), jumped to a snapshot, or swallows a long-term-storage error, and agave 4.3.0 ignores `getTransaction`'s `minContextSlot`. So `includedFinal` answers `{ included: false }` only after: (1) the finalized `getTransaction` quorum read found nothing; (2) the predicate "finalized height > `L`" holds (block `L + 1` is final); (3) the window's first and last blocks are attested by height; (4) `getBlocks` over their slots, at `finalized` with `minContextSlot`, lists exactly one slot per height (151); (5) every block is read whole (`transactionDetails: 'signatures'`) under the proof quorum, sits at the next height, names the previous block as its parent, and ends at the attested last block, and none holds the signature. Every block read certifies itself, so a lagging, pruned or gapped backend can only answer "not available", which decides nothing. A block that holds the transaction while the index showed nothing is `PROVIDER_INCONSISTENT` (a stale answer, lesson 17). A proven absence is remembered per driver (1,024 entries, immutable chain data), so `rebuild`'s re-proof costs one read. Cost: about 152 quorum block reads (0.1–0.3 MB each on mainnet) once per Attempt that really expired unlanded; with one provider, everything that provider answers is trusted, so proven expiry wants two independent providers (the guide says so), and A14 guards the quorum.
+- **D7. "Not included" is proven by reading the window, block by block (C1, lesson 16 sharpened).** An index that shows nothing proves nothing: behind one load-balanced URL, `getTransaction` can reach a backend that lags, was pruned (Ankr keeps about 16 hours), jumped to a snapshot, or swallows a long-term-storage error, and agave 4.3.0 ignores `getTransaction`'s `minContextSlot`. So `includedFinal` answers `{ included: false }` only after: (1) the finalized `getTransaction` quorum read found nothing; (2) the predicate "finalized height > `L`" holds (block `L + 1` is final); (3) the window's first and last blocks are attested by height; (4) `getBlocks` over their slots, at `finalized` with `minContextSlot`, lists exactly one slot per height (151); (5) every block is read whole (`transactionDetails: 'signatures'`) under the proof quorum, sits at the next height, names the previous block as its parent, and ends at the attested last block, and none holds the signature. Every block read certifies itself, so a lagging, pruned or gapped backend can only answer "not available", which decides nothing. Lesson 18, widened (R1): only this definitive negative proof answers "no"; every other RPC error on a proof path (for example agave 4.3.0's `-32602 "BigTable query failed"` when a window lies below a backend's local ledger and its long-term storage fails) becomes a retryable `PROVIDER_UNAVAILABLE` through `undecided`, and every `ProofSource` method is wrapped so that none escapes. A block that holds the transaction while the index showed nothing is `PROVIDER_INCONSISTENT` (a stale answer, lesson 17). A proven absence is remembered per driver (1,024 entries, immutable chain data), so `rebuild`'s re-proof costs one read. Cost: about 152 quorum block reads (0.1–0.3 MB each on mainnet) once per Attempt that really expired unlanded; with one provider, everything that provider answers is trusted, so proven expiry wants two independent providers (the guide says so), and A14 guards the quorum.
 - **D8. Library policies for the clusters.** `finality: { kind: 'commitment', level: 'finalized' }`; `defaultConfirmations: 1` (a default `waitForConfirmation` waits for inclusion; credit on `final`); `reorgWindow: 64`; `maxLagBlocks: 150` (a blockhash lives 150 blocks, so an endpoint further behind cannot judge expiry). The driver never reads `maxLagBlocks` (the pool resolves it, R36). Cost: a user may override per chain (R36).
 - **D9. Fees.** The `network` charge is the signature fee the node quotes for the exact message (`getFeeForMessage`, minus our priority fee); the `priority` charge is `ceil(price × limit / 1e6)`; a created recipient account adds a `rent` charge (`getMinimumBalanceForRentExemption(165)`). Speeds take the 25th, 50th and 75th nearest-rank percentile of `getRecentPrioritizationFees` over the accounts the transaction writes. The limit is the simulated usage plus 20% and 1,000 units (`simulateTransaction`, `sigVerify: false`, `replaceRecentBlockhash: true`), or 200,000 per instruction when a simulation fails (for example an unfunded sender, which `checkFunds` then explains). `bound` is `exact`, or `upper` when rent is charged (someone else may create the account first). Overrides: `{ computeUnitPrice, computeUnitLimit? }`. Cost: two extra reads per estimate; percentiles are a library policy.
 - **D10. Build variants against identical transfers (Review Focus 3; defense in depth next to ruling A15's core guard).** Each estimate draws a variant from a per-driver counter with a crypto-random start (0 to 1,023,999): 0–1,023 extra compute units on the limit, an explicit limit included (M3), and, for a speed, 0–999 extra micro-lamports on the price (at most about one lamport per 1,000 compute units). An explicit price is used exactly. The variant lives in `fee.details`, so `build` reproduces it and the estimate stays exact. At the protocol maximum limit (1,400,000) no variant fits, and A15 is the only guard. Cost: up to about 25 lamports more priority fee on a token transfer; an explicit fee pays for up to 1,023 more compute units.
 - **D11. Pre-signing refusals that protect funds (Review Focus 4).** SOL to an account that exists and is executable or not owned by the System Program: `INVALID_INTENT` ("the recipient is a program-owned account"); SPL to a program id (M4: "the recipient is a program; send to a wallet or a PDA owner") or to a token account (classic or Token-2022 owner) instead of its owner: `INVALID_INTENT`; SOL to a missing account below `getMinimumBalanceForRentExemption(0)`: `INVALID_AMOUNT`; a frozen source or recipient token account, or a recipient token account for another mint or owner: `INVALID_INTENT`. `checkFunds` keeps the sender at 0 or at least the rent-exempt minimum (the runtime refuses anything in between). To fund a program account deliberately, use `crypto-aio/native`. Cost: those sends need the native client.
 - **D12. SPL scope.** Classic Token program only; a Token-2022 mint is `UNSUPPORTED_CAPABILITY` (spec §15). `getBalance(owner, spl)` sums every classic token account the owner holds for the mint; a transfer spends only the owner's associated token account, so `checkFunds` reports that account's balance as `available`. `ext.solana.getTokenAccounts(owner, mint?)` lists them. An unregistered mint's symbol is the first 8 characters of its address (SPL mints carry no symbol; metadata is display only, spec §6.2). Cost: tokens held outside the ATA must be moved by the owner first.
-- **D13. Decoding, and a scan filter that never drops a deposit (I4).** System `transfer`, `transferWithSeed`, `createAccount`, `createAccountWithSeed` and classic Token `transfer`/`transferChecked`, outer and inner (`source: 'internal'` for inner). Token transfers name the token accounts' owners (from the token balances), falling back to the token accounts, as `partial`, when a node omits owners. Every lamport and token balance change must be explained by the decoded moves and the fee, else `partial` (spec §15). A memo is attached to the transfers only when the transaction has exactly one. Failed transactions report the fee and no transfers (lesson 15). Vote transactions are skipped by the block source. The address filter is a conservative superset (handoff §3, "at least every transaction"): a decoded transfer names a watched address; a watched account's lamports changed; a token balance owned by a watched address changed, or one with no owner reported changed; or the transaction is `partial` and names a watched account. Cost: other value-moving instructions (stake, close account, Token-2022) make a transaction `partial`, and the filter returns a few transactions that turn out unrelated.
-- **D14. The phantom-success guard, in the board's final wording (lessons 7 and 15; I2).** On verdict paths only (`observe` with an ordering, and `includedFinal`), a transaction that carries token instructions counts as executed only when the balances show a transfer **from the sender's account to the intended recipient's account of a positive amount**; the exact amount is not required (fee-on-transfer tokens exist). The intended recipient is the destination of the sender's own signed instruction, which its signature makes authentic (as the EVM verdict trusts calldata). A zero-amount record, a failed transaction, or no transfer by the sender at all is `success: false` (`reason: 'token transfer failed'`); missing evidence (no token balances, an unparsed token instruction, accounts missing from the keys) decides nothing (retryable `PROVIDER_UNAVAILABLE`), never a proven `failed`. A native transfer's verdict is the chain's own status. General decoding reports the chain's own status and the amounts that actually moved. Cost: none for honest nodes.
+- **D13. Decoding, and a scan filter that never drops a deposit (I4).** System `transfer`, `transferWithSeed`, `createAccount`, `createAccountWithSeed` and classic Token `transfer`/`transferChecked`, outer and inner (`source: 'internal'` for inner). Token transfers name the token accounts' owners (from the token balances), falling back to the token accounts, as `partial`, when a node omits owners. Every lamport and token balance change must be explained by the decoded moves and the fee, else `partial` (spec §15). A memo is attached to the transfers only when the transaction has exactly one. Failed transactions report the fee and no transfers (lesson 15). Vote transactions are skipped by the block source. The address filter is a conservative superset (handoff §3, "at least every transaction"): a decoded transfer names a watched address; a watched account's lamports changed; a token balance owned by a watched address changed, or one with no owner reported changed; the node reported no token balances and a token program ran (a deposit into an existing token account then names no owner, R4); or the transaction is `partial` and names a watched account. Cost: other value-moving instructions (stake, close account, Token-2022) make a transaction `partial`, and the filter returns a few transactions that turn out unrelated.
+- **D14. The phantom-success guard, in the board's final wording (lessons 7 and 15; I2).** On verdict paths only (`observe` with an ordering, and `includedFinal`), a transaction that carries token instructions counts as executed only when the balances show a transfer **from the sender's account to the intended recipient's account of a positive amount**; the exact amount is not required (fee-on-transfer tokens exist). The intended recipient is the destination of the sender's own signed instruction, which its signature makes authentic (as the EVM verdict trusts calldata). A zero-amount record, a failed transaction, or balances that show no move from the sender's account to the recipient's is `success: false` (`reason: 'token transfer failed'`); missing evidence (no token balances, an unparsed token instruction, accounts missing from the keys) decides nothing (retryable `PROVIDER_UNAVAILABLE`), never a proven `failed`; so do token instructions of which none is the sender's, since the sender's own signed message carries its `transferChecked` (an answer that contradicts it is retryable `PROVIDER_INCONSISTENT`; lesson 18 widened, R3). A native transfer's verdict is the chain's own status (a transaction with no token instruction; the re-review accepted this). General decoding reports the chain's own status and the amounts that actually moved. Cost: none for honest nodes.
 - **D15. Broadcast classification (lesson 3).** `already-known`: "Transaction simulation failed: This transaction has already been processed". `rejected` (only bytes invalid by construction on every node): the anchored signature-verification texts under codes `-32002` and `-32003` (agave ≥ 4.0 answers `-32002` under preflight; `-32003` is kept for older nodes, harmless; with `skipPreflight` agave forwards a bad signature unverified, and the leader drops it, M1). `refused` with `INSUFFICIENT_FUNDS`: the anchored debit, fee, rent and "custom program error: 0x1" / "insufficient funds for instruction" texts (error 1 is insufficient funds in both the System and Token programs). Everything else, including "Blockhash not found" (a lagging node may not know it yet), undeserializable bytes and version or size limits, is `refused` `TX_REFUSED` with a fixed reason. Only a definitive, non-ambiguous `RPC_ERROR` is classified (R16/R17). Cost: an unlisted permanent text is reported refused (the safe direction); a first broadcast answered "Blockhash not found" by a lagging endpoint stalls until `rebroadcast` or expiry (M5, documented).
 - **D16. Memos** are at most 256 UTF-8 bytes (a library policy well inside the 1,232-byte packet limit) and must be well-formed text (no lone UTF-16 surrogate); otherwise `INVALID_INTENT`. Memos are never logged (spec §12 classifies them sensitive). Cost: longer memos need the native client.
 - **D17. History.** `getSignaturesForAddress` (newest first, at most 1,000 per page, `before` = the cursor), then `getTransaction` for each signature. A backend that does not know the cursor answers `-32020`, which is a retryable `PROVIDER_UNAVAILABLE` (M2: another backend may). The indexer transport is used when configured (handoff §3). An SPL deposit into an existing associated token account names the token account, not the owner, so it appears in the token account's history (listed by `ext.solana.getTokenAccounts`), not the owner's; the block scanner matches owners. History and proofs reach back only as far as the provider's ledger (Ankr: about 16 hours); older history decides nothing. Cost: one request per history item.
@@ -87,6 +89,7 @@ The common brief (lessons 1–17, with lesson 17 in its final form) and the scop
 - **A5:** crash tests consume `fenceGeneration` (D21). **A14** (N5, a height liar shrinking the proof quorum), **A15** (a core guard against two Operations sharing an `AttemptRef`) and **A17** (health probes respect rate limits) land in Plan 2.5; D10 stays as defense in depth.
 - **Plan 2 Task 10's final family shape** (R79–R82): Task 9 follows it (`SOLANA_PEER_DEPENDENCIES` keyed by library, per-manifest lazy tests, the peer-pin test, the SDK-free main-entry guard, `USE_ACME` in both file orders, bare peer names).
 - **The phantom-success rule, final wording:** D14.
+- **Lesson 18, widened (binding for all families):** on a proof path only a definitive negative proof answers "no"; every other RPC error decides nothing (D4, D7, `undecided` in Task 2), and so does a decoding contradiction (D14).
 - Adapter-local dense heights: accepted with no core change (D4).
 
 ## File Structure
@@ -1399,7 +1402,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 0 (`CallOptions.exactIntegers`); Task 1 (`SolanaCallTags`, `Commitment`, `SolanaFeeDetails`, `SolanaFeeOverride`, `DEFAULT_INSTRUCTION_COMPUTE_UNITS`, `MAX_COMPUTE_UNIT_LIMIT`); `Transport`, `ProviderError`, `ValidationError`, `isCryptoAioError`, `canonicalJson`, `BroadcastResult`, `FeeEstimateDraft`.
 - Produces:
-  - `rpc.ts`: tag constants `READ`, `MONITOR`, `PROOF`, `BROADCAST`, `withSignal(tags, signal?)`; `RPC_CODES` (incl. `FILTER_TRANSACTION_NOT_FOUND: -32020`); `rpcCode(error)`, `rpcMessage(error)`; the split "cannot show it" predicates (I3) `isNotYet` (`-32004`, `-32014`, `-32016`), `isGone` (`-32001`, `-32009`, `-32011`, `-32019`), `isSkipped` (`-32007`) and their union `isNotAvailable`; error makers `notYet(what)` and `gone(what)` (retryable `PROVIDER_UNAVAILABLE`), `malformed(what)` (retryable `PROVIDER_UNAVAILABLE`), `inconsistent(what)` (retryable `PROVIDER_INCONSISTENT`); validators `u64(value, what)`, `amountString(value, what)`, `contextValue(result, what)`, `blockHeader(result): BlockHeader { blockhash, previousBlockhash, parentSlot, blockHeight, blockTime? }`; `pick(value, keys)` and `BLOCK_FIELDS` (a block's consensus fields); `quorumKeyFor(method)`; `call(transport, method, params, tags)` (sets `exactIntegers: true`; a caller `quorumKey` in the tags replaces the method's default); `headerOptions(commitment)`, `parsedOptions(commitment)`.
+  - `rpc.ts`: tag constants `READ`, `MONITOR`, `PROOF`, `BROADCAST`, `withSignal(tags, signal?)`; `RPC_CODES` (incl. `FILTER_TRANSACTION_NOT_FOUND: -32020`); `rpcCode(error)`, `rpcMessage(error)`; the split "cannot show it" predicates (I3) `isNotYet` (`-32004`, `-32014`, `-32016`), `isGone` (`-32001`, `-32009`, `-32011`, `-32019`), `isSkipped` (`-32007`) and their union `isNotAvailable`; error makers `notYet(what)` and `gone(what)` (retryable `PROVIDER_UNAVAILABLE`), `malformed(what)` (retryable `PROVIDER_UNAVAILABLE`), `inconsistent(what)` (retryable `PROVIDER_INCONSISTENT`), `undecided(error, what)` (lesson 18, widened: an `RPC_ERROR` becomes a retryable `PROVIDER_UNAVAILABLE` with the node's message; any other error is returned unchanged; used by Tasks 6 and 8, R1); validators `u64(value, what)`, `amountString(value, what)`, `contextValue(result, what)`, `blockHeader(result): BlockHeader { blockhash, previousBlockhash, parentSlot, blockHeight, blockTime? }`; `pick(value, keys)` and `BLOCK_FIELDS` (a block's consensus fields); `quorumKeyFor(method)`; `call(transport, method, params, tags)` (sets `exactIntegers: true`; a caller `quorumKey` in the tags replaces the method's default); `headerOptions(commitment)`, `parsedOptions(commitment)`.
   - `fees.ts`: `SPEED_PERCENTILE`, `computeUnitLimitFor(units)`, `fallbackComputeUnitLimit(instructions)`, `VARIANTS`, `variantOffsets(variant)`, `variantCounter(start)`, `priorityFee(price, limit)`, `priceForSpeed(recent, speed)`, `parseOverride(fee)`, `feeDraft(speed, details)`, `detailsOf(fee)`, `lamportsCharged(fee)`.
   - `errors.ts`: `classifyBroadcastError(code, message): BroadcastResult` (frozen results).
 
@@ -1408,7 +1411,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - The `getTransaction` quorum key covers every field a verdict reads (slot, error, signatures, account keys, token balances, token-transfer instructions) and ignores formatting, including the order of the token balances (lesson 2, R59, M7); a throwing key counts as a disagreement.
 - "Not yet" and "gone" are distinct (I3): only "not yet" may become `null` downstream.
 - `rejected` only for the two anchored signature texts under their own codes; the default is `TX_REFUSED` with a fixed reason; no reason carries an address or amount (lesson 3, R24).
-- "Not available" codes are matched only on definitive, non-ambiguous `RPC_ERROR`s.
+- "Not available" codes are matched only on definitive, non-ambiguous `RPC_ERROR`s; on proof paths every other `RPC_ERROR` goes through `undecided` (Tasks 6 and 8), so no RPC error is ever a verdict.
 - Fee math is bigint only; the priority fee rounds up; overrides reject unknown keys and out-of-range values.
 
 - [ ] **Step 1: Write the failing test**
@@ -2003,6 +2006,26 @@ export const gone = (what: string) =>
 /** A retryable error that decides nothing: the endpoints cannot show this yet. */
 export const notYet = (what: string) =>
   new ProviderError('PROVIDER_UNAVAILABLE', `the endpoints cannot show ${what} yet`);
+
+/**
+ * Lesson 18, widened: on a proof path only a definitive negative proof answers "no". Any
+ * other definitive RPC error (agave 4.3.0's `getBlocks` answers `-32602 "BigTable query
+ * failed"` for a range below its local ledger, `-32603` on a blockstore error) decides
+ * nothing: it becomes a retryable `PROVIDER_UNAVAILABLE`. Every other error (retryable
+ * ones, `PROVIDER_MISCONFIGURED`) is returned unchanged.
+ */
+export function undecided(error: unknown, what: string): unknown {
+  if (!isCryptoAioError(error, 'RPC_ERROR')) return error;
+  return new ProviderError(
+    'PROVIDER_UNAVAILABLE',
+    `the endpoints cannot show ${what}: ${rpcMessage(error)}`,
+    {
+      cause: error,
+      context: error.context,
+      ...(error.details ? { details: error.details } : {}),
+    },
+  );
+}
 
 export const malformed = (what: string) =>
   new ProviderError('PROVIDER_UNAVAILABLE', `malformed ${what} answer`);
@@ -2971,7 +2994,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 3 (`createWeb3Codec`, `signedTransaction`, vectors), `FakeFetch`, `FakeClock`, `HttpTransport`, `EventBus`; `@solana/web3.js` (`VersionedTransaction`, `VersionedMessage`, `PublicKey`) to decode, `@noble/curves` to verify.
 - Produces (test support, used by Tasks 6–10):
-  - `ScriptedSolanaNode({ clock, genesisHash?, finalizedDepth? = 2, blockhashValidity? = 150, prioritizationFees? })`: `endpoint(name, EndpointOptions | BalancedOptions)` with `EndpointOptions { lag?, firstAvailableHeight?, missingHeights? }` and `BalancedOptions { backends: EndpointOptions[] }` (a load-balanced URL: each request is served by the next backend, deterministically), `produce(n)`, `skip(n)`, `reorg(depth, drop?)`, `fund`, `setAccount`, `createMint(mint, decimals, program?)`, `mintTo(mint, owner, amount, { frozen? })`, `balance`, `account`, `tokenBalance`, `rent(bytes)`, `inMempool`, `drop`, `sendCount`, `landed(signature)`, `submit(base64, { skipPreflight? })`, `answer(endpoint, method, params)`, `head`, `finalized`, `block(height)`, `served`, `intercept`; `associatedAddress(owner, mint, program?)`; program-id constants.
+  - `ScriptedSolanaNode({ clock, genesisHash?, finalizedDepth? = 2, blockhashValidity? = 150, prioritizationFees? })`: `endpoint(name, EndpointOptions | BalancedOptions)` with `EndpointOptions { lag?, firstAvailableHeight?, missingHeights?, bigtableFailsBelow? }` and `BalancedOptions { backends: EndpointOptions[] }` (a load-balanced URL: each request is served by the next backend, deterministically), `produce(n)`, `skip(n)`, `reorg(depth, drop?)`, `fund`, `setAccount`, `createMint(mint, decimals, program?)`, `mintTo(mint, owner, amount, { frozen? })`, `balance`, `account`, `tokenBalance`, `rent(bytes)`, `inMempool`, `drop`, `sendCount`, `landed(signature)`, `submit(base64, { skipPreflight? })`, `answer(endpoint, method, params)`, `head`, `finalized`, `block(height)`, `served`, `intercept`; `associatedAddress(owner, mint, program?)`; program-id constants.
   - `harness.ts`: `type Endpoint` (a name, or a name with `EndpointOptions` or `BalancedOptions`), `nodeTransport(options?, endpoints?)` → `{ clock, node, transport, run, seen }`; `recording(transport)` → `{ transport, calls: { method, tags, params }[] }` (tags without `signal`, `quorumKey`, `exactIntegers`).
   - `tx.ts`: `codec`, `signedTx(blockhash, instructions, { payer?, key? })` → base64 wire bytes.
 
@@ -2979,7 +3002,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Dense heights over skipped slots; `finalized` is `finalizedDepth` heights below the head and never moves back after a fork; forks never cut below it.
 - A blockhash's age is checked against the including block's parent (agave, I1): `getLatestBlockhash` states `lastValidBlockHeight = height + 150`, a transaction can land up to `lastValidBlockHeight + 1`, and never later (not even with `skipPreflight`).
 - Preflight defaults to `finalized` (so a `confirmed` blockhash is "not found" there, D3); "already been processed" for a landed signature; a bad signature is `-32002` under preflight; with `skipPreflight` the bytes are forwarded unverified and never land (M1).
-- A load-balanced URL rotates its backends per request; a missing height answers `-32009`, is left out of `getBlocks`, and hides its transactions (C1's test double); `getBlocks` honours `minContextSlot` (`-32016`); an unknown history cursor is `-32020` (M2); `getBlock` with `transactionDetails: 'signatures'` lists the signatures.
+- A load-balanced URL rotates its backends per request; a missing height answers `-32009`, is left out of `getBlocks`, and hides its transactions (C1's test double); `getBlocks` honours `minContextSlot` (`-32016`); an unknown history cursor is `-32020` (M2); an endpoint whose long-term storage fails (`bigtableFailsBelow`) answers `getBlocks` from below its local ledger with `-32602 "BigTable query failed (maybe timeout due to too large range?)"`, `getBlock` there with `null`, and finds no transaction there (agave 4.3.0, R1); `getBlock` with `transactionDetails: 'signatures'` lists the signatures.
 - Fees: 5,000 lamports per signature plus `ceil(price × limit / 1e6)`, charged even when execution fails; compute limits enforced (a starved transaction lands failed).
 - Rent: new accounts and the fee payer end at 0 or at least `(128 + bytes) × 5,080` lamports (today's devnet and mainnet value, Appendix A); zero-lamport accounts disappear.
 - Token rules: mint and decimals checks (errors 0x12, 0x3), owner check (0x4), frozen (0x11), insufficient (0x1); the associated token account's address is checked; `CreateIdempotent` is a no-op on an existing account.
@@ -3357,6 +3380,45 @@ describe('the scripted Solana node', () => {
     });
   });
 
+  it('fails long-term-storage reads below the local ledger as agave 4.3.0 does (R1)', async () => {
+    const node = new ScriptedSolanaNode({ clock: new FakeClock() });
+    const url = node.endpoint('bt', { bigtableFailsBelow: 4n });
+    node.fund(KEY_ADDRESS, 10_000_000_000n);
+    node.produce(1);
+    const id = node.submit(
+      signedTx(node.head.hash, [systemTransfer(KEY_ADDRESS, RECIPIENT, 1_000_000_000n)]),
+    );
+    node.produce(8);
+    const call = async (method: string, params: unknown[]) =>
+      JSON.parse(
+        await (
+          await node.fetch.fetch(url, {
+            method: 'POST',
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+          })
+        ).text(),
+      ) as { result?: unknown; error?: { code: number; message: string } };
+    const slot = (height: bigint) => Number(node.block(height)?.slot);
+    const finalized = { commitment: 'finalized' };
+    expect((await call('getBlocks', [slot(1n), slot(6n), finalized])).error).toEqual({
+      code: -32602,
+      message: 'BigTable query failed (maybe timeout due to too large range?)',
+    });
+    expect((await call('getBlocks', [slot(4n), slot(6n), finalized])).result).toEqual([
+      slot(4n),
+      slot(5n),
+      slot(6n),
+    ]);
+    const header = { ...finalized, transactionDetails: 'none' };
+    expect((await call('getBlock', [slot(2n), header])).result).toBeNull();
+    expect((await call('getBlock', [slot(4n), header])).result).toMatchObject({
+      blockHeight: 4,
+    });
+    const options = { ...finalized, encoding: 'jsonParsed' };
+    expect(node.landed(id)?.block.height).toBe(2n);
+    expect((await call('getTransaction', [id, options])).result).toBeNull();
+  });
+
   it('answers an unknown history cursor with -32020 (M2)', async () => {
     const { node, rpc } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -3435,6 +3497,12 @@ export interface EndpointOptions {
    * `getBlock` answers -32009, `getBlocks` omits them, and their transactions are not found.
    */
   readonly missingHeights?: readonly bigint[];
+  /**
+   * The local ledger starts at this height and long-term storage fails every read below it
+   * (agave 4.3.0): `getBlocks` from a slot below answers -32602 "BigTable query failed",
+   * `getBlock` answers `null`, and transactions there are not found.
+   */
+  readonly bigtableFailsBelow?: bigint;
 }
 
 /** A URL behind a load balancer: each request is served by the next backend in turn. */
@@ -3498,6 +3566,7 @@ interface View {
   readonly finalized: Block;
   readonly firstAvailable: bigint;
   readonly missing: ReadonlySet<bigint>;
+  readonly bigtableFailsBelow: bigint | undefined;
 }
 
 class RpcFailure extends Error {
@@ -4226,12 +4295,17 @@ export class ScriptedSolanaNode {
       finalized: this.#blocks[Number(height < 0n ? 0n : height)] as Block,
       firstAvailable: BigInt(options.firstAvailableHeight ?? 0),
       missing: new Set(options.missingHeights ?? []),
+      bigtableFailsBelow: options.bigtableFailsBelow,
     };
   }
 
   /** Whether the view's ledger holds the block at `height`. */
   #holds(view: View, height: bigint): boolean {
-    return height >= view.firstAvailable && !view.missing.has(height);
+    return (
+      height >= view.firstAvailable &&
+      !view.missing.has(height) &&
+      (view.bigtableFailsBelow === undefined || height >= view.bigtableFailsBelow)
+    );
   }
 
   #bank(view: View, commitment: unknown): Block {
@@ -4478,6 +4552,13 @@ export class ScriptedSolanaNode {
     if (typeof minContextSlot === 'number' && BigInt(minContextSlot) > bank.slot) {
       throw new RpcFailure(-32016, 'Minimum context slot has not been reached');
     }
+    const local = view.bigtableFailsBelow;
+    if (local !== undefined && start < (this.#blocks[Number(local)]?.slot ?? 0n)) {
+      throw new RpcFailure(
+        -32602,
+        'BigTable query failed (maybe timeout due to too large range?)',
+      );
+    }
     return this.#blocks
       .filter(
         (b) =>
@@ -4524,6 +4605,10 @@ export class ScriptedSolanaNode {
     }
     const bank = this.#bank(view, options.commitment);
     const block = this.#blockAt(view, BigInt(params[0] as number), bank);
+    // A failed long-term-storage read is not "block not found": agave answers `null`.
+    if (view.bigtableFailsBelow !== undefined && block.height < view.bigtableFailsBelow) {
+      return null;
+    }
     const header = {
       blockHeight: block.height,
       blockTime: block.blockTime,
@@ -4838,7 +4923,7 @@ export function recording(transport: Transport) {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm jest test/adapters/solana/node.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Check and commit**
 
@@ -4860,18 +4945,18 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Test: `test/adapters/solana/decode.test.ts`
 
 **Interfaces:**
-- Consumes: Task 1 (program ids), Task 2 (`u64`, `amountString`, `malformed`); `DriverTransaction`, `DriverTransfer`, `canonicalJson`.
+- Consumes: Task 1 (program ids), Task 2 (`u64`, `amountString`, `malformed`, `notYet`, `inconsistent`); `DriverTransaction`, `DriverTransfer`, `canonicalJson`.
 - Produces:
   - `ParsedTransaction { signature, keys, err, fee, preBalances, postBalances, preTokens, postTokens, tokenBalances: 'present' | 'absent', instructions, version, slot?, blockTime? }` and `parseTransaction(value)`: validates a `jsonParsed` transaction (from `getTransaction` or a block's list); any malformed part is a retryable `PROVIDER_UNAVAILABLE`.
   - `decodeTransaction(parsed, place: BlockPlace { height, hash, blockTime? }): DriverTransaction`: transfers with locators `ix:<outer>` and `ix:<outer>.<inner>`, `decoding: 'partial'` when balances are not explained (spec §15), the chain's own status (lesson 15), `details: { slot, version, err? }`.
-  - `isVote(parsed)`; `touches(decoded, parsed, addresses)`, the scan filter, a conservative superset (I4, D13); `tokenTransfersLanded(parsed, from)`, the phantom-success guard in the final wording (I2, D14; verdict paths only; throws a retryable `PROVIDER_UNAVAILABLE` on missing evidence).
+  - `isVote(parsed)`; `touches(decoded, parsed, addresses)`, the scan filter, a conservative superset (I4, D13); `tokenTransfersLanded(parsed, from)`, the phantom-success guard in the final wording (I2, D14; verdict paths only; throws a retryable `PROVIDER_UNAVAILABLE` on missing evidence and a retryable `PROVIDER_INCONSISTENT` when token instructions are present but none is the sender's, R3).
 
 **Review points:**
 - Reconciliation covers every account: lamports (fee on account 0 plus decoded moves) and token balances; anything unexplained is `partial`, never silently `complete`.
 - Token transfers name owners, not token accounts; missing owners fall back to token accounts as `partial`.
 - Token-2022 instructions are not decoded (spec §15), and so the transaction is `partial`.
-- `tokenTransfersLanded` follows the final wording: a transfer from the sender to the intended recipient of a positive amount, never the exact amount; missing evidence decides nothing (never a proven `failed`); seeing no transfer by the sender never passes; a failed transaction never lands.
-- `touches` never drops a transaction that moves value to a watched address, even when decoding cannot attribute it (I4).
+- `tokenTransfersLanded` follows the final wording: a transfer from the sender to the intended recipient of a positive amount, never the exact amount; missing evidence decides nothing (never a proven `failed`); token instructions of which none is the sender's contradict the signed message and decide nothing too (lesson 18, widened; R3); a native transaction keeps the chain's own status; a failed transaction never lands.
+- `touches` never drops a transaction that moves value to a watched address, even when decoding cannot attribute it (I4), including an SPL deposit when the node reports no token balances and a token program ran (R4).
 - The fixture is public chain data; no private data enters the repository.
 
 - [ ] **Step 1: Write the failing test**
@@ -5373,6 +5458,22 @@ describe('the scan filter is a superset (I4)', () => {
       true,
     );
   });
+
+  it('keeps an SPL deposit when the node reports no token balances (R4)', () => {
+    // The recipient's owner is not an account key: only the balances would name it.
+    const recipient = '75AjMdh7Gn1TLigfze541AVJGJ4TyqBEaRZk3pozfBza';
+    const bare = clone(DEVNET_TRANSFER_CHECKED) as unknown as { meta: Json };
+    delete bare.meta.preTokenBalances;
+    delete bare.meta.postTokenBalances;
+    const parsed = parseTransaction(bare);
+    const decoded = decodeTransaction(parsed, PLACE);
+    expect(parsed.keys).not.toContain(recipient);
+    expect(decoded.decoding).toBe('partial');
+    expect(touches(decoded, parsed, new Set([recipient]))).toBe(true);
+    // With the balances reported, an unrelated watcher still sees nothing.
+    const full = parseTransaction(DEVNET_TRANSFER_CHECKED);
+    expect(touches(decodeTransaction(full, PLACE), full, new Set(['Z']))).toBe(false);
+  });
 });
 
 describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict paths only)', () => {
@@ -5399,8 +5500,6 @@ describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict pat
     const nothing = fixture();
     nothing.meta.postTokenBalances[1]!.uiTokenAmount.amount = '372685000';
     expect(landed(nothing)).toBe(false);
-    // Seeing no transfer from the sender never passes.
-    expect(landed(DEVNET_TRANSFER_CHECKED, 'Someone')).toBe(false);
     // A failed transaction moved nothing.
     const failed = fixture();
     failed.meta.err = { InstructionError: [2, { Custom: 1 }] };
@@ -5409,7 +5508,11 @@ describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict pat
     expect(landed(nativeTx(), 'A')).toBe(true);
   });
 
-  it('decides nothing on missing evidence: no token balances, an unparsed instruction', () => {
+  it('decides nothing on missing or contradictory evidence (lesson 18, widened)', () => {
+    // Token instructions, none by the sender: the answer contradicts the signed message.
+    expect(() => landed(DEVNET_TRANSFER_CHECKED, 'Someone')).toThrow(
+      expect.objectContaining({ code: 'PROVIDER_INCONSISTENT', retryable: true }),
+    );
     const noBalances = fixture();
     delete noBalances.meta.preTokenBalances;
     expect(() => landed(noBalances)).toThrow(
@@ -5456,7 +5559,7 @@ import {
   TOKEN_PROGRAM,
   VOTE_PROGRAM,
 } from './programs';
-import { amountString, malformed, notYet, u64 } from './rpc';
+import { amountString, inconsistent, malformed, notYet, u64 } from './rpc';
 
 type Json = Record<string, unknown>;
 
@@ -5813,8 +5916,10 @@ export function decodeTransaction(
  * The scan filter (handoff §3: "at least every transaction with a transfer from or to"
  * the addresses), a conservative superset (I4): a decoded transfer names a watched
  * address; a watched account's lamports changed; a token balance owned by a watched
- * address changed, or one with no owner reported changed (it cannot be attributed); or the
- * decoding is partial and a watched address is among the account keys.
+ * address changed, or one with no owner reported changed (it cannot be attributed); the
+ * node reported no token balances and a token program ran (a deposit into an existing
+ * token account names no owner then, R4); or the decoding is partial and a watched address
+ * is among the account keys.
  */
 export function touches(
   decoded: DriverTransaction,
@@ -5831,6 +5936,14 @@ export function touches(
     (key, i) => addresses.has(key) && tx.preBalances[i] !== tx.postBalances[i],
   );
   if (lamportsMoved || (decoded.decoding === 'partial' && keyed)) return true;
+  if (
+    tx.tokenBalances === 'absent' &&
+    tx.instructions.some(
+      (ix) => ix.programId === TOKEN_PROGRAM || ix.programId === TOKEN_2022_PROGRAM,
+    )
+  ) {
+    return true;
+  }
   const indices = new Set([...tx.preTokens.keys(), ...tx.postTokens.keys()]);
   for (const index of indices) {
     const pre = tx.preTokens.get(index);
@@ -5849,7 +5962,10 @@ export function touches(
  * exact amount is not required (fee-on-transfer tokens exist). The intended recipient is
  * the destination of the sender's own signed instruction. Missing evidence (no token
  * balances, an unparsed instruction, accounts not in the keys) decides nothing (a
- * retryable `PROVIDER_UNAVAILABLE`); seeing no transfer never passes.
+ * retryable `PROVIDER_UNAVAILABLE`), and so does an answer that contradicts the signed
+ * message: token instructions, none of them by the sender, where the sender signed its own
+ * `transferChecked` (lesson 18, widened; a retryable `PROVIDER_INCONSISTENT`). Seeing no
+ * transfer never passes.
  */
 export function tokenTransfersLanded(tx: ParsedTransaction, from: string): boolean {
   if (tx.err !== null) return false;
@@ -5867,7 +5983,9 @@ export function tokenTransfersLanded(tx: ParsedTransaction, from: string): boole
     const move = tokenMove(ix);
     return move && move.authority === from ? [move] : [];
   });
-  if (ours.length === 0) return false;
+  if (ours.length === 0) {
+    throw inconsistent('the token instructions do not match the signed transaction');
+  }
   if (tx.tokenBalances === 'absent') throw notYet('the token balances');
   const delta = (address: string): bigint => {
     const index = tx.keys.indexOf(address);
@@ -5888,7 +6006,7 @@ export function tokenTransfersLanded(tx: ParsedTransaction, from: string): boole
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm jest test/adapters/solana/decode.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Check and commit**
 
@@ -5919,6 +6037,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Review points:**
 - Heights: `getBlockHeight` at `confirmed` (head) and `finalized`; both are `monitor` reads; blocks by height via the index, checked against the height they claim (a contradiction is `PROVIDER_INCONSISTENT` and drops the cache).
 - I3: no pair is cached before a read of its page's first block confirms the counted height; the downward search is bounded; a pruned endpoint answers a retryable error, never `null`; `forget()` clears the whole cache.
+- Lesson 18, widened (R1): proofs reach this index, so any other RPC error from `header` or `getBlocks` (agave's `-32602 "BigTable query failed"` below its local ledger, `-32603`) goes through `undecided`: retryable, deciding nothing.
 - `getTokenMetadata` (lesson 13): a missing mint, another program's account or unparsable data is `ASSET_RESOLUTION`; Token-2022 is `UNSUPPORTED_CAPABILITY`; a definitive node error becomes retryable; `PROVIDER_MISCONFIGURED` and retryable errors propagate unchanged.
 - `observe` applies the landing guard only with an ordering (lesson 15; Plan 2's Task 8 note); a malformed id is `{ seen: 'none' }` with no request.
 - `getBalance(owner, spl)` sums every classic token account of the owner for the mint (D12); lamports above 2^53 are exact (D19).
@@ -6132,6 +6251,31 @@ describe('dense heights over slots (Review Focus 5)', () => {
       t.node.block(45n)?.slot,
     );
     expect(await t.run(index.slotAt(1_000n, 'confirmed', MONITOR))).toBeNull();
+  });
+
+  it('turns any other RPC error into a retryable one that decides nothing (lesson 18, widened)', async () => {
+    const t = nodeTransport({}, [{ name: 'bt', bigtableFailsBelow: 40n }]);
+    const index = new HeightIndex(t.transport);
+    t.node.produce(200);
+    // agave 4.3.0: getBlocks from below the local ledger, with long-term storage failing.
+    await expect(t.run(index.slotAt(10n, 'finalized', MONITOR))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: expect.stringContaining('BigTable query failed') as unknown,
+    });
+    // An internal error on a header read.
+    t.node.intercept = (_endpoint, method) =>
+      method === 'getBlock'
+        ? { error: { code: -32603, message: 'Internal error' } }
+        : undefined;
+    await expect(
+      t.run(index.header(t.node.block(150n)?.slot as bigint, 'finalized', MONITOR)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    t.node.intercept = undefined;
+    // Heights well inside the local ledger still resolve.
+    expect(await t.run(index.slotAt(150n, 'finalized', MONITOR))).toBe(
+      t.node.block(150n)?.slot,
+    );
   });
 });
 ```
@@ -6444,7 +6588,9 @@ Expected: FAIL: "Cannot find module '../../../src/adapters/solana/heights'" (and
  * forward scan cost one `getBlock` per height. A height the endpoint no longer holds is a
  * retryable error that decides nothing, never `null` (`null` means "not visible yet").
  * Every read is a single endpoint's view (lesson 17): verdicts quorum-read the block at the
- * resolved slot.
+ * resolved slot. Any other RPC error decides nothing either (lesson 18, widened): proofs
+ * reach this index, and agave answers `getBlocks` below its local ledger with `-32602
+ * "BigTable query failed"` when long-term storage fails.
  */
 import type { Transport } from '../../core/transport/types';
 import {
@@ -6459,6 +6605,7 @@ import {
   malformed,
   notYet,
   u64,
+  undecided,
   type BlockHeader,
 } from './rpc';
 import type { Commitment, SolanaCallTags } from './types';
@@ -6519,7 +6666,7 @@ export class HeightIndex {
         this.forget();
         throw inconsistent(`slot ${slot} holds no block`);
       }
-      throw error;
+      throw undecided(error, `the block at slot ${slot}`);
     }
     return result === null ? null : blockHeader(result);
   }
@@ -6598,12 +6745,17 @@ export class HeightIndex {
     commitment: Commitment,
     tags: SolanaCallTags,
   ): Promise<bigint[]> {
-    const result = await call(
-      this.#transport,
-      'getBlocks',
-      [Number(from), Number(to), { commitment }],
-      tags,
-    );
+    let result: unknown;
+    try {
+      result = await call(
+        this.#transport,
+        'getBlocks',
+        [Number(from), Number(to), { commitment }],
+        tags,
+      );
+    } catch (error) {
+      throw undecided(error, `the blocks from slot ${from}`);
+    }
     if (!Array.isArray(result) || result.length === 0) throw malformed('getBlocks');
     const slots = result.map((slot) => u64(slot, 'getBlocks slot'));
     for (let i = 0; i < slots.length; i++) {
@@ -7050,7 +7202,7 @@ export function createSolanaExt(ctx: SolanaContext): SolanaExt {
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `pnpm jest test/adapters/solana/heights.test.ts test/adapters/solana/reader.test.ts`
-Expected: PASS, 15 tests (6 + 9). "maps every height to its block, skipping empty slots", "refuses a list that leaves out a block, and caches nothing from it" and "answers a height a pruned endpoint no longer holds with a retryable error, in bounded calls" pin Review Focus 5.
+Expected: PASS, 16 tests (7 + 9). "maps every height to its block, skipping empty slots", "refuses a list that leaves out a block, and caches nothing from it" and "answers a height a pruned endpoint no longer holds with a retryable error, in bounded calls" pin Review Focus 5.
 
 - [ ] **Step 7: Check and commit**
 
@@ -8202,7 +8354,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Tasks 1–7; `ProofSource`, `BlockSource`, `AddressHistorySource`, `ChainDriver`, `DriverFactory`, `HealthProbes`, `EndpointCall`, `randomBytes`.
 - Produces:
-  - `proofs.ts`: `BLOCKHASH_VALIDITY = 150n`, `PEER_SKEW = 2n`, `windowOf(lastValidHeight)` → `{ first, end }` (`lastValidHeight − 149` … `lastValidHeight + 1`, I1); `createSolanaProofs(ctx)` (D6, D7): `finalizedHead`, `includedFinal` (a positive answer from the finalized `getTransaction`; a negative one only from the window scan, C1, remembered per driver), `slotConsumed` (always `false`), `expired`, `blockHash`; every proof read under `PROOF` tags; `createSolanaBlocks(ctx)`: `header(height)` (dense, `monitor`) and `transactions(block, filter?)` (the full `jsonParsed` block at `confirmed`, votes skipped, the superset address filter of Task 5, a changed block → retryable `PROVIDER_INCONSISTENT`, a pruned one → retryable `PROVIDER_UNAVAILABLE`).
+  - `proofs.ts`: `BLOCKHASH_VALIDITY = 150n`, `PEER_SKEW = 2n`, `windowOf(lastValidHeight)` → `{ first, end }` (`lastValidHeight − 149` … `lastValidHeight + 1`, I1); `createSolanaProofs(ctx)` (D6, D7): `finalizedHead`, `includedFinal` (a positive answer from the finalized `getTransaction`; a negative one only from the window scan, C1, remembered per driver), `slotConsumed` (always `false`), `expired`, `blockHash`; every proof read under `PROOF` tags; every method wrapped by `guarded` (lesson 18, widened: no RPC error leaves a proof method as anything but a retryable error, R1); `createSolanaBlocks(ctx)`: `header(height)` (dense, `monitor`) and `transactions(block, filter?)` (the full `jsonParsed` block at `confirmed`, votes skipped, the superset address filter of Task 5, a changed block → retryable `PROVIDER_INCONSISTENT`, a pruned one → retryable `PROVIDER_UNAVAILABLE`).
   - `history.ts`: `MAX_HISTORY_PAGE = 1_000`; `createSolanaHistory(ctx)` (D17; `-32020` → retryable, M2).
   - `driver.ts`: `solanaDriverFactory(makeCodec: (transport) => SolanaCodec): DriverFactory`: validates the network, calls `setProbes` exactly once on the transport and on the indexer before any traffic (identity `getGenesisHash`, height `getBlockHeight` at `confirmed`, R19, M12), builds the context (a random variant start), and assembles `{ ordering: 'expiry', capabilities, address, reader, builder, broadcaster, proofs, blocks, history, ext: { solana: { getTokenAccounts } }, limits: () => ({ maxOutputs: 1 }), createNativeClient }` (no `sequence`, no `replacement`).
   - `web3.ts`: `web3DriverFactory = solanaDriverFactory(createWeb3Codec)`, which Task 9's manifest `load()` returns (Plan 2 Task 9's shape: the factory lives in `driver.ts`; the client module exports `<library>DriverFactory`; `driver.ts` imports no client).
@@ -8211,6 +8363,8 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Lesson 17 final form: no endpoint proposes a height for a verdict. `expired` is one predicate read; a lagging peer throws a retryable `PROVIDER_INCONSISTENT`; an endpoint that has not finalized a block answers nothing and decides nothing.
 - Lesson 16 sharpened / C1: "not included" comes only from reading every block of the window (151 blocks, through `lastValidBlockHeight + 1`) under finality, each certifying its height and its parent; a lagging, pruned or gapped backend behind one load-balanced URL decides nothing; the tests use **one** endpoint (quorum 1). A block that holds the transaction while the index did not is `PROVIDER_INCONSISTENT`.
 - I1: a transaction included at `lastValidBlockHeight + 1` is proven included.
+- Lesson 18, widened (R1): only a definitive negative proof answers "no". Every other RPC error on a proof path (the index, the window list, a window block, a header, the finalized height, the block of a landed transfer; agave's `-32602 "BigTable query failed"` for an old window) is a retryable `PROVIDER_UNAVAILABLE`; `PROVIDER_MISCONFIGURED` and already-retryable errors pass unchanged.
+- R2: each one-endpoint C1 test fails against the old composition (index empty twice, finalized past `L`, the window's first block held): the lagging backends sit below the transaction's block, the gap is mid-window, and an index that hides a transaction every block serves is `PROVIDER_INCONSISTENT`.
 - Proven inclusion reads the transaction and its block at `finalized` under the quorum (lesson 2 keys), and applies the landing guard (lesson 7).
 - `setProbes` once per transport, before traffic (M12), pinned with a counting Proxy; the driver never reads `maxLagBlocks` (R36).
 - No request path waits on a real timer (lesson 1): a `setTimeout` spy and the 100-run step.
@@ -8610,17 +8764,28 @@ describe('Solana proofs', () => {
 
   describe('"not included" behind one URL (C1: one endpoint, quorum 1)', () => {
     it('never answers "not included" for a landed transfer when a backend lags', async () => {
-      const h = await driverFor([{ name: 'lb', backends: [{}, { lag: 20 }] }]);
+      // Two of three backends lag (the rotation then reaches a lagging one for both index
+      // reads of one proof, as the old composition needed to be fooled).
+      const h = await driverFor([
+        { name: 'lb', backends: [{}, { lag: 20 }, { lag: 20 }] },
+      ]);
       h.node.produce(2);
       const { raw, last, ordering } = heldBack(h);
       produceTo(h, last - 3n);
       const id = h.node.submit(raw);
       h.node.produce(1);
       expect(h.node.landed(id)?.block.height).toBe(last - 2n);
-      produceTo(h, last + 30n);
+      // The caught-up backend has finalized lastValid + 1; the lagging one only reaches
+      // lastValid − 19, below the transaction's block, so its index shows nothing.
+      produceTo(h, last + 3n);
       const answers = await verdicts(h, id, ordering);
       expect(answers).not.toContainEqual({ included: false });
-      expect(answers).toContainEqual(expect.objectContaining({ included: true }));
+      expect(answers).toContain('decides nothing');
+      // Once the lagging backend has finalized the block too, the transfer is proven.
+      produceTo(h, last + 30n);
+      expect(await verdicts(h, id, ordering)).toContainEqual(
+        expect.objectContaining({ included: true }),
+      );
     });
 
     it('never answers "not included" when a backend\'s ledger lacks the transaction\'s block', async () => {
@@ -8629,20 +8794,46 @@ describe('Solana proofs', () => {
       const balanced: bigint[] = [];
       for (const endpoint of [
         { name: 'gapped', missingHeights: single },
-        { name: 'lb', backends: [{}, { missingHeights: balanced }] },
+        // Behind a balancer the block lists can come from the whole backend, so only the
+        // window scan sees the gap; one gapped URL is also caught by the height index (I3).
+        {
+          name: 'lb',
+          backends: [{}, { missingHeights: balanced }, { missingHeights: balanced }],
+        },
       ]) {
         const h = await driverFor([endpoint]);
         h.node.produce(2);
         const { raw, last, ordering } = heldBack(h);
+        // Mid-window, away from the window's first and last blocks.
+        produceTo(h, last - 50n);
         const id = h.node.submit(raw);
         h.node.produce(1);
         const height = h.node.landed(id)?.block.height as bigint;
+        expect(height).toBe(last - 49n);
         single.push(height);
         balanced.push(height);
         produceTo(h, last + 5n);
         const answers = await verdicts(h, id, ordering);
         expect(answers).not.toContainEqual({ included: false });
+        expect(answers).toContain('decides nothing');
       }
+    });
+
+    it('never answers "not included" when the index hides a transaction the window holds', async () => {
+      const h = await driverFor(['main']);
+      h.node.produce(2);
+      const { raw, last, ordering } = heldBack(h);
+      produceTo(h, last - 50n);
+      const id = h.node.submit(raw);
+      h.node.produce(1);
+      produceTo(h, last + 3n);
+      // Every block is served; only the index answers "no such transaction".
+      h.node.intercept = (_endpoint, method) =>
+        method === 'getTransaction' ? { result: null } : undefined;
+      await expect(
+        h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+      expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
     });
 
     it('still proves an honest window without the transaction, once, and remembers it', async () => {
@@ -8678,6 +8869,95 @@ describe('Solana proofs', () => {
       ).toEqual({ included: false });
       expect(h.calls.map((c) => c.method)).toEqual(['getTransaction']);
     });
+  });
+
+  describe('no RPC error is a verdict (lesson 18, widened)', () => {
+    it('decides nothing when long-term storage fails below the local ledger', async () => {
+      // agave 4.3.0: getBlocks from below the local ledger answers -32602 "BigTable query
+      // failed", getBlock answers null, and the transaction is not found.
+      const h = await driverFor([{ name: 'bt', bigtableFailsBelow: 200n }]);
+      h.node.produce(2);
+      const { id, ordering } = transfer(h);
+      h.node.drop(id);
+      produceTo(h, 260n);
+      expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
+      const answers = await verdicts(h, id, ordering);
+      expect(answers).toEqual(Array(6).fill('decides nothing'));
+      expect(h.node.served.map((s) => s.method)).toContain('getBlocks');
+    });
+
+    it('decides nothing when the block of a landed transfer fails to load', async () => {
+      const h = await driverFor(['main']);
+      h.node.produce(2);
+      const { id, ordering } = transfer(h);
+      h.node.produce(5);
+      h.node.intercept = (_endpoint, method) =>
+        method === 'getBlock'
+          ? { error: { code: -32603, message: 'Internal error' } }
+          : undefined;
+      await expect(
+        h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      h.node.intercept = undefined;
+      expect(
+        await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).toMatchObject({ included: true, success: true });
+    });
+
+    const failing: readonly [
+      string,
+      (method: string, params: readonly unknown[]) => boolean,
+    ][] = [
+      ['the index (getTransaction)', (method) => method === 'getTransaction'],
+      [
+        'the window list (getBlocks)',
+        (method, params) =>
+          method === 'getBlocks' &&
+          (params[2] as { minContextSlot?: number }).minContextSlot !== undefined,
+      ],
+      [
+        'a block of the window (getBlock)',
+        (method, params) =>
+          method === 'getBlock' &&
+          (params[1] as { transactionDetails?: string }).transactionDetails ===
+            'signatures',
+      ],
+      [
+        'the height index (getBlocks)',
+        (method, params) =>
+          method === 'getBlocks' &&
+          (params[2] as { minContextSlot?: number }).minContextSlot === undefined,
+      ],
+      ['a block header (getBlock)', (method) => method === 'getBlock'],
+      [
+        'the finalized height (getBlockHeight)',
+        // Not the health probe, which reads the confirmed height.
+        (method, params) =>
+          method === 'getBlockHeight' &&
+          (params[0] as { commitment?: string }).commitment === 'finalized',
+      ],
+    ];
+    it.each(failing)(
+      'turns a definitive error from %s into a retryable PROVIDER_UNAVAILABLE',
+      async (_what, fails) => {
+        const h = await driverFor(['main']);
+        h.node.produce(2);
+        const { id, ordering } = transfer(h);
+        h.node.drop(id);
+        produceTo(h, 160n);
+        h.node.intercept = (_endpoint, method, params) =>
+          fails(method, params)
+            ? { error: { code: -32603, message: 'Internal error' } }
+            : undefined;
+        await expect(
+          h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+        ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+        h.node.intercept = undefined;
+        expect(
+          await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+        ).toEqual({ included: false });
+      },
+    );
   });
 
   it('serves block hashes by level, null above the head or the finalized block (R33)', async () => {
@@ -8888,6 +9168,9 @@ Expected: FAIL: TypeScript reports that `'../../../src/adapters/solana/web3'` ha
  * under finality: each block certifies its own height and its parent's hash, so a lagging,
  * pruned, snapshot-jumped or long-term-storage-gapped backend behind a load-balanced URL
  * can only answer "not available" (decides nothing), never a short window (C1).
+ *
+ * Lesson 18, widened: only a definitive negative proof answers "no". Every other RPC error
+ * on these paths decides nothing (`undecided`: a retryable `PROVIDER_UNAVAILABLE`).
  */
 import type { BlockSource, DriverBlock, ProofSource } from '../../core/driver/types';
 import {
@@ -8916,6 +9199,7 @@ import {
   parsedOptions,
   pick,
   u64,
+  undecided,
   type BlockHeader,
 } from './rpc';
 import type { Commitment } from './types';
@@ -9002,7 +9286,7 @@ async function attestedBlock(
       throw inconsistent(`slot ${slot} holds no block`);
     }
     if (isNotAvailable(error)) return null;
-    throw error;
+    throw undecided(error, `the block at height ${height}`);
   }
   if (result === null) return null;
   const header = blockHeader(result);
@@ -9048,7 +9332,7 @@ async function absentFromWindow(
     );
   } catch (error) {
     if (isNotAvailable(error)) throw notYet('every block of the window');
-    throw error;
+    throw undecided(error, 'every block of the window');
   }
   if (!Array.isArray(listed) || BigInt(listed.length) !== end - first + 1n) {
     throw notYet('every block of the window');
@@ -9076,7 +9360,7 @@ async function absentFromWindow(
       );
     } catch (error) {
       if (isNotAvailable(error)) throw notYet('a block of the window');
-      throw error;
+      throw undecided(error, 'a block of the window');
     }
     const found = holds(block);
     if (found === null) throw notYet('a block of the window');
@@ -9107,8 +9391,21 @@ async function finalTransaction(ctx: SolanaContext, signature: string): Promise<
     );
   } catch (error) {
     if (isNotAvailable(error)) throw notYet('the transaction history');
-    throw error;
+    throw undecided(error, 'the transaction history');
   }
+}
+
+/** Lesson 18, widened: whatever a proof method meets, no RPC error is ever a verdict. */
+function guarded<A extends unknown[], R>(
+  method: (...args: A) => Promise<R>,
+): (...args: A) => Promise<R> {
+  return async (...args) => {
+    try {
+      return await method(...args);
+    } catch (error) {
+      throw undecided(error, 'the proof');
+    }
+  };
 }
 
 export function createSolanaProofs(ctx: SolanaContext): ProofSource {
@@ -9128,7 +9425,7 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
       );
       header = block === null ? null : blockHeader(block);
     } catch (error) {
-      if (!isNotAvailable(error)) throw error;
+      if (!isNotAvailable(error)) throw undecided(error, 'the block of the transaction');
       header = null;
     }
     if (!header) throw notYet('the block of the transaction');
@@ -9142,7 +9439,7 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
     };
   };
 
-  return {
+  const proofs: ProofSource = {
     async finalizedHead() {
       // The one unanchored head (lesson 17): one endpoint's view, trailed by a peer skew.
       const seen = await finalizedHeight(ctx);
@@ -9205,6 +9502,13 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
       );
       return block?.header.blockhash ?? null;
     },
+  };
+  return {
+    finalizedHead: guarded(proofs.finalizedHead),
+    includedFinal: guarded(proofs.includedFinal),
+    slotConsumed: guarded(proofs.slotConsumed),
+    expired: guarded(proofs.expired),
+    blockHash: guarded(proofs.blockHash),
   };
 }
 
@@ -9437,7 +9741,7 @@ export const web3DriverFactory = solanaDriverFactory(createWeb3Codec);
 - [ ] **Step 6: Run the test to verify it passes**
 
 Run: `pnpm jest test/adapters/solana/driver.test.ts`
-Expected: PASS, 18 tests. The three "not included behind one URL" tests, "proves a transfer included at lastValidBlockHeight + 1 as included, never absent", "answers "not included" only past the window…" and "attests expiry with a predicate at its own height" pin Review Focus 1; "agrees across formatting differences and decides nothing on a different fact" pins Review Focus 2; "scans dense heights over skipped slots, filtered by address, without votes" pins Review Focus 5; "returns a transaction whose deposit it cannot attribute" pins I4.
+Expected: PASS, 27 tests. The four "not included behind one URL" tests, "proves a transfer included at lastValidBlockHeight + 1 as included, never absent", "answers "not included" only past the window…" and "attests expiry with a predicate at its own height" pin Review Focus 1; "agrees across formatting differences and decides nothing on a different fact" pins Review Focus 2; "scans dense heights over skipped slots, filtered by address, without votes" pins Review Focus 5; "returns a transaction whose deposit it cannot attribute" pins I4; the "no RPC error is a verdict" tests (eight) pin R1.
 
 - [ ] **Step 7: Prove determinism (lesson 1)**
 
@@ -10972,7 +11276,7 @@ Expected: both files use Prettier code style; TypeDoc reports 0 errors and 0 war
 - [ ] **Step 3: Run the whole branch's checks**
 
 Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm doc`
-Expected: all green: the earlier suites plus the new ones (140 new tests, 136 if Plan 2.5 already delivered Task 0's four), 1 Solana integration test skipped, `dist/adapters/solana/` built, TypeDoc clean. During authoring, on Plan 2's `7bec7eb`: 1,152 passed and 1 skipped.
+Expected: all green: the earlier suites plus the new ones (152 new tests, 148 if Plan 2.5 already delivered Task 0's four), 1 Solana integration test skipped, `dist/adapters/solana/` built, TypeDoc clean. During authoring, on Plan 2's `7bec7eb`: 1,164 passed and 1 skipped.
 
 - [ ] **Step 4: Commit**
 
@@ -11002,10 +11306,10 @@ Each risk names the protocol pitfall and where the plan handles it.
 | **`jsonParsed` differences across providers** | Honest providers differ in `uiAmount` (float or `null`), `owner`/`programId` on token balances, `stackHeight`, `costUnits`, logs, `blockTime`; a whole-object quorum would never agree. | Quorum keys compare only the facts a verdict reads (lesson 2): slot, error, signatures, keys, token amounts, token-transfer instructions. Pinned: Task 2, Task 8 (Review Focus 2). |
 | **Skipped slots and dense heights** | Slots are not heights; a scanner or confirmation count over slots would see gaps or skip blocks. | Block heights everywhere; the height index maps them to slots (D4). Pinned: Task 6, Task 8 (Review Focus 5). |
 | **u64 lamports as JSON numbers** | Balances above 2^53 − 1 lamports are rounded by `JSON.parse`. | Every call sets `exactIntegers` (Task 0, D19); a rounded number is refused. Pinned: Tasks 0, 2, 5, 6. |
-| **Pruned ledgers, snapshot jumps and history gaps** | An endpoint without transaction history, with a pruned ledger (Ankr keeps about 16 hours), started from a snapshot, or with a long-term-storage gap answers `null` for a transaction that did land, and its `getBlocks` lists can skip heights. | "Gone" codes decide nothing (D4); a `getBlocks` page is believed only after its first block's height is read (I3); "not included" reads every block of the window (D7), so a gapped backend yields "not available", never `{ included: false }`. History ends at the provider's retention (guide). Pinned: Task 6 (the gap and pruned-endpoint tests), Task 8 (one gapped endpoint, single and load-balanced). |
-| **Phantom success** | A node answer that says a token transfer succeeded while the balances do not show it. | The landing guard on verdict paths (D14): a token transfer from the sender's account to the recipient's, of any positive amount; seeing no such transfer never passes; missing token balances or keys decide nothing (retryable), never a proven `failed`. General decoding reports the chain's own status. Pinned: Task 5 ("needs a transfer from the sender to the recipient of a positive amount, not the exact one", "decides nothing on missing evidence"). |
+| **Pruned ledgers, snapshot jumps and history gaps** | An endpoint without transaction history, with a pruned ledger (Ankr keeps about 16 hours), started from a snapshot, or with a long-term-storage gap answers `null` for a transaction that did land, and its `getBlocks` lists can skip heights. | "Gone" codes decide nothing (D4); a `getBlocks` page is believed only after its first block's height is read (I3); "not included" reads every block of the window (D7), so a gapped backend yields "not available", never `{ included: false }`. Any other RPC error on a proof path, such as agave's `-32602 "BigTable query failed"` for a window below a backend's local ledger, decides nothing too (lesson 18 widened, R1). History ends at the provider's retention (guide). Pinned: Task 4 (the BigTable model), Task 6 (the gap, pruned-endpoint and lesson 18 tests), Task 8 (one gapped endpoint, single and load-balanced; "no RPC error is a verdict"). |
+| **Phantom success** | A node answer that says a token transfer succeeded while the balances do not show it. | The landing guard on verdict paths (D14): a token transfer from the sender's account to the recipient's, of any positive amount; seeing no such transfer never passes; missing token balances or keys, and token instructions of which none is the sender's (a contradiction of the signed message, R3), decide nothing (retryable), never a proven `failed`. General decoding reports the chain's own status. Pinned: Task 5 ("needs a transfer from the sender to the recipient of a positive amount, not the exact one", "decides nothing on missing or contradictory evidence"). |
 | **Load-balanced endpoints** | `api.mainnet.solana.com` and every provider URL are load-balanced: consecutive reads may reach different backends, one lagging, pruned or gapped, so an endpoint is not monotone and one "held" block says nothing about the next read. | A positive verdict is one quorum read of a fixed fact; "not included" is a chain of self-certifying block reads, each of which can only fail to decide (D7); single reads only feed observed (non-terminal) states and the stale-view guard. With one URL, everything that URL answers is trusted, so the guide advises two independent providers. Pinned: Task 4 (the balanced node model), Task 8 (one load-balanced endpoint with a gapped backend never yields `{ included: false }` or a proven `expired`). |
-| **Scan filters that drop deposits** | A block scan that keeps only transactions it can attribute to a watched address would miss a deposit whose token owner is not in the balances or whose instruction is not parsed. | The filter is a superset (I4): a named transfer, a lamport change on a watched key, a token balance change whose owner is watched or missing, or any partly decoded transaction with a watched key; what cannot be attributed is reported as `partial`, never dropped. Pinned: Task 5, Task 8. |
+| **Scan filters that drop deposits** | A block scan that keeps only transactions it can attribute to a watched address would miss a deposit whose token owner is not in the balances or whose instruction is not parsed. | The filter is a superset (I4): a named transfer, a lamport change on a watched key, a token balance change whose owner is watched or missing, a token program that ran when the node reported no token balances (R4), or any partly decoded transaction with a watched key; what cannot be attributed is reported as `partial`, never dropped. Pinned: Task 5 ("keeps a deposit it cannot attribute…", "keeps an SPL deposit when the node reports no token balances"), Task 8. |
 
 ## Unresolved assumptions
 
@@ -11014,6 +11318,7 @@ Each item gives the default chosen and what it costs if wrong.
 - **One provider is trusted for everything it answers (D7, A14).** The window scan makes every lagging, pruned or gapped backend fail to decide, but a provider that serves a well-formed, self-consistent block without a transaction it did include cannot be caught by reading it alone. Default: the proof quorum (A14 keeps a height liar from shrinking it), and the guide advises two independent providers for proven expiry. Cost if wrong: with one dishonest provider, a proven `expired` for a transaction that landed.
 - **Provider retention.** Ankr documents a ledger of about 100 M slots (about 16 hours); Infura's Solana access is limited to select customers; others vary. Default: a read below a provider's retention is "gone" and decides nothing (D4, D7), and history ends there (guide). Cost: an `expired` proof, or a scan, older than the retention waits until the user adds an archival provider.
 - **`getTransaction` ignores `minContextSlot` on agave 4.3.0** (verified live; `getBlocks` honours it). Default: nothing relies on it; `getBlocks` sets it as a cheap first filter, and the block reads self-certify. Cost: none.
+- **Long-term storage failing near a backend's local ledger (R1).** agave 4.3.0 serves `getBlocks` from below its local ledger through long-term storage; when that fails (`-32602`), a height-index page that starts below the ledger fails too, even for a height just above it (a page reaches about 64 slots plus a quarter of the distance below the target). Default: it decides nothing (retryable), and a second provider or a later retry answers. Cost: liveness only, for heights near one backend's retention.
 - **Health probes and rate limits (A17).** Until Plan 2.5's A17 lands, probes do not wait for a public endpoint's rate limit. Default: Task 11 pauses 2 s between steps. Cost: a flaky live run, never CI.
 - **Priority-fee percentiles and the compute margin** (D9) are library policy, not chain facts; a congested account may need `fast` or an explicit price. Cost: an Attempt expires unlanded and needs `rebuild`.
 - **A simulation failure uses the runtime default limit** (200,000 per instruction). Cost: a higher priority fee for such a transfer (the price is usually 0 in that case).
@@ -11072,6 +11377,7 @@ Every item below was checked against the named source while this plan was writte
 | Rent-exempt minimums (today) | 650,240 lamports for 0 bytes, 1,488,440 for 165, 1,066,800 for 82 (= (128 + bytes) × 5,080) | live `getMinimumBalanceForRentExemption` on devnet (0, 82, 165) and mainnet (0) |
 | Error texts | `TransactionError` and `InstructionError` displays; sendTransaction's "Transaction simulation failed: {err}" | https://github.com/anza-xyz/solana-sdk (`transaction-error/src/lib.rs`, `instruction-error/src/lib.rs`), https://github.com/anza-xyz/agave (`rpc/src/rpc.rs`); live devnet answers for blockhash-not-found, signature failure and undeserializable bytes |
 | JSON-RPC server codes | `-32001` cleaned up, `-32002` preflight failure, `-32003` signature verification (older agave; 4.3.0 reports it under `-32002`), `-32004` block not available, `-32005` node unhealthy, `-32007` slot skipped or missing after a ledger jump to a snapshot, `-32009` slot skipped or missing in long-term storage, `-32011` history not available, `-32014` status not yet available, `-32016` min context slot, `-32019` long-term storage unreachable, `-32020` transaction not found (an unknown `before` cursor) | https://github.com/anza-xyz/agave/blob/master/rpc-client-api/src/custom_error.rs; live devnet: `getSignaturesForAddress` with an unknown `before` → `-32020 "Transaction … not found"` |
+| Long-term storage failures | `getBlocks` from a slot below the local ledger, when the BigTable read fails: `-32602 "BigTable query failed (maybe timeout due to too large range?)"`; a blockstore iterator error: `-32603`; `getBlock` on a BigTable error other than "block not found": `null` | agave `v4.3.0` `rpc/src/rpc.rs` (`get_blocks`: `start_slot < lowest_blockstore_slot` → `bigtable_ledger_storage.get_confirmed_blocks(…).map_err(… invalid_params("BigTable query failed …"))`, `rooted_slot_iterator(…).map_err(… internal_error())`; `check_bigtable_result` maps only `BlockNotFound` to `-32009`) |
 | `minContextSlot` | `getBlocks` honours it (`-32016 "Minimum context slot has not been reached"`); `getTransaction` on agave 4.3.0 ignores it and returns the transaction | live devnet, 26 September 2026 (agave 4.3.0) |
 | `skipPreflight` with a bad signature | returns the signature; the leader drops the bytes (M1) | agave `v4.3.0` `rpc/src/rpc.rs` `send_transaction` (signatures verified only without `skip_preflight`); pre-flight review, live devnet |
 | RPC limits | `getBlocks` range 500,000 slots; `getSignaturesForAddress` limit 1,000 | https://github.com/anza-xyz/agave/blob/master/rpc-client-types/src/request.rs |
@@ -11089,11 +11395,11 @@ Every item below was checked against the named source while this plan was writte
 
 ## Appendix C: How this plan was validated
 
-- Every code block was written and run in a scratch copy of Plan 2's final tree (`git archive` of `feat/plan-2-evm` at `7bec7eb`, whose own suite is 1,012 tests), with `@solana/web3.js` 1.99.0 and the uuid override installed (`.superpowers/scratch/repo2`, git-ignored). The final state: `tsc --noEmit` clean, ESLint clean, `pnpm doc` 0 warnings, the whole suite 1,153 tests (1,152 passed, 1 integration skipped), `dist/index.d.ts` names no SDK and `dist/index.js` loads none.
-- The tasks were replayed in order on a fresh copy of that baseline (`replay2.sh`): after each task the tree typechecked, linted and every test so far passed (new tests: Task 0: 4, 1: 12, 2: 26, 3: 5, 4: 11, 5: 11, 6: 15, 7: 12, 8: 18, 9: 11 plus the extended augmentation suite, 10: 15; Task 11: 1 skipped).
+- Every code block was written and run in a scratch copy of Plan 2's final tree (`git archive` of `feat/plan-2-evm` at `7bec7eb`, whose own suite is 1,012 tests), with `@solana/web3.js` 1.99.0 and the uuid override installed (`.superpowers/scratch/repo2`, git-ignored). The final state: `tsc --noEmit` clean, ESLint clean, `pnpm doc` 0 warnings, the whole suite 1,165 tests (1,164 passed, 1 integration skipped), `dist/index.d.ts` names no SDK and `dist/index.js` loads none.
+- The tasks were replayed in order on a fresh copy of that baseline (`replay2.sh`): after each task the tree typechecked, linted and every test so far passed (new tests: Task 0: 4, 1: 12, 2: 26, 3: 5, 4: 12, 5: 12, 6: 16, 7: 12, 8: 27, 9: 11 plus the extended augmentation suite, 10: 15; Task 11: 1 skipped).
 - Task 0's textual edit steps, applied to Plan 2's files and formatted with Prettier, reproduce the validated `json.ts`, `types.ts` and `http-transport.ts` byte for byte.
 - The dependency step was replayed with pnpm 10.5.2 in a copy of `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml`: the lockfile records the override, `rpc-websockets@9.3.9` resolves `uuid@11.1.1`, and `pnpm install --frozen-lockfile` succeeds.
 - The driver, codec and end-to-end suites passed 100 consecutive runs.
-- A mutation check: restoring the old "one held block proves coverage" composition fails two of Task 8's one-endpoint tests.
+- Mutation checks (re-review R2, R1, R3, R4): restoring the old composition (index empty twice, finalized past `L`, the window's first block held) fails every one of Task 8's one-endpoint C1 tests (the lag, gap and hidden-index tests answer `{ included: false }`; the honest-window test sees no block reads); making `undecided` a no-op fails all nine lesson 18 tests in Tasks 6 and 8; restoring `false` for a sender-less token answer and dropping the no-balances rule fails the two Task 5 tests that pin them.
 - The integration test passed live against mainnet, devnet and testnet (agave 4.3.0).
 - `src/testing/generation.ts` is Plan 2's own file (Task 11, at `7bec7eb`); the crash tests never close a killed container and pin that a call on the dead handle never settles.
