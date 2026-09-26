@@ -68,6 +68,10 @@ nonce ordering, the `secp256k1-ecdsa` scheme, and per network the decimal chain 
 `identity`, an `evm-1559` or `evm-legacy` fee model, and `finalized`-tag or confirmation
 finality. A network removes the capabilities it lacks: `finality-tag` without the tag,
 `fee-market-1559` on `evm-legacy`, and `replace-fee` and `cancel` without a mempool.
+Optional network `params` describe the chain further: `minPriorityFeePerGas` (a bigint tip
+floor), `l1DataFee: 'op-stack'` (transactions also pay an OP Stack L1 data fee), and
+`systemLogs: 'bor'` (a bor client's system logs on every receipt, as on Polygon PoS, which
+a plain transfer then ignores).
 
 ```ts
 import { CryptoAio, type ChainInfo } from 'crypto-aio';

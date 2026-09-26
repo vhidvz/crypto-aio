@@ -32,7 +32,10 @@ export interface EvmNetworkConfig {
   readonly minPriorityFeePerGas: bigint;
   /** OP Stack: transactions also pay an L1 data fee (`GasPriceOracle.getL1Fee`). */
   readonly l1DataFee: boolean;
-  /** Polygon PoS: receipts carry bor's `POLYGON_FEE_LOG` and `POLYGON_TRANSFER_LOG`. */
+  /**
+   * bor-based networks (`params.systemLogs: 'bor'`, as on Polygon PoS): receipts carry bor's
+   * `POLYGON_FEE_LOG` and `POLYGON_TRANSFER_LOG`.
+   */
   readonly polygonSystemLogs: boolean;
   readonly capabilities: ReadonlySet<Capability>;
 }
@@ -118,6 +121,10 @@ export function evmNetworkConfig(
   if (params.l1DataFee !== undefined && params.l1DataFee !== 'op-stack') {
     fail(`params.l1DataFee must be 'op-stack'`);
   }
+  // M7: data, not the chain id, so a bor chain served through evmChainPlugin can opt in.
+  if (params.systemLogs !== undefined && params.systemLogs !== 'bor') {
+    fail(`params.systemLogs must be 'bor'`);
+  }
   const replaces = capabilities.has('replace-fee') || capabilities.has('cancel');
   return {
     chainId: BigInt(network.identity as string),
@@ -126,7 +133,7 @@ export function evmNetworkConfig(
     ...(replaces ? { minBumpPercent: network.replacement?.minBumpPercent ?? 10 } : {}),
     minPriorityFeePerGas: (minTip as bigint | undefined) ?? 0n,
     l1DataFee: params.l1DataFee === 'op-stack',
-    polygonSystemLogs: chain.id === 'polygon',
+    polygonSystemLogs: params.systemLogs === 'bor',
     capabilities,
   };
 }

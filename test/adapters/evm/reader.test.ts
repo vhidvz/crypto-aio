@@ -147,6 +147,26 @@ describe('EVM network config', () => {
           chain.id === 'polygon',
         );
   });
+
+  it("takes bor's system logs from network data, so a custom chain can opt in (R91 M7)", () => {
+    const polygon = EVM_CHAINS.find((c) => c.id === 'polygon') as ChainInfo;
+    const amoy = polygon.networks.amoy as NetworkInfo;
+    expect(amoy.params).toEqual({ systemLogs: 'bor' });
+    // Served through evmChainPlugin under another id, a bor chain keeps them.
+    const bor: ChainInfo = { ...polygon, id: 'borchain' };
+    expect(evmNetworkConfig(bor, amoy).polygonSystemLogs).toBe(true);
+    expect(evmNetworkConfig(polygon, { ...amoy, params: {} }).polygonSystemLogs).toBe(
+      false,
+    );
+    expect(() =>
+      evmNetworkConfig(bor, { ...amoy, params: { systemLogs: 'heimdall' } }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_INVALID',
+        message: `EVM network borchain:amoy: params.systemLogs must be 'bor'`,
+      }),
+    );
+  });
 });
 
 describe('EVM call tags', () => {

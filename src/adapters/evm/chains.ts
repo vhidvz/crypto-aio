@@ -143,6 +143,8 @@ export const EVM_CHAINS: readonly ChainInfo[] = deepFreeze([
     symbol: 'POL',
     name: 'POL',
     feeModel: 'evm-1559',
+    // bor, Polygon PoS's client, adds system logs to receipts (R69, R70).
+    params: { systemLogs: 'bor' },
     networks: [
       {
         id: 'mainnet',

@@ -76,8 +76,11 @@ describe('EVM chain data', () => {
     });
     expect(net('arbitrum').replacement).toBeUndefined();
     expect(net('arbitrum').capabilities).toEqual({ remove: ['replace-fee', 'cancel'] });
-    expect(net('polygon').params).toEqual({ minPriorityFeePerGas: 25_000_000_000n });
-    expect(net('polygon', 'amoy').params).toBeUndefined();
+    expect(net('polygon').params).toEqual({
+      systemLogs: 'bor',
+      minPriorityFeePerGas: 25_000_000_000n,
+    });
+    expect(net('polygon', 'amoy').params).toEqual({ systemLogs: 'bor' });
     for (const chain of ['optimism', 'base']) {
       for (const network of ['mainnet', 'sepolia'])
         expect(net(chain, network).params).toEqual({ l1DataFee: 'op-stack' });
