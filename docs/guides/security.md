@@ -165,7 +165,7 @@ own is operational, and the `nonce.allocated` and `nonce.gap` events carry it.
 ```ts
 import { native } from 'crypto-aio/native';
 
-const client = await native(env.bc, 'fake-sdk'); // planned: native(eth, 'ethers')
+const client = await native(env.bc, 'fake-sdk'); // on EVM: native(eth, 'ethers')
 ```
 
 - Each handle gets **its own** SDK client, built on the first call. Later calls on the same
@@ -174,6 +174,11 @@ const client = await native(env.bc, 'fake-sdk'); // planned: native(eth, 'ethers
 - It is typed through `NativeClientMap`, which each adapter augments. The library name must
   match the handle's (`INCOMPATIBLE_SELECTION` otherwise). A driver without a native client
   throws `UNSUPPORTED_CAPABILITY`.
+- On EVM, `native(bc, 'ethers')` returns an ethers `JsonRpcApiProvider` and
+  `native(bc, 'web3')` a `Web3` instance, both wired to the handle's transport, so they never
+  see the real URL. Import `crypto-aio/evm` once to type them. Its declarations name both
+  SDKs' types, so with only one SDK installed, keep `skipLibCheck: true` (the `tsc --init`
+  default) or install the other SDK too.
 - The root container's `close()` closes every native client handed out, once, then the
   driver pool. A client that fails to close is logged by error code only. After that,
   `native()` and the handle's methods throw `INVALID_TRANSITION`.

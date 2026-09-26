@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The EVM family, built in: Ethereum (mainnet, Sepolia, Hoodi), BNB Smart Chain, Polygon,
+  Avalanche C-Chain, Arbitrum, Optimism and Base, with ethers 6 (the default) or web3 4 as
+  optional peer dependencies. A missing SDK fails with `DEPENDENCY_MISSING` and the install
+  command.
+- Native and ERC-20 transfers with `evm-1559` or `evm-legacy` fees per network, the OP Stack
+  L1 data fee as an `l1-data` charge, nonce ordering, and same-nonce replace and cancel
+  (except on Arbitrum, which has no mempool).
+- Finality from the `finalized` tag, or from confirmations; proofs under the proof quorum,
+  including `blockHash`; block scanning of native transfers and ERC-20 `Transfer` logs.
+- The `public`, `alchemy`, `infura` and `ankr` provider presets, and USDT and USDC by alias.
+- The `crypto-aio/evm` entry: `evmChainPlugin` for EVM chains of your own, registered as
+  `evm:<name>`, and the SDK types for `native(bc, 'ethers')` and `native(bc, 'web3')`.
+- `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
+  result that the key returns.
+
+### Changed
+
+- `DEPENDENCY_MISSING` carries the original error as its `cause`, and a missing module that
+  is not a peer dependency keeps its own error instead of being reported as a missing SDK.
+- A token's own permanent metadata failure (a non-retryable `ASSET_RESOLUTION`) is cached per
+  container; any other failure is looked up again.
+- Closing a container waits at most 5 seconds for each native client to close.
+- `getNetworkStatus()` never reports a finalized height above the head height.
+
 ## [0.1.0] - Unreleased
 
 ### Security

@@ -1,11 +1,11 @@
 ---
-summary: Install crypto-aio and run a first transfer on the fake chain in 5 minutes.
+summary: Install crypto-aio, run a first transfer on the fake chain in 5 minutes, and configure a real EVM network.
 ---
 
 # Quick start
 
 This page takes about 5 minutes. You install the package, run a transfer to proven finality
-on the fake chain, and see how a real network will be configured.
+on the fake chain, and configure a real EVM network.
 
 ## Install
 
@@ -20,11 +20,13 @@ cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<ve
 npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` is enough. The package has three entry
-points:
+Once 0.1.0 is published, `npm install crypto-aio` is enough. Install only the SDK you use
+next to it, for example `npm install ethers` for EVM chains. A missing SDK fails with
+`DEPENDENCY_MISSING` and the exact install command. The package has four entry points:
 
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
+import { evmChainPlugin } from 'crypto-aio/evm'; // EVM extras and SDK client types
 import { createFakeEnv } from 'crypto-aio/testing'; // test kit and the fake chain
 import { native } from 'crypto-aio/native'; // escape hatch to the SDK client
 ```
@@ -103,17 +105,15 @@ What happened:
   chain data, read with a proof quorum: by default, two healthy endpoints must agree when two
   exist. The fake env has one endpoint.
 
-## Configuring a real network (planned)
+## Configuring a real network (EVM)
 
-> **Shape of the API once the adapter ships (planned).** No real chain family ships today.
-> The EVM family (ethers, web3) is the next one planned. This code does not run yet.
-
-In production, you configure the default container once at startup with `configure`, or
-you create one `new CryptoAio({ namespace })` per tenant. API keys and private keys go in a
-`Secret`, so they never appear in logs, errors or events. Only in-memory stores ship, so
-production also needs your own durable `OperationStore`, `LockManager`, `SequenceStore` and
-`CursorStore`, passed as `stores` and validated with the contract suites in
-`crypto-aio/testing` ([how](./networks.md#testing-an-adapter-or-a-store)).
+The EVM family ships with ethers (the default library) and web3. In production, you
+configure the default container once at startup with `configure`, or you create one
+`new CryptoAio({ namespace })` per tenant. API keys and private keys go in a `Secret`, so
+they never appear in logs, errors or events. Only in-memory stores ship, so production also
+needs your own durable `OperationStore`, `LockManager`, `SequenceStore` and `CursorStore`,
+passed as `stores` and validated with the contract suites in `crypto-aio/testing`
+([how](./networks.md#testing-an-adapter-or-a-store)).
 
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
@@ -121,13 +121,16 @@ import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
 configure({
   providers: {
     alchemy: { preset: 'alchemy', apiKey: secret(process.env.ALCHEMY_KEY ?? '') },
+    infura: { preset: 'infura', apiKey: secret(process.env.INFURA_KEY ?? '') },
   },
   signers: {
     'hot-1': localSigner({ id: 'hot-1', secp256k1: secret(process.env.HOT_KEY ?? '') }),
   },
   wallets: { 'wallet-main': { signer: 'hot-1', tier: 'hot' } },
   chains: {
-    ethereum: { network: 'mainnet', library: 'ethers', provider: 'alchemy', wallet: 'wallet-main' },
+    ethereum: {
+      network: 'mainnet', library: 'ethers', provider: ['alchemy', 'infura'], wallet: 'wallet-main',
+    },
   },
   lifecycle: { requireIdempotencyKey: true },
 });
@@ -136,13 +139,26 @@ const eth = Blockchain.create({ chain: 'ethereum' });
 await eth.ready(); // loads the adapter and checks the provider serves the right network
 ```
 
-The names `ethereum`, `ethers` and `alchemy` are provisional. The EVM adapter's release fixes
-the final chain ids, preset names and preset URLs.
+Two providers let proofs cross-check: by default, two healthy endpoints must agree before
+the library proves finality or a failure. With one endpoint, the proof quorum is 1.
 
-The configuration shape itself works today. The fake chain takes the same `providers`,
-`signers`, `wallets`, `chains` and `lifecycle` keys; step 10 of
-[the tutorial](./tutorial.md#step-10-secrets-never-leak) sets `providers` and `chains` by hand.
-What is missing is the `ethereum` chain, its driver and the `alchemy` preset.
+The chains are `ethereum` (`mainnet`, `sepolia`, `hoodi`), `bsc` (`mainnet`, `testnet`),
+`polygon` (`mainnet`, `amoy`), `avalanche` (`mainnet`, `fuji`), `arbitrum`, `optimism` and
+`base` (`mainnet`, `sepolia`). The presets are `alchemy`, `infura` and `ankr` (with an
+`apiKey`), and `public` for the operator-run endpoints some chains document. `public` is not
+for production; a handle with no provider configured falls back to it where it serves the
+network, with a logged warning. [Using any blockchain network](./networks.md#evm-networks)
+lists what each network supports.
+
+A first read needs no key and no signer:
+
+```ts
+const fuji = Blockchain.create({ chain: 'avalanche', network: 'fuji', provider: 'public' });
+await fuji.getBlockHeight();
+```
+
+From there, `transfer`, `waitForConfirmation` and `scanner` work as on the fake chain.
+`amount: '0.01'` means 0.01 ETH on `ethereum`, and `asset: 'USDC'` sends USDC on mainnet.
 
 ## Next steps
 
@@ -150,4 +166,5 @@ What is missing is the `ethereum` chain, its driver and the `alchemy` preset.
 - [Tutorial](./tutorial.md): ten short, hands-on steps that exercise the main concepts.
 - [Sending and receiving](./transactions.md): withdrawals, deposits, and error handling.
 - [Keys, signers and secrets](./security.md): signers, policy hooks, and a production checklist.
-- [Using any blockchain network](./networks.md): how networks are added, and what is planned.
+- [Using any blockchain network](./networks.md): the EVM networks, adding your own, and what
+  is planned.

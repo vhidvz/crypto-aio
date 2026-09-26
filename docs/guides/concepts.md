@@ -6,7 +6,7 @@ summary: The vocabulary of crypto-aio, with a small example for each term.
 
 This page defines the terms the other guides use. The examples use a fake-chain handle
 `bc = env.bc` from `createFakeEnv()`; wrap each awaited call in `env.run(...)`, as the
-[tutorial](./tutorial.md) shows. Examples for real networks are marked planned.
+[tutorial](./tutorial.md) shows. Real-network examples use the EVM family.
 
 ## The layers
 
@@ -36,8 +36,9 @@ never imports a blockchain SDK. Only drivers do, and they are loaded on first us
 ## Chain, network and library
 
 A **chain** is a blockchain id from the registry. A **network** is one of its deployments.
-A **library** is the SDK the driver uses. A handle is bound to one of each. Today only the fake
-chains exist. Planned examples are `ethereum` with `mainnet` and `ethers`.
+A **library** is the SDK the driver uses. A handle is bound to one of each. The built-in
+chains are the EVM chains, such as `ethereum` with `mainnet` and `ethers`; the fake chains
+come from `crypto-aio/testing`.
 
 ```ts
 [bc.chain, bc.network, bc.library]; // ['fakechain', 'local', 'fake-sdk']
@@ -52,7 +53,8 @@ endpoint, health and identity checks, and quorum reads for proofs. SDKs never se
 An endpoint more than `maxLagBlocks` behind the best known height is lagging, and the
 monitor and scanner never decide anything from a view that far behind. The tolerance comes
 from `chains.<id>.maxLagBlocks`, then the root `transport.maxLagBlocks`, then the network's
-own value, then the built-in default of 5.
+own value, then the built-in default of 5. The BSC, Arbitrum, OP and Base mainnets set about
+60 s of blocks (134, 240, 30 and 30); set your own for fast testnets with several endpoints.
 
 ```ts
 const aio = new CryptoAio({
@@ -78,7 +80,7 @@ const me = await bc.walletAddress(); // an Address; me.canonical === 'fk1…'
 ## Asset and Amount
 
 An **asset** is identified by an `AssetId` string bound to one chain and network, such as
-`fakechain:local/native`. Planned token ids look like `ethereum:mainnet/erc20:0x…`. The
+`fakechain:local/native`. Token ids look like `ethereum:mainnet/erc20:0xdAC17F…`. The
 `metadata` (`symbol`, `decimals`) is for display only. An alias resolves only within the
 handle's chain and network. An **`Amount`** is an exact, non-negative quantity of one asset, in base units, as a bigint.
 When you pass an amount (`AmountInput`):

@@ -6,8 +6,8 @@ summary: Withdrawals, cold signing, confirmations, background workers, deposit s
 
 This guide shows how to build withdrawals and deposits into a service. The examples run on
 the fake chain (`bc = env.bc`; wrap awaited calls in `env.run(...)`, as in the
-[tutorial](./tutorial.md)). They work the same way on a real family once its adapter ships.
-Terms are defined in [Core concepts](./concepts.md).
+[tutorial](./tutorial.md)). They work the same way on the EVM chains, apart from the EVM
+notes below. Terms are defined in [Core concepts](./concepts.md).
 
 ## Sending
 
@@ -29,20 +29,22 @@ stores the signed Attempt, and broadcasts. It returns a `Submission`: the Operat
 signs twice.
 
 - `outputs: [{ to, amount }, …]` sends several outputs; it needs the `batch-transfer`
-  capability.
+  capability. An EVM transfer has exactly one output.
 - `asset` defaults to `'native'`. It also accepts a token ref, an asset id, or an alias
-  registered for the handle's chain and network. Tokens need the `tokens` capability, and no
-  shipped family has it yet.
-- `memo` needs the `memo` capability.
+  registered for the handle's chain and network, such as `'USDC'` on `ethereum` mainnet.
+  Tokens need the `tokens` capability: the EVM chains have it (ERC-20); the fake chain does
+  not.
+- `memo` needs the `memo` capability, which EVM networks lack.
 - `options.signal` aborts the call. An abort after a possible broadcast is reported as
   ambiguous.
 
 ### Fees
 
 `fee` is a speed (`'slow'`, `'normal'` (the default) or `'fast'`) or a family-specific
-override object. The fake chain takes `fee: { fee: 5n }`. Each planned family defines its own
-override fields with its adapter; the `FeeOverride` docs name `{ maxFeePerGas }` and
-`{ satPerVByte }` as examples. Override amounts must be bigints or decimal strings, never
+override object. The fake chain takes `fee: { fee: 5n }`. EVM networks take
+`{ maxFeePerGas, maxPriorityFeePerGas, gasLimit? }` (`evm-1559`) or `{ gasPrice, gasLimit? }`
+(`evm-legacy`), as bigints in wei (`EvmFeeOverride`). Each planned family defines its own
+override fields with its adapter. Override amounts must be bigints or decimal strings, never
 numbers (`INVALID_INTENT`). The fee is part of the `intentHash`, and an override is hashed as
 written: `{ fee: 1n }` and `{ fee: '1' }` are different intents. Retry in the same form, or you
 get `IDEMPOTENCY_CONFLICT`.
@@ -53,6 +55,17 @@ estimate.charges; // [{ amount: Amount, label: 'network' }]; a charge per asset 
 estimate.bound; // 'exact' | 'expected' | 'upper'
 feeTotal(estimate, 'fakechain:local/native'); // Amount | undefined
 ```
+
+On `evm-1559` networks, `slow`, `normal` and `fast` take the median, over the last 15
+blocks, of the 10th, 25th or 50th percentile tip (at least the network's floor, 25 gwei on
+Polygon mainnet), and the fee cap allows the base fee to double. On `evm-legacy` networks
+they scale `eth_gasPrice` by 100%, 110% or 125%. The gas
+limit is the node's estimate, plus 20% for anything but a plain transfer. The `network`
+charge is an `upper` bound, and `details.expected` (`EvmFeeDetails`) the likely cost. On OP
+Stack chains the L1 data fee is a separate `l1-data` charge, and the bound is `expected`,
+since that fee moves with L1 prices. An override's `gasLimit` skips `eth_estimateGas`, the
+check that refuses a call that would fail: a token transfer that reverts for a reason other
+than a low balance is then signed, broadcast, and burns its gas.
 
 ### Cold, offline and asynchronous signing
 
@@ -106,6 +119,14 @@ unchanged. Only a cancel that a node refused or dropped is bumped, one step per 
 if the original is already mined, it throws `NONCE_CONFLICT`, and the outcome stays
 `executed`. Replace and cancel never happen automatically.
 
+On EVM, a replacement or cancel reuses the nonce and must raise both the fee cap and the tip
+(the gas price on `evm-legacy`) by the network's `replacement.minBumpPercent` (10), or it
+throws `FEE_TOO_LOW`. A speed re-estimates the fee, which on a quiet network is often not
+10% higher; on Polygon mainnet all three speeds often sit at the 25 gwei tip floor. So pass
+an explicit override that raises each price by at least 10%. A cancel is a zero-value
+transfer to yourself, at the smallest valid bump unless you pass `fee`. Arbitrum has no
+mempool, so it supports neither (`UNSUPPORTED_CAPABILITY`).
+
 On expiry- and seqno-based chains (planned Tron, Solana and TON; `fakeexpiry` and
 `fakeseqno` today), `bc.rebuild(id)` re-issues an Operation after its expiry is **proven**
 (`expired`, error `TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the Operation. Other
@@ -133,6 +154,16 @@ const now = await bc.getTransactionStatus(operationId); // one read
   `INVALID_TRANSITION`. An unmanaged transaction rejects with `TX_REVERTED` on observed
   finality. On `TIMEOUT` (retryable), nothing changed. Wait again.
 - `sub.wait(options)` is the same as `waitForConfirmation(sub.operationId, options)`.
+- **EVM token verdicts.** An Operation's ERC-20 `transfer` counts as executed only if the
+  token contract logged a `Transfer` from the sender, as ERC-20 requires. A token that
+  returns `false` instead of reverting, or moves value without logging that `Transfer`, is
+  reported failed (`TX_REVERTED`). This applies to your own Operations only: `getTransaction`
+  and scans show the receipt's status as the chain reports it.
+- **EVM proofs.** An Attempt whose transaction disappears is settled only once its nonce is
+  proven used at a final height, read by block number (BSC's public nodes serve no state at
+  the `finalized` tag). An endpoint without that state, such as a non-archive L2 node, makes
+  the proof decide nothing (a retryable `PROVIDER_UNAVAILABLE`) until endpoints that serve it
+  answer. With one endpoint the proof quorum is 1, so configure two or more providers.
 
 ## Background workers and startup recovery
 
@@ -220,12 +251,19 @@ for await (const event of scanner) {
   `ASSET_RESOLUTION`). Its transaction has `decoding: 'partial'`. `getTransaction` and
   `history` return the same marker. A retryable failure still fails the read.
 - Stop an idle scanner with `signal`. `iterator.return()` acts only after a pending `next()`.
+- **EVM.** Blocks carry native transfers and ERC-20 `Transfer` logs. A transaction that ran
+  contract code is `decoding: 'partial'`: internal transfers need traces, which are out of
+  scope. A plain POL transfer on Polygon is `complete`, because bor's system logs are ignored
+  for it. An unfiltered scan reads one receipt per transaction (`eth_getBlockReceipts` is a
+  later optimization). A filtered scan finds token transfers in one endpoint's `eth_getLogs`
+  answer, so an endpoint whose log index lags misses them without an error. For token
+  deposits, prefer an unfiltered scan: it reads every receipt, and a missing one is retried.
 
 ### Address history (`address-history`)
 
 `bc.history(address, { cursor?, limit? })` returns `{ items: Transaction[], next? }` from an
-indexer. It needs an indexer provider. The fake chain has none, so it throws
-`UNSUPPORTED_CAPABILITY` there.
+indexer. It needs an indexer provider. The fake chain has none, and the EVM family does not
+support one yet, so both throw `UNSUPPORTED_CAPABILITY`.
 
 ## Error handling
 

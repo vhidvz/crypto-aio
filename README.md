@@ -15,15 +15,15 @@ All-In-One Crypto-Currency for Backend
 library is being rebuilt as a blockchain abstraction layer. See [CHANGELOG.md](CHANGELOG.md),
 including the security advisory about credentials that were committed to this repository.
 
-Plan 1 is complete: the SDK-free core, a fake chain family and the testing kit
-(`crypto-aio/testing`). The chain families arrive in Plans 2–6; until then, no real
-blockchain is supported.
+Plans 1 and 2 are complete: the SDK-free core, the testing kit (`crypto-aio/testing`) and
+the EVM family (Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism and
+Base, through ethers or web3). Bitcoin, Tron, Solana and TON arrive in Plans 3–6.
 
 ## Documentation
 
 - [Guides](docs/guides/index.md): what works today, the core concepts and how to use them.
 - [Quick start](docs/guides/quick-start.md): a first transfer on the fake chain in 5
-  minutes. The [tutorial](docs/guides/tutorial.md) then reviews the main concepts in 10
-  hands-on steps.
+  minutes, then a real EVM network. The [tutorial](docs/guides/tutorial.md) reviews the main
+  concepts in 10 hands-on steps.
 - API reference: run `pnpm doc`, then open `docs/api/index.html`. The generated site
   includes the guides.

@@ -14,30 +14,80 @@ data and imports no SDK. There are three ways a network becomes available.
 | Family | Chains (networks) | Ordering | Status |
 | --- | --- | --- | --- |
 | fake | `fakechain`, `fakeexpiry`, `fakeseqno` (`local`) | nonce, expiry, seqno | **Works today**, from `crypto-aio/testing` (register `fakePlugin()`) |
-| EVM (ethers, web3) | Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | nonce | Planned, Plan 2 |
+| EVM (ethers, web3) | Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | nonce | **Works today**, built in ([details](#evm-networks)) |
 | UTXO (bitcoinjs-lib + Esplora) | Bitcoin mainnet, testnet, testnet4, signet, regtest | inputs | Planned, Plan 3 |
 | Tron (tronweb) | mainnet, shasta, nile | expiry | Planned, Plan 4 |
 | Solana (@solana/web3.js) | mainnet, devnet, testnet | expiry | Planned, Plan 5 |
 | TON (@ton/ton) | mainnet, testnet | seqno + expiry | Planned, Plan 6 |
 
-Plans 2 to 6 are the next roadmap milestones (see the [status](./index.md#status)). Planned
-families will register themselves in the package's composition root. You will install only
-the SDK you use, for example `npm install crypto-aio ethers`. A missing SDK then fails with
-`DEPENDENCY_MISSING` and the install command. Today, the list of built-in plugins is empty.
-Asking for a planned chain fails with `ConfigError` (`CONFIG_INVALID`, "unknown chain").
+Plans 3 to 6 are the next roadmap milestones (see the [status](./index.md#status)); a planned
+chain fails with `ConfigError` (`CONFIG_INVALID`, "unknown chain"). Built-in families, today
+the EVM family, register in the package's composition root. Install only the SDK you use
+(`npm install crypto-aio ethers`); a missing one fails with `DEPENDENCY_MISSING`.
 
-## 2. More networks of an existing family (planned with the EVM adapter)
+### EVM networks
+
+One EVM driver serves every chain below, with either library: `ethers` (v6, the default) or
+`web3` (v4). ChainSafe sunset web3.js in 2025, and 4.16.0 is its last release, with no
+further fixes. crypto-aio keeps it working and tested, but prefer `ethers` for new work.
+[Sending and receiving](./transactions.md) covers EVM fees, replacements, verdicts, scans
+and proofs, and [Keys, signers and secrets](./security.md) the ethers and web3 clients.
+
+| Chain | Networks (chain id) | Fees | Finality | Replace / cancel |
+| --- | --- | --- | --- | --- |
+| `ethereum` | `mainnet` (1), `sepolia` (11155111), `hoodi` (560048) | `evm-1559` | `finalized` tag | yes |
+| `bsc` | `mainnet` (56), `testnet` (97) | `evm-legacy` (the base fee is always 0) | `finalized` tag | yes |
+| `polygon` | `mainnet` (137), `amoy` (80002) | `evm-1559`; mainnet tips at least 25 gwei | `finalized` tag | yes |
+| `avalanche` | `mainnet` (43114), `fuji` (43113) | `evm-1559` | the `latest` block is final | yes |
+| `arbitrum` | `mainnet` (42161), `sepolia` (421614) | `evm-1559` | `finalized` tag | no: there is no mempool |
+| `optimism`, `base` | `mainnet` (10, 8453), `sepolia` (11155420, 84532) | `evm-1559` plus an `l1-data` charge | `finalized` tag | yes |
+
+- **Tokens.** ERC-20 only. USDT (Ethereum, Avalanche) and USDC (every built-in mainnet but
+  BNB Smart Chain) resolve by alias on mainnet, where their issuers deploy them natively. Any
+  other token resolves by contract, with its symbol and decimals read from the chain.
+- **Presets.** `alchemy` and `infura` serve every network above; `ankr` the Ethereum, BNB
+  Smart Chain, Avalanche, Arbitrum and Base mainnets; `public` the networks whose chain
+  documents a public endpoint (not Ethereum). The public Base, Arbitrum and OP Sepolia
+  endpoints may refuse Node's `fetch` (a Cloudflare 403, seen as `PROVIDER_UNAVAILABLE`).
+- **Not in this release:** address history (it needs an indexer; `history()` throws
+  `UNSUPPORTED_CAPABILITY`), contract calls other than ERC-20 `transfer`, and `ext.evm`
+  beyond `getNonce`.
+
+## 2. More networks of an existing family
 
 A family driver is written once, and every chain and network it serves is data: a
-`ChainInfo` with its `NetworkInfo` entries. That data holds the chain id or genesis identity,
-the fee model, the `FinalityPolicy`, the default confirmations, `reorgWindow`, replacement
-rules and explorer templates. Provider presets map `(chain, network, apiKey)` to endpoints.
-An EVM-compatible chain therefore needs no new adapter. It needs chain and network data, a
-manifest entry that lists the chain for the EVM libraries, and presets.
+`ChainInfo` with its `NetworkInfo` entries (identity, fee model, `FinalityPolicy`, default
+confirmations, `reorgWindow`, replacement rules, explorer templates), plus provider presets
+that map `(chain, network, apiKey)` to endpoints. So an EVM chain needs no new adapter.
 
-> **Shape of the API once the adapter ships (planned).** The EVM adapter's release decides
-> how you point the built-in EVM driver at a chain of your own, for example by exposing its driver factory or
-> a chain builder.
+`evmChainPlugin` from `crypto-aio/evm` serves your EVM chains with the built-in driver, for
+both libraries. It checks the data when called, or throws `CONFIG_INVALID`: family `evm`,
+nonce ordering, the `secp256k1-ecdsa` scheme, and per network the decimal chain id as
+`identity`, an `evm-1559` or `evm-legacy` fee model, and `finalized`-tag or confirmation
+finality. A network removes the capabilities it lacks: `finality-tag` without the tag,
+`fee-market-1559` on `evm-legacy`, and `replace-fee` and `cancel` without a mempool.
+
+```ts
+import { CryptoAio, type ChainInfo } from 'crypto-aio';
+import { evmChainPlugin } from 'crypto-aio/evm';
+
+const acme: ChainInfo = {
+  id: 'acmechain', family: 'evm', model: 'account', ordering: 'nonce', schemes: ['secp256k1-ecdsa'],
+  nativeAsset: { symbol: 'ACME', decimals: 18 }, defaultNetwork: 'mainnet',
+  networks: {
+    mainnet: {
+      id: 'mainnet', identity: '777', testnet: false, feeModel: 'evm-1559', // eth_chainId 777
+      finality: { kind: 'confirmations', confirmations: 12 },
+      capabilities: { remove: ['finality-tag'] }, // no `finalized` tag on this chain
+      defaultConfirmations: 1, reorgWindow: 128, replacement: { minBumpPercent: 10 },
+    },
+  },
+};
+const aio = new CryptoAio({ plugins: [evmChainPlugin({ name: 'acme', chains: [acme] })] });
+```
+
+It registers as `evm:acme` and also takes `presets` and `assets`. Augment `ChainRegistry`
+with `acmechain: { family: 'evm'; network: 'mainnet' }` to type the handle and `ext.evm`.
 
 The registry rules that apply today already set the limits. A chain id registers once (a
 second registration fails with `CONFIG_INVALID`, "already registered"), so nobody can add a
@@ -111,12 +161,12 @@ declare module 'crypto-aio' {
 
 Register it with `new CryptoAio({ plugins: [acmePlugin()] })` or `aio.use(acmePlugin())`.
 Plugins go on a root container only. A second plugin with a name already registered is
-ignored silently, so give each plugin a unique name. A plugin may also
-bring `assets` (tokens with aliases, per chain and network) and `schemes`. The built-in
-schemes are `secp256k1-ecdsa`, `secp256k1-schnorr` and `ed25519`.
+ignored silently, so give each plugin a unique name. A plugin may also bring `assets` (tokens
+with aliases, per chain and network) and `schemes`. The built-in schemes are
+`secp256k1-ecdsa`, `secp256k1-schnorr` and `ed25519`.
 
-**The reference implementation is the fake family**: `src/testing/fake-plugin.ts` (plugin and
-manifest) and `src/testing/fake-driver.ts` (the driver). Read them next to this section.
+**Reference implementations:** the fake family (`src/testing/fake-plugin.ts` and
+`fake-driver.ts`) and the EVM family (`src/adapters/evm/`). Read them next to this section.
 
 ### The driver
 
@@ -149,9 +199,8 @@ relies on these rules most:
   matches `network.identity`, and a height probe.
 - **Tag reads.** Heights, `observe`, `sequence` and block sources use `purpose: 'monitor'`.
   The `proofs` methods use `purpose: 'proof'` and `quorum: 'proof'`; the table names the one
-  exception. When
-  endpoints disagree, the transport throws a retryable `PROVIDER_INCONSISTENT`, and the core
-  decides nothing.
+  exception. When endpoints disagree, the transport throws a retryable
+  `PROVIDER_INCONSISTENT`, and the core decides nothing.
 - **Broadcast is `ambiguous-on-failure`.** Classify a node's answer only when the error is
   not ambiguous. Rethrow an ambiguous `RPC_ERROR` unclassified, even if it reads like "nonce
   too low". Keep refusal reasons short and address-free.
