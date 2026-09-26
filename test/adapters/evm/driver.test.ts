@@ -8,6 +8,7 @@ import {
 } from '../../../src/adapters/evm/proofs';
 import { createEvmReader } from '../../../src/adapters/evm/reader';
 import { web3DriverFactory } from '../../../src/adapters/evm/web3-client';
+import { Wallet } from 'ethers';
 import { validator } from 'web3';
 import type { ChainDriver, DriverBlock } from '../../../src/core/driver/types';
 import { ProviderError } from '../../../src/core/errors/error';
@@ -997,6 +998,102 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await prove(executed, 1n)).toMatchObject({ included: true, success: true });
   });
 
+  it("pins each field of the consumer block's key against a lying first endpoint (R93 N1)", async () => {
+    // A quorum resolves with the first endpoint's whole answer, so every field the nonce
+    // lookup reads from block C must be keyed, or that endpoint alone decides.
+    const t = setup();
+    const stranger = new Wallet(`0x${'5a'.repeat(32)}`);
+    t.node.fund(stranger.address, 10n ** 18n);
+    const strangerSends = async (n: number) =>
+      t.node.submit(
+        await stranger.signTransaction({
+          chainId: t.ctx.config.chainId,
+          nonce: n,
+          to: RECIPIENT,
+          value: 1n,
+          gasLimit: 21_000n,
+          type: 2,
+          maxFeePerGas: 3_000_000_000n,
+          maxPriorityFeePerGas: 1_000_000_000n,
+        }),
+      );
+    await submit(t, 0);
+    await strangerSends(0);
+    t.node.mine();
+    // Block 2: the stranger's nonce 1, then our nonces 1 and 2.
+    const foreign = await strangerSends(1);
+    const ours = await submit(t, 1);
+    const next = await submit(t, 2);
+    t.node.mine();
+    // Block 3: our token transfer that returned false, so its verdict is `failed`.
+    t.node.deployToken(TOKEN, { symbol: 'FLS', decimals: 6, returnsFalse: true });
+    const data = t.client.abi.encodeTransfer(RECIPIENT, 10n);
+    const token = await submit(t, 3, { to: TOKEN, value: 0n, gasLimit: 60_000n, data });
+    t.node.mine(5);
+    expect(t.node.block(2n)?.txs).toEqual([foreign, ours, next]);
+    expect(t.node.receipt(token)).toMatchObject({ status: 1, blockNumber: 3n });
+    const prove = (hash: string, n: bigint) =>
+      t.run(t.proofs.includedFinal(ref(hash), nonce(n), KEY_ADDRESS));
+    const lost = [foreign, ours, next, token];
+    unindexed(t, lost);
+    expect(await prove(ours, 1n)).toMatchObject({ included: true, blockHeight: 2n });
+    expect(await prove(token, 3n)).toMatchObject({ included: true, success: false });
+    const lies: [string, string, bigint, Intercept][] = [
+      // The stranger's transaction at our nonce relabelled as ours: a false TX_REPLACED.
+      [
+        'from',
+        ours,
+        1n,
+        rewrittenBlock(t, 'a', 2n, (txs) =>
+          txs.map((x) => (x.hash === foreign ? { ...x, from: KEY_ADDRESS } : x)),
+        ),
+      ],
+      // Our transactions renumbered, so our nonce points at the other one: the same.
+      [
+        'nonce',
+        ours,
+        1n,
+        rewrittenBlock(t, 'a', 2n, (txs) =>
+          txs.map((x) =>
+            x.hash === ours
+              ? { ...x, nonce: hex(2) }
+              : x.hash === next
+                ? { ...x, nonce: hex(1) }
+                : x,
+          ),
+        ),
+      ],
+      // No token called: a transfer that moved nothing reported executed.
+      [
+        'to',
+        token,
+        3n,
+        rewrittenBlock(t, 'a', 3n, (txs) =>
+          txs.map((x) => (x.hash === token ? { ...x, to: null } : x)),
+        ),
+      ],
+    ];
+    const outcomes: [string, unknown][] = [];
+    for (const [field, hash, n, lie] of lies) {
+      unindexed(t, lost, lie);
+      outcomes.push([
+        field,
+        await prove(hash, n).then(
+          (answer) => answer,
+          (error: { code?: unknown; retryable?: unknown }) => [
+            error.code,
+            error.retryable,
+          ],
+        ),
+      ]);
+    }
+    expect(outcomes).toEqual([
+      ['from', ['PROVIDER_INCONSISTENT', true]],
+      ['nonce', ['PROVIDER_INCONSISTENT', true]],
+      ['to', ['PROVIDER_INCONSISTENT', true]],
+    ]);
+  });
+
   it('ignores whatever the first endpoint forges outside the consensus facts', async () => {
     // A quorum call resolves with the first endpoint's whole answer: a proof may use only
     // the fields its quorum key compares.
@@ -1561,6 +1658,37 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
       await h.run(createEvmBlocks(h.ctx).transactions(plain, { addresses: [OTHER] })),
     ).toEqual([]);
     expect(methods()).toEqual([...fallback, 'getLogs']);
+  });
+
+  it('falls back on any answer that says the method is missing, and only then (R93 N2)', async () => {
+    const h = evmHarness(library);
+    const { native, token, scan } = await depositBlock(h);
+    const missing: [number, string][] = [
+      [-32601, 'the method eth_getBlockReceipts does not exist/is not available'],
+      // EIP-1474's "method not supported", by its code alone.
+      [-32004, 'unsupported'],
+      // Provider-specific codes, by their text.
+      [-32000, 'Method eth_getBlockReceipts not found'],
+      [-32602, 'method eth_getBlockReceipts is not supported on this network'],
+      [-32000, 'The method eth_getBlockReceipts does not exist'],
+      [-32001, 'the method eth_getBlockReceipts is not available on your plan'],
+    ];
+    const answering = (code: number, message: string) => {
+      h.node.intercept = (_endpoint, method) =>
+        method === 'eth_getBlockReceipts' ? { error: { code, message } } : undefined;
+    };
+    for (const [code, message] of missing) {
+      answering(code, message);
+      expect([code, message, await scan(), await scan([OTHER])]).toEqual([
+        code,
+        message,
+        [native, token],
+        [token],
+      ]);
+    }
+    // Any other error is the node's, and fails the scan.
+    answering(-32000, 'internal error');
+    await expect(scan()).rejects.toMatchObject({ code: 'RPC_ERROR' });
   });
 
   it('reads a block bloom as web3 does (R90)', async () => {

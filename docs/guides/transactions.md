@@ -177,9 +177,13 @@ const now = await bc.getTransactionStatus(operationId); // one read
   Ethereum), so a missing receipt proves nothing. A transaction older than your endpoints'
   index window is resolved by its nonce: the proof finds the final block that used the nonce
   and reads the sender's transaction there. `TX_REPLACED` needs another transaction there;
-  your own is proven final with its receipt from that block. That lookup reads historical
-  state (an archive node for old blocks). Without it, the Attempt stays undecided, and it is
-  never failed.
+  your own is proven final with its receipt from that block. That lookup reads the nonce at
+  past heights, and a standard full node keeps only about the last 128 blocks of state
+  (about 1 minute on BSC, 25 minutes on Ethereum). Anything older needs an archive node.
+  Without one, the Attempt stays undecided, and it is never failed. So an external
+  replacement that the monitor first notices later than that stays undecided until an
+  archive endpoint answers. A nonce consumed by an EIP-7702 authorization, rather than by a
+  transaction from your address, also stays undecided and is never failed.
 
 ## Background workers and startup recovery
 

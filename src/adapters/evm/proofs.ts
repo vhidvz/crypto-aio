@@ -71,8 +71,9 @@ const undecidable = (reason: string) => new ProviderError('PROVIDER_UNAVAILABLE'
 
 /**
  * R88: at most this many nonce reads look for the height that consumed a nonce. The gallop
- * and the bisection take about two reads per doubling of the distance back, so this reaches
- * 2^32 blocks: every consumption on any chain served today.
+ * and the bisection take about two reads per doubling of the distance back: at worst 60
+ * reads below a final height of 2^30, and 64 below 2^32, so this reaches every consumption
+ * on any chain served today.
  */
 const MAX_SEARCH_READS = 64;
 
@@ -285,9 +286,24 @@ export function mayHold(bloom: string | undefined, value: string): boolean {
   return true;
 }
 
-/** JSON-RPC's "method not found": a node without `eth_getBlockReceipts`. */
-const methodMissing = (error: unknown): boolean =>
-  isCryptoAioError(error, 'RPC_ERROR') && error.details?.rpcCode === -32601;
+/** Provider texts for a method they do not serve, whatever their error code. */
+const METHOD_MISSING =
+  /method .*(not found|not supported|does not exist|is not available)/i;
+
+/**
+ * A definitive answer that the node does not serve `eth_getBlockReceipts`: JSON-RPC's
+ * "method not found" (-32601), EIP-1474's "method not supported" (-32004), or a provider's
+ * own code with a text that says so (R93).
+ */
+function methodMissing(error: unknown): boolean {
+  if (!isCryptoAioError(error, 'RPC_ERROR') || error.ambiguous) return false;
+  const { rpcCode, rpcMessage } = error.details ?? {};
+  return (
+    rpcCode === -32601 ||
+    rpcCode === -32004 ||
+    METHOD_MISSING.test(String(rpcMessage ?? ''))
+  );
+}
 
 type Receipts = ReadonlyMap<string, EvmReceipt>;
 

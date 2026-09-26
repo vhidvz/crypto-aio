@@ -1,6 +1,6 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { EVM_CHAINS } from '../../../src/adapters/evm/chains';
-import { decodeTransaction } from '../../../src/adapters/evm/decode';
+import { decodeTransaction, tokenTransferLanded } from '../../../src/adapters/evm/decode';
 import {
   FEE_HISTORY_BLOCKS,
   FEE_PERCENTILES,
@@ -577,6 +577,35 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
         decoding: 'partial',
       });
       expect(decoded?.observation).not.toHaveProperty('reason');
+    }
+  });
+
+  it('counts a transfer call whose arguments do not decode as not landed (R93 N1)', async () => {
+    const h = evmHarness(library);
+    h.node.fund(KEY_ADDRESS, 10n ** 18n);
+    h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    h.node.mintToken(TOKEN, KEY_ADDRESS, 100n);
+    const data = h.client.abi.encodeTransfer(RECIPIENT, 30n);
+    const hash = await submit(h, 0, { value: 0n, gasLimit: 60_000n, to: TOKEN, data });
+    h.node.mine();
+    const tx = (await h.run(h.client.getTransaction(hash, READ_TAGS))) as EvmTx;
+    const receipt = (await h.run(h.client.getReceipt(hash, READ_TAGS))) as EvmReceipt;
+    // The token logged the transfer the call asked for.
+    expect(receipt.logs).toHaveLength(1);
+    expect(tokenTransferLanded(h.client.abi, tx, receipt)).toBe(true);
+    const [selector, recipient, amount] = [
+      data.slice(0, 10),
+      data.slice(10, 74),
+      data.slice(74),
+    ];
+    const malformed = [
+      `${selector}${recipient}`, // no amount
+      `${data}00`, // a stray byte after the two words
+      `${selector}${'ff'.repeat(12)}${recipient.slice(24)}${amount}`, // a dirty address word
+      selector,
+    ];
+    for (const input of malformed) {
+      expect(tokenTransferLanded(h.client.abi, { ...tx, input }, receipt)).toBe(false);
     }
   });
 
