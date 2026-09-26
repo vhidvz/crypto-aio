@@ -915,9 +915,15 @@ export class HttpTransport implements Transport {
     if (purpose !== 'monitor' && purpose !== 'proof') {
       return { sized: usable, inRange: usable };
     }
-    const sized = this.#endpoints.filter(
-      (e) => e.identity !== 'mismatch' && e.healthMisses < HEALTH_MISS_LIMIT,
-    );
+    // P25-R10/I1: with no probe at all, nothing ever records a miss, so counting endpoints
+    // that cannot answer would stall proofs for good; the count is then the usable
+    // endpoints (the prior, weaker rule: a liar can prove alone once the honest endpoints'
+    // breakers open). Families set probes (R19).
+    const sized = this.hasProbes()
+      ? this.#endpoints.filter(
+          (e) => e.identity !== 'mismatch' && e.healthMisses < HEALTH_MISS_LIMIT,
+        )
+      : usable;
     if (!this.#probes.height) return { sized, inRange: usable };
     const known = usable.filter((e) => e.height !== undefined);
     const reference = corroboratedHeight(known);
@@ -1514,22 +1520,7 @@ export class HttpTransport implements Transport {
         endpoint.identityRetryAt = undefined;
         return;
       }
-      endpoint.identity = 'mismatch';
-      // R19 (round 4): a disabled endpoint's height stops counting at once; #best and
-      // #highest are rebuilt from identity-verified endpoints with known heights only. I2:
-      // never below a verified peak, even while a verified endpoint's height is unknown.
-      endpoint.height = undefined;
-      this.#best = this.#verifiedMaxHeight();
-      this.#highest = maxHeight(this.#verifiedPeak, this.#best);
-      this.#events.emit('provider.misconfigured', {
-        transportId: this.id,
-        endpointId: endpoint.id,
-        expected: sanitizeIdentityField(expected),
-        actual: sanitizeIdentityField(String(actual)),
-      });
-      this.#log.warn('endpoint serves a different network; disabled', {
-        endpointId: endpoint.id,
-      });
+      this.#disable(endpoint, expected, actual);
     } catch (error) {
       // Any probe failure (a definitive RPC error, a transport error, a malformed reply) is
       // an endpoint-local failure, not a confirmed mismatch: identity stays 'unchecked' and
@@ -1544,6 +1535,41 @@ export class HttpTransport implements Transport {
       if (callerAborted) this.#abandonedChecks.add(failure);
       throw failure;
     }
+  }
+
+  /** A proven identity mismatch: the endpoint serves a different network and is disabled. */
+  #disable(endpoint: Endpoint, expected: string, actual: unknown): void {
+    endpoint.identity = 'mismatch';
+    // R19 (round 4): a disabled endpoint's height stops counting at once; #best and
+    // #highest are rebuilt from identity-verified endpoints with known heights only. I2:
+    // never below a verified peak, even while a verified endpoint's height is unknown.
+    endpoint.height = undefined;
+    this.#best = this.#verifiedMaxHeight();
+    this.#highest = maxHeight(this.#verifiedPeak, this.#best);
+    this.#events.emit('provider.misconfigured', {
+      transportId: this.id,
+      endpointId: endpoint.id,
+      expected: sanitizeIdentityField(expected),
+      actual: sanitizeIdentityField(String(actual)),
+    });
+    this.#log.warn('endpoint serves a different network; disabled', {
+      endpointId: endpoint.id,
+    });
+  }
+
+  /**
+   * P25-R10/I1: with no height probe, the identity probe is a confirmed endpoint's only
+   * health signal, so `#refresh` re-runs it (under the refresh's own deadline), or a dead
+   * endpoint would never miss and a proof quorum would count it for good. A different
+   * answer disables the endpoint as a first check does; a failure is a health miss only,
+   * never an identity throttle, so a confirmed endpoint stays in service for requests.
+   */
+  async #reconfirmIdentity(endpoint: Endpoint, signal: AbortSignal): Promise<void> {
+    const probe = this.#probes.identity;
+    const expected = this.#probes.expectedIdentity;
+    if (!probe || expected === undefined) return;
+    const actual = await raceAbort(probe(this.#direct(endpoint, signal)), signal);
+    if (actual !== expected) this.#disable(endpoint, expected, actual);
   }
 
   /** An identity probe failure as a retryable, sanitized, untagged endpoint-local error. */
@@ -1588,7 +1614,14 @@ export class HttpTransport implements Transport {
             const identityThrottled =
               endpoint.identityRetryAt !== undefined &&
               this.#clock.now() < endpoint.identityRetryAt;
-            if (!identityThrottled) await this.#ensureIdentity(endpoint, deadline);
+            // P25-R10/I1: with no height probe, a confirmed identity is re-probed as the
+            // endpoint's health signal. A skipped (throttled) one is neither a miss nor a
+            // success.
+            if (!identityThrottled) {
+              if (!probe && endpoint.identity === 'ok')
+                await this.#reconfirmIdentity(endpoint, deadline);
+              else await this.#ensureIdentity(endpoint, deadline);
+            }
             // R19 (round 4): only an endpoint verified 'ok' in this refresh is height-probed
             // and feeds #best/#highest/lag/anySucceeded. A throttled or still-unchecked one
             // is cleared and does not count as succeeded.

@@ -376,3 +376,40 @@ describe('proof quorum and unverified identities (A24, P25-R8)', () => {
     expect([finCalls('honest'), finCalls('liar')]).toEqual([2, 2]);
   });
 });
+
+// P25-R10: counting endpoints that cannot answer must never stall proofs for good; a dead
+// endpoint leaves the count after three spaced misses, whatever probes are configured.
+describe('proof quorum liveness (P25-R10)', () => {
+  it('drops a dead endpoint after three spaced misses with an identity probe alone (I1)', async () => {
+    const ids = { a: '1', b: '1' };
+    const answers: Record<string, string> = {};
+    const { fake, idCalls } = identified(ids, {}, answers);
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    transport.setProbes(identity);
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    await expect(proof()).resolves.toBe('fact');
+    // b dies after its identity was confirmed: its probe and its requests fail from now on.
+    ids.b = 'down';
+    answers.b = 'down';
+    for (let miss = 1; miss <= 2; miss++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    }
+    await clock.advance(HEALTH_INTERVAL_MS);
+    await expect(proof()).resolves.toBe('fact');
+    // Each refresh re-probed b's confirmed identity, its only health signal.
+    expect(idCalls('b')).toBe(4);
+  });
+
+  it('counts only usable endpoints when no probe is configured, so proofs never stall (I1)', async () => {
+    const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
+      failureThreshold: 1,
+    });
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    // The weaker, prior rule: once b's breaker opens, b no longer counts.
+    await expect(proof()).resolves.toBe('fact');
+    expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
+  });
+});
