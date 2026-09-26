@@ -243,6 +243,10 @@ export interface CreateResult {
  *   identity fields (`attempts`, `claim`, `version`, `id`, ...) or `state`. An
  *   implementation reads the caller's `clear` list once (M6), so the list it validates is
  *   the list it applies.
+ * - A key set to `undefined`, in an observation or a patch, means the key is absent. A
+ *   store never persists `undefined` as a value, such as `null` (P25-R14). In a patch, the
+ *   stored field survives. In an observation, which replaces the whole record, the field
+ *   is gone and reads back `undefined`.
  */
 export interface OperationStore {
   create(operation: NewOperation): Promise<CreateResult>;
@@ -273,9 +277,10 @@ export interface OperationStore {
   getObservation(attemptId: string): Promise<AttemptObservation | null>;
   /**
    * Stores `observation` as the whole new record, version-checked. An optional field absent
-   * from it (a cleared `reason`, `blockHash` or `blockHeight`) is gone afterwards: a store
-   * must replace the record, never merge fields into the old one. The monitor relies on
-   * this to clear stale values (A9, M9).
+   * from it or set to `undefined` (a cleared `reason`, `blockHash` or `blockHeight`) is gone
+   * afterwards and reads back `undefined`, never `null`. A store must replace the record,
+   * never merge fields into the old one. The monitor relies on this to clear stale values
+   * (A9, M9, P25-R14).
    */
   putObservation(
     observation: Omit<AttemptObservation, 'version'>,

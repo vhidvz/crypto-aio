@@ -1279,6 +1279,30 @@ describe('failure reasons (A9, P6-2)', () => {
     ).toBeUndefined();
   });
 
+  it('clears a refusal reason once a rebroadcast is accepted, before any monitor pass (P25-R14)', async () => {
+    const env = await createFakeEnv();
+    const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.dropFromMempool(sub.attempt?.id ?? '');
+    env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });
+    await expect(env.run(env.bc.rebroadcast(sub.operationId))).rejects.toMatchObject({
+      code: 'TX_REFUSED',
+    });
+    const attemptId = (await stored(env, sub.operationId)).activeAttemptId ?? '';
+    expect(await env.stores.operations.getObservation(attemptId)).toMatchObject({
+      state: 'refused',
+      reason: 'invalid signature',
+    });
+    const resent = await env.run(env.bc.rebroadcast(sub.operationId));
+    expect(resent.state).toBe('submitted');
+    // The view comes from the stored observation: no monitor pass has run since.
+    const status = resent.attempts.find((attempt) => attempt.id === attemptId)?.status;
+    expect(status?.state).toBe('pending');
+    expect(status?.reason).toBeUndefined();
+    const observation = await env.stores.operations.getObservation(attemptId);
+    expect(observation?.state).toBe('pending');
+    expect(observation?.reason).toBeUndefined();
+  });
+
   it('clears a failure reason when a reorg takes the transaction out of its block (M8)', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: REVERT_ADDRESS, amount: 5n }));

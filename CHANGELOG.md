@@ -76,8 +76,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - These cost liveness: proofs wait until enough endpoints are confirmed, in range and past
   their breaker's open period (`openMs`), including at startup, and a dead endpoint holds
   them back for up to three health intervals.
-- An observation clears an earlier failure or refusal reason once the transaction succeeds or
-  leaves its block.
+- An observation clears an earlier failure or refusal reason once the transaction succeeds,
+  leaves its block, or has a rebroadcast accepted after a refusal.
+- The `OperationStore` contract suite now checks that `putObservation` replaces the whole
+  observation, and that a field left out or set to `undefined` reads back as `undefined`,
+  not `null`.
 
 ## [0.1.0] - Unreleased
 

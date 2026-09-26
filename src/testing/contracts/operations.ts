@@ -272,6 +272,53 @@ export function describeOperationStoreContract(
       assert.equal(await operations.findByRef('other', 'ref-a2'), null);
     });
 
+    api.it(
+      'replaces an observation whole: a key left out or set to undefined reads back absent',
+      async () => {
+        // M9, P25-R14: the core clears a stale reason or block by leaving it out or setting
+        // it to undefined. A store that merged records, or kept undefined as a value such as
+        // null, would return a stale or wrong field.
+        const { operations } = await create();
+        const { record } = await operations.create(sampleOperation());
+        await operations.appendAttempt(
+          'ns',
+          record.id,
+          sampleAttempt('a3'),
+          { state: 'signed' },
+          1,
+        );
+        const failed = await operations.putObservation(
+          {
+            attemptId: 'a3',
+            operationId: record.id,
+            state: 'failed',
+            evidence: 'observed',
+            confirmations: 1,
+            blockHeight: 7n,
+            blockHash: 'block-7',
+            reason: 'transfer bounced',
+          },
+          null,
+        );
+        await operations.putObservation(
+          {
+            attemptId: 'a3',
+            operationId: record.id,
+            state: 'pending',
+            evidence: 'observed',
+            confirmations: 0,
+            reason: undefined,
+          },
+          failed.version,
+        );
+        const reread = await operations.getObservation('a3');
+        assert.equal(reread?.state, 'pending');
+        assert.equal(reread?.blockHeight, undefined);
+        assert.equal(reread?.blockHash, undefined);
+        assert.equal(reread?.reason, undefined);
+      },
+    );
+
     api.it('claims due operations exclusively and fences stale workers', async () => {
       const { operations } = await create();
       const a = (

@@ -1797,8 +1797,9 @@ export class OperationEngine {
       await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
         lastBroadcastAt: now,
         ...(acknowledged ? { firstSeenAt: current?.firstSeenAt ?? now } : {}),
+        // P25-R14: back to `pending`, a refusal's reason no longer applies (M8).
         ...(current === null || current.state === 'refused' || current.state === 'dropped'
-          ? { state: 'pending' as const }
+          ? { state: 'pending' as const, reason: undefined }
           : {}),
       }));
       // R26.2: re-derived from the stored Operation after a lost compare-and-set. An
