@@ -12,7 +12,7 @@ import {
   type FakeOrdering,
 } from '../../src/testing/fake-chain';
 import { FakeClock, drive } from '../../src/testing/fake-clock';
-import { FakeFetch, hang, rpcError } from '../../src/testing/fake-fetch';
+import { FakeFetch, hang, rpcError, rpcResult } from '../../src/testing/fake-fetch';
 import { fakeManifest, fakePlugin } from '../../src/testing/fake-plugin';
 
 const CHAIN_OF: Record<FakeOrdering, string> = {
@@ -353,6 +353,58 @@ describe('fake driver', () => {
       drive(clock, driver.broadcaster.broadcast(signed)),
     ).rejects.toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
     expect(attempts).toBe(2);
+  });
+
+  it('decides nothing on a JSON-RPC error while proving, as the proof contract says (lesson 18)', async () => {
+    const clock = new FakeClock();
+    const info = fakePlugin().chains?.find((c) => c.id === 'fakechain');
+    if (!info) throw new Error('missing chain');
+    const network = info.networks.local as NonNullable<(typeof info.networks)['local']>;
+    const fake = new FakeFetch();
+    // A healthy node that no longer holds the state or history a proof reads.
+    fake.route('https://pruned.test/rpc', (request) => {
+      const { method } = request.json<{ readonly method: string }>();
+      if (method === 'fake_identity') return rpcResult(request, network.identity);
+      if (method === 'fake_blockNumber') return rpcResult(request, '10');
+      return rpcError(request, -32000, 'missing trie node');
+    });
+    const transport = new HttpTransport(
+      [{ name: 'main', url: 'https://pruned.test/rpc' }],
+      {
+        clock,
+        events: new EventBus(clock, noopLogger),
+        log: noopLogger,
+        options: { fetch: fake.fetch, baseDelayMs: 1, maxDelayMs: 2 },
+      },
+    );
+    const factory = await fakeManifest.load();
+    const driver: ChainDriver = await factory.create({
+      chain: info,
+      network,
+      library: 'fake-sdk',
+      transport,
+      clock,
+      log: noopLogger,
+      options: {},
+    });
+    const ref = { id: 'deadbeef', idKind: 'tx-hash' as const, canonical: true };
+    const slot = { kind: 'nonce' as const, nonce: 0n };
+    const proving: (() => Promise<unknown>)[] = [
+      () => driver.proofs.finalizedHead(),
+      () => driver.proofs.includedFinal(ref, slot, 'fake1from'),
+      () => driver.proofs.slotConsumed(slot, 'fake1from', 'finalized'),
+      () => driver.proofs.slotConsumed(slot, 'fake1from', 'latest'),
+      () => driver.proofs.blockHash(1n, 'finalized'),
+      () => driver.proofs.blockHash(1n, 'latest'),
+      () => driver.proofs.expired({ kind: 'expiry', lastValidHeight: 5n }),
+    ];
+    for (const proof of proving) {
+      await expect(drive(clock, proof())).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+        cause: expect.objectContaining({ code: 'RPC_ERROR', retryable: false }),
+      });
+    }
   });
 
   it('covers seqno ordering: build, checkFunds, broadcast and same-slot conflicts', async () => {

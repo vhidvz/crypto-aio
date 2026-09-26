@@ -121,6 +121,23 @@ function toDriverTx(wire: FakeWireTx): DriverTransaction {
   };
 }
 
+/**
+ * Lesson 18, the proof contract (`ProofSource`): a JSON-RPC error answer is no negative
+ * proof. Every `RPC_ERROR` on a proof path becomes a retryable `PROVIDER_UNAVAILABLE` that
+ * carries it as its cause, so the core decides nothing and looks again later; every other
+ * error passes unchanged. The EVM driver's proofs keep the same boundary.
+ */
+async function undecided<T>(proof: () => Promise<T>): Promise<T> {
+  try {
+    return await proof();
+  } catch (error) {
+    if (!isCryptoAioError(error, 'RPC_ERROR')) throw error;
+    throw new ProviderError('PROVIDER_UNAVAILABLE', 'the endpoints gave no answer', {
+      cause: error,
+    });
+  }
+}
+
 export const fakeDriverFactory: DriverFactory = {
   async create(ctx: DriverContext): Promise<ChainDriver> {
     const { transport, chain, network, clock } = ctx;
@@ -360,47 +377,56 @@ export const fakeDriverFactory: DriverFactory = {
       },
     };
 
-    const finalizedHead = async () => {
-      const head = await proof<{ height: string; hash: string; timestamp: number }>(
-        'fake_finalizedBlock',
-      );
-      return { height: BigInt(head.height), hash: head.hash, timestamp: head.timestamp };
-    };
+    const finalizedHead = () =>
+      undecided(async () => {
+        const head = await proof<{ height: string; hash: string; timestamp: number }>(
+          'fake_finalizedBlock',
+        );
+        return {
+          height: BigInt(head.height),
+          hash: head.hash,
+          timestamp: head.timestamp,
+        };
+      });
 
     const proofs: ProofSource = {
       finalizedHead,
-      includedFinal: async (ref) => {
-        const wire = await proof<FakeWireTx | null>('fake_getFinalizedTransaction', [
-          ref.id,
-        ]);
-        if (!wire || wire.blockHeight === undefined || wire.blockHash === undefined)
-          return { included: false };
-        return {
-          included: true,
-          success: wire.success ?? true,
-          blockHeight: BigInt(wire.blockHeight),
-          blockHash: wire.blockHash,
-          txHash: wire.id,
-        };
-      },
-      slotConsumed: async (order, from, level) => {
-        if (order.kind !== 'nonce' && order.kind !== 'seqno') return false;
-        const slot = order.kind === 'nonce' ? order.nonce : order.seqno;
-        const fetchNonce = level === 'finalized' ? proof : monitor;
-        const next = BigInt(
-          await fetchNonce<string>('fake_getNonce', [
-            from,
-            level === 'finalized' ? 'finalized' : 'latest',
-          ]),
-        );
-        return next > slot;
-      },
+      includedFinal: (ref) =>
+        undecided(async () => {
+          const wire = await proof<FakeWireTx | null>('fake_getFinalizedTransaction', [
+            ref.id,
+          ]);
+          if (!wire || wire.blockHeight === undefined || wire.blockHash === undefined)
+            return { included: false };
+          return {
+            included: true,
+            success: wire.success ?? true,
+            blockHeight: BigInt(wire.blockHeight),
+            blockHash: wire.blockHash,
+            txHash: wire.id,
+          };
+        }),
+      slotConsumed: (order, from, level) =>
+        undecided(async () => {
+          if (order.kind !== 'nonce' && order.kind !== 'seqno') return false;
+          const slot = order.kind === 'nonce' ? order.nonce : order.seqno;
+          const fetchNonce = level === 'finalized' ? proof : monitor;
+          const next = BigInt(
+            await fetchNonce<string>('fake_getNonce', [
+              from,
+              level === 'finalized' ? 'finalized' : 'latest',
+            ]),
+          );
+          return next > slot;
+        }),
       expired: async (order) => {
         if (order.kind !== 'expiry' || order.lastValidHeight === undefined) return false;
         return (await finalizedHead()).height >= order.lastValidHeight;
       },
       blockHash: (height, level) =>
-        proof<string | null>('fake_getBlockHash', [height.toString(), level]),
+        undecided(() =>
+          proof<string | null>('fake_getBlockHash', [height.toString(), level]),
+        ),
     };
 
     const sequence: SequenceSource | undefined =
