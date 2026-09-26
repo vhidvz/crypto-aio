@@ -16,7 +16,7 @@ import {
   uncompressedPublicKey,
 } from './client';
 import { evmDriverFactory } from './driver';
-import { NATIVE_TAGS, throughSdk, transportCall } from './rpc';
+import { nativeTags, throughSdk, transportCall } from './rpc';
 import type { EvmAbi, EvmCallTags, EvmSignature, EvmTxFields } from './types';
 
 interface Eip1193Provider {
@@ -161,7 +161,7 @@ export class Web3Client extends EvmClientBase {
 
   createNative(): DisposableNativeClient {
     const call = (method: string, params: unknown) =>
-      transportCall(this.#transport, method, params, NATIVE_TAGS);
+      transportCall(this.#transport, method, params, nativeTags(method));
     return { client: new Web3(eip1193(call) as never) };
   }
 

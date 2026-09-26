@@ -30,7 +30,7 @@ import {
   uncompressedPublicKey,
 } from './client';
 import { evmDriverFactory } from './driver';
-import { NATIVE_TAGS, transportCall } from './rpc';
+import { nativeTags, transportCall } from './rpc';
 import type { EvmAbi, EvmCallTags, EvmSignature, EvmTxFields } from './types';
 
 type Call = (method: string, params: unknown) => Promise<unknown>;
@@ -168,7 +168,7 @@ export class EthersClient extends EvmClientBase {
 
   createNative(): DisposableNativeClient {
     const client = new TransportJsonRpcProvider(this.#network, (method, params) =>
-      transportCall(this.#transport, method, params, NATIVE_TAGS),
+      transportCall(this.#transport, method, params, nativeTags(method)),
     );
     return { client, close: () => client.destroy() };
   }

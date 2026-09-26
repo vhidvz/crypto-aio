@@ -69,8 +69,19 @@ export function blockTransactionsKey(result: unknown): unknown {
   };
 }
 
-/** The tags of a `crypto-aio/native` client's requests: plain reads. */
-export const NATIVE_TAGS: EvmCallTags = { purpose: 'read', retry: 'safe' };
+const NATIVE_READ: EvmCallTags = { purpose: 'read', retry: 'safe' };
+const NATIVE_BROADCAST: EvmCallTags = {
+  purpose: 'broadcast',
+  retry: 'ambiguous-on-failure',
+};
+
+/**
+ * The tags of a `crypto-aio/native` client's request: plain reads, except a broadcast, which
+ * is one (M3): a failure after the transport may have delivered it is `ambiguous`, never an
+ * invitation to sign again with a new nonce.
+ */
+export const nativeTags = (method: string): EvmCallTags =>
+  method === 'eth_sendRawTransaction' ? NATIVE_BROADCAST : NATIVE_READ;
 
 /**
  * The consensus facts compared under a quorum, per JSON-RPC method. Node implementations

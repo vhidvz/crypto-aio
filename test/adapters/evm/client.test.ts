@@ -1,6 +1,6 @@
 import { secp256k1 } from '@noble/curves/secp256k1';
-import { Wallet } from 'ethers';
-import { core, eth } from 'web3';
+import { Wallet, type JsonRpcApiProvider } from 'ethers';
+import { core, eth, type Web3 } from 'web3';
 import { quorumKeyFor, throughSdk } from '../../../src/adapters/evm/rpc';
 import { ProviderError } from '../../../src/core/errors/error';
 import type { CallOptions, Transport } from '../../../src/core/transport/types';
@@ -672,6 +672,25 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     expect(t.node.served.length).toBeGreaterThan(count);
     await first.close?.();
     await second.close?.();
+  });
+
+  it('tags a native broadcast as one, so a failure after delivery is ambiguous (R91 M3)', async () => {
+    const { transport, calls } = recording({
+      eth_sendRawTransaction: `0x${'11'.repeat(32)}`,
+      eth_blockNumber: '0x5',
+    });
+    const native = makeClient(library, transport, 11155111n).createNative();
+    const send = (method: string, params: unknown[]) =>
+      library === 'ethers'
+        ? (native.client as JsonRpcApiProvider).send(method, params)
+        : (native.client as Web3).requestManager.send({ method, params } as never);
+    await send('eth_sendRawTransaction', ['0x02f8']);
+    await send('eth_blockNumber', []);
+    expect(calls.map((c) => [c.method, c.options])).toEqual([
+      ['eth_sendRawTransaction', { purpose: 'broadcast', retry: 'ambiguous-on-failure' }],
+      ['eth_blockNumber', { purpose: 'read', retry: 'safe' }],
+    ]);
+    await native.close?.();
   });
 });
 
