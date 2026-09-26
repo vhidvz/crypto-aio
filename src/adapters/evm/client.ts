@@ -320,14 +320,24 @@ export abstract class EvmClientBase implements EvmClient {
     };
   }
 
+  /** M2: an answer about another transaction is malformed, never another's facts. */
   async getTransaction(txHash: string, tags: EvmCallTags): Promise<EvmTx | null> {
     const result = await this.send('eth_getTransactionByHash', [txHash], tags);
-    return result === null ? null : this.#tx(object(result, 'transaction'));
+    if (result === null) return null;
+    const tx = this.#tx(object(result, 'transaction'));
+    if (tx.hash !== txHash.toLowerCase()) throw malformed('transaction hash');
+    return tx;
   }
 
+  /** M2: an answer about another transaction is malformed, never another's receipt. */
   async getReceipt(txHash: string, tags: EvmCallTags): Promise<EvmReceipt | null> {
     const result = await this.send('eth_getTransactionReceipt', [txHash], tags);
-    return result === null ? null : this.#receipt(object(result, 'receipt'));
+    if (result === null) return null;
+    const receipt = this.#receipt(object(result, 'receipt'));
+    if (receipt.transactionHash !== txHash.toLowerCase()) {
+      throw malformed('transaction hash');
+    }
+    return receipt;
   }
 
   async getBlockReceipts(
@@ -434,7 +444,8 @@ export abstract class EvmClientBase implements EvmClient {
           : this.#address(json.to, 'recipient'),
       nonce: quantity(json.nonce, 'nonce'),
       value: quantity(json.value, 'value'),
-      input: data(json.input ?? json.data ?? '0x', 'input'),
+      // M2: no calldata field is malformed, never an empty call (older nodes say `data`).
+      input: data(json.input ?? json.data, 'input'),
       type: Number(optionalQuantity(json.type, 'type') ?? 0n),
       gasLimit: quantity(json.gas, 'gas limit'),
       ...(gasPrice !== undefined ? { gasPrice } : {}),

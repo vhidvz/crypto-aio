@@ -529,6 +529,57 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     });
   });
 
+  it('refuses an answer about another transaction, or one without its calldata (R91 M2)', async () => {
+    const t = setup();
+    const broadcast = { purpose: 'broadcast' } as const;
+    const first = await t.run(t.client.sendRawTransaction(await t.sign(0), broadcast));
+    const second = await t.run(t.client.sendRawTransaction(await t.sign(1), broadcast));
+    t.node.mine();
+    const malformed = {
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: expect.stringMatching(/^malformed .* in a JSON-RPC answer$/),
+    };
+    // A buggy or misrouted answer describes another transaction.
+    t.node.intercept = (_e, method, params) =>
+      (method === 'eth_getTransactionByHash' || method === 'eth_getTransactionReceipt') &&
+      params[0] === first
+        ? { result: t.node.answer(method, [second]) }
+        : undefined;
+    await expect(t.run(t.client.getTransaction(first, READ))).rejects.toMatchObject(
+      malformed,
+    );
+    await expect(t.run(t.client.getReceipt(first, READ))).rejects.toMatchObject(
+      malformed,
+    );
+    expect(await t.run(t.client.getTransaction(second, READ))).toMatchObject({
+      hash: second,
+    });
+    expect(await t.run(t.client.getReceipt(second, READ))).toMatchObject({
+      transactionHash: second,
+    });
+    // No calldata at all is malformed, not an empty call; older nodes name it `data`.
+    const calldata = (field?: 'data') => {
+      t.node.intercept = (_e, method, params) => {
+        if (method !== 'eth_getTransactionByHash') return undefined;
+        const { input, ...rest } = t.node.answer(method, params) as Record<
+          string,
+          unknown
+        >;
+        return { result: field ? { ...rest, [field]: input } : rest };
+      };
+    };
+    calldata();
+    await expect(t.run(t.client.getTransaction(first, READ))).rejects.toMatchObject(
+      malformed,
+    );
+    calldata('data');
+    expect(await t.run(t.client.getTransaction(first, READ))).toMatchObject({
+      hash: first,
+      input: '0x',
+    });
+  });
+
   it('reaches the transport with no real timer and no fake time (R46)', async () => {
     const t = setup();
     const timers = jest.spyOn(global, 'setTimeout');
