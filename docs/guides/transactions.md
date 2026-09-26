@@ -95,7 +95,8 @@ signed elsewhere, for example a PSBT back from a hardware wallet:
 `cold.submitSignatures(prepared.operation.id, { encoding: 'base64', data: signedPsbt })`. The
 driver extracts the signatures, and only their bytes are used: the core verifies each one
 against its stored request, exactly like a bundle. A payload that is not the prepared
-transaction is `INVALID_INTENT`, and a chain whose driver cannot read one throws
+transaction is refused: `INVALID_INTENT` when the driver tells it apart, otherwise
+`SIGNATURE_MISMATCH` from the core's check. A chain whose driver cannot read one throws
 `UNSUPPORTED_CAPABILITY` (submit bundles there). The Operation must belong to the handle's
 chain, network and wallet, as for bundles.
 

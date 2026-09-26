@@ -146,8 +146,9 @@ export interface TxBuilder {
   /**
    * P3-B (A6): the signatures a payload signed elsewhere carries for `unsigned`'s requests,
    * e.g. a PSBT a cold signer returned. No I/O. Throws `ValidationError('INVALID_INTENT')`
-   * when `signed` is not the prepared transaction. Only signature bytes are taken from it:
-   * the core verifies each one against its stored request (R9), as for any bundle. A request
+   * when `signed` is not the prepared transaction; one it does not tell apart still fails
+   * the core's check with `SIGNATURE_MISMATCH`. Only signature bytes are taken from it: the
+   * core verifies each one against its stored request (R9), as for any bundle. A request
    * without a signature in `signed` is left out (a partial set).
    */
   signaturesFrom?(unsigned: UnsignedTx, signed: RawTx): readonly SignatureBundle[];

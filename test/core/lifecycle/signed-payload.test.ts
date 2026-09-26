@@ -10,17 +10,23 @@ import { fromHex, toHex } from '../../../src/core/util/bytes';
 import { createFakeEnv, type FakeEnv } from '../../../src/testing/env';
 import { ctx } from '../signing/fixtures';
 
-/** A cold wallet over `signer`'s key (default: the env's), and its prepared transfer. */
-async function prepareCold(env: FakeEnv, signer: Signer = env.signer) {
+/** A watch-only handle over `signer`'s key (default: the env's). */
+async function coldOf(env: FakeEnv, signer: Signer = env.signer) {
   const publicKey = await signer.getPublicKey('secp256k1-ecdsa');
-  const cold = env.aio
+  return env.aio
     .scope({ wallets: { cold: { publicKey: toHex(publicKey) } } })
     .blockchain({ chain: 'fakechain', wallet: 'cold' });
+}
+
+/** A cold wallet over `signer`'s key (default: the env's), and its prepared transfer. */
+async function prepareCold(
+  env: FakeEnv,
+  signer: Signer = env.signer,
+  idempotencyKey = 'cold-1',
+) {
+  const cold = await coldOf(env, signer);
   const prepared = await env.run(
-    cold.prepareTransfer(
-      { to: env.stranger(), amount: 7n },
-      { idempotencyKey: 'cold-1' },
-    ),
+    cold.prepareTransfer({ to: env.stranger(), amount: 7n }, { idempotencyKey }),
   );
   const signed = await signer.sign(prepared.unsigned?.signingRequests ?? [], ctx);
   if (signed.status !== 'signed') throw new Error('unreachable');
@@ -75,6 +81,61 @@ describe('submitSignatures with a signed payload (A6)', () => {
     ).rejects.toMatchObject({ code: 'SIGNATURE_MISMATCH' });
     const op = await env.stores.operations.get('default', prepared.operation.id);
     expect(op?.attempts).toHaveLength(0);
+  });
+
+  it("refuses another transaction's genuine signatures, writing nothing (P25-R12)", async () => {
+    const env = await createFakeEnv();
+    const a = await prepareCold(env);
+    const b = await prepareCold(env, env.signer, 'cold-2');
+    // Same wallet and intent, another nonce: B is another transaction, validly signed.
+    expect(b.prepared.unsigned?.payload).not.toEqual(a.prepared.unsigned?.payload);
+    const seen = await withExtractor(env, a.cold);
+    // The fake names its one request 'r0' in every transaction, so B's signature reaches
+    // A's request and fails the core's verification against A's digest.
+    await expect(
+      env.run(a.cold.submitSignatures(a.prepared.operation.id, payloadOf(b.signatures))),
+    ).rejects.toMatchObject({ code: 'SIGNATURE_MISMATCH' });
+    expect(seen[0]?.unsigned.payload).toEqual(a.prepared.unsigned?.payload);
+    const op = await env.stores.operations.get('default', a.prepared.operation.id);
+    expect(op?.attempts).toHaveLength(0);
+  });
+
+  it('refuses a payload once the Operation has moved on, adding no attempt (P25-R12)', async () => {
+    const env = await createFakeEnv();
+    const { cold, prepared, signatures } = await prepareCold(env);
+    await withExtractor(env, cold);
+    const sub = await env.run(cold.submitSignatures(prepared.operation.id, signatures));
+    expect(sub.state).toBe('submitted');
+    await expect(
+      env.run(cold.submitSignatures(prepared.operation.id, payloadOf(signatures))),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+    const op = await env.stores.operations.get('default', prepared.operation.id);
+    expect(op?.attempts).toHaveLength(1);
+  });
+
+  it('refuses a payload for an Operation that never built a transaction (P25-R12)', async () => {
+    const env = await createFakeEnv();
+    const poor = localSigner.generate({ curves: ['secp256k1'], id: 'poor' }).signer;
+    const cold = await coldOf(env, poor);
+    await expect(
+      env.run(
+        cold.prepareTransfer(
+          { to: env.stranger(), amount: 7n },
+          { idempotencyKey: 'poor' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    const failed = await env.stores.operations.getByKey('default', 'poor');
+    expect(failed).toMatchObject({ state: 'failed' });
+    expect(failed?.unsigned).toBeUndefined();
+    const seen = await withExtractor(env, cold);
+    await expect(
+      env.run(cold.submitSignatures(failed?.id ?? '', payloadOf([]))),
+    ).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+      context: { operationId: failed?.id },
+    });
+    expect(seen).toHaveLength(0);
   });
 
   it('refuses a signed payload on a driver that cannot read one, writing nothing', async () => {
