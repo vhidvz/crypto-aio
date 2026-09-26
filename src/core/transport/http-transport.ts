@@ -89,6 +89,8 @@ interface Endpoint {
   /** A24/P25-R8: health refreshes in a row whose identity or height probe failed; 0 once a
    * refresh's probes succeed (a caller-aborted identity check is neither, N1). */
   healthMisses: number;
+  /** P25-R10/I2: when the last counted miss was recorded; at most one counts per interval. */
+  lastMissAt?: number;
   latencyMs?: number;
   failures: number;
   /** P25-R6/M1: tokens this endpoint's probes have taken from its bucket, ever. */
@@ -513,6 +515,7 @@ export class HttpTransport implements Transport {
       endpoint.identityRetryAt = undefined;
       endpoint.height = undefined;
       endpoint.healthMisses = 0;
+      endpoint.lastMissAt = undefined;
     }
   }
 
@@ -1537,6 +1540,23 @@ export class HttpTransport implements Transport {
     }
   }
 
+  /**
+   * P25-R10/I2: records a genuine failed health refresh, at most one per `healthIntervalMs`,
+   * so a caller that refreshes often (`refreshHealth`, `getNetworkStatus`) never turns one
+   * hiccup into three misses and the endpoint's exclusion from a proof quorum's count.
+   */
+  #recordMiss(endpoint: Endpoint): void {
+    const now = this.#clock.now();
+    if (
+      endpoint.lastMissAt !== undefined &&
+      now - endpoint.lastMissAt < this.#opts.healthIntervalMs
+    ) {
+      return;
+    }
+    endpoint.healthMisses += 1;
+    endpoint.lastMissAt = now;
+  }
+
   /** A proven identity mismatch: the endpoint serves a different network and is disabled. */
   #disable(endpoint: Endpoint, expected: string, actual: unknown): void {
     endpoint.identity = 'mismatch';
@@ -1639,6 +1659,7 @@ export class HttpTransport implements Transport {
           // P25-R8: identity and height failures feed one counter, which a refresh whose
           // probes all succeeded (with no height probe, the identity alone) resets.
           endpoint.healthMisses = 0;
+          endpoint.lastMissAt = undefined;
           anySucceeded = true;
         } catch (error) {
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
@@ -1648,7 +1669,7 @@ export class HttpTransport implements Transport {
           // about the endpoint, so it is no miss. The height probe itself runs only under
           // this refresh's own deadline (I8), so no caller can abort it.
           if (this.#abandonedChecks.has(error as object)) anyAbandoned = true;
-          else endpoint.healthMisses += 1;
+          else this.#recordMiss(endpoint);
           // R18 (round 3): #refresh never does breaker bookkeeping — no onAttempt, onSuccess,
           // onFailure or onAbandon. A probe failure here only affects height/identity state,
           // never endpoint.breaker or endpoint.failures. The breaker tracks request traffic.

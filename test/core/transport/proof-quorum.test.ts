@@ -176,6 +176,8 @@ describe('proof quorum and height exclusion (A14)', () => {
     for (let refresh = 1; refresh <= 2; refresh++) {
       await drive(clock, transport.refreshHealth());
       await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+      // P25-R10/I2: at most one miss counts per health interval.
+      await clock.advance(HEALTH_INTERVAL_MS);
     }
     // A sustained outage: after the third failed refresh in a row, b no longer counts.
     await drive(clock, transport.refreshHealth());
@@ -237,13 +239,16 @@ describe('proof quorum and height exclusion (A14)', () => {
     await expect(request).rejects.toBe(reason);
     await drive(clock, aborted);
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
-    // Two genuine failed height probes: b (identity now confirmed) still counts.
+    // Two genuine failed height probes, one health interval apart (P25-R10/I2): b (identity
+    // now confirmed) still counts.
     for (let refresh = 1; refresh <= 2; refresh++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
       await drive(clock, transport.refreshHealth());
       await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
     }
     expect(identityCalls).toBe(2);
     // The third genuine failure in a row is the sustained outage.
+    await clock.advance(HEALTH_INTERVAL_MS);
     await drive(clock, transport.refreshHealth());
     await expect(proof()).resolves.toBe('fact');
     expect([finCalls('a'), finCalls('b')]).toEqual([1, 0]);
@@ -377,9 +382,32 @@ describe('proof quorum and unverified identities (A24, P25-R8)', () => {
   });
 });
 
-// P25-R10: counting endpoints that cannot answer must never stall proofs for good; a dead
-// endpoint leaves the count after three spaced misses, whatever probes are configured.
-describe('proof quorum liveness (P25-R10)', () => {
+// P25-R10: counting endpoints that cannot answer must never stall proofs for good (a dead
+// endpoint leaves the count after three spaced misses, whatever probes are configured), and
+// misses are spaced in time, so frequent refreshes never turn a hiccup into exclusion.
+describe('proof quorum health misses (P25-R10)', () => {
+  it('counts at most one miss per health interval, so rapid refreshes never leave the liar alone (I2)', async () => {
+    const { fake, finCalls } = network(
+      { liar: '1000000', honest: 'down' },
+      { liar: 'forged' },
+    );
+    const { transport, clock } = setup(
+      [endpoint('liar', 0), endpoint('honest', 1)],
+      fake,
+      { maxLagBlocks: 5 },
+    );
+    transport.setProbes(probes);
+    // Three refreshes at the same instant (a caller polling refreshHealth or
+    // getNetworkStatus) are one miss, not a sustained outage.
+    for (let refresh = 1; refresh <= 3; refresh++) {
+      await drive(clock, transport.refreshHealth());
+    }
+    await expect(
+      drive(clock, transport.rpc('fin', [], { quorum: 'proof' })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(finCalls('liar')).toBe(0);
+  });
+
   it('drops a dead endpoint after three spaced misses with an identity probe alone (I1)', async () => {
     const ids = { a: '1', b: '1' };
     const answers: Record<string, string> = {};
