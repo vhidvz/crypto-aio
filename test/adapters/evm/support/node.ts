@@ -657,6 +657,15 @@ export class ScriptedEvmNode {
         return this.#txJson(params[0] as string);
       case 'eth_getTransactionReceipt':
         return this.#receiptJson(params[0] as string);
+      case 'eth_getBlockReceipts': {
+        // geth takes a block number, tag or hash; every receipt of the block, in order.
+        const [at] = params;
+        const block =
+          typeof at === 'string' && at.length === 66
+            ? this.#blocks.find((b) => b.hash === at)
+            : this.#blockAt(at);
+        return block ? block.txs.map((hash) => this.#receiptJson(hash)) : null;
+      }
       case 'eth_getLogs': {
         const filter = params[0] as { blockHash: string; topics?: (string | null)[] };
         const block = this.#blocks.find((b) => b.hash === filter.blockHash);

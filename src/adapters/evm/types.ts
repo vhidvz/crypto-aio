@@ -225,6 +225,15 @@ export interface EvmClient {
   ): Promise<EvmFullBlock | null>;
   getTransaction(hash: string, tags: EvmCallTags): Promise<EvmTx | null>;
   getReceipt(hash: string, tags: EvmCallTags): Promise<EvmReceipt | null>;
+  /**
+   * Every receipt of the block with this hash, in block order (`eth_getBlockReceipts`):
+   * read by block, so a node serves them without a transaction or log index. `null` for a
+   * block the node does not know.
+   */
+  getBlockReceipts(
+    blockHash: string,
+    tags: EvmCallTags,
+  ): Promise<readonly EvmReceipt[] | null>;
   getLogs(
     filter: { readonly blockHash: string; readonly topics: readonly (string | null)[] },
     tags: EvmCallTags,

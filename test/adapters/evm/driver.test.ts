@@ -1,6 +1,10 @@
 import { EVM_CHAINS } from '../../../src/adapters/evm/chains';
 import { ethersDriverFactory } from '../../../src/adapters/evm/ethers-client';
-import { createEvmBlocks, createEvmProofs } from '../../../src/adapters/evm/proofs';
+import {
+  consumptionHeight,
+  createEvmBlocks,
+  createEvmProofs,
+} from '../../../src/adapters/evm/proofs';
 import { createEvmReader } from '../../../src/adapters/evm/reader';
 import { web3DriverFactory } from '../../../src/adapters/evm/web3-client';
 import type { ChainDriver } from '../../../src/core/driver/types';
@@ -15,6 +19,7 @@ import type {
 } from '../../../src/core/transport/types';
 import { LIBRARIES, nodeTransport, type Library } from './support/harness';
 import { evmHarness, submit } from './support/context';
+import type { Intercept } from './support/node';
 import { KEY_ADDRESS, RECIPIENT } from './support/vectors';
 
 const TOKEN = '0x00000000000000000000000000000000000070Ce';
@@ -234,6 +239,40 @@ describe.each(LIBRARIES)('EVM driver factory (%s)', (library) => {
       ['a', 'healthy'],
       ['b', 'lagging'],
     ]);
+  });
+});
+
+describe('the search for the height that consumed a nonce (R88)', () => {
+  /** A chain whose nonce was consumed at `at`, recording every height read. */
+  function chain(at: bigint) {
+    const reads: bigint[] = [];
+    const consumed = async (height: bigint) => {
+      reads.push(height);
+      return height >= at;
+    };
+    return { reads, consumed };
+  }
+
+  it('gallops back from the final height, then bisects', async () => {
+    const c = chain(6n);
+    expect(await consumptionHeight(c.consumed, 22n)).toBe(6n);
+    expect(c.reads).toEqual([21n, 20n, 18n, 14n, 6n, 0n, 3n, 4n, 5n]);
+    const recent = chain(22n);
+    expect(await consumptionHeight(recent.consumed, 22n)).toBe(22n);
+    expect(recent.reads).toEqual([21n]);
+    expect(await consumptionHeight(chain(0n).consumed, 3n)).toBe(0n);
+    expect(await consumptionHeight(chain(0n).consumed, 0n)).toBe(0n);
+  });
+
+  it('reaches a billion blocks back, and decides nothing past its bound', async () => {
+    expect(await consumptionHeight(chain(5n).consumed, 2n ** 30n)).toBe(5n);
+    const far = chain(5n);
+    await expect(consumptionHeight(far.consumed, 2n ** 40n)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: 'the nonce was consumed too far back to look up',
+    });
+    expect(far.reads).toHaveLength(64);
   });
 });
 
@@ -672,6 +711,239 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
         t.run(t.proofs.includedFinal(ref(winner), nonce(0n), KEY_ADDRESS)),
       ).rejects.toMatchObject(inconsistent);
     }
+  });
+
+  /**
+   * R88: every endpoint's transaction index lost `hashes`, as geth's does past its
+   * `TransactionHistory` window: lookups by hash answer `null`, reads by block still serve.
+   */
+  function unindexed(
+    t: ReturnType<typeof setup>,
+    hashes: readonly string[],
+    intercept?: Intercept,
+  ): void {
+    t.node.intercept = (endpoint, method, params) =>
+      (method === 'eth_getTransactionReceipt' || method === 'eth_getTransactionByHash') &&
+      hashes.includes(params[0] as string)
+        ? { result: null }
+        : intercept?.(endpoint, method, params);
+  }
+
+  /** `endpoint` serves the block at `height` with its transactions rewritten by `edit`. */
+  const rewrittenBlock =
+    (
+      t: ReturnType<typeof setup>,
+      endpoint: string,
+      height: bigint,
+      edit: (txs: Record<string, unknown>[]) => Record<string, unknown>[],
+    ): Intercept =>
+    (e, method, params) => {
+      if (e !== endpoint || method !== 'eth_getBlockByNumber') return undefined;
+      if (params[0] !== hex(height) || params[1] !== true) return undefined;
+      const real = t.node.answer(method, params) as Record<string, unknown>;
+      const txs = real.transactions as Record<string, unknown>[];
+      return { result: { ...real, transactions: edit(txs) } };
+    };
+
+  it('proves a final transfer the index lost by its nonce, never "not included" (R88)', async () => {
+    // The final review's C1: both endpoints answer `null` for an executed, final transfer.
+    // "Not included" would let the core prove it `replaced`, and the caller pay again.
+    const t = setup();
+    t.node.mine(5);
+    const hash = await submit(t, 0);
+    t.node.mine(21);
+    expect(t.node.receipt(hash)).toMatchObject({ status: 1, blockNumber: 6n });
+    unindexed(t, [hash]);
+    const reads = nonceReads(t);
+    t.calls.length = 0;
+    expect(
+      await t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
+    ).toEqual({
+      included: true,
+      success: true,
+      blockHeight: 6n,
+      blockHash: t.node.block(6n)?.hash,
+      txHash: hash,
+    });
+    // The attested final height (24 less PEER_SKEW) still shows the nonce consumed; a gallop
+    // back finds a height where it is not (0), and a binary search the block that consumed it.
+    expect(reads.filter(([e]) => e === 'a').map(([, at]) => at)).toEqual(
+      [22, 21, 20, 18, 14, 6, 0, 3, 4, 5].map(hex),
+    );
+    expect(new Set(reads.map(([e]) => e))).toEqual(new Set(['a', 'b']));
+    const methods = t.calls.map((c) => [c.method, c.tags.purpose, c.tags.quorum]);
+    expect(methods.slice(0, 3)).toEqual([
+      ['getReceipt', 'proof', 'proof'],
+      ['getBlock', 'monitor', undefined],
+      ['getBlock', 'proof', 'proof'],
+    ]);
+    expect(methods.slice(-2)).toEqual([
+      ['getBlockWithTransactions', 'proof', 'proof'],
+      ['getBlockReceipts', 'proof', 'proof'],
+    ]);
+    expect(methods.slice(3, -2)).toEqual(
+      Array.from({ length: 10 }, () => ['getTransactionCount', 'proof', 'proof']),
+    );
+    // A token transfer the index lost gets the same verdict as one it serves (R50).
+    t.node.deployToken(TOKEN, { symbol: 'FLS', decimals: 6, returnsFalse: true });
+    const data = t.client.abi.encodeTransfer(RECIPIENT, 10n);
+    const token = await submit(t, 1, { to: TOKEN, value: 0n, gasLimit: 60_000n, data });
+    t.node.mine(5);
+    expect(t.node.receipt(token)?.status).toBe(1);
+    unindexed(t, [hash, token]);
+    expect(
+      await t.run(t.proofs.includedFinal(ref(token), nonce(1n), KEY_ADDRESS)),
+    ).toMatchObject({ included: true, success: false, blockHeight: 27n });
+  });
+
+  it('proves a replacement "not included" only by the final transaction at its nonce (R88)', async () => {
+    const t = setup();
+    const first = await submit(t, 0);
+    t.node.mine(2);
+    const winner = await submit(t, 1);
+    // Our nonce-1 transaction is replaced by one that pays more, from outside the library.
+    const external = await submit(t, 1, {
+      to: OTHER,
+      maxFeePerGas: 4_000_000_000n,
+      maxPriorityFeePerGas: 2_000_000_000n,
+    });
+    t.node.mine(5);
+    expect(t.node.receipt(external)?.blockNumber).toBe(3n);
+    // Neither endpoint indexes any of them any more.
+    unindexed(t, [first, winner, external]);
+    expect(
+      await t.run(t.proofs.includedFinal(ref(winner), nonce(1n), KEY_ADDRESS)),
+    ).toEqual({ included: false });
+    expect(
+      await t.run(t.proofs.includedFinal(ref(external), nonce(1n), KEY_ADDRESS)),
+    ).toMatchObject({ included: true, success: true, blockHeight: 3n });
+    expect(
+      await t.run(t.proofs.includedFinal(ref(first), nonce(0n), KEY_ADDRESS)),
+    ).toMatchObject({ included: true, success: true, blockHeight: 1n });
+  });
+
+  it('decides nothing without the historical state, the block or its receipts (R88)', async () => {
+    const t = setup();
+    t.node.mine(3);
+    const hash = await submit(t, 0);
+    t.node.mine(8);
+    const proof = () => t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS));
+    for (const failing of ['a', 'b']) {
+      // A node that pruned the state below its recent window.
+      unindexed(t, [hash], (e, method, params) =>
+        e === failing && method === 'eth_getTransactionCount' && params[1] !== hex(7n)
+          ? { error: { code: -32000, message: 'missing trie node' } }
+          : undefined,
+      );
+      await expect(proof()).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+        message: 'finalized state not available',
+      });
+      // A node without eth_getBlockReceipts.
+      unindexed(t, [hash], (e, method) =>
+        e === failing && method === 'eth_getBlockReceipts'
+          ? { error: { code: -32601, message: 'the method does not exist' } }
+          : undefined,
+      );
+      await expect(proof()).rejects.toMatchObject(noAnswer);
+    }
+    // The endpoints agree the block's receipts are gone, or that no transaction in it used
+    // the nonce (an EIP-7702 authorization consumes one without a transaction from it).
+    unindexed(t, [hash], (_e, method) =>
+      method === 'eth_getBlockReceipts' ? { result: null } : undefined,
+    );
+    await expect(proof()).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    const hidden = (txs: Record<string, unknown>[]) => txs.filter((x) => x.hash !== hash);
+    unindexed(t, [hash], (e, method, params) =>
+      rewrittenBlock(t, e, 4n, hidden)(e, method, params),
+    );
+    await expect(proof()).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    unindexed(t, [hash]);
+    expect(await proof()).toMatchObject({ included: true, blockHeight: 4n });
+  });
+
+  it('lets no single endpoint force either answer while looking up the nonce (R88)', async () => {
+    const t = setup();
+    const replaced = await submit(t, 0);
+    const winner = await submit(t, 0, {
+      maxFeePerGas: 4_000_000_000n,
+      maxPriorityFeePerGas: 2_000_000_000n,
+    });
+    t.node.mine(2);
+    const executed = await submit(t, 1);
+    t.node.mine(5);
+    expect([
+      t.node.receipt(winner)?.blockNumber,
+      t.node.receipt(executed)?.blockNumber,
+    ]).toEqual([1n, 3n]);
+    const prove = (hash: string, n: bigint) =>
+      t.run(t.proofs.includedFinal(ref(hash), nonce(n), KEY_ADDRESS));
+    const forged = `0x${'99'.repeat(32)}`;
+    for (const liar of ['a', 'b']) {
+      const lies: [string, bigint, Intercept][] = [
+        // "Not included" for the executed transfer: another hash at its nonce.
+        [
+          executed,
+          1n,
+          rewrittenBlock(t, liar, 3n, (txs) =>
+            txs.map((x) => (x.hash === executed ? { ...x, hash: forged } : x)),
+          ),
+        ],
+        // ...or its nonce not consumed at any earlier height.
+        [
+          executed,
+          1n,
+          (e, method, params) =>
+            e === liar && method === 'eth_getTransactionCount' && params[1] !== 'latest'
+              ? { result: '0x1' }
+              : undefined,
+        ],
+        // A failed verdict for it: a reverted receipt.
+        [
+          executed,
+          1n,
+          (e, method, params) =>
+            e === liar && method === 'eth_getBlockReceipts'
+              ? {
+                  result: (t.node.answer(method, params) as object[]).map((r) => ({
+                    ...r,
+                    status: '0x0',
+                  })),
+                }
+              : undefined,
+        ],
+        // "Included" for the replaced transaction: its hash in the winner's place.
+        [
+          replaced,
+          0n,
+          rewrittenBlock(t, liar, 1n, (txs) =>
+            txs.map((x) => (x.hash === winner ? { ...x, hash: replaced } : x)),
+          ),
+        ],
+        // A token call's arguments, which the verdict reads, forged in the block.
+        [
+          executed,
+          1n,
+          rewrittenBlock(t, liar, 3n, (txs) =>
+            txs.map((x) => (x.hash === executed ? { ...x, input: '0xa9059cbb' } : x)),
+          ),
+        ],
+      ];
+      for (const [hash, n, lie] of lies) {
+        unindexed(t, [replaced, winner, executed], lie);
+        await expect(prove(hash, n)).rejects.toMatchObject(inconsistent);
+      }
+    }
+    unindexed(t, [replaced, winner, executed]);
+    expect(await prove(replaced, 0n)).toEqual({ included: false });
+    expect(await prove(executed, 1n)).toMatchObject({ included: true, success: true });
   });
 
   it('ignores whatever the first endpoint forges outside the consensus facts', async () => {

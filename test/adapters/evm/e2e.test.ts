@@ -7,6 +7,7 @@ import { native } from '../../../src/native';
 import { CrashError, FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, createEvmEnv } from './support/env';
 import { LIBRARIES } from './support/harness';
+import type { ScriptedEvmNode } from './support/node';
 import { KEY, RECIPIENT } from './support/vectors';
 
 const TOKEN = '0x00000000000000000000000000000000000070Ce';
@@ -298,6 +299,68 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     const final = await env.mineWhile(waiting);
     expect(final.operation?.state).toBe('final');
     expect(env.node.balance(RECIPIENT)).toBe(5n);
+  });
+
+  /** R88: both endpoints' transaction index lost `hash` (geth past its history window). */
+  const unindexed = (env: { readonly node: ScriptedEvmNode }, hash: string) => {
+    env.node.intercept = (_endpoint, method, params) =>
+      (method === 'eth_getTransactionReceipt' || method === 'eth_getTransactionByHash') &&
+      params[0] === hash
+        ? { result: null }
+        : undefined;
+  };
+
+  it('proves a final transfer the index lost executed, never replaced (R88)', async () => {
+    // The final review's C1: no pass saw the transfer land before the endpoints' index
+    // dropped it (an outage, a restored store, or no monitor running).
+    const env = await createEvmEnv({ library, endpoints: ['a', 'b'] });
+    const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: 3n }));
+    const ref = sub.attempt?.id ?? '';
+    env.node.mine(10);
+    expect(env.node.balance(RECIPIENT)).toBe(3n);
+    expect(env.node.receipt(ref)?.status).toBe(1);
+    unindexed(env, ref);
+    const final = await env.mineWhile(sub.wait({ finality: 'final' }));
+    expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    const op = await env.stores.operations.get('default', sub.operationId);
+    expect(
+      await env.stores.operations.getObservation(op?.activeAttemptId ?? ''),
+    ).toMatchObject({
+      state: 'final',
+      evidence: 'proven',
+      blockHash: env.node.receipt(ref)?.blockHash,
+    });
+  });
+
+  it('still proves a transfer replaced from outside the library replaced (R88)', async () => {
+    const env = await createEvmEnv({ library, endpoints: ['a', 'b'] });
+    const sub = await env.run(
+      env.bc.transfer({ to: RECIPIENT, amount: 3n, fee: 'slow' }),
+    );
+    // The same key signs another transaction for the same nonce elsewhere, paying more.
+    const raw = await new Wallet(`0x${KEY}`).signTransaction({
+      chainId: env.node.options.chainId,
+      nonce: 0,
+      to: env.address,
+      value: 0n,
+      gasLimit: 21_000n,
+      type: 2,
+      maxFeePerGas: 100n * GWEI,
+      maxPriorityFeePerGas: 50n * GWEI,
+    });
+    const external = env.node.submit(raw);
+    env.node.mine();
+    expect(env.node.receipt(external)?.status).toBe(1);
+    unindexed(env, external);
+    await expect(env.mineWhile(sub.wait({ finality: 'final' }))).rejects.toMatchObject({
+      code: 'TX_REPLACED',
+    });
+    const op = await env.stores.operations.get('default', sub.operationId);
+    expect(op?.state).toBe('failed');
+    expect(
+      await env.stores.operations.getObservation(op?.activeAttemptId ?? ''),
+    ).toMatchObject({ state: 'replaced', evidence: 'proven' });
+    expect(env.node.balance(RECIPIENT)).toBe(0n);
   });
 
   describe('crash and recovery', () => {

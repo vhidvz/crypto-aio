@@ -24,6 +24,7 @@ export function recording(client: EvmClient) {
     'getBlockWithTransactions',
     'getTransaction',
     'getReceipt',
+    'getBlockReceipts',
     'getLogs',
     'sendRawTransaction',
   ]);

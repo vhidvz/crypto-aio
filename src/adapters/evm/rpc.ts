@@ -27,6 +27,16 @@ const lowerCased = (value: unknown): unknown =>
       ? value.map(lowerCased)
       : value;
 
+/** The `keys` of `value`, each lower-cased: hex case is formatting, not consensus. */
+function lowerCasedFacts(value: unknown, keys: readonly string[]): unknown {
+  const facts = pick(value, keys);
+  return facts !== null && typeof facts === 'object'
+    ? Object.fromEntries(
+        Object.entries(facts).map(([key, fact]) => [key, lowerCased(fact)]),
+      )
+    : facts;
+}
+
 /**
  * R59: a receipt's consensus facts include its logs, since a proven token verdict (R50)
  * reads them: one endpoint that drops or alters a `Transfer` log must disagree. Hex case is
@@ -37,15 +47,24 @@ function receiptKey(result: unknown): unknown {
   const logs = (result as Record<string, unknown>).logs;
   return {
     ...(pick(result, RECEIPT) as Record<string, unknown>),
-    logs: Array.isArray(logs)
-      ? logs.map((log) => {
-          const facts = pick(log, LOG);
-          return facts !== null && typeof facts === 'object'
-            ? Object.fromEntries(
-                Object.entries(facts).map(([key, value]) => [key, lowerCased(value)]),
-              )
-            : facts;
-        })
+    logs: Array.isArray(logs) ? logs.map((log) => lowerCasedFacts(log, LOG)) : null,
+  };
+}
+
+const BLOCK_TX = ['hash', 'from', 'nonce', 'to', 'input'] as const;
+
+/**
+ * R88: the consensus facts of a block read with its transactions to find the one that
+ * consumed a nonce: the block's number and hash, and each transaction's hash, sender and
+ * nonce, with the recipient and calldata that the token verdict reads (R50).
+ */
+export function blockTransactionsKey(result: unknown): unknown {
+  if (result === null || typeof result !== 'object') return result;
+  const txs = (result as Record<string, unknown>).transactions;
+  return {
+    ...(lowerCasedFacts(result, ['number', 'hash']) as Record<string, unknown>),
+    transactions: Array.isArray(txs)
+      ? txs.map((tx) => lowerCasedFacts(tx, BLOCK_TX))
       : null,
   };
 }
@@ -65,6 +84,8 @@ export function quorumKeyFor(method: string): ((result: unknown) => unknown) | u
       return (result) => pick(result as Json, BLOCK);
     case 'eth_getTransactionReceipt':
       return receiptKey;
+    case 'eth_getBlockReceipts':
+      return (result) => (Array.isArray(result) ? result.map(receiptKey) : result);
     case 'eth_getTransactionByHash':
       return (result) => pick(result as Json, TX);
     default:

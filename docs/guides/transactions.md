@@ -169,6 +169,14 @@ const now = await bc.getTransactionStatus(operationId); // one read
   the proof decide nothing (a retryable `PROVIDER_UNAVAILABLE`) until endpoints that serve it
   answer; so does any other JSON-RPC error on a proof read, since only a definitive answer
   proves "no". With one endpoint the proof quorum is 1, so configure two or more providers.
+- **Run the monitor.** A node answers "not found" for every transaction outside its index
+  window (geth keeps the last 2,350,000 blocks: weeks on fast chains, under a year on
+  Ethereum), so a missing receipt proves nothing. A transaction older than your endpoints'
+  index window is resolved by its nonce: the proof finds the final block that used the nonce
+  and reads the sender's transaction there. `TX_REPLACED` needs another transaction there;
+  your own is proven final with its receipt from that block. That lookup reads historical
+  state (an archive node for old blocks). Without it, the Attempt stays undecided, and it is
+  never failed.
 
 ## Background workers and startup recovery
 
@@ -284,7 +292,7 @@ land.**
 | `INSUFFICIENT_FUNDS`, `POLICY_REJECTED` with state `failed` | Failed before signing; nonce released | Fix the cause; retry with a **new** key |
 | `INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, `NONCE_TOO_HIGH`, `TX_REFUSED` with state `stalled` | Node refused signed bytes | `rebroadcast` after the fix, `replace` or `cancel`; never a new key |
 | `NONCE_CONFLICT` | A cancel or replacement lost: the original is already mined | Wait for the original |
-| `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure | Reconcile; a new transfer with a new key is safe, except for an EVM token `TX_REVERTED` whose receipt succeeded: value may have moved, so check the chain first ([EVM token verdicts](#waiting-and-watching)) |
+| `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure. For `TX_REPLACED`, another transaction is final in the slot | Reconcile; a new transfer with a new key is safe, except for an EVM token `TX_REVERTED` whose receipt succeeded: value may have moved, so check the chain first ([EVM token verdicts](#waiting-and-watching)) |
 | `TX_REJECTED` | Nodes rejected every Attempt as never valid; nonce released | Fix the cause; retry with a **new** key |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |

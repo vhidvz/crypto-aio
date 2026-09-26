@@ -321,8 +321,21 @@ export abstract class EvmClientBase implements EvmClient {
 
   async getReceipt(txHash: string, tags: EvmCallTags): Promise<EvmReceipt | null> {
     const result = await this.send('eth_getTransactionReceipt', [txHash], tags);
+    return result === null ? null : this.#receipt(object(result, 'receipt'));
+  }
+
+  async getBlockReceipts(
+    blockHash: string,
+    tags: EvmCallTags,
+  ): Promise<readonly EvmReceipt[] | null> {
+    const result = await this.send('eth_getBlockReceipts', [blockHash], tags);
     if (result === null) return null;
-    const json = object(result, 'receipt');
+    return this.#list(result, 'block receipts').map((receipt) =>
+      this.#receipt(object(receipt, 'receipt')),
+    );
+  }
+
+  #receipt(json: Json): EvmReceipt {
     const status = quantity(json.status, 'receipt status');
     if (status !== 0n && status !== 1n) throw malformed('receipt status');
     const l1Fee = optionalQuantity(json.l1Fee, 'L1 fee');

@@ -9,6 +9,7 @@
  */
 import type { BlockSource, ProofSource } from '../../core/driver/types';
 import { ProviderError, isCryptoAioError } from '../../core/errors/error';
+import type { OrderingData } from '../../core/model/ordering';
 import { quantity } from './client';
 import { decodeTransaction, tokenTransferLanded } from './decode';
 import {
@@ -19,6 +20,7 @@ import {
   toDriverBlock,
   type EvmContext,
 } from './reader';
+import { blockTransactionsKey } from './rpc';
 import type { EvmTx } from './types';
 
 /**
@@ -62,6 +64,108 @@ async function undecided<T>(proof: () => Promise<T>): Promise<T> {
   }
 }
 
+/** A retryable "decide nothing": look again later, or elsewhere. */
+const undecidable = (reason: string) => new ProviderError('PROVIDER_UNAVAILABLE', reason);
+
+/**
+ * R88: at most this many nonce reads look for the height that consumed a nonce. The gallop
+ * and the bisection take about two reads per doubling of the distance back, so this reaches
+ * 2^32 blocks: every consumption on any chain served today.
+ */
+const MAX_SEARCH_READS = 64;
+
+/**
+ * R88: the lowest height at or below `final` where `consumed` holds, given that it holds at
+ * `final`. A gallop back (`final` less 1, 2, 4, …) finds a height where it does not, then a
+ * bisection the first where it does. `consumed` never turns false again as the height
+ * grows, since an account's nonce never falls. Beyond `MAX_SEARCH_READS` reads, it decides
+ * nothing.
+ */
+export async function consumptionHeight(
+  consumed: (height: bigint) => Promise<boolean>,
+  final: bigint,
+): Promise<bigint> {
+  let reads = 0;
+  const read = (height: bigint): Promise<boolean> => {
+    if (reads === MAX_SEARCH_READS) {
+      throw undecidable('the nonce was consumed too far back to look up');
+    }
+    reads += 1;
+    return consumed(height);
+  };
+  // Consumed at `high`; not at `low` (below genesis, until a read says otherwise).
+  let high = final;
+  let low = -1n;
+  for (let step = 1n; high > 0n && low < 0n; step *= 2n) {
+    const height = final > step ? final - step : 0n;
+    if (await read(height)) high = height;
+    else low = height;
+  }
+  while (high - low > 1n) {
+    const middle = (low + high) / 2n;
+    if (await read(middle)) high = middle;
+    else low = middle;
+  }
+  return high;
+}
+
+type Inclusion = Awaited<ReturnType<ProofSource['includedFinal']>>;
+
+/**
+ * R88 (the final review's C1): whether `txHash` is final, when no endpoint serves its
+ * receipt. `null` is no proof of absence: a node answers it for every transaction outside its
+ * index (geth indexes the last 2,350,000 blocks by default, and pruning nodes of other
+ * clients drop theirs), so "not included" would prove a final, executed transfer `replaced`.
+ * The nonce's consumer decides instead. The quorum attests the nonce consumed at a final
+ * height, a search finds the block that consumed it, and the sender's transaction at that
+ * nonce there answers: another one proves ours is not included; ours is included, with the
+ * verdict its receipt in that block gives (R50). Anything else decides nothing, and so does
+ * an endpoint without the historical state the search reads.
+ */
+async function nonceConsumer(
+  ctx: EvmContext,
+  txHash: string,
+  ordering: OrderingData,
+  from: string,
+): Promise<Inclusion> {
+  if (ordering.kind !== 'nonce')
+    throw undecidable('no nonce to look the transaction up by');
+  const { client } = ctx;
+  const { nonce } = ordering;
+  const tags = { ...PROOF, quorumKey: nonceAbove(nonce) };
+  const consumed = async (height: bigint) =>
+    (await client.getTransactionCount(from, height, tags)) > nonce;
+  const { height: final } = await provenFinal(ctx, PROOF);
+  if (!(await consumed(final)))
+    throw undecidable('the nonce is not consumed at finality');
+  const height = await consumptionHeight(consumed, final);
+  const block = await client.getBlockWithTransactions(height, {
+    ...PROOF,
+    quorumKey: blockTransactionsKey,
+  });
+  if (block?.number !== height) throw undecidable('the endpoints serve no final block');
+  const sender = from.toLowerCase();
+  const consumer = block.transactions.find(
+    (tx) => tx.from.toLowerCase() === sender && tx.nonce === nonce,
+  );
+  // No transaction from the sender used the nonce: an EIP-7702 authorization can.
+  if (!consumer) throw undecidable('no transaction in its block used the nonce');
+  // Another transaction is final at our nonce: ours can never be included.
+  if (consumer.hash !== txHash.toLowerCase()) return { included: false };
+  const receipts = await client.getBlockReceipts(block.hash, PROOF);
+  const receipt = receipts?.find((r) => r.transactionHash === consumer.hash);
+  if (receipt?.blockHash !== block.hash) {
+    throw undecidable('the final block has no receipts on the endpoints');
+  }
+  return {
+    included: true,
+    success: receipt.status === 1 && tokenTransferLanded(client.abi, consumer, receipt),
+    blockHeight: height,
+    blockHash: block.hash,
+    txHash: consumer.hash,
+  };
+}
+
 export function createEvmProofs(ctx: EvmContext): ProofSource {
   const { client } = ctx;
   return {
@@ -78,11 +182,11 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
         return { height: final.number, hash: final.hash, timestamp: final.timestamp };
       }),
 
-    includedFinal: (ref) =>
+    includedFinal: (ref, ordering, from) =>
       undecided(async () => {
         const receipt = await client.getReceipt(ref.id, PROOF);
-        // "Not included" only when the quorum agrees there is no receipt at all.
-        if (!receipt) return { included: false };
+        // R88: no receipt is no proof of absence; the transaction at our nonce decides.
+        if (!receipt) return nonceConsumer(ctx, ref.id, ordering, from);
         const final = await finalBlockAt(ctx, receipt.blockNumber, PROOF);
         // R77: the transaction is in a block, just not a final one on these endpoints yet.
         // "Not included" would let the core prove a final transfer `replaced` (whenAbsent,
