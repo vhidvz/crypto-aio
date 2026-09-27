@@ -62,7 +62,7 @@ async function withTransfer(t: ReturnType<typeof tonNode>) {
 
 /** The scripted indexer's honest answer to a v3 query (read before any intercept). */
 async function indexerBody(t: ReturnType<typeof tonNode>, path: string) {
-  const response = await t.node.fetch.fetch(`https://main.ton.test/api/v3${path}`);
+  const response = await t.node.fetch.fetch(`${t.node.endpoint('main', 'v3')}${path}`);
   return (await response.json()) as Record<string, unknown>;
 }
 
@@ -281,7 +281,7 @@ describe('the toncenter API layer', () => {
           one.description = { ...one.description, aborted: true, bounce: { type: 'ok' } };
         }
         return { json: body };
-      }) as never;
+      });
     };
     await expect(t.run(t.api.trace(tx!.hash, PROOF))).rejects.toMatchObject({
       code: 'PROVIDER_INCONSISTENT',

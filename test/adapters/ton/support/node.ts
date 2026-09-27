@@ -4,19 +4,28 @@
  * it models the rules the driver relies on (lesson 8), each from the contract or node source:
  * - wallets v4r2 and v5r1: signature over the signing cell hash (front / tail), wallet id,
  *   seqno, `valid_until <= now` refusal, deployment by `StateInit`, seqno committed before
- *   the actions, and send mode +2 skipping a message the balance cannot pay; a v5r1
- *   `internal_signed` request relayed in an internal message, ignored when its signature
- *   fails (wallet_v5.fc);
+ *   the actions; a v5r1 `internal_signed` request relayed in an internal message, ignored
+ *   when its signature fails (wallet_v5.fc); a frozen wallet refuses everything;
+ * - each message's send mode (transaction.cpp): +1 pays the forward fee on top of the value
+ *   (else the fee comes out of it), +2 skips a message the balance cannot pay; without +2
+ *   the action phase fails (37, or 40 when the value cannot pay its own fee), rolling back
+ *   the seqno and every message while the gas stays charged; other flags are refused (34);
  * - external messages the chain cannot accept are refused at send time (HTTP 500, as
- *   toncenter) and, when state changed meanwhile, silently never included;
+ *   toncenter), checked against the endpoint's own view, and, when state changed meanwhile,
+ *   silently never included;
  * - internal messages delivered one masterchain block later, bounce for bounceable
- *   messages to an uninitialized account or a failing contract, TEP-74 jettons with
+ *   messages to an uninitialized account or a failing contract (`nofunds`, the value kept,
+ *   when it cannot pay for the bounce), TEP-74 jettons with the 707 sender check,
  *   notifications, excesses and bounced `internal_transfer`s;
- * - one masterchain block per `mine()`, one or two basechain shards (`shards`), each
- *   `shardLagSeconds` (the second `secondShardLagSeconds`) older than its masterchain block;
+ * - one masterchain block per `mine()`, one or two basechain shards (`shards`, real shard
+ *   ids), each `shardLagSeconds` (the second `secondShardLagSeconds`) older than its
+ *   masterchain block; an account's transactions run at its own shard's time;
  * - state snapshots per masterchain block for `seqno=` reads;
- * - an indexer that trails the chain by `indexerLag` blocks, and traces that complete only
- *   when every message of the trace has been delivered and indexed.
+ * - an indexer that trails the chain by `indexerLag` blocks, and traces, named after their
+ *   root transaction, that complete only when every message of the trace has been
+ *   delivered and indexed;
+ * - each API's own error envelope (v2 `{ ok: false, error, code }`, v3 `{ error }`), with
+ *   HTTP 422 for a parameter it cannot parse.
  * Deterministic: time comes from the `FakeClock`, hashes from SHA-256 of counters.
  */
 import { createHash } from 'node:crypto';
@@ -30,6 +39,7 @@ import {
   loadMessageRelaxed,
   loadOutList,
   storeMessageRelaxed,
+  storeStateInit,
   type MessageRelaxed,
 } from '@ton/core';
 import {
@@ -45,8 +55,14 @@ import {
   type FakeRequest,
 } from '../../../../src/testing/fake-fetch';
 
-/** Shard ids (signed 64-bit, as toncenter v2 writes them) for one or two basechain shards. */
-const SHARDS = ['-9223372036854775808', '-4611686018427387904'];
+/**
+ * Basechain shard ids (signed 64-bit, as toncenter v2 writes them): the whole basechain, or
+ * its two halves after one split (address prefix bit 0: 0x4000…, bit 1: 0xC000…).
+ */
+const SHARD_SETS: Readonly<Record<1 | 2, readonly string[]>> = {
+  1: ['-9223372036854775808'],
+  2: ['4611686018427387904', '-4611686018427387904'],
+};
 
 /** Config param 25 (basechain message prices), as on mainnet (Plan 6 appendix). */
 export const MSG_PRICES_BOC =
@@ -121,8 +137,12 @@ interface Msg {
   readonly bounced: boolean;
   readonly body: Cell;
   readonly hashNorm?: string;
-  readonly init?: boolean;
+  /** The `StateInit` the message carries, used or not. */
+  readonly initState?: Cell;
 }
+
+/** toncenter v3's account statuses. */
+type V3Status = 'nonexist' | 'uninit' | 'active' | 'frozen';
 
 interface Tx {
   readonly hash: string;
@@ -132,6 +152,8 @@ interface Tx {
   readonly mcSeqno: number;
   readonly traceId: string;
   readonly totalFees: bigint;
+  readonly origStatus: V3Status;
+  readonly endStatus: V3Status;
   readonly description: Record<string, unknown>;
   readonly inMsg: Msg;
   readonly outMsgs: readonly Msg[];
@@ -141,6 +163,8 @@ interface Queued {
   readonly msg: Msg;
   readonly traceId: string;
   readonly readyAt: number;
+  /** The delivery is its trace's root (an injected message): its hash is `traceId`. */
+  readonly root?: boolean;
 }
 
 interface Block {
@@ -172,11 +196,32 @@ export interface TonNodeOptions {
   readonly secondShardLagSeconds?: number;
 }
 
+/** Replaces the node's answer when it returns one; a promise scripts a late or lost one. */
 export type Intercept = (
   endpoint: string,
   route: string,
   request: FakeRequest,
-) => FakeReply | undefined;
+  signal: AbortSignal | undefined,
+) => FakeReply | Promise<FakeReply> | undefined;
+
+/** A request parameter the API cannot parse: HTTP 422, as toncenter answers it. */
+class ParamError extends Error {}
+
+/** A wallet request's message with its send mode. */
+interface Requested {
+  readonly mode: number;
+  readonly message: MessageRelaxed;
+}
+
+/** The outcome of a wallet's action phase. */
+type Actions =
+  | {
+      readonly ok: true;
+      readonly out: readonly Msg[];
+      readonly forwardFees: bigint;
+      readonly skipped: number;
+    }
+  | { readonly ok: false; readonly resultCode: number };
 
 const cloneAccount = (a: Account): Account => ({
   ...a,
@@ -220,12 +265,19 @@ export class ScriptedTonNode {
     this.#seal();
   }
 
-  /** The v2 (`rpc`) or v3 (`indexer`) base URL of a named endpoint. */
+  /** The v2 (`rpc`) or v3 (`indexer`) base URL of a named endpoint (routed once). */
   endpoint(name: string, api: 'v2' | 'v3'): string {
     const base = `https://${name}.ton.test/api/${api}`;
-    this.fetch.route(base, (request) => this.#serve(name, api, request));
+    if (!this.#routed.has(base)) {
+      this.#routed.add(base);
+      this.fetch.route(base, (request, signal) =>
+        this.#serve(name, api, request, signal),
+      );
+    }
     return base;
   }
+
+  readonly #routed = new Set<string>();
 
   /** A v2 endpoint that serves the chain `blocks` masterchain blocks behind the head. */
   lagEndpoint(name: string, blocks: number): void {
@@ -246,10 +298,10 @@ export class ScriptedTonNode {
   }
 
   // ---- scripting ------------------------------------------------------------------------
+  // Every helper keys accounts by the canonical raw address, however a test spells it (M8).
 
   fund(address: string, nanograms: bigint): void {
-    const account = this.#account(address);
-    account.balance += nanograms;
+    this.#account(normalizeParam(address)).balance += nanograms;
     this.#sealState();
   }
 
@@ -263,7 +315,7 @@ export class ScriptedTonNode {
       seqno?: number;
     },
   ): void {
-    const account = this.#account(address);
+    const account = this.#account(normalizeParam(address));
     account.status = 'active';
     account.wallet = {
       version: wallet.version,
@@ -276,26 +328,29 @@ export class ScriptedTonNode {
 
   /** Takes nanograms from an account, as another spend of the same wallet would. */
   debit(address: string, nanograms: bigint): void {
-    this.#account(address).balance -= nanograms;
+    this.#account(normalizeParam(address)).balance -= nanograms;
     this.#sealState();
   }
 
-  /** Freezes an account (storage debt), as the chain does to an account it cannot charge. */
+  /**
+   * Freezes an account (storage debt), as the chain does to an account it cannot charge.
+   * A frozen wallet refuses every message, its deploy `StateInit` included (I3).
+   */
   freeze(address: string): void {
-    this.#account(address).status = 'frozen';
+    this.#account(normalizeParam(address)).status = 'frozen';
     this.#sealState();
   }
 
   /** A contract that fails every inbound message (bounceable ones bounce). */
   deployReverter(address: string): void {
-    const account = this.#account(address);
+    const account = this.#account(normalizeParam(address));
     account.status = 'active';
     account.reverter = true;
     this.#sealState();
   }
 
   deployJetton(master: string, jetton: Jetton): void {
-    const account = this.#account(master);
+    const account = this.#account(normalizeParam(master));
     account.status = 'active';
     account.jetton = jetton;
     this.#sealState();
@@ -303,12 +358,17 @@ export class ScriptedTonNode {
 
   /** The jetton wallet the master assigns to `owner`. */
   jettonWalletOf(master: string, owner: string): string {
-    const address = `0:${sha(`jetton-wallet:${master}:${owner}`).toString('hex')}`;
-    this.#owners.set(address, owner);
+    const identity = { master: normalizeParam(master), owner: normalizeParam(owner) };
+    const address = jettonWalletAddress(identity.master, identity.owner);
+    this.#jettonWallets.set(address, identity);
     return address;
   }
 
-  readonly #owners = new Map<string, string>();
+  /** Each standard jetton wallet's master and owner: what its `StateInit` encodes. */
+  readonly #jettonWallets = new Map<
+    string,
+    { readonly master: string; readonly owner: string }
+  >();
 
   /** A contract at `address` that claims to be `owner`'s jetton wallet of `master`. */
   deployFakeJettonWallet(
@@ -317,9 +377,13 @@ export class ScriptedTonNode {
     owner: string,
     balance: bigint,
   ): void {
-    const account = this.#account(address);
+    const account = this.#account(normalizeParam(address));
     account.status = 'active';
-    account.jettonWallet = { master, owner, balance };
+    account.jettonWallet = {
+      master: normalizeParam(master),
+      owner: normalizeParam(owner),
+      balance,
+    };
     this.#sealState();
   }
 
@@ -327,7 +391,10 @@ export class ScriptedTonNode {
     const address = this.jettonWalletOf(master, owner);
     const account = this.#account(address);
     account.status = 'active';
-    account.jettonWallet = account.jettonWallet ?? { master, owner, balance: 0n };
+    account.jettonWallet = account.jettonWallet ?? {
+      ...(this.#jettonWallets.get(address) as { master: string; owner: string }),
+      balance: 0n,
+    };
     account.jettonWallet.balance += amount;
     this.#sealState();
   }
@@ -339,15 +406,15 @@ export class ScriptedTonNode {
   }
 
   balance(address: string): bigint {
-    return this.#accounts.get(address)?.balance ?? 0n;
+    return this.#accounts.get(normalizeParam(address))?.balance ?? 0n;
   }
 
   status(address: string): Account['status'] {
-    return this.#accounts.get(address)?.status ?? 'uninitialized';
+    return this.#accounts.get(normalizeParam(address))?.status ?? 'uninitialized';
   }
 
   seqno(address: string): number {
-    return this.#accounts.get(address)?.wallet?.seqno ?? 0;
+    return this.#accounts.get(normalizeParam(address))?.wallet?.seqno ?? 0;
   }
 
   /** How many times the message with this normalized hash was sent. */
@@ -368,7 +435,10 @@ export class ScriptedTonNode {
     return this.#txs;
   }
 
-  /** Queues an internal message from any account, delivered with the next block. */
+  /**
+   * Queues an internal message from any account, delivered with the next block. Its
+   * delivery is the root of its trace (M3).
+   */
   inject(
     source: string,
     destination: string,
@@ -376,26 +446,48 @@ export class ScriptedTonNode {
     body: Cell,
     bounce = false,
   ): void {
-    const traceId = this.#hashOf('tx');
     this.#queue.push({
-      msg: this.#internal(source, destination, value, bounce, body),
-      traceId,
+      msg: this.#internal(
+        normalizeParam(source),
+        normalizeParam(destination),
+        value,
+        bounce,
+        body,
+      ),
+      traceId: this.#hashOf('tx'),
       readyAt: this.head + 1,
+      root: true,
     });
   }
 
   /** Accepts an external message as `/sendBocReturnHash` does; throws the node's text. */
   submit(boc: string): { readonly hash: string; readonly hashNorm: string } {
+    return this.#submit(boc, this.#accounts);
+  }
+
+  /** Produces `count` masterchain blocks (each with one block per shard). */
+  mine(count = 1): void {
+    for (let i = 0; i < count; i++) this.#mineOne();
+  }
+
+  // ---- chain rules ----------------------------------------------------------------------
+
+  /** Checks an external message against `view` (an endpoint's state), then queues it. */
+  #submit(
+    boc: string,
+    view: ReadonlyMap<string, Account>,
+  ): { readonly hash: string; readonly hashNorm: string } {
     const cell = Cell.fromBoc(Buffer.from(boc, 'base64'))[0] as Cell;
     const message = loadMessage(cell.beginParse());
     if (message.info.type !== 'external-in') throw new Error('Failed to unpack Message');
     const dest = rawOf(message.info.dest);
     const hashNorm = normalizedHash(cell);
     const verdict = this.#checkExternal(
+      view,
       dest,
       message.init ?? undefined,
       message.body,
-      this.#now(),
+      this.#now(dest),
     );
     if (verdict !== 'ok') {
       throw new Error(
@@ -410,15 +502,19 @@ export class ScriptedTonNode {
     return { hash, hashNorm };
   }
 
-  /** Produces `count` masterchain blocks (each with one shard block). */
-  mine(count = 1): void {
-    for (let i = 0; i < count; i++) this.#mineOne();
+  /** Chain time at `account`: its shard block's time, older than the masterchain's (M2). */
+  #now(account: string): number {
+    return Math.floor(this.#clock.now() / 1000) - this.#shardLag(account);
   }
 
-  // ---- chain rules ----------------------------------------------------------------------
-
-  #now(): number {
-    return Math.floor(this.#clock.now() / 1000) - this.shardLagSeconds;
+  /**
+   * The lag of the shard holding `account`: the first bit of its address picks one of two
+   * shards (the masterchain has no lag).
+   */
+  #shardLag(account: string): number {
+    if (account.startsWith('-1:')) return 0;
+    const second = this.shardCount === 2 && Number.parseInt(account.charAt(2), 16) >= 8;
+    return second ? this.secondShardLagSeconds : this.shardLagSeconds;
   }
 
   #account(address: string): Account {
@@ -464,14 +560,22 @@ export class ScriptedTonNode {
     return undefined;
   }
 
-  /** The wallet contract's checks, in its order; 'ok' or the node's error text. */
+  /**
+   * The wallet contract's checks against `view`, in its order; 'ok' or the node's error
+   * text. A frozen account runs nothing: its `StateInit` would have to match the frozen
+   * state's hash, never the deploy one (transaction.cpp), so it is refused (I3).
+   */
   #checkExternal(
+    view: ReadonlyMap<string, Account>,
     dest: string,
     init: { code?: Cell | null; data?: Cell | null } | undefined,
     body: Cell,
     now: number,
   ): string {
-    const account = this.#accounts.get(dest);
+    const account = view.get(dest);
+    if (account?.status === 'frozen') {
+      return 'Cannot run message on account: account is frozen';
+    }
     const wallet =
       account?.status === 'active' ? account.wallet : this.#walletFromInit(dest, init);
     if (!wallet)
@@ -515,13 +619,14 @@ export class ScriptedTonNode {
 
   #mineOne(): void {
     const seqno = this.head + 1;
-    const now = this.#now();
     // Internal messages created in earlier blocks are delivered first.
     const ready = this.#queue.filter((q) => q.readyAt <= seqno);
     for (const item of ready) this.#queue.splice(this.#queue.indexOf(item), 1);
-    for (const item of ready) this.#deliver(item, seqno, now);
+    for (const item of ready) {
+      this.#deliver(item, seqno, this.#now(item.msg.destination));
+    }
     const pending = this.#pending.splice(0);
-    for (const item of pending) this.#processExternal(item.cell, seqno, now);
+    for (const item of pending) this.#processExternal(item.cell, seqno);
     this.#seal();
   }
 
@@ -563,118 +668,153 @@ export class ScriptedTonNode {
     };
   }
 
-  #processExternal(cell: Cell, seqno: number, now: number): void {
-    const message = loadMessage(cell.beginParse());
-    if (message.info.type !== 'external-in') return;
-    const dest = rawOf(message.info.dest);
-    // Re-checked against the state at inclusion: a message that no longer applies is
-    // never included and leaves no trace (it may still be retried until it expires).
-    if (this.#checkExternal(dest, message.init ?? undefined, message.body, now) !== 'ok')
-      return;
-    const account = this.#account(dest);
-    const deploy = account.status !== 'active';
-    const wallet = deploy
-      ? (this.#walletFromInit(dest, message.init ?? undefined) as Wallet)
-      : (account.wallet as Wallet);
-    const request = parseRequest(wallet.version, message.body) as Request;
-    const fees = NODE_FEES.importFee + this.#walletGas(wallet.version, deploy);
-    account.balance -= fees;
-    account.status = 'active';
-    account.wallet = { ...wallet, seqno: wallet.seqno + 1 };
-    if (request.withoutIgnoreErrors) {
-      // wallet_v5.fc: `commit()` keeps the seqno, then error 137 aborts the transaction.
-      this.#record({
-        account: dest,
-        now,
-        mcSeqno: seqno,
-        traceId: this.#hashOf('trace'),
-        totalFees: fees,
-        description: {
-          type: 'ord',
-          aborted: true,
-          compute_ph: { skipped: false, success: false, exit_code: 137 },
-        },
-        inMsg: {
-          hash: cell.hash().toString('hex'),
-          source: null,
-          destination: dest,
-          value: null,
-          bounce: false,
-          bounced: false,
-          body: message.body,
-          hashNorm: normalizedHash(cell),
-          init: deploy,
-        },
-        outMsgs: [],
-      });
-      return;
-    }
+  /**
+   * The action phase (transaction.cpp `try_action_send_message`), all or nothing. Each
+   * message's send mode decides who pays its forward fee (+1: the balance, on top of the
+   * value; else the value) and whether an unpayable message is skipped (+2) or fails the
+   * phase: 37 when the balance cannot pay, 40 when the value cannot pay its own fee. A
+   * failed phase sends nothing and leaves the balance; a flag this node does not model
+   * fails it too (34), never guessed.
+   */
+  #actions(account: Account, from: string, requested: readonly Requested[]): Actions {
+    let balance = account.balance;
     let forwardFees = 0n;
     let skipped = 0;
     const out: Msg[] = [];
-    // The trace is named after its root transaction, as toncenter's `trace_id`.
-    const traceId = this.#hashOf('tx');
-    for (const requested of request.messages) {
-      if (requested.info.type !== 'internal') continue;
-      const fwd = forwardFee(requested);
-      const value = requested.info.value.coins;
-      if (account.balance < value + fwd) {
+    for (const { mode, message } of requested) {
+      if (message.info.type !== 'internal' || (mode & ~3) !== 0) {
+        return { ok: false, resultCode: 34 };
+      }
+      const fwd = forwardFee(message);
+      const value = message.info.value.coins;
+      const separately = (mode & 1) !== 0;
+      const cost = separately ? value + fwd : value;
+      const failure = !separately && value < fwd ? 40 : balance < cost ? 37 : 0;
+      if (failure !== 0) {
+        if ((mode & 2) === 0) return { ok: false, resultCode: failure };
         skipped += 1;
         continue;
       }
-      account.balance -= value + fwd;
+      balance -= cost;
       forwardFees += fwd;
       out.push(
         this.#internal(
-          dest,
-          rawOf(requested.info.dest),
-          value,
-          requested.info.bounce,
-          requested.body,
+          from,
+          rawOf(message.info.dest),
+          separately ? value : value - fwd,
+          message.info.bounce,
+          message.body,
         ),
       );
     }
-    const inMsg: Msg = {
-      hash: cell.hash().toString('hex'),
-      source: null,
-      destination: dest,
-      value: null,
-      bounce: false,
-      bounced: false,
-      body: message.body,
-      hashNorm: normalizedHash(cell),
-      init: deploy,
+    account.balance = balance;
+    return { ok: true, out, forwardFees, skipped };
+  }
+
+  #processExternal(cell: Cell, seqno: number): void {
+    const message = loadMessage(cell.beginParse());
+    if (message.info.type !== 'external-in') return;
+    const dest = rawOf(message.info.dest);
+    const now = this.#now(dest);
+    // Re-checked against the state at inclusion: a message that no longer applies is
+    // never included and leaves no trace (it may still be retried until it expires).
+    const init = message.init ?? undefined;
+    if (this.#checkExternal(this.#accounts, dest, init, message.body, now) !== 'ok')
+      return;
+    const origStatus = v3Status(this.#accounts.get(dest));
+    const account = this.#account(dest);
+    const deploy = account.status !== 'active';
+    const wallet = {
+      ...(deploy
+        ? (this.#walletFromInit(dest, init) as Wallet)
+        : (account.wallet as Wallet)),
     };
-    const tx = this.#record(
-      {
-        account: dest,
-        now,
-        mcSeqno: seqno,
-        traceId,
-        totalFees: fees + forwardFees,
-        description: {
-          type: 'ord',
-          aborted: false,
-          compute_ph: { skipped: false, success: true, exit_code: 0 },
-          action: {
-            success: true,
-            valid: true,
-            result_code: 0,
-            tot_actions: request.messages.length,
-            skipped_actions: skipped,
-            msgs_created: out.length,
+    const request = parseRequest(wallet.version, message.body) as Request;
+    const fees = NODE_FEES.importFee + this.#walletGas(wallet.version, deploy);
+    account.balance -= fees;
+    // The `StateInit` activates the account whatever happens next (transaction.cpp).
+    account.status = 'active';
+    account.wallet = wallet;
+    // The trace is named after its root transaction, as toncenter's `trace_id` (M3).
+    const traceId = this.#hashOf('tx');
+    const record = (
+      totalFees: bigint,
+      description: Record<string, unknown>,
+      outMsgs: readonly Msg[],
+    ): void => {
+      this.#record(
+        {
+          account: dest,
+          now,
+          mcSeqno: seqno,
+          traceId,
+          totalFees,
+          origStatus,
+          endStatus: 'active',
+          description: { type: 'ord', ...description },
+          inMsg: {
+            hash: cell.hash().toString('hex'),
+            source: null,
+            destination: dest,
+            value: null,
+            bounce: false,
+            bounced: false,
+            body: message.body,
+            hashNorm: normalizedHash(cell),
+            ...(init
+              ? { initState: beginCell().store(storeStateInit(init)).endCell() }
+              : {}),
           },
+          outMsgs,
         },
-        inMsg,
-        outMsgs: out,
+        traceId,
+      );
+    };
+    if (request.withoutIgnoreErrors) {
+      // wallet_v5.fc: `commit()` keeps the seqno, then error 137 aborts the transaction.
+      wallet.seqno += 1;
+      record(
+        fees,
+        {
+          aborted: true,
+          compute_ph: { skipped: false, success: false, exit_code: 137 },
+        },
+        [],
+      );
+      return;
+    }
+    const computed = { skipped: false, success: true, exit_code: 0 };
+    const actions = this.#actions(account, dest, request.messages);
+    if (!actions.ok) {
+      // The action phase failed: the seqno (c4) and every message roll back, the gas stays
+      // paid, and the same message applies again until it expires (I2).
+      record(
+        fees,
+        {
+          aborted: true,
+          compute_ph: computed,
+          action: actionPhase(actions, request.messages.length),
+        },
+        [],
+      );
+      return;
+    }
+    wallet.seqno += 1;
+    record(
+      fees + actions.forwardFees,
+      {
+        aborted: false,
+        compute_ph: computed,
+        action: actionPhase(actions, request.messages.length),
       },
-      traceId,
+      actions.out,
     );
-    for (const msg of out) this.#send(msg, tx.traceId, seqno);
+    for (const msg of actions.out) this.#send(msg, traceId, seqno);
   }
 
   #deliver(item: Queued, seqno: number, now: number): void {
     const { msg, traceId } = item;
+    const origStatus = v3Status(this.#accounts.get(msg.destination));
     const account = this.#account(msg.destination);
     const value = msg.value ?? 0n;
     const out: Msg[] = [];
@@ -684,43 +824,59 @@ export class ScriptedTonNode {
       success: true,
       exit_code: 0,
     };
+    let action: Record<string, unknown> | undefined;
     let bounce: Record<string, unknown> | undefined;
-    const fail = (exitCode: number, skipReason?: string): void => {
+    /** Aborts the transaction; a bounceable message bounces if its value pays for it. */
+    const abort = (): void => {
       aborted = true;
+      if (!msg.bounce || msg.bounced) return;
+      const back = value - NODE_FEES.internalGas;
+      if (back <= 0n) {
+        // Too little to pay for the bounce: `nofunds`, and the value stays here (I1, M7).
+        bounce = { type: 'nofunds' };
+        return;
+      }
+      bounce = { type: 'ok' };
+      account.balance -= value;
+      out.push(
+        this.#internal(
+          msg.destination,
+          msg.source as string,
+          back,
+          false,
+          bouncedBody(msg.body),
+          true,
+        ),
+      );
+    };
+    const fail = (exitCode: number, skipReason?: string): void => {
       compute = skipReason
         ? { skipped: true, reason: skipReason }
         : { skipped: false, success: false, exit_code: exitCode };
-      if (msg.bounce && !msg.bounced) {
-        bounce = { type: 'ok' };
-        account.balance -= value;
-        const back = value - NODE_FEES.internalGas;
-        if (back > 0n) {
-          out.push(
-            this.#internal(
-              msg.destination,
-              msg.source as string,
-              back,
-              false,
-              bouncedBody(msg.body),
-              true,
-            ),
-          );
-        }
-      }
+      abort();
     };
     account.balance += value;
     const op = opOf(msg.body);
+    // A standard jetton wallet's `internal_transfer` carries its `StateInit`.
+    const jettonIdentity =
+      op === OP.internalTransfer
+        ? (account.jettonWallet ?? this.#jettonWallets.get(msg.destination))
+        : undefined;
     if (msg.bounced) {
       // A bounced internal_transfer returns its amount to the sending jetton wallet.
       if (account.jettonWallet && bouncedOp(msg.body) === OP.internalTransfer) {
         account.jettonWallet.balance += bouncedAmount(msg.body);
       }
-    } else if (account.status !== 'active' && op !== OP.internalTransfer) {
+    } else if (
+      account.status === 'frozen' ||
+      (account.status === 'uninitialized' && !jettonIdentity)
+    ) {
       fail(0, 'no_state');
     } else if (op === OP.signedInternal && account.wallet?.version === 'v5r1') {
       // wallet_v5.fc `recv_internal`: a relayed signed request. A failing signature is
       // ignored (the transaction succeeds and changes nothing); otherwise the seqno, wallet
-      // id and lifetime are checked (133, 134, 136), the seqno committed, the actions run.
+      // id and lifetime are checked (133, 134, 136), the seqno set, the actions run. With
+      // no `commit()` here, a failed action phase rolls the seqno back.
       const wallet = account.wallet;
       const request = parseRequest('v5r1', msg.body, OP.signedInternal);
       if (
@@ -731,22 +887,13 @@ export class ScriptedTonNode {
         else if (request.walletId !== wallet.walletId) fail(134);
         else if (request.validUntil <= now) fail(136);
         else {
-          wallet.seqno += 1;
-          for (const requested of request.messages) {
-            if (requested.info.type !== 'internal') continue;
-            const sent = requested.info.value.coins;
-            const fwd = forwardFee(requested);
-            if (account.balance < sent + fwd) continue; // send mode +2: skipped
-            account.balance -= sent + fwd;
-            out.push(
-              this.#internal(
-                msg.destination,
-                rawOf(requested.info.dest),
-                sent,
-                requested.info.bounce,
-                requested.body,
-              ),
-            );
+          const actions = this.#actions(account, msg.destination, request.messages);
+          action = actionPhase(actions, request.messages.length);
+          if (actions.ok) {
+            wallet.seqno += 1;
+            out.push(...actions.out);
+          } else {
+            abort();
           }
         }
       }
@@ -771,7 +918,7 @@ export class ScriptedTonNode {
           .storeUint(t.queryId, 64)
           .storeCoins(t.amount)
           .storeAddress(Address.parseRaw(jw.owner))
-          .storeAddress(Address.parseRaw(t.response))
+          .storeAddress(t.response === null ? null : Address.parseRaw(t.response))
           .storeCoins(t.forwardAmount)
           .storeSlice(t.forwardPayload)
           .endCell();
@@ -779,17 +926,24 @@ export class ScriptedTonNode {
           this.#internal(msg.destination, to, value - NODE_FEES.internalGas, true, body),
         );
       }
-    } else if (op === OP.internalTransfer) {
+    } else if (jettonIdentity) {
       const t = parseInternalTransfer(msg.body);
-      if (!t || this.#failing.has(msg.destination)) {
-        if (account.status !== 'active') account.status = 'active';
-        fail(this.#failing.has(msg.destination) ? 709 : 9);
-      } else {
-        const master = this.#jettonMasterOf(msg.source as string);
-        account.status = 'active';
+      const { master } = jettonIdentity;
+      const sender = msg.source as string;
+      // The jetton wallet's code runs, and stays deployed, whatever the outcome.
+      account.status = 'active';
+      if (!t) fail(9);
+      // TEP-74 `receive_tokens`: only the master, or the sending owner's own jetton wallet.
+      else if (
+        sender !== master &&
+        (t.from === null || sender !== jettonWalletAddress(master, t.from))
+      ) {
+        fail(707);
+      } else if (this.#failing.has(msg.destination)) fail(709);
+      else {
         account.jettonWallet = account.jettonWallet ?? {
           master,
-          owner: this.#ownerFor(msg.destination),
+          owner: jettonIdentity.owner,
           balance: 0n,
         };
         account.jettonWallet.balance += t.amount;
@@ -823,33 +977,40 @@ export class ScriptedTonNode {
         }
       }
     }
-    this.#record({
-      account: msg.destination,
-      now,
-      mcSeqno: seqno,
-      traceId,
-      totalFees: NODE_FEES.internalGas,
-      description: {
-        type: 'ord',
-        aborted,
-        compute_ph: compute,
-        ...(aborted
-          ? {}
-          : {
-              action: {
-                success: true,
-                valid: true,
-                result_code: 0,
-                skipped_actions: 0,
-                msgs_created: out.length,
-                tot_actions: out.length,
-              },
-            }),
-        ...(bounce ? { bounce } : {}),
+    this.#record(
+      {
+        account: msg.destination,
+        now,
+        mcSeqno: seqno,
+        traceId,
+        totalFees: NODE_FEES.internalGas,
+        origStatus,
+        endStatus: v3Status(account),
+        description: {
+          type: 'ord',
+          aborted,
+          compute_ph: compute,
+          ...(action
+            ? { action }
+            : aborted
+              ? {}
+              : {
+                  action: {
+                    success: true,
+                    valid: true,
+                    result_code: 0,
+                    skipped_actions: 0,
+                    msgs_created: out.length,
+                    tot_actions: out.length,
+                  },
+                }),
+          ...(bounce ? { bounce } : {}),
+        },
+        inMsg: msg,
+        outMsgs: out,
       },
-      inMsg: msg,
-      outMsgs: out,
-    });
+      item.root ? traceId : undefined,
+    );
     for (const next of out) this.#send(next, traceId, seqno);
   }
 
@@ -857,18 +1018,7 @@ export class ScriptedTonNode {
 
   /** Makes the jetton wallet at `address` fail every `internal_transfer` (it bounces). */
   failJettonWallet(address: string): void {
-    this.#failing.add(address);
-  }
-
-  #jettonMasterOf(senderJettonWallet: string): string {
-    return (
-      this.#accounts.get(senderJettonWallet)?.jettonWallet?.master ??
-      '0:' + '0'.repeat(64)
-    );
-  }
-
-  #ownerFor(jettonWallet: string): string {
-    return this.#owners.get(jettonWallet) ?? `0:${'0'.repeat(64)}`;
+    this.#failing.add(normalizeParam(address));
   }
 
   #seal(): void {
@@ -879,7 +1029,7 @@ export class ScriptedTonNode {
       genUtime,
       rootHash: sha(`mc-root:${seqno}`).toString('hex'),
       fileHash: sha(`mc-file:${seqno}`).toString('hex'),
-      shards: SHARDS.slice(0, this.shardCount).map((shard, index) => ({
+      shards: SHARD_SETS[this.shardCount].map((shard, index) => ({
         shard,
         seqno: seqno + 1000 * (index + 1),
         genUtime:
@@ -903,16 +1053,25 @@ export class ScriptedTonNode {
 
   // ---- HTTP -----------------------------------------------------------------------------
 
-  #serve(name: string, api: 'v2' | 'v3', request: FakeRequest): FakeReply {
+  #serve(
+    name: string,
+    api: 'v2' | 'v3',
+    request: FakeRequest,
+    signal: AbortSignal | undefined,
+  ): FakeReply | Promise<FakeReply> {
     const route = request.url.pathname.replace(/^\/api\/v[23]/, '');
     this.served.push({ endpoint: name, route });
-    const intercepted = this.intercept?.(name, route, request);
-    if (intercepted) return intercepted;
+    const intercepted = this.intercept?.(name, route, request, signal);
+    if (intercepted !== undefined) return intercepted;
     try {
       return api === 'v2' ? this.#v2(name, route, request) : this.#v3(route, request);
     } catch (error) {
+      // Each API's own envelope (M6): v2 `{ ok: false, error, code }`, v3 `{ error }`.
       const message = error instanceof Error ? error.message : String(error);
-      return { status: 500, json: { ok: false, error: message, code: 500 } };
+      const status = error instanceof ParamError ? 422 : 500;
+      return api === 'v2'
+        ? { status, json: { ok: false, error: message, code: status } }
+        : { status, json: { error: message } };
     }
   }
 
@@ -992,7 +1151,8 @@ export class ScriptedTonNode {
             prev_blocks: prev ? [mcId(prev)] : [],
           });
         }
-        const index = SHARDS.indexOf(q.get('shard') ?? '');
+        const index = SHARD_SETS[this.shardCount].indexOf(q.get('shard') ?? '');
+        if (index < 0) throw new Error('LITE_SERVER_UNKNOWN: block not found');
         const block = this.#blockAt(name, String(wanted - 1000 * (index + 1)));
         const top = block.shards[index];
         if (!top || top.seqno !== wanted)
@@ -1060,38 +1220,45 @@ export class ScriptedTonNode {
       case '/estimateFee': {
         const body = request.json<{ address: string; body: string; init_code: string }>();
         const deploy = body.init_code !== '';
-        const account = this.#accounts.get(normalizeParam(body.address));
-        const version = deploy
-          ? Cell.fromBoc(Buffer.from(body.init_code, 'base64'))[0]
-              ?.hash()
-              .equals(WALLET_CODE.v4r2.hash())
+        // The endpoint emulates on its own view of the chain (M6).
+        const account = this.#blockAt(name, null).state.get(normalizeParam(body.address));
+        const deployed = account?.status === 'active' ? account.wallet : undefined;
+        const fees = (gas: bigint, fwd: bigint) =>
+          ok({
+            '@type': 'query.fees',
+            source_fees: {
+              '@type': 'fees',
+              in_fwd_fee: Number(NODE_FEES.importFee),
+              storage_fee: 0,
+              gas_fee: Number(gas),
+              fwd_fee: Number(fwd),
+            },
+            destination_fees: [],
+          });
+        // No wallet in this view and no `StateInit`: no code runs, so nothing is sent.
+        if (!deploy && !deployed) return fees(0n, 0n);
+        const version = deployed
+          ? deployed.version
+          : Cell.fromBoc(Buffer.from(body.init_code, 'base64'))[0]
+                ?.hash()
+                .equals(WALLET_CODE.v4r2.hash())
             ? 'v4r2'
-            : 'v5r1'
-          : (account?.wallet?.version ?? 'v4r2');
+            : 'v5r1';
         // The real action list's forward fees, as a liteserver's emulation reports them.
         const request_ = parseRequest(
           version,
           Cell.fromBoc(Buffer.from(body.body, 'base64'))[0] as Cell,
         );
         const fwd = (request_?.messages ?? []).reduce(
-          (sum, m) => sum + forwardFee(m),
+          (sum, m) => sum + forwardFee(m.message),
           0n,
         );
-        return ok({
-          '@type': 'query.fees',
-          source_fees: {
-            '@type': 'fees',
-            in_fwd_fee: Number(NODE_FEES.importFee),
-            storage_fee: 0,
-            gas_fee: Number(this.#walletGas(version, deploy)),
-            fwd_fee: Number(fwd),
-          },
-          destination_fees: [],
-        });
+        return fees(this.#walletGas(version, deploy), fwd);
       }
       case '/sendBocReturnHash': {
         const { boc } = request.json<{ boc: string }>();
-        const sent = this.submit(boc);
+        // Checked against this endpoint's own view (M6), then again at inclusion.
+        const sent = this.#submit(boc, this.#blockAt(name, null).state);
         return ok({
           '@type': 'raw.extMessageInfo',
           hash: b64(Buffer.from(sent.hash, 'hex')),
@@ -1227,12 +1394,10 @@ export class ScriptedTonNode {
           };
         }
         const account = normalizeParam(q.get('account'));
-        const endLt = q.get('end_lt');
+        const endLt = bigParam(q.get('end_lt'));
         const limit = Number(q.get('limit') ?? '10');
         const list = indexed
-          .filter(
-            (t) => t.account === account && (endLt === null || t.lt <= BigInt(endLt)),
-          )
+          .filter((t) => t.account === account && (endLt === null || t.lt <= endLt))
           .sort((a, b) => (a.lt < b.lt ? 1 : -1))
           .slice(0, limit);
         return { json: { transactions: list.map(txJson), ...book } };
@@ -1245,13 +1410,16 @@ export class ScriptedTonNode {
         const open =
           this.#queue.some((m) => m.traceId === tx.traceId) ||
           this.#txs.some((t) => t.traceId === tx.traceId && t.mcSeqno > this.indexed);
-        const root = members.find((t) => t.hash === tx.traceId) ?? members[0];
+        const root = (members.find((t) => t.hash === tx.traceId) ?? members[0]) as Tx;
         return {
           json: {
             traces: [
               {
-                trace_id: b64(Buffer.from((root as Tx).hash, 'hex')),
-                external_hash: b64(Buffer.from((root as Tx).inMsg.hash, 'hex')),
+                trace_id: b64(Buffer.from(root.hash, 'hex')),
+                external_hash:
+                  root.inMsg.source === null
+                    ? b64(Buffer.from(root.inMsg.hash, 'hex'))
+                    : null,
                 is_incomplete: open,
                 trace_info: {
                   trace_state: open ? 'pending' : 'complete',
@@ -1271,7 +1439,8 @@ export class ScriptedTonNode {
       }
       case '/jetton/masters': {
         const address = normalizeParam(q.get('address'));
-        const jetton = this.#accounts.get(address)?.jetton;
+        // The indexer knows only what it has indexed (M6).
+        const jetton = (this.block(this.indexed) as Block).state.get(address)?.jetton;
         if (!jetton) return { json: { jetton_masters: [], ...book } };
         const content: Record<string, string> = {};
         if (jetton.decimals !== undefined) content.decimals = String(jetton.decimals);
@@ -1286,7 +1455,8 @@ export class ScriptedTonNode {
       }
       case '/metadata': {
         const address = normalizeParam(q.get('address'));
-        const jetton = this.#accounts.get(address)?.jetton;
+        // The indexer knows only what it has indexed (M6).
+        const jetton = (this.block(this.indexed) as Block).state.get(address)?.jetton;
         return {
           json: jetton?.symbol
             ? {
@@ -1314,13 +1484,16 @@ interface Request {
   readonly walletId: number;
   readonly validUntil: number;
   readonly seqno: number;
-  readonly messages: readonly MessageRelaxed[];
+  /** The requested messages, each with its own send mode. */
+  readonly messages: readonly Requested[];
   /** W5: an action without send mode +2; the wallet commits the seqno, then throws 137. */
   readonly withoutIgnoreErrors?: boolean;
 }
 
-/** The wallet contract's own parse (v4r2: signature first; v5r1: last). */
-/** A wallet request's parts; `op` is the v5r1 prefix (external or relayed internally). */
+/**
+ * The wallet contract's own parse (v4r2: signature first; v5r1: last), keeping each
+ * message's send mode; `op` is the v5r1 prefix (external or relayed internally).
+ */
 function parseRequest(
   version: 'v4r2' | 'v5r1',
   body: Cell,
@@ -1345,10 +1518,10 @@ function parseRequest(
       const validUntil = s.loadUint(32);
       const seqno = s.loadUint(32);
       if (s.loadUint(8) !== 0) return null;
-      const messages: MessageRelaxed[] = [];
+      const messages: Requested[] = [];
       while (s.remainingRefs > 0) {
-        s.loadUint(8);
-        messages.push(loadMessageRelaxed(s.loadRef().beginParse()));
+        const mode = s.loadUint(8);
+        messages.push({ mode, message: loadMessageRelaxed(s.loadRef().beginParse()) });
       }
       return { signature, digest: signing.hash(), walletId, validUntil, seqno, messages };
     }
@@ -1365,11 +1538,11 @@ function parseRequest(
     const seqno = s.loadUint(32);
     const list = s.loadMaybeRef();
     let withoutIgnoreErrors = false;
-    const messages: MessageRelaxed[] = [];
+    const messages: Requested[] = [];
     for (const action of list ? loadOutList(list.beginParse()) : []) {
       if (action.type === 'sendMsg') {
         if ((action.mode & 2) === 0) withoutIgnoreErrors = true;
-        messages.push(action.outMsg);
+        messages.push({ mode: action.mode, message: action.outMsg });
       }
     }
     return {
@@ -1438,10 +1611,18 @@ function parseTransfer(body: Cell) {
     const queryId = s.loadUintBig(64);
     const amount = s.loadCoins();
     const destination = rawOf(s.loadAddress());
-    const response = rawOf(s.loadAddress());
+    // TEP-74 allows `addr_none` here: no excess is returned (M7).
+    const response = s.loadMaybeAddress();
     s.loadMaybeRef();
     const forwardAmount = s.loadCoins();
-    return { queryId, amount, destination, response, forwardAmount, forwardPayload: s };
+    return {
+      queryId,
+      amount,
+      destination,
+      response: response ? rawOf(response) : null,
+      forwardAmount,
+      forwardPayload: s,
+    };
   } catch {
     return null;
   }
@@ -1501,7 +1682,9 @@ function msgJson(m: Msg): Record<string, unknown> {
       body: m.body.toBoc().toString('base64'),
       decoded: null,
     },
-    init_state: null,
+    init_state: m.initState
+      ? { hash: b64(m.initState.hash()), body: m.initState.toBoc().toString('base64') }
+      : null,
   };
 }
 
@@ -1513,8 +1696,8 @@ function txJson(t: Tx): Record<string, unknown> {
     now: t.now,
     mc_block_seqno: t.mcSeqno,
     trace_id: b64(Buffer.from(t.traceId, 'hex')),
-    orig_status: 'active',
-    end_status: 'active',
+    orig_status: t.origStatus,
+    end_status: t.endStatus,
     total_fees: t.totalFees.toString(),
     description: t.description,
     in_msg: msgJson(t.inMsg),
@@ -1535,5 +1718,52 @@ function hexParam(value: string | null): string {
 /** Accepts raw or friendly addresses as toncenter does; the chain keys are raw. */
 function normalizeParam(value: string | null): string {
   if (value === null) return '';
-  return rawOf(Address.parse(value));
+  try {
+    return rawOf(Address.parse(value));
+  } catch {
+    throw new ParamError(`Failed to parse ton_addr: '${value}'`);
+  }
+}
+
+/** An integer query parameter (a logical time), or null when absent. */
+function bigParam(value: string | null): bigint | null {
+  if (value === null) return null;
+  if (!/^\d{1,20}$/.test(value))
+    throw new ParamError(`Failed to parse integer: '${value}'`);
+  return BigInt(value);
+}
+
+/** The address the master assigns to `owner`'s jetton wallet (the node's own derivation). */
+function jettonWalletAddress(master: string, owner: string): string {
+  return `0:${sha(`jetton-wallet:${master}:${owner}`).toString('hex')}`;
+}
+
+/** An account's v3 status: an uninitialized account without a balance does not exist. */
+function v3Status(account: Account | undefined): V3Status {
+  if (!account || (account.status === 'uninitialized' && account.balance === 0n)) {
+    return 'nonexist';
+  }
+  return account.status === 'uninitialized' ? 'uninit' : account.status;
+}
+
+/** The v3 `action` description of an action phase. */
+function actionPhase(actions: Actions, total: number): Record<string, unknown> {
+  return actions.ok
+    ? {
+        success: true,
+        valid: true,
+        result_code: 0,
+        tot_actions: total,
+        skipped_actions: actions.skipped,
+        msgs_created: actions.out.length,
+      }
+    : {
+        success: false,
+        valid: actions.resultCode !== 34,
+        no_funds: actions.resultCode === 37,
+        result_code: actions.resultCode,
+        tot_actions: total,
+        skipped_actions: 0,
+        msgs_created: 0,
+      };
 }

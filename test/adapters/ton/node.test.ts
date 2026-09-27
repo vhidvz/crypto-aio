@@ -1,15 +1,29 @@
 import { ed25519 } from '@noble/curves/ed25519';
 import {
+  Address,
   Cell,
+  SendMode,
   beginCell,
   external,
+  internal,
   loadMessage,
   storeMessage,
   storeOutList,
+  type MessageRelaxed,
 } from '@ton/core';
-import { WalletContractV5R1 } from '@ton/ton';
-import { OP, jettonMessage, nativeMessage } from '../../../src/adapters/ton/messages';
-import { resolveIdentity, walletIdOf } from '../../../src/adapters/ton/wallets';
+import { WalletContractV4, WalletContractV5R1 } from '@ton/ton';
+import {
+  OP,
+  jettonMessage,
+  nativeMessage,
+  sdkAddress,
+} from '../../../src/adapters/ton/messages';
+import {
+  SEND_MODE,
+  resolveIdentity,
+  walletIdOf,
+} from '../../../src/adapters/ton/wallets';
+import { hang } from '../../../src/testing/fake-fetch';
 import { NODE_FEES } from './support/node';
 import { relayedBody, signedBoc, testWallet, tonNode } from './support/harness';
 import { KEY, PUBLIC_KEY } from './support/vectors';
@@ -343,19 +357,20 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     const { boc } = await signedBoc('v4r2', TESTNET, {
       seqno: 0,
       validUntil: s.now() + 60,
-      deploy: false,
+      deploy: true,
       messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false, memo: 'x' })],
     });
-    const body = loadMessage(
+    const { body, init } = loadMessage(
       Cell.fromBoc(Buffer.from(boc, 'base64'))[0]!.beginParse(),
-    ).body;
+    );
+    // An undeployed wallet is emulated with its StateInit, as the driver sends it (D13).
     const fees = await post(
       `${s.v2}/estimateFee`,
       {
         address: s.wallet,
         body: body.toBoc().toString('base64'),
-        init_code: '',
-        init_data: '',
+        init_code: init!.code!.toBoc().toString('base64'),
+        init_data: init!.data!.toBoc().toString('base64'),
       },
       s.fetchFn,
     );
@@ -407,6 +422,8 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
       aborted: true,
       compute_ph: { exit_code: 137 },
     });
+    // M3: the trace is named after its root transaction.
+    expect(tx?.traceId).toBe(tx?.hash);
     expect(tx?.outMsgs).toHaveLength(0);
     expect(s.node.balance(RECIPIENT)).toBe(0n);
   });
@@ -442,6 +459,8 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
       aborted: false,
       compute_ph: { success: true },
     });
+    // M3: an injected message's delivery is its trace's root.
+    expect(fromRelayer()[0]?.traceId).toBe(fromRelayer()[0]?.hash);
     s.node.inject(relayer, s.wallet, 50_000_000n, relayed());
     s.node.mine(2);
     expect(s.node.seqno(s.wallet)).toBe(2);
@@ -463,7 +482,7 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     const ids = (shards.json.result as { shards: { shard: string; seqno: number }[] })
       .shards;
     expect(ids.map((id) => id.shard)).toEqual([
-      '-9223372036854775808',
+      '4611686018427387904',
       '-4611686018427387904',
     ]);
     const times = [];
@@ -476,5 +495,571 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     }
     const mc = s.node.block(s.node.head)!.genUtime;
     expect(times).toEqual([mc - 1, mc - 9]);
+  });
+});
+
+const FRESH = `0:${'12'.repeat(32)}`;
+const b64 = (hex: string) => Buffer.from(hex, 'hex').toString('base64');
+
+/** Signs with the test key, as the wallet's owner does. */
+const signer = async (cell: Cell): Promise<Buffer> =>
+  Buffer.from(ed25519.sign(cell.hash(), Buffer.from(KEY, 'hex')));
+
+/** The test key's wallet contract; `subwallet` changes its wallet id (default the network's). */
+function contractOf(version: 'v4r2' | 'v5r1', subwallet = 0) {
+  const publicKey = Buffer.from(PUBLIC_KEY, 'hex');
+  return version === 'v4r2'
+    ? WalletContractV4.create({
+        workchain: 0,
+        publicKey,
+        walletId: 698983191 + subwallet,
+      })
+    : WalletContractV5R1.create({
+        publicKey,
+        walletId: {
+          networkGlobalId: TESTNET,
+          context: { workchain: 0, walletVersion: 'v5r1', subwalletNumber: subwallet },
+        },
+      });
+}
+
+/**
+ * A request the SDK builds with any send mode and wallet id, sent to the test key's default
+ * wallet (with its `StateInit` when `deploy`).
+ */
+async function sdkRequest(
+  version: 'v4r2' | 'v5r1',
+  args: {
+    readonly seqno: number;
+    readonly validUntil: number;
+    readonly sendMode: number;
+    readonly deploy: boolean;
+    readonly messages: MessageRelaxed[];
+    readonly subwallet?: number;
+  },
+): Promise<string> {
+  const own = contractOf(version);
+  const signing = contractOf(version, args.subwallet ?? 0);
+  const transfer = {
+    seqno: args.seqno,
+    timeout: args.validUntil,
+    sendMode: args.sendMode,
+    messages: args.messages,
+    signer,
+  };
+  const body =
+    signing instanceof WalletContractV4
+      ? await signing.createTransfer(transfer)
+      : await signing.createTransfer(transfer);
+  return beginCell()
+    .store(
+      storeMessage(
+        external({ to: own.address, body, ...(args.deploy ? { init: own.init } : {}) }),
+      ),
+    )
+    .endCell()
+    .toBoc()
+    .toString('base64');
+}
+
+/** A TEP-74 `internal_transfer` of `amount`, naming `from` as the sending owner. */
+function internalTransfer(amount: bigint, from: string | null): Cell {
+  return beginCell()
+    .storeUint(OP.jettonInternalTransfer, 32)
+    .storeUint(0, 64)
+    .storeCoins(amount)
+    .storeAddress(from === null ? null : sdkAddress(from))
+    .storeAddress(null)
+    .storeCoins(0)
+    .storeBit(false)
+    .endCell();
+}
+
+describe('the scripted toncenter node: never more lenient than the chain (F6-R5)', () => {
+  it('keeps a bounceable value too small to pay its bounce (nofunds, M7)', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, GRAM);
+    const { boc } = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil: s.now() + 60,
+      deploy: true,
+      messages: [
+        nativeMessage({ to: RECIPIENT, value: NODE_FEES.internalGas, bounce: true }),
+      ],
+    });
+    s.node.submit(boc);
+    s.node.mine(3);
+    const delivery = s.node.transactions().find((t) => t.account === RECIPIENT);
+    expect(delivery?.description).toMatchObject({
+      aborted: true,
+      compute_ph: { skipped: true, reason: 'no_state' },
+      bounce: { type: 'nofunds' },
+    });
+    expect(delivery?.outMsgs).toHaveLength(0);
+    expect(s.node.balance(RECIPIENT)).toBe(NODE_FEES.internalGas);
+    expect(s.node.transactions()).toHaveLength(2);
+  });
+
+  it('fails the action phase of an unpayable message without send mode +2: seqno kept, gas charged, replayable', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, GRAM / 10n);
+    const boc = await sdkRequest('v4r2', {
+      seqno: 0,
+      validUntil: s.now() + 60,
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+      deploy: true,
+      messages: [nativeMessage({ to: RECIPIENT, value: GRAM, bounce: false })],
+    });
+    s.node.submit(boc);
+    s.node.mine(2);
+    const charged = NODE_FEES.importFee + NODE_FEES.gasV4 + NODE_FEES.deployGas;
+    expect(s.node.seqno(s.wallet)).toBe(0);
+    expect(s.node.status(s.wallet)).toBe('active');
+    expect(s.node.balance(s.wallet)).toBe(GRAM / 10n - charged);
+    const [tx] = s.node.transactions();
+    expect(tx?.outMsgs).toHaveLength(0);
+    expect(tx?.description).toMatchObject({
+      aborted: true,
+      compute_ph: { success: true, exit_code: 0 },
+      action: { success: false, result_code: 37, msgs_created: 0 },
+    });
+    // The seqno did not move, so the same message applies again until it expires.
+    expect((await post(`${s.v2}/sendBocReturnHash`, { boc }, s.fetchFn)).status).toBe(
+      200,
+    );
+    s.node.mine();
+    expect(s.node.transactions()).toHaveLength(2);
+    expect(s.node.balance(s.wallet)).toBe(
+      GRAM / 10n - charged - NODE_FEES.importFee - NODE_FEES.gasV4,
+    );
+    expect(s.node.balance(RECIPIENT)).toBe(0n);
+  });
+
+  it('takes the forward fee out of the value without send mode +1', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 2n * GRAM);
+    const boc = await sdkRequest('v4r2', {
+      seqno: 0,
+      validUntil: s.now() + 60,
+      sendMode: SendMode.IGNORE_ERRORS,
+      deploy: true,
+      messages: [nativeMessage({ to: RECIPIENT, value: GRAM, bounce: false })],
+    });
+    s.node.submit(boc);
+    s.node.mine(2);
+    const [tx] = s.node.transactions();
+    const gas = NODE_FEES.importFee + NODE_FEES.gasV4 + NODE_FEES.deployGas;
+    const fwd = tx!.totalFees - gas;
+    expect(fwd).toBeGreaterThan(0n);
+    expect(tx?.outMsgs[0]?.value).toBe(GRAM - fwd);
+    expect(s.node.balance(RECIPIENT)).toBe(GRAM - fwd);
+    expect(s.node.balance(s.wallet)).toBe(GRAM - gas);
+  });
+
+  it("fails a relayed request's action phase without +2 and keeps the seqno (wallet_v5.fc)", async () => {
+    const s = setup('v5r1');
+    const relayer = `0:${'22'.repeat(32)}`;
+    s.node.fund(s.wallet, GRAM / 10n);
+    const { boc } = await signedBoc('v5r1', TESTNET, {
+      seqno: 0,
+      validUntil: s.now() + 60,
+      deploy: true,
+      messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+    });
+    s.node.submit(boc);
+    s.node.mine();
+    const body = relayedBody(TESTNET, {
+      seqno: 1,
+      validUntil: s.now() + 60,
+      messages: [nativeMessage({ to: RECIPIENT, value: GRAM, bounce: false })],
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+    });
+    s.node.inject(relayer, s.wallet, 50_000_000n, body, true);
+    s.node.mine(2);
+    expect(s.node.seqno(s.wallet)).toBe(1);
+    const tx = s.node.transactions().find((t) => t.inMsg.source === relayer);
+    expect(tx?.description).toMatchObject({
+      aborted: true,
+      compute_ph: { success: true },
+      action: { success: false, result_code: 37 },
+      bounce: { type: 'ok' },
+    });
+    expect(tx?.outMsgs.map((m) => m.destination)).toEqual([relayer]);
+    expect(s.node.balance(RECIPIENT)).toBe(1n);
+  });
+
+  it('refuses every message to a frozen wallet, its deploy StateInit included', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 2n * GRAM);
+    const request = (seqno: number, validUntil: number, deploy: boolean) =>
+      signedBoc('v4r2', TESTNET, {
+        seqno,
+        validUntil,
+        deploy,
+        messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+      });
+    s.node.submit((await request(0, s.now() + 60, true)).boc);
+    s.node.mine(2);
+    const accepted = await request(1, s.now() + 60, false);
+    s.node.submit(accepted.boc);
+    s.node.freeze(s.wallet);
+    s.node.mine(2);
+    // Accepted before the freeze: never included.
+    expect(s.node.seqno(s.wallet)).toBe(1);
+    expect(s.node.transactions().filter((t) => t.account === s.wallet)).toHaveLength(1);
+    // Its deploy StateInit must not revive it at seqno 0 (a replay of seqnos 1..N-1).
+    const replay = await request(0, s.now() + 61, true);
+    for (const boc of [replay.boc, accepted.boc]) {
+      const answer = await post(`${s.v2}/sendBocReturnHash`, { boc }, s.fetchFn);
+      expect(answer.status).toBe(500);
+      expect(String(answer.json.error)).toMatch(/account is frozen/);
+    }
+    expect(s.node.status(s.wallet)).toBe('frozen');
+    expect(s.node.seqno(s.wallet)).toBe(1);
+  });
+
+  it('credits an internal_transfer only from the master or the owner’s jetton wallet (TEP-74 707)', async () => {
+    const s = setup('v4r2');
+    s.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    const genuine = s.node.jettonWalletOf(MASTER, RECIPIENT);
+    const impostor = `0:${'66'.repeat(32)}`;
+    s.node.deployFakeJettonWallet(impostor, MASTER, s.wallet, 1_000_000n);
+    s.node.inject(
+      impostor,
+      genuine,
+      50_000_000n,
+      internalTransfer(1_000_000n, s.wallet),
+      true,
+    );
+    s.node.mine(2);
+    expect(s.node.jettonBalance(MASTER, RECIPIENT)).toBe(0n);
+    const refused = s.node.transactions().find((t) => t.account === genuine);
+    expect(refused?.description).toMatchObject({
+      aborted: true,
+      compute_ph: { success: false, exit_code: 707 },
+      bounce: { type: 'ok' },
+    });
+    // The master mints.
+    s.node.inject(MASTER, genuine, 50_000_000n, internalTransfer(5n, null), true);
+    s.node.mine(2);
+    expect(s.node.jettonBalance(MASTER, RECIPIENT)).toBe(5n);
+  });
+
+  it('accepts a jetton transfer with no response destination (TEP-74 addr_none)', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 2n * GRAM);
+    s.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    s.node.mintJetton(MASTER, s.wallet, 1_000_000n);
+    const body = beginCell()
+      .storeUint(OP.jettonTransfer, 32)
+      .storeUint(0, 64)
+      .storeCoins(400_000n)
+      .storeAddress(sdkAddress(RECIPIENT))
+      .storeAddress(null)
+      .storeMaybeRef(null)
+      .storeCoins(1n)
+      .storeBit(false)
+      .endCell();
+    const { boc } = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil: s.now() + 60,
+      deploy: true,
+      messages: [
+        internal({
+          to: sdkAddress(s.node.jettonWalletOf(MASTER, s.wallet)),
+          value: 50_000_000n,
+          bounce: true,
+          body,
+        }),
+      ],
+    });
+    s.node.submit(boc);
+    s.node.mine(5);
+    expect(s.node.jettonBalance(MASTER, RECIPIENT)).toBe(400_000n);
+    expect(s.node.transactions().map((t) => t.account)).toEqual([
+      s.wallet,
+      s.node.jettonWalletOf(MASTER, s.wallet),
+      s.node.jettonWalletOf(MASTER, RECIPIENT),
+      RECIPIENT,
+    ]);
+  });
+
+  it('serves jetton metadata from indexed state only (M6)', async () => {
+    const s = setup('v4r2', { indexerLag: 2 });
+    s.node.mine(3);
+    s.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
+    const masters = () =>
+      get(`${s.v3}/jetton/masters?address=${MASTER}&limit=1`, s.fetchFn);
+    const metadata = () => get(`${s.v3}/metadata?address=${MASTER}`, s.fetchFn);
+    expect((await masters()).json.jetton_masters).toEqual([]);
+    expect((await metadata()).json).toEqual({});
+    s.node.mine(2);
+    expect((await masters()).json.jetton_masters).toHaveLength(1);
+    expect((await metadata()).json).toHaveProperty([MASTER.toUpperCase()]);
+  });
+
+  it('checks a message against a lagging endpoint’s own view, then again at inclusion (M6)', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 2n * GRAM);
+    const request = (seqno: number, validUntil: number, deploy: boolean) =>
+      signedBoc('v4r2', TESTNET, {
+        seqno,
+        validUntil,
+        deploy,
+        messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+      });
+    s.node.submit((await request(0, s.now() + 60, true)).boc);
+    s.node.mine();
+    s.node.lagEndpoint('main', 1);
+    // The endpoint has not seen the deployment yet.
+    const next = await request(1, s.now() + 60, false);
+    const refused = await post(`${s.v2}/sendBocReturnHash`, { boc: next.boc }, s.fetchFn);
+    expect(refused.status).toBe(500);
+    expect(String(refused.json.error)).toMatch(/not initialized/);
+    // A stale request passes its view, and is never included.
+    const stale = await request(0, s.now() + 61, true);
+    const sent = await post(`${s.v2}/sendBocReturnHash`, { boc: stale.boc }, s.fetchFn);
+    expect(sent.status).toBe(200);
+    s.node.lagEndpoint('main', 0);
+    s.node.mine();
+    expect(s.node.seqno(s.wallet)).toBe(1);
+    expect(s.node.transactions().filter((t) => t.account === s.wallet)).toHaveLength(1);
+  });
+
+  it('emulates fees on a lagging endpoint’s own view (M6)', async () => {
+    const s = setup('v5r1');
+    s.node.fund(s.wallet, GRAM);
+    const { boc } = await signedBoc('v5r1', TESTNET, {
+      seqno: 0,
+      validUntil: s.now() + 60,
+      deploy: true,
+      messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+    });
+    s.node.submit(boc);
+    s.node.mine();
+    const next = await signedBoc('v5r1', TESTNET, {
+      seqno: 1,
+      validUntil: s.now() + 60,
+      deploy: false,
+      messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+    });
+    const body = loadMessage(
+      Cell.fromBoc(Buffer.from(next.boc, 'base64'))[0]!.beginParse(),
+    )
+      .body.toBoc()
+      .toString('base64');
+    const fees = async () =>
+      (
+        (
+          await post(
+            `${s.v2}/estimateFee`,
+            { address: s.wallet, body, init_code: '', init_data: '' },
+            s.fetchFn,
+          )
+        ).json.result as { source_fees: Record<string, number> }
+      ).source_fees;
+    expect(await fees()).toMatchObject({ gas_fee: Number(NODE_FEES.gasV5) });
+    s.node.lagEndpoint('main', 1);
+    // Not deployed in the endpoint's view: nothing runs, so no gas and no forward fee.
+    expect(await fees()).toMatchObject({ gas_fee: 0, fwd_fee: 0 });
+  });
+
+  it('answers errors in each API’s own envelope (M6)', async () => {
+    const s = setup('v4r2');
+    const v3 = await get(`${s.v3}/transactions?account=notanaddress&limit=1`, s.fetchFn);
+    expect(v3.status).toBe(422);
+    expect(v3.json).toEqual({ error: expect.any(String) });
+    const v2 = await get(`${s.v2}/getAddressInformation?address=notanaddress`, s.fetchFn);
+    expect(v2.status).toBe(422);
+    expect(v2.json).toMatchObject({ ok: false, code: 422 });
+  });
+
+  it('runs each account at its own shard’s time (M2)', async () => {
+    // The test wallet (0:cd…) is in the second shard, 9 s behind; RECIPIENT (0:11…) in the first.
+    const s = setup('v4r2', { shards: 2, shardLagSeconds: 1, secondShardLagSeconds: 9 });
+    s.node.fund(s.wallet, GRAM);
+    const { boc } = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil: s.now() + 5,
+      deploy: true,
+      messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+    });
+    s.node.submit(boc);
+    await s.clock.advance(6_000);
+    // Masterchain time is past valid_until; the wallet's shard is not.
+    s.node.mine();
+    expect(s.node.seqno(s.wallet)).toBe(1);
+    const mc = s.node.block(s.node.head)!.genUtime;
+    expect(s.node.transactions()[0]?.now).toBe(mc - 9);
+    s.node.mine();
+    expect(s.node.transactions()[1]?.now).toBe(s.node.block(s.node.head)!.genUtime - 1);
+  });
+
+  it('names every trace after its root transaction (M3)', async () => {
+    const s = setup('v4r2');
+    s.node.inject(`0:${'22'.repeat(32)}`, RECIPIENT, GRAM, beginCell().endCell());
+    s.node.mine();
+    const [tx] = s.node.transactions();
+    expect(tx?.traceId).toBe(tx?.hash);
+    const traces = await get(`${s.v3}/traces?tx_hash=${tx!.hash}`, s.fetchFn);
+    expect((traces.json.traces as Record<string, unknown>[])[0]).toMatchObject({
+      trace_id: b64(tx!.hash),
+      is_incomplete: false,
+    });
+  });
+
+  it('reports account statuses and the StateInit a message carries (M4)', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 3n * GRAM);
+    const { boc } = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil: s.now() + 60,
+      deploy: true,
+      messages: [
+        nativeMessage({ to: RECIPIENT, value: GRAM, bounce: false }),
+        nativeMessage({ to: FRESH, value: GRAM, bounce: true }),
+      ],
+    });
+    s.node.submit(boc);
+    s.node.mine(3);
+    const txs = async (account: string) =>
+      (await get(`${s.v3}/transactions?account=${account}&limit=10`, s.fetchFn)).json
+        .transactions as Record<string, unknown>[];
+    const [back, root] = await txs(s.wallet);
+    expect(root).toMatchObject({ orig_status: 'uninit', end_status: 'active' });
+    const init = (root?.in_msg as { init_state: { hash: string; body: string } })
+      .init_state;
+    const stateInit = Cell.fromBoc(Buffer.from(init.body, 'base64'))[0]!;
+    expect(init.hash).toBe(stateInit.hash().toString('base64'));
+    expect(`0:${stateInit.hash().toString('hex')}`).toBe(s.wallet);
+    expect(back).toMatchObject({ orig_status: 'active', end_status: 'active' });
+    expect((back?.in_msg as Record<string, unknown>).init_state).toBeNull();
+    expect((await txs(RECIPIENT))[0]).toMatchObject({
+      orig_status: 'nonexist',
+      end_status: 'uninit',
+    });
+    expect((await txs(FRESH))[0]).toMatchObject({
+      orig_status: 'nonexist',
+      end_status: 'nonexist',
+    });
+  });
+
+  it('keys accounts by their canonical raw address, however a test spells them (M8)', () => {
+    const s = setup('v4r2');
+    const address = `0:${'ab'.repeat(32)}`;
+    const friendly = Address.parseRaw(address).toString({
+      testOnly: true,
+      bounceable: false,
+    });
+    s.node.fund(friendly, GRAM);
+    s.node.fund(address.toUpperCase(), GRAM);
+    expect(s.node.balance(address)).toBe(2n * GRAM);
+    expect(s.node.balance(friendly)).toBe(2n * GRAM);
+    expect(s.node.jettonWalletOf(MASTER.toUpperCase(), friendly)).toBe(
+      s.node.jettonWalletOf(MASTER, address),
+    );
+  });
+
+  it.each([
+    ['v4r2', 'expired', 36],
+    ['v4r2', 'seqno', 33],
+    ['v4r2', 'walletId', 34],
+    ['v4r2', 'signature', 35],
+    ['v5r1', 'signature', 135],
+    ['v5r1', 'seqno', 133],
+    ['v5r1', 'walletId', 134],
+    ['v5r1', 'expired', 136],
+  ] as const)(
+    'refuses a %s request with a bad %s at send time (exitcode=%i)',
+    async (version, fault, code) => {
+      const s = setup(version);
+      s.node.fund(s.wallet, GRAM);
+      const good = {
+        seqno: 0,
+        validUntil: s.now() + 60,
+        deploy: true,
+        messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+      };
+      const boc =
+        fault === 'walletId'
+          ? await sdkRequest(version, { ...good, sendMode: SEND_MODE, subwallet: 1 })
+          : (
+              await signedBoc(version, TESTNET, {
+                ...good,
+                ...(fault === 'expired' ? { validUntil: s.now() } : {}),
+                ...(fault === 'seqno' ? { seqno: 5 } : {}),
+                ...(fault === 'signature' ? { seed: 'ab'.repeat(32) } : {}),
+              })
+            ).boc;
+      const answer = await post(`${s.v2}/sendBocReturnHash`, { boc }, s.fetchFn);
+      expect(answer.status).toBe(500);
+      expect(String(answer.json.error)).toMatch(
+        new RegExp(`External message was not accepted\\n.*exitcode=${code}\\b`),
+      );
+      expect(s.node.pendingCount()).toBe(0);
+    },
+  );
+
+  it('loses what swallow and dropPending lose, and re-checks the balance at inclusion', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, GRAM);
+    const request = (validUntil: number) =>
+      signedBoc('v4r2', TESTNET, {
+        seqno: 0,
+        validUntil,
+        deploy: true,
+        messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+      });
+    s.node.swallow = true;
+    const swallowed = await request(s.now() + 60);
+    const sent = await post(
+      `${s.v2}/sendBocReturnHash`,
+      { boc: swallowed.boc },
+      s.fetchFn,
+    );
+    expect(sent.status).toBe(200);
+    expect(s.node.sendCount(swallowed.hashNorm)).toBe(1);
+    expect(s.node.pendingCount()).toBe(0);
+    s.node.swallow = false;
+    const dropped = await request(s.now() + 61);
+    s.node.submit(dropped.boc);
+    expect(s.node.pendingCount()).toBe(1);
+    s.node.dropPending();
+    expect(s.node.pendingCount()).toBe(0);
+    s.node.mine();
+    expect(s.node.transactions()).toHaveLength(0);
+    // Accepted, then the balance is spent elsewhere: never included.
+    const spent = await request(s.now() + 62);
+    s.node.submit(spent.boc);
+    s.node.debit(s.wallet, GRAM);
+    s.node.mine();
+    expect(s.node.transactions()).toHaveLength(0);
+    expect(s.node.seqno(s.wallet)).toBe(0);
+    expect(s.node.sendCount(spent.hashNorm)).toBe(1);
+  });
+
+  it('lets a test script a late answer, or one that never comes (intercept)', async () => {
+    const t = tonNode();
+    const info = { method: 'GET', path: '/getMasterchainInfo' } as const;
+    const signals: (AbortSignal | undefined)[] = [];
+    t.node.intercept = (_endpoint, route, _request, signal) => {
+      if (route !== '/getMasterchainInfo') return undefined;
+      signals.push(signal);
+      return hang(signal);
+    };
+    // The transport gives up on each attempt and aborts it: the hanging answer ends.
+    await expect(t.run(t.rpc.http(info))).rejects.toMatchObject({ retryable: true });
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((signal) => signal?.aborted === true)).toBe(true);
+    // A late answer arrives once the clock moves.
+    t.node.intercept = (_endpoint, route) =>
+      route === '/getMasterchainInfo'
+        ? t.clock.sleep(1_000).then(() => ({ json: { ok: true, result: 'late' } }))
+        : undefined;
+    await expect(t.run(t.rpc.http(info))).resolves.toEqual({ ok: true, result: 'late' });
+    expect(t.node.served.at(-1)).toEqual({
+      endpoint: 'main',
+      route: '/getMasterchainInfo',
+    });
   });
 });

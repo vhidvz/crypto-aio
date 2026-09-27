@@ -82,14 +82,15 @@ export function relayedBody(
     readonly validUntil: number;
     readonly messages: readonly MessageRelaxed[];
     readonly seed?: string;
+    /** Each action's send mode (default the driver's `SEND_MODE`). */
+    readonly sendMode?: number;
   },
 ): Cell {
   const identity = resolveIdentity({ ton: { version: 'v5r1' } }, globalId);
+  const mode = args.sendMode ?? SEND_MODE;
   const actions = beginCell()
     .store(
-      storeOutList(
-        args.messages.map((outMsg) => ({ type: 'sendMsg', mode: SEND_MODE, outMsg })),
-      ),
+      storeOutList(args.messages.map((outMsg) => ({ type: 'sendMsg', mode, outMsg }))),
     )
     .endCell();
   const signing = beginCell()
