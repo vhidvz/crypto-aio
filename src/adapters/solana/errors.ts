@@ -12,7 +12,7 @@
  * displays behind `sendTransaction`'s preflight prefix, matched whole.
  */
 import type { BroadcastResult } from '../../core/driver/types';
-import { RPC_CODES } from './rpc';
+import { RPC_CODES, record } from './rpc';
 
 const PREFLIGHT = 'Transaction simulation failed: ';
 
@@ -82,11 +82,6 @@ const REFUSED: readonly { readonly pattern: RegExp; readonly result: Refused }[]
     result: INSUFFICIENT_FUNDS,
   },
 ];
-
-const record = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 
 /**
  * The `err` of a preflight failure's simulation result (the transport's `rpcData`, a JSON

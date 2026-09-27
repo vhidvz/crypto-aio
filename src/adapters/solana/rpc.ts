@@ -84,7 +84,7 @@ export const isNotYet = (error: unknown): boolean => hasCode(error, NOT_YET);
 /** The endpoint no longer holds that block or history, or never did (decides nothing). */
 export const isGone = (error: unknown): boolean => hasCode(error, GONE);
 
-/** The endpoint says the slot holds no block (`-32007`). */
+/** The endpoint says the slot was skipped, or is missing on this endpoint (`-32007`). */
 export const isSkipped = (error: unknown): boolean =>
   rpcCode(error) === RPC_CODES.SLOT_SKIPPED;
 
@@ -126,7 +126,8 @@ export const malformed = (what: string) =>
 export const inconsistent = (what: string) =>
   new ProviderError('PROVIDER_INCONSISTENT', what, { retryable: true });
 
-const record = (value: unknown): Record<string, unknown> | null =>
+/** A JSON object's fields, or `null` for anything else (arrays and `null` included). */
+export const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;

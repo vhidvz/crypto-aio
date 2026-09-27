@@ -52,6 +52,12 @@ export function variantOffsets(variant: number): {
   };
 }
 
+/**
+ * The highest recent price a speed pays: the u64 range less the largest price variant
+ * (999), so the varied price still fits its u64 field (lesson 19, F5-R3).
+ */
+const MAX_RECENT_PRICE = 2n ** 64n - 1n - 999n;
+
 /** A per-driver counter from a random start: distinct in-process, rare across processes. */
 export function variantCounter(start: number): () => number {
   let next = start % VARIANTS;
@@ -69,16 +75,19 @@ export function priorityFee(computeUnitPrice: bigint, computeUnitLimit: bigint):
 /**
  * The nearest-rank percentile of `getRecentPrioritizationFees` answers (micro-lamports per
  * compute unit); `0n` when the node reports none. A malformed entry, including one outside
- * the u64 range (lesson 19), is a retryable `PROVIDER_UNAVAILABLE`.
+ * the u64 range or without room for the price variant (lesson 19), is a retryable
+ * `PROVIDER_UNAVAILABLE`.
  */
 export function priceForSpeed(recent: unknown, speed: FeeSpeed): bigint {
   if (!Array.isArray(recent)) throw malformed('getRecentPrioritizationFees');
-  const fees = recent.map((entry: unknown) =>
-    u64(
+  const fees = recent.map((entry: unknown) => {
+    const fee = u64(
       (entry as { prioritizationFee?: unknown } | null)?.prioritizationFee,
       'getRecentPrioritizationFees',
-    ),
-  );
+    );
+    if (fee > MAX_RECENT_PRICE) throw malformed('getRecentPrioritizationFees');
+    return fee;
+  });
   if (fees.length === 0) return 0n;
   fees.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const rank = Math.ceil((SPEED_PERCENTILE[speed] / 100) * fees.length);

@@ -5,6 +5,7 @@ import {
   detailsOf,
   fallbackComputeUnitLimit,
   feeDraft,
+  lamportsCharged,
   parseOverride,
   priceForSpeed,
   priorityFee,
@@ -12,19 +13,28 @@ import {
   variantOffsets,
 } from '../../../src/adapters/solana/fees';
 import {
+  BROADCAST,
   MONITOR,
   PROOF,
+  READ,
   amountString,
   blockHeader,
   call,
   contextValue,
+  gone,
+  inconsistent,
   isGone,
   isNotAvailable,
   isNotYet,
   isSkipped,
+  malformed,
+  notYet,
   quorumKeyFor,
+  record,
   rpcCode,
   u64,
+  undecided,
+  withSignal,
 } from '../../../src/adapters/solana/rpc';
 import type { Transport } from '../../../src/core/transport/types';
 import { ProviderError } from '../../../src/core/errors/error';
@@ -65,6 +75,14 @@ describe('Solana answers', () => {
         blockHeight: null,
       }),
     ).toThrow(expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE' }));
+  });
+
+  it('reads a JSON object as a record, and anything else as null', () => {
+    const object = { a: 1 };
+    expect(record(object)).toBe(object);
+    for (const other of [null, undefined, [], [1], 'x', 5, 5n, true]) {
+      expect(record(other)).toBeNull();
+    }
   });
 
   it('treats only definitive "cannot show it" codes as not available, split by meaning (I3)', () => {
@@ -130,6 +148,95 @@ describe('call()', () => {
         },
       },
     ]);
+  });
+});
+
+describe('transport helpers (F5-R3 M4)', () => {
+  it('turns an RPC error into a retryable answer that decides nothing and keeps its evidence (lesson 18)', () => {
+    const cause = new ProviderError(
+      'RPC_ERROR',
+      'getBlocks failed: BigTable query failed',
+      {
+        details: { rpcCode: -32602, rpcMessage: 'BigTable query failed' },
+        context: { chain: 'solana', method: 'getBlocks' },
+      },
+    );
+    const error = undecided(cause, 'the blocks') as ProviderError;
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(error.message).toBe(
+      'the endpoints cannot show the blocks: BigTable query failed',
+    );
+    expect(error.cause).toBe(cause);
+    expect(error.context).toEqual(cause.context);
+    expect(error.details).toEqual(cause.details);
+    const bare = undecided(new ProviderError('RPC_ERROR', 'x'), 'y') as ProviderError;
+    expect(bare).toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(bare.details).toBeUndefined();
+    // Every other error, retryable or not, passes through as it is.
+    for (const other of [
+      new ProviderError('PROVIDER_UNAVAILABLE', 'down'),
+      new ProviderError('PROVIDER_INCONSISTENT', 'split', { retryable: true }),
+      new ProviderError('PROVIDER_MISCONFIGURED', 'another network'),
+      new Error('foreign'),
+      'text',
+    ]) {
+      expect(undecided(other, 'y')).toBe(other);
+    }
+  });
+
+  it('makes every "decides nothing" error retryable, and none an RPC answer', () => {
+    const made = [
+      [gone('the block'), 'PROVIDER_UNAVAILABLE'],
+      [notYet('the block'), 'PROVIDER_UNAVAILABLE'],
+      [malformed('getBlock'), 'PROVIDER_UNAVAILABLE'],
+      [inconsistent('the window'), 'PROVIDER_INCONSISTENT'],
+    ] as const;
+    for (const [error, code] of made) {
+      expect(error).toMatchObject({ code, retryable: true });
+      expect(isNotAvailable(error)).toBe(false);
+    }
+  });
+
+  it('tags each purpose with its retry class, and adds a signal only when given one', () => {
+    expect(READ).toEqual({ purpose: 'read', retry: 'safe' });
+    expect(BROADCAST).toEqual({ purpose: 'broadcast', retry: 'ambiguous-on-failure' });
+    for (const tags of [READ, MONITOR, PROOF, BROADCAST]) {
+      expect(Object.isFrozen(tags)).toBe(true);
+    }
+    expect(withSignal(PROOF)).toBe(PROOF);
+    const signal = new AbortController().signal;
+    const tagged = withSignal(BROADCAST, signal);
+    expect(tagged).toEqual({
+      purpose: 'broadcast',
+      retry: 'ambiguous-on-failure',
+      signal,
+    });
+    expect(tagged.signal).toBe(signal);
+    expect(BROADCAST).not.toHaveProperty('signal');
+  });
+
+  it('reads a block header exactly, and drops a block time that is not a safe integer', () => {
+    const block = {
+      blockhash: 'h',
+      previousBlockhash: 'p',
+      parentSlot: 41,
+      blockHeight: 2n ** 60n,
+      blockTime: 1_790_000_000,
+      rewards: [],
+    };
+    expect(blockHeader(block)).toStrictEqual({
+      blockhash: 'h',
+      previousBlockhash: 'p',
+      parentSlot: 41n,
+      blockHeight: 2n ** 60n,
+      blockTime: 1_790_000_000,
+    });
+    for (const blockTime of [null, undefined, 1.5, 2 ** 60, 2n ** 60n, '1790000000']) {
+      const header = blockHeader({ ...block, blockTime });
+      expect(header).not.toHaveProperty('blockTime');
+      expect(header.parentSlot).toBe(41n);
+    }
   });
 });
 
@@ -286,16 +393,20 @@ describe('the fee policy', () => {
     expect(priceForSpeed(recent, 'normal')).toBe(20n);
     expect(priceForSpeed(recent, 'fast')).toBe(40n);
     expect(priceForSpeed([], 'fast')).toBe(0n);
-    // Exact integers (P5-A): a u64 price above 2^53 − 1 arrives as a bigint.
-    expect(priceForSpeed([{ prioritizationFee: 2n ** 64n - 1n }], 'fast')).toBe(
-      2n ** 64n - 1n,
-    );
+    // Exact integers (P5-A): a u64 price above 2^53 − 1 arrives as a bigint. The highest
+    // accepted price leaves room for the largest price variant within the u64 range.
+    const highest = priceForSpeed([{ prioritizationFee: 2n ** 64n - 1_000n }], 'fast');
+    expect(highest).toBe(2n ** 64n - 1_000n);
+    expect(highest + variantOffsets(VARIANTS - 1).price).toBe(2n ** 64n - 1n);
     for (const bad of [
       null,
       [{ prioritizationFee: -1 }],
       [{ prioritizationFee: 1.5 }],
       [{}],
-      // Lesson 19: outside the u64 range is malformed, never a price to encode.
+      // Lesson 19: outside the u64 range is malformed, never a price to encode, and so is
+      // a price the variant would push past it (F5-R3 M1).
+      [{ prioritizationFee: 2n ** 64n - 999n }],
+      [{ prioritizationFee: 2n ** 64n - 1n }],
       [{ prioritizationFee: 2n ** 64n }],
       [{ prioritizationFee: -1n }],
       [{ prioritizationFee: 2 ** 60 }],
@@ -376,6 +487,26 @@ describe('the fee policy', () => {
     expect(() => detailsOf({ ...draft, kind: 'evm-1559' })).toThrow(
       expect.objectContaining({ code: 'INVALID_INTENT' }),
     );
+  });
+});
+
+describe('lamports charged (F5-R3 M4)', () => {
+  it('adds up the charges of a draft, and only its charges', () => {
+    const details = {
+      signatures: 1,
+      baseFee: 5_000n,
+      computeUnitLimit: 26_000n,
+      computeUnitPrice: 1_000n,
+      priorityFee: 26n,
+      rent: 1_488_440n,
+      createsRecipientAccount: true,
+    };
+    const draft = feeDraft('fast', details);
+    expect(lamportsCharged(draft)).toBe(1_493_466n);
+    // Rent a draft does not charge is not counted.
+    const noAccount = feeDraft('custom', { ...details, createsRecipientAccount: false });
+    expect(lamportsCharged(noAccount)).toBe(5_026n);
+    expect(lamportsCharged({ ...draft, charges: [] })).toBe(0n);
   });
 });
 
