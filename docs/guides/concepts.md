@@ -56,6 +56,16 @@ from `chains.<id>.maxLagBlocks`, then the root `transport.maxLagBlocks`, then th
 own value, then the built-in default of 5. The BSC, Arbitrum, OP and Base mainnets set about
 60 s of blocks (134, 240, 30 and 30); set your own for fast testnets with several endpoints.
 
+A proof read needs `proofQuorum` endpoints (2 by default) to agree. The quorum's size counts
+every endpoint not proven to serve another network, including lagging ones, ones whose
+identity is not yet confirmed and ones whose circuit breaker is open, so one endpoint never
+proves a fact alone while the others are only briefly unavailable. That costs liveness:
+proofs wait at startup, while an honest endpoint's breaker is briefly open, and for about
+three health intervals (`healthIntervalMs`, 15 s by default) after an endpoint stops
+answering its probes or its requests; then it stops counting until it serves again. With two
+endpoints both must answer, and once one stops counting the other proves alone, so use three
+or more endpoints for production proofs.
+
 ```ts
 const aio = new CryptoAio({
   providers: { node: { endpoints: [{ name: 'main', url: secret('https://node.example/KEY') }] } },

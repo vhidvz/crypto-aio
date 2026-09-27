@@ -13,7 +13,7 @@ import { redactText } from '../secret/redact';
 import { REDACTED, reveal } from '../secret/secret';
 import { randomId } from '../util/bytes';
 import type { Clock } from '../util/clock';
-import { canonicalJson, parseJson } from '../util/json';
+import { parseJson, quorumJson } from '../util/json';
 import { backoffDelay, parseRetryAfter } from './backoff';
 import { CircuitBreaker } from './circuit';
 import { TokenBucket } from './rate-limit';
@@ -49,8 +49,9 @@ type Mode = 'rpc' | 'json' | 'text';
 type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 
 const MAX_RETRY_AFTER_MS = 60_000;
-/** A24/P25-R8: consecutive failed health refreshes (identity or height probe) after which an
- * endpoint stops counting toward a proof quorum's size (a sustained outage, not a hiccup). */
+/** A24/P25-R8: consecutive failed health refreshes (identity or height probe, or, P25-R21,
+ * failing requests) after which an endpoint stops counting toward a proof quorum's size (a
+ * sustained outage, not a hiccup). */
 const HEALTH_MISS_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
 /** N1: statuses that must never carry a body on the Response passed back to the SDK. */
@@ -86,8 +87,9 @@ interface Endpoint {
   /** Earliest time this endpoint may be picked again, from Retry-After or backoff (I9). */
   notBefore: number;
   height?: bigint;
-  /** A24/P25-R8: health refreshes in a row whose identity or height probe failed; 0 once a
-   * refresh's probes succeed (a caller-aborted identity check is neither, N1). */
+  /** A24/P25-R8: health refreshes in a row whose identity or height probe failed, or
+   * (P25-R21) that found the endpoint's requests failing; 0 once a refresh's probes succeed
+   * while its requests do not fail (a caller-aborted identity check is neither, N1). */
   healthMisses: number;
   /** P25-R10/I2: when the last counted miss was recorded; at most one counts per interval. */
   lastMissAt?: number;
@@ -197,10 +199,11 @@ function sanitizeIdentityField(value: string): string {
 }
 
 /**
- * Whether every quorum result matches the first under `canonicalJson`, compared whole or,
- * with a `quorumKey`, on the key's projection. M2: a key that throws (or projects something
- * `canonicalJson` rejects) counts as a disagreement, never a foreign error. Without a key,
- * the comparison is unchanged.
+ * Whether every quorum result matches the first under `quorumJson`, compared whole or, with
+ * a `quorumKey`, on the key's projection. M2: a key that throws (or projects something
+ * `quorumJson` rejects) counts as a disagreement, never a foreign error. P25-R21/M1:
+ * `quorumJson`, not `canonicalJson`, so an object shaped like a bigint tag never agrees with
+ * a revived bigint.
  */
 function quorumAgrees(
   values: readonly unknown[],
@@ -210,9 +213,9 @@ function quorumAgrees(
     const expected = key(values[0]);
     return values.every((value) => key(value) === expected);
   };
-  if (!quorumKey) return agree(canonicalJson);
+  if (!quorumKey) return agree(quorumJson);
   try {
-    return agree((value) => canonicalJson(quorumKey(value)));
+    return agree((value) => quorumJson(quorumKey(value)));
   } catch {
     return false;
   }
@@ -940,9 +943,11 @@ export class HttpTransport implements Transport {
    * identity probe with an expected identity), every endpoint not proven mismatched,
    * whatever its height, identity state (confirmed, not yet checked or identity-throttled)
    * or breaker state, until `HEALTH_MISS_LIMIT` health refreshes in a row, at most one per
-   * `healthIntervalMs`, failed its identity or height probe (a sustained outage). Such an
-   * endpoint cannot be asked, so it makes the read decide nothing rather than letting fewer
-   * endpoints decide it. Otherwise (no such probe, or another quorum) it is the usable
+   * `healthIntervalMs`, failed its identity or height probe or (P25-R21) found its requests
+   * failing (breaker not closed, or failures in a row at `failureThreshold`): a sustained
+   * outage. Such an endpoint cannot be asked, so it makes the read decide nothing rather
+   * than letting fewer endpoints decide it. It counts again once it serves requests and a
+   * later refresh succeeds. Otherwise (no such probe, or another quorum) it is the usable
    * endpoints (the prior, weaker rule).
    *
    * `inRange`: the usable endpoints (breaker, identity, throttle). For a monitor or proof
@@ -1605,6 +1610,18 @@ export class HttpTransport implements Transport {
     endpoint.lastMissAt = now;
   }
 
+  /**
+   * P25-R21/I1: whether the endpoint's requests are failing: its circuit breaker is not
+   * closed (open or half-open), or its consecutive request failures reached the breaker's
+   * `failureThreshold`. Read only; `#refresh` still never does breaker bookkeeping (R18).
+   */
+  #failingRequests(endpoint: Endpoint): boolean {
+    return (
+      endpoint.breaker.state !== 'closed' ||
+      endpoint.failures >= this.#opts.failureThreshold
+    );
+  }
+
   /** A proven identity mismatch: the endpoint serves a different network and is disabled. */
   #disable(endpoint: Endpoint, expected: string, actual: unknown): void {
     endpoint.identity = 'mismatch';
@@ -1706,8 +1723,15 @@ export class HttpTransport implements Transport {
           }
           // P25-R8: identity and height failures feed one counter, which a refresh whose
           // probes all succeeded (with no height probe, the identity alone) resets.
-          endpoint.healthMisses = 0;
-          endpoint.lastMissAt = undefined;
+          // P25-R21/I1: unless the endpoint's requests fail: then its answered probes are a
+          // miss too, so an endpoint that answers probes but no request leaves a proof
+          // quorum's count as a probe-dead one does, while a shorter outage still counts.
+          if (this.#failingRequests(endpoint)) {
+            this.#recordMiss(endpoint);
+          } else {
+            endpoint.healthMisses = 0;
+            endpoint.lastMissAt = undefined;
+          }
           anySucceeded = true;
         } catch (error) {
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
@@ -1858,11 +1882,34 @@ function isProofQuorum(purpose: RequestPurpose, options: CallOptions): boolean {
 }
 
 /**
- * P25-R10: whether two definitive errors are the same answer: the same code and, for a
- * JSON-RPC error, the same `rpcCode`.
+ * P25-R10, P25-R21/I2: whether two definitive errors are the same answer: the same code, the
+ * same HTTP status (`details.status`) and the same JSON-RPC code (`details.rpcCode`), each
+ * possibly absent from both, and for an implementation-defined JSON-RPC code, the same
+ * message text (`details.rpcMessage`). Anything else is a different answer. Only this
+ * boolean leaves here: no message text reaches an error, event or log.
  */
 function sameRefusal(a: CryptoAioError, b: CryptoAioError): boolean {
-  return a.code === b.code && a.details?.rpcCode === b.details?.rpcCode;
+  const left = a.details ?? {};
+  const right = b.details ?? {};
+  if (
+    a.code !== b.code ||
+    left.status !== right.status ||
+    left.rpcCode !== right.rpcCode
+  ) {
+    return false;
+  }
+  return !implementationDefined(left.rpcCode) || left.rpcMessage === right.rpcMessage;
+}
+
+/**
+ * P25-R21/I2: a JSON-RPC error code whose meaning each server defines (-32000 to -32099, and
+ * -32603, "internal error"), so one code can stand for unlike errors, such as a revert and
+ * a missing header.
+ */
+function implementationDefined(code: unknown): boolean {
+  return (
+    typeof code === 'number' && ((code <= -32000 && code >= -32099) || code === -32603)
+  );
 }
 
 /** A14: the highest height at least two endpoints have reached (the second-highest). */

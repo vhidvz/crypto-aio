@@ -63,21 +63,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of height lag, an unknown height, an identity not yet confirmed or an open circuit
   breaker. An endpoint keeps counting until its identity is proven mismatched or three
   health refreshes in a row, at most one per `healthIntervalMs`, fail its identity or height
-  probe (with an identity probe alone, each refresh re-probes a confirmed identity). Only a
-  confirmed, in-range endpoint whose breaker lets requests through answers; otherwise the
-  read decides nothing (a retryable `PROVIDER_UNAVAILABLE`). A `quorum: 'proof'` read keeps
-  health fresh under any purpose. With no probe configured, the quorum counts only the
-  usable endpoints, as before, so a chain family sets its probes.
+  probe or find its requests failing (its breaker not closed, or `failureThreshold` failures
+  in a row); with an identity probe alone, each refresh re-probes a confirmed identity. It
+  counts again once it serves requests and a later refresh succeeds. Only a confirmed,
+  in-range endpoint whose breaker lets requests through answers; otherwise the read decides
+  nothing (a retryable `PROVIDER_UNAVAILABLE`). A `quorum: 'proof'` read keeps health fresh
+  under any purpose. With no probe configured, the quorum counts only the usable endpoints,
+  as before, so a chain family sets its probes.
 - Lag is measured against the second-highest known height, so one endpoint that
   over-reports its head never marks honest ones as lagging. With two endpoints that
   excludes neither, so a proof read should be anchored to a block height.
 - In a proof quorum, a definitive error decides only when every endpoint of the quorum
-  returns an equivalent one (the same JSON-RPC error code, else the same error code);
-  against an answer, or a different error, the read decides nothing (a retryable
-  `PROVIDER_INCONSISTENT`). One endpoint's revert therefore never fails a token for good.
-- These cost liveness: proofs wait until enough endpoints are confirmed, in range and past
-  their breaker's open period (`openMs`), including at startup, and a dead endpoint holds
-  them back for up to three health intervals.
+  returns an equivalent one: the same error code, HTTP status and JSON-RPC error code, and
+  for a JSON-RPC code whose meaning each server defines (-32000 to -32099, and -32603) the
+  same message. Against an answer, or a different error, the read decides nothing (a
+  retryable `PROVIDER_INCONSISTENT`). One endpoint's revert therefore never fails a token for
+  good.
+- A quorum compares answers in a form where an object never equals a `bigint`, so under
+  `exactIntegers` an endpoint's `{"$bigint": …}` object no longer agrees with another's
+  exact integer.
+- These cost liveness. Proofs wait at startup until enough endpoints are confirmed and in
+  range, and while an honest endpoint's breaker is open for less than three health
+  intervals. An endpoint that stops answering its probes or its requests holds them back for
+  about three health intervals; after that it no longer counts, so with two endpoints the
+  other decides alone until the first serves requests again. With two endpoints both must
+  answer, so use three or more for production proofs. Errors worded differently decide
+  nothing.
 - An observation clears an earlier failure or refusal reason once the transaction succeeds,
   leaves its block or is proven replaced, and whenever a rebroadcast, accepted or
   ambiguous, makes it `pending` again. `TxStatus.reason` is present only with `failed`,

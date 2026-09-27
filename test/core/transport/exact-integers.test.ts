@@ -186,6 +186,42 @@ describe('exact JSON integers (A12)', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
+  it('never lets an object pass for a revived bigint in a quorum (P25-R21/M1)', async () => {
+    // A liar's object shaped like canonicalJson's bigint tag, against an honest u64.
+    const LIAR = '{"lamports":{"$bigint":"18446744073709551615"}}';
+    const HONEST = '{"lamports":18446744073709551615}';
+    const lamports = (result: unknown) => (result as { lamports: unknown }).lamports;
+    for (const [first, second] of [
+      [LIAR, HONEST],
+      [HONEST, LIAR],
+    ]) {
+      const fake = new FakeFetch()
+        .route('https://a.test', (req) => rpcAnswer(req, first as string))
+        .route('https://b.test', (req) => rpcAnswer(req, second as string));
+      const { transport, clock } = setup([A, B], fake);
+      for (const quorumKey of [undefined, lamports]) {
+        await expect(
+          drive(
+            clock,
+            transport.rpc('m', [], {
+              exactIntegers: true,
+              quorum: 'proof',
+              ...(quorumKey ? { quorumKey } : {}),
+            }),
+          ),
+        ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+      }
+    }
+    // Answers alike still agree, `$` keys and all.
+    const same = new FakeFetch()
+      .route('https://a.test', (req) => rpcAnswer(req, LIAR))
+      .route('https://b.test', (req) => rpcAnswer(req, LIAR));
+    const { transport, clock } = setup([A, B], same);
+    await expect(
+      drive(clock, transport.rpc('m', [], { exactIntegers: true, quorum: 'proof' })),
+    ).resolves.toEqual({ lamports: { $bigint: '18446744073709551615' } });
+  });
+
   it('keeps health probes on plain parsing', async () => {
     const fake = new FakeFetch().route('https://a.test', (req) =>
       rpcAnswer(req, '18446744073709551615'),

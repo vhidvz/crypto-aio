@@ -295,6 +295,28 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
+  it("never fails a token for good on one endpoint's revert against another's node error (P25-R21/I2)", async () => {
+    const h = evmHarness(library, 'ethereum', 'sepolia', { endpoints: ['a', 'b'] });
+    const reader = createEvmReader(h.ctx);
+    h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    // One implementation-defined code, two texts: two different answers, whichever is first.
+    for (const reverting of ['a', 'b']) {
+      h.node.intercept = (endpoint, method) =>
+        method === 'eth_call'
+          ? {
+              error: {
+                code: -32000,
+                message:
+                  endpoint === reverting ? 'execution reverted' : 'header not found',
+              },
+            }
+          : undefined;
+      await expect(
+        h.run(reader.getTokenMetadata!({ standard: 'erc20', contract: TOKEN })),
+      ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    }
+  });
+
   it('classifies token metadata failures: permanent for the token, retryable for the node (N6)', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);

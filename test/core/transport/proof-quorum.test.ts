@@ -536,9 +536,108 @@ describe('proof quorum health misses (P25-R10)', () => {
   });
 });
 
+// P25-R21/I1: an endpoint whose probes answer but whose requests fail (its breaker not closed,
+// or its failures in a row at the breaker's threshold) records a health miss instead of a
+// reset, so it leaves the count after three spaced misses, as a probe-dead one does (A24),
+// while a shorter open breaker still counts (P25-R9).
+describe('proof quorum and request-dead endpoints (P25-R21)', () => {
+  it('recovers proofs within about three health intervals of an endpoint failing every request', async () => {
+    // The final review's reproduction: both endpoints answer the height probe, b answers
+    // HTTP 503 to every proof read, and a proof read runs every 20 s for 20 minutes.
+    const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    transport.setProbes(probes);
+    const outcomes: string[] = [];
+    for (let read = 0; read < 60; read++) {
+      if (read > 0) await clock.advance(20_000);
+      outcomes.push(
+        await drive(clock, transport.rpc('fin', [], { quorum: 'proof' })).then(
+          (value) => String(value),
+          (error: { code: string }) => error.code,
+        ),
+      );
+    }
+    // Five failures open b's breaker (80 s); the refreshes at 100, 120 and 140 s find it not
+    // closed and record its three misses; from 140 s on, b no longer counts.
+    expect(outcomes.slice(0, 7)).toEqual(Array(7).fill('PROVIDER_UNAVAILABLE'));
+    expect(outcomes.slice(7)).toEqual(Array(53).fill('fact'));
+    // a missed only the read that failed fast while b's breaker was open (100 s); b was asked
+    // until it left the count (its half-open trial at 120 s the last time).
+    expect([finCalls('a'), finCalls('b')]).toEqual([59, 6]);
+  });
+
+  it('keeps counting a breaker open for under three health intervals, one miss per interval', async () => {
+    const { fake, finCalls } = identified(
+      { honest: '1', liar: '1' },
+      {},
+      { honest: 'down', liar: 'forged' },
+    );
+    const { transport, clock } = setup(
+      [endpoint('honest', 0), endpoint('liar', 1)],
+      fake,
+      { failureThreshold: 2, openMs: 10 * 60_000 },
+    );
+    transport.setProbes({ ...probes, ...identity });
+    await drive(clock, transport.refreshHealth());
+    // Two plain reads fail on honest and fail over to the liar: honest's breaker opens.
+    for (let read = 1; read <= 2; read++) await drive(clock, transport.rpc('x'));
+    expect(transport.status().find((s) => s.id === 'honest')?.state).toBe('open');
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    // Two health intervals of an open breaker, each refreshed three times at one instant, are
+    // two misses: honest still counts, and the liar never proves alone.
+    for (let interval = 1; interval <= 2; interval++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
+      for (let refresh = 1; refresh <= 3; refresh++) {
+        await drive(clock, transport.refreshHealth());
+      }
+      await expect(proof()).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+    expect(finCalls('liar')).toBe(0);
+    // The third interval makes it a sustained request outage: honest no longer counts. With
+    // two endpoints the other then proves alone, the documented cost (use three or more).
+    await clock.advance(HEALTH_INTERVAL_MS);
+    await drive(clock, transport.refreshHealth());
+    await expect(proof()).resolves.toBe('forged');
+  });
+
+  it('counts an endpoint again once it serves requests and a later refresh succeeds', async () => {
+    const answers: Record<string, string> = { honest: 'down', liar: 'forged' };
+    const { fake, finCalls } = identified({ honest: '1', liar: '1' }, {}, answers);
+    const openMs = 60_000;
+    const { transport, clock } = setup(
+      [endpoint('honest', 0), endpoint('liar', 1)],
+      fake,
+      { failureThreshold: 2, openMs },
+    );
+    transport.setProbes({ ...probes, ...identity });
+    await drive(clock, transport.refreshHealth());
+    for (let read = 1; read <= 2; read++) await drive(clock, transport.rpc('x'));
+    for (let interval = 1; interval <= 3; interval++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
+      await drive(clock, transport.refreshHealth());
+    }
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    await expect(proof()).resolves.toBe('forged');
+    // honest serves again: asked first (its priority) once its breaker is half-open, its
+    // answer closes the breaker…
+    answers.honest = 'fact';
+    await clock.advance(openMs);
+    await expect(proof()).resolves.toBe('fact');
+    // …and the next refresh that finds it serving resets its misses: it counts again, so the
+    // liar is contradicted instead of proving alone.
+    await clock.advance(HEALTH_INTERVAL_MS);
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+    expect([finCalls('honest'), finCalls('liar')]).toEqual([2, 2]);
+  });
+});
+
 // P25-R10: under a proof quorum, one endpoint's definitive error decides only when the
-// quorum's endpoints all return an equivalent one (the same rpcCode, else the same code);
-// otherwise the read decides nothing, and the other endpoints are still asked.
+// quorum's endpoints all return an equivalent one (P25-R21/I2: the same code, HTTP status and
+// rpcCode, and for an implementation-defined rpcCode the same text); otherwise the read
+// decides nothing, and the other endpoints are still asked.
 describe('proof quorum and definitive errors (P25-R10)', () => {
   const REVERT = { code: 3, message: 'execution reverted' };
   /** Endpoints at height 100 answering 'fin' with `replies`: a JSON-RPC error or a result. */
@@ -596,5 +695,68 @@ describe('proof quorum and definitive errors (P25-R10)', () => {
       drive(clock, transport.rpc('fin', [], { quorum: 'proof' })),
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
     expect([finCalls('a'), finCalls('b')]).toEqual([1, 1]);
+  });
+
+  // P25-R21/I2: equivalent means the same code, HTTP status and JSON-RPC code, and for an
+  // implementation-defined JSON-RPC code, the same message text.
+  it('tells REST refusals apart by their HTTP status', async () => {
+    const rest = (statuses: Record<string, number>) => {
+      const fake = new FakeFetch();
+      for (const [name, status] of Object.entries(statuses)) {
+        fake.route(`https://${name}.test`, () => ({ status, text: '{"error":"no"}' }));
+      }
+      return setup([endpoint('a'), endpoint('b')], fake);
+    };
+    const read = { method: 'GET', path: '/account' } as const;
+    const unlike = rest({ a: 404, b: 400 });
+    await expect(
+      drive(unlike.clock, unlike.transport.http(read, { quorum: 'proof' })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    const alike = rest({ a: 404, b: 404 });
+    await expect(
+      drive(alike.clock, alike.transport.http(read, { quorum: 'proof' })),
+    ).rejects.toMatchObject({
+      code: 'RPC_ERROR',
+      retryable: false,
+      details: { status: 404 },
+    });
+  });
+
+  it('tells implementation-defined JSON-RPC errors apart by their text, and others by code', async () => {
+    const TEXTS = ['execution reverted', 'header not found'] as const;
+    const outcome = async (code: number, messages: readonly [string, string]) => {
+      const { fake } = refusing({
+        a: { code, message: messages[0] },
+        b: { code, message: messages[1] },
+      });
+      const { transport, clock, seen } = setup([endpoint('a'), endpoint('b')], fake);
+      transport.setProbes(probes);
+      const error = await drive(
+        clock,
+        transport.rpc('fin', [], { quorum: 'proof' }),
+      ).catch((e: unknown) => e);
+      return { error, seen };
+    };
+    // -32000 to -32099 and -32603: each implementation defines what the code means.
+    for (const code of [-32000, -32050, -32099, -32603]) {
+      const { error, seen } = await outcome(code, TEXTS);
+      expect(error).toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+      // Comparing the texts puts neither into the error or an event.
+      for (const text of TEXTS) {
+        expect(JSON.stringify(error)).not.toContain(text);
+        expect(JSON.stringify(seen)).not.toContain(text);
+      }
+      const alike = await outcome(code, [TEXTS[1], TEXTS[1]]);
+      expect(alike.error).toMatchObject({
+        code: 'RPC_ERROR',
+        retryable: false,
+        details: { rpcCode: code, rpcMessage: TEXTS[1] },
+      });
+    }
+    // A standard code (and one just outside that range) means the same whatever the text.
+    for (const code of [-32602, -32100]) {
+      const { error } = await outcome(code, ['invalid params', 'missing argument 0']);
+      expect(error).toMatchObject({ code: 'RPC_ERROR', details: { rpcCode: code } });
+    }
   });
 });

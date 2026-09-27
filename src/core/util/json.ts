@@ -56,6 +56,44 @@ function canonicalize(value: unknown, seen: WeakSet<object>): unknown {
   }
 }
 
+/**
+ * P25-R21/M1: deterministic JSON for comparing quorum answers, which no two different values
+ * share. `canonicalJson` writes a bigint as `{"$bigint":…}` and bytes as `{"$bytes":…}`, the
+ * same text as a plain object with that key, so one endpoint's object could agree with
+ * another's bigint; it also drops a `__proto__` key. Here every plain-object key that starts
+ * with `$` gains one more `$`, and `__proto__` becomes `$__proto__`, before tagging, so no
+ * two keys become one and no plain object's key is ever `$bigint` or `$bytes`.
+ * `canonicalJson` itself is unchanged: the intent hash depends on it.
+ */
+export function quorumJson(value: unknown): string {
+  return canonicalJson(escapeKeys(value, new WeakSet()));
+}
+
+/** `value` with the keys of its plain objects escaped as `quorumJson` describes. */
+function escapeKeys(value: unknown, seen: WeakSet<object>): unknown {
+  if (value === null || typeof value !== 'object' || value instanceof Uint8Array)
+    return value;
+  if (seen.has(value)) throw new TypeError('canonicalJson: circular structure');
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((item) => escapeKeys(item, seen));
+    const proto: unknown = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      // As canonicalJson reads it: its toJSON() value, or (without one) a TypeError there.
+      const toJSON = (value as { toJSON?: () => unknown }).toJSON;
+      return typeof toJSON === 'function' ? escapeKeys(toJSON.call(value), seen) : value;
+    }
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value)) {
+      const escaped = key.startsWith('$') || key === '__proto__' ? `$${key}` : key;
+      out[escaped] = escapeKeys((value as Record<string, unknown>)[key], seen);
+    }
+    return out;
+  } finally {
+    seen.delete(value);
+  }
+}
+
 /** P25-R4: the longest integer literal `parseJson` revives, in digits without the sign. */
 const MAX_EXACT_DIGITS = 80;
 
