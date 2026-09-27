@@ -64,9 +64,9 @@ proofs wait at startup, while an honest endpoint's breaker is briefly open, and 
 three health intervals (`healthIntervalMs`, 15 s by default) after an endpoint stops
 answering its probes or its requests; then it stops counting. A recovering endpoint is tried
 alongside the others and can only block a proof; once it answers, it rejoins at the next
-health refresh, which the next proof read triggers. With two endpoints both must answer, and
-once one stops counting the other proves alone, so use three or more endpoints for
-production proofs.
+health refresh, if its probes answer; the next proof read triggers that refresh. With two
+endpoints both must answer, and once one stops counting the other proves alone, so use three
+or more endpoints for production proofs.
 
 ```ts
 const aio = new CryptoAio({

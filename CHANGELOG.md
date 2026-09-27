@@ -67,14 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in a row); with an identity probe alone, each refresh re-probes a confirmed identity. An
   endpoint out of the count never answers toward a proof: while its breaker is half-open it
   is tried alongside the others and can only block the proof (its disagreement or refusal
-  decides nothing); once it answers, it rejoins the count at the next health refresh, which
-  the next proof read triggers. A proof read waits for a trial it sends, up to the call's
-  timeout; a trial whose endpoint has no rate-limit token free is skipped for that read, and
-  each concurrent proof read in a half-open window may send its own trial. Only a confirmed,
-  in-range endpoint whose breaker lets requests through answers; otherwise the read decides
-  nothing (a retryable `PROVIDER_UNAVAILABLE`). A `quorum: 'proof'` read keeps health fresh
-  under any purpose. With no probe configured, the quorum counts only the usable endpoints,
-  as before, so a chain family sets its probes.
+  decides nothing); once it answers, it rejoins the count at the next health refresh, if
+  its probes answer; the next proof read triggers that refresh. A proof read waits for a
+  trial it sends, up to the call's timeout; a trial whose endpoint has no rate-limit token
+  free is skipped for that read, and each concurrent proof read in a half-open window may
+  send its own trial. Only a confirmed, in-range endpoint whose breaker lets requests
+  through answers; otherwise the read decides nothing (a retryable `PROVIDER_UNAVAILABLE`).
+  A `quorum: 'proof'` read keeps health fresh under any purpose. With no probe configured,
+  the quorum counts only the usable endpoints, as before, so a chain family sets its
+  probes.
 - For proof reads and proof quorums, lag is measured against the second-highest known
   height, so one endpoint that over-reports its head never marks honest ones as lagging.
   With two endpoints that excludes neither, so a proof read should be anchored to a block
@@ -96,8 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   intervals. An endpoint that stops answering its probes or its requests holds them back for
   about three health intervals; after that it no longer counts, so with two endpoints the
   other decides alone until the first answers a trial again and rejoins at the next health
-  refresh, which the next proof read triggers. With two endpoints both must answer, so use
-  three or more for production proofs. Errors worded differently decide nothing.
+  refresh, if its probes answer; the next proof read triggers that refresh. With two
+  endpoints both must answer, so use three or more for production proofs. Errors worded
+  differently decide nothing.
 - An observation clears an earlier failure or refusal reason once the transaction succeeds,
   leaves its block or is proven replaced, and whenever a rebroadcast, accepted or
   ambiguous, makes it `pending` again. `TxStatus.reason` is present only with `failed`,

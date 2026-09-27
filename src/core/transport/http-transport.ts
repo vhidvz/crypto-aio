@@ -258,9 +258,9 @@ export class HttpTransport implements Transport {
   /** #3 (round 3): set after a refresh where every probe failed, so ensureFreshHealth backs
    * off instead of storming the same down endpoints on every read during an outage. */
   #nextRefreshAt = Number.NEGATIVE_INFINITY;
-  /** P25-R23: set after a trial answered or refused (its breaker closed), so the next health
-   * check refreshes at once and the endpoint rejoins the count by the ordinary rules. A
-   * refresh clears it when it starts, so one already running when the flag was set (and
+  /** P25-R23, P25-R25: set as a trial answers or refuses (its breaker closed), so the next
+   * health check refreshes at once and the endpoint rejoins the count by the ordinary rules.
+   * A refresh clears it when it starts, so one already running when the flag was set (and
    * which may have read the breaker before it closed) does not count. */
   #refreshDue = false;
   #healthRun: Promise<void> | undefined;
@@ -694,10 +694,6 @@ export class HttpTransport implements Transport {
       throw error;
     }
     const outcome = await trial;
-    // P25-R23: a trial that answered or refused closed its breaker; the next proof read
-    // refreshes health first, so the endpoint rejoins the count at once and its veto holds
-    // for the reads that follow, not for this one only.
-    if (outcome && outcome.kind !== 'failed') this.#refreshDue = true;
     // The caller aborted while the trial ran: the read ends as any aborted read does.
     if (options.signal?.aborted) throw options.signal.reason;
     if (outcome && outcome.kind !== 'failed') {
@@ -854,11 +850,20 @@ export class HttpTransport implements Transport {
         (a, b) => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
       );
     if (!endpoint) return undefined;
+    // P25-R23, P25-R25: an answer or a refusal closed the endpoint's breaker, so the next
+    // health check refreshes at once and it rejoins the count by the ordinary rules. Set
+    // here, as the trial settles, not when the read does: whatever becomes of the counted
+    // endpoints (a failure, the caller's abort, a slow answer), no later read finds the
+    // endpoint closed but still out of the count, so its veto never lapses.
     return this.#attempt(endpoint, label, 0, options, work, false).then(
-      (value): TrialOutcome<T> => ({ endpoint, kind: 'answer', value }),
+      (value): TrialOutcome<T> => {
+        this.#refreshDue = true;
+        return { endpoint, kind: 'answer', value };
+      },
       (error: unknown): TrialOutcome<T> => {
         const refused =
           !options.signal?.aborted && isCryptoAioError(error) && !error.retryable;
+        if (refused) this.#refreshDue = true;
         return { endpoint, kind: refused ? 'refusal' : 'failed' };
       },
     );

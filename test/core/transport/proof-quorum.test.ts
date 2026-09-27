@@ -646,20 +646,26 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
   /**
    * a and b at equal priority with a height probe. b fails every request until its breaker
    * opens and three spaced refreshes drop it from the count (a then proves alone); then it
-   * answers `recovered` ('down', 'refuse' or a value) and its breaker turns half-open.
-   * Every request to b is logged with its time.
+   * answers `recovered` and its breaker turns half-open. Answers (read live): 'down' (HTTP
+   * 503), 'refuse' (a revert), 'hang' (never, until aborted), 'slow:<value>' (the value
+   * after 5 s) or a value. Every request to b is logged with its time.
    */
   async function recovering(recovered: string, b: Partial<EndpointConfig> = {}) {
     const answers: Record<string, string> = { b: 'down' };
     const log: { readonly method: string; readonly at: number }[] = [];
     let now = () => 0;
+    let sleep = (_ms: number, _signal?: AbortSignal): Promise<void> => Promise.resolve();
     const fake = new FakeFetch();
     for (const name of ['a', 'b']) {
-      fake.route(`https://${name}.test`, (req) => {
+      fake.route(`https://${name}.test`, (req, signal) => {
         if (name === 'b') log.push({ method: method(req), at: now() });
         if (method(req) === 'height') return rpcResult(req, '100');
         const answer = answers[name] ?? 'fact';
         if (answer === 'refuse') return rpcError(req, 3, 'execution reverted');
+        if (answer === 'hang') return hang(signal);
+        if (answer.startsWith('slow:')) {
+          return sleep(5_000, signal).then(() => rpcResult(req, answer.slice(5)));
+        }
         return answer === 'down' ? { status: 503, text: '' } : rpcResult(req, answer);
       });
     }
@@ -669,6 +675,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
       { failureThreshold: 2, openMs: OPEN_MS },
     );
     now = () => clock.now();
+    sleep = (ms, signal) => clock.sleep(ms, signal);
     transport.setProbes(probes);
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
     // Two proof reads fail on b while it still counts: its breaker opens.
@@ -799,6 +806,59 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
       await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
       expect(heights()).toBe(probed + 1);
     }
+  });
+
+  // P25-R25: the trial's own answer (or refusal) makes health due, whatever becomes of the
+  // counted endpoints' read: a failure, an abort or a slow answer never reopens the gap.
+  describe('the veto holds whatever becomes of the read carrying the trial (P25-R25)', () => {
+    it('when a fails that read (S1)', async () => {
+      const { proof, answers, bCalls } = await recovering('fact');
+      const before = bCalls();
+      answers.a = 'down';
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+      expect(bCalls()).toBe(before + 1);
+      answers.a = 'forged';
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+    });
+
+    it('when the caller aborts that read after the trial answered (S2)', async () => {
+      const { transport, clock, proof, answers, bCalls } = await recovering('fact');
+      const before = bCalls();
+      answers.a = 'hang';
+      const controller = new AbortController();
+      const reason = new Error('cancelled');
+      const read = transport.rpc('fin', [], {
+        quorum: 'proof',
+        signal: controller.signal,
+      });
+      await settle();
+      expect(bCalls()).toBe(before + 1);
+      controller.abort(reason);
+      await expect(drive(clock, read)).rejects.toBe(reason);
+      answers.a = 'forged';
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+    });
+
+    it('for a read that starts while a is still answering that read (S3)', async () => {
+      const { transport, clock, answers, bCalls } = await recovering('fact');
+      const before = bCalls();
+      answers.a = 'slow:forged';
+      const read = () =>
+        transport.rpc('fin', [], { quorum: 'proof' }).then(
+          (value) => String(value),
+          (error: { code: string }) => error.code,
+        );
+      const first = read();
+      await settle();
+      expect(bCalls()).toBe(before + 1);
+      // One second later b's breaker is closed but b is not yet counted.
+      await clock.advance(1_000);
+      const second = read();
+      expect(await drive(clock, Promise.all([first, second]))).toEqual([
+        'PROVIDER_INCONSISTENT',
+        'PROVIDER_INCONSISTENT',
+      ]);
+    });
   });
 
   it('tries a recovering endpoint even when no counted endpoint can answer (f)', async () => {
