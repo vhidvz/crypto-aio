@@ -281,5 +281,12 @@ export { createLogger, noopLogger } from './core/events/logger';
 export type { LogFields, LogLevel, LogWriter, Logger } from './core/events/logger';
 export type { Clock } from './core/util/clock';
 
-// Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/evm`.
+// Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/evm`
+// and `crypto-aio/tron`.
 export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './adapters/evm/types';
+export type {
+  TronExt,
+  TronFeeDetails,
+  TronFeeOverride,
+  TronResources,
+} from './adapters/tron/types';
