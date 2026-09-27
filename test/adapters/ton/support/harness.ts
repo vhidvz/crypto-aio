@@ -4,6 +4,7 @@
  */
 import { ed25519 } from '@noble/curves/ed25519';
 import { beginCell, storeOutList, type Cell, type MessageRelaxed } from '@ton/core';
+import { TonApi } from '../../../../src/adapters/ton/api';
 import {
   SEND_MODE,
   normalizedHash,
@@ -57,8 +58,9 @@ export function tonNode(
     );
   const rpc = transport('v2');
   const indexer = transport('v3');
+  const api = new TonApi(rpc, indexer);
   const run = <T>(promise: Promise<T>): Promise<T> => drive(clock, promise);
-  return { clock, node, rpc, indexer, run, seen };
+  return { clock, node, rpc, indexer, api, run, seen };
 }
 
 const PK = Buffer.from(PUBLIC_KEY, 'hex');
