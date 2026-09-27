@@ -27,11 +27,15 @@ const MEMPOOL: Table = Object.freeze({
   signet: 'https://mempool.space/signet/api',
 });
 
+/** Own keys only: `table['toString']` would find `Object.prototype`'s. */
+function has(table: Table, network: string): boolean {
+  return Object.hasOwn(table, network);
+}
+
 function url(table: Table, network: string): string {
-  const value = table[network];
   // Unreachable through the catalog, which asks `supports` first.
-  if (value === undefined) throw new Error(`no entry for bitcoin:${network}`);
-  return value;
+  if (!has(table, network)) throw new Error(`no entry for bitcoin:${network}`);
+  return table[network] as string;
 }
 
 function presets(
@@ -55,22 +59,22 @@ export const UTXO_PRESETS: readonly ProviderPreset[] = Object.freeze([
   ...presets(
     'blockstream',
     (network) => [{ name: 'blockstream', url: url(BLOCKSTREAM, network) }],
-    (network) => BLOCKSTREAM[network] !== undefined,
+    (network) => has(BLOCKSTREAM, network),
   ),
   ...presets(
     'mempool',
     (network) => [{ name: 'mempool', url: url(MEMPOOL, network) }],
-    (network) => MEMPOOL[network] !== undefined,
+    (network) => has(MEMPOOL, network),
   ),
   // The fallback when a handle names no provider: both services, mempool.space first.
   ...presets(
     'public',
     (network) => [
       { name: 'mempool', url: url(MEMPOOL, network), priority: 0 },
-      ...(BLOCKSTREAM[network] !== undefined
+      ...(has(BLOCKSTREAM, network)
         ? [{ name: 'blockstream', url: url(BLOCKSTREAM, network), priority: 1 }]
         : []),
     ],
-    (network) => MEMPOOL[network] !== undefined,
+    (network) => has(MEMPOOL, network),
   ),
 ]);

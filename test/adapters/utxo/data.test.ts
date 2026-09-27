@@ -81,6 +81,14 @@ describe('the Bitcoin chain data', () => {
       tx: 'https://blockstream.info/tx/{id}',
       address: 'https://blockstream.info/address/{address}',
     });
+    expect(BITCOIN_CHAIN.networks.testnet?.explorer).toEqual({
+      tx: 'https://blockstream.info/testnet/tx/{id}',
+      address: 'https://blockstream.info/testnet/address/{address}',
+    });
+    expect(BITCOIN_CHAIN.networks.signet?.explorer).toEqual({
+      tx: 'https://blockstream.info/signet/tx/{id}',
+      address: 'https://blockstream.info/signet/address/{address}',
+    });
     expect(BITCOIN_CHAIN.networks.testnet4?.explorer).toBeUndefined();
     expect(BITCOIN_CHAIN.networks.regtest?.explorer).toBeUndefined();
   });
@@ -104,6 +112,35 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     );
   });
 
+  it('applies valid options, down to the accepted boundaries', () => {
+    const options = {
+      coinSelection: 'all',
+      minInputConfirmations: 0,
+      rbf: false,
+      nonWitnessUtxo: false,
+      maxFee: 1n,
+      // Equal to the network's minRelayFee (1,000 sat/kvB): the lowest accepted rate.
+      maxFeeRate: 1_000n,
+      maxEstimatedFeeRate: 1_000n,
+    };
+    expect(utxoNetworkConfig(BITCOIN_CHAIN, mainnet, options)).toMatchObject(options);
+  });
+
+  it('adds and removes the network capabilities', () => {
+    const network = withNetwork({
+      capabilities: { add: ['memo'], remove: ['cancel', 'replace-fee'] },
+    });
+    expect(utxoNetworkConfig(BITCOIN_CHAIN, network).capabilities).toEqual(
+      new Set([
+        'batch-transfer',
+        'block-scan',
+        'address-history',
+        'hd-public-derivation',
+        'memo',
+      ]),
+    );
+  });
+
   it.each([
     ['a non-genesis identity', withNetwork({ identity: '1' })],
     ['another fee model', withNetwork({ feeModel: 'evm-1559' })],
@@ -124,6 +161,22 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     ['an uppercase HRP', withNetwork({ params: { ...mainnet.params, bech32: 'BC' } })],
     ['a number fee', withNetwork({ params: { ...mainnet.params, dustRelayFee: 3000 } })],
     ['equal prefixes', withNetwork({ params: { ...mainnet.params, scriptHash: 0 } })],
+    [
+      'a version byte above 255',
+      withNetwork({ params: { ...mainnet.params, pubKeyHash: 256 } }),
+    ],
+    [
+      'a negative minRelayFee',
+      withNetwork({ params: { ...mainnet.params, minRelayFee: -1n } }),
+    ],
+    [
+      'a number incrementalRelayFee',
+      withNetwork({ params: { ...mainnet.params, incrementalRelayFee: 1000 } }),
+    ],
+    [
+      'a string feeFallback',
+      withNetwork({ params: { ...mainnet.params, feeFallback: '1000' } }),
+    ],
   ])('refuses %s with CONFIG_INVALID', (_name, network) => {
     expect(() => utxoNetworkConfig(BITCOIN_CHAIN, network)).toThrow(
       expect.objectContaining({ code: 'CONFIG_INVALID' }),
@@ -169,6 +222,9 @@ describe('the Esplora presets', () => {
         'https://blockstream.info/signet/api',
       ]);
       expect(url('mempool', 'mainnet', kind)).toEqual(['https://mempool.space/api']);
+      expect(url('mempool', 'testnet', kind)).toEqual([
+        'https://mempool.space/testnet/api',
+      ]);
       expect(url('mempool', 'testnet4', kind)).toEqual([
         'https://mempool.space/testnet4/api',
       ]);
@@ -178,6 +234,10 @@ describe('the Esplora presets', () => {
       expect(url('public', 'mainnet', kind)).toEqual([
         'https://mempool.space/api',
         'https://blockstream.info/api',
+      ]);
+      // blockstream.info serves no testnet4, so the fallback is mempool.space alone.
+      expect(url('public', 'testnet4', kind)).toEqual([
+        'https://mempool.space/testnet4/api',
       ]);
     }
     expect(UTXO_PRESETS.every((p) => p.production === false)).toBe(true);
@@ -199,5 +259,16 @@ describe('the Esplora presets', () => {
     expect(() =>
       catalog.resolve('mempool', { chain: 'ethereum', network: 'mainnet' }, 'rpc'),
     ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
+  });
+
+  it('looks up own network keys only, never inherited ones', () => {
+    for (const network of ['toString', 'constructor', '__proto__']) {
+      for (const preset of UTXO_PRESETS) {
+        expect(preset.supports('bitcoin', network)).toBe(false);
+      }
+      expect(() => url('public', network, 'rpc')).toThrow(
+        expect.objectContaining({ code: 'CONFIG_INVALID' }),
+      );
+    }
   });
 });
