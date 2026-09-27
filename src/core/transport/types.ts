@@ -36,11 +36,13 @@ export interface CallOptions {
    * mismatched until three health refreshes in a row, at most one per `healthIntervalMs`,
    * fail its probes or find its requests failing (its circuit breaker not closed), even
    * while it cannot answer, so a shortfall decides nothing (a retryable
-   * `PROVIDER_UNAVAILABLE`); any other quorum counts the usable endpoints. In a proof
-   * quorum, a definitive error decides only when every endpoint asked returns an equivalent
-   * one: the same error code, HTTP status and JSON-RPC code, and for a JSON-RPC code each
-   * server defines (-32000 to -32099, and -32603) the same message. Otherwise the read is a
-   * retryable `PROVIDER_INCONSISTENT`.
+   * `PROVIDER_UNAVAILABLE`); any other quorum counts the usable endpoints. An endpoint out
+   * of a proof quorum's count never answers toward the read: while its circuit breaker is
+   * half-open it is tried alongside the others, and its disagreement or refusal can only
+   * block the read. In a proof quorum, a definitive error decides only when every endpoint
+   * asked returns an equivalent one: the same error code, HTTP status and JSON-RPC code, and
+   * for a JSON-RPC code each server defines (-32000 to -32099, and -32603) the same message.
+   * Otherwise the read is a retryable `PROVIDER_INCONSISTENT`.
    */
   readonly quorum?: number | 'proof';
   /**

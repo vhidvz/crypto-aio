@@ -48,7 +48,7 @@ const probes = {
  * Endpoints answering the identity probe's `chain_id` from `ids` (read live; `'down'`
  * answers HTTP 503, `'hang'` never answers), the height probe from `heights` (default
  * '100') and every other request from `answers` (default 'fact'; read live, `'down'`
- * answers HTTP 503).
+ * answers HTTP 503, `'refuse'` a definitive revert).
  */
 function identified(
   ids: Record<string, string>,
@@ -64,6 +64,7 @@ function identified(
       }
       if (method(req) === 'height') return rpcResult(req, heights[name] ?? '100');
       const answer = answers[name] ?? 'fact';
+      if (answer === 'refuse') return rpcError(req, 3, 'execution reverted');
       return answer === 'down' ? { status: 503, text: '' } : rpcResult(req, answer);
     });
   }
@@ -561,9 +562,11 @@ describe('proof quorum and request-dead endpoints (P25-R21)', () => {
     // closed and record its three misses; from 140 s on, b no longer counts.
     expect(outcomes.slice(0, 7)).toEqual(Array(7).fill('PROVIDER_UNAVAILABLE'));
     expect(outcomes.slice(7)).toEqual(Array(53).fill('fact'));
-    // a missed only the read that failed fast while b's breaker was open (100 s); b was asked
-    // until it left the count (its half-open trial at 120 s the last time).
-    expect([finCalls('a'), finCalls('b')]).toEqual([59, 6]);
+    // a missed only the read that failed fast while b's breaker was open (100 s). b was asked
+    // until it left the count (6 times); after that, P25-R22 tries it once per half-open
+    // window (every other read: each failed trial reopens its breaker for 30 s), 26 times,
+    // and the failed trials never touch the verdict.
+    expect([finCalls('a'), finCalls('b')]).toEqual([59, 32]);
   });
 
   it('keeps counting a breaker open for under three health intervals, one miss per interval', async () => {
@@ -621,16 +624,179 @@ describe('proof quorum and request-dead endpoints (P25-R21)', () => {
     }
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
     await expect(proof()).resolves.toBe('forged');
-    // honest serves again: asked first (its priority) once its breaker is half-open, its
-    // answer closes the breaker…
+    // honest serves again. Once its breaker is half-open it is tried alongside the liar
+    // (P25-R22): its answer blocks the liar's at once and closes its breaker…
     answers.honest = 'fact';
     await clock.advance(openMs);
-    await expect(proof()).resolves.toBe('fact');
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
     // …and the next refresh that finds it serving resets its misses: it counts again, so the
     // liar is contradicted instead of proving alone.
     await clock.advance(HEALTH_INTERVAL_MS);
     await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
-    expect([finCalls('honest'), finCalls('liar')]).toEqual([2, 2]);
+    expect([finCalls('honest'), finCalls('liar')]).toEqual([2, 3]);
+  });
+});
+
+// P25-R22: an endpoint out of the count whose breaker is half-open is tried alongside the
+// counted endpoints. Its answer can only block a proof (a disagreement or a refusal decides
+// nothing); an agreeing answer closes its breaker, so it rejoins at the next refresh.
+describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
+  const OPEN_MS = 60_000;
+
+  /**
+   * a and b at equal priority with a height probe. b fails every request until its breaker
+   * opens and three spaced refreshes drop it from the count (a then proves alone); then it
+   * answers `recovered` ('down', 'refuse' or a value) and its breaker turns half-open.
+   * Every request to b is logged with its time.
+   */
+  async function recovering(recovered: string, b: Partial<EndpointConfig> = {}) {
+    const answers: Record<string, string> = { b: 'down' };
+    const log: { readonly method: string; readonly at: number }[] = [];
+    let now = () => 0;
+    const fake = new FakeFetch();
+    for (const name of ['a', 'b']) {
+      fake.route(`https://${name}.test`, (req) => {
+        if (name === 'b') log.push({ method: method(req), at: now() });
+        if (method(req) === 'height') return rpcResult(req, '100');
+        const answer = answers[name] ?? 'fact';
+        if (answer === 'refuse') return rpcError(req, 3, 'execution reverted');
+        return answer === 'down' ? { status: 503, text: '' } : rpcResult(req, answer);
+      });
+    }
+    const { transport, clock, seen } = setup(
+      [endpoint('a'), { ...endpoint('b'), ...b }],
+      fake,
+      { failureThreshold: 2, openMs: OPEN_MS },
+    );
+    now = () => clock.now();
+    transport.setProbes(probes);
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    // Two proof reads fail on b while it still counts: its breaker opens.
+    for (let read = 1; read <= 2; read++) {
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    }
+    // Three spaced refreshes find it open: it leaves the count, and a proves alone.
+    for (let refresh = 1; refresh <= 3; refresh++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
+      await drive(clock, transport.refreshHealth());
+    }
+    await expect(proof()).resolves.toBe('fact');
+    answers.b = recovered;
+    await clock.advance(OPEN_MS);
+    const bCalls = () => log.filter((request) => request.method === 'fin').length;
+    return { transport, clock, seen, proof, answers, log, bCalls };
+  }
+
+  it('lets a recovered endpoint rejoin through a trial, even at equal priority (a)', async () => {
+    // The reproduction above, then b recovers.
+    const answers: Record<string, string> = { b: 'down' };
+    const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, answers);
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    transport.setProbes(probes);
+    const proof = () =>
+      drive(clock, transport.rpc('fin', [], { quorum: 'proof' })).then(
+        (value) => String(value),
+        (error: { code: string }) => error.code,
+      );
+    for (let read = 0; read < 8; read++) {
+      if (read > 0) await clock.advance(20_000);
+      await proof();
+    }
+    // b left the count at 140 s: a proves alone.
+    expect(await proof()).toBe('fact');
+    // b recovers. At 160 s its breaker is half-open: it is tried alongside a, and its
+    // agreeing answer closes the breaker…
+    answers.b = 'fact';
+    const before = finCalls('b');
+    await clock.advance(20_000);
+    expect(await proof()).toBe('fact');
+    expect(finCalls('b')).toBe(before + 1);
+    // …so the refresh at 180 s counts it again, and every proof asks both.
+    await clock.advance(20_000);
+    expect(await proof()).toBe('fact');
+    expect(finCalls('b')).toBe(before + 2);
+    // A lone lying a can no longer prove.
+    answers.a = 'forged';
+    await clock.advance(20_000);
+    expect(await proof()).toBe('PROVIDER_INCONSISTENT');
+  });
+
+  it("blocks the proof when the recovering endpoint's answer disagrees (b)", async () => {
+    const { proof, bCalls, seen } = await recovering('other');
+    const before = bCalls();
+    await expect(proof()).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+    expect(bCalls()).toBe(before + 1);
+    expect(seen.filter((e) => e.type === 'provider.inconsistent')).toHaveLength(1);
+  });
+
+  it('blocks the proof when the recovering endpoint refuses while a answers (c)', async () => {
+    const { proof, bCalls } = await recovering('refuse');
+    const before = bCalls();
+    await expect(proof()).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+    expect(bCalls()).toBe(before + 1);
+  });
+
+  it('leaves the verdict to the counted endpoints when the trial fails in transport (d)', async () => {
+    const { proof, bCalls, transport, clock } = await recovering('down');
+    const before = bCalls();
+    await expect(proof()).resolves.toBe('fact');
+    expect(bCalls()).toBe(before + 1);
+    // The failure counts against b as usual: its breaker opens again, and it stays out.
+    expect(transport.status().find((s) => s.id === 'b')?.state).toBe('open');
+    await clock.advance(HEALTH_INTERVAL_MS);
+    await expect(proof()).resolves.toBe('fact');
+    expect(bCalls()).toBe(before + 1);
+  });
+
+  it("takes the trial's request through the endpoint's rate limit (e)", async () => {
+    const { proof, bCalls, log } = await recovering('fact', {
+      rateLimit: { rps: 1, burst: 1 },
+    });
+    const before = bCalls();
+    await expect(proof()).resolves.toBe('fact');
+    expect(bCalls()).toBe(before + 1);
+    // The refresh's height probe took b's only token; the trial waited for the next one.
+    const trial = log[log.length - 1] as { method: string; at: number };
+    const probe = log[log.length - 2] as { method: string; at: number };
+    expect([probe.method, trial.method]).toEqual(['height', 'fin']);
+    expect(trial.at - probe.at).toBeGreaterThanOrEqual(1_000);
+  });
+
+  it('tries a recovering endpoint even when no counted endpoint can answer (f)', async () => {
+    const answers: Record<string, string> = { a: 'down', b: 'down' };
+    const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, answers);
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
+      failureThreshold: 2,
+      openMs: OPEN_MS,
+    });
+    transport.setProbes(probes);
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    for (let read = 1; read <= 2; read++) {
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    }
+    for (let refresh = 1; refresh <= 3; refresh++) {
+      await clock.advance(HEALTH_INTERVAL_MS);
+      await drive(clock, transport.refreshHealth());
+    }
+    // Both are out of the count; b recovers, and both breakers turn half-open. No endpoint
+    // counts, so each proof decides nothing, but one trial per read still goes out: a first
+    // (by name), which fails and reopens, then b, which answers and closes its breaker.
+    answers.b = 'fact';
+    await clock.advance(OPEN_MS);
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    expect([finCalls('a'), finCalls('b')]).toEqual([3, 2]);
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    expect([finCalls('a'), finCalls('b')]).toEqual([3, 3]);
+    // The next refresh counts b again, and b answers for the quorum.
+    await clock.advance(HEALTH_INTERVAL_MS);
+    await expect(proof()).resolves.toBe('fact');
+    expect([finCalls('a'), finCalls('b')]).toEqual([3, 4]);
   });
 });
 

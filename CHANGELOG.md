@@ -64,8 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breaker. An endpoint keeps counting until its identity is proven mismatched or three
   health refreshes in a row, at most one per `healthIntervalMs`, fail its identity or height
   probe or find its requests failing (its breaker not closed, or `failureThreshold` failures
-  in a row); with an identity probe alone, each refresh re-probes a confirmed identity. It
-  counts again once it serves requests and a later refresh succeeds. Only a confirmed,
+  in a row); with an identity probe alone, each refresh re-probes a confirmed identity. An
+  endpoint out of the count never answers toward a proof: while its breaker is half-open it
+  is tried alongside the others, can only block the proof (its disagreement or refusal
+  decides nothing), and rejoins the count once it answers. Only a confirmed,
   in-range endpoint whose breaker lets requests through answers; otherwise the read decides
   nothing (a retryable `PROVIDER_UNAVAILABLE`). A `quorum: 'proof'` read keeps health fresh
   under any purpose. With no probe configured, the quorum counts only the usable endpoints,
@@ -89,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range, and while an honest endpoint's breaker is open for less than three health
   intervals. An endpoint that stops answering its probes or its requests holds them back for
   about three health intervals; after that it no longer counts, so with two endpoints the
-  other decides alone until the first serves requests again. With two endpoints both must
+  other decides alone until the first answers its trial again. With two endpoints both must
   answer, so use three or more for production proofs. Errors worded differently decide
   nothing.
 - An observation clears an earlier failure or refusal reason once the transaction succeeds,

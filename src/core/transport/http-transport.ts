@@ -47,6 +47,14 @@ const DEFAULTS = {
 type ResolvedOptions = typeof DEFAULTS & { fetch?: typeof fetch };
 type Mode = 'rpc' | 'json' | 'text';
 type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
+/** P25-R22: the counted endpoints' verdict: agreeing answers, or one refusal they all gave. */
+type Decided<T> =
+  | { readonly results: readonly { readonly endpoint: Endpoint; readonly value: T }[] }
+  | { readonly refusal: CryptoAioError; readonly endpoints: readonly Endpoint[] };
+/** P25-R22: what a recovering endpoint's trial request came back with. */
+type TrialOutcome<T> =
+  | { readonly endpoint: Endpoint; readonly kind: 'answer'; readonly value: T }
+  | { readonly endpoint: Endpoint; readonly kind: 'refusal' | 'failed' };
 
 const MAX_RETRY_AFTER_MS = 60_000;
 /** A24/P25-R8: consecutive failed health refreshes (identity or height probe, or, P25-R21,
@@ -663,6 +671,60 @@ export class HttpTransport implements Transport {
     options: CallOptions,
     work: Work<T>,
   ): Promise<T> {
+    const proof = isProofQuorum(purpose, options);
+    const { sized, inRange } = this.#quorumCandidates(purpose, proof);
+    // P25-R22: only the endpoints the quorum counts answer toward it. A recovering endpoint
+    // (out of the count, its breaker half-open) is tried alongside them, from the start, so
+    // it is tried even when too few counted endpoints can answer; its answer only blocks.
+    const counted: ReadonlySet<Endpoint> = new Set(sized);
+    const trial = proof ? this.#trial(label, inRange, counted, options, work) : undefined;
+    let decided: Decided<T>;
+    try {
+      decided = await this.#decide(label, purpose, proof, counted, options, work);
+    } catch (error) {
+      await trial;
+      throw error;
+    }
+    const outcome = await trial;
+    // The caller aborted while the trial ran: the read ends as any aborted read does.
+    if (options.signal?.aborted) throw options.signal.reason;
+    if (outcome && outcome.kind !== 'failed') {
+      const agrees =
+        outcome.kind === 'answer' &&
+        'results' in decided &&
+        quorumAgrees(
+          [...decided.results.map((r) => r.value), outcome.value],
+          options.quorumKey,
+        );
+      if (!agrees) {
+        const asked =
+          'results' in decided
+            ? decided.results.map((r) => r.endpoint)
+            : decided.endpoints;
+        throw this.#inconsistent(
+          label,
+          [...asked, outcome.endpoint].map((e) => e.id),
+        );
+      }
+    }
+    if ('refusal' in decided) throw decided.refusal;
+    return (decided.results[0] as { readonly value: T }).value;
+  }
+
+  /**
+   * The counted endpoints' verdict (P25-R22: no other endpoint answers toward it): their
+   * agreeing answers, or the definitive error they all returned alike (P25-R10). Anything
+   * else throws: too few answers, a disagreement, or (outside a proof quorum) the first
+   * definitive error.
+   */
+  async #decide<T>(
+    label: string,
+    purpose: RequestPurpose,
+    proof: boolean,
+    counted: ReadonlySet<Endpoint>,
+    options: CallOptions,
+    work: Work<T>,
+  ): Promise<Decided<T>> {
     const requested =
       options.quorum === 'proof' ? this.#opts.proofQuorum : (options.quorum ?? 1);
     // N3 (round 2, item 5): sized from the full candidate set, not the rate-limit-filtered
@@ -671,15 +733,11 @@ export class HttpTransport implements Transport {
     // retryable error instead of resolving from fewer endpoints than needed.
     // A14/P25-R8/P25-R9: nor may lag, an unknown height, an unconfirmed identity or an open
     // breaker shrink a proof quorum (#quorumCandidates), so one liar is never alone.
-    const proof = isProofQuorum(purpose, options);
-    const needed = Math.max(
-      1,
-      Math.min(requested, this.#quorumCandidates(purpose, proof).sized.length),
-    );
+    const needed = Math.max(1, Math.min(requested, counted.size));
     const eligible = (): Endpoint[] => {
       const now = this.#clock.now();
       return this.#quorumCandidates(purpose, proof).inRange.filter(
-        (e) => e.notBefore <= now,
+        (e) => e.notBefore <= now && counted.has(e),
       );
     };
     // #5 (round 3): if fewer endpoints are eligible right now than needed, fail fast —
@@ -735,16 +793,15 @@ export class HttpTransport implements Transport {
         results.length === 0 &&
         refusals.every((r) => sameRefusal(r.error, refusal.error))
       ) {
-        throw refusal.error;
+        return { refusal: refusal.error, endpoints: refusals.map((r) => r.endpoint) };
       }
       throw this.#inconsistent(
         label,
         [...results, ...refusals].map((r) => r.endpoint.id),
       );
     }
-    const [answer] = results;
     if (
-      !answer ||
+      results.length === 0 ||
       !quorumAgrees(
         results.map((r) => r.value),
         options.quorumKey,
@@ -755,7 +812,41 @@ export class HttpTransport implements Transport {
         results.map((r) => r.endpoint.id),
       );
     }
-    return answer.value;
+    return { results };
+  }
+
+  /**
+   * P25-R22: the trial of a recovering endpoint, one per read: among the in-range endpoints
+   * the quorum does not count (health misses) whose breaker is half-open, the first by
+   * priority, then name. Its request is an ordinary attempt (its rate limit, identity check
+   * and breaker bookkeeping, so an answer closes the breaker and a failure counts against
+   * it). Never rejects: the outcome is an answer, a refusal (a definitive error) or a
+   * failure, which the verdict ignores.
+   */
+  #trial<T>(
+    label: string,
+    inRange: readonly Endpoint[],
+    counted: ReadonlySet<Endpoint>,
+    options: CallOptions,
+    work: Work<T>,
+  ): Promise<TrialOutcome<T>> | undefined {
+    const now = this.#clock.now();
+    const [endpoint] = inRange
+      .filter(
+        (e) => !counted.has(e) && e.breaker.state === 'half-open' && e.notBefore <= now,
+      )
+      .sort(
+        (a, b) => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      );
+    if (!endpoint) return undefined;
+    return this.#attempt(endpoint, label, 0, options, work).then(
+      (value): TrialOutcome<T> => ({ endpoint, kind: 'answer', value }),
+      (error: unknown): TrialOutcome<T> => {
+        const refused =
+          !options.signal?.aborted && isCryptoAioError(error) && !error.retryable;
+        return { endpoint, kind: refused ? 'refusal' : 'failed' };
+      },
+    );
   }
 
   /** A quorum whose endpoints disagree: a retryable `PROVIDER_INCONSISTENT`, announced. */
@@ -947,8 +1038,9 @@ export class HttpTransport implements Transport {
    * failing (breaker not closed, or failures in a row at `failureThreshold`): a sustained
    * outage. Such an endpoint cannot be asked, so it makes the read decide nothing rather
    * than letting fewer endpoints decide it. It counts again once it serves requests and a
-   * later refresh succeeds. Otherwise (no such probe, or another quorum) it is the usable
-   * endpoints (the prior, weaker rule).
+   * later refresh succeeds; meanwhile it never answers toward the quorum, and only its
+   * half-open trial (P25-R22, `#trial`) can block a read. Otherwise (no such probe, or
+   * another quorum) it is the usable endpoints (the prior, weaker rule).
    *
    * `inRange`: the usable endpoints (breaker, identity, throttle). For a monitor or proof
    * purpose with a height probe, only those with a known height (only a confirmed endpoint

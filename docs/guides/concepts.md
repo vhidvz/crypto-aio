@@ -62,9 +62,10 @@ identity is not yet confirmed and ones whose circuit breaker is open, so one end
 proves a fact alone while the others are only briefly unavailable. That costs liveness:
 proofs wait at startup, while an honest endpoint's breaker is briefly open, and for about
 three health intervals (`healthIntervalMs`, 15 s by default) after an endpoint stops
-answering its probes or its requests; then it stops counting until it serves again. With two
-endpoints both must answer, and once one stops counting the other proves alone, so use three
-or more endpoints for production proofs.
+answering its probes or its requests; then it stops counting. A recovering endpoint is tried
+alongside the others, can only block a proof, and rejoins once it answers. With two endpoints
+both must answer, and once one stops counting the other proves alone, so use three or more
+endpoints for production proofs.
 
 ```ts
 const aio = new CryptoAio({
