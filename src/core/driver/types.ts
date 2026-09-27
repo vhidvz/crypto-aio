@@ -19,7 +19,11 @@ import type { KeyRef, SignatureBundle } from '../signing/types';
 import type { Transport } from '../transport/types';
 import type { Clock } from '../util/clock';
 
-/** Family-specific wallet settings (e.g. `utxo.addressType`, TON wallet identity). */
+/**
+ * Family-specific wallet settings (e.g. `utxo.addressType`, TON wallet identity). The `hd`
+ * key is reserved and core-built (A22): the core sets it to the wallet's `WalletHdOptions`
+ * when the wallet has an `xpub`, and a user's or caller's `hd` never reaches a driver.
+ */
 export type WalletOptions = Readonly<Record<string, unknown>>;
 
 export interface WalletKey {

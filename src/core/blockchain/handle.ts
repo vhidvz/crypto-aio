@@ -178,17 +178,15 @@ export class Blockchain<C extends ChainId = ChainId> {
     return toAddress(await this.mapping(), address);
   }
 
+  /** The chain's address for `publicKey`. `options.hd` is reserved (A22): the core builds it
+   * from a wallet's `xpub`, so a caller's `hd` is dropped and never reaches the driver. */
   async addressFromPublicKey(
     publicKey: Uint8Array | string,
     options: WalletOptions = {},
   ): Promise<Address> {
-    const { driver, selection } = await this.mapping();
+    const { hd: _reserved, ...callerOptions } = options;
     const bytes = typeof publicKey === 'string' ? fromHex(publicKey) : publicKey;
-    return new Address(
-      selection.chain.id,
-      driver.address.fromPublicKey(bytes, options),
-      driver.address.format,
-    );
+    return this.driverAddress(bytes, callerOptions);
   }
 
   /** Address of the handle's own selected wallet, or of another configured `wallet` by name
@@ -253,7 +251,8 @@ export class Blockchain<C extends ChainId = ChainId> {
       config.xpubVersions,
       chain.model === 'utxo' ? { testnet: network.testnet } : undefined,
     );
-    return this.addressFromPublicKey(publicKey, walletOptionsOf(config));
+    // I1: the core's own options, with the wallet's `hd`, reach the driver directly.
+    return this.driverAddress(publicKey, walletOptionsOf(config));
   }
 
   async resolveAsset(asset?: AssetRef | string): Promise<AssetInfo> {
@@ -672,6 +671,19 @@ export class Blockchain<C extends ChainId = ChainId> {
         },
       },
     ) as ExtOf<C>;
+  }
+
+  /** @internal The driver's address for `publicKey` under options the core built (A22). */
+  protected async driverAddress(
+    publicKey: Uint8Array,
+    options: WalletOptions,
+  ): Promise<Address> {
+    const { driver, selection } = await this.mapping();
+    return new Address(
+      selection.chain.id,
+      driver.address.fromPublicKey(publicKey, options),
+      driver.address.format,
+    );
   }
 
   /** @internal */

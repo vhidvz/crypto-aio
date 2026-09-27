@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as before.
 - `TxStatus.reason` for on-chain failures: a driver may return a short fixed `reason` from
   `observe` and `ProofSource.includedFinal`.
-- `WalletHdOptions` and `WalletOptions.hd`: drivers receive the wallet's extended public key.
+- `WalletHdOptions`, and an `hd` entry in `WalletOptions`: drivers receive the wallet's
+  extended public key.
 
 ### Changed
 
@@ -94,9 +95,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a plugin whose functions are rebuilt on each call is a different plugin.
 - `deriveAddress` on UTXO chains refuses an extended key whose Bitcoin SLIP-0132 version is of
   the other network class with `CONFIG_INVALID`; `deriveXpubChild` takes an optional `network`.
-- A wallet's own `options.hd` is reserved and never reaches a driver, and a wallet whose
-  `xpub` is private or unreadable fails with `CONFIG_INVALID` when it is used, not only in
-  `deriveAddress`.
+- A wallet whose `xpub` is private, unreadable, or in a format that needs `xpubVersions` (a
+  SLIP-0132 `ypub`, `zpub` or `vpub` without them) is now refused with `CONFIG_INVALID`
+  when the wallet is resolved, so on every use of that wallet: sends, `walletAddress`,
+  `ready()`, `limits()` and the recovery of its stored Operations, not only
+  `deriveAddress`. The refusal repeats no part of the key. An empty `xpub` counts as none.
+- `hd` in `WalletOptions` is reserved: neither a wallet's own `options.hd` nor the
+  `options` passed to `Blockchain.addressFromPublicKey` bring an `hd` to a driver.
 
 ## [0.1.0] - Unreleased
 

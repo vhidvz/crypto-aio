@@ -131,14 +131,19 @@ const PRIVATE_PREFIXES: ReadonlySet<string> = new Set([
 
 /**
  * A26: reads an extended PUBLIC key with `versions` (default: by its `xpub`/`tpub` prefix).
- * A private key (by its SLIP-0132 prefix, or by its key data) or an unreadable one is
- * `CONFIG_INVALID`, and no message repeats the key. Returns the node and the version pair
- * it was read with, whose `public` is the key's own version.
+ * A private key (by its SLIP-0132 prefix, or by its key data), an unreadable or non-string
+ * one, or one of an unknown format is `CONFIG_INVALID` with a fixed text: no message or
+ * `cause` repeats any part of the input, which may be a mis-pasted secret (a mnemonic, a WIF
+ * or hex key). Returns the node and the version pair it was read with, whose `public` is the
+ * key's own version.
  */
 export function parseExtendedPublicKey(
   xpub: string,
   versions?: ExtendedKeyVersions,
 ): { readonly node: HDKey; readonly versions: ExtendedKeyVersions } {
+  if (typeof xpub !== 'string') {
+    throw new ConfigError('CONFIG_INVALID', 'an extended public key must be a string');
+  }
   const prefix = xpub.slice(0, 4);
   const privateKey = () =>
     new ConfigError(
@@ -150,14 +155,15 @@ export function parseExtendedPublicKey(
   if (!selected) {
     throw new ConfigError(
       'CONFIG_INVALID',
-      `unsupported extended key prefix '${prefix}'; pass xpubVersions for this format`,
+      'unsupported extended key format; pass xpubVersions for this format',
     );
   }
   let node: HDKey;
   try {
     node = HDKey.fromExtendedKey(xpub, selected);
-  } catch (cause) {
-    throw new ConfigError('CONFIG_INVALID', 'invalid extended public key', { cause });
+  } catch {
+    // M1: the library's error can name a character of the input, so it is not kept.
+    throw new ConfigError('CONFIG_INVALID', 'invalid extended public key');
   }
   if (node.privateKey) throw privateKey();
   return { node, versions: selected };

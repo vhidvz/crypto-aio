@@ -139,6 +139,31 @@ describe('deriveXpubChild network class (A20)', () => {
     const other = { private: 0x0488ade5, public: 0x0488b21f };
     expect(deriveXpubChild(key(other), '0/1', other, test)).toHaveLength(33);
   });
+
+  it('refuses a private key before its network class (A26)', () => {
+    const tprv = HDKey.fromMasterSeed(SEED_1, TPUB).derive(
+      "m/84'/1'/0'",
+    ).privateExtendedKey;
+    for (const versions of [undefined, TPUB]) {
+      const error = thrown(() => deriveXpubChild(tprv, '0/1', versions, mainnet));
+      expect(error).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message: 'expected an extended PUBLIC key; never configure private extended keys',
+      });
+      expect(JSON.stringify(error)).not.toContain(tprv.slice(4, 20));
+    }
+  });
+
+  it('refuses an unknown, unreadable or non-string key with a fixed text (I2, M1, M3)', () => {
+    const unreadable = `${key().slice(0, 20)}0${key().slice(21)}`;
+    for (const input of [`${'abandon '.repeat(11)}about`, unreadable, 42 as never]) {
+      const error = thrown(() => deriveXpubChild(input, '0/1'));
+      expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect((error as Error).cause).toBeUndefined();
+      expect((error as Error).message).not.toContain(String(input).slice(0, 4));
+    }
+  });
 });
 
 describe('localSigner.fromMnemonic', () => {

@@ -26,8 +26,9 @@ export interface ResolvedWallet {
 
 /**
  * A22: the wallet's extended public key as drivers receive it, `WalletOptions.hd`: plain,
- * frozen data (R11), present only when the wallet configures an `xpub`, which must be a
- * readable PUBLIC extended key (A26: `CONFIG_INVALID` otherwise, naming no key).
+ * frozen data (R11), present only when the wallet configures a non-empty `xpub` (an empty
+ * one counts as none, as in `deriveAddress`), which must be a readable PUBLIC extended key
+ * (A26: `CONFIG_INVALID` otherwise, naming no key).
  */
 export interface WalletHdOptions {
   readonly xpub: string;
@@ -43,19 +44,27 @@ export function walletOptionsOf(config: WalletConfig): WalletOptions {
     ...options,
     ...(config.utxo ? { utxo: config.utxo } : {}),
     ...(config.ton ? { ton: config.ton } : {}),
-    ...(config.xpub !== undefined ? { hd: hdOptionsOf(config) } : {}),
+    // M3: a falsy `xpub` ('', null) is no xpub, as `deriveAddress` reads it.
+    ...(config.xpub ? { hd: hdOptionsOf(config) } : {}),
   };
 }
 
 function hdOptionsOf(config: WalletConfig): WalletHdOptions {
+  const { xpubPath, xpubVersions } = config;
   const xpub = config.xpub as string;
   // A26: only a readable, PUBLIC extended key ever reaches a driver.
-  parseExtendedPublicKey(xpub, config.xpubVersions);
+  parseExtendedPublicKey(xpub, xpubVersions);
   return Object.freeze({
     xpub,
-    ...(config.xpubPath !== undefined ? { xpubPath: config.xpubPath } : {}),
-    ...(config.xpubVersions
-      ? { xpubVersions: Object.freeze({ ...config.xpubVersions }) }
+    ...(xpubPath !== undefined ? { xpubPath } : {}),
+    // M5: the version pair only, never other keys of the caller's object.
+    ...(xpubVersions
+      ? {
+          xpubVersions: Object.freeze({
+            private: xpubVersions.private,
+            public: xpubVersions.public,
+          }),
+        }
       : {}),
   });
 }

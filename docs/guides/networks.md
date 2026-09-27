@@ -228,11 +228,14 @@ relies on these rules most:
   instance on every call. `CryptoAio.close()` calls `close`.
 - Amounts reach drivers in base units only. `DriverContext` has no asset resolver, and
   `DriverIntent` carries no decimals. This is still open and may change.
-- **Wallet options.** `BuildContext.wallet` and `address.fromPublicKey`'s `options` carry
-  the wallet's `options`, its family settings (`utxo`, `ton`) and, when it has an `xpub`,
+- **Wallet options.** `BuildContext.wallet`, `limits(wallet)` and `address.fromPublicKey`'s
+  `options` (when the core resolves a wallet or derives from its `xpub`) carry the wallet's
+  `options`, its family settings (`utxo`, `ton`) and, when it has an `xpub`,
   `hd: { xpub, xpubPath?, xpubVersions? }` (`WalletHdOptions`, always a readable public
-  extended key). `hd` is always the core's: a wallet's own `options.hd` never reaches a
-  driver.
+  extended key). `hd` is always the core's: neither a wallet's own `options.hd` nor the
+  `options` a caller passes to `Blockchain.addressFromPublicKey` bring an `hd` to a
+  driver. The core does not check `hd` against the network class when it resolves the
+  wallet: a UTXO driver passes `{ testnet }` to `deriveXpubChild` when it derives from it.
 - **Exact integers.** Pass `exactIntegers: true` on a read whose JSON answer carries amounts
   as numbers: integers beyond 2^53 − 1 then arrive as `bigint`, and a quorum compares them
   exactly.
