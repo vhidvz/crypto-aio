@@ -1,0 +1,379 @@
+/**
+ * TON message bodies over `@ton/core`: text comments (the memo), native transfers, TEP-74
+ * jetton transfers, and the decoders the verdict and history paths use. Loaded only
+ * through the adapter manifest's `load()`.
+ */
+import {
+  Address,
+  Cell,
+  beginCell,
+  comment,
+  internal,
+  loadMessageRelaxed,
+  loadOutList,
+  type MessageRelaxed,
+} from '@ton/core';
+import { ProviderError, ValidationError } from '../../core/errors/error';
+import { parseTonAddress, rawAddress, type TonWorkchain } from './address';
+
+/** TEP-74 op codes, and the text-comment op (0). */
+export const OP = Object.freeze({
+  comment: 0,
+  jettonTransfer: 0x0f8a7ea5,
+  jettonInternalTransfer: 0x178d4519,
+  jettonNotification: 0x7362d09c,
+  jettonExcesses: 0xd53276db,
+  w5SignedExternal: 0x7369676e,
+  w5SignedInternal: 0x73696e74,
+});
+
+/** The longest memo, in UTF-8 bytes (library policy: comments stay a few cells). */
+export const MAX_MEMO_BYTES = 1024;
+
+/**
+ * Lesson 20: the longest provider text `addressFromBoc` decodes. An address is one cell of
+ * at most 1023 bits, under 200 base64 characters as a BOC; the rest leaves room for a
+ * slice that still carries refs, so a jetton wallet is never refused for its encoding.
+ */
+export const MAX_ADDRESS_BOC_LENGTH = 4096;
+
+/**
+ * Lesson 20: the longest message body BOC `cellFromBoc` decodes. TON's message limits
+ * (config param 43: 2^21 bits in 2^13 cells) keep a message's BOC under about 370 KB,
+ * some 500,000 base64 characters; 2^20 leaves room for a raise of those limits.
+ */
+export const MAX_BODY_BOC_LENGTH = 1 << 20;
+
+const toRaw = (address: Address): string =>
+  rawAddress(address.workChain as TonWorkchain, address.hash);
+
+/**
+ * The SDK's `Address` for a raw address, parsed strictly (lesson 4): `Address.parseRaw`
+ * takes any `parseInt` workchain and throws a bare `Error` (M12).
+ */
+export function sdkAddress(raw: string): Address {
+  const parsed = parseTonAddress(raw);
+  if (parsed?.form !== 'raw') {
+    throw new ValidationError('INVALID_ADDRESS', 'not a raw TON address');
+  }
+  return new Address(parsed.workchain, Buffer.from(parsed.hash));
+}
+
+/** `Coins` (VarUInteger 16): at most 15 bytes. */
+const MAX_COINS = (1n << 120n) - 1n;
+const MAX_QUERY_ID = (1n << 64n) - 1n;
+
+/**
+ * Lesson 19: an amount that does not fit `Coins` is refused with a fixed text that never
+ * carries it (`@ton/core` would throw a bare `Error` naming the value).
+ */
+function coins(value: bigint): bigint {
+  if (typeof value !== 'bigint' || value < 0n || value > MAX_COINS) {
+    throw new ValidationError('INVALID_AMOUNT', 'a TON amount must be in [0, 2^120 - 1]');
+  }
+  return value;
+}
+
+/** Lesson 19: a TEP-74 `query_id` is a uint64. */
+function queryIdOf(value: bigint): bigint {
+  if (typeof value !== 'bigint' || value < 0n || value > MAX_QUERY_ID) {
+    throw new ValidationError('INVALID_INTENT', 'a TON query id must be a uint64');
+  }
+  return value;
+}
+
+export function memoBytes(memo: string): number {
+  return Buffer.byteLength(memo, 'utf8');
+}
+
+/** A text comment: op 0, then the UTF-8 text as a snake string. */
+export function commentCell(memo: string): Cell {
+  return comment(memo);
+}
+
+/** A native transfer of `value` nanograms; `bounce` comes from the recipient's address. */
+export function nativeMessage(args: {
+  readonly to: string;
+  readonly value: bigint;
+  readonly bounce: boolean;
+  readonly memo?: string;
+}): MessageRelaxed {
+  return internal({
+    to: sdkAddress(args.to),
+    value: coins(args.value),
+    bounce: args.bounce,
+    ...(args.memo !== undefined ? { body: commentCell(args.memo) } : {}),
+  });
+}
+
+/**
+ * A TEP-74 `transfer` to the sender's own jetton wallet: `amount` base units to the owner
+ * `destination`, excess back to `responseDestination`, and `forwardAmount` nanograms with
+ * the memo (if any) as the recipient's notification payload.
+ */
+export function jettonMessage(args: {
+  readonly jettonWallet: string;
+  readonly attached: bigint;
+  readonly queryId: bigint;
+  readonly amount: bigint;
+  readonly destination: string;
+  readonly responseDestination: string;
+  readonly forwardAmount: bigint;
+  readonly memo?: string;
+}): MessageRelaxed {
+  const to = sdkAddress(args.jettonWallet);
+  const attached = coins(args.attached);
+  const body = beginCell()
+    .storeUint(OP.jettonTransfer, 32)
+    .storeUint(queryIdOf(args.queryId), 64)
+    .storeCoins(coins(args.amount))
+    .storeAddress(sdkAddress(args.destination))
+    .storeAddress(sdkAddress(args.responseDestination))
+    .storeMaybeRef(null)
+    .storeCoins(coins(args.forwardAmount));
+  if (args.memo !== undefined) body.storeBit(true).storeRef(commentCell(args.memo));
+  else body.storeBit(false);
+  return internal({
+    to,
+    value: attached,
+    bounce: true,
+    body: body.endCell(),
+  });
+}
+
+/** A one-cell slice holding `raw`: the `get_wallet_address` argument, as base64 BOC. */
+export function addressArgument(raw: string): string {
+  return beginCell().storeAddress(sdkAddress(raw)).endCell().toBoc().toString('base64');
+}
+
+/** The address a get-method returned in a cell or slice (base64 BOC); null if none. */
+export function addressFromBoc(boc: string): string | null {
+  if (typeof boc !== 'string' || boc.length > MAX_ADDRESS_BOC_LENGTH) return null;
+  try {
+    const address = Cell.fromBoc(Buffer.from(boc, 'base64'))[0]
+      ?.beginParse()
+      .loadMaybeAddress();
+    return address ? toRaw(address) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The text of a comment body, or undefined for any other body. */
+export function decodeComment(body: Cell): string | undefined {
+  try {
+    const slice = body.beginParse();
+    if (slice.remainingBits < 32 || slice.loadUint(32) !== OP.comment) return undefined;
+    return slice.loadStringTail();
+  } catch {
+    return undefined;
+  }
+}
+
+/** The comment carried in a `forward_payload:(Either Cell ^Cell)`, if it is one. */
+function forwardComment(slice: ReturnType<Cell['beginParse']>): string | undefined {
+  if (slice.remainingBits < 1) return undefined;
+  const inRef = slice.loadBit();
+  if (inRef) return slice.remainingRefs > 0 ? decodeComment(slice.loadRef()) : undefined;
+  return decodeComment(beginCell().storeSlice(slice).endCell());
+}
+
+export interface JettonTransferBody {
+  readonly queryId: bigint;
+  readonly amount: bigint;
+  readonly destination: string;
+  readonly forwardAmount: bigint;
+  readonly comment?: string;
+}
+
+/** A TEP-74 `transfer` body, or null for any other body. */
+export function decodeJettonTransfer(body: Cell): JettonTransferBody | null {
+  try {
+    const slice = body.beginParse();
+    if (slice.loadUint(32) !== OP.jettonTransfer) return null;
+    const queryId = slice.loadUintBig(64);
+    const amount = slice.loadCoins();
+    const destination = slice.loadAddress();
+    slice.loadMaybeAddress();
+    slice.loadMaybeRef();
+    const forwardAmount = slice.loadCoins();
+    const memo = forwardComment(slice);
+    return {
+      queryId,
+      amount,
+      destination: toRaw(destination),
+      forwardAmount,
+      ...(memo !== undefined ? { comment: memo } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface JettonInternalTransferBody {
+  readonly queryId: bigint;
+  readonly amount: bigint;
+  /** The sending owner, when the body names one. */
+  readonly from: string | null;
+  readonly comment?: string;
+}
+
+/** A TEP-74 `internal_transfer` body, or null for any other body. */
+export function decodeJettonInternalTransfer(
+  body: Cell,
+): JettonInternalTransferBody | null {
+  try {
+    const slice = body.beginParse();
+    if (slice.loadUint(32) !== OP.jettonInternalTransfer) return null;
+    const queryId = slice.loadUintBig(64);
+    const amount = slice.loadCoins();
+    const from = slice.loadMaybeAddress();
+    slice.loadMaybeAddress();
+    slice.loadCoins();
+    const memo = forwardComment(slice);
+    return {
+      queryId,
+      amount,
+      from: from ? toRaw(from) : null,
+      ...(memo !== undefined ? { comment: memo } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface JettonNotificationBody {
+  readonly queryId: bigint;
+  readonly amount: bigint;
+  /** The sending owner, when the body names one. */
+  readonly sender: string | null;
+  readonly comment?: string;
+}
+
+/** A TEP-74 `transfer_notification` body, or null for any other body. */
+export function decodeJettonNotification(body: Cell): JettonNotificationBody | null {
+  try {
+    const slice = body.beginParse();
+    if (slice.loadUint(32) !== OP.jettonNotification) return null;
+    const queryId = slice.loadUintBig(64);
+    const amount = slice.loadCoins();
+    const sender = slice.loadMaybeAddress();
+    const memo = forwardComment(slice);
+    return {
+      queryId,
+      amount,
+      sender: sender ? toRaw(sender) : null,
+      ...(memo !== undefined ? { comment: memo } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface WalletRequest {
+  /**
+   * `internal`: a W5 signed request relayed in an internal message (gasless). Anyone can
+   * post such a body: it proves nothing until `requestIsOwn` authenticates it (A23).
+   */
+  readonly auth: 'external' | 'internal';
+  /** v4r2: the subwallet id; v5r1: the signed 32-bit wallet id. */
+  readonly walletId: number;
+  readonly seqno: number;
+  readonly validUntil: number;
+  readonly messages: readonly MessageRelaxed[];
+}
+
+/**
+ * The signed request inside a v4r2 or v5r1 external message body: its seqno, lifetime and
+ * the internal messages it asks for. Null for anything else (another wallet, a plugin or
+ * extension request): the verdict then has no evidence and decides nothing.
+ */
+export function decodeWalletRequest(body: Cell): WalletRequest | null {
+  try {
+    const bits = body.bits.length;
+    const head = body.beginParse();
+    const op = bits >= 32 ? head.preloadUint(32) : undefined;
+    if (op === OP.w5SignedExternal || op === OP.w5SignedInternal) {
+      const s = body.beginParse();
+      s.skip(32);
+      const walletId = s.loadInt(32);
+      const validUntil = s.loadUint(32);
+      const seqno = s.loadUint(32);
+      const list = s.loadMaybeRef();
+      if (s.loadBit()) return null; // extended actions: not a plain transfer
+      if (s.remainingBits !== 512 || s.remainingRefs !== 0) return null;
+      const actions = list ? loadOutList(list.beginParse()) : [];
+      const messages: MessageRelaxed[] = [];
+      for (const action of actions) {
+        if (action.type !== 'sendMsg') return null;
+        messages.push(action.outMsg);
+      }
+      const auth = op === OP.w5SignedExternal ? 'external' : 'internal';
+      return { auth, walletId, seqno, validUntil, messages };
+    }
+    const s = body.beginParse();
+    s.skip(512);
+    const walletId = s.loadUint(32);
+    const validUntil = s.loadUint(32);
+    const seqno = s.loadUint(32);
+    if (s.loadUint(8) !== 0) return null; // v4 op 0: simple send
+    const messages: MessageRelaxed[] = [];
+    while (s.remainingRefs > 0) {
+      s.loadUint(8);
+      messages.push(loadMessageRelaxed(s.loadRef().beginParse()));
+    }
+    if (s.remainingBits !== 0) return null;
+    return { auth: 'external', walletId, seqno, validUntil, messages };
+  } catch {
+    return null;
+  }
+}
+
+/** A message's destination (raw), value and body hash (hex), for matching on chain. */
+export function messageFacts(message: MessageRelaxed): {
+  readonly to: string;
+  readonly value: bigint;
+  readonly bodyHash: string;
+  readonly body: Cell;
+} | null {
+  if (message.info.type !== 'internal') return null;
+  return {
+    to: toRaw(message.info.dest),
+    value: message.info.value.coins,
+    bodyHash: message.body.hash().toString('hex'),
+    body: message.body,
+  };
+}
+
+/** A body cell from a base64 BOC; null when it does not parse. */
+export function cellFromBoc(boc: string | null | undefined): Cell | null {
+  if (typeof boc !== 'string' || boc.length === 0) return null;
+  if (boc.length > MAX_BODY_BOC_LENGTH) return null;
+  try {
+    const cells = Cell.fromBoc(Buffer.from(boc, 'base64'));
+    return cells.length === 1 ? (cells[0] as Cell) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * C1: an indexed message's body, bound to the body hash the quorum keyed. A body that does
+ * not parse or hash to `bodyHash`, or that comes without one, is a malformed answer
+ * (retryable): no verdict or decoding ever reads an unbound body.
+ */
+export function messageBody(message: {
+  readonly body?: string;
+  readonly bodyHash?: string;
+}): Cell | null {
+  if (message.body === undefined) return null;
+  const cell = cellFromBoc(message.body);
+  if (!cell || !message.bodyHash || cell.hash().toString('hex') !== message.bodyHash) {
+    throw new ProviderError(
+      'PROVIDER_UNAVAILABLE',
+      'the indexer returned a message body that does not match its hash',
+      { retryable: true },
+    );
+  }
+  return cell;
+}
