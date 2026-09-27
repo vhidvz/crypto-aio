@@ -1,7 +1,8 @@
 /**
  * Bitcoin addresses and output scripts, SDK-free (`@scure/base`, `@noble/*`), so the codec
  * is an implementation independent of bitcoinjs-lib, which the tests cross-check it against
- * (lesson 11). Decoding is strict (lesson 4): one network's HRP and base58 version bytes,
+ * (lesson 11). Decoding is strict (lesson 4): at most 90 characters, refused before any
+ * decoding (lesson 20), one network's HRP and base58 version bytes,
  * bech32 only for witness v0 and bech32m only for v1 (BIP350), exact program lengths, no
  * mixed case, and a taproot output key must be a valid x coordinate. Every failure is
  * `ValidationError('INVALID_ADDRESS')` with a message that names no address.
@@ -24,7 +25,20 @@ export interface DecodedAddress {
 }
 
 const base58check = createBase58check(sha256);
-const BECH32_MAX = 90;
+/**
+ * BIP173's bech32 limit, and more than any base58 address needs. Lesson 20: `@scure/base`'s
+ * base58 decoding is quadratic, so an untrusted string is capped before any decoding.
+ */
+const ADDRESS_MAX = 90;
+const BECH32_CHARS = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/;
+/** The program length each output script's push byte encodes. */
+const PROGRAM_LENGTH: Readonly<Record<UtxoOutputType, number>> = Object.freeze({
+  p2pkh: 20,
+  p2sh: 20,
+  p2wpkh: 20,
+  p2wsh: 32,
+  p2tr: 32,
+});
 
 const invalid = (reason: string): never => {
   throw new ValidationError('INVALID_ADDRESS', `invalid Bitcoin address: ${reason}`);
@@ -32,8 +46,11 @@ const invalid = (reason: string): never => {
 
 export const hash160 = (data: Uint8Array): Uint8Array => ripemd160(sha256(data));
 
-/** The standard output script of each type. */
+/** The standard output script of each type; the program must have that type's length. */
 export function outputScript(type: UtxoOutputType, program: Uint8Array): Uint8Array {
+  if (program.length !== PROGRAM_LENGTH[type]) {
+    invalid('the output program has the wrong length');
+  }
   switch (type) {
     case 'p2pkh':
       return concatBytes(
@@ -63,20 +80,28 @@ export function isXOnlyPoint(bytes: Uint8Array): boolean {
   }
 }
 
-function decodeSegwit(address: string, params: AddressParams): DecodedAddress {
-  if (address.length > BECH32_MAX) invalid('too long');
-  if (address !== address.toLowerCase() && address !== address.toUpperCase()) {
-    invalid('mixed case');
-  }
+/**
+ * Whether an address starting with this network's `<hrp>1` has the shape of bech32: one case,
+ * and only bech32 characters after the separator. A custom network's base58 address can
+ * start with `<hrp>1` too; it is not bech32-shaped, so it takes the base58 path.
+ */
+function isBech32Shaped(address: string, hrp: string): boolean {
   const lower = address.toLowerCase();
+  if (!lower.startsWith(`${hrp}1`)) return false;
+  if (address !== lower && address !== address.toUpperCase()) return false;
+  return BECH32_CHARS.test(lower.slice(hrp.length + 1));
+}
+
+/** Decodes a bech32-shaped address, already lowercased (BIP173 allows either case). */
+function decodeSegwit(lower: string, params: AddressParams): DecodedAddress {
   let decoded: { prefix: string; words: number[] } | undefined;
   let variant: 'bech32' | 'bech32m' | undefined;
   try {
-    decoded = bech32.decode(lower as `${string}1${string}`, BECH32_MAX);
+    decoded = bech32.decode(lower as `${string}1${string}`, ADDRESS_MAX);
     variant = 'bech32';
   } catch {
     try {
-      decoded = bech32m.decode(lower as `${string}1${string}`, BECH32_MAX);
+      decoded = bech32m.decode(lower as `${string}1${string}`, ADDRESS_MAX);
       variant = 'bech32m';
     } catch {
       invalid('bad checksum or encoding');
@@ -115,15 +140,16 @@ function decodeSegwit(address: string, params: AddressParams): DecodedAddress {
 /** Decodes an address of this network; throws `INVALID_ADDRESS`. */
 export function decodeAddress(address: string, params: AddressParams): DecodedAddress {
   if (typeof address !== 'string' || address.length === 0) invalid('empty');
+  if (address.length > ADDRESS_MAX) invalid('too long');
   if (!/^[0-9A-Za-z]+$/.test(address)) invalid('unexpected characters');
-  if (address.toLowerCase().startsWith(`${params.bech32}1`)) {
-    return decodeSegwit(address, params);
+  if (isBech32Shaped(address, params.bech32)) {
+    return decodeSegwit(address.toLowerCase(), params);
   }
   let payload: Uint8Array = new Uint8Array();
   try {
     payload = base58check.decode(address);
   } catch {
-    // A segwit address of another network lands here too.
+    // A segwit address of another network, or a mixed-case one, lands here too.
     invalid('bad checksum or encoding');
   }
   if (payload.length !== 21) invalid('bad payload length');
@@ -161,6 +187,8 @@ export function taprootTweak(internalKey: Uint8Array): {
   readonly tweak: Uint8Array;
   readonly outputKey: Uint8Array;
 } {
+  if (!isXOnlyPoint(internalKey))
+    invalid('the taproot internal key is not an x-only point');
   const point = schnorr.utils.lift_x(schnorr.utils.bytesToNumberBE(internalKey));
   const tweak = schnorr.utils.taggedHash('TapTweak', internalKey);
   const t = schnorr.utils.bytesToNumberBE(tweak);
@@ -255,9 +283,21 @@ export function walletTypeOf(decoded: DecodedAddress): UtxoAddressType {
   }
 }
 
-/** Bitcoin Core's `GetDustThreshold` (policy.cpp) at `dustRelayFee` sat/kvB, rounded up. */
+const OP_RETURN = 0x6a;
+/** Bitcoin Core's `MAX_SCRIPT_SIZE`: a longer script can never be spent. */
+const MAX_SCRIPT_SIZE = 10_000;
+
+/** The byte length of Bitcoin's CompactSize encoding of `n`. */
+const compactSize = (n: number): number => (n < 0xfd ? 1 : n <= 0xffff ? 3 : 5);
+
+/**
+ * Bitcoin Core's `GetDustThreshold` (policy.cpp) at `dustRelayFee` sat/kvB, rounded up.
+ * An unspendable script (`IsUnspendable`: OP_RETURN first, or over `MAX_SCRIPT_SIZE`) has
+ * no dust threshold.
+ */
 export function dustThreshold(script: Uint8Array, dustRelayFee: bigint): bigint {
-  const size = BigInt(8 + 1 + script.length);
+  if (script[0] === OP_RETURN || script.length > MAX_SCRIPT_SIZE) return 0n;
+  const size = BigInt(8 + compactSize(script.length) + script.length);
   return ((size + (isWitnessProgram(script) ? 67n : 148n)) * dustRelayFee + 999n) / 1000n;
 }
 

@@ -126,6 +126,13 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     expect(utxoNetworkConfig(BITCOIN_CHAIN, mainnet, options)).toMatchObject(options);
   });
 
+  it('accepts an HRP of up to 30 letters, the most a p2tr address fits in 90 (M4)', () => {
+    const network = withNetwork({
+      params: { ...mainnet.params, bech32: 'a'.repeat(30) },
+    });
+    expect(utxoNetworkConfig(BITCOIN_CHAIN, network).address.bech32).toBe('a'.repeat(30));
+  });
+
   it('adds and removes the network capabilities', () => {
     const network = withNetwork({
       capabilities: { add: ['memo'], remove: ['cancel', 'replace-fee'] },
@@ -159,6 +166,10 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
       withNetwork({ finality: { kind: 'confirmations', confirmations: 1.5 } }),
     ],
     ['an uppercase HRP', withNetwork({ params: { ...mainnet.params, bech32: 'BC' } })],
+    [
+      'an HRP over 30 letters',
+      withNetwork({ params: { ...mainnet.params, bech32: 'a'.repeat(31) } }),
+    ],
     ['a number fee', withNetwork({ params: { ...mainnet.params, dustRelayFee: 3000 } })],
     ['equal prefixes', withNetwork({ params: { ...mainnet.params, scriptHash: 0 } })],
     [

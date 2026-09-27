@@ -96,3 +96,28 @@ export const BIP350_INVALID: readonly string[] = [
   'tb1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vpggkg4j',
   'bc1gmk9yu',
 ];
+
+/**
+ * BIP341 wallet-test-vectors.json, keyPathSpending input 0 (no script tree; the same key as
+ * scriptPubKey[0]). `tweakedPrivkey` signs for the tweaked key: its compressed public key
+ * starts with 03, so the tweaked key has odd y (parity 1).
+ */
+export const BIP341_KEY_PATH = {
+  internalPubkey: 'd6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d',
+  tweak: 'b86e7be8f39bab32a6f2c0443abbc210f0edac0e2c53d501b36b64437d9c6c70',
+  tweakedPrivkey: '2405b971772ad26915c8dcdf10f238753a9b837e5f8e6a86fd7c0cce5b7296d9',
+  tweakedPubkey: '53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343',
+  parity: 1,
+  address: 'bc1p2wsldez5mud2yam29q22wgfh9439spgduvct83k3pm50fcxa5dps59h4z5',
+} as const;
+
+/**
+ * BIP341 wallet-test-vectors.json, scriptPubKey[2]: its control block starts with c0, so
+ * the tweaked key has even y (parity 0).
+ */
+export const BIP341_EVEN_Y = {
+  internalPubkey: '93478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820',
+  tweak: '6af9e28dbf9d6aaf027696e2598a5b3d056f5fd2355a7fd5a37a0e5008132d30',
+  tweakedPubkey: 'e4d810fd50586274face62b8a807eb9719cef49c04177cc6b76a9a4251d5450e',
+  parity: 0,
+} as const;

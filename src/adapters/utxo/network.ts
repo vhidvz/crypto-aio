@@ -94,8 +94,9 @@ export function utxoNetworkConfig(
   }
   const params = network.params ?? {};
   const bech32 = params.bech32;
-  if (typeof bech32 !== 'string' || !/^[a-z]{1,83}$/.test(bech32)) {
-    fail('params.bech32 must be a lowercase human-readable part');
+  // 30 letters at most: a 32-byte witness program (p2tr, p2wsh) then fits in 90 characters.
+  if (typeof bech32 !== 'string' || !/^[a-z]{1,30}$/.test(bech32)) {
+    fail('params.bech32 must be a lowercase human-readable part of 1 to 30 letters');
   }
   const byte = (key: string): number => {
     const value = params[key];
