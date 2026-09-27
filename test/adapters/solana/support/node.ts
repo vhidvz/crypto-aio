@@ -6,19 +6,26 @@
  * (5,000 lamports per signature plus `ceil(price × limit / 1e6)`), compute-unit limits,
  * agave's rent-state rule (fee payer included), System transfers, SPL `transferChecked` and
  * associated token accounts in their programs' own check order, Memo, forks below the
- * head, lagging, gapped, pruned and load-balanced endpoints. Error texts are agave's, and a
- * preflight failure carries agave's simulation result as `data`, as the broadcast
- * classifier reads it. Wire numbers are exact u64 JSON.
+ * head, lagging, gapped, pruned and load-balanced endpoints. Error texts are agave's
+ * (v4.3.0, commit 825efd1): a preflight failure carries agave's simulation result as
+ * `data`, with agave-like program logs, as the broadcast classifier reads it. Wire numbers
+ * are exact u64 JSON.
+ *
+ * The RPC surface is agave's too: size limits before decoding, base58 unless `encoding`
+ * says otherwise, sanitizing (signature count, compute budget) before any preflight, a
+ * simulation's blockhash window six blocks short, and `processed` refused where agave
+ * refuses it. It accepts only what the codec writes: canonical legacy transactions.
  *
  * Each transaction runs on a copy of the state and commits only whole: a refused one
- * leaves no trace in blocks, balances or the mempool, across forks too. `intercept`
+ * leaves no trace in blocks, balances or the mempool, across forks too, and each block
+ * keeps its own snapshot, so later scripting never rewrites a landed meta. `intercept`
  * scripts faults per endpoint and method (a liar, `faults.rateLimited`, `unhealthy`,
  * `serverError`, `timeout`). Deterministic: time comes from the `FakeClock` only.
  */
 import { ed25519 } from '@noble/curves/ed25519';
 import { sha256 } from '@noble/hashes/sha256';
 import { base58 } from '@scure/base';
-import { PublicKey, VersionedMessage, VersionedTransaction } from '@solana/web3.js';
+import { PublicKey, VersionedMessage } from '@solana/web3.js';
 import type { FakeClock } from '../../../../src/testing/fake-clock';
 import { FakeFetch, hang, type FakeRequest } from '../../../../src/testing/fake-fetch';
 
@@ -40,6 +47,28 @@ const COST = {
 };
 const memoCost = (bytes: number) => 12_000n + 25n * BigInt(bytes);
 const U64_MAX = 2n ** 64n - 1n;
+/** agave simulates (and preflights) with MAX_PROCESSING_AGE − MAX_TRANSACTION_FORWARDING_DELAY. */
+const FORWARDING_DELAY = 6n;
+const TRANSACTION = 'solana_transaction::versioned::VersionedTransaction';
+/** agave `rpc.rs`: base58 1,683 characters; legacy base64 1,644; v1+ base64 5,464 / 4,096. */
+const PACKET_DATA_SIZE = 1_232;
+const MAX_BASE58_SIZE = 1_683;
+const MAX_BASE58_BYTES = 128;
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+/** SPL Token's logged errors (`TokenError::to_str`), by custom code. */
+const TOKEN_ERRORS: Readonly<Record<number, string>> = {
+  1: 'Error: insufficient funds',
+  3: 'Error: Account not associated with this Mint',
+  4: 'Error: owner does not match',
+  17: 'Error: Account is frozen',
+  18: 'Error: decimals different from the Mint decimals',
+};
+const STATUS_TEXT: Readonly<Record<number, string>> = {
+  500: 'Internal Server Error',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+  504: 'Gateway Timeout',
+};
 
 export interface NodeOptions {
   readonly clock: FakeClock;
@@ -48,8 +77,11 @@ export interface NodeOptions {
   readonly finalizedDepth?: number;
   /** Blocks a blockhash stays valid after its own (default 150, agave's MAX_PROCESSING_AGE). */
   readonly blockhashValidity?: number;
-  /** `getRecentPrioritizationFees` answers, micro-lamports (default all zero). */
-  readonly prioritizationFees?: readonly number[];
+  /**
+   * `getRecentPrioritizationFees` answers in micro-lamports, newest block first, one per
+   * recent block (default none). Bigints are written as exact u64 numbers.
+   */
+  readonly prioritizationFees?: readonly (number | bigint)[];
 }
 
 export interface EndpointOptions {
@@ -107,6 +139,8 @@ interface Executed {
   readonly pre: State;
   readonly post: State;
   readonly inner: readonly Inner[];
+  /** agave-like program logs (`meta.logMessages`, a simulation's `logs`). */
+  readonly logs: readonly string[];
 }
 
 interface Block {
@@ -137,6 +171,7 @@ export type Scripted =
   | {
       readonly http: {
         readonly status: number;
+        readonly statusText?: string;
         readonly text?: string;
         readonly headers?: Readonly<Record<string, string>>;
       };
@@ -164,9 +199,10 @@ export const faults = {
     },
   }),
   /** A proxy's 5xx in front of the node (ambiguous: it may have reached the node). */
-  serverError: (status = 503): Scripted => ({
-    http: { status, text: 'Service Unavailable' },
-  }),
+  serverError: (status = 503): Scripted => {
+    const text = STATUS_TEXT[status] ?? 'Server Error';
+    return { http: { status, statusText: text, text } };
+  },
   /** No answer until the caller aborts the request (its timeout). */
   timeout: { hang: true } as Scripted,
 };
@@ -189,13 +225,37 @@ class RpcFailure extends Error {
   }
 }
 
-/** A transaction error: agave's `TransactionError` value and its display text. */
+/** A transaction's binary encoding, as agave reads it (base58 unless told), or its refusal. */
+function transactionEncoding(encoding: unknown): 'base58' | 'base64' {
+  switch (encoding ?? 'base58') {
+    case 'base58':
+    case 'binary':
+      return 'base58';
+    case 'base64':
+      return 'base64';
+    case 'json':
+    case 'jsonParsed':
+      throw new RpcFailure(
+        -32602,
+        `unsupported encoding: ${String(encoding)}. Supported encodings: base58, base64`,
+      );
+    default:
+      throw new RpcFailure(
+        -32602,
+        `Invalid params: unknown variant \`${String(encoding)}\`, expected one of \`binary\`, \`base64\`, \`base58\`, \`json\`, \`jsonParsed\``,
+      );
+  }
+}
+
+/**
+ * A transaction error: agave's `TransactionError` value, its display text, and (for an
+ * instruction error) the instruction error's own text, as a program's failure log shows it.
+ */
 class TxError extends Error {
   constructor(
     readonly value: unknown,
     readonly display: string,
-    /** Load errors (fee payer, blockhash) keep a transaction out of every block. */
-    readonly load = false,
+    readonly detail = display,
   ) {
     super(display);
   }
@@ -205,6 +265,7 @@ const ixError = (index: number, value: unknown, display: string) =>
   new TxError(
     { InstructionError: [index, value] },
     `Error processing Instruction ${index}: ${display}`,
+    display,
   );
 const custom = (index: number, code: number) =>
   ixError(index, { Custom: code }, `custom program error: 0x${code.toString(16)}`);
@@ -263,16 +324,67 @@ function readToken(account: Account | undefined): TokenState | null {
  * answers it and as a preflight failure's `data` carries it: short enough for the
  * transport's 512-character `rpcData` cut, so the classifier reads its `err`.
  */
-const simulation = (err: unknown, unitsConsumed: bigint) => ({
+const simulation = (
+  err: unknown,
+  parts: {
+    readonly units?: bigint;
+    readonly logs?: readonly string[];
+    readonly fee?: bigint;
+    readonly balances?: {
+      readonly pre: readonly bigint[];
+      readonly post: readonly bigint[];
+      readonly preToken: readonly unknown[];
+      readonly postToken: readonly unknown[];
+    };
+    readonly replacement?: {
+      readonly blockhash: string;
+      readonly lastValidBlockHeight: bigint;
+    };
+  } = {},
+) => ({
+  // agave 4.3.0 `RpcSimulateTransactionResult`, every field (serde_json writes keys sorted).
   accounts: null,
   err,
+  fee: parts.fee ?? null,
   innerInstructions: null,
   loadedAccountsDataSize: 0,
-  logs: [],
-  replacementBlockhash: null,
+  loadedAddresses: null,
+  logs: parts.logs ?? [],
+  postBalances: parts.balances?.post ?? null,
+  postTokenBalances: parts.balances?.postToken ?? null,
+  preBalances: parts.balances?.pre ?? null,
+  preTokenBalances: parts.balances?.preToken ?? null,
+  replacementBlockhash: parts.replacement ?? null,
   returnData: null,
-  unitsConsumed,
+  unitsConsumed: parts.units ?? 0n,
 });
+
+/** A compact-u16 length as the SDK reads it (aliases too), or `null` when it runs out. */
+function readLength(
+  bytes: Uint8Array,
+  offset: number,
+): { readonly value: number; readonly next: number } | null {
+  let value = 0;
+  for (let i = 0; i < 3; i++) {
+    const byte = bytes[offset + i];
+    if (byte === undefined) return null;
+    value |= (byte & 0x7f) << (7 * i);
+    if ((byte & 0x80) === 0) return { value, next: offset + i + 1 };
+  }
+  return null;
+}
+
+/** A canonical compact-u16 length. */
+function shortvec(value: number): number[] {
+  const out: number[] = [];
+  let rest = value;
+  do {
+    const byte = rest & 0x7f;
+    rest >>= 7;
+    out.push(rest ? byte | 0x80 : byte);
+  } while (rest);
+  return out;
+}
 
 /** Exact u64 JSON: bigints are written as bare JSON numbers. */
 function toJson(value: unknown): string {
@@ -307,7 +419,7 @@ export class ScriptedSolanaNode {
   readonly finalizedDepth: number;
   readonly validity: bigint;
   readonly #clock: FakeClock;
-  readonly #fees: readonly number[];
+  readonly #fees: readonly (number | bigint)[];
   readonly #blocks: Block[] = [];
   readonly #bySlot = new Map<bigint, Block>();
   readonly #mempool = new Map<string, Decoded>();
@@ -476,8 +588,11 @@ export class ScriptedSolanaNode {
     return this.head.state.get(address);
   }
 
+  /** The owner's associated token account balance, derived with the mint's own program. */
   tokenBalance(mint: string, owner: string): bigint {
-    return readToken(this.head.state.get(associatedAddress(owner, mint)))?.amount ?? 0n;
+    const program = this.head.state.get(mint)?.owner ?? TOKEN;
+    const address = associatedAddress(owner, mint, program);
+    return readToken(this.head.state.get(address))?.amount ?? 0n;
   }
 
   rent(bytes: number): bigint {
@@ -583,25 +698,27 @@ export class ScriptedSolanaNode {
    * A blockhash is valid in the block at `height` while its age against that block's
    * PARENT is at most `validity` (agave registers a block's own hash only after its
    * transactions ran): so a transaction can land up to `lastValidBlockHeight + 1` (I1).
+   * A simulation (and so a preflight) allows six blocks less (`#simulationAge`).
    */
-  #blockhashValid(tx: Decoded, bank: Block, height: bigint): void {
+  #blockhashValid(
+    tx: Decoded,
+    bank: Block,
+    height: bigint,
+    maxAge = this.validity,
+  ): void {
     const hash = tx.message.recentBlockhash;
     const origin = this.#blocks.find((b) => b.hash === hash && b.height <= bank.height);
-    if (!origin || height - 1n - origin.height > this.validity) {
-      throw new TxError('BlockhashNotFound', 'Blockhash not found', true);
+    if (!origin || height - 1n - origin.height > maxAge) {
+      throw new TxError('BlockhashNotFound', 'Blockhash not found');
     }
   }
 
-  #decode(raw: Uint8Array): Decoded {
-    const tx = VersionedTransaction.deserialize(raw);
-    const keys = tx.message.staticAccountKeys.map((k) => k.toBase58());
-    return {
-      signature: base58.encode(tx.signatures[0] as Uint8Array),
-      raw,
-      message: tx.message,
-      keys,
-      signatures: tx.signatures.map((s) => base58.encode(s)),
-    };
+  /**
+   * agave's bank simulates with MAX_PROCESSING_AGE − MAX_TRANSACTION_FORWARDING_DELAY, so a
+   * forwarded transaction cannot expire on its way to the leader (saturating at zero).
+   */
+  #simulationAge(): bigint {
+    return this.validity > FORWARDING_DELAY ? this.validity - FORWARDING_DELAY : 0n;
   }
 
   #verify(tx: Decoded): boolean {
@@ -624,21 +741,39 @@ export class ScriptedSolanaNode {
     });
   }
 
-  /** Compute-unit limit and price from the message's ComputeBudget instructions. */
+  /**
+   * Compute-unit limit and price from the message's ComputeBudget instructions, read as agave
+   * reads them when it sanitizes a transaction: known instructions only (borsh reads a
+   * prefix), and one of each kind; otherwise a `TxError` for `invalid transaction: …`.
+   */
   #budget(message: VersionedMessage): { limit: bigint; price: bigint } {
+    const seen = new Set<number>();
     let limit: bigint | undefined;
     let price = 0n;
     let others = 0n;
     const keys = message.staticAccountKeys.map((k) => k.toBase58());
-    for (const ix of message.compiledInstructions) {
-      const data = ix.data;
+    message.compiledInstructions.forEach((ix, index) => {
       if (keys[ix.programIdIndex] !== BUDGET) {
         others += 1n;
-        continue;
+        return;
       }
-      if (data[0] === 2 && data.length === 5) limit = BigInt(u32le(data, 1));
-      if (data[0] === 3 && data.length === 9) price = u64le(data, 1);
-    }
+      const data = ix.data;
+      // RequestHeapFrame (1), SetComputeUnitLimit (2), SetComputeUnitPrice (3) and
+      // SetLoadedAccountsDataSizeLimit (4).
+      const kind = data[0] ?? 0;
+      if (kind < 1 || kind > 4 || data.length < (kind === 3 ? 9 : 5)) {
+        throw ixError(index, 'InvalidInstructionData', 'invalid instruction data');
+      }
+      if (seen.has(kind)) {
+        throw new TxError(
+          { DuplicateInstruction: index },
+          `Transaction contains a duplicate instruction (${index}) that is not allowed`,
+        );
+      }
+      seen.add(kind);
+      if (kind === 2) limit = BigInt(u32le(data, 1));
+      if (kind === 3) price = u64le(data, 1);
+    });
     const fallback = 200_000n * others;
     const chosen = limit ?? (fallback > 1_400_000n ? 1_400_000n : fallback);
     return { limit: chosen > 1_400_000n ? 1_400_000n : chosen, price };
@@ -663,25 +798,22 @@ export class ScriptedSolanaNode {
       throw new TxError(
         'AccountNotFound',
         'Attempt to debit an account but found no record of a prior credit.',
-        true,
       );
     }
     if (payerAccount.owner !== SYSTEM || payerAccount.data.length > 0) {
       throw new TxError(
         'InvalidAccountForFee',
         'This account may not be used to pay transaction fees',
-        true,
       );
     }
     if (payerAccount.lamports < fee) {
-      throw new TxError('InsufficientFundsForFee', 'Insufficient funds for fee', true);
+      throw new TxError('InsufficientFundsForFee', 'Insufficient funds for fee');
     }
     const left = payerAccount.lamports - fee;
     if (!this.#rentAllows(payerAccount, { ...payerAccount, lamports: left })) {
       throw new TxError(
         { InsufficientFundsForRent: { account_index: 0 } },
         'Transaction results in an account (0) with insufficient funds for rent',
-        true,
       );
     }
     const pre = new Map(state);
@@ -689,23 +821,16 @@ export class ScriptedSolanaNode {
     charged.set(payer, { ...payerAccount, lamports: left });
     const work = new Map(charged);
     const inner: Inner[] = [];
-    const { limit } = this.#budget(message);
-    let units = 0n;
+    const logs: string[] = [];
+    const meter = { limit: this.#budget(message).limit, used: 0n };
     try {
       message.compiledInstructions.forEach((ix, index) => {
-        units += this.#instruction(tx, ix, index, work, inner);
-        if (units > limit) {
-          throw ixError(
-            index,
-            'ComputationalBudgetExceeded',
-            'Computational budget exceeded',
-          );
-        }
+        this.#run(tx, ix, index, work, inner, logs, meter);
       });
       // agave compares against the accounts as loaded, the fee already charged.
       this.#rentCheck(tx, charged, work);
       ScriptedSolanaNode.#collect(work);
-      return { tx, err: null, fee, units, pre, post: work, inner };
+      return { tx, err: null, fee, units: meter.used, pre, post: work, inner, logs };
     } catch (error) {
       if (!(error instanceof TxError)) throw error;
       ScriptedSolanaNode.#collect(charged);
@@ -714,12 +839,81 @@ export class ScriptedSolanaNode {
         err: error.value,
         display: error.display,
         fee,
-        units: units > limit ? limit : units,
+        units: meter.used,
         pre,
         post: charged,
         inner: [],
+        logs,
       };
     }
+  }
+
+  /**
+   * One instruction within the compute budget, logged as agave logs it. Out of units, a
+   * builtin (System, ComputeBudget) exceeds the budget, and a program run by the BPF loader
+   * (Token, ATA, Memo) fails to complete, the meter depleted.
+   */
+  #run(
+    tx: Decoded,
+    ix: { programIdIndex: number; accountKeyIndexes: number[]; data: Uint8Array },
+    index: number,
+    state: State,
+    inner: Inner[],
+    logs: string[],
+    meter: { readonly limit: bigint; used: bigint },
+  ): void {
+    const program = tx.keys[ix.programIdIndex] as string;
+    const builtin = program === SYSTEM || program === BUDGET;
+    const remaining = meter.limit - meter.used;
+    const cost = this.#cost(tx, ix, state);
+    const consumed = (units: bigint) => {
+      if (!builtin) {
+        logs.push(`Program ${program} consumed ${units} of ${remaining} compute units`);
+      }
+    };
+    const failed = (error: TxError) => {
+      logs.push(`Program ${program} failed: ${error.detail}`);
+      return error;
+    };
+    logs.push(`Program ${program} invoke [1]`);
+    if (cost > remaining) {
+      meter.used = meter.limit;
+      consumed(remaining);
+      throw failed(
+        builtin
+          ? ixError(index, 'ComputationalBudgetExceeded', 'Computational budget exceeded')
+          : ixError(index, 'ProgramFailedToComplete', 'Program failed to complete'),
+      );
+    }
+    try {
+      this.#instruction(tx, ix, index, state, inner, (line) => logs.push(line));
+    } catch (error) {
+      if (!(error instanceof TxError)) throw error;
+      meter.used += cost;
+      consumed(cost);
+      throw failed(error);
+    }
+    meter.used += cost;
+    consumed(cost);
+    logs.push(`Program ${program} success`);
+  }
+
+  /** The node's compute-unit model of one instruction (not chain facts). */
+  #cost(
+    tx: Decoded,
+    ix: { programIdIndex: number; accountKeyIndexes: number[]; data: Uint8Array },
+    state: State,
+  ): bigint {
+    const program = tx.keys[ix.programIdIndex] as string;
+    if (program === BUDGET) return COST.budget;
+    if (program === SYSTEM) return COST.system;
+    if (program === TOKEN) return COST.token;
+    if (program === MEMO) return memoCost(ix.data.length);
+    if (program === ATA) {
+      const address = tx.keys[ix.accountKeyIndexes[1] as number] as string;
+      return readToken(state.get(address)) ? COST.ataExists : COST.ataCreate;
+    }
+    return 0n;
   }
 
   /** Accounts left with no lamports no longer exist. */
@@ -756,19 +950,22 @@ export class ScriptedSolanaNode {
     });
   }
 
+  /** One instruction's effect on `state` (a copy), or a `TxError`; `log` takes program logs. */
   #instruction(
     tx: Decoded,
     ix: { programIdIndex: number; accountKeyIndexes: number[]; data: Uint8Array },
     index: number,
     state: State,
     inner: Inner[],
-  ): bigint {
+    log: (line: string) => void,
+  ): void {
     const program = tx.keys[ix.programIdIndex] as string;
     const account = (i: number) => tx.keys[ix.accountKeyIndexes[i] as number] as string;
     const signed = (i: number) =>
       tx.message.isAccountSigner(ix.accountKeyIndexes[i] as number);
     const data = ix.data;
-    if (program === BUDGET) return COST.budget;
+    // The budget was read when the transaction was sanitized.
+    if (program === BUDGET) return;
     if (program === SYSTEM) {
       if (data.length !== 12 || u32le(data, 0) !== 2) {
         throw ixError(index, 'InvalidInstructionData', 'invalid instruction data');
@@ -786,7 +983,10 @@ export class ScriptedSolanaNode {
       if (!source || source.owner !== SYSTEM || source.data.length > 0) {
         throw ixError(index, 'InvalidArgument', 'invalid program argument');
       }
-      if (source.lamports < lamports) throw custom(index, 1);
+      if (source.lamports < lamports) {
+        log(`Transfer: insufficient lamports ${source.lamports}, need ${lamports}`);
+        throw custom(index, 1);
+      }
       state.set(from, { ...source, lamports: source.lamports - lamports });
       const target = state.get(to);
       state.set(to, {
@@ -795,19 +995,18 @@ export class ScriptedSolanaNode {
         data: target?.data ?? new Uint8Array(),
         executable: target?.executable ?? false,
       });
-      return COST.system;
+      return;
     }
     if (program === ATA) {
       if (data.length !== 1 || data[0] !== 1) {
         throw ixError(index, 'InvalidInstructionData', 'invalid instruction data');
       }
-      const [payer, address, wallet, mint] = [
-        account(0),
-        account(1),
-        account(2),
-        account(3),
-      ];
-      if (address !== associatedAddress(wallet, mint)) {
+      log('Program log: CreateIdempotent');
+      const [payer, address, wallet, mint, system, tokenProgram] = [0, 1, 2, 3, 4, 5].map(
+        account,
+      ) as [string, string, string, string, string, string];
+      // The address is derived with the token program the instruction passes.
+      if (address !== associatedAddress(wallet, mint, tokenProgram)) {
         throw ixError(
           index,
           'InvalidSeeds',
@@ -815,7 +1014,7 @@ export class ScriptedSolanaNode {
         );
       }
       const current = state.get(address);
-      const existing = current?.owner === TOKEN ? readToken(current) : null;
+      const existing = current?.owner === tokenProgram ? readToken(current) : null;
       if (existing) {
         // CreateIdempotent: a no-op on the wallet's own account for that mint.
         if (existing.owner !== wallet) throw custom(index, 0);
@@ -826,14 +1025,17 @@ export class ScriptedSolanaNode {
             'invalid account data for instruction',
           );
         }
-        return COST.ataExists;
+        return;
       }
       if (current && current.owner !== SYSTEM) {
         throw ixError(index, 'IllegalOwner', 'Provided owner is not allowed');
       }
-      // The token program's InitializeAccount3 checks the mint.
+      // A call into the token program passed, which checks that it owns the mint.
+      if (tokenProgram !== TOKEN && tokenProgram !== TOKEN_2022) {
+        throw ixError(index, 'UnsupportedProgramId', 'Unsupported program id');
+      }
       const mintAccount = state.get(mint);
-      if (mintAccount?.owner !== TOKEN) {
+      if (mintAccount?.owner !== tokenProgram) {
         throw ixError(
           index,
           'IncorrectProgramId',
@@ -842,6 +1044,14 @@ export class ScriptedSolanaNode {
       }
       if (mintAccount.data.length !== 82 || mintAccount.data[45] !== 1) {
         throw custom(index, 2);
+      }
+      // Then a call into the System program, which must be among the accounts.
+      if (system !== SYSTEM) {
+        throw ixError(
+          index,
+          'MissingAccount',
+          'An account required by the instruction is missing',
+        );
       }
       // Lamports already at the address stay; the payer adds what the minimum still lacks.
       const rent = this.rent(165);
@@ -852,13 +1062,14 @@ export class ScriptedSolanaNode {
         if (!funder || funder.lamports < needed) throw custom(index, 1);
         state.set(payer, { ...funder, lamports: funder.lamports - needed });
       }
+      // A Token-2022 account is modeled without its extension bytes (165, not 170).
       state.set(address, {
         lamports: held + needed,
-        owner: TOKEN,
+        owner: tokenProgram,
         data: tokenAccountData(mint, wallet, 0n, false),
         executable: false,
       });
-      const system = (type: string, info: Record<string, unknown>) => ({
+      const systemCall = (type: string, info: Record<string, unknown>) => ({
         parsed: { info, type },
         program: 'system',
         programId: SYSTEM,
@@ -867,10 +1078,10 @@ export class ScriptedSolanaNode {
       const create =
         held === 0n
           ? [
-              system('createAccount', {
+              systemCall('createAccount', {
                 lamports: rent,
                 newAccount: address,
-                owner: TOKEN,
+                owner: tokenProgram,
                 source: payer,
                 space: 165,
               }),
@@ -878,15 +1089,15 @@ export class ScriptedSolanaNode {
           : [
               ...(needed > 0n
                 ? [
-                    system('transfer', {
+                    systemCall('transfer', {
                       destination: address,
                       lamports: needed,
                       source: payer,
                     }),
                   ]
                 : []),
-              system('allocate', { account: address, space: 165 }),
-              system('assign', { account: address, owner: TOKEN }),
+              systemCall('allocate', { account: address, space: 165 }),
+              systemCall('assign', { account: address, owner: tokenProgram }),
             ];
       inner.push({
         index,
@@ -897,18 +1108,23 @@ export class ScriptedSolanaNode {
               info: { account: address, mint, owner: wallet },
               type: 'initializeAccount3',
             },
-            program: 'spl-token',
-            programId: TOKEN,
+            program: tokenProgram === TOKEN ? 'spl-token' : 'spl-token-2022',
+            programId: tokenProgram,
             stackHeight: 2,
           },
         ],
       });
-      return COST.ataCreate;
+      return;
     }
     if (program === TOKEN) {
       if (data.length !== 10 || data[0] !== 12) {
         throw ixError(index, 'InvalidInstructionData', 'invalid instruction data');
       }
+      log('Program log: Instruction: TransferChecked');
+      const tokenError = (code: number) => {
+        log(`Program log: ${TOKEN_ERRORS[code] ?? 'Error'}`);
+        return custom(index, code);
+      };
       const [source, mint, destination, authority] = [
         account(0),
         account(1),
@@ -931,9 +1147,9 @@ export class ScriptedSolanaNode {
         );
       }
       // The token program's own order (`process_transfer`).
-      if (from.frozen || to.frozen) throw custom(index, 17);
-      if (from.amount < amount) throw custom(index, 1);
-      if (from.mint !== to.mint || from.mint !== mint) throw custom(index, 3);
+      if (from.frozen || to.frozen) throw tokenError(17);
+      if (from.amount < amount) throw tokenError(1);
+      if (from.mint !== to.mint || from.mint !== mint) throw tokenError(3);
       const mintAccount = state.get(mint);
       if (!mintAccount || mintAccount.data.length !== 82 || mintAccount.data[45] !== 1) {
         throw ixError(
@@ -942,8 +1158,8 @@ export class ScriptedSolanaNode {
           'invalid account data for instruction',
         );
       }
-      if (mintAccount.data[44] !== data[9]) throw custom(index, 18);
-      if (from.owner !== authority) throw custom(index, 4);
+      if (mintAccount.data[44] !== data[9]) throw tokenError(18);
+      if (from.owner !== authority) throw tokenError(4);
       if (!signed(3))
         throw ixError(
           index,
@@ -958,15 +1174,17 @@ export class ScriptedSolanaNode {
       put(source, { ...from, amount: from.amount - amount });
       const current = readToken(state.get(destination)) as TokenState;
       put(destination, { ...current, amount: current.amount + amount });
-      return COST.token;
+      return;
     }
     if (program === MEMO) {
+      let text: string;
       try {
-        new TextDecoder('utf-8', { fatal: true }).decode(data);
+        text = new TextDecoder('utf-8', { fatal: true }).decode(data);
       } catch {
         throw ixError(index, 'InvalidInstructionData', 'invalid instruction data');
       }
-      return memoCost(data.length);
+      log(`Program log: Memo (len ${data.length}): ${JSON.stringify(text)}`);
+      return;
     }
     throw ixError(index, 'UnsupportedProgramId', 'Unsupported program id');
   }
@@ -1030,9 +1248,10 @@ export class ScriptedSolanaNode {
     const intercepted = this.intercept?.(endpoint, body.method, params);
     if (intercepted && 'hang' in intercepted) return hang(signal);
     if (intercepted && 'http' in intercepted) {
-      const { status, text = '', headers = {} } = intercepted.http;
+      const { status, statusText = '', text = '', headers = {} } = intercepted.http;
       return new Response(text, {
         status,
+        statusText,
         headers: { 'content-type': 'text/plain', ...headers },
       });
     }
@@ -1086,42 +1305,39 @@ export class ScriptedSolanaNode {
         const account = bank.state.get(params[0] as string);
         return {
           context: context(bank),
-          value: account ? this.#renderAccount(account) : null,
+          value: account ? this.#renderAccount(account, config(1).encoding) : null,
         };
       }
-      case 'getTokenAccountsByOwner': {
-        const bank = this.#bank(view, config(2).commitment);
-        const owner = params[0] as string;
-        const filter = config(1);
-        const value = [...bank.state.entries()].flatMap(([address, account]) => {
-          const token = readToken(account);
-          if (!token || token.owner !== owner) return [];
-          if (typeof filter.mint === 'string' && token.mint !== filter.mint) return [];
-          if (typeof filter.programId === 'string' && account.owner !== filter.programId)
-            return [];
-          return [{ pubkey: address, account: this.#renderAccount(account) }];
-        });
-        return { context: context(bank), value };
-      }
+      case 'getTokenAccountsByOwner':
+        return this.#tokenAccounts(view, params);
       case 'getMinimumBalanceForRentExemption':
         return this.rent(Number(params[0]));
       case 'getRecentPrioritizationFees':
-        return this.#fees.map((fee, i) => ({
-          prioritizationFee: fee,
-          slot: view.head.slot - BigInt(i),
-        }));
+        // One fee per recent block, newest first: never a skipped slot or one before genesis.
+        return this.#fees.flatMap((fee, i) => {
+          const block = this.#blocks[Number(view.head.height) - i];
+          return block ? [{ prioritizationFee: BigInt(fee), slot: block.slot }] : [];
+        });
       case 'getFeeForMessage': {
         const bank = this.#bank(view, config(1).commitment);
         const message = VersionedMessage.deserialize(
           Buffer.from(params[0] as string, 'base64'),
         );
+        // Any hash still in the bank's queue: agave keeps 300, twice the processing age.
         const known = this.#blocks.some(
           (b) =>
             b.hash === message.recentBlockhash &&
             b.height <= bank.height &&
-            bank.height - b.height <= this.validity,
+            bank.height - b.height <= 2n * this.validity,
         );
-        return { context: context(bank), value: known ? this.#fee(message) : null };
+        let value: bigint | null = null;
+        try {
+          if (known) value = this.#fee(message);
+        } catch (error) {
+          // A budget agave cannot read has no fee.
+          if (!(error instanceof TxError)) throw error;
+        }
+        return { context: context(bank), value };
       }
       case 'simulateTransaction':
         return this.#simulate(view, params);
@@ -1140,72 +1356,278 @@ export class ScriptedSolanaNode {
     }
   }
 
-  #renderAccount(account: Account) {
+  /** An account as agave encodes it: legacy base58 text by default, or `[data, encoding]`. */
+  #renderAccount(account: Account, encoding: unknown) {
+    const bytes = account.data;
+    let data: unknown;
+    if (encoding === undefined || encoding === 'binary' || encoding === 'base58') {
+      if (bytes.length > MAX_BASE58_BYTES) {
+        throw new RpcFailure(
+          -32600,
+          `Encoded binary (base 58) data should be less than ${MAX_BASE58_BYTES} bytes, please use Base64 encoding.`,
+        );
+      }
+      data =
+        encoding === 'base58' ? [base58.encode(bytes), 'base58'] : base58.encode(bytes);
+    } else if (encoding === 'base64') {
+      data = [Buffer.from(bytes).toString('base64'), 'base64'];
+    } else {
+      throw new RpcFailure(
+        -32602,
+        `Invalid params: the scripted node does not model the ${String(encoding)} account encoding`,
+      );
+    }
     return {
-      data: [Buffer.from(account.data).toString('base64'), 'base64'],
+      data,
       executable: account.executable,
       lamports: account.lamports,
       owner: account.owner,
       rentEpoch: 18446744073709551615n,
-      space: account.data.length,
+      space: bytes.length,
     };
   }
 
-  #parseRaw(encoded: unknown): Decoded {
-    try {
-      return this.#decode(new Uint8Array(Buffer.from(encoded as string, 'base64')));
-    } catch {
+  /** `getTokenAccountsByOwner`: the accounts of the mint's program, or of a token program. */
+  #tokenAccounts(view: View, params: readonly unknown[]) {
+    const options = (params[2] ?? {}) as Record<string, unknown>;
+    const bank = this.#bank(view, options.commitment);
+    const owner = params[0] as string;
+    const filter = (params[1] ?? {}) as Record<string, unknown>;
+    let program: string;
+    let mint: string | undefined;
+    if (typeof filter.mint === 'string') {
+      const account = bank.state.get(filter.mint);
+      if (!account) throw new RpcFailure(-32602, 'Invalid param: could not find mint');
+      if (account.data.length !== 82 || account.data[45] !== 1) {
+        throw new RpcFailure(-32602, 'Invalid param: Token mint could not be unpacked');
+      }
+      if (account.owner !== TOKEN && account.owner !== TOKEN_2022) {
+        throw new RpcFailure(-32602, 'Invalid param: not a Token mint');
+      }
+      program = account.owner;
+      mint = filter.mint;
+    } else if (filter.programId === TOKEN || filter.programId === TOKEN_2022) {
+      program = filter.programId;
+    } else {
+      throw new RpcFailure(-32602, 'Invalid param: unrecognized Token program id');
+    }
+    const value = [...bank.state.entries()].flatMap(([address, account]) => {
+      const token = account.owner === program ? readToken(account) : null;
+      if (!token || token.owner !== owner) return [];
+      if (mint !== undefined && token.mint !== mint) return [];
+      return [
+        { pubkey: address, account: this.#renderAccount(account, options.encoding) },
+      ];
+    });
+    return { context: { apiVersion: '4.3.0', slot: bank.slot }, value };
+  }
+
+  /**
+   * agave's `decode_and_deserialize` (size limits before decoding), then only what the
+   * codec writes: canonical legacy bytes, no aliased lengths or trailing bytes (the
+   * deserialize failure's tail is the node's own text), then `sanitize_transaction`.
+   */
+  #parseRaw(encoded: unknown, encoding: unknown): Decoded {
+    const text = typeof encoded === 'string' ? encoded : '';
+    let bytes: Uint8Array;
+    let maxRaw = PACKET_DATA_SIZE;
+    if (transactionEncoding(encoding) === 'base58') {
+      if (text.length > MAX_BASE58_SIZE) {
+        throw new RpcFailure(
+          -32602,
+          `base58 encoded ${TRANSACTION} too large: ${text.length} bytes (max: encoded/raw ${MAX_BASE58_SIZE}/${PACKET_DATA_SIZE})`,
+        );
+      }
+      const bad = [...text].findIndex((c) => !BASE58_ALPHABET.includes(c));
+      if (bad >= 0) {
+        throw new RpcFailure(
+          -32602,
+          `invalid base58 encoding: InvalidCharacter { character: '${text[bad]}', index: ${bad} }`,
+        );
+      }
+      bytes = base58.decode(text);
+    } else {
+      // A v1+ message starts at 0x81 ("gQ" in base64): agave allows it 4,096 bytes.
+      const v1 = text.slice(0, 2) >= 'gQ';
+      const maxEncoded = v1 ? 5_464 : 1_644;
+      maxRaw = v1 ? 4_096 : PACKET_DATA_SIZE;
+      if (text.length > maxEncoded) {
+        throw new RpcFailure(
+          -32602,
+          `base64 encoded ${TRANSACTION} too large: ${text.length} bytes (max: encoded/raw ${maxEncoded}/${maxRaw})`,
+        );
+      }
+      if (text.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(text)) {
+        throw new RpcFailure(-32602, 'invalid base64 encoding: InvalidPadding');
+      }
+      bytes = new Uint8Array(Buffer.from(text, 'base64'));
+    }
+    if (bytes.length > maxRaw) {
       throw new RpcFailure(
         -32602,
-        'failed to deserialize solana_transaction::versioned::VersionedTransaction: io error: failed to fill whole buffer',
+        `decoded ${TRANSACTION} too large: ${bytes.length} bytes (max: ${maxRaw} bytes)`,
+      );
+    }
+    const unreadable = (why: string) =>
+      new RpcFailure(-32602, `failed to deserialize ${TRANSACTION}: ${why}`);
+    // Signatures, then the message: read here, since the SDK's own reader refuses a count
+    // that differs from the header's, which agave leaves to the sanitizer.
+    const count = readLength(bytes, 0);
+    const start = count ? count.next + 64 * count.value : Infinity;
+    let message: VersionedMessage;
+    try {
+      if (!count || start > bytes.length) throw new Error('short');
+      message = VersionedMessage.deserialize(bytes.subarray(start));
+    } catch {
+      throw unreadable('io error: failed to fill whole buffer');
+    }
+    const signatures = Array.from({ length: count.value }, (_, i) =>
+      bytes.subarray(count.next + 64 * i, count.next + 64 * (i + 1)),
+    );
+    const canonical = Uint8Array.from([
+      ...shortvec(count.value),
+      ...signatures.flatMap((signature) => [...signature]),
+      ...message.serialize(),
+    ]);
+    if (Buffer.compare(Buffer.from(canonical), Buffer.from(bytes)) !== 0) {
+      throw unreadable(
+        'not the canonical encoding (an aliased length or trailing bytes)',
+      );
+    }
+    if (message.version !== 'legacy') {
+      throw new RpcFailure(
+        -32602,
+        'invalid transaction: Transaction version is unsupported',
+      );
+    }
+    const decoded: Decoded = {
+      signature: signatures[0] ? base58.encode(signatures[0]) : '',
+      raw: bytes,
+      message,
+      keys: message.staticAccountKeys.map((k) => k.toBase58()),
+      signatures: signatures.map((signature) => base58.encode(signature)),
+    };
+    this.#sanitize(decoded);
+    return decoded;
+  }
+
+  /**
+   * agave's `sanitize_transaction` for a legacy message, before any preflight: one signature
+   * per required signer, a writable fee payer, indexes within the keys, and a compute budget
+   * it can read.
+   */
+  #sanitize(tx: Decoded): void {
+    const { header, compiledInstructions } = tx.message;
+    const keys = tx.keys.length;
+    if (
+      tx.signatures.length !== header.numRequiredSignatures ||
+      header.numReadonlySignedAccounts >= header.numRequiredSignatures ||
+      header.numRequiredSignatures + header.numReadonlyUnsignedAccounts > keys ||
+      compiledInstructions.some(
+        (ix) =>
+          ix.programIdIndex === 0 ||
+          ix.programIdIndex >= keys ||
+          ix.accountKeyIndexes.some((i) => i >= keys),
+      )
+    ) {
+      throw new RpcFailure(
+        -32602,
+        'invalid transaction: Transaction failed to sanitize accounts offsets correctly',
+      );
+    }
+    try {
+      this.#budget(tx.message);
+    } catch (error) {
+      if (error instanceof TxError) {
+        throw new RpcFailure(-32602, `invalid transaction: ${error.display}`);
+      }
+      throw error;
+    }
+  }
+
+  /** A simulation's checks before loading: the blockhash (six blocks short), the status cache. */
+  #check(tx: Decoded, bank: Block): void {
+    this.#blockhashValid(tx, bank, bank.height + 1n, this.#simulationAge());
+    if (this.#processed(tx.signature, bank)) {
+      throw new TxError(
+        'AlreadyProcessed',
+        'This transaction has already been processed',
       );
     }
   }
 
   #simulate(view: View, params: readonly unknown[]) {
     const options = (params[1] ?? {}) as Record<string, unknown>;
+    const tx = this.#parseRaw(params[0], options.encoding);
     const bank = this.#bank(view, options.commitment ?? 'finalized');
-    const tx = this.#parseRaw(params[0]);
+    let replacement: { blockhash: string; lastValidBlockHeight: bigint } | undefined;
+    if (options.replaceRecentBlockhash === true) {
+      if (options.sigVerify === true) {
+        throw new RpcFailure(
+          -32602,
+          'sigVerify may not be used with replaceRecentBlockhash',
+        );
+      }
+      replacement = {
+        blockhash: bank.hash,
+        lastValidBlockHeight: bank.height + this.validity,
+      };
+      tx.message.recentBlockhash = bank.hash;
+    }
+    const context = { apiVersion: '4.3.0', slot: bank.slot };
     try {
       if (options.sigVerify === true && !this.#verify(tx)) {
         throw new TxError(
           'SignatureFailure',
           'Transaction did not pass signature verification',
-          true,
         );
       }
-      if (options.replaceRecentBlockhash !== true)
-        this.#blockhashValid(tx, bank, bank.height + 1n);
+      this.#check(tx, bank);
       const executed = this.#execute(tx, new Map(bank.state));
+      const lamports = (state: State) => tx.keys.map((k) => state.get(k)?.lamports ?? 0n);
       return {
-        context: { apiVersion: '4.3.0', slot: bank.slot },
-        value: { ...simulation(executed.err, executed.units), fee: executed.fee },
+        context,
+        value: simulation(executed.err, {
+          units: executed.units,
+          logs: executed.logs,
+          fee: executed.fee,
+          balances: {
+            pre: lamports(executed.pre),
+            post: lamports(executed.post),
+            preToken: this.#tokenBalances(tx, executed.pre),
+            postToken: this.#tokenBalances(tx, executed.post),
+          },
+          ...(replacement ? { replacement } : {}),
+        }),
       };
     } catch (error) {
       if (!(error instanceof TxError)) throw error;
       return {
-        context: { apiVersion: '4.3.0', slot: bank.slot },
-        value: simulation(error.value, 0n),
+        context,
+        value: simulation(error.value, replacement ? { replacement } : {}),
       };
     }
   }
 
   #send(view: View, params: readonly unknown[]): string {
     const options = (params[1] ?? {}) as Record<string, unknown>;
-    if (options.encoding !== 'base64')
-      throw new RpcFailure(-32602, 'Invalid params: encoding');
-    const tx = this.#parseRaw(params[0]);
+    const tx = this.#parseRaw(params[0], options.encoding);
     this.#sends.set(tx.signature, this.sendCount(tx.signature) + 1);
     if (options.skipPreflight === true) {
       // agave forwards unverified bytes; a leader drops a bad signature, so it never lands.
       if (!this.#verify(tx)) return tx.signature;
     } else {
       const bank = this.#bank(view, options.preflightCommitment ?? 'finalized');
-      const fail = (error: TxError, units = 0n) =>
+      const fail = (error: TxError, executed?: Executed) =>
         new RpcFailure(
           -32002,
           `Transaction simulation failed: ${error.display}`,
-          simulation(error.value, units),
+          simulation(
+            error.value,
+            executed
+              ? { units: executed.units, logs: executed.logs, fee: executed.fee }
+              : {},
+          ),
         );
       if (!this.#verify(tx)) {
         throw fail(
@@ -1215,24 +1637,16 @@ export class ScriptedSolanaNode {
           ),
         );
       }
+      let executed: Executed;
       try {
-        this.#blockhashValid(tx, bank, bank.height + 1n);
-        if (this.#processed(tx.signature, bank)) {
-          throw new TxError(
-            'AlreadyProcessed',
-            'This transaction has already been processed',
-          );
-        }
-        const executed = this.#execute(tx, new Map(bank.state));
-        if (executed.err !== null) {
-          throw fail(
-            new TxError(executed.err, executed.display ?? 'failed'),
-            executed.units,
-          );
-        }
+        this.#check(tx, bank);
+        executed = this.#execute(tx, new Map(bank.state));
       } catch (error) {
         if (error instanceof TxError) throw fail(error);
         throw error;
+      }
+      if (executed.err !== null) {
+        throw fail(new TxError(executed.err, executed.display ?? 'failed'), executed);
       }
     }
     if (!this.#processed(tx.signature, this.head)) this.#mempool.set(tx.signature, tx);
@@ -1240,15 +1654,14 @@ export class ScriptedSolanaNode {
   }
 
   #getBlocks(view: View, params: readonly unknown[]): bigint[] {
+    const options = (params[2] ?? {}) as Record<string, unknown>;
+    ScriptedSolanaNode.#atLeastConfirmed(options.commitment);
     const start = BigInt(params[0] as number);
     const end = BigInt(params[1] as number);
-    const bank = this.#bank(
-      view,
-      ((params[2] ?? {}) as Record<string, unknown>).commitment,
-    );
+    const bank = this.#bank(view, options.commitment);
     if (end - start > 500_000n)
       throw new RpcFailure(-32602, 'Slot range too large; max 500000');
-    const minContextSlot = ((params[2] ?? {}) as Record<string, unknown>).minContextSlot;
+    const minContextSlot = options.minContextSlot;
     if (typeof minContextSlot === 'number' && BigInt(minContextSlot) > bank.slot) {
       throw new RpcFailure(-32016, 'Minimum context slot has not been reached', {
         contextSlot: bank.slot,
@@ -1272,23 +1685,33 @@ export class ScriptedSolanaNode {
       .map((b) => b.slot);
   }
 
+  /** agave's `check_is_at_least_confirmed`, for the history and block methods. */
+  static #atLeastConfirmed(commitment: unknown): void {
+    if (commitment === 'processed') {
+      throw new RpcFailure(
+        -32602,
+        'Method does not support commitment below `confirmed`',
+      );
+    }
+  }
+
   #blockAt(view: View, slot: bigint, bank: Block): Block {
     if (slot > bank.slot)
       throw new RpcFailure(-32004, `Block not available for slot ${slot}`);
+    // Below the first available block a slot is cleaned up, skipped or not: agave's
+    // skipped-slot check knows no pruned slot. agave names that block by its slot.
+    const first = this.#blocks[Number(view.firstAvailable)]?.slot ?? this.#nextSlot;
+    if (view.firstAvailable > 0n && slot < first) {
+      throw new RpcFailure(
+        -32001,
+        `Block ${slot} cleaned up, does not exist on node. First available block: ${first}`,
+      );
+    }
     const block = this.#bySlot.get(slot);
     if (!block || block.height > bank.height) {
       throw new RpcFailure(
         -32007,
         `Slot ${slot} was skipped, or missing due to ledger jump to recent snapshot`,
-      );
-    }
-    if (block.height < view.firstAvailable) {
-      // agave names the first available block by its slot.
-      const first =
-        this.#blocks[Number(view.firstAvailable)]?.slot ?? view.firstAvailable;
-      throw new RpcFailure(
-        -32001,
-        `Block ${slot} cleaned up, does not exist on node. First available block: ${first}`,
       );
     }
     if (view.missing.has(block.height)) {
@@ -1302,12 +1725,7 @@ export class ScriptedSolanaNode {
 
   #getBlock(view: View, params: readonly unknown[]) {
     const options = (params[1] ?? {}) as Record<string, unknown>;
-    if (options.commitment === 'processed') {
-      throw new RpcFailure(
-        -32602,
-        'Method does not support commitment below `confirmed`',
-      );
-    }
+    ScriptedSolanaNode.#atLeastConfirmed(options.commitment);
     const bank = this.#bank(view, options.commitment);
     const block = this.#blockAt(view, BigInt(params[0] as number), bank);
     // A failed long-term-storage read is not "block not found": agave answers `null`.
@@ -1346,6 +1764,7 @@ export class ScriptedSolanaNode {
     const options = (params[1] ?? {}) as Record<string, unknown>;
     if (options.encoding !== 'jsonParsed')
       throw new RpcFailure(-32602, 'Invalid params: encoding');
+    ScriptedSolanaNode.#atLeastConfirmed(options.commitment);
     const bank = this.#bank(view, options.commitment);
     const found = this.#find(params[0] as string, bank);
     if (!found || !this.#holds(view, found.block.height)) return null;
@@ -1362,6 +1781,7 @@ export class ScriptedSolanaNode {
     const limit = Number(options.limit ?? 1000);
     if (limit < 1 || limit > 1000)
       throw new RpcFailure(-32602, 'Invalid limit; max 1000');
+    ScriptedSolanaNode.#atLeastConfirmed(options.commitment);
     const bank = this.#bank(view, options.commitment);
     const all: { block: Block; executed: Executed }[] = [];
     for (let h = Number(bank.height); h >= Number(view.firstAvailable); h--) {
@@ -1499,7 +1919,7 @@ export class ScriptedSolanaNode {
         err: executed.err,
         fee: executed.fee,
         innerInstructions: executed.inner,
-        logMessages: [],
+        logMessages: executed.logs,
         postBalances: tx.keys.map((k) => executed.post.get(k)?.lamports ?? 0n),
         postTokenBalances: this.#tokenBalances(tx, executed.post),
         preBalances: tx.keys.map((k) => executed.pre.get(k)?.lamports ?? 0n),
