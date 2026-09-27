@@ -38,6 +38,13 @@ export interface TronNetworkConfig {
   readonly energyMarginPercent: number;
 }
 
+/**
+ * The only driver options (`HandleOptions.options`) the Tron driver reads. Any other key is
+ * refused, so a typo such as `expirationMS` fails loudly instead of leaving the default in
+ * place (lesson 10).
+ */
+const OPTION_KEYS: ReadonlySet<string> = new Set(['expirationMs', 'energyMarginPercent']);
+
 function integerIn(
   value: unknown,
   min: number,
@@ -74,6 +81,10 @@ export function tronNetworkConfig(
   }
   if (network.feeModel !== 'tron') fail(`its fee model must be 'tron'`);
   if (network.finality.kind !== 'solidified') fail(`its finality must be 'solidified'`);
+  // The error names the key only, never its value.
+  for (const key of Object.keys(options)) {
+    if (!OPTION_KEYS.has(key)) fail(`unknown option '${key}'`);
+  }
   return {
     identity: network.identity as string,
     expirationMs:

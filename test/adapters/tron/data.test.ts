@@ -125,6 +125,8 @@ describe('Tron chain data (verified, Appendix A)', () => {
     const nile = TRON_CHAIN.networks.nile as NetworkInfo;
     for (const network of [
       { ...nile, identity: '0xabc' },
+      { ...nile, identity: undefined },
+      { ...nile, identity: GENESIS.nile.toUpperCase() },
       { ...nile, feeModel: 'evm-1559' },
       { ...nile, finality: { kind: 'confirmations', confirmations: 19 } as const },
     ]) {
@@ -132,22 +134,55 @@ describe('Tron chain data (verified, Appendix A)', () => {
         expect.objectContaining({ code: 'CONFIG_INVALID' }),
       );
     }
-    expect(() => tronNetworkConfig({ ...TRON_CHAIN, ordering: 'nonce' }, nile)).toThrow(
-      expect.objectContaining({ code: 'CONFIG_INVALID' }),
-    );
+    for (const chain of [
+      { ...TRON_CHAIN, ordering: 'nonce' as const },
+      { ...TRON_CHAIN, family: 'evm' },
+    ]) {
+      expect(() => tronNetworkConfig(chain, nile)).toThrow(
+        expect.objectContaining({ code: 'CONFIG_INVALID' }),
+      );
+    }
     expect(
       tronNetworkConfig(TRON_CHAIN, nile, { expirationMs: MAX_EXPIRATION_MS })
         .expirationMs,
     ).toBe(300_000);
+    for (const energyMarginPercent of [0, 1_000]) {
+      expect(
+        tronNetworkConfig(TRON_CHAIN, nile, { energyMarginPercent }).energyMarginPercent,
+      ).toBe(energyMarginPercent);
+    }
     for (const options of [
       { expirationMs: 9_999 },
       { expirationMs: 300_001 },
       { energyMarginPercent: -1 },
+      { energyMarginPercent: 1_001 },
+      { energyMarginPercent: 20.5 },
       { expirationMs: '60000' },
     ]) {
       expect(() => tronNetworkConfig(TRON_CHAIN, nile, options)).toThrow(
         expect.objectContaining({ code: 'CONFIG_INVALID' }),
       );
+    }
+  });
+
+  it('refuses an unknown option key, naming the key and never its value (lesson 10)', () => {
+    const nile = TRON_CHAIN.networks.nile as NetworkInfo;
+    for (const [key, value] of [
+      ['expirationMS', 120_000],
+      ['feeLimit', 'value-that-must-stay-private'],
+      ['constructor', 7_777],
+      ['extra', undefined],
+    ] as const) {
+      let caught: unknown;
+      try {
+        tronNetworkConfig(TRON_CHAIN, nile, { expirationMs: 60_000, [key]: value });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: 'CONFIG_INVALID' });
+      const { message } = caught as Error;
+      expect(message).toContain(`unknown option '${key}'`);
+      expect(message).not.toContain(String(value));
     }
   });
 });
