@@ -292,3 +292,14 @@ export type {
   TronFeeOverride,
   TronResources,
 } from './adapters/tron/types';
+export type {
+  UtxoAddressType,
+  UtxoExt,
+  UtxoFeeDetails,
+  UtxoFeeOverride,
+  UtxoOutputType,
+  UtxoSelectionPreview,
+  UtxoSelectionRequest,
+  UtxoUnspent,
+  UtxoWalletOptions,
+} from './adapters/utxo/types';
