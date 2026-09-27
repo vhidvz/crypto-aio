@@ -15,6 +15,7 @@ import {
 } from '@ton/core';
 import { ProviderError, ValidationError } from '../../core/errors/error';
 import { parseTonAddress, rawAddress, type TonWorkchain } from './address';
+import { bocWithinLimits } from './api';
 
 /** TEP-74 op codes, and the text-comment op (0). */
 export const OP = Object.freeze({
@@ -37,24 +38,9 @@ export const MAX_MEMO_BYTES = 1024;
  */
 export const MAX_ADDRESS_BOC_LENGTH = 4096;
 
-/**
- * Lesson 20: the most cells a message body may hold, checked in the BOC header before the
- * SDK parses anything. TON refuses a message of more than 2^13 cells or 2^21 bits (config
- * param 43, "account and message limits", docs.ton.org/foundations/config; the node's
- * defaults `max_msg_cells = 1 << 13` and `max_msg_bits = 1 << 21` in `SizeLimitsConfig`,
- * ton-blockchain/ton `crypto/block/mc-config.h`), so no body the chain carried holds more.
- * The text length alone does not bound the work: minimal cells cost about 4 bytes each,
- * and `Cell.fromBoc` takes about 20-50 µs per cell.
- */
-export const MAX_BODY_CELLS = 1 << 13;
-
-/**
- * Lesson 20: the longest message body BOC text `cellFromBoc` decodes. The same limits give
- * at most 2^21 / 8 bytes of data in 2^13 cells, each with 2 descriptor bytes, 4 two-byte
- * refs, a rounding byte and a 3-byte index entry, plus a header and a checksum: under
- * 377,000 bytes, about 502,500 base64 characters.
- */
-export const MAX_BODY_BOC_LENGTH = 1 << 19;
+// Lesson 20: the body limits (`MAX_BODY_CELLS`, `MAX_BODY_BOC_LENGTH`) and their header
+// check live in the SDK-free `api.ts`, which bounds the cells it hands on the same way.
+export { MAX_BODY_BOC_LENGTH, MAX_BODY_CELLS } from './api';
 
 /**
  * Lesson 20: the most cells a comment's snake chain may span. A cell holds at most 127
@@ -390,34 +376,11 @@ export function messageFacts(message: MessageRelaxed): {
   };
 }
 
-/**
- * The cell count a BOC header declares, for the three layouts `@ton/core` reads (magic,
- * then the size byte or flags with the size in their low 3 bits, the offset size, and the
- * count in `size` bytes); undefined for anything else.
- */
-function bocCellCount(bytes: Buffer): number | undefined {
-  if (bytes.length < 6) return undefined;
-  const magic = bytes.readUInt32BE(0);
-  const head = bytes[4] as number;
-  const size =
-    magic === 0xb5ee9c72
-      ? head & 0x07
-      : magic === 0x68ff65f3 || magic === 0xacc3a728
-        ? head
-        : 0;
-  if (size < 1 || size > 4 || bytes.length < 6 + size) return undefined;
-  return bytes.readUIntBE(6, size);
-}
-
 /** A body cell from a base64 BOC; null when it does not parse. */
 export function cellFromBoc(boc: string | null | undefined): Cell | null {
-  if (typeof boc !== 'string' || boc.length === 0) return null;
-  if (boc.length > MAX_BODY_BOC_LENGTH) return null;
+  if (typeof boc !== 'string' || !bocWithinLimits(boc)) return null;
   try {
-    const bytes = Buffer.from(boc, 'base64');
-    const count = bocCellCount(bytes);
-    if (count === undefined || count > MAX_BODY_CELLS) return null;
-    const cells = Cell.fromBoc(bytes);
+    const cells = Cell.fromBoc(Buffer.from(boc, 'base64'));
     return cells.length === 1 ? (cells[0] as Cell) : null;
   } catch {
     return null;

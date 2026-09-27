@@ -1,3 +1,4 @@
+import { Cell, loadMessage } from '@ton/core';
 import {
   MASTERCHAIN_SHARD,
   MONITOR,
@@ -13,6 +14,7 @@ import type {
   HttpRequest,
   Transport,
 } from '../../../src/core/transport/types';
+import { canonicalJson } from '../../../src/core/util/json';
 import { signedBoc, testWallet, tonNode } from './support/harness';
 
 const TESTNET = -3;
@@ -20,24 +22,38 @@ const GRAM = 1_000_000_000n;
 const RECIPIENT = `0:${'11'.repeat(32)}`;
 /** 32 zero bytes, as toncenter writes a hash (base64). */
 const ZERO = `${'A'.repeat(43)}=`;
+const MASTER = `0:${'77'.repeat(32)}`;
+/** USDT's master in its user-friendly form: a valid address, but not the raw form. */
+const FRIENDLY = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 
-/** Records each call's route and tags (R41, R14). */
+interface Recorded {
+  readonly route?: string;
+  readonly path: string;
+  readonly options: CallOptions;
+  readonly quorumKey?: (result: unknown) => unknown;
+  answer?: unknown;
+}
+
+/** Records each call's route, tags, quorum key and answer (R41, R14, M7). */
 function recorded(transport: Transport) {
-  const calls: { route?: string; path: string; options: CallOptions }[] = [];
+  const calls: Recorded[] = [];
   const proxy: Transport = new Proxy(transport, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver) as unknown;
       if (prop !== 'http' || typeof value !== 'function') {
         return typeof value === 'function' ? value.bind(target) : value;
       }
-      return (request: HttpRequest, options: CallOptions = {}) => {
-        const { signal: _signal, quorumKey: _key, ...tags } = options;
-        calls.push({
+      return async (request: HttpRequest, options: CallOptions = {}) => {
+        const { signal: _signal, quorumKey, ...tags } = options;
+        const call: Recorded = {
           ...(request.route !== undefined ? { route: request.route } : {}),
           path: request.path,
           options: tags,
-        });
-        return (value as Transport['http']).call(target, request, options);
+          ...(quorumKey ? { quorumKey } : {}),
+        };
+        calls.push(call);
+        call.answer = await (value as Transport['http']).call(target, request, options);
+        return call.answer;
       };
     },
   });
@@ -64,6 +80,56 @@ async function withTransfer(t: ReturnType<typeof tonNode>) {
 async function indexerBody(t: ReturnType<typeof tonNode>, path: string) {
   const response = await t.node.fetch.fetch(`${t.node.endpoint('main', 'v3')}${path}`);
   return (await response.json()) as Record<string, unknown>;
+}
+
+type Json = Record<string, unknown>;
+/** A v3 transaction's description, and one of its phases. */
+const desc = (tx: Json) => tx.description as Json;
+const phase = (tx: Json, name: 'compute_ph' | 'action') => desc(tx)[name] as Json;
+
+/** Our transfer's wallet transaction, parsed and as the indexer writes it. */
+async function transferJson(t: ReturnType<typeof tonNode>) {
+  const { wallet, hashNorm, sent } = await withTransfer(t);
+  const [tx] = await t.run(t.api.transactionsByMessage(hashNorm, READ));
+  const body = await indexerBody(t, `/transactions?hash=${tx!.hash}`);
+  const [json] = body.transactions as Json[];
+  return { wallet, hashNorm, sent, tx: tx!, json: json! };
+}
+
+/** A v2 account state answer with these amounts. */
+function accountAnswer(balance: string, lt = '1') {
+  return {
+    ok: true,
+    result: {
+      balance,
+      state: 'active',
+      last_transaction_id: { lt, hash: ZERO },
+      block_id: {
+        workchain: -1,
+        shard: MASTERCHAIN_SHARD,
+        seqno: 1,
+        root_hash: ZERO,
+        file_hash: ZERO,
+      },
+      sync_utime: 1,
+    },
+  };
+}
+
+/** A BOC header (magic b5ee9c72, 2-byte counts) declaring `cells` cells. */
+function bocHeader(cells: number): string {
+  return Buffer.from([
+    0xb5,
+    0xee,
+    0x9c,
+    0x72,
+    0x02,
+    0x01,
+    cells >> 8,
+    cells & 0xff,
+    0,
+    0,
+  ]).toString('base64');
 }
 
 const malformedAnswer = {
@@ -126,34 +192,82 @@ describe('the toncenter API layer', () => {
     expect(await t.run(t.api.reachedMasterchain(t.node.head + 1, PROOF))).toBe(false);
   });
 
-  it('tags every call per the ChainDriver table and labels it with a route', async () => {
+  it('tags all 18 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
     const t = tonNode();
+    t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
+    const { wallet, hashNorm } = await withTransfer(t);
+    const next = await signedBoc('v4r2', TESTNET, {
+      seqno: 1,
+      validUntil: Math.floor(t.clock.now() / 1000) + 60,
+      deploy: false,
+      messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+    });
+    const body = loadMessage(
+      Cell.fromBoc(Buffer.from(next.boc, 'base64'))[0]!.beginParse(),
+    )
+      .body.toBoc()
+      .toString('base64');
     const rpc = recorded(t.rpc);
     const indexer = recorded(t.indexer);
     const api = new TonApi(rpc.proxy, indexer.proxy);
+    const head = await t.run(api.masterchainHead(PROOF));
+    await t.run(api.reachedMasterchain(head, PROOF));
+    const [shard] = await t.run(api.shards(head, PROOF));
+    await t.run(api.blockHeader(shard!, PROOF));
+    const header = await t.run(api.masterchainHeader(head, PROOF));
+    await t.run(api.configParam(19, PROOF));
+    await t.run(api.account(wallet, PROOF));
+    await t.run(api.runGetMethod(wallet, 'seqno', [], PROOF));
+    await t.run(api.estimateFee({ address: wallet, body }, PROOF));
+    await t.run(api.send(next.boc, PROOF));
+    await t.run(api.indexerHead(PROOF));
+    expect(await t.run(api.masterchainSeqnoOf(header.id.rootHash, PROOF))).toBe(head);
+    const [tx] = await t.run(api.transactionsByMessage(hashNorm, PROOF));
+    expect(await t.run(api.transaction(tx!.hash, PROOF))).toEqual(tx);
+    await t.run(api.accountTransactions(wallet, { limit: 5 }, PROOF));
+    await t.run(api.trace(tx!.hash, PROOF));
+    expect(await t.run(api.jettonContent(MASTER, PROOF))).toEqual({
+      decimals: '6',
+      symbol: 'TST',
+    });
+    expect(await t.run(api.tokenSymbol(MASTER, PROOF))).toBe('TST');
+    expect(rpc.calls.map((call) => call.route)).toEqual([
+      '/getMasterchainInfo',
+      '/getMasterchainInfo',
+      '/getShards',
+      '/getBlockHeader',
+      '/getBlockHeader',
+      '/getConfigParam',
+      '/getAddressInformation',
+      '/runGetMethod',
+      '/estimateFee',
+      '/sendBocReturnHash',
+    ]);
+    expect(indexer.calls.map((call) => call.route)).toEqual([
+      '/masterchainInfo',
+      '/blocks',
+      '/transactionsByMessage',
+      '/transactions',
+      '/transactions',
+      '/traces',
+      '/jetton/masters',
+      '/metadata',
+    ]);
+    for (const call of [...rpc.calls, ...indexer.calls]) {
+      expect(call.path).toBe(call.route);
+      // A12: every call reads integers exactly (toncenter writes some u64 values as numbers).
+      expect(call.options).toEqual({ ...PROOF, exactIntegers: true });
+      // M6: a default key over the parsed facts reaches the transport; it reads neither the
+      // envelope (v2's `@extra`) nor fields the method does not read.
+      expect(call.quorumKey).toEqual(expect.any(Function));
+      const facts = canonicalJson(call.quorumKey!(call.answer));
+      const reformatted = { ...(call.answer as object), '@extra': 'other', unread: 1 };
+      expect(canonicalJson(call.quorumKey!(reformatted))).toBe(facts);
+    }
+    // A read without a quorum carries no key.
     await t.run(api.masterchainHead(MONITOR));
-    await t.run(api.masterchainHeader(1, PROOF));
-    await t.run(api.transactionsByMessage('ab'.repeat(32), MONITOR));
-    // A12: every call reads integers exactly (toncenter writes some u64 values as numbers).
-    expect(rpc.calls).toEqual([
-      {
-        route: '/getMasterchainInfo',
-        path: '/getMasterchainInfo',
-        options: { ...MONITOR, exactIntegers: true },
-      },
-      {
-        route: '/getBlockHeader',
-        path: '/getBlockHeader',
-        options: { ...PROOF, exactIntegers: true },
-      },
-    ]);
-    expect(indexer.calls).toEqual([
-      {
-        route: '/transactionsByMessage',
-        path: '/transactionsByMessage',
-        options: { ...MONITOR, exactIntegers: true },
-      },
-    ]);
+    expect(rpc.calls.at(-1)?.options).toEqual({ ...MONITOR, exactIntegers: true });
+    expect(rpc.calls.at(-1)?.quorumKey).toBeUndefined();
   });
 
   it('turns a malformed answer into a retryable PROVIDER_UNAVAILABLE (lesson 6)', async () => {
@@ -392,7 +506,7 @@ describe('the toncenter API layer', () => {
     ).rejects.toMatchObject(malformedAnswer);
   });
 
-  it('refuses an answer about other transactions, or one listed twice', async () => {
+  it('binds lookups to the id asked, and refuses a history that breaks its query', async () => {
     const t = tonNode();
     const { wallet, hashNorm } = await withTransfer(t);
     const [tx] = await t.run(t.api.transactionsByMessage(hashNorm, READ));
@@ -405,11 +519,10 @@ describe('the toncenter API layer', () => {
     let answer: unknown;
     t.node.intercept = (_endpoint, route) =>
       route === '/transactions' || route === '/traces' ? { json: answer } : undefined;
-    // An indexer that drops a filter answers with other transactions: never evidence.
+    // An indexer that drops a filter answers with other transactions: never evidence. A
+    // lookup by id reads that as "none yet"; a history that breaks its query is malformed.
     answer = theirs;
-    await expect(t.run(t.api.transaction(tx!.hash, READ))).rejects.toMatchObject(
-      malformedAnswer,
-    );
+    await expect(t.run(t.api.transaction(tx!.hash, READ))).resolves.toBeNull();
     await expect(
       t.run(t.api.accountTransactions(wallet, { limit: 5 }, READ)),
     ).rejects.toMatchObject(malformedAnswer);
@@ -436,9 +549,7 @@ describe('the toncenter API layer', () => {
     ).resolves.toHaveLength(1);
     // A trace must hold the transaction asked about, each transaction once, under its hash.
     answer = trace;
-    await expect(t.run(t.api.trace('cd'.repeat(32), READ))).rejects.toMatchObject(
-      malformedAnswer,
-    );
+    await expect(t.run(t.api.trace('cd'.repeat(32), READ))).resolves.toBeNull();
     const [one] = trace.traces as {
       transactions_order: string[];
       transactions: Record<string, unknown>;
@@ -470,6 +581,330 @@ describe('the toncenter API layer', () => {
     await expect(t.run(t.api.trace(tx!.hash, READ))).resolves.toMatchObject({
       complete: true,
     });
+  });
+
+  const DRIFTS: readonly (readonly [string, (tx: Json) => void])[] = [
+    ['aborted is missing', (tx) => delete desc(tx).aborted],
+    ['aborted is not a boolean', (tx) => (desc(tx).aborted = 'false')],
+    ['description has no type', (tx) => delete desc(tx).type],
+    ['ord description has no compute phase', (tx) => delete desc(tx).compute_ph],
+    [
+      'tick-tock description has no compute phase',
+      (tx) => {
+        desc(tx).type = 'tick_tock';
+        delete desc(tx).compute_ph;
+      },
+    ],
+    ['compute_ph.skipped is missing', (tx) => delete phase(tx, 'compute_ph').skipped],
+    ['compute_ph.success is missing', (tx) => delete phase(tx, 'compute_ph').success],
+    [
+      'compute_ph.exit_code is not an integer',
+      (tx) => (phase(tx, 'compute_ph').exit_code = 'x'),
+    ],
+    ['action phase is not a record', (tx) => (desc(tx).action = true)],
+    ['action.success is missing', (tx) => delete phase(tx, 'action').success],
+    ['action.result_code is missing', (tx) => delete phase(tx, 'action').result_code],
+    [
+      'action.skipped_actions is missing',
+      (tx) => delete phase(tx, 'action').skipped_actions,
+    ],
+    ['action.msgs_created is missing', (tx) => delete phase(tx, 'action').msgs_created],
+    ['bounce phase has an unknown type', (tx) => (desc(tx).bounce = { type: 'maybe' })],
+    ['in_msg.hash_norm is not a hash', (tx) => ((tx.in_msg as Json).hash_norm = 'x')],
+    [
+      'outbound bounce flag is not a boolean',
+      (tx) => ((tx.out_msgs as Json[])[0]!.bounce = 'no'),
+    ],
+  ];
+
+  it.each(DRIFTS)(
+    'reads a transaction whose %s as malformed, never as a default (I1)',
+    async (_drift, change) => {
+      const t = tonNode();
+      const { tx, json } = await transferJson(t);
+      const drifted = structuredClone(json);
+      change(drifted);
+      t.node.intercept = (_endpoint, route) =>
+        route === '/transactions'
+          ? { json: { transactions: [drifted], address_book: {} } }
+          : undefined;
+      await expect(t.run(t.api.transaction(tx.hash, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    },
+  );
+
+  it('reads what the chain writes: a skipped compute phase, a storage transaction, a bounce (I1)', async () => {
+    const t = tonNode();
+    const { tx, json } = await transferJson(t);
+    let answer = json;
+    t.node.intercept = (_endpoint, route) =>
+      route === '/transactions'
+        ? { json: { transactions: [answer], address_book: {} } }
+        : undefined;
+    answer = structuredClone(json);
+    desc(answer).compute_ph = { skipped: true, reason: 'no_state' };
+    delete desc(answer).action;
+    desc(answer).bounce = { type: 'nofunds' };
+    const skipped = await t.run(t.api.transaction(tx.hash, READ));
+    expect(skipped).toMatchObject({
+      compute: { skipped: true, success: false },
+      bounce: 'nofunds',
+    });
+    expect(skipped?.action).toBeUndefined();
+    answer = structuredClone(json);
+    desc(answer).type = 'storage';
+    delete desc(answer).compute_ph;
+    delete desc(answer).action;
+    await expect(t.run(t.api.transaction(tx.hash, READ))).resolves.toMatchObject({
+      compute: { skipped: true, success: false },
+    });
+  });
+
+  it('keeps only what a lookup by id asked for: a dropped filter reads as "none yet" (I2)', async () => {
+    const t = tonNode();
+    const { hashNorm, sent, tx, json } = await transferJson(t);
+    const theirs = await indexerBody(t, `/transactions?account=${RECIPIENT}&limit=5`);
+    const [stranger] = theirs.transactions as Json[];
+    const header = await t.run(t.api.masterchainHeader(tx.mcSeqno, READ));
+    const other = await t.run(t.api.masterchainHeader(tx.mcSeqno - 1, READ));
+    const blocks = await indexerBody(
+      t,
+      `/blocks?workchain=-1&root_hash=${other.id.rootHash}&limit=1`,
+    );
+    let answer: unknown[] = [];
+    t.node.intercept = (_endpoint, route) =>
+      route === '/transactionsByMessage'
+        ? { json: { transactions: answer, address_book: {} } }
+        : route === '/blocks'
+          ? { json: blocks }
+          : undefined;
+    answer = [stranger];
+    await expect(t.run(t.api.transactionsByMessage(hashNorm, READ))).resolves.toEqual([]);
+    answer = [stranger, json];
+    await expect(t.run(t.api.transactionsByMessage(hashNorm, READ))).resolves.toEqual([
+      tx,
+    ]);
+    await expect(t.run(t.api.transactionsByMessage(sent.hash, READ))).resolves.toEqual([
+      tx,
+    ]);
+    answer = [{ ...json, in_msg: null }];
+    await expect(t.run(t.api.transactionsByMessage(hashNorm, READ))).resolves.toEqual([]);
+    // Another block than the root hash asked for: unknown, not another block's seqno.
+    await expect(
+      t.run(t.api.masterchainSeqnoOf(header.id.rootHash, READ)),
+    ).resolves.toBeNull();
+  });
+
+  it('reads amounts as unsigned coins and logical times as u64 (M1)', async () => {
+    const t = tonNode();
+    const { tx, json } = await transferJson(t);
+    let account = accountAnswer('0');
+    let answer = json;
+    let fees: Json = {};
+    t.node.intercept = (_endpoint, route) =>
+      route === '/getAddressInformation'
+        ? { json: account }
+        : route === '/transactions'
+          ? { json: { transactions: [answer], address_book: {} } }
+          : route === '/estimateFee'
+            ? { json: { ok: true, result: { source_fees: fees } } }
+            : undefined;
+    const refusedStates: [string, string][] = [
+      ['-1', '1'],
+      [(2n ** 120n).toString(), '1'],
+      ['1', '-1'],
+      ['1', (2n ** 64n).toString()],
+    ];
+    for (const [balance, lt] of refusedStates) {
+      account = accountAnswer(balance, lt);
+      await expect(t.run(t.api.account(RECIPIENT, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    }
+    account = accountAnswer((2n ** 120n - 1n).toString(), (2n ** 64n - 1n).toString());
+    await expect(t.run(t.api.account(RECIPIENT, READ))).resolves.toMatchObject({
+      balance: 2n ** 120n - 1n,
+      lastLt: 2n ** 64n - 1n,
+    });
+    const refusedTxs: ((tx: Json) => void)[] = [
+      (tx) => (tx.total_fees = '-1'),
+      (tx) => (tx.lt = '-1'),
+      (tx) => (tx.lt = (2n ** 64n).toString()),
+      (tx) => ((tx.out_msgs as Json[])[0]!.value = '-5'),
+    ];
+    for (const change of refusedTxs) {
+      answer = structuredClone(json);
+      change(answer);
+      await expect(t.run(t.api.transaction(tx.hash, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    }
+    fees = { in_fwd_fee: 0, storage_fee: 0, gas_fee: -1, fwd_fee: 0 };
+    await expect(
+      t.run(t.api.estimateFee({ address: RECIPIENT, body: 'te6cc' }, READ)),
+    ).rejects.toMatchObject(malformedAnswer);
+  });
+
+  it('refuses a non-raw address before any request (M2)', async () => {
+    const t = tonNode();
+    const served = t.node.served.length;
+    const calls: (() => Promise<unknown>)[] = [
+      () => t.api.accountTransactions(FRIENDLY, { limit: 1 }, READ),
+      () => t.api.jettonContent(FRIENDLY, READ),
+      () => t.api.tokenSymbol(FRIENDLY, READ),
+    ];
+    for (const call of calls) {
+      await expect(t.run(call())).rejects.toMatchObject({
+        code: 'INVALID_ADDRESS',
+        retryable: false,
+      });
+    }
+    expect(t.node.served).toHaveLength(served);
+  });
+
+  it('refuses more items than a lookup asked for (M3)', async () => {
+    const t = tonNode();
+    t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
+    const { hashNorm, tx, json } = await transferJson(t);
+    const header = await t.run(t.api.masterchainHeader(tx.mcSeqno, READ));
+    const twice = async (path: string, field: string) => {
+      const body = await indexerBody(t, path);
+      const items = body[field] as unknown[];
+      return { ...body, [field]: [...items, ...items] };
+    };
+    const answers: Json = {
+      '/transactionsByMessage': {
+        transactions: Array.from({ length: 9 }, () => json),
+        address_book: {},
+      },
+      '/transactions': { transactions: [json, json], address_book: {} },
+      '/traces': await twice(`/traces?tx_hash=${tx.hash}`, 'traces'),
+      '/blocks': await twice(
+        `/blocks?workchain=-1&root_hash=${header.id.rootHash}&limit=1`,
+        'blocks',
+      ),
+      '/jetton/masters': await twice(
+        `/jetton/masters?address=${MASTER}`,
+        'jetton_masters',
+      ),
+    };
+    t.node.intercept = (_endpoint, route) =>
+      Object.hasOwn(answers, route) ? { json: answers[route] } : undefined;
+    const calls: (() => Promise<unknown>)[] = [
+      () => t.api.transactionsByMessage(hashNorm, READ),
+      () => t.api.transaction(tx.hash, READ),
+      () => t.api.trace(tx.hash, READ),
+      () => t.api.masterchainSeqnoOf(header.id.rootHash, READ),
+      () => t.api.jettonContent(MASTER, READ),
+    ];
+    for (const call of calls) {
+      await expect(t.run(call())).rejects.toMatchObject(malformedAnswer);
+    }
+  });
+
+  it('holds cells and jetton metadata to their limits (M4)', async () => {
+    const t = tonNode();
+    let bytes = '';
+    let content: Json = {};
+    let symbol: unknown = '';
+    t.node.intercept = (_endpoint, route) =>
+      route === '/getConfigParam'
+        ? { json: { ok: true, result: { config: { bytes } } } }
+        : route === '/runGetMethod'
+          ? { json: { ok: true, result: { exit_code: 0, stack: [['cell', { bytes }]] } } }
+          : route === '/jetton/masters'
+            ? { json: { jetton_masters: [{ address: MASTER, jetton_content: content }] } }
+            : route === '/metadata'
+              ? {
+                  json: {
+                    [MASTER]: { is_indexed: true, token_info: [{ valid: true, symbol }] },
+                  },
+                }
+              : undefined;
+    const cells: (() => Promise<unknown>)[] = [
+      () => t.api.configParam(19, READ),
+      () => t.api.runGetMethod(MASTER, 'get_jetton_data', [], READ),
+    ];
+    // A message's worth of cells (2^13, read from the BOC header) is the accepted end.
+    bytes = bocHeader(8192);
+    for (const call of cells) await expect(t.run(call())).resolves.toBeDefined();
+    for (const refused of [bocHeader(8193), 'A'.repeat(2 ** 19 + 4), 'not a BOC']) {
+      bytes = refused;
+      for (const call of cells) {
+        await expect(t.run(call())).rejects.toMatchObject(malformedAnswer);
+      }
+    }
+    const refusedContent: Json[] = [
+      { symbol: 'S'.repeat(257) },
+      { name: 'N'.repeat(257) },
+      { uri: 'u'.repeat(1025) },
+      { decimals: '256' },
+      { decimals: 'six' },
+      { symbol: 7 },
+    ];
+    for (const refused of refusedContent) {
+      content = refused;
+      await expect(t.run(t.api.jettonContent(MASTER, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    }
+    // The accepted ends; fields the driver does not read (an inline image) are left out.
+    const longest = {
+      symbol: 'S'.repeat(256),
+      name: 'N'.repeat(256),
+      uri: 'u'.repeat(1024),
+      decimals: '255',
+    };
+    content = { ...longest, image_data: 'x'.repeat(100_000) };
+    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toEqual(longest);
+    for (const refused of ['S'.repeat(257), 7]) {
+      symbol = refused;
+      await expect(t.run(t.api.tokenSymbol(MASTER, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    }
+    symbol = 'S'.repeat(256);
+    await expect(t.run(t.api.tokenSymbol(MASTER, READ))).resolves.toBe(symbol);
+  });
+
+  it('reads a malformed jetton master entry as malformed, not as unknown (M5)', async () => {
+    const t = tonNode();
+    let masters: unknown[] = [];
+    let metadata: Json = {};
+    t.node.intercept = (_endpoint, route) =>
+      route === '/jetton/masters'
+        ? { json: { jetton_masters: masters, address_book: {} } }
+        : route === '/metadata'
+          ? { json: metadata }
+          : undefined;
+    const refused: unknown[] = [
+      7,
+      null,
+      { address: MASTER },
+      { address: MASTER, jetton_content: 'x' },
+      { address: 'x', jetton_content: {} },
+    ];
+    for (const entry of refused) {
+      masters = [entry];
+      await expect(t.run(t.api.jettonContent(MASTER, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    }
+    // Another master's entry (a dropped filter) is "none yet", as no entry is.
+    const other = `0:${'88'.repeat(32)}`;
+    masters = [{ address: other, jetton_content: { symbol: 'X' } }];
+    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toBeNull();
+    masters = [];
+    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toBeNull();
+    metadata = {
+      [other]: { is_indexed: true, token_info: [{ valid: true, symbol: 'X' }] },
+    };
+    await expect(t.run(t.api.tokenSymbol(MASTER, READ))).resolves.toBeUndefined();
+    metadata = { [MASTER]: 7 };
+    await expect(t.run(t.api.tokenSymbol(MASTER, READ))).rejects.toMatchObject(
+      malformedAnswer,
+    );
   });
 
   it('converts hashes and addresses strictly', () => {

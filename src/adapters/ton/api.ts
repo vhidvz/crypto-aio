@@ -5,12 +5,18 @@
  * jetton metadata), as REST calls through the core transports. Each call carries its
  * driver method's tags (R41) and a `route` with no identifiers in it (R14), and reads
  * integers exactly (A12: toncenter writes some u64 values as JSON numbers). Answers are
- * validated here: a malformed one, or one about other transactions than asked, is a
- * retryable `PROVIDER_UNAVAILABLE` (lesson 6), never a foreign error; numbers are length
- * capped before conversion (lesson 20). Under a quorum, only consensus facts are compared
- * (lesson 2), or the caller's predicate key (lesson 17). SDK-free.
+ * validated here (lesson 6): a malformed one, including a missing or ill-typed field a
+ * verdict reads, is a retryable `PROVIDER_UNAVAILABLE`, never a default or a foreign error.
+ * Lookups by id keep only what they asked for, so a dropped server-side filter reads as
+ * "none yet"; a history that breaks its query is malformed. Numbers, cells and metadata are
+ * bounded before use (lesson 20). Under a quorum, every method compares the parsed facts it
+ * returns (lesson 2, M5), or the caller's predicate key (lesson 17). SDK-free.
  */
-import { ProviderError, isCryptoAioError } from '../../core/errors/error';
+import {
+  ProviderError,
+  ValidationError,
+  isCryptoAioError,
+} from '../../core/errors/error';
 import type { CallOptions, HttpRequest, Transport } from '../../core/transport/types';
 import type { TonCallTags } from './types';
 
@@ -27,6 +33,59 @@ export const withSignal = (tags: TonCallTags, signal?: AbortSignal): TonCallTags
 
 /** The masterchain's one shard, as toncenter v2 writes it. */
 export const MASTERCHAIN_SHARD = '-9223372036854775808';
+
+/**
+ * Lesson 20: the most cells a message body may hold, checked in the BOC header before the
+ * SDK parses anything. TON refuses a message of more than 2^13 cells or 2^21 bits (config
+ * param 43, "account and message limits", docs.ton.org/foundations/config; the node's
+ * defaults `max_msg_cells = 1 << 13` and `max_msg_bits = 1 << 21` in `SizeLimitsConfig`,
+ * ton-blockchain/ton `crypto/block/mc-config.h`), so no body the chain carried holds more.
+ * The text length alone does not bound the work: minimal cells cost about 4 bytes each,
+ * and `Cell.fromBoc` takes about 20-50 µs per cell.
+ */
+export const MAX_BODY_CELLS = 1 << 13;
+
+/**
+ * Lesson 20: the longest message body BOC text `cellFromBoc` decodes. The same limits give
+ * at most 2^21 / 8 bytes of data in 2^13 cells, each with 2 descriptor bytes, 4 two-byte
+ * refs, a rounding byte and a 3-byte index entry, plus a header and a checksum: under
+ * 377,000 bytes, about 502,500 base64 characters.
+ */
+export const MAX_BODY_BOC_LENGTH = 1 << 19;
+
+/**
+ * The cell count a BOC header declares, for the three layouts `@ton/core` reads (magic,
+ * then the size byte or flags with the size in their low 3 bits, the offset size, and the
+ * count in `size` bytes); undefined for anything else.
+ */
+function bocCellCount(bytes: Buffer): number | undefined {
+  if (bytes.length < 6) return undefined;
+  const magic = bytes.readUInt32BE(0);
+  const head = bytes[4] as number;
+  const size =
+    magic === 0xb5ee9c72
+      ? head & 0x07
+      : magic === 0x68ff65f3 || magic === 0xacc3a728
+        ? head
+        : 0;
+  if (size < 1 || size > 4 || bytes.length < 6 + size) return undefined;
+  return bytes.readUIntBE(6, size);
+}
+
+/**
+ * Lesson 20: whether a base64 BOC is within one message's limits: at most
+ * `MAX_BODY_BOC_LENGTH` characters, and a header (its first 16 characters) declaring at most
+ * `MAX_BODY_CELLS` cells. SDK-free, so the API layer bounds the cells it hands on (config
+ * params, get-method stacks) and `cellFromBoc` the bodies it decodes.
+ */
+export function bocWithinLimits(boc: string): boolean {
+  if (boc.length === 0 || boc.length > MAX_BODY_BOC_LENGTH) return false;
+  const count = bocCellCount(Buffer.from(boc.slice(0, 16), 'base64'));
+  return count !== undefined && count <= MAX_BODY_CELLS;
+}
+
+/** M4: the longest jetton metadata texts read from the indexer (decimals: 0..255). */
+const CONTENT_LIMITS = { symbol: 256, name: 256, uri: 1024 } as const;
 
 type Json = Record<string, unknown>;
 
@@ -49,8 +108,21 @@ function need<T>(value: T | undefined | null, route: string): T {
   return value;
 }
 
+/** An optional field: absent (undefined or null), else `read` must accept it (lesson 6). */
+function optional<T>(
+  value: unknown,
+  read: (value: unknown) => T | undefined,
+  route: string,
+): T | undefined {
+  return value === undefined || value === null ? undefined : need(read(value), route);
+}
+
 const str = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
+const bool = (value: unknown): boolean | undefined =>
+  typeof value === 'boolean' ? value : undefined;
+const record = (value: unknown): Json | undefined =>
+  isRecord(value) ? value : undefined;
 const int = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isSafeInteger(value)
     ? value
@@ -69,6 +141,19 @@ const big = (value: unknown): bigint | undefined =>
       : typeof value === 'number' && Number.isSafeInteger(value)
         ? BigInt(value)
         : undefined;
+
+const COINS_MAX = 2n ** 120n - 1n;
+const U64_MAX = 2n ** 64n - 1n;
+
+/** M1: an unsigned integer up to `max`. */
+function unsigned(value: unknown, max: bigint): bigint | undefined {
+  const n = big(value);
+  return n !== undefined && n >= 0n && n <= max ? n : undefined;
+}
+/** An amount of nanograms (`Coins`, a VarUInteger 16: below 2^120). */
+const coins = (value: unknown): bigint | undefined => unsigned(value, COINS_MAX);
+/** A logical time (u64). */
+const u64 = (value: unknown): bigint | undefined => unsigned(value, U64_MAX);
 
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
@@ -96,6 +181,22 @@ export function rawOf(value: unknown): string | null | undefined {
   if (typeof value !== 'string' || !/^(0|-1):[0-9a-fA-F]{64}$/.test(value))
     return undefined;
   return value.toLowerCase();
+}
+
+/**
+ * M2: a lookup that filters its answer by address needs the address's raw form (the
+ * codec's canonical form); anything else is refused before any request, never retried as a
+ * provider fault.
+ */
+function rawAddress(address: string): string {
+  const raw = rawOf(address);
+  if (!raw) {
+    throw new ValidationError(
+      'INVALID_ADDRESS',
+      'a toncenter lookup needs a raw address',
+    );
+  }
+  return raw;
 }
 
 // ---- wire types (validated) ---------------------------------------------------------------
@@ -134,6 +235,7 @@ export interface AccountState {
 
 export type StackEntry =
   | { readonly type: 'num'; readonly value: bigint }
+  /** A cell or slice (base64 BOC), within one message's limits (lesson 20). */
   | { readonly type: 'cell'; readonly boc: string }
   | { readonly type: 'other' };
 
@@ -177,6 +279,10 @@ export interface V3Transaction {
   readonly traceId: string;
   readonly totalFees: bigint;
   readonly aborted: boolean;
+  /**
+   * The compute phase. A skipped one is `{ skipped: true, success: false }`, and so is the
+   * missing phase of a transaction type that has none (storage, split, merge).
+   */
   readonly compute: {
     readonly skipped: boolean;
     readonly success: boolean;
@@ -202,9 +308,13 @@ export interface V3Trace {
 }
 
 // ---- parsers ------------------------------------------------------------------------------
+// Lesson 6, sharpened: a field a verdict reads is required, or optional and then well
+// typed; a missing or ill-typed one is malformed (retryable), never `false` or `0`. Every
+// endpoint running the same indexer would agree on a drifted answer, so a quorum does not
+// catch what the parser lets through.
 
 function blockIdOf(value: unknown, route: string): BlockId {
-  const v = need(isRecord(value) ? value : undefined, route);
+  const v = need(record(value), route);
   return {
     workchain: need(int(v.workchain), route),
     shard: need(shardOf(v.shard), route),
@@ -217,6 +327,13 @@ function blockIdOf(value: unknown, route: string): BlockId {
 function v2Result(body: unknown, route: string): unknown {
   if (!isRecord(body) || body.ok !== true || !('result' in body)) throw malformed(route);
   return body.result;
+}
+
+/** A cell's base64 BOC, within one message's limits (M4, lesson 20). */
+function cellOf(value: unknown, route: string): string {
+  const boc = need(str(value), route);
+  if (!bocWithinLimits(boc)) throw malformed(route);
+  return boc;
 }
 
 function stackOf(value: unknown, route: string): StackEntry[] {
@@ -239,68 +356,94 @@ function stackOf(value: unknown, route: string): StackEntry[] {
       type === 'tvm.Cell' ||
       type === 'tvm.Slice'
     ) {
-      const boc = isRecord(data) ? str(data.bytes) : str(data);
-      return { type: 'cell', boc: need(boc, route) };
+      return { type: 'cell', boc: cellOf(isRecord(data) ? data.bytes : data, route) };
     }
     return { type: 'other' };
   });
 }
 
 function messageOf(value: unknown, route: string): V3Message {
-  const m = need(isRecord(value) ? value : undefined, route);
-  const content = isRecord(m.message_content) ? m.message_content : undefined;
+  const m = need(record(value), route);
+  const content = optional(m.message_content, record, route);
   const source = rawOf(m.source ?? null);
   const destination = rawOf(m.destination ?? null);
   if (source === undefined || destination === undefined) throw malformed(route);
-  const hashNorm =
-    m.hash_norm === undefined || m.hash_norm === null ? undefined : hashHex(m.hash_norm);
-  const bodyHash = content ? hashHex(content.hash) : undefined;
-  const body = content ? str(content.body) : undefined;
+  const hashNorm = optional(m.hash_norm, hashHex, route);
+  const bodyHash = content ? optional(content.hash, hashHex, route) : undefined;
+  const body = content ? optional(content.body, str, route) : undefined;
   return {
     hash: need(hashHex(m.hash), route),
     ...(hashNorm !== undefined ? { hashNorm } : {}),
     source,
     destination,
-    value: m.value === null || m.value === undefined ? null : need(big(m.value), route),
-    bounce: typeof m.bounce === 'boolean' ? m.bounce : null,
-    bounced: typeof m.bounced === 'boolean' ? m.bounced : null,
+    value: optional(m.value, coins, route) ?? null,
+    bounce: optional(m.bounce, bool, route) ?? null,
+    bounced: optional(m.bounced, bool, route) ?? null,
     ...(bodyHash !== undefined ? { bodyHash } : {}),
     ...(body !== undefined ? { body } : {}),
   };
 }
 
+/** Transaction types with a compute phase (block.tlb `trans_ord`, `trans_tick_tock`). */
+const COMPUTING: ReadonlySet<string> = new Set(['ord', 'tick_tock']);
+/** Bounce phase types (block.tlb `tr_phase_bounce_ok`, `_nofunds`, `_negfunds`). */
+const BOUNCES: ReadonlySet<string> = new Set(['ok', 'nofunds', 'negfunds']);
+
+/** I1: the compute phase; an ord or tick-tock transaction always has one. */
+function computeOf(d: Json, route: string): V3Transaction['compute'] {
+  const type = need(str(d.type), route);
+  if (d.compute_ph === undefined || d.compute_ph === null) {
+    if (COMPUTING.has(type)) throw malformed(route);
+    return { skipped: true, success: false };
+  }
+  const c = need(record(d.compute_ph), route);
+  const skipped = need(bool(c.skipped), route);
+  // A skipped phase (`tr_phase_compute_skipped`) carries only its reason.
+  const success = skipped
+    ? (optional(c.success, bool, route) ?? false)
+    : need(bool(c.success), route);
+  const exitCode = optional(c.exit_code, int, route);
+  return { skipped, success, ...(exitCode !== undefined ? { exitCode } : {}) };
+}
+
+/** I1: the action phase, when there was one, with every field a verdict reads. */
+function actionOf(value: unknown, route: string): V3Transaction['action'] {
+  const a = optional(value, record, route);
+  if (!a) return undefined;
+  return {
+    success: need(bool(a.success), route),
+    resultCode: need(int(a.result_code), route),
+    skippedActions: need(int(a.skipped_actions), route),
+    msgsCreated: need(int(a.msgs_created), route),
+  };
+}
+
+/** M4: the bounce phase's type, one of block.tlb's three. */
+function bounceOf(value: unknown, route: string): string | undefined {
+  const b = optional(value, record, route);
+  if (!b) return undefined;
+  const type = need(str(b.type), route);
+  if (!BOUNCES.has(type)) throw malformed(route);
+  return type;
+}
+
 export function transactionOf(value: unknown, route: string): V3Transaction {
-  const t = need(isRecord(value) ? value : undefined, route);
-  const d = need(isRecord(t.description) ? t.description : undefined, route);
-  const c = isRecord(d.compute_ph) ? d.compute_ph : {};
-  const a = isRecord(d.action) ? d.action : undefined;
-  const b = isRecord(d.bounce) ? d.bounce : undefined;
-  const exitCode = int(c.exit_code);
+  const t = need(record(value), route);
+  const d = need(record(t.description), route);
+  const action = actionOf(d.action, route);
+  const bounce = bounceOf(d.bounce, route);
   return {
     hash: need(hashHex(t.hash), route),
-    lt: need(big(t.lt), route),
+    lt: need(u64(t.lt), route),
     account: need(rawOf(t.account) ?? undefined, route),
     now: need(int(t.now), route),
     mcSeqno: need(int(t.mc_block_seqno), route),
     traceId: need(hashHex(t.trace_id), route),
-    totalFees: need(big(t.total_fees), route),
-    aborted: d.aborted === true,
-    compute: {
-      skipped: c.skipped === true,
-      success: c.success === true,
-      ...(exitCode !== undefined ? { exitCode } : {}),
-    },
-    ...(a
-      ? {
-          action: {
-            success: a.success === true,
-            resultCode: int(a.result_code) ?? 0,
-            skippedActions: int(a.skipped_actions) ?? 0,
-            msgsCreated: int(a.msgs_created) ?? 0,
-          },
-        }
-      : {}),
-    ...(b && typeof b.type === 'string' ? { bounce: b.type } : {}),
+    totalFees: need(coins(t.total_fees), route),
+    aborted: need(bool(d.aborted), route),
+    compute: computeOf(d, route),
+    ...(action ? { action } : {}),
+    ...(bounce !== undefined ? { bounce } : {}),
     inMsg:
       t.in_msg === null || t.in_msg === undefined ? null : messageOf(t.in_msg, route),
     outMsgs: need(Array.isArray(t.out_msgs) ? t.out_msgs : undefined, route).map((m) =>
@@ -313,14 +456,21 @@ export function transactionOf(value: unknown, route: string): V3Transaction {
 const committed = (value: unknown): boolean =>
   !(isRecord(value) && value.emulated === true);
 
-function transactionsOf(body: unknown, route: string): V3Transaction[] {
-  if (!isRecord(body) || !Array.isArray(body.transactions)) throw malformed(route);
+/** A v3 transaction list, emulated ones dropped; more than `limit` items is malformed (M3). */
+function transactionsOf(body: unknown, route: string, limit: number): V3Transaction[] {
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.transactions) ||
+    body.transactions.length > limit
+  ) {
+    throw malformed(route);
+  }
   return body.transactions.filter(committed).map((t) => transactionOf(t, route));
 }
 
-/** A block header, parsed (shared by `blockHeader` and its quorum key). */
+/** A block header, parsed. */
 function headerOf(result: unknown, route: string): BlockHeader {
-  const h = need(isRecord(result) ? result : undefined, route);
+  const h = need(record(result), route);
   return {
     id: blockIdOf(h.id, route),
     globalId: need(int(h.global_id), route),
@@ -331,9 +481,14 @@ function headerOf(result: unknown, route: string): BlockHeader {
   };
 }
 
-/** An account state, parsed (shared by `account` and its quorum key). */
+/** The newest masterchain block a `getMasterchainInfo` result names. */
+function lastOf(result: unknown, route: string): BlockId {
+  return blockIdOf(need(isRecord(result) ? result.last : undefined, route), route);
+}
+
+/** An account state, parsed. */
 function accountOf(result: unknown, route: string): AccountState {
-  const r = need(isRecord(result) ? result : undefined, route);
+  const r = need(record(result), route);
   const state = r.state;
   const status: AccountStatus | undefined =
     state === 'active' || state === 'frozen'
@@ -341,14 +496,11 @@ function accountOf(result: unknown, route: string): AccountState {
       : state === 'uninitialized' || state === 'uninit' || state === 'nonexist'
         ? 'uninitialized'
         : undefined;
-  const last = need(
-    isRecord(r.last_transaction_id) ? r.last_transaction_id : undefined,
-    route,
-  );
+  const last = need(record(r.last_transaction_id), route);
   return {
-    balance: need(big(r.balance), route),
+    balance: need(coins(r.balance), route),
     status: need(status, route),
-    lastLt: need(big(last.lt), route),
+    lastLt: need(u64(last.lt), route),
     lastHash: need(hashHex(last.hash), route),
     blockSeqno: blockIdOf(r.block_id, route).seqno,
     syncUtime: need(int(r.sync_utime), route),
@@ -369,21 +521,14 @@ export function runResultOf(body: unknown): RunResult {
 }
 
 /**
- * A trace, parsed (shared by `trace` and its quorum key): its transactions in trace order,
- * an emulated one as `undefined`. Each is listed once, under its own hash; anything else is
- * malformed (a transaction counted twice would count its transfer twice).
+ * A trace, parsed: its transactions in trace order, each listed once under its own hash
+ * (a transaction counted twice would count its transfer twice). An emulated one is left
+ * out and leaves the trace incomplete.
  */
-function traceParts(
-  value: unknown,
-  route: string,
-): {
-  readonly traceId: string;
-  readonly complete: boolean;
-  readonly entries: readonly (V3Transaction | undefined)[];
-} {
-  const t = need(isRecord(value) ? value : undefined, route);
+function traceOf(value: unknown, route: string): V3Trace {
+  const t = need(record(value), route);
   const info = isRecord(t.trace_info) ? t.trace_info : {};
-  const txs = need(isRecord(t.transactions) ? t.transactions : undefined, route);
+  const txs = need(record(t.transactions), route);
   const order = need(
     Array.isArray(t.transactions_order) ? t.transactions_order : undefined,
     route,
@@ -406,49 +551,35 @@ function traceParts(
       t.is_incomplete === false &&
       info.trace_state === 'complete' &&
       entries.every((tx) => tx !== undefined),
-    entries,
-  };
-}
-
-function traceOf(value: unknown, route: string): V3Trace {
-  const { entries, ...trace } = traceParts(value, route);
-  return {
-    ...trace,
     transactions: entries.filter((tx): tx is V3Transaction => tx !== undefined),
   };
 }
 
-// ---- quorum keys (lesson 2) ----------------------------------------------------------------
-// Each key is the parsed value (M5): honest endpoints that format a fact differently (a
-// number or a string, `uninit` or `uninitialized`) agree, and a key that throws is a
-// disagreement. A key covers every field a verdict reads (C1); message bodies are left out
-// (their serialization varies) and are bound to the keyed body hash where they are decoded
-// (`messageBody`). The transport compares keys as canonical JSON, bigints included.
-
-function blockKey(body: unknown): unknown {
-  // The facts a proof reads; `prev_blocks` only feeds `getBlock`'s parent hash (a `read`).
-  const { prev: _prev, ...facts } = headerOf(v2Result(body, 'quorum'), 'quorum');
-  return facts;
+/** M4: the indexed jetton content fields the driver reads, each within its limit. */
+function contentOf(value: unknown, route: string): Readonly<Record<string, string>> {
+  const c = need(record(value), route);
+  const content: Record<string, string> = {};
+  for (const [field, limit] of Object.entries(CONTENT_LIMITS)) {
+    const text = optional(c[field], str, route);
+    if (text === undefined) continue;
+    if (text.length > limit) throw malformed(route);
+    content[field] = text;
+  }
+  const decimals = optional(c.decimals, int, route);
+  if (decimals !== undefined) {
+    if (decimals < 0 || decimals > 255) throw malformed(route);
+    content.decimals = String(decimals);
+  }
+  return content;
 }
 
-function accountKey(body: unknown): unknown {
-  // `sync_utime` is when the endpoint answered, not a fact of the state at that block.
-  const { syncUtime: _syncUtime, ...facts } = accountOf(
-    v2Result(body, 'quorum'),
-    'quorum',
-  );
-  return facts;
-}
-
-function runKey(body: unknown): unknown {
-  return runResultOf(body);
-}
-
-function shardsKey(body: unknown): unknown {
-  const r = v2Result(body, 'quorum');
-  if (!isRecord(r) || !Array.isArray(r.shards)) throw malformed('quorum');
-  return r.shards.map((s) => blockIdOf(s, 'quorum'));
-}
+// ---- quorum facts (lesson 2) ---------------------------------------------------------------
+// Each method's key is its parsed value (M5, M6): honest endpoints that format a fact
+// differently (a number or a string, `uninit` or `uninitialized`, v2's `@extra`) agree, and
+// a key that throws is a disagreement. A key covers every field a verdict reads (C1);
+// message bodies are left out (their serialization varies) and are bound to the keyed body
+// hash where they are decoded (`messageBody`). The transport compares keys as canonical
+// JSON, bigints included.
 
 /** Every fact of a transaction a verdict or a decoding reads, bodies as their hashes. */
 function factsOf(tx: V3Transaction): unknown {
@@ -461,20 +592,20 @@ function factsOf(tx: V3Transaction): unknown {
   return { ...facts, inMsg: message(inMsg), outMsgs: outMsgs.map(message) };
 }
 
-function transactionsKey(body: unknown): unknown {
-  return transactionsOf(body, 'quorum').map(factsOf);
-}
-
-/** A trace's completeness and every transaction's full facts, in trace order (C1). */
-function tracesKey(body: unknown): unknown {
-  if (!isRecord(body) || !Array.isArray(body.traces)) throw malformed('quorum');
-  return body.traces.map((value) => {
-    const { entries, ...trace } = traceParts(value, 'quorum');
-    return { ...trace, txs: entries.map((tx) => (tx ? factsOf(tx) : null)) };
-  });
+/** A trace's id, completeness and every transaction's facts, in trace order (C1). */
+function traceFacts(trace: V3Trace | null): unknown {
+  return trace && { ...trace, transactions: trace.transactions.map(factsOf) };
 }
 
 // ---- the client ---------------------------------------------------------------------------
+
+/** Validates an answer body; `route` labels a malformed one. */
+type Parse<T> = (body: unknown, route: string) => T;
+
+const itself = (value: unknown): unknown => value;
+
+/** The most transactions a message hash can name (a few forks of one external, retried). */
+const BY_MESSAGE_LIMIT = 8;
 
 export class TonApi {
   constructor(
@@ -491,14 +622,14 @@ export class TonApi {
     transport: Transport,
     request: HttpRequest,
     tags: TonCallTags,
-    quorumKey?: (result: unknown) => unknown,
+    quorumKey: (result: unknown) => unknown,
   ): Promise<unknown> {
     // The caller's key (a predicate, lesson 17) replaces the call's consensus facts.
     const key = tags.quorumKey ?? quorumKey;
     const options: CallOptions = {
       ...tags,
       exactIntegers: true,
-      ...(tags.quorum !== undefined && key ? { quorumKey: key } : {}),
+      ...(tags.quorum !== undefined ? { quorumKey: key } : {}),
     };
     try {
       return await transport.http<unknown>(request, options);
@@ -524,56 +655,80 @@ export class TonApi {
     }
   }
 
-  async #v2(
+  /**
+   * One request whose answer `parse` validates (lesson 6). Under a quorum, each endpoint's
+   * answer is keyed on `facts` of its parsed value: the fields a verdict reads, never the
+   * envelope (lesson 2, M5, M6).
+   */
+  async #read<T>(
+    transport: Transport,
+    request: HttpRequest & { readonly route: string },
+    tags: TonCallTags,
+    parse: Parse<T>,
+    facts: (value: T) => unknown = itself,
+  ): Promise<T> {
+    const body = await this.#call(transport, request, tags, (answer) =>
+      facts(parse(answer, 'quorum')),
+    );
+    return parse(body, request.route);
+  }
+
+  #v2<T>(
     route: string,
     query: Record<string, string>,
     tags: TonCallTags,
-    quorumKey?: (result: unknown) => unknown,
-  ): Promise<unknown> {
-    const body = await this.#call(
+    parse: Parse<T>,
+    facts?: (value: T) => unknown,
+  ): Promise<T> {
+    return this.#read(
       this.rpc,
       { method: 'GET', path: route, query, route },
       tags,
-      quorumKey,
+      (body, label) => parse(v2Result(body, label), label),
+      facts,
     );
-    return v2Result(body, route);
   }
 
-  async #v2Post(
+  #v2Post<T>(
     route: string,
     body: Json,
     tags: TonCallTags,
-    quorumKey?: (result: unknown) => unknown,
-  ): Promise<unknown> {
-    const answer = await this.#call(
+    parse: Parse<T>,
+    facts?: (value: T) => unknown,
+  ): Promise<T> {
+    return this.#read(
       this.rpc,
       { method: 'POST', path: route, body, route },
       tags,
-      quorumKey,
+      (answer, label) => parse(v2Result(answer, label), label),
+      facts,
     );
-    return v2Result(answer, route);
   }
 
-  #v3(
+  #v3<T>(
     route: string,
     query: Record<string, string>,
     tags: TonCallTags,
-    quorumKey?: (result: unknown) => unknown,
-  ): Promise<unknown> {
-    return this.#call(
+    parse: Parse<T>,
+    facts?: (value: T) => unknown,
+  ): Promise<T> {
+    return this.#read(
       this.indexer,
       { method: 'GET', path: route, query, route },
       tags,
-      quorumKey,
+      parse,
+      facts,
     );
   }
 
   /** The newest masterchain block the liteserver knows. */
-  async masterchainHead(tags: TonCallTags): Promise<number> {
-    const route = '/getMasterchainInfo';
-    const result = await this.#v2(route, {}, tags);
-    return blockIdOf(need(isRecord(result) ? result.last : undefined, route), route)
-      .seqno;
+  masterchainHead(tags: TonCallTags): Promise<number> {
+    return this.#v2(
+      '/getMasterchainInfo',
+      {},
+      tags,
+      (result, route) => lastOf(result, route).seqno,
+    );
   }
 
   /**
@@ -581,41 +736,32 @@ export class TonApi {
    * final once it exists). Under a quorum the key is this predicate (lesson 17): endpoints
    * past `seqno` agree whatever their heads.
    */
-  async reachedMasterchain(seqno: number, tags: TonCallTags): Promise<boolean> {
-    const route = '/getMasterchainInfo';
-    const reached = (body: unknown): boolean => {
-      const result = v2Result(body, route);
-      const last = blockIdOf(
-        need(isRecord(result) ? result.last : undefined, route),
-        route,
-      );
-      return last.seqno >= seqno;
-    };
-    const body = await this.#call(
-      this.rpc,
-      { method: 'GET', path: route, route },
-      { ...tags, ...(tags.quorum !== undefined ? { quorumKey: reached } : {}) },
+  reachedMasterchain(seqno: number, tags: TonCallTags): Promise<boolean> {
+    return this.#v2(
+      '/getMasterchainInfo',
+      {},
+      tags,
+      (result, route) => lastOf(result, route).seqno >= seqno,
     );
-    return reached(body);
   }
 
   /** A block's header; `seqno` above the endpoint's head fails (retryable). */
-  async blockHeader(
+  blockHeader(
     block: { readonly workchain: number; readonly shard: string; readonly seqno: number },
     tags: TonCallTags,
   ): Promise<BlockHeader> {
-    const route = '/getBlockHeader';
-    const result = await this.#v2(
-      route,
+    return this.#v2(
+      '/getBlockHeader',
       {
         workchain: String(block.workchain),
         shard: block.shard,
         seqno: String(block.seqno),
       },
       tags,
-      blockKey,
+      headerOf,
+      // The facts a proof reads; `prev_blocks` only feeds `getBlock`'s parent hash (a `read`).
+      ({ prev: _prev, ...facts }) => facts,
     );
-    return headerOf(result, route);
   }
 
   masterchainHeader(seqno: number, tags: TonCallTags): Promise<BlockHeader> {
@@ -623,70 +769,62 @@ export class TonApi {
   }
 
   /** The shard blocks masterchain block `seqno` commits. */
-  async shards(seqno: number, tags: TonCallTags): Promise<BlockId[]> {
-    const route = '/getShards';
-    const result = await this.#v2(route, { seqno: String(seqno) }, tags, shardsKey);
-    const shards = need(
-      isRecord(result) && Array.isArray(result.shards) ? result.shards : undefined,
-      route,
+  shards(seqno: number, tags: TonCallTags): Promise<BlockId[]> {
+    return this.#v2('/getShards', { seqno: String(seqno) }, tags, (result, route) =>
+      need(
+        isRecord(result) && Array.isArray(result.shards) ? result.shards : undefined,
+        route,
+      ).map((s) => blockIdOf(s, route)),
     );
-    return shards.map((s) => blockIdOf(s, route));
   }
 
-  /** A config param's cell (base64 BOC). */
-  async configParam(param: number, tags: TonCallTags, seqno?: number): Promise<string> {
-    const route = '/getConfigParam';
-    const result = await this.#v2(
-      route,
+  /** A config param's cell (base64 BOC, within one message's limits). */
+  configParam(param: number, tags: TonCallTags, seqno?: number): Promise<string> {
+    return this.#v2(
+      '/getConfigParam',
       {
         param: String(param),
         ...(seqno !== undefined ? { seqno: String(seqno) } : {}),
       },
       tags,
+      (result, route) =>
+        cellOf(
+          need(isRecord(result) ? record(result.config) : undefined, route).bytes,
+          route,
+        ),
     );
-    const config = need(
-      isRecord(result) && isRecord(result.config) ? result.config : undefined,
-      route,
-    );
-    return need(str(config.bytes), route);
   }
 
   /** An account's state, at masterchain block `seqno` when given. */
-  async account(
-    address: string,
-    tags: TonCallTags,
-    seqno?: number,
-  ): Promise<AccountState> {
-    const route = '/getAddressInformation';
-    const result = await this.#v2(
-      route,
+  account(address: string, tags: TonCallTags, seqno?: number): Promise<AccountState> {
+    return this.#v2(
+      '/getAddressInformation',
       { address, ...(seqno !== undefined ? { seqno: String(seqno) } : {}) },
       tags,
-      accountKey,
+      accountOf,
+      // `sync_utime` is when the endpoint answered, not a fact of the state at that block.
+      ({ syncUtime: _syncUtime, ...facts }) => facts,
     );
-    return accountOf(result, route);
   }
 
   /** A get-method, at masterchain block `seqno` when given. */
-  async runGetMethod(
+  runGetMethod(
     address: string,
     method: string,
     stack: readonly (readonly [string, string])[],
     tags: TonCallTags,
     seqno?: number,
   ): Promise<RunResult> {
-    const route = '/runGetMethod';
-    const result = await this.#v2Post(
-      route,
+    return this.#v2Post(
+      '/runGetMethod',
       { address, method, stack, ...(seqno !== undefined ? { seqno } : {}) },
       tags,
-      runKey,
+      runOf,
     );
-    return runOf(result, route);
   }
 
   /** The emulated source fees of an external message body (signature check skipped). */
-  async estimateFee(
+  estimateFee(
     request: {
       readonly address: string;
       readonly body: string;
@@ -695,9 +833,8 @@ export class TonApi {
     },
     tags: TonCallTags,
   ): Promise<SourceFees> {
-    const route = '/estimateFee';
-    const result = await this.#v2Post(
-      route,
+    return this.#v2Post(
+      '/estimateFee',
       {
         address: request.address,
         body: request.body,
@@ -706,98 +843,117 @@ export class TonApi {
         ignore_chksig: true,
       },
       tags,
+      (result, route): SourceFees => {
+        // toncenter writes these fees as JSON numbers: read exactly (A12), as coins (M1).
+        const fees = need(
+          isRecord(result) ? record(result.source_fees) : undefined,
+          route,
+        );
+        return {
+          importFee: need(coins(fees.in_fwd_fee), route),
+          storageFee: need(coins(fees.storage_fee), route),
+          gasFee: need(coins(fees.gas_fee), route),
+          forwardFee: need(coins(fees.fwd_fee), route),
+        };
+      },
     );
-    // toncenter writes these fees as JSON numbers: read exactly (A12).
-    const fees = need(
-      isRecord(result) && isRecord(result.source_fees) ? result.source_fees : undefined,
-      route,
-    );
-    return {
-      importFee: need(big(fees.in_fwd_fee), route),
-      storageFee: need(big(fees.storage_fee), route),
-      gasFee: need(big(fees.gas_fee), route),
-      forwardFee: need(big(fees.fwd_fee), route),
-    };
   }
 
   /** Sends an external message; resolves with the node's hashes (hex). */
-  async send(boc: string, tags: TonCallTags): Promise<SentMessage> {
-    const route = '/sendBocReturnHash';
-    const result = await this.#v2Post(route, { boc }, tags);
-    const r = need(isRecord(result) ? result : undefined, route);
-    return {
-      hash: need(hashHex(r.hash), route),
-      hashNorm: need(hashHex(r.hash_norm), route),
-    };
+  send(boc: string, tags: TonCallTags): Promise<SentMessage> {
+    return this.#v2Post('/sendBocReturnHash', { boc }, tags, (result, route) => {
+      const r = need(record(result), route);
+      return {
+        hash: need(hashHex(r.hash), route),
+        hashNorm: need(hashHex(r.hash_norm), route),
+      };
+    });
   }
 
   /** The indexer's newest indexed masterchain block and the network's global id. */
-  async indexerHead(
+  indexerHead(
     tags: TonCallTags,
   ): Promise<{ readonly seqno: number; readonly globalId: number }> {
-    const route = '/masterchainInfo';
-    const body = await this.#v3(route, {}, tags);
-    const last = need(
-      isRecord(body) && isRecord(body.last) ? body.last : undefined,
-      route,
-    );
-    return {
-      seqno: need(int(last.seqno), route),
-      globalId: need(int(last.global_id), route),
-    };
+    return this.#v3('/masterchainInfo', {}, tags, (body, route) => {
+      const last = need(isRecord(body) ? record(body.last) : undefined, route);
+      return {
+        seqno: need(int(last.seqno), route),
+        globalId: need(int(last.global_id), route),
+      };
+    });
   }
 
   /** The seqno of the masterchain block with this root hash (hex); null if unknown. */
-  async masterchainSeqnoOf(rootHash: string, tags: TonCallTags): Promise<number | null> {
-    const route = '/blocks';
-    const body = await this.#v3(
-      route,
+  masterchainSeqnoOf(rootHash: string, tags: TonCallTags): Promise<number | null> {
+    const wanted = hashHex(rootHash);
+    return this.#v3(
+      '/blocks',
       { workchain: '-1', root_hash: rootHash, limit: '1' },
       tags,
+      (body, route) => {
+        if (!isRecord(body) || !Array.isArray(body.blocks) || body.blocks.length > 1) {
+          throw malformed(route);
+        }
+        for (const item of body.blocks) {
+          const block = need(record(item), route);
+          const workchain = need(int(block.workchain), route);
+          // A lookup by id keeps only the block asked for (I2).
+          if (workchain === -1 && need(hashHex(block.root_hash), route) === wanted) {
+            return need(int(block.seqno), route);
+          }
+        }
+        return null;
+      },
     );
-    if (!isRecord(body) || !Array.isArray(body.blocks)) throw malformed(route);
-    const [first] = body.blocks;
-    if (first === undefined) return null;
-    const block = need(isRecord(first) ? first : undefined, route);
-    if (hashHex(block.root_hash) !== rootHash) throw malformed(route);
-    return need(int(block.seqno), route);
-  }
-
-  /** Committed transactions whose inbound message has this raw or normalized hash (hex). */
-  async transactionsByMessage(hash: string, tags: TonCallTags): Promise<V3Transaction[]> {
-    const route = '/transactionsByMessage';
-    const body = await this.#v3(
-      route,
-      { msg_hash: hash, direction: 'in', limit: '8' },
-      tags,
-      transactionsKey,
-    );
-    return transactionsOf(body, route);
-  }
-
-  /** The committed transaction with this hash; an answer about another one is malformed. */
-  async transaction(hash: string, tags: TonCallTags): Promise<V3Transaction | null> {
-    const route = '/transactions';
-    const body = await this.#v3(route, { hash, limit: '1' }, tags, transactionsKey);
-    const wanted = hashHex(hash);
-    const txs = transactionsOf(body, route);
-    if (txs.some((tx) => tx.hash !== wanted)) throw malformed(route);
-    return txs[0] ?? null;
   }
 
   /**
-   * An account's (raw address) transactions, newest first, at or below `endLt` when given.
-   * An answer that breaks the query (another account, an lt out of order or above `endLt`,
-   * more than `limit`) is malformed: a verdict reads this list as the account's history.
+   * Committed transactions whose inbound message has this raw or normalized hash (hex).
+   * I2: only those; a dropped filter's strangers read as "none yet".
+   */
+  transactionsByMessage(hash: string, tags: TonCallTags): Promise<V3Transaction[]> {
+    const wanted = hashHex(hash);
+    return this.#v3(
+      '/transactionsByMessage',
+      { msg_hash: hash, direction: 'in', limit: String(BY_MESSAGE_LIMIT) },
+      tags,
+      (body, route) =>
+        transactionsOf(body, route, BY_MESSAGE_LIMIT).filter(
+          (tx) =>
+            wanted !== undefined &&
+            tx.inMsg !== null &&
+            (tx.inMsg.hash === wanted || tx.inMsg.hashNorm === wanted),
+        ),
+      (txs) => txs.map(factsOf),
+    );
+  }
+
+  /** The committed transaction with this hash; null when the indexer has none (yet). */
+  transaction(hash: string, tags: TonCallTags): Promise<V3Transaction | null> {
+    const wanted = hashHex(hash);
+    return this.#v3(
+      '/transactions',
+      { hash, limit: '1' },
+      tags,
+      (body, route) =>
+        transactionsOf(body, route, 1).find((tx) => tx.hash === wanted) ?? null,
+      (tx) => (tx ? factsOf(tx) : null),
+    );
+  }
+
+  /**
+   * An account's transactions (a raw address, M2), newest first, at or below `endLt` when
+   * given. An answer that breaks the query (another account, an lt out of order or above
+   * `endLt`, more than `limit`) is malformed: a verdict reads it as the account's history.
    */
   async accountTransactions(
     account: string,
     options: { readonly limit: number; readonly endLt?: bigint },
     tags: TonCallTags,
   ): Promise<V3Transaction[]> {
-    const route = '/transactions';
-    const body = await this.#v3(
-      route,
+    const wanted = rawAddress(account);
+    return this.#v3(
+      '/transactions',
       {
         account,
         limit: String(options.limit),
@@ -805,78 +961,106 @@ export class TonApi {
         ...(options.endLt !== undefined ? { end_lt: options.endLt.toString() } : {}),
       },
       tags,
-      transactionsKey,
+      (body, route) => {
+        const txs = transactionsOf(body, route, options.limit);
+        let below = options.endLt === undefined ? undefined : options.endLt + 1n;
+        for (const tx of txs) {
+          if (tx.account !== wanted || (below !== undefined && tx.lt >= below)) {
+            throw malformed(route);
+          }
+          below = tx.lt;
+        }
+        return txs;
+      },
+      (txs) => txs.map(factsOf),
     );
-    const txs = transactionsOf(body, route);
-    if (txs.length > options.limit) throw malformed(route);
-    const wanted = rawOf(account);
-    let below = options.endLt === undefined ? undefined : options.endLt + 1n;
-    for (const tx of txs) {
-      if (tx.account !== wanted || (below !== undefined && tx.lt >= below)) {
-        throw malformed(route);
-      }
-      below = tx.lt;
-    }
-    return txs;
+  }
+
+  /** The trace that holds this transaction; null when the indexer has none (yet). */
+  trace(txHash: string, tags: TonCallTags): Promise<V3Trace | null> {
+    const wanted = hashHex(txHash);
+    return this.#v3(
+      '/traces',
+      { tx_hash: txHash, include_actions: 'false', limit: '1' },
+      tags,
+      (body, route) => {
+        if (!isRecord(body) || !Array.isArray(body.traces) || body.traces.length > 1) {
+          throw malformed(route);
+        }
+        for (const value of body.traces) {
+          const trace = traceOf(value, route);
+          // A lookup by id keeps only the trace asked for (I2).
+          if (trace.transactions.some((tx) => tx.hash === wanted)) return trace;
+        }
+        return null;
+      },
+      traceFacts,
+    );
   }
 
   /**
-   * The trace a transaction belongs to; null when the indexer has none yet. A trace that
-   * does not hold the transaction is malformed.
+   * A jetton master's indexed content (`decimals`, `symbol`, `name`, `uri`; M4), for a raw
+   * master address (M2); null when the indexer has no entry for it (yet).
    */
-  async trace(txHash: string, tags: TonCallTags): Promise<V3Trace | null> {
-    const route = '/traces';
-    const body = await this.#v3(
-      route,
-      { tx_hash: txHash, include_actions: 'false', limit: '1' },
-      tags,
-      tracesKey,
-    );
-    if (!isRecord(body) || !Array.isArray(body.traces)) throw malformed(route);
-    const [first] = body.traces;
-    if (first === undefined) return null;
-    const trace = traceOf(first, route);
-    const wanted = hashHex(txHash);
-    if (!trace.transactions.some((tx) => tx.hash === wanted)) throw malformed(route);
-    return trace;
-  }
-
-  /** A jetton master's indexed content (`decimals`, `symbol`, `uri`…); null if unknown. */
   async jettonContent(
     master: string,
     tags: TonCallTags,
   ): Promise<Readonly<Record<string, string>> | null> {
-    const route = '/jetton/masters';
-    const body = await this.#v3(route, { address: master, limit: '1' }, tags);
-    if (!isRecord(body) || !Array.isArray(body.jetton_masters)) throw malformed(route);
-    const [first] = body.jetton_masters;
-    if (!isRecord(first)) return null;
-    const content = isRecord(first.jetton_content) ? first.jetton_content : {};
-    return Object.fromEntries(
-      Object.entries(content).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string',
-      ),
+    const wanted = rawAddress(master);
+    return this.#v3(
+      '/jetton/masters',
+      { address: master, limit: '1' },
+      tags,
+      (body, route) => {
+        if (
+          !isRecord(body) ||
+          !Array.isArray(body.jetton_masters) ||
+          body.jetton_masters.length > 1
+        ) {
+          throw malformed(route);
+        }
+        for (const item of body.jetton_masters) {
+          const entry = need(record(item), route);
+          // A lookup by id keeps only the master asked for (I2); its entry is well formed (M5).
+          if (need(rawOf(entry.address) ?? undefined, route) !== wanted) continue;
+          return contentOf(entry.jetton_content, route);
+        }
+        return null;
+      },
     );
   }
 
-  /** The indexer's token symbol for an address, when it has one. */
+  /** The indexer's token symbol for a raw address (M2), when it has one. */
   async tokenSymbol(address: string, tags: TonCallTags): Promise<string | undefined> {
-    const route = '/metadata';
-    const body = await this.#v3(route, { address }, tags);
-    if (!isRecord(body)) throw malformed(route);
-    for (const entry of Object.values(body)) {
-      const info =
-        isRecord(entry) && Array.isArray(entry.token_info) ? entry.token_info : [];
-      for (const token of info) {
-        if (
-          isRecord(token) &&
-          token.valid !== false &&
-          typeof token.symbol === 'string'
-        ) {
-          return token.symbol;
+    const wanted = rawAddress(address);
+    return this.#v3(
+      '/metadata',
+      { address },
+      tags,
+      (body, route) => {
+        if (!isRecord(body)) throw malformed(route);
+        for (const [key, value] of Object.entries(body)) {
+          // The answer is keyed by address; a lookup by id reads only its own entry (I2).
+          if (rawOf(key) !== wanted) continue;
+          const entry = need(record(value), route);
+          const info =
+            optional(
+              entry.token_info,
+              (v) => (Array.isArray(v) ? v : undefined),
+              route,
+            ) ?? [];
+          for (const item of info) {
+            const token = need(record(item), route);
+            if (token.valid === false) continue;
+            const symbol = optional(token.symbol, str, route);
+            if (symbol === undefined) continue;
+            if (symbol.length > CONTENT_LIMITS.symbol) throw malformed(route);
+            return symbol;
+          }
         }
-      }
-    }
-    return undefined;
+        return undefined;
+      },
+      (symbol) => symbol ?? null,
+    );
   }
 }
