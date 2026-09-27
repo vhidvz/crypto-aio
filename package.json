@@ -50,12 +50,14 @@
     "debug": "^4.4.3"
   },
   "peerDependencies": {
+    "@solana/web3.js": "^1.99.0",
     "bitcoinjs-lib": "^7.0.2",
     "ethers": "^6.17.0",
     "tronweb": "^6.5.1",
     "web3": "^4.16.0"
   },
   "peerDependenciesMeta": {
+    "@solana/web3.js": { "optional": true },
     "bitcoinjs-lib": { "optional": true },
     "ethers": { "optional": true },
     "tronweb": { "optional": true },
@@ -63,6 +65,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@solana/web3.js": "1.99.0",
     "@types/debug": "^4.1.13",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.20.4",
