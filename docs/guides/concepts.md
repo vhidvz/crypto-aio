@@ -71,18 +71,20 @@ public key only (watch-only), or give an xpub for deposit addresses. A **signer*
 place private keys live (see [Keys, signers and secrets](./security.md)). An **`Address`** is
 bound to one chain. Compare addresses with `canonical` or `equals()`, and show `display`.
 
-`bc.deriveAddress(wallet, index)` derives deposit addresses from a wallet's `xpub` (with
-`xpubPath`, default `0/{index}`, and `xpubVersions` for formats other than `xpub` and `tpub`).
-On UTXO chains an extended key's version names its network: a mainnet key (`xpub`, `ypub`,
-`zpub`) on a test network, or a test key (`tpub`, `upub`, `vpub`) on mainnet, is refused with
-`CONFIG_INVALID`. Account-model chains (EVM, Tron) accept an `xpub` on every network, as their
-wallets export it.
-
 ```ts
 const { signer } = localSigner.generate({ curves: ['secp256k1'], id: 'hot' });
 const wallets = { main: { signer: 'hot', tier: 'hot' }, cold: { publicKey: '02ab…' } };
 const me = await bc.walletAddress(); // an Address; me.canonical === 'fk1…'
 ```
+
+`bc.deriveAddress(wallet, index)` derives deposit addresses from a wallet's `xpub` (with
+`xpubPath`, default `0/{index}`, and `xpubVersions` for formats other than `xpub` and `tpub`).
+On UTXO chains, a key whose version is a Bitcoin SLIP-0132 version (mainnet `xpub`/`ypub`/
+`zpub`/`Ypub`/`Zpub`, test `tpub`/`upub`/`vpub`/`Upub`/`Vpub`) must match the network: a
+mainnet key on a test network, or a test key on mainnet, is refused with `CONFIG_INVALID`.
+Versions outside that table, including custom `xpubVersions` that are not in it, are not
+checked. Account-model chains (EVM, Tron) accept an `xpub` on every network, as their wallets
+export it.
 
 ## Asset and Amount
 

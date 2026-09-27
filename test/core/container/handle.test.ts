@@ -22,7 +22,7 @@ import { fakeAddress } from '../../../src/testing/fake-chain';
 import { createFakeEnv, type FakeChainId, type FakeEnv } from '../../../src/testing/env';
 import { fakeDriverFactory } from '../../../src/testing/fake-driver';
 import { fakeManifest, fakePlugin } from '../../../src/testing/fake-plugin';
-import type { ChainInfo } from '../../../src/core/model/chain';
+import type { ChainInfo, NetworkInfo } from '../../../src/core/model/chain';
 import { thrown } from '../../helpers';
 
 afterEach(() => resetDefaultContainer());
@@ -226,29 +226,41 @@ describe('Blockchain handle', () => {
     // The fake chain is an account-model test network: its xpub keeps deriving, as EVM and
     // Tron wallets export `xpub` on every network.
     await expect(env.run(env.bc.deriveAddress('x', 0))).resolves.toBeDefined();
-    // A UTXO-model test network, served by the same fake driver.
-    const [fakechain] = fakePlugin().chains ?? [];
+    // A UTXO-model chain, with a test network and a mainnet, served by the same fake driver.
+    const fakechain = (fakePlugin().chains ?? [])[0] as ChainInfo;
+    const local = fakechain.networks['local'] as NetworkInfo;
     env.aio.use({
       name: 'fake-utxo',
       chains: [
         {
-          ...(fakechain as ChainInfo),
+          ...fakechain,
           id: 'fakeutxo',
           family: 'fakeutxo',
           model: 'utxo',
+          networks: { local, main: { ...local, id: 'main', testnet: false } },
         },
       ],
       adapters: [{ ...fakeManifest, family: 'fakeutxo', chains: ['fakeutxo'] }],
     });
-    const utxo = env.aio.blockchain({
-      chain: 'fakeutxo' as FakeChainId,
-      provider: 'fake',
-      wallet: 'main',
-    });
-    await expect(env.run(utxo.deriveAddress('x', 0))).rejects.toMatchObject({
+    const utxo = (network: string) =>
+      env.aio.blockchain({
+        chain: 'fakeutxo' as FakeChainId,
+        network: network as never,
+        provider: 'fake',
+        wallet: 'main',
+      });
+    const error = await env
+      .run(utxo('local').deriveAddress('x', 0))
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
+    expect(JSON.stringify(error)).not.toContain(xpub.slice(4, 20));
+    expect((error as Error).cause).toBeUndefined();
+    await expect(env.run(utxo('local').deriveAddress('t', 0))).resolves.toBeDefined();
+    // A test key on the UTXO mainnet is refused; a mainnet key there derives.
+    await expect(env.run(utxo('main').deriveAddress('t', 0))).rejects.toMatchObject({
       code: 'CONFIG_INVALID',
     });
-    await expect(env.run(utxo.deriveAddress('t', 0))).resolves.toBeDefined();
+    await expect(env.run(utxo('main').deriveAddress('x', 0))).resolves.toBeDefined();
   });
 
   it('reports network status with semantic endpoint health', async () => {

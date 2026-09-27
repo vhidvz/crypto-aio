@@ -123,6 +123,8 @@ describe('deriveXpubChild network class (A20)', () => {
       const error = thrown(() => deriveXpubChild(xpub, '0/1', versions, network));
       expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
       expect(String((error as Error).message)).not.toContain(xpub.slice(4, 20));
+      expect(JSON.stringify(error)).not.toContain(xpub.slice(4, 20));
+      expect((error as Error).cause).toBeUndefined();
     }
   });
 
@@ -132,7 +134,8 @@ describe('deriveXpubChild network class (A20)', () => {
     expect(deriveXpubChild(key(TPUB), '0/1', undefined, test)).toHaveLength(33);
     expect(deriveXpubChild(key(VPUB), '0/1', VPUB, test)).toHaveLength(33);
     expect(deriveXpubChild(key(), '0/1', undefined, undefined)).toHaveLength(33);
-    // An unregistered version (another coin's) has no known class and is not checked.
+    // An unlisted version (outside the Bitcoin SLIP-0132 table) has no known class and is
+    // not checked.
     const other = { private: 0x0488ade5, public: 0x0488b21f };
     expect(deriveXpubChild(key(other), '0/1', other, test)).toHaveLength(33);
   });

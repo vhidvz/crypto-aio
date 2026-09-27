@@ -119,8 +119,8 @@ export function deriveEd25519(seed: Uint8Array, path: string): Uint8Array {
  * Non-hardened child public key (33-byte compressed) from an extended PUBLIC key. A20: with
  * `network`, a key whose SLIP-0132 version belongs to the other network class (a mainnet
  * `xpub`/`zpub` on a test network, a `tpub`/`vpub` on mainnet) is `CONFIG_INVALID`; a
- * version that SLIP-0132 does not register has no known class and is not checked. Pass it
- * for chains whose extended keys carry a network class (UTXO chains).
+ * version outside the Bitcoin SLIP-0132 table has no known class and is not checked. Pass
+ * it for chains whose extended keys carry a network class (UTXO chains).
  */
 export function deriveXpubChild(
   xpub: string,
