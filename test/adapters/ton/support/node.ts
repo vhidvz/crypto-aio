@@ -8,14 +8,15 @@
  *   when its signature fails (wallet_v5.fc); a frozen wallet refuses everything;
  * - each message's send mode (transaction.cpp): +1 pays the forward fee on top of the value
  *   (else the fee comes out of it), +2 skips a message the balance cannot pay; without +2
- *   the action phase fails (37, or 40 when the value cannot pay its own fee), rolling back
- *   the seqno and every message while the gas stays charged; other flags are refused (34);
- * - external messages the chain cannot accept are refused at send time (HTTP 500, as
- *   toncenter), checked against the endpoint's own view, and, when state changed meanwhile,
- *   silently never included;
+ *   the action phase fails (37, `no_funds`), rolling back the seqno and every message
+ *   while the gas stays charged and nothing bounces; other flags are refused (34);
+ * - external messages the chain cannot accept are refused at send time (HTTP 500, with the
+ *   liteserver's own texts), checked against the endpoint's own view, and, when state
+ *   changed meanwhile, silently never included; one whose balance pays the accept but not
+ *   the run is included out of gas (-14);
  * - internal messages delivered one masterchain block later, bounce for bounceable
- *   messages to an uninitialized account or a failing contract (`nofunds`, the value kept,
- *   when it cannot pay for the bounce), TEP-74 jettons with the 707 sender check,
+ *   messages whose compute phase failed or was skipped (`nofunds`, the value kept, when it
+ *   is below the bounce's cost), TEP-74 jettons with the 707 sender check,
  *   notifications, excesses and bounced `internal_transfer`s;
  * - one masterchain block per `mine()`, one or two basechain shards (`shards`, real shard
  *   ids), each `shardLagSeconds` (the second `secondShardLagSeconds`) older than its
@@ -82,7 +83,15 @@ export const NODE_FEES = Object.freeze({
   deployGas: 500_000n,
   internalGas: 300_000n,
   jettonGas: 10_000_000n,
+  /** The gas fee toncenter's `estimateFee` reports when no code runs (live, mainnet). */
+  flatGas: 6_667n,
 });
+
+/**
+ * VM steps are not metered: a refusal the wallet code raises reports the step count of a
+ * live v4r2 expiry refusal (13).
+ */
+const VM_STEPS = 13;
 
 const WALLET_CODE = {
   v4r2: WalletContractV4.create({ workchain: 0, publicKey: Buffer.alloc(32) }).init.code,
@@ -221,7 +230,7 @@ type Actions =
       readonly forwardFees: bigint;
       readonly skipped: number;
     }
-  | { readonly ok: false; readonly resultCode: number };
+  | { readonly ok: false; readonly resultCode: number; readonly skipped: number };
 
 const cloneAccount = (a: Account): Account => ({
   ...a,
@@ -491,7 +500,7 @@ export class ScriptedTonNode {
     );
     if (verdict !== 'ok') {
       throw new Error(
-        `LITE_SERVER_UNKNOWN: cannot apply external message to current state : External message was not accepted\n${verdict}`,
+        `LITE_SERVER_UNKNOWN: cannot apply external message to current state : ${verdict}`,
       );
     }
     this.#sends.set(hashNorm, (this.#sends.get(hashNorm) ?? 0) + 1);
@@ -561,9 +570,16 @@ export class ScriptedTonNode {
   }
 
   /**
-   * The wallet contract's checks against `view`, in its order; 'ok' or the node's error
-   * text. A frozen account runs nothing: its `StateInit` would have to match the frozen
-   * state's hash, never the deploy one (transaction.cpp), so it is refused (I3).
+   * Whether the liteserver accepts an external against `view`: 'ok', or the chain's own
+   * refusal text (live toncenter, external-message.cpp, collator.cpp, transaction.cpp), in
+   * the chain's order:
+   * - an account that does not exist cannot be loaded;
+   * - the balance pays the import fee before any code runs (`unpack_input_msg`);
+   * - a frozen account, or one without code or a matching `StateInit`, runs nothing (its
+   *   compute phase is skipped): a frozen wallet is never revived by its deploy `StateInit`,
+   *   which never matches the frozen state's hash (I3);
+   * - the wallet code's checks, in its order, until `accept_message` (the liteserver stops
+   *   there, so a request its balance cannot finish is still accepted).
    */
   #checkExternal(
     view: ReadonlyMap<string, Account>,
@@ -573,15 +589,25 @@ export class ScriptedTonNode {
     now: number,
   ): string {
     const account = view.get(dest);
-    if (account?.status === 'frozen') {
-      return 'Cannot run message on account: account is frozen';
+    if (!account || v3Status(account) === 'nonexist') {
+      return 'Failed to unpack account state';
+    }
+    const hex = dest.slice(dest.indexOf(':') + 1).toUpperCase();
+    const run = 'External message was not accepted: cannot run message on account: ';
+    const rejected = (exitCode: number, steps = VM_STEPS): string =>
+      `${run}inbound external message rejected by transaction ${hex}:\nexitcode=${exitCode}, steps=${steps}, gas_used=0`;
+    if (account.balance < NODE_FEES.importFee) {
+      return `${run}inbound external message rejected by account ${hex} before smart-contract execution`;
     }
     const wallet =
-      account?.status === 'active' ? account.wallet : this.#walletFromInit(dest, init);
-    if (!wallet)
-      return 'Cannot run message on account: no state (account is not initialized)';
+      account.status === 'active'
+        ? account.wallet
+        : account.status === 'uninitialized'
+          ? this.#walletFromInit(dest, init)
+          : undefined;
+    if (!wallet) return rejected(0, 0);
     const request = parseRequest(wallet.version, body);
-    if (!request) return 'exitcode=9, steps=1';
+    if (!request) return rejected(9);
     const codes =
       wallet.version === 'v4r2'
         ? { seqno: 33, id: 34, sig: 35, expired: 36 }
@@ -602,11 +628,7 @@ export class ScriptedTonNode {
             [request.walletId === wallet.walletId, codes.id],
             [request.validUntil > now, codes.expired],
           ];
-    for (const [passed, code] of checks) if (!passed) return `exitcode=${code}`;
-    const gas = this.#walletGas(wallet.version, account?.status !== 'active');
-    if ((account?.balance ?? 0n) < NODE_FEES.importFee + gas) {
-      return 'Cannot run message on account: not enough balance to pay for gas';
-    }
+    for (const [passed, code] of checks) if (!passed) return rejected(code);
     return 'ok';
   }
 
@@ -672,9 +694,10 @@ export class ScriptedTonNode {
    * The action phase (transaction.cpp `try_action_send_message`), all or nothing. Each
    * message's send mode decides who pays its forward fee (+1: the balance, on top of the
    * value; else the value) and whether an unpayable message is skipped (+2) or fails the
-   * phase: 37 when the balance cannot pay, 40 when the value cannot pay its own fee. A
-   * failed phase sends nothing and leaves the balance; a flag this node does not model
-   * fails it too (34), never guessed.
+   * phase with 37 (`no_funds`), whether the balance cannot pay it or its value cannot pay
+   * its own fee. A failed phase sends nothing and leaves the balance; the list stays valid
+   * and earlier skips count. A flag this node does not model (+16 included) fails it too
+   * (34), never guessed. Only +16 would bounce an action failure, so none bounces here.
    */
   #actions(account: Account, from: string, requested: readonly Requested[]): Actions {
     let balance = account.balance;
@@ -683,15 +706,14 @@ export class ScriptedTonNode {
     const out: Msg[] = [];
     for (const { mode, message } of requested) {
       if (message.info.type !== 'internal' || (mode & ~3) !== 0) {
-        return { ok: false, resultCode: 34 };
+        return { ok: false, resultCode: 34, skipped };
       }
       const fwd = forwardFee(message);
       const value = message.info.value.coins;
       const separately = (mode & 1) !== 0;
       const cost = separately ? value + fwd : value;
-      const failure = !separately && value < fwd ? 40 : balance < cost ? 37 : 0;
-      if (failure !== 0) {
-        if ((mode & 2) === 0) return { ok: false, resultCode: failure };
+      if ((!separately && value < fwd) || balance < cost) {
+        if ((mode & 2) === 0) return { ok: false, resultCode: 37, skipped };
         skipped += 1;
         continue;
       }
@@ -731,7 +753,12 @@ export class ScriptedTonNode {
     };
     const request = parseRequest(wallet.version, message.body) as Request;
     const fees = NODE_FEES.importFee + this.#walletGas(wallet.version, deploy);
-    account.balance -= fees;
+    // A balance that pays the import and the accept, not the whole run: the gas runs out
+    // after `accept_message`, so the chain includes it out of gas (-14), taking the whole
+    // balance and keeping the seqno (the compute phase's state is dropped).
+    const outOfGas = account.balance < fees;
+    const charged = outOfGas ? account.balance : fees;
+    account.balance -= charged;
     // The `StateInit` activates the account whatever happens next (transaction.cpp).
     account.status = 'active';
     account.wallet = wallet;
@@ -770,6 +797,17 @@ export class ScriptedTonNode {
         traceId,
       );
     };
+    if (outOfGas) {
+      record(
+        charged,
+        {
+          aborted: true,
+          compute_ph: { skipped: false, success: false, exit_code: -14 },
+        },
+        [],
+      );
+      return;
+    }
     if (request.withoutIgnoreErrors) {
       // wallet_v5.fc: `commit()` keeps the seqno, then error 137 aborts the transaction.
       wallet.seqno += 1;
@@ -826,13 +864,20 @@ export class ScriptedTonNode {
     };
     let action: Record<string, unknown> | undefined;
     let bounce: Record<string, unknown> | undefined;
-    /** Aborts the transaction; a bounceable message bounces if its value pays for it. */
-    const abort = (): void => {
+    /**
+     * The compute phase failed: the transaction aborts, and a bounceable message bounces
+     * if its value pays for the bounce (collator.cpp runs the bounce phase only then).
+     */
+    const fail = (exitCode: number, skipReason?: string): void => {
       aborted = true;
+      compute = skipReason
+        ? { skipped: true, reason: skipReason }
+        : { skipped: false, success: false, exit_code: exitCode };
       if (!msg.bounce || msg.bounced) return;
       const back = value - NODE_FEES.internalGas;
-      if (back <= 0n) {
-        // Too little to pay for the bounce: `nofunds`, and the value stays here (I1, M7).
+      if (back < 0n) {
+        // Below the bounce's cost (strictly, transaction.cpp `prepare_bounce_phase`):
+        // `nofunds`, and the value stays here (I1, M7).
         bounce = { type: 'nofunds' };
         return;
       }
@@ -848,12 +893,6 @@ export class ScriptedTonNode {
           true,
         ),
       );
-    };
-    const fail = (exitCode: number, skipReason?: string): void => {
-      compute = skipReason
-        ? { skipped: true, reason: skipReason }
-        : { skipped: false, success: false, exit_code: exitCode };
-      abort();
     };
     account.balance += value;
     const op = opOf(msg.body);
@@ -893,7 +932,9 @@ export class ScriptedTonNode {
             wallet.seqno += 1;
             out.push(...actions.out);
           } else {
-            abort();
+            // The action phase failed: the seqno rolls back (no `commit()` here), and with
+            // no +16 nothing bounces, so the relayed value stays at the wallet (F6-R7).
+            aborted = true;
           }
         }
       }
@@ -930,8 +971,15 @@ export class ScriptedTonNode {
       const t = parseInternalTransfer(msg.body);
       const { master } = jettonIdentity;
       const sender = msg.source as string;
-      // The jetton wallet's code runs, and stays deployed, whatever the outcome.
+      // The `StateInit` deploys the jetton wallet with its initial data (no jettons), and
+      // that stays whatever the outcome: a later transfer meets the balance check (F6-R7).
       account.status = 'active';
+      account.jettonWallet = account.jettonWallet ?? {
+        master,
+        owner: jettonIdentity.owner,
+        balance: 0n,
+      };
+      const jw = account.jettonWallet;
       if (!t) fail(9);
       // TEP-74 `receive_tokens`: only the master, or the sending owner's own jetton wallet.
       else if (
@@ -941,12 +989,7 @@ export class ScriptedTonNode {
         fail(707);
       } else if (this.#failing.has(msg.destination)) fail(709);
       else {
-        account.jettonWallet = account.jettonWallet ?? {
-          master,
-          owner: jettonIdentity.owner,
-          balance: 0n,
-        };
-        account.jettonWallet.balance += t.amount;
+        jw.balance += t.amount;
         account.balance -= value;
         let rest = value - NODE_FEES.internalGas;
         if (t.forwardAmount > 0n) {
@@ -958,13 +1001,7 @@ export class ScriptedTonNode {
             .storeSlice(t.forwardPayload)
             .endCell();
           out.push(
-            this.#internal(
-              msg.destination,
-              account.jettonWallet.owner,
-              t.forwardAmount,
-              false,
-              note,
-            ),
+            this.#internal(msg.destination, jw.owner, t.forwardAmount, false, note),
           );
           rest -= t.forwardAmount;
         }
@@ -1235,8 +1272,9 @@ export class ScriptedTonNode {
             },
             destination_fees: [],
           });
-        // No wallet in this view and no `StateInit`: no code runs, so nothing is sent.
-        if (!deploy && !deployed) return fees(0n, 0n);
+        // No wallet in this view and no `StateInit`: no code runs, so nothing is sent, and
+        // toncenter reports the flat gas price (live, F6-R7).
+        if (!deploy && !deployed) return fees(NODE_FEES.flatGas, 0n);
         const version = deployed
           ? deployed.version
           : Cell.fromBoc(Buffer.from(body.init_code, 'base64'))[0]
@@ -1758,12 +1796,13 @@ function actionPhase(actions: Actions, total: number): Record<string, unknown> {
         msgs_created: actions.out.length,
       }
     : {
+        // `valid` is set once the list parses, before any message is sent (transaction.cpp).
         success: false,
-        valid: actions.resultCode !== 34,
+        valid: true,
         no_funds: actions.resultCode === 37,
         result_code: actions.resultCode,
         tot_actions: total,
-        skipped_actions: 0,
+        skipped_actions: actions.skipped,
         msgs_created: 0,
       };
 }

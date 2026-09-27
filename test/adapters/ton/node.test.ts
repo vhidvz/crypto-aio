@@ -8,6 +8,7 @@ import {
   internal,
   loadMessage,
   storeMessage,
+  storeMessageRelaxed,
   storeOutList,
   type MessageRelaxed,
 } from '@ton/core';
@@ -107,8 +108,9 @@ describe('the scripted toncenter node: wallets', () => {
       { boc: undeployed.boc },
       s.fetchFn,
     );
+    // F6-R7: the liteserver's own texts (live toncenter for an account that does not exist).
     expect(answer.status).toBe(500);
-    expect(String(answer.json.error)).toMatch(/not initialized/);
+    expect(String(answer.json.error)).toMatch(/: Failed to unpack account state$/);
     const unfunded = await signedBoc('v4r2', TESTNET, {
       seqno: 0,
       validUntil: s.now() + 60,
@@ -116,8 +118,11 @@ describe('the scripted toncenter node: wallets', () => {
       messages: [message],
     });
     answer = await post(`${s.v2}/sendBocReturnHash`, { boc: unfunded.boc }, s.fetchFn);
-    expect(String(answer.json.error)).toMatch(/not enough balance/);
+    expect(String(answer.json.error)).toMatch(/: Failed to unpack account state$/);
+    // Funded, yet no code and no StateInit: the compute phase is skipped (no_state).
     s.node.fund(s.wallet, GRAM);
+    answer = await post(`${s.v2}/sendBocReturnHash`, { boc: undeployed.boc }, s.fetchFn);
+    expect(String(answer.json.error)).toBe(skippedCompute(s.wallet));
     const expired = await signedBoc('v4r2', TESTNET, {
       seqno: 0,
       validUntil: s.now(),
@@ -562,6 +567,44 @@ async function sdkRequest(
     .toString('base64');
 }
 
+/** The liteserver's refusal of an external whose compute phase did not run (collator.cpp). */
+function skippedCompute(account: string): string {
+  return `LITE_SERVER_UNKNOWN: cannot apply external message to current state : External message was not accepted: cannot run message on account: inbound external message rejected by transaction ${account.slice(2).toUpperCase()}:\nexitcode=0, steps=0, gas_used=0`;
+}
+
+/** A v4r2 request for the test key's wallet with each message's own send mode. */
+function v4Modes(args: {
+  readonly seqno: number;
+  readonly validUntil: number;
+  readonly deploy: boolean;
+  readonly messages: readonly (readonly [number, MessageRelaxed])[];
+}): string {
+  const own = contractOf('v4r2');
+  const signing = beginCell()
+    .storeUint(698983191, 32)
+    .storeUint(args.validUntil, 32)
+    .storeUint(args.seqno, 32)
+    .storeUint(0, 8);
+  for (const [mode, message] of args.messages) {
+    signing.storeUint(mode, 8).storeRef(beginCell().store(storeMessageRelaxed(message)));
+  }
+  const cell = signing.endCell();
+  const signature = ed25519.sign(cell.hash(), Buffer.from(KEY, 'hex'));
+  const body = beginCell()
+    .storeBuffer(Buffer.from(signature))
+    .storeSlice(cell.beginParse())
+    .endCell();
+  return beginCell()
+    .store(
+      storeMessage(
+        external({ to: own.address, body, ...(args.deploy ? { init: own.init } : {}) }),
+      ),
+    )
+    .endCell()
+    .toBoc()
+    .toString('base64');
+}
+
 /** A TEP-74 `internal_transfer` of `amount`, naming `from` as the sending owner. */
 function internalTransfer(amount: bigint, from: string | null): Cell {
   return beginCell()
@@ -576,29 +619,43 @@ function internalTransfer(amount: bigint, from: string | null): Cell {
 }
 
 describe('the scripted toncenter node: never more lenient than the chain (F6-R5)', () => {
-  it('keeps a bounceable value too small to pay its bounce (nofunds, M7)', async () => {
-    const s = setup('v4r2');
-    s.node.fund(s.wallet, GRAM);
-    const { boc } = await signedBoc('v4r2', TESTNET, {
-      seqno: 0,
-      validUntil: s.now() + 60,
-      deploy: true,
-      messages: [
-        nativeMessage({ to: RECIPIENT, value: NODE_FEES.internalGas, bounce: true }),
-      ],
-    });
-    s.node.submit(boc);
-    s.node.mine(3);
-    const delivery = s.node.transactions().find((t) => t.account === RECIPIENT);
-    expect(delivery?.description).toMatchObject({
-      aborted: true,
-      compute_ph: { skipped: true, reason: 'no_state' },
-      bounce: { type: 'nofunds' },
-    });
-    expect(delivery?.outMsgs).toHaveLength(0);
-    expect(s.node.balance(RECIPIENT)).toBe(NODE_FEES.internalGas);
-    expect(s.node.transactions()).toHaveLength(2);
-  });
+  it.each([
+    ['below', NODE_FEES.internalGas - 1n, 'nofunds'],
+    ['exactly at', NODE_FEES.internalGas, 'ok'],
+  ] as const)(
+    'bounces a value %s the bounce cost as transaction.cpp does (nofunds only below it, M7)',
+    async (_where, value, type) => {
+      const s = setup('v4r2');
+      s.node.fund(s.wallet, GRAM);
+      const { boc } = await signedBoc('v4r2', TESTNET, {
+        seqno: 0,
+        validUntil: s.now() + 60,
+        deploy: true,
+        messages: [nativeMessage({ to: RECIPIENT, value, bounce: true })],
+      });
+      s.node.submit(boc);
+      s.node.mine(3);
+      const delivery = s.node.transactions().find((t) => t.account === RECIPIENT);
+      expect(delivery?.description).toMatchObject({
+        aborted: true,
+        compute_ph: { skipped: true, reason: 'no_state' },
+        bounce: { type },
+      });
+      if (type === 'nofunds') {
+        // Too little to pay for the bounce: the value stays.
+        expect(delivery?.outMsgs).toHaveLength(0);
+        expect(s.node.balance(RECIPIENT)).toBe(value);
+        expect(s.node.transactions()).toHaveLength(2);
+      } else {
+        // Exactly enough: the bounce goes back carrying nothing.
+        expect(delivery?.outMsgs.map((m) => [m.destination, m.value])).toEqual([
+          [s.wallet, 0n],
+        ]);
+        expect(s.node.balance(RECIPIENT)).toBe(0n);
+        expect(s.node.transactions()).toHaveLength(3);
+      }
+    },
+  );
 
   it('fails the action phase of an unpayable message without send mode +2: seqno kept, gas charged, replayable', async () => {
     const s = setup('v4r2');
@@ -656,7 +713,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect(s.node.balance(s.wallet)).toBe(GRAM - gas);
   });
 
-  it("fails a relayed request's action phase without +2 and keeps the seqno (wallet_v5.fc)", async () => {
+  it("fails a relayed request's action phase without +2: seqno kept, no bounce, value kept (wallet_v5.fc)", async () => {
     const s = setup('v5r1');
     const relayer = `0:${'22'.repeat(32)}`;
     s.node.fund(s.wallet, GRAM / 10n);
@@ -674,6 +731,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
       messages: [nativeMessage({ to: RECIPIENT, value: GRAM, bounce: false })],
       sendMode: SendMode.PAY_GAS_SEPARATELY,
     });
+    const before = s.node.balance(s.wallet);
     s.node.inject(relayer, s.wallet, 50_000_000n, body, true);
     s.node.mine(2);
     expect(s.node.seqno(s.wallet)).toBe(1);
@@ -681,11 +739,63 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect(tx?.description).toMatchObject({
       aborted: true,
       compute_ph: { success: true },
-      action: { success: false, result_code: 37 },
-      bounce: { type: 'ok' },
+      action: { success: false, no_funds: true, result_code: 37 },
     });
-    expect(tx?.outMsgs.map((m) => m.destination)).toEqual([relayer]);
+    // F6-R7: an action failure bounces only with send mode +16 (transaction.cpp
+    // `need_bounce_on_fail`); the bounce phase needs a failed compute phase (collator.cpp).
+    expect(tx?.description).not.toHaveProperty('bounce');
+    expect(tx?.outMsgs).toHaveLength(0);
+    expect(s.node.balance(s.wallet)).toBe(before + 50_000_000n);
     expect(s.node.balance(RECIPIENT)).toBe(1n);
+  });
+
+  it('fails a message whose value cannot pay its own forward fee without +1 (37, no_funds)', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, GRAM);
+    s.node.submit(
+      v4Modes({
+        seqno: 0,
+        validUntil: s.now() + 60,
+        deploy: true,
+        messages: [[0, nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })]],
+      }),
+    );
+    s.node.mine(2);
+    expect(s.node.seqno(s.wallet)).toBe(0);
+    expect(s.node.transactions()[0]?.description).toMatchObject({
+      aborted: true,
+      action: { success: false, valid: true, no_funds: true, result_code: 37 },
+    });
+    expect(s.node.balance(RECIPIENT)).toBe(0n);
+  });
+
+  it('refuses a send mode it does not model (34): the list stays valid, earlier skips count', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, GRAM / 10n);
+    s.node.submit(
+      v4Modes({
+        seqno: 0,
+        validUntil: s.now() + 60,
+        deploy: true,
+        messages: [
+          [SEND_MODE, nativeMessage({ to: RECIPIENT, value: GRAM, bounce: false })],
+          [SEND_MODE + 64, nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+        ],
+      }),
+    );
+    s.node.mine(2);
+    expect(s.node.seqno(s.wallet)).toBe(0);
+    expect(s.node.transactions()[0]?.description).toMatchObject({
+      aborted: true,
+      action: {
+        success: false,
+        valid: true,
+        no_funds: false,
+        result_code: 34,
+        skipped_actions: 1,
+        msgs_created: 0,
+      },
+    });
   });
 
   it('refuses every message to a frozen wallet, its deploy StateInit included', async () => {
@@ -712,7 +822,8 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     for (const boc of [replay.boc, accepted.boc]) {
       const answer = await post(`${s.v2}/sendBocReturnHash`, { boc }, s.fetchFn);
       expect(answer.status).toBe(500);
-      expect(String(answer.json.error)).toMatch(/account is frozen/);
+      // F6-R7: a frozen account runs no code; the chain's text, not an invented one.
+      expect(String(answer.json.error)).toBe(skippedCompute(s.wallet));
     }
     expect(s.node.status(s.wallet)).toBe('frozen');
     expect(s.node.seqno(s.wallet)).toBe(1);
@@ -815,7 +926,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     const next = await request(1, s.now() + 60, false);
     const refused = await post(`${s.v2}/sendBocReturnHash`, { boc: next.boc }, s.fetchFn);
     expect(refused.status).toBe(500);
-    expect(String(refused.json.error)).toMatch(/not initialized/);
+    expect(String(refused.json.error)).toBe(skippedCompute(s.wallet));
     // A stale request passes its view, and is never included.
     const stale = await request(0, s.now() + 61, true);
     const sent = await post(`${s.v2}/sendBocReturnHash`, { boc: stale.boc }, s.fetchFn);
@@ -860,8 +971,9 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
       ).source_fees;
     expect(await fees()).toMatchObject({ gas_fee: Number(NODE_FEES.gasV5) });
     s.node.lagEndpoint('main', 1);
-    // Not deployed in the endpoint's view: nothing runs, so no gas and no forward fee.
-    expect(await fees()).toMatchObject({ gas_fee: 0, fwd_fee: 0 });
+    // Not deployed in the endpoint's view: nothing runs, so no forward fee, and live
+    // toncenter answers the flat gas price (F6-R7).
+    expect(await fees()).toMatchObject({ gas_fee: 6667, fwd_fee: 0 });
   });
 
   it('answers errors in each API’s own envelope (M6)', async () => {
@@ -872,6 +984,22 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     const v2 = await get(`${s.v2}/getAddressInformation?address=notanaddress`, s.fetchFn);
     expect(v2.status).toBe(422);
     expect(v2.json).toMatchObject({ ok: false, code: 422 });
+    const lt = await get(
+      `${s.v3}/transactions?account=${RECIPIENT}&end_lt=later&limit=1`,
+      s.fetchFn,
+    );
+    expect(lt.status).toBe(422);
+    expect(lt.json).toEqual({ error: expect.any(String) });
+    // A shard this chain does not have (one shard: only -2^63), at a seqno past the head.
+    const shard = await get(
+      `${s.v2}/getBlockHeader?workchain=0&shard=4611686018427387904&seqno=1001`,
+      s.fetchFn,
+    );
+    expect(shard.status).toBe(500);
+    expect(shard.json).toMatchObject({
+      ok: false,
+      error: 'LITE_SERVER_UNKNOWN: block not found',
+    });
   });
 
   it('runs each account at its own shard’s time (M2)', async () => {
@@ -904,6 +1032,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     const traces = await get(`${s.v3}/traces?tx_hash=${tx!.hash}`, s.fetchFn);
     expect((traces.json.traces as Record<string, unknown>[])[0]).toMatchObject({
       trace_id: b64(tx!.hash),
+      external_hash: null,
       is_incomplete: false,
     });
   });
@@ -994,7 +1123,9 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
       const answer = await post(`${s.v2}/sendBocReturnHash`, { boc }, s.fetchFn);
       expect(answer.status).toBe(500);
       expect(String(answer.json.error)).toMatch(
-        new RegExp(`External message was not accepted\\n.*exitcode=${code}\\b`),
+        new RegExp(
+          `: External message was not accepted: cannot run message on account: inbound external message rejected by transaction ${s.wallet.slice(2).toUpperCase()}:\\nexitcode=${code}, steps=\\d+, gas_used=0$`,
+        ),
       );
       expect(s.node.pendingCount()).toBe(0);
     },
@@ -1036,6 +1167,104 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect(s.node.transactions()).toHaveLength(0);
     expect(s.node.seqno(s.wallet)).toBe(0);
     expect(s.node.sendCount(spent.hashNorm)).toBe(1);
+  });
+
+  it('skips an internal message to a frozen account: a bounceable one bounces', async () => {
+    const s = setup('v4r2');
+    const sender = `0:${'22'.repeat(32)}`;
+    s.node.fund(RECIPIENT, GRAM);
+    s.node.freeze(RECIPIENT);
+    s.node.inject(sender, RECIPIENT, GRAM, beginCell().endCell(), true);
+    s.node.inject(sender, RECIPIENT, 5n, beginCell().endCell(), false);
+    s.node.mine(2);
+    const [bounced, kept] = s.node.transactions();
+    for (const tx of [bounced, kept]) {
+      expect(tx?.account).toBe(RECIPIENT);
+      expect(tx?.origStatus).toBe('frozen');
+      expect(tx?.endStatus).toBe('frozen');
+      expect(tx?.description).toMatchObject({
+        aborted: true,
+        compute_ph: { skipped: true, reason: 'no_state' },
+      });
+    }
+    expect(bounced?.description).toMatchObject({ bounce: { type: 'ok' } });
+    expect(kept?.description).not.toHaveProperty('bounce');
+    expect(s.node.balance(RECIPIENT)).toBe(GRAM + 5n);
+    expect(s.node.status(RECIPIENT)).toBe('frozen');
+  });
+
+  it('leaves a jetton wallet deployed with no jettons after a refused internal_transfer', async () => {
+    const s = setup('v4r2');
+    s.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    const genuine = s.node.jettonWalletOf(MASTER, RECIPIENT);
+    const impostor = `0:${'66'.repeat(32)}`;
+    s.node.deployFakeJettonWallet(impostor, MASTER, s.wallet, 1_000_000n);
+    s.node.inject(impostor, genuine, 50_000_000n, internalTransfer(10n, s.wallet), true);
+    s.node.mine(2);
+    expect(s.node.status(genuine)).toBe('active');
+    // Its owner's transfer finds no jettons: the balance error, and the value bounces.
+    const transfer = jettonMessage({
+      jettonWallet: genuine,
+      attached: 50_000_000n,
+      queryId: 0n,
+      amount: 1n,
+      destination: FRESH,
+      responseDestination: RECIPIENT,
+      forwardAmount: 0n,
+    }).body;
+    s.node.inject(RECIPIENT, genuine, 50_000_000n, transfer, true);
+    s.node.mine(2);
+    const refused = s.node.transactions().filter((t) => t.account === genuine)[1];
+    expect(refused?.description).toMatchObject({
+      aborted: true,
+      compute_ph: { success: false, exit_code: 47 },
+      bounce: { type: 'ok' },
+    });
+    expect(s.node.jettonBalance(MASTER, FRESH)).toBe(0n);
+  });
+
+  it('refuses an external the balance cannot import, and drains one it cannot run (chain texts)', async () => {
+    const s = setup('v4r2');
+    const request = (validUntil: number) =>
+      signedBoc('v4r2', TESTNET, {
+        seqno: 0,
+        validUntil,
+        deploy: true,
+        messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+      });
+    // Below the import fee: refused before any code runs (transaction.cpp `unpack_input_msg`).
+    s.node.fund(s.wallet, NODE_FEES.importFee - 1n);
+    const answer = await post(
+      `${s.v2}/sendBocReturnHash`,
+      { boc: (await request(s.now() + 60)).boc },
+      s.fetchFn,
+    );
+    expect(answer.status).toBe(500);
+    expect(String(answer.json.error)).toBe(
+      `LITE_SERVER_UNKNOWN: cannot apply external message to current state : External message was not accepted: cannot run message on account: inbound external message rejected by account ${s.wallet.slice(2).toUpperCase()} before smart-contract execution`,
+    );
+    // Enough to import and to accept, not to finish: the liteserver stops at the accept, and
+    // the chain includes it out of gas (-14), taking the balance and keeping the seqno.
+    s.node.fund(s.wallet, NODE_FEES.gasV4);
+    const funded = s.node.balance(s.wallet);
+    const sent = await post(
+      `${s.v2}/sendBocReturnHash`,
+      { boc: (await request(s.now() + 61)).boc },
+      s.fetchFn,
+    );
+    expect(sent.status).toBe(200);
+    s.node.mine(2);
+    const [tx] = s.node.transactions();
+    expect(tx?.description).toMatchObject({
+      aborted: true,
+      compute_ph: { skipped: false, success: false, exit_code: -14 },
+    });
+    expect(tx?.description).not.toHaveProperty('action');
+    expect(tx?.totalFees).toBe(funded);
+    expect(tx?.outMsgs).toHaveLength(0);
+    expect(s.node.balance(s.wallet)).toBe(0n);
+    expect(s.node.seqno(s.wallet)).toBe(0);
+    expect(s.node.status(s.wallet)).toBe('active');
   });
 
   it('lets a test script a late answer, or one that never comes (intercept)', async () => {
