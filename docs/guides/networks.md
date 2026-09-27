@@ -241,6 +241,9 @@ relies on these rules most:
   exactly.
 - **Output variants.** `DriverIntent.outputs[i].variant` is the recipient address's
   `variant` (for example TON's bounce flag) when it has one; it is part of the intent hash.
+  Your codec's `normalize` must return a variant of JSON scalars only (strings, finite
+  numbers, booleans, `null`) under string keys: anything else fails the transfer with
+  `INVALID_ADDRESS`.
 - **Failure reasons.** With `success: false`, `observe` and `includedFinal` may return a
   short fixed `reason` (no addresses or amounts); the core shows it as `TxStatus.reason`.
 - **Signed payloads.** The optional `builder.signaturesFrom(unsigned, signed)` lets

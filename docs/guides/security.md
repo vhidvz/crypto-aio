@@ -143,7 +143,7 @@ stores can then encrypt and retain data per field.
 | Class | Examples | Handling |
 | --- | --- | --- |
 | `secret` | none; the core never persists secrets | n/a |
-| `sensitive` | intent (addresses, amounts, memo), unsigned payload, context, idempotency key, reservation and Attempt ordering, signer tickets, partial signatures, fees, errors, a node's refusal `reason` | Encrypt at rest |
+| `sensitive` | intent (addresses, amounts, memo, output variants), unsigned payload, context, idempotency key, reservation and Attempt ordering, signer tickets, partial signatures, fees, errors, an observation's `reason` (a node's refusal text or the driver's on-chain failure reason) | Encrypt at rest |
 | `sensitive-until-broadcast` | Attempt `raw` bytes and `ref` | Public once broadcast; before that they reveal pending treasury activity |
 | `operational` | ids, states, versions, claims, timestamps, heights, hashes | Safe for telemetry |
 

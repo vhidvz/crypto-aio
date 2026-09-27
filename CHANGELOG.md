@@ -70,15 +70,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing (a retryable `PROVIDER_UNAVAILABLE`). A `quorum: 'proof'` read keeps health fresh
   under any purpose. With no probe configured, the quorum counts only the usable endpoints,
   as before, so a chain family sets its probes.
-- Lag is measured against the second-highest known height, so one endpoint that
-  over-reports its head never marks honest ones as lagging. With two endpoints that
-  excludes neither, so a proof read should be anchored to a block height.
+- For proof reads and proof quorums, lag is measured against the second-highest known
+  height, so one endpoint that over-reports its head never marks honest ones as lagging.
+  With two endpoints that excludes neither, so a proof read should be anchored to a block
+  height. A single monitor read and `status()` still measure lag against the highest known
+  height.
 - In a proof quorum, a definitive error decides only when every endpoint of the quorum
   returns an equivalent one: the same error code, HTTP status and JSON-RPC error code, and
   for a JSON-RPC code whose meaning each server defines (-32000 to -32099, and -32603) the
   same message. Against an answer, or a different error, the read decides nothing (a
   retryable `PROVIDER_INCONSISTENT`). One endpoint's revert therefore never fails a token for
-  good.
+  good. The `provider.inconsistent` event is now also emitted when a proof quorum sees a
+  refusal against an answer, or unlike refusals.
 - A quorum compares answers in a form where an object never equals a `bigint`, so under
   `exactIntegers` an endpoint's `{"$bigint": …}` object no longer agrees with another's
   exact integer.
@@ -106,13 +109,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a plugin whose functions are rebuilt on each call is a different plugin.
 - `deriveAddress` on UTXO chains refuses an extended key whose Bitcoin SLIP-0132 version is of
   the other network class with `CONFIG_INVALID`; `deriveXpubChild` takes an optional `network`.
+- `deriveXpubChild` refuses a key that is not a string, and a private key named by its
+  SLIP-0132 prefix (such as `xprv`), with `CONFIG_INVALID` instead of a `TypeError` or an
+  unsupported-prefix error. Its unsupported-format message no longer quotes the key's
+  prefix, and "invalid extended public key" no longer carries the parser's error as its
+  `cause`.
+- An address codec whose `normalize` returns a `variant` holding anything but JSON scalars
+  (strings, finite numbers, booleans, `null`) under string keys now fails transfers to that
+  address with `INVALID_ADDRESS`. This affects custom chain plugins.
 - A wallet whose `xpub` is private, unreadable, or in a format that needs `xpubVersions` (a
   SLIP-0132 `ypub`, `zpub` or `vpub` without them) is now refused with `CONFIG_INVALID`
   when the wallet is resolved, so on every use of that wallet: sends, `walletAddress`,
-  `ready()`, `limits()` and the recovery of its stored Operations, not only
+  `ready()`, `limits()` and the writes on its stored Operations that resolve the wallet (the
+  all-rejected verdict, nonce reconciliation and recovery's resend), not only
   `deriveAddress`. The refusal repeats no part of the key. An empty `xpub` counts as none.
+  An `xpubPath` that is not a string is refused the same way, at resolution and in
+  `deriveAddress`.
 - `hd` in `WalletOptions` is reserved: neither a wallet's own `options.hd` nor the
   `options` passed to `Blockchain.addressFromPublicKey` bring an `hd` to a driver.
+  `addressFromPublicKey` reads `null` options as none.
 
 ## [0.1.0] - Unreleased
 
