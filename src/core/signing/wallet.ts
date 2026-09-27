@@ -5,6 +5,7 @@ import { Address } from '../model/address';
 import type { SchemeCatalog } from '../registry/schemes';
 import { fromHex } from '../util/bytes';
 import { signerPublicKey, signerSchemes, type SignerDeadline } from './guard';
+import { parseExtendedPublicKey, type ExtendedKeyVersions } from './hd';
 import type { KeyRef, Signer } from './types';
 
 export interface ResolvedWallet {
@@ -23,12 +24,40 @@ export interface ResolvedWallet {
   signerById(id: string): { readonly id: string; readonly signer: Signer } | undefined;
 }
 
+/**
+ * A22: the wallet's extended public key as drivers receive it, `WalletOptions.hd`: plain,
+ * frozen data (R11), present only when the wallet configures an `xpub`, which must be a
+ * readable PUBLIC extended key (A26: `CONFIG_INVALID` otherwise, naming no key).
+ */
+export interface WalletHdOptions {
+  readonly xpub: string;
+  /** Child path template relative to the xpub; `{index}` is replaced. Default `0/{index}`. */
+  readonly xpubPath?: string;
+  readonly xpubVersions?: ExtendedKeyVersions;
+}
+
 export function walletOptionsOf(config: WalletConfig): WalletOptions {
+  // A22: `hd` is the core's own key: the wallet's xpub or nothing, never a user option.
+  const { hd: _ignored, ...options } = config.options ?? {};
   return {
-    ...config.options,
+    ...options,
     ...(config.utxo ? { utxo: config.utxo } : {}),
     ...(config.ton ? { ton: config.ton } : {}),
+    ...(config.xpub !== undefined ? { hd: hdOptionsOf(config) } : {}),
   };
+}
+
+function hdOptionsOf(config: WalletConfig): WalletHdOptions {
+  const xpub = config.xpub as string;
+  // A26: only a readable, PUBLIC extended key ever reaches a driver.
+  parseExtendedPublicKey(xpub, config.xpubVersions);
+  return Object.freeze({
+    xpub,
+    ...(config.xpubPath !== undefined ? { xpubPath: config.xpubPath } : {}),
+    ...(config.xpubVersions
+      ? { xpubVersions: Object.freeze({ ...config.xpubVersions }) }
+      : {}),
+  });
 }
 
 export async function resolveWallet(

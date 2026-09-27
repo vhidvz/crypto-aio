@@ -61,6 +61,7 @@ export { callbackSigner } from './core/signing/callback';
 export type { CallbackSignerOptions } from './core/signing/callback';
 export { deriveXpubChild } from './core/signing/hd';
 export type { ExtendedKeyVersions } from './core/signing/hd';
+export type { WalletHdOptions } from './core/signing/wallet';
 export type {
   KeyRef,
   SignatureBundle,

@@ -228,6 +228,21 @@ relies on these rules most:
   instance on every call. `CryptoAio.close()` calls `close`.
 - Amounts reach drivers in base units only. `DriverContext` has no asset resolver, and
   `DriverIntent` carries no decimals. This is still open and may change.
+- **Wallet options.** `BuildContext.wallet` and `address.fromPublicKey`'s `options` carry
+  the wallet's `options`, its family settings (`utxo`, `ton`) and, when it has an `xpub`,
+  `hd: { xpub, xpubPath?, xpubVersions? }` (`WalletHdOptions`, always a readable public
+  extended key). `hd` is always the core's: a wallet's own `options.hd` never reaches a
+  driver.
+- **Exact integers.** Pass `exactIntegers: true` on a read whose JSON answer carries amounts
+  as numbers: integers beyond 2^53 − 1 then arrive as `bigint`, and a quorum compares them
+  exactly.
+- **Output variants.** `DriverIntent.outputs[i].variant` is the recipient address's
+  `variant` (for example TON's bounce flag) when it has one; it is part of the intent hash.
+- **Failure reasons.** With `success: false`, `observe` and `includedFinal` may return a
+  short fixed `reason` (no addresses or amounts); the core shows it as `TxStatus.reason`.
+- **Signed payloads.** The optional `builder.signaturesFrom(unsigned, signed)` lets
+  `submitSignatures` take a whole transaction signed elsewhere. Return only its signatures,
+  with no I/O, and throw `INVALID_INTENT` when it is not the prepared transaction.
 
 ## Testing an adapter or a store
 

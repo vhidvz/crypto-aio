@@ -84,7 +84,8 @@ On UTXO chains, a key whose version is a Bitcoin SLIP-0132 version (mainnet `xpu
 mainnet key on a test network, or a test key on mainnet, is refused with `CONFIG_INVALID`.
 Versions outside that table, including custom `xpubVersions` that are not in it, are not
 checked. Account-model chains (EVM, Tron) accept an `xpub` on every network, as their wallets
-export it.
+export it. A private extended key (`xprv`, `tprv`, `zprv` and the rest) is refused with
+`CONFIG_INVALID` as soon as the wallet is used, and the message never repeats it.
 
 ## Asset and Amount
 
