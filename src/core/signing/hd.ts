@@ -21,6 +21,24 @@ const KNOWN_VERSIONS: Readonly<Record<string, ExtendedKeyVersions>> = {
   tpub: { private: 0x04358394, public: 0x043587cf },
 };
 
+/**
+ * A20 (SLIP-0132): whether each registered Bitcoin extended PUBLIC key version belongs to a
+ * test network (`tpub`, `upub`, `vpub`, `Upub`, `Vpub`) or to mainnet (`xpub`, `ypub`,
+ * `zpub`, `Ypub`, `Zpub`).
+ */
+const TESTNET_VERSION: ReadonlyMap<number, boolean> = new Map([
+  [0x0488b21e, false], // xpub
+  [0x049d7cb2, false], // ypub
+  [0x04b24746, false], // zpub
+  [0x0295b43f, false], // Ypub
+  [0x02aa7ed3, false], // Zpub
+  [0x043587cf, true], // tpub
+  [0x044a5262, true], // upub
+  [0x045f1cf6, true], // vpub
+  [0x024289ef, true], // Upub
+  [0x02575483, true], // Vpub
+]);
+
 export function mnemonicToSeed(phrase: string, passphrase = ''): Uint8Array {
   const normalized = phrase.trim().normalize('NFKD').split(/\s+/).join(' ');
   if (!validateMnemonic(normalized, wordlist)) {
@@ -97,11 +115,18 @@ export function deriveEd25519(seed: Uint8Array, path: string): Uint8Array {
   return key;
 }
 
-/** Non-hardened child public key (33-byte compressed) from an extended PUBLIC key. */
+/**
+ * Non-hardened child public key (33-byte compressed) from an extended PUBLIC key. A20: with
+ * `network`, a key whose SLIP-0132 version belongs to the other network class (a mainnet
+ * `xpub`/`zpub` on a test network, a `tpub`/`vpub` on mainnet) is `CONFIG_INVALID`; a
+ * version that SLIP-0132 does not register has no known class and is not checked. Pass it
+ * for chains whose extended keys carry a network class (UTXO chains).
+ */
 export function deriveXpubChild(
   xpub: string,
   relativePath: string,
   versions?: ExtendedKeyVersions,
+  network?: { readonly testnet: boolean },
 ): Uint8Array {
   const prefix = xpub.slice(0, 4);
   const selected = versions ?? KNOWN_VERSIONS[prefix];
@@ -121,6 +146,14 @@ export function deriveXpubChild(
     throw new ConfigError(
       'CONFIG_INVALID',
       'expected an extended PUBLIC key; never configure private extended keys',
+    );
+  }
+  // The key parsed with `selected`, so its version is `selected.public`.
+  const testnet = TESTNET_VERSION.get(selected.public);
+  if (network && testnet !== undefined && testnet !== network.testnet) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `the extended public key is for ${testnet ? 'a test network' : 'mainnet'}, but the network is ${network.testnet ? 'a test network' : 'mainnet'}`,
     );
   }
   const path = relativePath.startsWith('m') ? relativePath : `m/${relativePath}`;

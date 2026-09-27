@@ -91,6 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A plugin registered under a name that a different plugin already holds throws
   `CONFIG_INVALID` (it was silently ignored). Registering the same plugin again stays a no-op;
   a plugin whose functions are rebuilt on each call is a different plugin.
+- `deriveAddress` on UTXO chains refuses an extended key of the other network class with
+  `CONFIG_INVALID`; `deriveXpubChild` takes an optional `network`.
 
 ## [0.1.0] - Unreleased
 

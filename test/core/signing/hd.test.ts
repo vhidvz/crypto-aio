@@ -102,6 +102,42 @@ describe('derivation', () => {
   });
 });
 
+/** SLIP-0132 version pairs: `{ private, public }` (Appendix A). */
+const TPUB = { private: 0x04358394, public: 0x043587cf };
+const ZPUB = { private: 0x04b2430c, public: 0x04b24746 };
+const VPUB = { private: 0x045f18bc, public: 0x045f1cf6 };
+
+describe('deriveXpubChild network class (A20)', () => {
+  const key = (versions?: { private: number; public: number }) =>
+    HDKey.fromMasterSeed(SEED_1, versions).derive("m/84'/0'/0'").publicExtendedKey;
+  const mainnet = { testnet: false };
+  const test = { testnet: true };
+
+  it('refuses an extended key of the other network class', () => {
+    for (const [xpub, versions, network] of [
+      [key(), undefined, test],
+      [key(ZPUB), ZPUB, test],
+      [key(TPUB), undefined, mainnet],
+      [key(VPUB), VPUB, mainnet],
+    ] as const) {
+      const error = thrown(() => deriveXpubChild(xpub, '0/1', versions, network));
+      expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
+      expect(String((error as Error).message)).not.toContain(xpub.slice(4, 20));
+    }
+  });
+
+  it('derives from a key of the matching class, or when no network is given', () => {
+    expect(deriveXpubChild(key(), '0/1', undefined, mainnet)).toHaveLength(33);
+    expect(deriveXpubChild(key(ZPUB), '0/1', ZPUB, mainnet)).toHaveLength(33);
+    expect(deriveXpubChild(key(TPUB), '0/1', undefined, test)).toHaveLength(33);
+    expect(deriveXpubChild(key(VPUB), '0/1', VPUB, test)).toHaveLength(33);
+    expect(deriveXpubChild(key(), '0/1', undefined, undefined)).toHaveLength(33);
+    // An unregistered version (another coin's) has no known class and is not checked.
+    const other = { private: 0x0488ade5, public: 0x0488b21f };
+    expect(deriveXpubChild(key(other), '0/1', other, test)).toHaveLength(33);
+  });
+});
+
 describe('localSigner.fromMnemonic', () => {
   it('derives per keyRef.path for each curve', async () => {
     const signer = localSigner.fromMnemonic(secret(MNEMONIC));

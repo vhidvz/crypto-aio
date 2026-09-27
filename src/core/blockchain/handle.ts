@@ -244,7 +244,15 @@ export class Blockchain<C extends ChainId = ChainId> {
     if (!config?.xpub)
       throw new ConfigError('CONFIG_INVALID', `wallet '${wallet}' has no xpub`);
     const path = (config.xpubPath ?? '0/{index}').replace('{index}', String(index));
-    const publicKey = deriveXpubChild(config.xpub, path, config.xpubVersions);
+    // A20 (D7): a UTXO chain's extended keys carry its network class; account-model
+    // wallets (EVM, Tron) export `xpub` on every network, so theirs is not checked.
+    const { chain, network } = internals.selection;
+    const publicKey = deriveXpubChild(
+      config.xpub,
+      path,
+      config.xpubVersions,
+      chain.model === 'utxo' ? { testnet: network.testnet } : undefined,
+    );
     return this.addressFromPublicKey(publicKey, walletOptionsOf(config));
   }
 

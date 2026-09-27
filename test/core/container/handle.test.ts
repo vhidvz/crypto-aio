@@ -21,7 +21,8 @@ import { fromHex } from '../../../src/core/util/bytes';
 import { fakeAddress } from '../../../src/testing/fake-chain';
 import { createFakeEnv, type FakeChainId, type FakeEnv } from '../../../src/testing/env';
 import { fakeDriverFactory } from '../../../src/testing/fake-driver';
-import { fakePlugin } from '../../../src/testing/fake-plugin';
+import { fakeManifest, fakePlugin } from '../../../src/testing/fake-plugin';
+import type { ChainInfo } from '../../../src/core/model/chain';
 import { thrown } from '../../helpers';
 
 afterEach(() => resetDefaultContainer());
@@ -212,6 +213,42 @@ describe('Blockchain handle', () => {
     await expect(env.run(env.bc.deriveAddress('deposits', -1))).rejects.toMatchObject({
       code: 'INVALID_INTENT',
     });
+  });
+
+  it('checks the extended key network class on UTXO chains only (A20)', async () => {
+    const seed = fromHex('000102030405060708090a0b0c0d0e0f');
+    const tpubVersions = { private: 0x04358394, public: 0x043587cf };
+    const xpub = HDKey.fromMasterSeed(seed).derive("m/44'/0'/0'").publicExtendedKey;
+    const tpub = HDKey.fromMasterSeed(seed, tpubVersions).derive(
+      "m/44'/1'/0'",
+    ).publicExtendedKey;
+    const env = await createFakeEnv({ wallets: { x: { xpub }, t: { xpub: tpub } } });
+    // The fake chain is an account-model test network: its xpub keeps deriving, as EVM and
+    // Tron wallets export `xpub` on every network.
+    await expect(env.run(env.bc.deriveAddress('x', 0))).resolves.toBeDefined();
+    // A UTXO-model test network, served by the same fake driver.
+    const [fakechain] = fakePlugin().chains ?? [];
+    env.aio.use({
+      name: 'fake-utxo',
+      chains: [
+        {
+          ...(fakechain as ChainInfo),
+          id: 'fakeutxo',
+          family: 'fakeutxo',
+          model: 'utxo',
+        },
+      ],
+      adapters: [{ ...fakeManifest, family: 'fakeutxo', chains: ['fakeutxo'] }],
+    });
+    const utxo = env.aio.blockchain({
+      chain: 'fakeutxo' as FakeChainId,
+      provider: 'fake',
+      wallet: 'main',
+    });
+    await expect(env.run(utxo.deriveAddress('x', 0))).rejects.toMatchObject({
+      code: 'CONFIG_INVALID',
+    });
+    await expect(env.run(utxo.deriveAddress('t', 0))).resolves.toBeDefined();
   });
 
   it('reports network status with semantic endpoint health', async () => {
