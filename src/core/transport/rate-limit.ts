@@ -28,6 +28,11 @@ export class TokenBucket {
     return false;
   }
 
+  /** P25-R23: takes a token only if one is free now and no priority taker is waiting. */
+  tryTakeNow(): boolean {
+    return this.#priorityWaiting === 0 && this.tryTake();
+  }
+
   msUntilToken(): number {
     this.#refill();
     return this.#tokens >= 1 ? 0 : Math.ceil(((1 - this.#tokens) * 1_000) / this.rps);

@@ -258,6 +258,11 @@ export class HttpTransport implements Transport {
   /** #3 (round 3): set after a refresh where every probe failed, so ensureFreshHealth backs
    * off instead of storming the same down endpoints on every read during an outage. */
   #nextRefreshAt = Number.NEGATIVE_INFINITY;
+  /** P25-R23: set after a trial answered or refused (its breaker closed), so the next health
+   * check refreshes at once and the endpoint rejoins the count by the ordinary rules. A
+   * refresh clears it when it starts, so one already running when the flag was set (and
+   * which may have read the breaker before it closed) does not count. */
+  #refreshDue = false;
   #healthRun: Promise<void> | undefined;
   #rpcId = 0;
 
@@ -541,11 +546,14 @@ export class HttpTransport implements Transport {
     // unset). This caller's own signal is raced against it; the shared run itself is not
     // cancelled by it.
     if (this.#healthRun) await this.#join(this.#healthRun, signal);
-    if (this.#clock.now() - this.#lastHealthAt < this.#opts.healthIntervalMs) return;
-    // #3 (round 3): after a fully-failed refresh, back off until #nextRefreshAt instead of
-    // re-probing every down endpoint on every read during an outage. Reads in this window
-    // simply see no fresh health and proceed with the existing no-eligible-endpoint semantics.
-    if (this.#clock.now() < this.#nextRefreshAt) return;
+    if (!this.#refreshDue) {
+      if (this.#clock.now() - this.#lastHealthAt < this.#opts.healthIntervalMs) return;
+      // #3 (round 3): after a fully-failed refresh, back off until #nextRefreshAt instead
+      // of re-probing every down endpoint on every read during an outage. Reads in this
+      // window simply see no fresh health and proceed with the existing
+      // no-eligible-endpoint semantics.
+      if (this.#clock.now() < this.#nextRefreshAt) return;
+    }
     await this.refreshHealth(signal);
   }
 
@@ -686,6 +694,10 @@ export class HttpTransport implements Transport {
       throw error;
     }
     const outcome = await trial;
+    // P25-R23: a trial that answered or refused closed its breaker; the next proof read
+    // refreshes health first, so the endpoint rejoins the count at once and its veto holds
+    // for the reads that follow, not for this one only.
+    if (outcome && outcome.kind !== 'failed') this.#refreshDue = true;
     // The caller aborted while the trial ran: the read ends as any aborted read does.
     if (options.signal?.aborted) throw options.signal.reason;
     if (outcome && outcome.kind !== 'failed') {
@@ -820,7 +832,10 @@ export class HttpTransport implements Transport {
    * the quorum does not count (health misses) whose breaker is half-open, the first by
    * priority, then name. Its request is an ordinary attempt (its rate limit, identity check
    * and breaker bookkeeping, so an answer closes the breaker and a failure counts against
-   * it). Never rejects: the outcome is an answer, a refusal (a definitive error) or a
+   * it), except that it never waits for a rate-limit token (P25-R23): with none free now,
+   * it is not sent this read (a failure). The read waits for a trial it sent, up to the
+   * call's timeout. Each concurrent proof read in a half-open window may send its own
+   * trial. Never rejects: the outcome is an answer, a refusal (a definitive error) or a
    * failure, which the verdict ignores.
    */
   #trial<T>(
@@ -839,7 +854,7 @@ export class HttpTransport implements Transport {
         (a, b) => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
       );
     if (!endpoint) return undefined;
-    return this.#attempt(endpoint, label, 0, options, work).then(
+    return this.#attempt(endpoint, label, 0, options, work, false).then(
       (value): TrialOutcome<T> => ({ endpoint, kind: 'answer', value }),
       (error: unknown): TrialOutcome<T> => {
         const refused =
@@ -897,6 +912,8 @@ export class HttpTransport implements Transport {
     attempt: number,
     options: CallOptions,
     work: Work<T>,
+    /** P25-R23: false for a trial, which never waits for a rate-limit token. */
+    waitForToken = true,
   ): Promise<T> {
     const timeoutMs = options.timeoutMs ?? endpoint.timeoutMs ?? this.#opts.timeoutMs;
     // A17: a first-use identity probe takes its own token (#direct), so it runs before this
@@ -913,7 +930,7 @@ export class HttpTransport implements Transport {
     // aborts) never touches the breaker and is never tagged ambiguous — no fetch has
     // happened yet.
     if (identityFailure === undefined) {
-      await this.#takeToken(endpoint, timeoutMs, options.signal);
+      await this.#takeToken(endpoint, timeoutMs, options.signal, waitForToken);
     }
     const { signal, cancel } = this.#deadline(timeoutMs, options.signal);
     const started = this.#clock.now();
@@ -998,8 +1015,19 @@ export class HttpTransport implements Transport {
     endpoint: Endpoint,
     timeoutMs: number,
     outer?: AbortSignal,
+    wait = true,
   ): Promise<void> {
     if (!endpoint.bucket) return;
+    if (!wait) {
+      // P25-R23: with no token free now, no wait: the same retryable RATE_LIMITED, before
+      // any fetch or breaker bookkeeping.
+      if (endpoint.bucket.tryTakeNow()) return;
+      throw new ProviderError(
+        'RATE_LIMITED',
+        `no rate limit token free for endpoint '${endpoint.id}'`,
+        { context: this.#context(endpoint) },
+      );
+    }
     const { signal, cancel } = this.#deadline(timeoutMs, outer);
     try {
       await endpoint.bucket.take(signal);
@@ -1766,6 +1794,7 @@ export class HttpTransport implements Transport {
   }
 
   async #refresh(): Promise<void> {
+    this.#refreshDue = false;
     const probe = this.#probes.height;
     const identityProbed = this.#identityProbed();
     const targets = this.#endpoints.filter((e) => e.identity !== 'mismatch');

@@ -743,29 +743,62 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
   });
 
   it('leaves the verdict to the counted endpoints when the trial fails in transport (d)', async () => {
-    const { proof, bCalls, transport, clock } = await recovering('down');
+    const { proof, bCalls, transport, clock, log } = await recovering('down');
     const before = bCalls();
     await expect(proof()).resolves.toBe('fact');
     expect(bCalls()).toBe(before + 1);
-    // The failure counts against b as usual: its breaker opens again, and it stays out.
+    // The failure counts against b as usual: its breaker opens again, and it stays out. A
+    // failed trial forces no refresh (P25-R23): the next read probes nothing.
     expect(transport.status().find((s) => s.id === 'b')?.state).toBe('open');
+    const probed = log.length - bCalls();
+    await expect(proof()).resolves.toBe('fact');
+    expect(log.length - bCalls()).toBe(probed);
     await clock.advance(HEALTH_INTERVAL_MS);
     await expect(proof()).resolves.toBe('fact');
     expect(bCalls()).toBe(before + 1);
   });
 
-  it("takes the trial's request through the endpoint's rate limit (e)", async () => {
-    const { proof, bCalls, log } = await recovering('fact', {
+  it('skips a trial whose rate-limit token is not free, without waiting (e, P25-R23)', async () => {
+    const { transport, clock, answers, bCalls } = await recovering('fact', {
       rateLimit: { rps: 1, burst: 1 },
     });
+    answers.a = 'forged';
+    // The reviewer's shape: a proof read with a 500 ms timeout.
+    const proof = () =>
+      drive(clock, transport.rpc('fin', [], { quorum: 'proof', timeoutMs: 500 }));
     const before = bCalls();
-    await expect(proof()).resolves.toBe('fact');
+    // The refresh this read runs first takes b's only token: the trial is skipped at once,
+    // and a decides alone (the documented cost while b is out), with no wait.
+    const started = clock.now();
+    await expect(proof()).resolves.toBe('forged');
+    expect(clock.now() - started).toBe(0);
+    expect(bCalls()).toBe(before);
+    // A second later b's bucket has a token again: the trial goes out and blocks the liar.
+    await clock.advance(1_000);
+    await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
     expect(bCalls()).toBe(before + 1);
-    // The refresh's height probe took b's only token; the trial waited for the next one.
-    const trial = log[log.length - 1] as { method: string; at: number };
-    const probe = log[log.length - 2] as { method: string; at: number };
-    expect([probe.method, trial.method]).toEqual(['height', 'fin']);
-    expect(trial.at - probe.at).toBeGreaterThanOrEqual(1_000);
+  });
+
+  it("keeps a trial's veto: the next proof read refreshes health first (g, P25-R23)", async () => {
+    // b answers honestly while a lies; or b refuses while a answers.
+    for (const [recovered, a] of [
+      ['fact', 'forged'],
+      ['refuse', 'fact'],
+    ] as const) {
+      const { proof, answers, clock, log, bCalls } = await recovering(recovered);
+      answers.a = a;
+      const heights = () => log.length - bCalls();
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+      // The trial closed b's breaker. A prompt retry refreshes health first, which counts b
+      // again, so it never lets a decide alone…
+      const probed = heights();
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+      expect(heights()).toBe(probed + 1);
+      // …and later reads within the health interval keep counting it, with no refresh.
+      await clock.advance(HEALTH_INTERVAL_MS - 1);
+      await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
+      expect(heights()).toBe(probed + 1);
+    }
   });
 
   it('tries a recovering endpoint even when no counted endpoint can answer (f)', async () => {
