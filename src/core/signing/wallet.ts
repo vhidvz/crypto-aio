@@ -49,24 +49,41 @@ export function walletOptionsOf(config: WalletConfig): WalletOptions {
   };
 }
 
+/**
+ * O1: the wallet's `xpubPath`, `undefined` when absent (`undefined` or `null`, as
+ * `deriveAddress` reads it). One that is present but not a string is `CONFIG_INVALID` with a
+ * fixed text. Wallet resolution and `deriveAddress` share this check.
+ */
+export function xpubPathOf(config: WalletConfig): string | undefined {
+  const path: unknown = config.xpubPath;
+  if (path === undefined || path === null) return undefined;
+  if (typeof path !== 'string') {
+    throw new ConfigError('CONFIG_INVALID', 'xpubPath must be a string');
+  }
+  return path;
+}
+
 function hdOptionsOf(config: WalletConfig): WalletHdOptions {
-  const { xpubPath, xpubVersions } = config;
-  const xpub = config.xpub as string;
-  // A26: only a readable, PUBLIC extended key ever reaches a driver.
-  parseExtendedPublicKey(xpub, xpubVersions);
-  return Object.freeze({
-    xpub,
+  const xpubPath = xpubPathOf(config);
+  const versions = config.xpubVersions;
+  // O2: the frozen copy comes first, reading each field once, and the key is read against
+  // it, so it is checked against exactly the versions a driver receives.
+  const hd: WalletHdOptions = Object.freeze({
+    xpub: config.xpub as string,
     ...(xpubPath !== undefined ? { xpubPath } : {}),
     // M5: the version pair only, never other keys of the caller's object.
-    ...(xpubVersions
+    ...(versions
       ? {
           xpubVersions: Object.freeze({
-            private: xpubVersions.private,
-            public: xpubVersions.public,
+            private: versions.private,
+            public: versions.public,
           }),
         }
       : {}),
   });
+  // A26: only a readable, PUBLIC extended key ever reaches a driver.
+  parseExtendedPublicKey(hd.xpub, hd.xpubVersions);
+  return hd;
 }
 
 export async function resolveWallet(

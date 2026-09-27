@@ -154,6 +154,77 @@ describe('the xpub passed to drivers (A22)', () => {
     expect(JSON.stringify(seen.slice(0, 2))).not.toContain(xprv.slice(4, 20));
   });
 
+  it('reads explicit null options as none (N2)', async () => {
+    const env = await createFakeEnv({ wallets: { deposits: { xpub } } });
+    const { driver } = await env.run(internalsOf(env.bc).pooled());
+    const seen: (WalletOptions | undefined)[] = [];
+    const fromPublicKey = driver.address.fromPublicKey.bind(driver.address);
+    Object.assign(driver.address, {
+      fromPublicKey: (...args: Parameters<typeof fromPublicKey>) => {
+        seen.push(args[1]);
+        return fromPublicKey(...args);
+      },
+    });
+    const publicKey = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'/0/0")
+      .publicKey as Uint8Array;
+    // An untyped JavaScript caller may pass null.
+    const withNull = await env.run(env.bc.addressFromPublicKey(publicKey, null as never));
+    const without = await env.run(env.bc.addressFromPublicKey(publicKey));
+    expect(withNull.equals(without)).toBe(true);
+    expect(seen).toEqual([{}, {}]);
+  });
+
+  it('refuses a non-string xpubPath with a fixed text, at resolution and in deriveAddress (O1)', async () => {
+    const paths: Record<string, unknown> = { number: 7, object: { leak: 'secret-ish' } };
+    const expectRefusal = (error: unknown) => {
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect(error).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message: 'xpubPath must be a string',
+      });
+      expect(JSON.stringify(error)).not.toContain('secret-ish');
+    };
+    for (const path of Object.values(paths)) {
+      expectRefusal(thrown(() => walletOptionsOf({ xpub, xpubPath: path as never })));
+    }
+    const env = await createFakeEnv({
+      wallets: Object.fromEntries(
+        Object.entries(paths).map(([name, path]) => [
+          name,
+          { signer: 'hot', xpub, xpubPath: path as never },
+        ]),
+      ),
+    });
+    for (const wallet of Object.keys(paths)) {
+      const bc = env.aio.blockchain({ chain: 'fakechain', provider: 'fake', wallet });
+      expectRefusal(await env.run(internalsOf(bc).wallet()).catch((e: unknown) => e));
+      expectRefusal(
+        await env.run(env.bc.deriveAddress(wallet, 0)).catch((e: unknown) => e),
+      );
+    }
+    // An absent path (undefined or null) is the default, as deriveAddress reads it.
+    expect(walletOptionsOf({ xpub, xpubPath: null as never })).toEqual({ hd: { xpub } });
+  });
+
+  it('checks the key against exactly the versions the driver receives (O2)', () => {
+    const XPUB = { private: 0x0488ade4, public: 0x0488b21e };
+    const reads = { private: 0, public: 0 };
+    // Versions that change between reads: ZPUB first, then the plain xpub pair.
+    const versions = {
+      get private() {
+        reads.private += 1;
+        return reads.private === 1 ? ZPUB.private : XPUB.private;
+      },
+      get public() {
+        reads.public += 1;
+        return reads.public === 1 ? ZPUB.public : XPUB.public;
+      },
+    };
+    const options = walletOptionsOf({ xpub: zpub, xpubVersions: versions });
+    expect(options.hd).toEqual({ xpub: zpub, xpubVersions: ZPUB });
+    expect(reads).toEqual({ private: 1, public: 1 });
+  });
+
   it('refuses a private extended key, naming no key (A26)', () => {
     const tpub = { private: 0x04358394, public: 0x043587cf };
     const cases: readonly (readonly [string, typeof ZPUB | undefined])[] = [

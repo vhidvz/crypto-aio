@@ -44,7 +44,7 @@ import {
 import { Scanner, type ScannerOptions } from '../observe/scanner';
 import { deriveXpubChild } from '../signing/hd';
 import type { SignatureBundle } from '../signing/types';
-import { resolveWallet, walletOptionsOf } from '../signing/wallet';
+import { resolveWallet, walletOptionsOf, xpubPathOf } from '../signing/wallet';
 import type { OperationRecord } from '../store/types';
 import type { EndpointState, EndpointStatus } from '../transport/types';
 import { fromHex } from '../util/bytes';
@@ -179,12 +179,13 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   /** The chain's address for `publicKey`. `options.hd` is reserved (A22): the core builds it
-   * from a wallet's `xpub`, so a caller's `hd` is dropped and never reaches the driver. */
+   * from a wallet's `xpub`, so a caller's `hd` is dropped and never reaches the driver.
+   * N2: `null` options (from an untyped caller) are none. */
   async addressFromPublicKey(
     publicKey: Uint8Array | string,
     options: WalletOptions = {},
   ): Promise<Address> {
-    const { hd: _reserved, ...callerOptions } = options;
+    const { hd: _reserved, ...callerOptions } = options ?? {};
     const bytes = typeof publicKey === 'string' ? fromHex(publicKey) : publicKey;
     return this.driverAddress(bytes, callerOptions);
   }
@@ -241,7 +242,8 @@ export class Blockchain<C extends ChainId = ChainId> {
     const config = containerOf(internals.container).effective().wallets[wallet];
     if (!config?.xpub)
       throw new ConfigError('CONFIG_INVALID', `wallet '${wallet}' has no xpub`);
-    const path = (config.xpubPath ?? '0/{index}').replace('{index}', String(index));
+    // O1: a non-string xpubPath is CONFIG_INVALID, as at wallet resolution.
+    const path = (xpubPathOf(config) ?? '0/{index}').replace('{index}', String(index));
     // A20 (D7): a UTXO chain's extended keys carry its network class; account-model
     // wallets (EVM, Tron) export `xpub` on every network, so theirs is not checked.
     const { chain, network } = internals.selection;
