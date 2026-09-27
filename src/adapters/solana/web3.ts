@@ -19,10 +19,15 @@ import type { SolanaCodec } from './types';
 const TOKEN = new PublicKey(TOKEN_PROGRAM);
 const ASSOCIATED_TOKEN = new PublicKey(ASSOCIATED_TOKEN_PROGRAM);
 
-/** The tags of a native client's requests: plain reads, and broadcasts for sends. */
+/**
+ * The tags of a native client's requests: broadcasts for its writes (a transaction send
+ * and a faucet airdrop, neither safe to retry as a read), plain reads for the rest.
+ */
 function classify(_url: URL, init: RequestInit | undefined) {
   const body = typeof init?.body === 'string' ? init.body : '';
-  return /"method"\s*:\s*"sendTransaction"/.test(body) ? BROADCAST : READ;
+  return /"method"\s*:\s*"(?:sendTransaction|requestAirdrop)"/.test(body)
+    ? BROADCAST
+    : READ;
 }
 
 export function createWeb3Codec(transport: Transport): SolanaCodec {
@@ -67,16 +72,24 @@ export function createWeb3Codec(transport: Transport): SolanaCodec {
       return {
         client: connection,
         close: () => {
-          // Subscriptions have no transport bridge; close the idle socket client if used.
-          // It retries a failed connection on a timer, so stop that first: a close while
-          // a retry is pending would otherwise find no socket and leave the timer running.
+          // Subscriptions have no transport bridge, so a socket client that was used only
+          // ever fails against the placeholder host and retries on a timer. Turn retries
+          // off (a flag: it does not cancel a retry already armed), cancel the armed one
+          // (while it waits there is no socket, so `close()` alone does nothing), then
+          // close the socket if there is one.
           const socket = (
             connection as unknown as {
-              _rpcWebSocket?: { close(): void; setAutoReconnect(on: boolean): void };
+              _rpcWebSocket?: {
+                close(): void;
+                setAutoReconnect(on: boolean): void;
+                reconnect_timer_id?: ReturnType<typeof setTimeout>;
+              };
             }
           )._rpcWebSocket;
-          socket?.setAutoReconnect(false);
-          socket?.close();
+          if (!socket) return;
+          socket.setAutoReconnect(false);
+          clearTimeout(socket.reconnect_timer_id);
+          socket.close();
         },
       };
     },

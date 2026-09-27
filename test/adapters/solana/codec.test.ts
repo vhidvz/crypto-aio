@@ -224,7 +224,7 @@ describe('the wire format on out-of-range values and untrusted bytes (lessons 19
 });
 
 describe('the native Connection (R34, spec §11)', () => {
-  it('bridges a fresh Connection per call to the transport, sends tagged as broadcasts', async () => {
+  it('bridges a fresh Connection per call to the transport, writes tagged as broadcasts', async () => {
     const tags: unknown[] = [];
     const transport = {
       createFetch: (classify: (url: URL, init: RequestInit | undefined) => unknown) =>
@@ -234,7 +234,8 @@ describe('the native Connection (R34, spec §11)', () => {
             id: string;
             method: string;
           };
-          const result = method === 'sendTransaction' ? VECTORS[0]!.signature : 42;
+          const write = method === 'sendTransaction' || method === 'requestAirdrop';
+          const result = write ? VECTORS[0]!.signature : 42;
           return new Response(JSON.stringify({ jsonrpc: '2.0', id, result }), {
             headers: { 'content-type': 'application/json' },
           });
@@ -255,18 +256,56 @@ describe('the native Connection (R34, spec §11)', () => {
     await expect(
       connection.sendRawTransaction(raw, { skipPreflight: true }),
     ).resolves.toBe(VECTORS[0]!.signature);
-    expect(tags).toEqual([READ, BROADCAST]);
-    // Closing stops the (never bridged) websocket client from reconnecting, then closes it.
-    const socket = (
-      connection as unknown as {
-        _rpcWebSocket: { close(): void; setAutoReconnect(on: boolean): void };
-      }
-    )._rpcWebSocket;
-    const reconnect = jest.spyOn(socket, 'setAutoReconnect');
-    const close = jest.spyOn(socket, 'close');
+    // An airdrop is a write too: it must never be retried as a safe read.
+    await expect(
+      connection.requestAirdrop(new PublicKey(KEY_ADDRESS), 1_000_000_000),
+    ).resolves.toBe(VECTORS[0]!.signature);
+    expect(tags).toEqual([READ, BROADCAST, BROADCAST]);
+    // Closing a client that never opened a socket is a no-op.
     await first.close?.();
-    expect(reconnect).toHaveBeenCalledWith(false);
-    expect(close).toHaveBeenCalledTimes(1);
     await second.close?.();
+  });
+
+  // A socket to the placeholder host always fails. Either a retry is armed (the socket is
+  // gone) or an attempt is in flight (ws aborts it on close with 1006, which would arm one).
+  it.each([
+    { when: 'a retry is armed', armed: true },
+    { when: 'an attempt is in flight', armed: false },
+  ])('closes the websocket client for good when $when', async ({ armed }) => {
+    jest.useFakeTimers();
+    try {
+      const native = createWeb3Codec({
+        createFetch: () => jest.fn(),
+      } as unknown as Transport).createNative();
+      const socket = (
+        native.client as unknown as {
+          _rpcWebSocket: {
+            webSocketFactory: () => unknown;
+            connect(): void;
+            _connect(): void;
+            reconnect_timer_id?: unknown;
+          };
+        }
+      )._rpcWebSocket;
+      const listeners = new Map<string, (event: unknown) => void>();
+      const failed = () => listeners.get('close')!({ code: 1006, reason: '' });
+      socket.webSocketFactory = () => ({
+        addEventListener: (type: string, listener: (event: unknown) => void) =>
+          listeners.set(type, listener),
+        close: failed,
+      });
+      socket.connect();
+      if (armed) {
+        failed();
+        expect(socket.reconnect_timer_id).toBeDefined();
+      }
+      const reconnect = jest.spyOn(socket, '_connect');
+      await native.close?.();
+      jest.advanceTimersByTime(60_000);
+      expect(reconnect).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
