@@ -111,14 +111,15 @@ function encodeRaw(raw: TronRawData): string {
     .toLowerCase();
 }
 
+type Field = { readonly field: number; readonly value: bigint | Uint8Array | null };
+
 /**
- * The fields of one protobuf message: varints as bigints, length-delimited as bytes, and
- * fixed-width fields skipped. `null` for anything malformed: a truncated field, a varint
- * over 64 bits, a group or a repeated field number (so "the single contract" is exact).
+ * The fields of one protobuf message, in order: varints as bigints, length-delimited as
+ * bytes, fixed-width as `null` (skipped). `null` for malformed bytes: a truncated field, a
+ * varint over 64 bits, a group or field number 0.
  */
-function fields(bytes: Uint8Array): Map<number, bigint | Uint8Array> | null {
-  const out = new Map<number, bigint | Uint8Array>();
-  const seen = new Set<number>();
+function fieldList(bytes: Uint8Array): Field[] | null {
+  const out: Field[] = [];
   let i = 0;
   const varint = (): bigint | null => {
     let result = 0n;
@@ -136,24 +137,55 @@ function fields(bytes: Uint8Array): Map<number, bigint | Uint8Array> | null {
     if (key === null) return null;
     const field = Number(key >> 3n);
     const wire = Number(key & 7n);
-    if (field === 0 || seen.has(field)) return null;
-    seen.add(field);
+    if (field === 0) return null;
     if (wire === 0) {
       const value = varint();
       if (value === null) return null;
-      out.set(field, value);
+      out.push({ field, value });
     } else if (wire === 2) {
       const length = varint();
       if (length === null || i + Number(length) > bytes.length) return null;
-      out.set(field, bytes.subarray(i, i + Number(length)));
+      out.push({ field, value: bytes.subarray(i, i + Number(length)) });
       i += Number(length);
     } else if (wire === 1 || wire === 5) {
       i += wire === 1 ? 8 : 4;
       if (i > bytes.length) return null;
+      out.push({ field, value: null });
     } else return null;
   }
   return out;
 }
+
+/**
+ * A message whose fields are all singular, by number; `null` when a field number repeats,
+ * so a value is never guessed between protobuf's merge and last-wins rules.
+ */
+function singular(
+  bytes: Uint8Array | null,
+): Map<number, bigint | Uint8Array | null> | null {
+  const list = bytes ? fieldList(bytes) : null;
+  if (!list) return null;
+  const out = new Map<number, bigint | Uint8Array | null>();
+  for (const { field, value } of list) {
+    if (out.has(field)) return null;
+    out.set(field, value);
+  }
+  return out;
+}
+
+/**
+ * The `Contract` of `Transaction.raw` bytes when there is exactly one (raw field 11; java-tron
+ * requires one), else `null`. Other repeated raw fields, such as the unused `auths`, are
+ * client metadata and stay readable.
+ */
+function onlyContract(raw: Uint8Array): Uint8Array | null {
+  const contracts = fieldList(raw)?.filter((f) => f.field === 11) ?? [];
+  const value = contracts.length === 1 ? contracts[0]?.value : null;
+  return value instanceof Uint8Array ? value : null;
+}
+
+const bytesOf = (value: bigint | Uint8Array | null | undefined): Uint8Array | null =>
+  value instanceof Uint8Array ? value : null;
 
 /**
  * SDK-free and exact: the amount of the single TransferContract in `Transaction.raw` bytes
@@ -168,14 +200,10 @@ export function transferAmount(rawHex: string): bigint | null {
   } catch {
     return null;
   }
-  const bytesOf = (value: bigint | Uint8Array | undefined): Uint8Array | null =>
-    value instanceof Uint8Array ? value : null;
-  const contract = bytesOf(fields(bytes)?.get(11));
-  const entry = contract ? fields(contract) : null;
+  const entry = singular(onlyContract(bytes));
   if (entry?.get(1) !== 1n) return null; // ContractType.TransferContract
-  const any = bytesOf(entry.get(2));
-  const value = any ? bytesOf(fields(any)?.get(2)) : null;
-  const amount = value ? fields(value)?.get(3) : undefined;
+  const any = singular(bytesOf(entry.get(2)));
+  const amount = singular(bytesOf(any?.get(2)))?.get(3);
   return typeof amount === 'bigint' && amount <= INT64_MAX ? amount : null;
 }
 
@@ -197,13 +225,16 @@ function hexField(value: unknown): string {
   return typeof value === 'string' ? value.toLowerCase() : malformed();
 }
 
-/** An `int64` tronweb read as a JS number: only a safe non-negative one is exact. */
-function count(value: unknown): number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : malformed();
+/** An `int64` tronweb read as a JS number is exact only when safe; a count is not negative. */
+function exact(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+/**
+ * Lenient on what the chain accepts (F4-R3): `readRaw` reads chain history, so client-set
+ * fields java-tron leaves unbounded never make a transaction unreadable. Range checks
+ * belong to what we encode (`encodeRaw`), and `decodeRaw` stays strict through it.
+ */
 function read(hex: string): TronRawData {
   if (
     typeof hex !== 'string' ||
@@ -213,6 +244,8 @@ function read(hex: string): TronRawData {
   ) {
     malformed();
   }
+  // tronweb reads only the first contract, so count them here, SDK-free (M1).
+  if (onlyContract(fromHex(hex)) === null) malformed();
   let decoded: Decoded | undefined;
   for (const type of ['TransferContract', 'TriggerSmartContract']) {
     try {
@@ -222,7 +255,7 @@ function read(hex: string): TronRawData {
       // Another contract type, or not a transaction at all.
     }
   }
-  const entry = decoded?.contract?.length === 1 ? decoded.contract[0] : undefined;
+  const entry = decoded?.contract?.[0];
   const value = entry?.parameter?.value;
   if (!decoded || !entry || !value) return malformed();
   const amount = value.amount;
@@ -233,10 +266,7 @@ function read(hex: string): TronRawData {
           owner: hexField(value.owner_address),
           to: hexField(value.to_address),
           // tronweb rounds an int64 above 2^53 - 1: read those exactly from the bytes (A12).
-          amount:
-            typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 0
-              ? BigInt(amount)
-              : (transferAmount(hex) ?? malformed()),
+          amount: exact(amount) ? BigInt(amount) : (transferAmount(hex) ?? malformed()),
         }
       : {
           type: 'TriggerSmartContract',
@@ -247,9 +277,16 @@ function read(hex: string): TronRawData {
   const raw: TronRawData = {
     refBlockBytes: hexField(decoded.ref_block_bytes),
     refBlockHash: hexField(decoded.ref_block_hash),
-    expiration: count(decoded.expiration),
-    timestamp: count(decoded.timestamp),
-    ...(decoded.fee_limit ? { feeLimit: count(decoded.fee_limit) } : {}),
+    // java-tron bounds `expiration` for every transaction in a block (`validateCommon`:
+    // after the head block's time, at most `MAXIMUM_TIME_UNTIL_EXPIRATION` beyond it).
+    expiration: exact(decoded.expiration) ? decoded.expiration : malformed(),
+    // Client-set and unbounded (some wallets write .NET ticks): kept as tronweb reads it.
+    timestamp: typeof decoded.timestamp === 'number' ? decoded.timestamp : malformed(),
+    // Only the VM bounds `fee_limit`, for contract calls; on a TRX transfer it is client
+    // data. One a number cannot hold exactly, or a negative one, is left out, never rounded.
+    ...(exact(decoded.fee_limit) && decoded.fee_limit > 0
+      ? { feeLimit: decoded.fee_limit }
+      : {}),
     ...(decoded.data ? { data: hexField(decoded.data) } : {}),
     contract,
   };

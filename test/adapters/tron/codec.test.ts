@@ -1,4 +1,25 @@
+// Lesson 20: records the length of every base58check decode the address codec performs,
+// delegating to the real implementation, so a test can prove long input never reaches it.
+const mockBase58Decodes: number[] = [];
+jest.mock('@scure/base', () => {
+  const actual = jest.requireActual<typeof ScureBase>('@scure/base');
+  return {
+    ...actual,
+    createBase58check: (sha: Parameters<typeof actual.createBase58check>[0]) => {
+      const codec = actual.createBase58check(sha);
+      return {
+        ...codec,
+        decode: (value: string) => {
+          mockBase58Decodes.push(value.length);
+          return codec.decode(value);
+        },
+      };
+    },
+  };
+});
+
 import { secp256k1 } from '@noble/curves/secp256k1';
+import type * as ScureBase from '@scure/base';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { sha256 } from '@noble/hashes/sha256';
 import { utils as tronUtils } from 'tronweb';
@@ -29,6 +50,7 @@ import {
   KEY_ADDRESS,
   KEY_HEX,
   KEY_PUBLIC,
+  MAINNET_TICKS,
   RECIPIENT,
   RECIPIENT_HEX,
   USDT,
@@ -104,9 +126,14 @@ describe('Tron addresses (SDK-free, strict)', () => {
     expect(isTronAddress(KEY_HEX.toUpperCase())).toBe(true);
   });
 
-  it('refuses a 100,000-character input before decoding it (lesson 20)', () => {
-    for (const value of [`T${'1'.repeat(99_999)}`, `41${'0'.repeat(99_998)}`]) {
-      const start = performance.now();
+  it('never base58-decodes an input longer than an address (lesson 20)', () => {
+    mockBase58Decodes.length = 0;
+    // 43 characters first: a regression then fails fast, before the quadratic 100,000.
+    for (const value of [
+      `T${'1'.repeat(42)}`,
+      `T${'1'.repeat(99_999)}`,
+      `41${'0'.repeat(99_998)}`,
+    ]) {
       expect(isTronAddress(value)).toBe(false);
       expect(() => normalizeTronAddress(value)).toThrow(
         expect.objectContaining({
@@ -114,9 +141,11 @@ describe('Tron addresses (SDK-free, strict)', () => {
           message: 'not a Tron address',
         }),
       );
-      // Base58 decoding is quadratic: 6,000 characters already take seconds.
-      expect(performance.now() - start).toBeLessThan(1_000);
+      expect(mockBase58Decodes).toEqual([]);
     }
+    // The spy sees the decoder: a real address reaches it once.
+    expect(isTronAddress(KEY_ADDRESS)).toBe(true);
+    expect(mockBase58Decodes).toEqual([34]);
   });
 });
 
@@ -360,6 +389,33 @@ describe('tronwebCodec', () => {
     const twice = `${encodeRawData(huge)}${second}`;
     expect(transferAmount(twice)).toBeNull();
     expect(tronwebCodec.readRaw(twice)).toBeNull();
+    // A singular field repeated inside the contract (the amount, twice) is never guessed at.
+    expect(transferAmount(minimalTransfer(`05${'18'}06`))).toBeNull();
+    // `auths` (raw field 9) is repeated, unused client metadata: two of them still read.
+    const auth = '4a050a030a0161'; // authority { account { name: "a" } }
+    const withAuths = `${encodeRawData(huge)}${auth}${auth}`;
+    expect(transferAmount(withAuths)).toBe(2n ** 60n + 1n);
+    expect(tronwebCodec.readRaw(withAuths)).toEqual(huge);
+  });
+
+  it('refuses two contracts even when both amounts are exact (M1)', () => {
+    const transfer = transferVector();
+    const other = { ...transfer.contract, to: KEY_HEX, amount: 7n };
+    const second = encodeRawData({
+      refBlockBytes: '',
+      refBlockHash: '',
+      expiration: 0,
+      timestamp: 0,
+      contract: other,
+    });
+    for (const first of [VECTORS[0]?.rawHex ?? '', VECTORS[1]?.rawHex ?? '']) {
+      const pair = `${first}${second}`;
+      expect(tronwebCodec.readRaw(pair)).toBeNull();
+      expect(() => tronwebCodec.decodeRaw(pair)).toThrow(
+        expect.objectContaining({ code: 'INVALID_INTENT' }),
+      );
+    }
+    expect(transferAmount(`${VECTORS[0]?.rawHex ?? ''}${second}`)).toBeNull();
   });
 
   it("reads raw bytes up to java-tron's 500 KiB and refuses longer hex before decoding (lesson 20)", () => {
@@ -384,24 +440,50 @@ describe('tronwebCodec', () => {
     );
   });
 
-  it('reads no rounded or negative integer fields', () => {
-    const transfer = VECTORS[0]?.rawHex ?? '';
-    const trigger = VECTORS[1]?.rawHex ?? '';
+  it('decodes strictly, but reads unbounded client metadata leniently (F4-R3)', () => {
+    const transfer = transferVector();
+    const hex = VECTORS[0]?.rawHex ?? '';
     const expiration = `40${varintHex(1_790_000_060_000n)}`;
     const timestamp = `70${varintHex(1_790_000_000_000n)}`;
-    const feeLimit = `9001${varintHex(30_000_000n)}`;
-    expect(transfer).toContain(expiration);
-    expect(transfer).toContain(timestamp);
-    expect(trigger).toContain(feeLimit);
-    for (const hex of [
-      transfer.replace(expiration, `40${varintHex(2n ** 60n + 1n)}`),
-      transfer.replace(timestamp, `70${varintHex(2n ** 64n - 1n)}`), // int64 -1
-      trigger.replace(feeLimit, `9001${varintHex(2n ** 60n + 1n)}`),
-    ]) {
-      expect(tronwebCodec.readRaw(hex)).toBeNull();
-      expect(() => tronwebCodec.decodeRaw(hex)).toThrow(
+    expect(hex).toContain(expiration);
+    expect(hex).toContain(timestamp);
+    const minusOne = varintHex(2n ** 64n - 1n); // int64 -1
+    const unsafe = varintHex(2n ** 60n + 1n);
+    // java-tron bounds `expiration` (validateCommon), so an unsafe one is not a chain read.
+    const badExpiration = hex.replace(expiration, `40${unsafe}`);
+    expect(tronwebCodec.readRaw(badExpiration)).toBeNull();
+    // `timestamp` is unbounded and informational: read as tronweb holds it.
+    const lenient: readonly (readonly [string, TronRawData])[] = [
+      [hex.replace(timestamp, `70${minusOne}`), { ...transfer, timestamp: -1 }],
+      [
+        hex.replace(timestamp, `70${unsafe}`),
+        { ...transfer, timestamp: Number(2n ** 60n + 1n) },
+      ],
+      // A TRX transfer's `fee_limit` is unbounded too (only the VM checks it); a value a
+      // number cannot hold exactly, or a negative one, is left out, never rounded.
+      [`${hex}9001${unsafe}`, transfer],
+      [`${hex}9001${minusOne}`, transfer],
+    ];
+    for (const [bytes, read] of lenient) {
+      expect(tronwebCodec.readRaw(bytes)).toEqual(read);
+    }
+    for (const bytes of [badExpiration, ...lenient.map(([bytes]) => bytes)]) {
+      expect(() => tronwebCodec.decodeRaw(bytes)).toThrow(
         expect.objectContaining({ code: 'INVALID_INTENT' }),
       );
     }
+  });
+
+  it('reads a real mainnet transfer whose timestamp is .NET ticks (F4-R3 I1)', () => {
+    // Block 86,615,431, txid a362c1f34d02…: see MAINNET_TICKS.
+    const v = MAINNET_TICKS;
+    expect(toHex(sha256(fromHex(v.rawHex)))).toBe(v.txId);
+    expect(v.timestamp > BigInt(Number.MAX_SAFE_INTEGER)).toBe(true);
+    expect(tronwebCodec.readRaw(v.rawHex)).toEqual(v.raw);
+    expect(transferAmount(v.rawHex)).toBe(200_800n);
+    // Strict decoding refuses it: we never encode a timestamp above 2^53 - 1.
+    expect(() => tronwebCodec.decodeRaw(v.rawHex)).toThrow(
+      expect.objectContaining({ code: 'INVALID_INTENT' }),
+    );
   });
 });

@@ -16,9 +16,9 @@ import { fromHex, toHex } from '../../core/util/bytes';
 
 const base58check = createBase58check(sha256);
 const HEX_ADDRESS = /^41[0-9a-fA-F]{40}$/;
-const BASE58 = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
-/** The longest form: 42 hex digits (base58 is 34 characters). */
-const MAX_LENGTH = 42;
+/** Every base58check form of 21 bytes starting `0x41` has exactly 34 characters. */
+const BASE58_LENGTH = 34;
+const BASE58_ALPHABET = /^T[1-9A-HJ-NP-Za-km-z]*$/;
 
 function invalid(): ValidationError {
   return new ValidationError('INVALID_ADDRESS', 'not a Tron address');
@@ -26,10 +26,11 @@ function invalid(): ValidationError {
 
 /** The 21 address bytes of a base58check or `41…` hex address; throws INVALID_ADDRESS. */
 export function addressBytes(value: string): Uint8Array {
-  // Lesson 20: base58 decoding is quadratic, so refuse anything too long before decoding.
-  if (typeof value !== 'string' || value.length > MAX_LENGTH) throw invalid();
+  if (typeof value !== 'string') throw invalid();
   if (HEX_ADDRESS.test(value)) return fromHex(value);
-  if (!BASE58.test(value)) throw invalid();
+  // Lesson 20: base58 decoding is quadratic, so this length check is the one gate before
+  // the decoder; the alphabet check deliberately leaves the length to it.
+  if (value.length !== BASE58_LENGTH || !BASE58_ALPHABET.test(value)) throw invalid();
   let bytes: Uint8Array;
   try {
     bytes = base58check.decode(value);
