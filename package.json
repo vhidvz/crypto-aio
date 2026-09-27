@@ -48,11 +48,13 @@
     "debug": "^4.4.3"
   },
   "peerDependencies": {
+    "bitcoinjs-lib": "^7.0.2",
     "ethers": "^6.17.0",
     "tronweb": "^6.5.1",
     "web3": "^4.16.0"
   },
   "peerDependenciesMeta": {
+    "bitcoinjs-lib": { "optional": true },
     "ethers": { "optional": true },
     "tronweb": { "optional": true },
     "web3": { "optional": true }
@@ -62,6 +64,7 @@
     "@types/debug": "^4.1.13",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.20.4",
+    "bitcoinjs-lib": "7.0.2",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
