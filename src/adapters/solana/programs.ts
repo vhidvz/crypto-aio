@@ -28,9 +28,16 @@ export const DEFAULT_INSTRUCTION_COMPUTE_UNITS = 200_000n;
  *  the packet limit. */
 export const MAX_MEMO_BYTES = 256;
 
-/** DataView and `Uint8Array.of` silently wrap a value that does not fit; we refuse it. */
-const outOfRange = (bits: number) =>
-  new ValidationError('INVALID_AMOUNT', `a value does not fit in its u${bits} field`);
+/**
+ * DataView and `Uint8Array.of` silently wrap a value that does not fit; we refuse it with a
+ * fixed text (lesson 19): `INVALID_AMOUNT` for a u64 (lamports, token amounts and
+ * micro-lamports), `INVALID_INTENT` for a u8 (decimals) or a u32 (compute units).
+ */
+const outOfRange = (bits: 8 | 32 | 64) =>
+  new ValidationError(
+    bits === 64 ? 'INVALID_AMOUNT' : 'INVALID_INTENT',
+    `a value does not fit in its u${bits} field`,
+  );
 
 function u8(value: number): Uint8Array {
   if (!Number.isInteger(value) || value < 0 || value > 0xff) throw outOfRange(8);

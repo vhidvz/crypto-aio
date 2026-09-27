@@ -37,6 +37,26 @@ describe('strict Solana keys (lesson 4)', () => {
     expect(decodeBase58(ADDRESS, 32)).toEqual(ed25519.getPublicKey(SEED));
   });
 
+  it('refuses text longer than the format allows before decoding it (lesson 20)', () => {
+    // base58 decoding is O(n²): 30,000 characters block the event loop for seconds.
+    const decode = jest.spyOn(base58, 'decode');
+    try {
+      const huge = 'z'.repeat(100_000);
+      expect(isAddress(huge)).toBe(false);
+      expect(isSignature(huge)).toBe(false);
+      expect(decodeBase58(`1${ADDRESS}`.repeat(2_000), 32)).toBeNull();
+      // The longest texts of 32 and 64 bytes are 44 and 88 characters; one more is refused.
+      expect(isAddress('z'.repeat(45))).toBe(false);
+      expect(isSignature('z'.repeat(89))).toBe(false);
+      expect(decode).not.toHaveBeenCalled();
+      expect(isAddress('z'.repeat(44))).toBe(false);
+      expect(isSignature('z'.repeat(88))).toBe(false);
+      expect(decode).toHaveBeenCalledTimes(2);
+    } finally {
+      decode.mockRestore();
+    }
+  });
+
   it('derives the address of an ed25519 public key only', () => {
     expect(addressFromPublicKey(ed25519.getPublicKey(SEED))).toBe(ADDRESS);
     const refused = (key: Uint8Array) =>

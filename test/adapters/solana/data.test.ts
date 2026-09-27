@@ -9,14 +9,45 @@ import type { ChainInfo, NetworkInfo } from '../../../src/core/model/chain';
 import { reveal, secret } from '../../../src/core/secret/secret';
 
 const preset = (name: string) => SOLANA_PRESETS.find((p) => p.name === name)!;
-const urls = (name: string, network: string, apiKey?: string) =>
-  preset(name)
-    .endpoints({
-      chain: 'solana',
-      network,
-      ...(apiKey !== undefined ? { apiKey: secret(apiKey) } : {}),
-    })
-    .map((e) => reveal(e.url));
+const KEYED = ['alchemy', 'infura', 'ankr'] as const;
+
+/**
+ * Every supported (preset, cluster) pair and its endpoint for the key `k` (Appendix A). The
+ * public RPC allows 100 requests per 10 s and 40 per 10 s for one method, per IP (A28): 4 rps
+ * keeps a `getBlock` scan under the per-method cap, since the bucket is per endpoint.
+ */
+const PUBLIC_LIMIT = { rps: 4 };
+const ENDPOINTS = [
+  [
+    'public',
+    'mainnet',
+    { name: 'public', url: 'https://api.mainnet.solana.com', rateLimit: PUBLIC_LIMIT },
+  ],
+  [
+    'public',
+    'devnet',
+    { name: 'public', url: 'https://api.devnet.solana.com', rateLimit: PUBLIC_LIMIT },
+  ],
+  [
+    'public',
+    'testnet',
+    { name: 'public', url: 'https://api.testnet.solana.com', rateLimit: PUBLIC_LIMIT },
+  ],
+  [
+    'alchemy',
+    'mainnet',
+    { name: 'alchemy', url: 'https://solana-mainnet.g.alchemy.com/v2/k' },
+  ],
+  [
+    'alchemy',
+    'devnet',
+    { name: 'alchemy', url: 'https://solana-devnet.g.alchemy.com/v2/k' },
+  ],
+  ['infura', 'mainnet', { name: 'infura', url: 'https://solana-mainnet.infura.io/v3/k' }],
+  ['infura', 'devnet', { name: 'infura', url: 'https://solana-devnet.infura.io/v3/k' }],
+  ['ankr', 'mainnet', { name: 'ankr', url: 'https://rpc.ankr.com/solana/k' }],
+  ['ankr', 'devnet', { name: 'ankr', url: 'https://rpc.ankr.com/solana_devnet/k' }],
+];
 
 describe('Solana chain data', () => {
   it('has the three clusters with their genesis hashes and the finalized commitment', () => {
@@ -60,6 +91,12 @@ describe('Solana chain data', () => {
     expect(Object.isFrozen(SOLANA_CHAIN.networks.mainnet?.finality)).toBe(true);
     expect(Object.isFrozen(SOLANA_TOKENS[0]?.ref)).toBe(true);
     expect(Object.isFrozen(SOLANA_PRESETS)).toBe(true);
+    expect(SOLANA_PRESETS.map((p) => Object.isFrozen(p))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it('registers USDC and USDT by mint, only where their issuers list them', () => {
@@ -82,39 +119,51 @@ describe('Solana chain data', () => {
 });
 
 describe('Solana provider presets', () => {
-  it('serves the verified URL templates, keyed URLs as secrets', () => {
-    expect(urls('public', 'mainnet')).toEqual(['https://api.mainnet.solana.com']);
-    expect(urls('public', 'testnet')).toEqual(['https://api.testnet.solana.com']);
-    expect(urls('alchemy', 'devnet', 'k1')).toEqual([
-      'https://solana-devnet.g.alchemy.com/v2/k1',
-    ]);
-    expect(urls('infura', 'mainnet', 'k2')).toEqual([
-      'https://solana-mainnet.infura.io/v3/k2',
-    ]);
-    expect(urls('ankr', 'devnet', 'k3')).toEqual([
-      'https://rpc.ankr.com/solana_devnet/k3',
-    ]);
-    const [endpoint] = preset('alchemy').endpoints({
-      chain: 'solana',
-      network: 'mainnet',
-      apiKey: 'k4',
-    });
-    expect(String(endpoint?.url)).toBe('[REDACTED]');
+  it('serves the verified endpoint of every supported cluster, and of no other', () => {
+    const served = SOLANA_PRESETS.flatMap((p) =>
+      Object.keys(SOLANA_CHAIN.networks)
+        .filter((network) => p.supports('solana', network))
+        .map((network) => [
+          p.name,
+          network,
+          ...p
+            .endpoints({ chain: 'solana', network, apiKey: secret('k') })
+            .map((e) => ({ ...e, url: reveal(e.url) })),
+        ]),
+    );
+    expect(served).toEqual(ENDPOINTS);
+    expect(preset('public').supports('ethereum', 'mainnet')).toBe(false);
+    expect(preset('public').supports('solana', 'toString')).toBe(false);
+  });
+
+  it('keeps keyed URLs secret, and marks the public RPC as not for production', () => {
+    for (const name of KEYED) {
+      const [endpoint] = preset(name).endpoints({
+        chain: 'solana',
+        network: 'mainnet',
+        apiKey: 'k4',
+      });
+      expect(String(endpoint?.url)).toBe('[REDACTED]');
+    }
     expect(preset('public').production).toBe(false);
   });
 
-  it('supports only the documented clusters, and refuses an empty key without naming it', () => {
-    expect(preset('alchemy').supports('solana', 'testnet')).toBe(false);
-    expect(preset('ankr').supports('solana', 'testnet')).toBe(false);
-    expect(preset('public').supports('ethereum', 'mainnet')).toBe(false);
-    expect(preset('public').supports('solana', 'toString')).toBe(false);
-    for (const key of ['', '   ']) {
-      expect(() => urls('infura', 'devnet', key)).toThrow(
-        expect.objectContaining({
-          code: 'CONFIG_INVALID',
-          message: expect.not.stringContaining(`'${key}'`),
-        }),
-      );
+  it('refuses a missing or empty key with a fixed text that names no key (lesson 10)', () => {
+    for (const name of KEYED) {
+      for (const apiKey of [undefined, '', secret(''), secret('   ')]) {
+        expect(() =>
+          preset(name).endpoints({
+            chain: 'solana',
+            network: 'devnet',
+            ...(apiKey !== undefined ? { apiKey } : {}),
+          }),
+        ).toThrow(
+          expect.objectContaining({
+            code: 'CONFIG_INVALID',
+            message: `provider preset '${name}' requires a non-empty apiKey for solana:devnet`,
+          }),
+        );
+      }
     }
   });
 });

@@ -9,9 +9,16 @@ import { ValidationError } from '../../core/errors/error';
 
 const ALPHABET = /^[1-9A-HJ-NP-Za-km-z]+$/;
 
+/**
+ * The longest base58 text of `length` bytes: 44 characters for a key, 88 for a signature.
+ * base58 decoding is O(n²), so longer text is refused before it is decoded (lesson 20).
+ */
+const maxChars = (length: number): number => Math.ceil((length * 8) / Math.log2(58));
+
 /** The bytes of a canonical base58 string of `length` bytes, or `null`. */
 export function decodeBase58(value: unknown, length: number): Uint8Array | null {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 90) return null;
+  if (typeof value !== 'string' || value.length === 0) return null;
+  if (value.length > maxChars(length)) return null;
   if (!ALPHABET.test(value)) return null;
   let bytes: Uint8Array;
   try {

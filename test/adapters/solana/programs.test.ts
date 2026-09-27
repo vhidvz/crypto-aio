@@ -87,22 +87,35 @@ describe('Solana instructions, as devnet encodes them', () => {
     expect(hex(transfer.data)).toBe('0200000000ca9a3b00000000');
   });
 
-  it('refuses a value that does not fit its field instead of wrapping it', () => {
+  it('refuses a value that does not fit its field instead of wrapping it (lesson 19)', () => {
     const [a, b] = [SYSTEM_PROGRAM, TOKEN_PROGRAM];
-    const refused = (build: () => unknown) =>
-      expect(build).toThrow(expect.objectContaining({ code: 'INVALID_AMOUNT' }));
-    // DataView would encode 2^64 + 5 as 5, and -1 as 2^64 - 1.
-    refused(() => systemTransfer(a, b, 2n ** 64n + 5n));
-    refused(() => systemTransfer(a, b, -1n));
-    refused(() => transferChecked(a, b, a, b, 2n ** 64n, 6));
-    refused(() => transferChecked(a, b, a, b, 1n, 256));
-    refused(() => transferChecked(a, b, a, b, 1n, 1.5));
-    refused(() => setComputeUnitPrice(2n ** 64n));
-    refused(() => setComputeUnitLimit(2n ** 32n));
+    // Fixed text that never contains the value: INVALID_AMOUNT for a u64, else INVALID_INTENT.
+    const refused = (bits: 8 | 32 | 64, build: () => unknown) =>
+      expect(build).toThrow(
+        expect.objectContaining({
+          code: bits === 64 ? 'INVALID_AMOUNT' : 'INVALID_INTENT',
+          message: `a value does not fit in its u${bits} field`,
+        }),
+      );
+    // u64 (lamports, token amounts, micro-lamports): DataView would encode 2^64 + 5 as 5
+    // and -1 as 2^64 - 1.
+    refused(64, () => systemTransfer(a, b, 2n ** 64n + 5n));
+    refused(64, () => systemTransfer(a, b, -1n));
+    refused(64, () => transferChecked(a, b, a, b, 2n ** 64n, 6));
+    refused(64, () => setComputeUnitPrice(2n ** 64n));
+    refused(64, () => setComputeUnitPrice(-1n));
     expect(hex(systemTransfer(a, b, 2n ** 64n - 1n).data)).toBe(
       '02000000ffffffffffffffff',
     );
+    // u32 (compute units).
+    refused(32, () => setComputeUnitLimit(2n ** 32n));
+    refused(32, () => setComputeUnitLimit(-1n));
     expect(hex(setComputeUnitLimit(2n ** 32n - 1n).data)).toBe('02ffffffff');
+    // u8 (decimals).
+    refused(8, () => transferChecked(a, b, a, b, 1n, 256));
+    refused(8, () => transferChecked(a, b, a, b, 1n, -1));
+    refused(8, () => transferChecked(a, b, a, b, 1n, 1.5));
+    expect(hex(transferChecked(a, b, a, b, 1n, 255).data).slice(-2)).toBe('ff');
   });
 
   it('decodes classic mints and token accounts strictly', () => {

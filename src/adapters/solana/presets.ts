@@ -7,6 +7,7 @@ import { ConfigError } from '../../core/errors/error';
 import type { PresetInput, ProviderPreset } from '../../core/registry/providers';
 import { reveal, secret } from '../../core/secret/secret';
 import type { EndpointConfig } from '../../core/transport/types';
+import { deepFreeze } from './chains';
 
 type Table = Readonly<Record<string, string>>;
 
@@ -16,6 +17,13 @@ const PUBLIC: Table = {
   devnet: 'https://api.devnet.solana.com',
   testnet: 'https://api.testnet.solana.com',
 };
+
+/**
+ * The public RPC's published per-IP limits (A28): 100 requests per 10 s, 40 per 10 s for a
+ * single method, 40 concurrent connections. The transport's bucket is per endpoint, not per
+ * method, so 4 rps keeps a scan that repeats `getBlock` under the per-method cap.
+ */
+const PUBLIC_RPS = 4;
 
 /** `https://<host>.g.alchemy.com/v2/<key>`. */
 const ALCHEMY: Table = { mainnet: 'solana-mainnet', devnet: 'solana-devnet' };
@@ -67,13 +75,15 @@ function keyed(
   };
 }
 
-export const SOLANA_PRESETS: readonly ProviderPreset[] = Object.freeze([
+export const SOLANA_PRESETS: readonly ProviderPreset[] = deepFreeze([
   {
     name: 'public',
     kind: 'rpc',
     production: false,
     supports: supports(PUBLIC),
-    endpoints: (input: PresetInput) => [{ name: 'public', url: entry(PUBLIC, input) }],
+    endpoints: (input: PresetInput) => [
+      { name: 'public', url: entry(PUBLIC, input), rateLimit: { rps: PUBLIC_RPS } },
+    ],
   },
   keyed('alchemy', ALCHEMY, (host, key) => `https://${host}.g.alchemy.com/v2/${key}`),
   keyed('infura', INFURA, (host, key) => `https://${host}.infura.io/v3/${key}`),

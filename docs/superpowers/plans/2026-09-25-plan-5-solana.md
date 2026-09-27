@@ -11355,6 +11355,7 @@ Every item below was checked against the named source while this plan was writte
 | Devnet genesis hash | `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG` | live `getGenesisHash` on `https://api.devnet.solana.com` |
 | Testnet genesis hash | `4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY` | live `getGenesisHash` on `https://api.testnet.solana.com` |
 | Public RPC (`public` preset, not for production) | `https://api.mainnet.solana.com`, `https://api.devnet.solana.com`, `https://api.testnet.solana.com` | https://solana.com/docs/references/clusters ("The public RPC endpoints are not intended for production applications") |
+| Public RPC rate limits (`public` preset `rateLimit: { rps: 4 }`, A28; the transport's bucket is per endpoint, not per method) | the same on mainnet, devnet and testnet, per IP: 100 requests per 10 s; 40 requests per 10 s for a single RPC method; 40 concurrent connections (also: 40 connections per 10 s, 100 MB per 30 s). Checked 27 September 2026 | https://solana.com/docs/references/clusters |
 | Alchemy | `https://solana-mainnet.g.alchemy.com/v2/<key>`, `https://solana-devnet.g.alchemy.com/v2/<key>`; no testnet | https://www.alchemy.com/docs/reference/node-supported-chains |
 | Infura | `https://solana-mainnet.infura.io/v3/<key>`, `https://solana-devnet.infura.io/v3/<key>` ("Testnet (Devnet)"); no testnet | https://docs.infura.io/get-started/endpoints/ |
 | Ankr | `https://rpc.ankr.com/solana/<key>`, `https://rpc.ankr.com/solana_devnet/<key>`; no testnet path | https://www.ankr.com/docs/llms-full.txt |
