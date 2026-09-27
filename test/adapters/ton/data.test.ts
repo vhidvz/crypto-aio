@@ -135,16 +135,27 @@ describe('TON provider presets', () => {
     ]);
   });
 
-  it('budgets v2 and v3 within one toncenter limit: 1 rps keyless, 10 with a free key (X2, M16)', () => {
+  it('budgets v2 and v3 within one toncenter limit: 1 rps keyless, 10 with a free key (X2, M16, F6-R3)', () => {
     const { presets } = catalogs();
-    const budget = (name: string, apiKey?: string) =>
+    const limits = (name: string, apiKey?: string) =>
       (['rpc', 'indexer'] as const).map(
         (kind) =>
-          presets.resolve(name, input('mainnet', apiKey), kind).endpoints[0]?.rateLimit
-            ?.rps,
+          presets.resolve(name, input('mainnet', apiKey), kind).endpoints[0]?.rateLimit,
       );
-    expect(budget('public')).toEqual([0.5, 0.5]);
-    expect(budget('toncenter', 'k')).toEqual([5, 5]);
+    expect(limits('public')).toEqual([{ rps: 0.5 }, { rps: 0.5 }]);
+    expect(limits('toncenter', 'k')).toEqual([
+      { rps: 5, burst: 1 },
+      { rps: 5, burst: 1 },
+    ]);
+    // After idle time each bucket holds its burst (the transport's default is ceil(rps)) and
+    // refills at rps: what v2 and v3 together can send in the first second.
+    const firstSecond = (list: ReturnType<typeof limits>): number =>
+      list.reduce((sum, limit) => {
+        const rps = limit?.rps ?? 0;
+        return sum + Math.floor((limit?.burst ?? Math.max(1, Math.ceil(rps))) + rps);
+      }, 0);
+    expect(firstSecond(limits('public'))).toBe(2);
+    expect(firstSecond(limits('toncenter', 'k'))).toBe(12);
   });
 
   it('puts the toncenter key in a secret header, never in the URL', () => {

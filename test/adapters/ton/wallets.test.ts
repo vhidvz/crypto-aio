@@ -1,6 +1,8 @@
 import { ed25519 } from '@noble/curves/ed25519';
 import {
+  Address,
   Cell,
+  Slice,
   beginCell,
   external,
   internal,
@@ -16,6 +18,7 @@ import {
   commentCell,
   decodeComment,
   decodeJettonInternalTransfer,
+  decodeJettonNotification,
   decodeJettonTransfer,
   decodeWalletRequest,
   jettonMessage,
@@ -23,6 +26,9 @@ import {
   messageFacts,
   MAX_ADDRESS_BOC_LENGTH,
   MAX_BODY_BOC_LENGTH,
+  MAX_BODY_CELLS,
+  MAX_COMMENT_CELLS,
+  MAX_MEMO_BYTES,
   nativeMessage,
   OP,
 } from '../../../src/adapters/ton/messages';
@@ -114,6 +120,19 @@ describe('TON wallet identity (spec §9)', () => {
     expect(() => at({ version: 'v5r1', subwalletNumber: 32768 })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining('32768') }),
     );
+    // M3: an unknown key is named, but never more than 64 characters of it.
+    const key = 'k'.repeat(100_000);
+    let error: unknown;
+    try {
+      at({ version: 'v4r2', [key]: 1 });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: expect.stringContaining(`'${'k'.repeat(64)}' is not a v4r2 setting`),
+    });
+    expect((error as Error).message.length).toBeLessThan(120);
   });
 
   it('refuses a v5r1 wallet id of another network before any key is used (lesson 5)', () => {
@@ -207,6 +226,26 @@ describe('TON wallet addresses', () => {
       expect(() => walletAddress(identity, PK)).toThrow(
         expect.objectContaining({ code: 'CONFIG_INVALID' }),
       );
+    }
+    // M2: the ends of each field are wallets.
+    const ends: readonly TonIdentity[] = [
+      { version: 'v4r2', workchain: 0, subwalletId: 2 ** 32 - 1 },
+      { version: 'v4r2', workchain: -1, subwalletId: 0 },
+      {
+        version: 'v5r1',
+        workchain: 0,
+        subwalletNumber: 0x7fff,
+        networkGlobalId: -(2 ** 31),
+      },
+      {
+        version: 'v5r1',
+        workchain: -1,
+        subwalletNumber: 0,
+        networkGlobalId: 2 ** 31 - 1,
+      },
+    ];
+    for (const identity of ends) {
+      expect(walletAddress(identity, PK)).toMatch(/^(0|-1):[0-9a-f]{64}$/);
     }
   });
 });
@@ -450,6 +489,63 @@ describe('TON message bodies', () => {
     expect(decodeComment(Cell.EMPTY)).toBeUndefined();
   });
 
+  it('reads a comment chain in one bounded pass (lesson 20)', () => {
+    const chain = (cells: number): Cell => {
+      let tail: Cell | undefined;
+      for (let i = cells - 1; i >= 0; i -= 1) {
+        const cell = beginCell();
+        if (i === 0) cell.storeUint(OP.comment, 32);
+        cell.storeBuffer(Buffer.alloc(8, 0x61));
+        if (tail) cell.storeRef(tail);
+        tail = cell.endCell();
+      }
+      return tail as Cell;
+    };
+    const longest = chain(MAX_COMMENT_CELLS);
+    const tooLong = [chain(MAX_COMMENT_CELLS + 1), chain(6_000)];
+    const concat = jest.spyOn(Buffer, 'concat');
+    const loadRef = jest.spyOn(Slice.prototype, 'loadRef');
+    try {
+      expect(decodeComment(longest)).toBe('a'.repeat(8 * MAX_COMMENT_CELLS));
+      // One step per cell and one concatenation for the whole chain: linear work.
+      expect(loadRef).toHaveBeenCalledTimes(MAX_COMMENT_CELLS - 1);
+      expect(concat).toHaveBeenCalledTimes(1);
+      for (const body of tooLong) {
+        concat.mockClear();
+        loadRef.mockClear();
+        expect(decodeComment(body)).toBeUndefined();
+        // It stops at the bound, before concatenating anything.
+        expect(loadRef.mock.calls.length).toBeLessThanOrEqual(MAX_COMMENT_CELLS);
+        expect(concat).not.toHaveBeenCalled();
+      }
+    } finally {
+      concat.mockRestore();
+      loadRef.mockRestore();
+    }
+    // The bound is well above the library's own memo limit, in a jetton payload too.
+    expect(MAX_COMMENT_CELLS * 127).toBeGreaterThanOrEqual(16 * MAX_MEMO_BYTES);
+    const memo = 'é'.repeat(MAX_MEMO_BYTES / 2);
+    expect(decodeComment(commentCell(memo))).toBe(memo);
+    const transfer = jettonMessage({
+      jettonWallet: RECIPIENT,
+      attached: 1n,
+      queryId: 0n,
+      amount: 1n,
+      destination: RECIPIENT,
+      responseDestination: RECIPIENT,
+      forwardAmount: 1n,
+      memo,
+    });
+    expect(decodeJettonTransfer(transfer.body)?.comment).toBe(memo);
+    // Not a snake string: two refs, or a partial byte.
+    const tail = beginCell().storeBuffer(Buffer.from('x')).endCell();
+    const twoRefs = beginCell().storeUint(0, 32).storeRef(tail).storeRef(tail).endCell();
+    expect(decodeComment(twoRefs)).toBeUndefined();
+    expect(
+      decodeComment(beginCell().storeUint(0, 32).storeUint(1, 7).endCell()),
+    ).toBeUndefined();
+  });
+
   it('builds a TEP-74 transfer to the sender jetton wallet, memo in the forward payload', () => {
     const jettonWallet = `0:${'22'.repeat(32)}`;
     const wallet = TEST_WALLETS.v4r2.basechain;
@@ -556,6 +652,98 @@ describe('TON message bodies', () => {
     for (const queryId of [-1n, MAX_QUERY_ID + 1n, 2n ** 64n + 5n]) {
       refused(() => jetton({ queryId }), 'INVALID_INTENT', queryId);
     }
+  });
+
+  it('decodes at most one message worth of body: 2^13 cells, read from the header (lesson 20)', () => {
+    expect(MAX_BODY_CELLS).toBe(2 ** 13);
+    // The longest legal body BOC: 2^21 bits of data in 2^13 cells, each with its
+    // descriptors, 4 two-byte refs, a rounding byte and a 3-byte index entry, plus header
+    // and checksum.
+    const longest = 17 + 2 ** 13 * (2 + 8 + 1 + 3) + 2 ** 21 / 8 + 4;
+    expect(Math.ceil(longest / 3) * 4).toBeLessThanOrEqual(MAX_BODY_BOC_LENGTH);
+    expect(MAX_BODY_BOC_LENGTH).toBe(2 ** 19);
+    const header = (magic: number, sizeByte: number, cells: number): string => {
+      const bytes = Buffer.alloc(64);
+      bytes.writeUInt32BE(magic, 0);
+      bytes[4] = sizeByte;
+      bytes[5] = 1;
+      bytes.writeUInt16BE(cells, 6);
+      return bytes.toString('base64');
+    };
+    const fromBoc = jest.spyOn(Cell, 'fromBoc');
+    try {
+      for (const [magic, sizeByte] of [
+        [0xb5ee9c72, 0x02],
+        [0x68ff65f3, 2],
+        [0xacc3a728, 2],
+      ] as const) {
+        fromBoc.mockClear();
+        expect(cellFromBoc(header(magic, sizeByte, MAX_BODY_CELLS + 1))).toBeNull();
+        expect(fromBoc).not.toHaveBeenCalled();
+        // A legal count reaches the SDK (this header is otherwise broken, so still null).
+        expect(cellFromBoc(header(magic, sizeByte, MAX_BODY_CELLS))).toBeNull();
+        expect(fromBoc).toHaveBeenCalledTimes(1);
+      }
+      fromBoc.mockClear();
+      expect(cellFromBoc(header(0x12345678, 2, 1))).toBeNull();
+      expect(fromBoc).not.toHaveBeenCalled();
+    } finally {
+      fromBoc.mockRestore();
+    }
+  });
+
+  it('reads only workchains 0 and -1 from untrusted bodies (M1)', () => {
+    const foreign = new Address(5, Buffer.alloc(32, 0x33));
+    const owner = sdkAddress(TEST_WALLETS.v4r2.basechain);
+    const bocOf = (address: Address) =>
+      beginCell().storeAddress(address).endCell().toBoc().toString('base64');
+    expect(addressFromBoc(bocOf(foreign))).toBeNull();
+    expect(addressFromBoc(bocOf(sdkAddress(TEST_WALLETS.v4r2.masterchain)))).toBe(
+      TEST_WALLETS.v4r2.masterchain,
+    );
+    const transfer = (destination: Address) =>
+      beginCell()
+        .storeUint(OP.jettonTransfer, 32)
+        .storeUint(7, 64)
+        .storeCoins(5n)
+        .storeAddress(destination)
+        .storeAddress(owner)
+        .storeMaybeRef(null)
+        .storeCoins(1n)
+        .storeBit(false)
+        .endCell();
+    expect(decodeJettonTransfer(transfer(owner))).toMatchObject({
+      destination: TEST_WALLETS.v4r2.basechain,
+    });
+    expect(decodeJettonTransfer(transfer(foreign))).toBeNull();
+    // An optional sender that is no TON account is not named; the amount still counts.
+    const arrival = beginCell()
+      .storeUint(OP.jettonInternalTransfer, 32)
+      .storeUint(7, 64)
+      .storeCoins(5n)
+      .storeAddress(foreign)
+      .storeAddress(owner)
+      .storeCoins(1n)
+      .storeBit(false)
+      .endCell();
+    expect(decodeJettonInternalTransfer(arrival)).toEqual({
+      queryId: 7n,
+      amount: 5n,
+      from: null,
+    });
+    const note = beginCell()
+      .storeUint(OP.jettonNotification, 32)
+      .storeUint(7, 64)
+      .storeCoins(5n)
+      .storeAddress(foreign)
+      .storeBit(false)
+      .endCell();
+    expect(decodeJettonNotification(note)).toEqual({
+      queryId: 7n,
+      amount: 5n,
+      sender: null,
+    });
+    expect(messageFacts(internal({ to: foreign, value: 1n }))).toBeNull();
   });
 
   it('hands the SDK only strict raw addresses (lesson 4)', () => {

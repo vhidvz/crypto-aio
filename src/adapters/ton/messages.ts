@@ -38,14 +38,41 @@ export const MAX_MEMO_BYTES = 1024;
 export const MAX_ADDRESS_BOC_LENGTH = 4096;
 
 /**
- * Lesson 20: the longest message body BOC `cellFromBoc` decodes. TON's message limits
- * (config param 43: 2^21 bits in 2^13 cells) keep a message's BOC under about 370 KB,
- * some 500,000 base64 characters; 2^20 leaves room for a raise of those limits.
+ * Lesson 20: the most cells a message body may hold, checked in the BOC header before the
+ * SDK parses anything. TON refuses a message of more than 2^13 cells or 2^21 bits (config
+ * param 43, "account and message limits", docs.ton.org/foundations/config; the node's
+ * defaults `max_msg_cells = 1 << 13` and `max_msg_bits = 1 << 21` in `SizeLimitsConfig`,
+ * ton-blockchain/ton `crypto/block/mc-config.h`), so no body the chain carried holds more.
+ * The text length alone does not bound the work: minimal cells cost about 4 bytes each,
+ * and `Cell.fromBoc` takes about 20-50 µs per cell.
  */
-export const MAX_BODY_BOC_LENGTH = 1 << 20;
+export const MAX_BODY_CELLS = 1 << 13;
 
-const toRaw = (address: Address): string =>
-  rawAddress(address.workChain as TonWorkchain, address.hash);
+/**
+ * Lesson 20: the longest message body BOC text `cellFromBoc` decodes. The same limits give
+ * at most 2^21 / 8 bytes of data in 2^13 cells, each with 2 descriptor bytes, 4 two-byte
+ * refs, a rounding byte and a 3-byte index entry, plus a header and a checksum: under
+ * 377,000 bytes, about 502,500 base64 characters.
+ */
+export const MAX_BODY_BOC_LENGTH = 1 << 19;
+
+/**
+ * Lesson 20: the most cells a comment's snake chain may span. A cell holds at most 127
+ * bytes, so a memo of `MAX_MEMO_BYTES` spans 9 cells; 256 cells (about 32 KB of text) keeps
+ * the longer comments other wallets write readable while bounding the work on an untrusted
+ * body. A longer chain reads as no comment.
+ */
+export const MAX_COMMENT_CELLS = 256;
+
+/**
+ * M1: an address read from an untrusted body, in raw form; null for a workchain other than
+ * 0 or -1, which names no TON account.
+ */
+function toRaw(address: Address): string | null {
+  const workchain = address.workChain;
+  if (workchain !== 0 && workchain !== -1) return null;
+  return rawAddress(workchain as TonWorkchain, address.hash);
+}
 
 /**
  * The SDK's `Address` for a raw address, parsed strictly (lesson 4): `Address.parseRaw`
@@ -159,12 +186,26 @@ export function addressFromBoc(boc: string): string | null {
   }
 }
 
-/** The text of a comment body, or undefined for any other body. */
+/**
+ * The text of a comment body, or undefined for any other body. The snake string is read in
+ * one pass (lesson 20): `@ton/core`'s `loadStringTail` recurses per cell and concatenates at
+ * each level, which is quadratic in the chain length. Past `MAX_COMMENT_CELLS` cells, or for
+ * a cell that is not a whole number of bytes with at most one ref, it is no comment.
+ */
 export function decodeComment(body: Cell): string | undefined {
   try {
-    const slice = body.beginParse();
+    let slice = body.beginParse();
     if (slice.remainingBits < 32 || slice.loadUint(32) !== OP.comment) return undefined;
-    return slice.loadStringTail();
+    const chunks: Buffer[] = [];
+    for (let cells = 1; ; cells += 1) {
+      if (cells > MAX_COMMENT_CELLS) return undefined;
+      const bits = slice.remainingBits;
+      if (bits % 8 !== 0 || slice.remainingRefs > 1) return undefined;
+      if (bits > 0) chunks.push(slice.loadBuffer(bits / 8));
+      if (slice.remainingRefs === 0) break;
+      slice = slice.loadRef().beginParse();
+    }
+    return Buffer.concat(chunks).toString('utf8');
   } catch {
     return undefined;
   }
@@ -198,10 +239,12 @@ export function decodeJettonTransfer(body: Cell): JettonTransferBody | null {
     slice.loadMaybeRef();
     const forwardAmount = slice.loadCoins();
     const memo = forwardComment(slice);
+    const recipient = toRaw(destination);
+    if (recipient === null) return null;
     return {
       queryId,
       amount,
-      destination: toRaw(destination),
+      destination: recipient,
       forwardAmount,
       ...(memo !== undefined ? { comment: memo } : {}),
     };
@@ -337,12 +380,33 @@ export function messageFacts(message: MessageRelaxed): {
   readonly body: Cell;
 } | null {
   if (message.info.type !== 'internal') return null;
+  const to = toRaw(message.info.dest);
+  if (to === null) return null;
   return {
-    to: toRaw(message.info.dest),
+    to,
     value: message.info.value.coins,
     bodyHash: message.body.hash().toString('hex'),
     body: message.body,
   };
+}
+
+/**
+ * The cell count a BOC header declares, for the three layouts `@ton/core` reads (magic,
+ * then the size byte or flags with the size in their low 3 bits, the offset size, and the
+ * count in `size` bytes); undefined for anything else.
+ */
+function bocCellCount(bytes: Buffer): number | undefined {
+  if (bytes.length < 6) return undefined;
+  const magic = bytes.readUInt32BE(0);
+  const head = bytes[4] as number;
+  const size =
+    magic === 0xb5ee9c72
+      ? head & 0x07
+      : magic === 0x68ff65f3 || magic === 0xacc3a728
+        ? head
+        : 0;
+  if (size < 1 || size > 4 || bytes.length < 6 + size) return undefined;
+  return bytes.readUIntBE(6, size);
 }
 
 /** A body cell from a base64 BOC; null when it does not parse. */
@@ -350,7 +414,10 @@ export function cellFromBoc(boc: string | null | undefined): Cell | null {
   if (typeof boc !== 'string' || boc.length === 0) return null;
   if (boc.length > MAX_BODY_BOC_LENGTH) return null;
   try {
-    const cells = Cell.fromBoc(Buffer.from(boc, 'base64'));
+    const bytes = Buffer.from(boc, 'base64');
+    const count = bocCellCount(bytes);
+    if (count === undefined || count > MAX_BODY_CELLS) return null;
+    const cells = Cell.fromBoc(bytes);
     return cells.length === 1 ? (cells[0] as Cell) : null;
   } catch {
     return null;

@@ -6,10 +6,11 @@
  *
  * X2: one toncenter limit covers every request to a network, v2 and v3 alike (per IP
  * keyless, per account with a key), so each API's endpoint gets half of it. Health probes
- * take their tokens from the same buckets (A17). The split holds on average only: each
- * API's bucket may spend its burst at once (one token keyless, five with a key), so after
- * idle time v2 and v3 calls can go out in the same second above the limit; toncenter's
- * 429 then comes back as a retryable `RATE_LIMITED`.
+ * take their tokens from the same buckets (A17). The split holds on average only: after
+ * idle time each API's bucket holds its burst of one token (F6-R3: keyless by default,
+ * keyed set explicitly) and refills at its rate, so v2 and v3 together can send 2 requests
+ * in the first second keyless (limit 1) and 12 with a key (limit 10); toncenter's 429 then
+ * comes back as a retryable `RATE_LIMITED`.
  */
 import { ConfigError } from '../../core/errors/error';
 import type { PresetInput, ProviderPreset } from '../../core/registry/providers';
@@ -80,9 +81,9 @@ function keyed(kind: 'rpc' | 'indexer'): ProviderPreset {
         url: baseUrl(kind, input),
         headers: { 'X-API-Key': secret(apiKeyOf(input)) },
         // Half of the free-key limit of 10 requests per second (docs.ton.org/api/rate-limit,
-        // M16), shared with the other API (X2); a paid key overrides it with a custom
-        // endpoint config.
-        rateLimit: { rps: 5 },
+        // M16), shared with the other API (X2), with a burst of one (F6-R3) rather than the
+        // default of five; a paid key overrides it with a custom endpoint config.
+        rateLimit: { rps: 5, burst: 1 },
       },
     ],
   };

@@ -78,7 +78,8 @@ export function resolveIdentity(
   const allowed = version === 'v4r2' ? V4_KEYS : V5_KEYS;
   for (const key of Object.keys(config)) {
     if (config[key] !== undefined && !allowed.has(key)) {
-      fail(`'${key}' is not a ${version} setting`);
+      // M3: the caller's key is echoed, but never more than 64 characters of it.
+      fail(`'${key.slice(0, 64)}' is not a ${version} setting`);
     }
   }
   const workchain = config.workchain ?? 0;
