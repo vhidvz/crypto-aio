@@ -837,8 +837,6 @@ describe('the toncenter API layer', () => {
     }
     const refusedContent: Json[] = [
       { symbol: 'S'.repeat(257) },
-      { name: 'N'.repeat(257) },
-      { uri: 'u'.repeat(1025) },
       { decimals: '256' },
       { decimals: 'six' },
       { symbol: 7 },
@@ -866,6 +864,36 @@ describe('the toncenter API layer', () => {
     }
     symbol = 'S'.repeat(256);
     await expect(t.run(t.api.tokenSymbol(MASTER, READ))).resolves.toBe(symbol);
+  });
+
+  it('reads an over-long or ill-typed jetton name or uri as absent, and still refuses a bad symbol (F6-R8)', async () => {
+    const t = tonNode();
+    let content: Json = {};
+    t.node.intercept = (_endpoint, route) =>
+      route === '/jetton/masters'
+        ? { json: { jetton_masters: [{ address: MASTER, jetton_content: content }] } }
+        : undefined;
+    // Author-set texts no verdict reads: every endpoint agrees on them, so refusing them
+    // would retry the token's metadata forever. They are left out, like an inline image.
+    content = {
+      symbol: 'TST',
+      decimals: '6',
+      name: 'N'.repeat(257),
+      uri: 'u'.repeat(1025),
+    };
+    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toEqual({
+      symbol: 'TST',
+      decimals: '6',
+    });
+    content = { symbol: 'TST', name: 7, uri: { href: 'x' } };
+    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toEqual({
+      symbol: 'TST',
+    });
+    // The symbol is read by the metadata the driver returns: a bad one is still malformed.
+    content = { symbol: 'S'.repeat(257), name: 'Test token' };
+    await expect(t.run(t.api.jettonContent(MASTER, READ))).rejects.toMatchObject(
+      malformedAnswer,
+    );
   });
 
   it('reads a malformed jetton master entry as malformed, not as unknown (M5)', async () => {

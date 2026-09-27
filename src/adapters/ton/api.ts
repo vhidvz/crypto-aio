@@ -84,7 +84,10 @@ export function bocWithinLimits(boc: string): boolean {
   return count !== undefined && count <= MAX_BODY_CELLS;
 }
 
-/** M4: the longest jetton metadata texts read from the indexer (decimals: 0..255). */
+/**
+ * M4: the longest jetton metadata texts read from the indexer (decimals: 0..255). A longer
+ * or ill-typed `symbol` is malformed; a `name` or `uri` beyond its limit is absent (F6-R8).
+ */
 const CONTENT_LIMITS = { symbol: 256, name: 256, uri: 1024 } as const;
 
 type Json = Record<string, unknown>;
@@ -555,15 +558,26 @@ function traceOf(value: unknown, route: string): V3Trace {
   };
 }
 
-/** M4: the indexed jetton content fields the driver reads, each within its limit. */
+/**
+ * M4: the indexed jetton content fields the driver reads, each within its limit. The symbol
+ * and decimals become the token's metadata, so a bad one is malformed. A name or uri is
+ * author-set text no verdict reads, which every endpoint agrees on: an over-long or
+ * ill-typed one is left out, like an inline image, rather than retried forever (F6-R8:
+ * lenient readers stay lenient on unbounded metadata).
+ */
 function contentOf(value: unknown, route: string): Readonly<Record<string, string>> {
   const c = need(record(value), route);
   const content: Record<string, string> = {};
-  for (const [field, limit] of Object.entries(CONTENT_LIMITS)) {
-    const text = optional(c[field], str, route);
-    if (text === undefined) continue;
-    if (text.length > limit) throw malformed(route);
-    content[field] = text;
+  const symbol = optional(c.symbol, str, route);
+  if (symbol !== undefined) {
+    if (symbol.length > CONTENT_LIMITS.symbol) throw malformed(route);
+    content.symbol = symbol;
+  }
+  for (const field of ['name', 'uri'] as const) {
+    const text = c[field];
+    if (typeof text === 'string' && text.length <= CONTENT_LIMITS[field]) {
+      content[field] = text;
+    }
   }
   const decimals = optional(c.decimals, int, route);
   if (decimals !== undefined) {
