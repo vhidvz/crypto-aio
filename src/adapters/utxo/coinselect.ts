@@ -6,7 +6,7 @@
  * dust threshold is not created; its value goes to the fee (bounded by the absurd-fee guard).
  */
 import { ValidationError } from '../../core/errors/error';
-import { dustThreshold } from './address';
+import { compactSize, dustThreshold } from './address';
 import { feeAt } from './fees';
 import type { CoinSelectionStrategy } from './network';
 import type { UtxoAddressType } from './types';
@@ -26,8 +26,6 @@ const INPUT_SIZE: Readonly<Record<UtxoAddressType, { base: number; witness: numb
   p2tr: { base: 41, witness: 1 + 1 + 64 },
 };
 
-const varIntSize = (n: number): number => (n < 0xfd ? 1 : n <= 0xffff ? 3 : 5);
-
 /** The weight of a transaction spending `inputs` inputs of one type to these outputs. */
 export function txWeight(
   inputType: UtxoAddressType,
@@ -37,11 +35,11 @@ export function txWeight(
   const size = INPUT_SIZE[inputType];
   let base =
     4 +
-    varIntSize(inputs) +
+    compactSize(inputs) +
     inputs * size.base +
-    varIntSize(outputScriptLengths.length) +
+    compactSize(outputScriptLengths.length) +
     4;
-  for (const length of outputScriptLengths) base += 8 + varIntSize(length) + length;
+  for (const length of outputScriptLengths) base += 8 + compactSize(length) + length;
   const witness = size.witness > 0 ? 2 + inputs * size.witness : 0;
   return base * 4 + witness;
 }
@@ -150,12 +148,12 @@ export function selectCoins(request: SelectionRequest): Selection | Shortfall {
     return { ok: true, inputs, change: 0n, fee: total - target, vsize: bare };
   };
 
-  const chosen: Spendable[] = [...required];
+  const everything = [...required, ...pool];
   if (request.strategy === 'all') {
-    chosen.push(...pool);
-    const done = chosen.length > 0 ? settle(chosen) : undefined;
+    const done = everything.length > 0 ? settle(everything) : undefined;
     if (done) return done;
   } else {
+    const chosen: Spendable[] = [...required];
     const first = chosen.length > 0 ? settle(chosen) : undefined;
     if (first) return first;
     for (const candidate of pool) {
@@ -164,8 +162,14 @@ export function selectCoins(request: SelectionRequest): Selection | Shortfall {
       const done = settle(chosen);
       if (done) return done;
     }
+    // `marginal` rounds one input's cost up on its own, but a step in the whole
+    // transaction's size can be a vbyte or a satoshi less: a skipped output may still pay
+    // its way, so everything is tried before a shortfall is reported.
+    if (chosen.length < everything.length) {
+      const done = settle(everything);
+      if (done) return done;
+    }
   }
-  const everything = [...required, ...pool];
   const vsize = vsizeOf(txWeight(inputType, everything.length, scripts));
   const fee = feeAt(rate, vsize);
   return {

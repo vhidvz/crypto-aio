@@ -1,4 +1,5 @@
 import { hexToBytes } from '@noble/hashes/utils';
+import { compactSize } from '../../../src/adapters/utxo/address';
 import {
   MAX_STANDARD_WEIGHT,
   selectCoins,
@@ -81,7 +82,15 @@ describe('fee rates', () => {
   });
 
   it('decides nothing on a malformed estimate, and never throws a foreign error', () => {
-    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    // Finite but huge: x × 1e6 overflows to Infinity inside satPerKvB.
+    for (const bad of [
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_VALUE,
+      1e303,
+      1e7 + 1,
+    ]) {
       expect(() => rateForSpeed(new Map([[6, bad]]), 'normal', POLICY)).toThrow(
         expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE', retryable: true }),
       );
@@ -143,6 +152,19 @@ describe('transaction size', () => {
     expect(vsizeOf(txWeight('p2sh-p2wpkh', 1, two))).toBe(164);
     expect(vsizeOf(txWeight('p2pkh', 1, two))).toBe(220);
     expect(vsizeOf(txWeight('p2tr', 1, two))).toBe(130);
+  });
+
+  it('sizes CompactSize counts at every width boundary (lesson 19)', () => {
+    const cases: [number, number][] = [
+      [0, 1],
+      [0xfc, 1],
+      [0xfd, 3],
+      [0xffff, 3],
+      [0x10000, 5],
+      [0xffffffff, 5],
+      [0x100000000, 9],
+    ];
+    for (const [n, bytes] of cases) expect(compactSize(n)).toBe(bytes);
   });
 });
 
@@ -239,6 +261,35 @@ describe('selectCoins', () => {
       outputs: [{ script: P2TR, value: 60_000n }],
     });
     expect(short).toMatchObject({ ok: false, available: 40_000n });
+  });
+
+  it('spends everything before it reports a shortfall that everything covers', () => {
+    // p2tr at 1 sat/vB: one input is 230 WU, so its cost rounds up to 58 vB alone, but the
+    // second-to-third step is 57 vB (169 -> 226). A 58-sat output is skipped as worth no
+    // more than its cost, yet all three inputs pay 50,000 + 226 exactly.
+    const p2tr = selectCoins({
+      ...base,
+      inputType: 'p2tr',
+      rate: 1_000n,
+      candidates: [coin(1, 30_000n), coin(2, 20_168n), coin(3, 58n)],
+      outputs: [{ script: P2TR, value: 50_000n }],
+    });
+    expect(p2tr).toMatchObject({ ok: true, change: 0n, fee: 226n, vsize: 226 });
+    expect(p2tr.ok ? p2tr.inputs.map((i) => i.value) : []).toEqual([
+      30_000n,
+      20_168n,
+      58n,
+    ]);
+    // p2sh-p2wpkh at 1.5 sat/vB: 91 vB costs 137 sat alone (136.5 rounded up), but the
+    // first-to-second step costs 136 (218 -> 354).
+    const nested = selectCoins({
+      ...base,
+      inputType: 'p2sh-p2wpkh',
+      rate: 1_500n,
+      candidates: [coin(1, 50_217n), coin(2, 137n)],
+      outputs: [{ script: P2TR, value: 50_000n }],
+    });
+    expect(nested).toMatchObject({ ok: true, change: 0n, fee: 354n, vsize: 236 });
   });
 
   it('refuses a transaction above the standard weight', () => {
@@ -437,11 +488,16 @@ describe('broadcast classification (lesson 3, R24)', () => {
 
   it('reads only the head of a 100,000-character body (lesson 20)', () => {
     // Unbounded, the mempool/electrs pattern retries at every "RPC error: {" (quadratic).
+    // The cap is pinned by structure, not time: an answer past the first 1,024 characters
+    // is never read, so it cannot decide anything.
+    expect(
+      classifyBroadcast(
+        parseNodeError('x'.repeat(1_024) + blockstream(-26, 'bad-txns-inputs-duplicate')),
+      ),
+    ).toEqual(REFUSED_BY_NODE);
     const hostile = 'sendrawtransaction RPC error: {'.repeat(100_000 / 31 + 1);
     expect(hostile.length).toBeGreaterThan(100_000);
-    const started = performance.now();
     expect(classifyBroadcast(parseNodeError(hostile))).toEqual(REFUSED_BY_NODE);
-    expect(performance.now() - started).toBeLessThan(250);
     const tail = 'x'.repeat(100_000);
     for (const body of [
       blockstream(-26, `bad-txns-inputs-duplicate, ${tail}`),

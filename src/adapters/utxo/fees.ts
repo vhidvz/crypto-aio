@@ -33,6 +33,12 @@ const outOfRange = (): ProviderError =>
   new ProviderError('PROVIDER_UNAVAILABLE', 'the fee estimate is out of range');
 
 /**
+ * The largest sat/vB an estimate may carry before it is converted (Task 7's parser bound);
+ * above about 1.8e302, `satPerKvB`'s `x × 1e6` overflows to Infinity.
+ */
+const MAX_ESTIMATE = 1e7;
+
+/**
  * The rate for a speed: the estimate at its target, else at the nearest faster target the
  * endpoint has; never below the minimum relay fee. With no usable estimate, a test
  * network's `feeFallback`, else a retryable `PROVIDER_UNAVAILABLE` (nothing is guessed).
@@ -53,8 +59,9 @@ export function rateForSpeed(
   if (best !== undefined) {
     const estimate = estimates.get(best) as number;
     // M3: one endpoint's estimate never sets an absurd rate (an explicit override may), and a
-    // malformed one (negative or not finite) decides nothing either.
-    if (!Number.isFinite(estimate) || estimate < 0) throw outOfRange();
+    // malformed one (negative, not finite or beyond any real rate) decides nothing either;
+    // the negated range test also refuses NaN.
+    if (!(estimate >= 0 && estimate <= MAX_ESTIMATE)) throw outOfRange();
     rate = satPerKvB(estimate);
     if (rate > policy.maxEstimatedFeeRate) throw outOfRange();
   } else if (policy.feeFallback !== undefined) rate = policy.feeFallback;

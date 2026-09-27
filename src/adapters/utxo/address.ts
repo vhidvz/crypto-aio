@@ -287,8 +287,9 @@ const OP_RETURN = 0x6a;
 /** Bitcoin Core's `MAX_SCRIPT_SIZE`: a longer script can never be spent. */
 const MAX_SCRIPT_SIZE = 10_000;
 
-/** The byte length of Bitcoin's CompactSize encoding of `n`. */
-const compactSize = (n: number): number => (n < 0xfd ? 1 : n <= 0xffff ? 3 : 5);
+/** The byte length of Bitcoin's CompactSize encoding of `n` (a count or a length). */
+export const compactSize = (n: number): number =>
+  n < 0xfd ? 1 : n <= 0xffff ? 3 : n <= 0xffffffff ? 5 : 9;
 
 /**
  * Bitcoin Core's `GetDustThreshold` (policy.cpp) at `dustRelayFee` sat/kvB, rounded up.
