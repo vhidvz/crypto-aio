@@ -479,6 +479,61 @@ describe('the scripted Solana node: runtime and program rules (lesson 8)', () =>
     ]).toEqual([undefined, 10_000_000_000n - 5_000n, undefined]);
   });
 
+  it("keeps a landed transaction's meta as it landed, whatever is scripted later (I1)", async () => {
+    const { node, rpc, tx, send } = setup();
+    node.fund(KEY_ADDRESS, 10_000_000_000n);
+    node.createMint(MINT, 6);
+    const source = node.mintTo(MINT, KEY_ADDRESS, 5_000_000n);
+    const destination = node.mintTo(MINT, RECIPIENT, 0n);
+    node.produce(1);
+    const id = (
+      await send(
+        tx([
+          systemTransfer(KEY_ADDRESS, RECIPIENT, 1_000_000_000n),
+          transferChecked(source, MINT, destination, KEY_ADDRESS, 2_000_000n, 6),
+        ]),
+      )
+    ).result as string;
+    node.produce(1);
+    const slot = Number(node.head.slot);
+    const read = async () => {
+      const options = {
+        encoding: 'jsonParsed',
+        commitment: 'confirmed',
+        maxSupportedTransactionVersion: 0,
+      };
+      const found = (await rpc('getTransaction', [id, options])).result as {
+        meta: unknown;
+      };
+      const block = (await rpc('getBlock', [slot, options])).result as {
+        transactions: { meta: unknown }[];
+      };
+      return [found.meta, block.transactions.map((t) => t.meta)];
+    };
+    const landed = await read();
+    expect(landed[0]).toMatchObject({
+      preBalances: [10_000_000_000, 0, 1_488_440, 1_488_440, 1, 1, 1_066_800],
+      postBalances: [
+        10_000_000_000 - 1_000_000_000 - 5_000,
+        1_000_000_000,
+        1_488_440,
+        1_488_440,
+        1,
+        1,
+        1_066_800,
+      ],
+    });
+    // Scripting rewrites the accounts' history, never a landed transaction's meta.
+    node.fund(RECIPIENT, 5n);
+    node.mintTo(MINT, RECIPIENT, 7n);
+    node.setAccount(KEY_ADDRESS, { lamports: 1n });
+    expect(await read()).toEqual(landed);
+    expect([node.balance(RECIPIENT), node.tokenBalance(MINT, RECIPIENT)]).toEqual([
+      1_000_000_005n,
+      2_000_007n,
+    ]);
+  });
+
   it("checks an SPL transfer in the token program's order: frozen, funds, mint, decimals, owner", async () => {
     const { node, tx, send } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);

@@ -430,7 +430,8 @@ export class ScriptedSolanaNode {
     const value: Account = {
       lamports: account.lamports ?? 1_000_000n,
       owner: account.owner ?? SYSTEM,
-      data: account.data ?? new Uint8Array(),
+      // A copy: the caller's bytes may change after this call.
+      data: account.data?.slice() ?? new Uint8Array(),
       executable: account.executable ?? false,
     };
     for (const { state } of this.#blocks) state.set(address, value);
@@ -564,7 +565,10 @@ export class ScriptedSolanaNode {
       previousBlockhash: parent.hash,
       blockTime: Math.floor(this.#clock.now() / 1000),
       txs,
-      state,
+      // A snapshot: scripting later rewrites the blocks' states (`fund`, `setAccount`), and
+      // must never reach the last transaction's recorded `post` (agave's meta is immutable).
+      // Accounts are immutable values, so copying the map is deep enough.
+      state: new Map(state),
     });
   }
 
