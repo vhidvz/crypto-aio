@@ -8,7 +8,7 @@
  * that cannot be read leaves the transaction possibly sent.
  */
 import { sha256 } from '@noble/hashes/sha256';
-import { ProviderError, ValidationError } from '../../core/errors/error';
+import { ConfigError, ProviderError, ValidationError } from '../../core/errors/error';
 import type { CallOptions, HttpRequest, Transport } from '../../core/transport/types';
 import { bytesToUtf8, fromHex, toHex } from '../../core/util/bytes';
 import type { TronCallTags, TronResources } from './types';
@@ -67,6 +67,23 @@ function uint(value: unknown, field: string): bigint {
 const uintOr0 = (value: unknown, field: string): bigint =>
   value === undefined ? 0n : uint(value, field);
 
+/** java-tron's `long`: block heights above it are malformed (M5). */
+const INT64_MAX = 2n ** 63n - 1n;
+
+/** A block height: a non-negative int64. */
+function height(value: unknown, field: string): bigint {
+  const n = uint(value, field);
+  if (n > INT64_MAX) throw malformed(field);
+  return n;
+}
+
+/**
+ * An integer written into a request body as an exact JSON literal (`JSON.rawJSON`, Node ≥ 22):
+ * java-tron reads int64 fields from number literals, and `Number()` would round above 2^53.
+ */
+const exactInteger = (value: bigint): unknown =>
+  (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON(value.toString());
+
 /** A block time in milliseconds: a safe non-negative integer, never rounded. */
 function millis(value: unknown, field: string): number {
   const ms = uint(value, field);
@@ -101,38 +118,49 @@ const lower = (value: unknown): unknown =>
       : value;
 
 /**
- * java-tron's HTTP 200 failure (`{ "Error": … }`), keyed as a flag: it never agrees with an
- * empty ("not found") answer, and its text is never compared (Plan 2.5 P25-R21).
+ * java-tron's HTTP 200 failure (`{ "Error": … }`) or a JSON-RPC error, keyed as a flag: it
+ * never agrees with a real or an empty answer, and its text is never compared (P25-R21).
  */
 const ERROR_KEY = { error: true } as const;
+/** java-tron's "not found" (`{}`); a non-empty answer without the facts never matches it. */
+const ABSENT_KEY = { absent: true } as const;
 
-function headerKey(result: unknown): unknown {
-  if (!isObject(result)) return result;
-  if (result.Error !== undefined) return ERROR_KEY;
-  const header = isObject(result.block_header) ? result.block_header : undefined;
+const isErrorAnswer = (result: unknown): boolean =>
+  isObject(result) && (result.Error !== undefined || result.error !== undefined);
+
+/** A REST key: an error answer is the error flag, `{}` is absent, else the `facts`. */
+const restKey =
+  (facts: (answer: Json) => unknown): QuorumKey =>
+  (result) => {
+    if (!isObject(result)) return result;
+    if (isErrorAnswer(result)) return ERROR_KEY;
+    if (Object.keys(result).length === 0) return ABSENT_KEY;
+    return facts(result);
+  };
+
+const headerKey = restKey((answer) => {
+  const header = isObject(answer.block_header) ? answer.block_header : undefined;
   const raw = header && isObject(header.raw_data) ? header.raw_data : undefined;
   return {
-    id: lower(result.blockID ?? null),
-    // proto3 JSON omits block 0's number: absent and 0 are the same fact.
+    id: lower(answer.blockID ?? null),
+    // proto3 JSON omits genesis's number and timestamp (M2): absent and 0 are one fact.
     number: raw ? (raw.number ?? 0) : null,
     parent: lower(raw?.parentHash ?? null),
-    timestamp: raw?.timestamp ?? null,
+    timestamp: raw ? (raw.timestamp ?? 0) : null,
   };
-}
+});
 
 /**
  * Lesson 2 / R59: a proven verdict reads the receipt result and the `Transfer` logs, so the
  * key covers them; hex case and fields nodes format differently do not count.
  */
-function infoKey(result: unknown): unknown {
-  if (!isObject(result)) return result;
-  if (result.Error !== undefined) return ERROR_KEY;
-  const receipt = isObject(result.receipt) ? result.receipt : {};
-  const logs = Array.isArray(result.log) ? result.log : [];
+const infoKey = restKey((answer) => {
+  const receipt = isObject(answer.receipt) ? answer.receipt : {};
+  const logs = Array.isArray(answer.log) ? answer.log : [];
   return {
-    id: lower(result.id ?? null),
-    block: result.blockNumber ?? null,
-    result: result.result ?? null,
+    id: lower(answer.id ?? null),
+    block: answer.blockNumber ?? null,
+    result: answer.result ?? null,
     receipt: receipt.result ?? null,
     logs: logs.map((log) =>
       isObject(log)
@@ -140,22 +168,49 @@ function infoKey(result: unknown): unknown {
         : log,
     ),
   };
-}
+});
 
-function transactionKey(result: unknown): unknown {
-  if (!isObject(result)) return result;
-  if (result.Error !== undefined) return ERROR_KEY;
-  const ret = Array.isArray(result.ret) && isObject(result.ret[0]) ? result.ret[0] : {};
+const transactionKey = restKey((answer) => {
+  const ret = Array.isArray(answer.ret) && isObject(answer.ret[0]) ? answer.ret[0] : {};
   return {
-    id: lower(result.txID ?? null),
-    raw: lower(result.raw_data_hex ?? null),
+    id: lower(answer.txID ?? null),
+    raw: lower(answer.raw_data_hex ?? null),
     ret: ret.contractRet ?? null,
   };
+});
+
+/** java-tron's answer for an address that holds no contract: its code and exact text. */
+function isNoContract(outcome: Json): boolean {
+  return (
+    outcome.result !== true &&
+    outcome.code === 'CONTRACT_VALIDATE_ERROR' &&
+    messageText(outcome.message) === 'Smart contract is not exist.'
+  );
 }
+
+/**
+ * I1: a constant call's verdict, and nothing else. Each node builds the simulated
+ * transaction on its own head (reference block, expiration, txID) and meters energy on its
+ * own state, so honest nodes never agree on the whole answer. The key compares the outcome
+ * (ran, no contract, or any other refusal: one value whose code and text are never
+ * compared), whether the VM failed (`ret`), and what the call returned.
+ */
+const constantCallKey = restKey((answer) => {
+  const outcome = isObject(answer.result) ? answer.result : {};
+  const tx = isObject(answer.transaction) ? answer.transaction : {};
+  const ret = Array.isArray(tx.ret) && isObject(tx.ret[0]) ? tx.ret[0].ret : undefined;
+  return {
+    outcome:
+      outcome.result === true ? 'ok' : isNoContract(outcome) ? 'no-contract' : 'refused',
+    ret: ret ?? null,
+    out: lower(answer.constant_result ?? null),
+  };
+});
 
 function rpcBlockKey(result: unknown): unknown {
   if (!isObject(result)) return result;
-  if (result.error !== undefined) return ERROR_KEY;
+  // M3: an envelope without a result is an error, whatever else it holds.
+  if (isErrorAnswer(result) || !Object.hasOwn(result, 'result')) return ERROR_KEY;
   const block = result.result;
   if (!isObject(block)) return block ?? null;
   // The negative scan stops on `timestamp` (lesson 2): it is compared too.
@@ -171,11 +226,11 @@ function rpcBlockKey(result: unknown): unknown {
 const QUORUM_KEYS: Readonly<Record<string, QuorumKey>> = {
   '/wallet/getblock': headerKey,
   '/walletsolidity/getblock': headerKey,
-  '/wallet/getblockbynum': headerKey,
   '/walletsolidity/gettransactioninfobyid': infoKey,
   '/wallet/gettransactioninfobyid': infoKey,
   '/walletsolidity/gettransactionbyid': transactionKey,
   '/wallet/gettransactionbyid': transactionKey,
+  '/wallet/triggerconstantcontract': constantCallKey,
   '/jsonrpc': rpcBlockKey,
 };
 
@@ -183,12 +238,25 @@ const QUORUM_KEYS: Readonly<Record<string, QuorumKey>> = {
 export const quorumKeyFor = (path: string): QuorumKey | undefined =>
   Object.hasOwn(QUORUM_KEYS, path) ? QUORUM_KEYS[path] : undefined;
 
+/** M4: a caller's key never makes an error answer agree with a real one. */
+const guarded =
+  (key: QuorumKey): QuorumKey =>
+  (result) =>
+    isErrorAnswer(result) ? ERROR_KEY : key(result);
+
 /**
  * One tagged transport call (R41) with exact integers (A12). Under a quorum the caller's
  * `quorumKey` (lesson 17: a monotone predicate) replaces `fallback`; a key never travels
- * without a quorum. Lesson 18: on a proof path a definitive refusal (a REST 4xx the quorum
- * agreed on, a 401 or 403) decides nothing, so it becomes a retryable
- * `PROVIDER_UNAVAILABLE`; other purposes see the transport's error unchanged (lesson 13).
+ * without a quorum.
+ *
+ * Lesson 18: on a proof path a definitive refusal decides nothing, so it becomes a retryable
+ * `PROVIDER_UNAVAILABLE`: a REST 4xx the quorum agreed on, and a 401 or 403 too (M1). The
+ * transport reports both as `PROVIDER_MISCONFIGURED` with no structured status, and TronGrid
+ * answers a rate-limit suspension with 403 ("Rate-limited requests usually return 429 or 403
+ * and should be retried with backoff", developers.tron.network/reference/rate-limits, read
+ * 2026-09-27), so a proof cannot tell a bad key from a pause; a bad key still surfaces as
+ * `PROVIDER_MISCONFIGURED` on every read. A caller's abort is never converted. Other
+ * purposes see the transport's error unchanged (lesson 13).
  */
 async function call(
   transport: Transport,
@@ -197,7 +265,7 @@ async function call(
   fallback?: QuorumKey,
 ): Promise<unknown> {
   const { quorumKey: own, ...rest } = tags;
-  const quorumKey = rest.quorum !== undefined ? (own ?? fallback) : undefined;
+  const quorumKey = rest.quorum === undefined ? undefined : own ? guarded(own) : fallback;
   const options: CallOptions = {
     ...rest,
     exactIntegers: true,
@@ -302,11 +370,12 @@ function parseHeader(value: unknown): TronBlockHeader | null {
   if (isEmpty(value)) return null;
   const block = object(value, 'block');
   const raw = object(object(block.block_header, 'block header').raw_data, 'block header');
+  // proto3 JSON omits zero fields: genesis has neither number nor timestamp (M2).
   return {
-    number: uint(raw.number ?? 0, 'block number'),
+    number: height(raw.number ?? 0, 'block number'),
     id: hex(block.blockID, 'block id', 32),
     parentId: hex(raw.parentHash, 'parent hash', 32),
-    timestamp: millis(raw.timestamp, 'block timestamp'),
+    timestamp: millis(raw.timestamp ?? 0, 'block timestamp'),
   };
 }
 
@@ -341,7 +410,7 @@ function parseInfo(value: unknown): TronTxInfo {
   if (info.result !== undefined && info.result !== 'FAILED') throw malformed('result');
   return {
     id: hex(info.id, 'transaction id', 32),
-    blockNumber: uint(info.blockNumber, 'block number'),
+    blockNumber: height(info.blockNumber, 'block number'),
     blockTimestamp: millis(info.blockTimeStamp, 'block timestamp'),
     fee: uintOr0(info.fee, 'fee'),
     ...(receiptResult !== undefined ? { receiptResult } : {}),
@@ -358,14 +427,20 @@ function parseInfo(value: unknown): TronTxInfo {
   };
 }
 
-/** A node's message field: hex-encoded UTF-8 on some paths, plain text on others. */
+/** The longest node message kept, in characters (M5): java-tron's texts are far shorter. */
+const MAX_MESSAGE = 1024;
+
+/**
+ * A node's message field: hex-encoded UTF-8 on some paths, plain text on others. At most
+ * the first 1 KiB is kept, decoded when the whole field is printable hex.
+ */
 export function messageText(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   if (/^(?:[0-9a-fA-F]{2})+$/.test(value)) {
-    const text = bytesToUtf8(fromHex(value));
+    const text = bytesToUtf8(fromHex(value.slice(0, 2 * MAX_MESSAGE)));
     if (/^[\x20-\x7e]+$/.test(text)) return text;
   }
-  return value;
+  return value.slice(0, MAX_MESSAGE);
 }
 
 /** A JSON-RPC 32-byte hash, lower-case without `0x`. */
@@ -458,7 +533,7 @@ export class TronApi {
     const transactions = list.map(parseTransaction);
     const infosAnswer = await this.post(
       '/wallet/gettransactioninfobyblocknum',
-      { num: Number(height) },
+      { num: exactInteger(height) },
       tags,
     );
     if (!Array.isArray(infosAnswer)) throw malformed('transaction infos');
@@ -577,12 +652,7 @@ export class TronApi {
     );
     const result = object(answer.result, 'constant call result');
     if (result.result !== true) {
-      if (
-        result.code === 'CONTRACT_VALIDATE_ERROR' &&
-        messageText(result.message) === 'Smart contract is not exist.'
-      ) {
-        return { kind: 'no-contract' };
-      }
+      if (isNoContract(result)) return { kind: 'no-contract' };
       throw new ProviderError('RPC_ERROR', 'the node refused a contract call', {
         retryable: true,
       });
@@ -685,8 +755,10 @@ export class TronApi {
     if (seconds * 1000n > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw malformed('JSON-RPC timestamp');
     }
+    const number = rpcQuantity(block.number, 'JSON-RPC number');
+    if (number > INT64_MAX) throw malformed('JSON-RPC number');
     const parsed: RpcBlock = {
-      number: rpcQuantity(block.number, 'JSON-RPC number'),
+      number,
       hash: rpcHash(block.hash, 'JSON-RPC hash'),
       parentHash: rpcHash(block.parentHash, 'JSON-RPC parent hash'),
       timestamp: Number(seconds) * 1000,
@@ -706,9 +778,27 @@ export class TronApi {
 const BASE58_ACCOUNT = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 /**
+ * TronGrid's page cursor, bounded in length and charset (M5). Observed on 2026-09-27: 221 to
+ * 224 base58 characters; the bound leaves room for base64 forms.
+ */
+const FINGERPRINT = /^[0-9A-Za-z+/=_-]{1,1024}$/;
+
+/**
  * TronGrid `/v1` account history pages (indexer transport), confirmed entries only. Each
  * transaction id is listed once per page: the TRC-20 stream lists a transaction once per
  * transfer it made.
+ *
+ * I2: internal transactions are not listed. `search_internal=false` asks TronGrid for none,
+ * and any entry carrying `internal_tx_id` is skipped: TronGrid documents that entry shape
+ * (`internal_tx_id`, `tx_id`, `from_address`, `to_address`, `data`, `block_timestamp`; its
+ * OpenAPI schema at developers.tron.network/reference/get-transaction-info-by-account-address)
+ * and it has no `txID`, so one would make the whole page malformed. Read on 2026-09-27,
+ * `GET api.trongrid.io/v1/accounts/TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR/transactions?limit=20`
+ * (WTRX) gave only whole transactions (`txID`, `raw_data_hex`, …), each with the internal
+ * transfers nested in `internal_transactions[]` (`internal_tx_id`, `data`, `from_address`,
+ * `to_address`); five other accounts, internal-TRX recipients among them, looked the same
+ * with `search_internal` true or false. A TRX amount an account received only through a
+ * contract's internal transfer is therefore not in its history.
  */
 export async function historyPage(
   transport: Transport,
@@ -719,6 +809,9 @@ export async function historyPage(
 ): Promise<{ readonly ids: readonly string[]; readonly next?: string }> {
   if (typeof address !== 'string' || !BASE58_ACCOUNT.test(address)) {
     throw new ValidationError('INVALID_ADDRESS', 'not a Tron address');
+  }
+  if (options.fingerprint !== undefined && !FINGERPRINT.test(options.fingerprint)) {
+    throw new ConfigError('CONFIG_INVALID', 'not a Tron history cursor');
   }
   const suffix = kind === 'trc20' ? '/trc20' : '';
   const answer = object(
@@ -731,6 +824,7 @@ export async function historyPage(
         query: {
           limit: String(options.limit),
           only_confirmed: 'true',
+          ...(kind === 'transactions' ? { search_internal: 'false' } : {}),
           ...(options.fingerprint !== undefined
             ? { fingerprint: options.fingerprint }
             : {}),
@@ -745,15 +839,21 @@ export async function historyPage(
   }
   const meta = answer.meta === undefined ? {} : object(answer.meta, 'history meta');
   const next = meta.fingerprint;
-  if (next !== undefined && typeof next !== 'string') {
+  if (
+    next !== undefined &&
+    next !== '' &&
+    (typeof next !== 'string' || !FINGERPRINT.test(next))
+  ) {
     throw malformed('history fingerprint');
   }
-  const ids = answer.data.map((item) => {
+  const ids: string[] = [];
+  for (const item of answer.data) {
     const entry = object(item, 'history item');
-    return hex(kind === 'trc20' ? entry.transaction_id : entry.txID, 'history id', 32);
-  });
+    if (entry.internal_tx_id !== undefined) continue;
+    ids.push(hex(kind === 'trc20' ? entry.transaction_id : entry.txID, 'history id', 32));
+  }
   return {
     ids: [...new Set(ids)],
-    ...(next ? { next } : {}),
+    ...(typeof next === 'string' && next !== '' ? { next } : {}),
   };
 }

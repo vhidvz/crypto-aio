@@ -1453,6 +1453,9 @@ export class ScriptedTronNode {
           String(body.data ?? ''),
           typeof body.call_value === 'number' ? BigInt(body.call_value) : 0n,
         );
+        // java-tron builds the simulated transaction on its own head: its reference block,
+        // expiration and txID differ between honest endpoints at different heights.
+        const head = this.#blocks[limit] as Block;
         return {
           json: {
             constant_result: [call.result],
@@ -1463,7 +1466,13 @@ export class ScriptedTronNode {
             energy_used: Number(call.energy),
             transaction: {
               ret: [call.revert ? { ret: 'FAILED' } : {}],
-              txID: '00'.repeat(32),
+              txID: toHex(sha256(utf8ToBytes(`${head.id}:${String(body.data ?? '')}`))),
+              raw_data: {
+                ref_block_bytes: head.id.slice(12, 16),
+                ref_block_hash: head.id.slice(16, 32),
+                expiration: head.timestamp + 60_000,
+                timestamp: head.timestamp,
+              },
             },
           },
         };
