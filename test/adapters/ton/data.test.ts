@@ -103,6 +103,14 @@ describe('TON assets', () => {
       expect.objectContaining({ code: 'ASSET_RESOLUTION' }),
     );
   });
+
+  it("gives the TON alias the chain's own native metadata, so the two cannot drift", () => {
+    const natives = TON_TOKENS.filter((token) => token.ref === 'native');
+    expect(natives.map((token) => token.network)).toEqual(['mainnet', 'testnet']);
+    for (const token of natives) {
+      expect(token.metadata).toEqual(TON_CHAINS[0]?.nativeAsset);
+    }
+  });
 });
 
 describe('TON provider presets', () => {
@@ -173,5 +181,23 @@ describe('TON provider presets', () => {
     expect(() =>
       presets.resolve('toncenter', { chain: 'ethereum', network: 'mainnet' }, 'rpc'),
     ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
+  });
+
+  it('supports only its own networks, never an inherited key', () => {
+    const { presets } = catalogs();
+    for (const network of ['constructor', 'toString', '__proto__']) {
+      for (const preset of TON_PRESETS)
+        expect(preset.supports('ton', network)).toBe(false);
+      for (const [name, apiKey] of [
+        ['public', undefined],
+        ['toncenter', 'k'],
+      ] as const) {
+        for (const kind of ['rpc', 'indexer'] as const) {
+          expect(() => presets.resolve(name, input(network, apiKey), kind)).toThrow(
+            expect.objectContaining({ code: 'CONFIG_INVALID' }),
+          );
+        }
+      }
+    }
   });
 });

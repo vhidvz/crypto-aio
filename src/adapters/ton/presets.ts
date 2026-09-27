@@ -6,7 +6,10 @@
  *
  * X2: one toncenter limit covers every request to a network, v2 and v3 alike (per IP
  * keyless, per account with a key), so each API's endpoint gets half of it. Health probes
- * take their tokens from the same buckets (A17), so they stay within the limit too.
+ * take their tokens from the same buckets (A17). The split holds on average only: each
+ * API's bucket may spend its burst at once (one token keyless, five with a key), so after
+ * idle time v2 and v3 calls can go out in the same second above the limit; toncenter's
+ * 429 then comes back as a retryable `RATE_LIMITED`.
  */
 import { ConfigError } from '../../core/errors/error';
 import type { PresetInput, ProviderPreset } from '../../core/registry/providers';
@@ -24,14 +27,16 @@ const API: Readonly<Record<'rpc' | 'indexer', string>> = Object.freeze({
   indexer: '/api/v3',
 });
 
+/** Own keys only: `constructor`, `toString` or `__proto__` is not a network. */
 const supports = (chain: string, network: string): boolean =>
-  chain === 'ton' && HOSTS[network] !== undefined;
+  chain === 'ton' && Object.hasOwn(HOSTS, network);
 
 function baseUrl(kind: 'rpc' | 'indexer', input: PresetInput): string {
-  const host = HOSTS[input.network];
   // Unreachable through the catalog, which asks `supports` first.
-  if (host === undefined) throw new Error(`no toncenter host for ${input.network}`);
-  return `${host}${API[kind]}`;
+  if (!Object.hasOwn(HOSTS, input.network)) {
+    throw new Error(`no toncenter host for ${input.network}`);
+  }
+  return `${HOSTS[input.network]}${API[kind]}`;
 }
 
 /** The revealed key; the error names the preset and network, never the key. */
