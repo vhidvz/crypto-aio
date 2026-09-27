@@ -1,0 +1,32 @@
+/**
+ * Well-known TON assets (spec §6.2). USDT is Tether's jetton on TON mainnet (master and
+ * 6 decimals verified against docs.ton.org and the master's on-chain content). The native
+ * coin keeps the alias `TON` beside its ticker `GRAM` (formerly Toncoin).
+ * Jetton asset ids use the master's raw address: `ton:mainnet/jetton:0:<hex>`.
+ */
+import type { AssetRegistration } from '../../core/registry/assets';
+import { TON_CHAINS, deepFreeze } from './chains';
+
+const NATIVE_ALIASES: readonly AssetRegistration[] = Object.keys(
+  TON_CHAINS[0]?.networks ?? {},
+).map((network) => ({
+  chain: 'ton',
+  network,
+  ref: 'native',
+  metadata: { symbol: 'GRAM', decimals: 9, name: 'Gram' },
+  aliases: ['TON'],
+}));
+
+export const TON_TOKENS: readonly AssetRegistration[] = deepFreeze([
+  ...NATIVE_ALIASES,
+  {
+    chain: 'ton',
+    network: 'mainnet',
+    ref: {
+      standard: 'jetton',
+      contract: '0:b113a994b5024a16719f69139328eb759596c38a25f59028b146fecdc3621dfe',
+    },
+    metadata: { symbol: 'USDT', decimals: 6, name: 'Tether USD' },
+    aliases: ['USDT'],
+  },
+]);

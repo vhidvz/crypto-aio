@@ -317,3 +317,10 @@ export type {
   SolanaFeeOverride,
   SolanaTokenAccount,
 } from './adapters/solana/types';
+export type {
+  TonExt,
+  TonFeeDetails,
+  TonFeeOverride,
+  TonWalletIdentity,
+  TonWalletVersion,
+} from './adapters/ton/types';
