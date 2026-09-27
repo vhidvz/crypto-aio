@@ -15,14 +15,21 @@ export function signTxId(txId: string, key: string = KEY): string {
   return `${toHex(sig.toCompactRawBytes())}${(sig.recovery + 27).toString(16)}`;
 }
 
+/** Signs and wraps `Transaction.raw` bytes: the signed hex and txID. */
+export function signRawHex(
+  rawHex: string,
+  key: string = KEY,
+): { readonly hex: string; readonly id: string } {
+  const id = toHex(sha256(fromHex(rawHex)));
+  return { hex: encodeTransaction(rawHex, [signTxId(id, key)]), id };
+}
+
 /** Encodes, signs and wraps `raw` with the independent codec: the signed hex and txID. */
 export function signedTransaction(
   raw: TronRawData,
   key: string = KEY,
 ): { readonly hex: string; readonly id: string } {
-  const rawHex = encodeRawData(raw);
-  const id = toHex(sha256(fromHex(rawHex)));
-  return { hex: encodeTransaction(rawHex, [signTxId(id, key)]), id };
+  return signRawHex(encodeRawData(raw), key);
 }
 
 const SIGNING_CONTEXT = {

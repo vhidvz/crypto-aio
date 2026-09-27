@@ -1,12 +1,22 @@
+import { secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { FakeClock, drive } from '../../../src/testing/fake-clock';
+import { hang } from '../../../src/testing/fake-fetch';
+import { addressFromPublicKey, toHexAddress } from '../../../src/adapters/tron/address';
 import { tronwebCodec } from '../../../src/adapters/tron/codec';
 import type { TronRawData } from '../../../src/adapters/tron/types';
 import { fromHex, toHex } from '../../../src/core/util/bytes';
 import { parseJson } from '../../../src/core/util/json';
-import { NEW_HOLDER_ENERGY, ScriptedTronNode, TRANSFER_ENERGY } from './support/node';
+import {
+  GENESIS,
+  NEW_HOLDER_ENERGY,
+  ScriptedTronNode,
+  TRANSFER_ENERGY,
+  encodeWireRaw,
+  type WireExtras,
+} from './support/node';
 import { encodeRawData, encodeTransaction } from './support/protobuf';
-import { signTxId, signedTransaction } from './support/signing';
+import { signRawHex, signTxId, signedTransaction } from './support/signing';
 import {
   KEY_ADDRESS,
   KEY_HEX,
@@ -14,9 +24,15 @@ import {
   RECIPIENT_HEX,
   USDT,
   USDT_HEX,
+  VECTORS,
 } from './support/vectors';
 
 const TRX = 1_000_000n;
+const OTHER_KEY = '22'.repeat(32);
+const OTHER = addressFromPublicKey(secp256k1.getPublicKey(OTHER_KEY, true));
+const OTHER_HEX = toHexAddress(OTHER);
+const word = (value: bigint): string => value.toString(16).padStart(64, '0');
+const TRANSFER_DATA = `a9059cbb${word(BigInt(`0x${RECIPIENT_HEX.slice(2)}`))}${word(10n)}`;
 
 function setup() {
   const clock = new FakeClock(1_790_000_000_000);
@@ -29,6 +45,11 @@ function setup() {
         body: JSON.stringify(body),
       })
     ).json() as Promise<Record<string, unknown>>;
+  const get = async (path: string) =>
+    (await (await node.fetch.fetch(`${url}${path}`)).json()) as {
+      data: Record<string, unknown>[];
+      meta: { fingerprint?: string };
+    };
   const ref = () => {
     const block = node.block(node.head) as { id: string; timestamp: number };
     return {
@@ -43,9 +64,38 @@ function setup() {
     contract: { type: 'TransferContract', owner: KEY_HEX, to: RECIPIENT_HEX, amount },
     ...extra,
   });
-  const send = (raw: TronRawData) =>
-    post('/wallet/broadcasthex', { transaction: signedTransaction(raw).hex });
-  return { clock, node, url, post, ref, trx, send };
+  const call = (feeLimit: number, extra: Partial<TronRawData> = {}): TronRawData => ({
+    ...ref(),
+    feeLimit,
+    contract: {
+      type: 'TriggerSmartContract',
+      owner: KEY_HEX,
+      contract: USDT_HEX,
+      data: TRANSFER_DATA,
+    },
+    ...extra,
+  });
+  const broadcast = (hex: string) => post('/wallet/broadcasthex', { transaction: hex });
+  const send = (raw: TronRawData) => broadcast(signedTransaction(raw).hex);
+  const sendWire = (raw: TronRawData, extras: WireExtras, key?: string) =>
+    broadcast(signRawHex(encodeWireRaw(raw, extras), key).hex);
+  return { clock, node, url, post, get, ref, trx, call, broadcast, send, sendWire };
+}
+
+/** A memo length that gives `raw` exactly `target` bytes under `measure` (signed size). */
+function memoFor(
+  target: number,
+  raw: (memo: string) => TronRawData,
+  measure: (signedBytes: number) => number,
+): TronRawData {
+  let length = target;
+  for (let i = 0; i < 6; i++) {
+    const candidate = raw('00'.repeat(length));
+    const size = measure(signedTransaction(candidate).hex.length / 2);
+    if (size === target) return candidate;
+    length += target - size;
+  }
+  throw new Error('no memo length gives that size');
 }
 
 describe('ScriptedTronNode', () => {
@@ -82,10 +132,12 @@ describe('ScriptedTronNode', () => {
   });
 
   it('refuses what java-tron refuses, with its codes and texts', async () => {
-    const { node, send, trx, ref, clock } = setup();
+    const { node, send, trx, ref } = setup();
+    // Fix round 1: BandwidthProcessor.consume refuses a missing owner before
+    // TransferActuator.validate (whose "no OwnerAccount" the brief expected here).
     expect(await send(trx(1n))).toMatchObject({
       code: 'CONTRACT_VALIDATE_ERROR',
-      message: expect.stringMatching(/no OwnerAccount/),
+      message: `Contract validate error : account [${KEY_ADDRESS}] does not exist`,
     });
     node.fund(KEY_ADDRESS, TRX);
     node.fund(RECIPIENT, 1n);
@@ -109,7 +161,6 @@ describe('ScriptedTronNode', () => {
     const ok = trx(1n);
     expect(await send(ok)).toMatchObject({ result: true });
     expect(await send(ok)).toMatchObject({ code: 'DUP_TRANSACTION_ERROR' });
-    void clock;
   });
 
   it('drops a pooled transaction once its expiration is at or before the parent block', async () => {
@@ -213,51 +264,553 @@ describe('ScriptedTronNode', () => {
     expect(clock.pending).toBe(0);
   });
 
-  it('activates only through a positive transfer, and refuses in a block an expiration before the next slot', async () => {
-    const { node, send, trx, clock } = setup();
+  it('activates only through a positive transfer, and refuses an expiration before the next slot at admission and in a block', async () => {
+    const { node, send, trx } = setup();
     expect(() => node.fund(KEY_ADDRESS, 0n)).toThrow('fund needs a positive amount');
     expect(node.exists(KEY_ADDRESS)).toBe(false);
     node.fund(KEY_ADDRESS, 10n * TRX);
     const head = node.block(node.head) as { id: string; timestamp: number };
-    // Valid against the head at admission, but less than one slot past it.
-    const { txid } = (await send(trx(TRX, { expiration: head.timestamp + 1_000 }))) as {
+    // Fix round 1: Wallet.broadcastTransaction checks the expiration against the next slot
+    // before admission, so the brief's head + 1 s is refused here.
+    expect(await send(trx(TRX, { expiration: head.timestamp + 2_999 }))).toMatchObject({
+      code: 'TRANSACTION_EXPIRATION_ERROR',
+      message: 'Transaction expired',
+    });
+    // Valid at admission, but less than one slot past the parent of the block after next.
+    const { txid } = (await send(trx(TRX, { expiration: head.timestamp + 4_000 }))) as {
       txid: string;
     };
     expect(node.inPool(txid)).toBe(true);
-    await clock.advance(3_000);
+    node.mine({ include: false });
+    expect(node.inPool(txid)).toBe(true);
     node.mine();
     expect(node.transaction(txid)).toBeUndefined();
+    expect(node.inPool(txid)).toBe(false);
   });
 
-  it('pins the admission edges: signature size and owner, the 24-hour window, the size cap', async () => {
-    const { node, send, trx, ref, post } = setup();
+  it('pins the admission edges: signature size, the next slot and the 24-hour window', async () => {
+    const { node, send, trx, ref, broadcast } = setup();
     node.fund(KEY_ADDRESS, 10n * TRX);
     const raw = trx(1n);
     const { hex, id } = signedTransaction(raw);
     const rawHex = encodeRawData(raw);
-    const short = encodeTransaction(rawHex, [signTxId(id).slice(0, 128)]);
-    expect(await post('/wallet/broadcasthex', { transaction: short })).toMatchObject({
+    expect(
+      await broadcast(encodeTransaction(rawHex, [signTxId(id).slice(0, 128)])),
+    ).toMatchObject({
       result: false,
       code: 'SIGERROR',
       message: 'Validate signature error: Signature size is 64',
     });
-    const other = signedTransaction(raw, '11'.repeat(32)).hex;
-    expect(await post('/wallet/broadcasthex', { transaction: other })).toMatchObject({
+    expect(
+      await broadcast(encodeTransaction(rawHex, [`${signTxId(id)}${'00'.repeat(4)}`])),
+    ).toMatchObject({
       code: 'SIGERROR',
-      message: `Validate signature error: ${id} sig error`,
+      message: 'Validate signature error: Signature size is 69',
     });
-    expect(await post('/wallet/broadcasthex', { transaction: hex })).toMatchObject({
-      result: true,
-      txid: id,
-    });
-    const day = ref().timestamp + 86_400_000;
-    expect(await send(trx(2n, { expiration: day + 1 }))).toMatchObject({
+    expect(await broadcast(hex)).toMatchObject({ result: true, txid: id });
+    const slot = ref().timestamp + 3_000;
+    expect(await send(trx(2n, { expiration: slot - 1 }))).toMatchObject({
       code: 'TRANSACTION_EXPIRATION_ERROR',
     });
-    expect(await send(trx(2n, { expiration: day }))).toMatchObject({ result: true });
-    expect(await send(trx(3n, { data: '00'.repeat(512_000) }))).toMatchObject({
-      code: 'TOO_BIG_TRANSACTION_ERROR',
+    expect(await send(trx(2n, { expiration: slot }))).toMatchObject({ result: true });
+    const day = ref().timestamp + 86_400_000;
+    expect(await send(trx(3n, { expiration: day + 1 }))).toMatchObject({
+      code: 'TRANSACTION_EXPIRATION_ERROR',
     });
+    expect(await send(trx(3n, { expiration: day }))).toMatchObject({ result: true });
+  });
+
+  it("checks the signature first, against the one owner key, with java-tron's texts", async () => {
+    const { trx, broadcast } = setup();
+    const raw = trx(1n);
+    const rawHex = encodeRawData(raw);
+    const id = toHex(sha256(fromHex(rawHex)));
+    // (c) TransactionCapsule.validatePubSignature and checkWeight (one owner key).
+    const signed = (count: number) =>
+      encodeTransaction(
+        rawHex,
+        Array.from({ length: count }, (_, i) =>
+          signTxId(id, i === 0 ? undefined : OTHER_KEY),
+        ),
+      );
+    expect(await broadcast(signed(0))).toMatchObject({
+      code: 'SIGERROR',
+      message: 'Validate signature error: miss sig or contract',
+    });
+    expect(await broadcast(signed(2))).toMatchObject({
+      code: 'SIGERROR',
+      message:
+        'Validate signature error: Signature count is 2 more than key counts of permission : 1',
+    });
+    expect(await broadcast(signed(6))).toMatchObject({
+      code: 'SIGERROR',
+      message: 'Validate signature error: too many signatures',
+    });
+    // (e) checkWeight: a key outside the owner permission.
+    expect(await broadcast(signedTransaction(raw, OTHER_KEY).hex)).toMatchObject({
+      code: 'SIGERROR',
+      message: `Validate signature error: ${id} is signed by ${OTHER} but it is not contained of permission.`,
+    });
+    // The signature is checked before TaPoS (Manager.pushTransaction).
+    expect(
+      await broadcast(
+        signedTransaction({ ...raw, refBlockHash: '00'.repeat(8) }, OTHER_KEY).hex,
+      ),
+    ).toMatchObject({ code: 'SIGERROR' });
+  });
+
+  it('refuses a recipient that is not a 21-byte 41… address, and TRX into a contract', async () => {
+    const { node, send, trx } = setup();
+    // TransferActuator.validate, after the account-creation bandwidth is paid.
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    const to = (address: string) =>
+      trx(1n, {
+        contract: { type: 'TransferContract', owner: KEY_HEX, to: address, amount: 1n },
+      });
+    for (const bad of ['41' + '55'.repeat(19), '42' + '55'.repeat(20), '']) {
+      expect(await send(to(bad))).toMatchObject({
+        code: 'CONTRACT_VALIDATE_ERROR',
+        message: 'Contract validate error : Invalid toAddress!',
+      });
+    }
+    expect(await send(to(USDT_HEX))).toMatchObject({
+      message: 'Contract validate error : Cannot transfer TRX to a smartContract.',
+    });
+  });
+
+  it("charges the memo fee after bandwidth, and checks a call's contract before its fee limit", async () => {
+    const { node, send, trx, call } = setup();
+    // (b) Manager.consumeMemoFee: a balance below the memo fee.
+    node.fund(KEY_ADDRESS, 500_000n);
+    node.fund(RECIPIENT, 1n);
+    expect(await send(trx(1n, { data: '6869' }))).toMatchObject({
+      code: 'BANDWITH_ERROR',
+      message: 'Account resource insufficient error.',
+    });
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    // VMActuator.call: the contract first, then the fee limit.
+    const tooHigh = 20_000_000_000;
+    const notAContract = call(tooHigh, {
+      contract: {
+        type: 'TriggerSmartContract',
+        owner: KEY_HEX,
+        contract: RECIPIENT_HEX,
+        data: TRANSFER_DATA,
+      },
+    });
+    expect(await send(notAContract)).toMatchObject({
+      code: 'CONTRACT_VALIDATE_ERROR',
+      message: 'Contract validate error : No contract or not a smart contract',
+    });
+    expect(await send(call(tooHigh))).toMatchObject({
+      message: 'Contract validate error : feeLimit must be >= 0 and <= 15000000000',
+    });
+  });
+
+  it("answers broadcasthex with java-tron's full envelope, or an Error for bytes it cannot parse", async () => {
+    const { node, send, trx, post } = setup();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    const raw = trx(1n, { data: '6869' });
+    const { id } = signedTransaction(raw);
+    const ok = await send(raw);
+    expect(Object.keys(ok).sort()).toEqual([
+      'code',
+      'message',
+      'result',
+      'transaction',
+      'txid',
+    ]);
+    expect(ok).toMatchObject({ result: true, code: 'SUCCESS', message: '', txid: id });
+    expect(JSON.parse(ok.transaction as string)).toEqual({
+      raw_data: {
+        ref_block_bytes: raw.refBlockBytes,
+        ref_block_hash: raw.refBlockHash,
+        expiration: raw.expiration,
+        data: '6869',
+        contract: [
+          {
+            type: 'TransferContract',
+            parameter: {
+              type_url: 'type.googleapis.com/protocol.TransferContract',
+              value: expect.stringMatching(
+                /^0a15412c7536e3605d9c16a7a3d7b1898e529396a65c23/,
+              ),
+            },
+          },
+        ],
+        timestamp: raw.timestamp,
+      },
+      signature: [signTxId(id)],
+    });
+    const refused = await send(raw);
+    expect(Object.keys(refused).sort()).toEqual([
+      'code',
+      'message',
+      'result',
+      'transaction',
+      'txid',
+    ]);
+    expect(refused).toMatchObject({
+      result: false,
+      code: 'DUP_TRANSACTION_ERROR',
+      txid: id,
+    });
+    const junk = await post('/wallet/broadcasthex', { transaction: 'zz' });
+    expect(junk).not.toHaveProperty('result');
+    expect(junk.Error).toMatch(/^class /);
+  });
+
+  it("omits block 0's number on /wallet and /walletsolidity, as proto3 JSON does", async () => {
+    const { node, post } = setup();
+    node.mine();
+    for (const path of ['/wallet/getblockbynum', '/walletsolidity/getblockbynum']) {
+      const genesis = await post(path, { num: 0 });
+      expect(genesis.blockID).toBe(GENESIS.nile);
+      const raw = (genesis.block_header as { raw_data: Record<string, unknown> })
+        .raw_data;
+      expect(raw).not.toHaveProperty('number');
+      expect(raw).toHaveProperty('timestamp');
+    }
+    const one = await post('/wallet/getblockbynum', { num: 1 });
+    expect(one).toMatchObject({ block_header: { raw_data: { number: 1 } } });
+  });
+
+  it('serves /v1 history from the head by default, solidified only when confirmed, at most 200 a page', async () => {
+    const { node, send, trx, get } = setup();
+    node.fund(KEY_ADDRESS, 100n * TRX);
+    node.fund(RECIPIENT, 1n);
+    const ids: string[] = [];
+    for (let i = 1n; i <= 201n; i++) {
+      ids.push(((await send(trx(i))) as { txid: string }).txid);
+    }
+    node.mine();
+    const path = `/v1/accounts/${KEY_ADDRESS}/transactions`;
+    const first = await get(`${path}?limit=500`);
+    expect(first.data).toHaveLength(200);
+    expect(first.meta.fingerprint).toBe('200');
+    const rest = await get(`${path}?limit=500&fingerprint=200`);
+    expect(rest.data.map((t) => t.txID)).toEqual([ids[0]]);
+    expect((await get(`${path}?only_confirmed=true`)).data).toEqual([]);
+    for (let i = 0; i < 3; i++) node.mine();
+    expect((await get(`${path}?only_confirmed=true&limit=1`)).data).toHaveLength(1);
+  });
+
+  it('models a TRX call value: refused beyond the balance, spent from the energy budget, reverted by a non-payable token, and served', async () => {
+    const { node, call, sendWire, post } = setup();
+    node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    node.mintToken(USDT, KEY_ADDRESS, 50n);
+    node.fund(KEY_ADDRESS, 3n * TRX);
+    // Staked bandwidth, so that no bandwidth fee moves the balance below.
+    node.stake(KEY_ADDRESS, { bandwidth: 10_000n });
+    // MUtil.transfer during validation: the value must be covered.
+    expect(await sendWire(call(10_000_000), { callValue: 5n * TRX })).toMatchObject({
+      code: 'CONTRACT_VALIDATE_ERROR',
+      message:
+        'Contract validate error : Validate InternalTransfer error, balance is not sufficient.',
+    });
+    expect(await sendWire(call(10_000_000), { callValue: -1n })).toMatchObject({
+      message: 'Contract validate error : callValue must be >= 0',
+    });
+    // Covered: admitted, then the token's non-payable function reverts and keeps nothing.
+    const reverted = (await sendWire(call(10_000_000), { callValue: 2n * TRX })) as {
+      txid: string;
+    };
+    expect(reverted).toMatchObject({ result: true });
+    node.mine();
+    expect(
+      await post('/wallet/gettransactioninfobyid', { value: reverted.txid }),
+    ).toMatchObject({ result: 'FAILED', receipt: { result: 'REVERT' } });
+    const burned = 3n * TRX - node.balance(KEY_ADDRESS);
+    expect(burned).toBeGreaterThan(0n);
+    expect(burned).toBeLessThan(TRX);
+    const served = await post('/wallet/gettransactionbyid', { value: reverted.txid });
+    expect(served).toMatchObject({
+      raw_data: {
+        contract: [
+          { parameter: { value: { call_value: 2_000_000, data: TRANSFER_DATA } } },
+        ],
+      },
+    });
+    // VMActuator: the energy budget is (balance − value) / price, so a value that leaves
+    // 5,000 sun buys 50 energy, too little for the revert: OUT_OF_ENERGY.
+    const left = node.balance(KEY_ADDRESS);
+    const starved = (await sendWire(call(10_000_000, { timestamp: 7 }), {
+      callValue: left - 5_000n,
+    })) as { txid: string };
+    node.mine();
+    expect(
+      await post('/wallet/gettransactioninfobyid', { value: starved.txid }),
+    ).toMatchObject({ receipt: { result: 'OUT_OF_ENERGY' } });
+  });
+
+  it('places a foreign transaction in a block as is, with every signature', async () => {
+    const { node, ref, post, get } = setup();
+    node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    const raw: TronRawData = {
+      ...ref(),
+      feeLimit: 1_000_000,
+      contract: {
+        type: 'TriggerSmartContract',
+        owner: OTHER_HEX,
+        contract: USDT_HEX,
+        data: 'abcd',
+      },
+    };
+    const rawHex = encodeWireRaw(raw, { callValue: 7n });
+    const id = toHex(sha256(fromHex(rawHex)));
+    const sigs = [signTxId(id, OTHER_KEY), signTxId(id)];
+    expect(node.place(encodeTransaction(rawHex, sigs))).toBe(id);
+    const reverted = signRawHex(
+      encodeWireRaw({ ...raw, timestamp: 1 }, { callValue: 7n }),
+      OTHER_KEY,
+    );
+    expect(node.place(reverted.hex, 'REVERT')).toBe(reverted.id);
+    expect(() => node.place(reverted.hex)).toThrow();
+    node.mine();
+    expect(await post('/wallet/gettransactionbyid', { value: id })).toMatchObject({
+      txID: id,
+      ret: [{ contractRet: 'SUCCESS' }],
+      signature: sigs,
+      raw_data_hex: rawHex,
+      raw_data: { contract: [{ parameter: { value: { call_value: 7 } } }] },
+    });
+    expect(
+      await post('/wallet/gettransactioninfobyid', { value: reverted.id }),
+    ).toMatchObject({ result: 'FAILED', receipt: { result: 'REVERT' } });
+    const block = await post('/wallet/getblock', { id_or_num: '1', detail: true });
+    expect((block.transactions as { txID: string }[]).map((t) => t.txID)).toEqual([
+      id,
+      reverted.id,
+    ]);
+    expect((await get(`/v1/accounts/${OTHER}/transactions`)).data).toHaveLength(2);
+  });
+
+  it('serves solidified state on /walletsolidity, and neither broadcast nor pool there', async () => {
+    const { node, url, post } = setup();
+    node.fund(KEY_ADDRESS, TRX);
+    node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    node.mintToken(USDT, KEY_ADDRESS, 5n);
+    node.mine();
+    node.fund(KEY_ADDRESS, TRX);
+    node.mintToken(USDT, KEY_ADDRESS, 5n);
+    node.stake(KEY_ADDRESS, { energy: 7n });
+    const account = { address: KEY_HEX };
+    expect(await post('/wallet/getaccount', account)).toMatchObject({
+      balance: 2_000_000,
+    });
+    expect(await post('/walletsolidity/getaccount', account)).toMatchObject({
+      balance: 1_000_000,
+    });
+    expect(await post('/wallet/getaccountresource', account)).toMatchObject({
+      EnergyLimit: 7,
+    });
+    expect(await post('/walletsolidity/getaccountresource', account)).not.toHaveProperty(
+      'EnergyLimit',
+    );
+    const balanceOf = {
+      owner_address: KEY_HEX,
+      contract_address: USDT_HEX,
+      data: `70a08231${KEY_HEX.slice(2).padStart(64, '0')}`,
+    };
+    expect(await post('/wallet/triggerconstantcontract', balanceOf)).toMatchObject({
+      constant_result: [word(10n)],
+    });
+    expect(
+      await post('/walletsolidity/triggerconstantcontract', balanceOf),
+    ).toMatchObject({
+      constant_result: [word(5n)],
+    });
+    for (const path of [
+      '/walletsolidity/broadcasthex',
+      '/walletsolidity/gettransactionfrompending',
+    ]) {
+      const answer = await node.fetch.fetch(`${url}${path}`, {
+        method: 'POST',
+        body: '{}',
+      });
+      expect(answer.status).toBe(404);
+    }
+  });
+
+  it('keeps refused pool entries from spending bandwidth at admission (the #admit half of the fix)', async () => {
+    const { node, send, trx } = setup();
+    node.fund(KEY_ADDRESS, TRX);
+    node.fund(RECIPIENT, 1n);
+    const genesis = node.block(0) as { id: string; timestamp: number };
+    const onGenesis = {
+      refBlockBytes: genesis.id.slice(12, 16),
+      refBlockHash: genesis.id.slice(16, 32),
+    };
+    node.mine();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    for (const amount of [5n * TRX, 5n * TRX + 1n]) {
+      expect(await send(trx(amount, onGenesis))).toMatchObject({ result: true });
+    }
+    node.reorg(1);
+    // Both pooled transfers are now refused. Had each counted its free bandwidth, the third
+    // transfer would burn 0.268 TRX for bandwidth and could no longer pay 0.9 TRX.
+    const third = (await send(trx(900_000n))) as { txid: string; result: boolean };
+    expect(third.result).toBe(true);
+    node.mine();
+    expect(node.transaction(third.txid)?.blockNumber).toBe(2);
+    expect(node.balance(KEY_ADDRESS)).toBe(100_000n);
+  });
+
+  it("pins the size caps: signed size + 128 at 512,000, and a new account's 1,000 bytes", async () => {
+    const { node, send, trx } = setup();
+    node.fund(KEY_ADDRESS, 2_000n * TRX);
+    node.fund(RECIPIENT, 1n);
+    const fits = memoFor(
+      512_000,
+      (memo) => trx(1n, { data: memo }),
+      (bytes) => bytes + 128,
+    );
+    expect(await send(fits)).toMatchObject({ result: true });
+    const over = memoFor(
+      512_001,
+      (memo) => trx(2n, { data: memo }),
+      (bytes) => bytes + 128,
+    );
+    const overId = signedTransaction(over).id;
+    expect(await send(over)).toMatchObject({
+      code: 'TOO_BIG_TRANSACTION_ERROR',
+      message: `Too big transaction with result, TxId ${overId}, the size is 512001 bytes, maxTxSize 512000`,
+    });
+    // BandwidthProcessor: a transfer that creates an account, without its signatures.
+    const fresh = (amount: bigint) => (memo: string) =>
+      trx(amount, {
+        data: memo,
+        contract: { type: 'TransferContract', owner: KEY_HEX, to: OTHER_HEX, amount },
+      });
+    const tooBig = memoFor(1_001, fresh(TRX), (bytes) => bytes - 65);
+    expect(await send(tooBig)).toMatchObject({
+      code: 'TOO_BIG_TRANSACTION_ERROR',
+      message: `Too big new account transaction, TxId ${signedTransaction(tooBig).id}, the size is 1001 bytes, maxTxSize 1000`,
+    });
+    expect(
+      await send(memoFor(1_000, fresh(TRX + 1n), (bytes) => bytes - 65)),
+    ).toMatchObject({
+      result: true,
+    });
+  });
+
+  it('pins the bandwidth of a transfer that creates an account: staked or the fee, never free', async () => {
+    const { node, send, trx, post } = setup();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    const paid = (await send(trx(TRX))) as { txid: string };
+    node.mine();
+    expect(
+      await post('/wallet/gettransactioninfobyid', { value: paid.txid }),
+    ).toMatchObject({
+      receipt: { net_fee: 100_000 },
+    });
+    const resources = await post('/wallet/getaccountresource', { address: KEY_HEX });
+    expect(resources).not.toHaveProperty('freeNetUsed');
+    node.stake(KEY_ADDRESS, { bandwidth: 1_000n });
+    const staked = (await send(
+      trx(TRX, {
+        contract: {
+          type: 'TransferContract',
+          owner: KEY_HEX,
+          to: OTHER_HEX,
+          amount: TRX,
+        },
+      }),
+    )) as { txid: string };
+    node.mine();
+    const info = await post('/wallet/gettransactioninfobyid', { value: staked.txid });
+    expect(info).toMatchObject({
+      fee: 1_000_000,
+      receipt: { net_usage: expect.any(Number) },
+    });
+    expect(info.receipt).not.toHaveProperty('net_fee');
+    expect(
+      await post('/wallet/getaccountresource', { address: KEY_HEX }),
+    ).not.toHaveProperty('freeNetUsed');
+  });
+
+  it("serves a TRC-20 call's return word and an exact int64 timestamp", async () => {
+    const { node, url, call, post, sendWire } = setup();
+    node.fund(KEY_ADDRESS, 100n * TRX);
+    node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    node.mintToken(USDT, KEY_ADDRESS, 50n);
+    const stamp = 2n ** 60n + 1n;
+    const { txid } = (await sendWire(call(100_000_000), { timestamp: stamp })) as {
+      txid: string;
+    };
+    node.mine();
+    expect(await post('/wallet/gettransactioninfobyid', { value: txid })).toMatchObject({
+      contractResult: [word(1n)],
+    });
+    const text = await (
+      await node.fetch.fetch(`${url}/wallet/gettransactionbyid`, {
+        method: 'POST',
+        body: JSON.stringify({ value: txid }),
+      })
+    ).text();
+    expect(text).toContain(`"timestamp":${stamp}`);
+  });
+
+  it('floors lied JSON-RPC timestamps to whole seconds, and lets an interception wait for its signal', async () => {
+    const { node, url } = setup();
+    node.mine();
+    node.lieAboutTimestamps('main', 1_500);
+    const answer = (await (
+      await node.fetch.fetch(`${url}/jsonrpc`, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: 1,
+          method: 'eth_getBlockByNumber',
+          params: ['0x1', false],
+        }),
+      })
+    ).json()) as { result: { timestamp: string } };
+    const at = (node.block(1) as { timestamp: number }).timestamp;
+    expect(answer.result.timestamp).toBe(
+      `0x${Math.floor((at - 1_500) / 1000).toString(16)}`,
+    );
+    node.intercept('main', '/wallet/getaccount', (_request, signal) => hang(signal));
+    const aborted = new AbortController();
+    const pending = node.fetch.fetch(`${url}/wallet/getaccount`, {
+      method: 'POST',
+      body: '{}',
+      signal: aborted.signal,
+    });
+    aborted.abort(new Error('deadline'));
+    await expect(pending).rejects.toThrow('deadline');
+    node.intercept('main', '/wallet/getnowblock', async () => ({ json: { late: 1 } }));
+    const late = await node.fetch.fetch(`${url}/wallet/getnowblock`, {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(await late.json()).toEqual({ late: 1 });
+  });
+
+  it('reverts every change of a transaction a block refuses', async () => {
+    const { node, send, trx, post } = setup();
+    node.fund(KEY_ADDRESS, TRX);
+    node.fund(RECIPIENT, 1n);
+    const genesis = node.block(0) as { id: string; timestamp: number };
+    node.mine();
+    // Funds that exist only in block 1, which the reorg below discards.
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    const { txid } = (await send(
+      trx(5n * TRX, {
+        refBlockBytes: genesis.id.slice(12, 16),
+        refBlockHash: genesis.id.slice(16, 32),
+      }),
+    )) as { txid: string };
+    node.reorg(1);
+    expect(node.inPool(txid)).toBe(true);
+    node.mine();
+    // Refused in block 2 (the balance is 1 TRX again) after its free bandwidth was counted.
+    expect(node.transaction(txid)).toBeUndefined();
+    expect(node.inPool(txid)).toBe(false);
+    expect(node.balance(KEY_ADDRESS)).toBe(TRX);
+    const resources = await post('/wallet/getaccountresource', { address: KEY_HEX });
+    expect(resources).not.toHaveProperty('freeNetUsed');
   });
 
   it('writes integers exactly, so amounts above 2^53 reach an exactIntegers parse unrounded', async () => {
@@ -331,28 +884,9 @@ describe('ScriptedTronNode', () => {
     }
   });
 
-  it('reverts every change of a transaction a block refuses', async () => {
-    const { node, send, trx, post } = setup();
-    node.fund(KEY_ADDRESS, TRX);
-    node.fund(RECIPIENT, 1n);
-    const genesis = node.block(0) as { id: string; timestamp: number };
-    node.mine();
-    // Funds that exist only in block 1, which the reorg below discards.
-    node.fund(KEY_ADDRESS, 10n * TRX);
-    const { txid } = (await send(
-      trx(5n * TRX, {
-        refBlockBytes: genesis.id.slice(12, 16),
-        refBlockHash: genesis.id.slice(16, 32),
-      }),
-    )) as { txid: string };
-    node.reorg(1);
-    expect(node.inPool(txid)).toBe(true);
-    node.mine();
-    // Refused in block 2 (the balance is 1 TRX again) after its free bandwidth was counted.
-    expect(node.transaction(txid)).toBeUndefined();
-    expect(node.inPool(txid)).toBe(false);
-    expect(node.balance(KEY_ADDRESS)).toBe(TRX);
-    const resources = await post('/wallet/getaccountresource', { address: KEY_HEX });
-    expect(resources).not.toHaveProperty('freeNetUsed');
+  it("encodes the wire extras canonically: without them, the bytes are the test codec's", () => {
+    for (const vector of VECTORS) {
+      expect(encodeWireRaw(vector.raw)).toBe(vector.rawHex);
+    }
   });
 });

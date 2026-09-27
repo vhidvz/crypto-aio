@@ -2,18 +2,25 @@
  * A scripted Tron node for tests (test-only, D6): java-tron's HTTP API (`/wallet`,
  * `/walletsolidity`), its JSON-RPC block reads and TronGrid's `/v1` history, served per
  * endpoint through a `FakeFetch`. It models the rules the driver's safety depends on
- * (lesson 8), as verified in java-tron's source (Plan 4 appendix):
- * - admission: signature size, duplicate, TaPoS (ref block in the canonical chain),
- *   expiration (> head time and ≤ head time + 24 h), size, signature owner, contract
- *   validation, bandwidth (staked, then free, then burned; new accounts: staked × rate or
- *   the creation fee, plus 1 TRX), the memo fee, and the fee limit ceiling;
- * - execution in blocks: a transaction is valid in a block only while its expiration is
- *   after the parent's timestamp; TRC-20 energy is capped at min(staked + balance / price,
- *   fee_limit / price), so a low fee limit is included and fails `OUT_OF_ENERGY`;
+ * (lesson 8). Fix round 1 checked each rule and text against java-tron GreatVoyage-v4.8.2.2
+ * (commit d5c3d1d1fd0cad12f09c4346d6ac937ab2cbb071); the file and method are named at each
+ * rule. Where the source could not settle a case, the node is stricter than the chain,
+ * never more lenient.
+ * - Admission (`Wallet.broadcastTransaction`, then `Manager.pushTransaction` and
+ *   `processTransaction`): signature sizes; at least one contract; the expiration against
+ *   the next slot; the signature against the owner permission (one key); exactly one
+ *   contract; TaPoS; the size with results; the expiration window; duplicates; bandwidth
+ *   (the owner must exist; a new account: the size cap, then staked × rate or the creation
+ *   fee; otherwise staked, then free, then burned); the memo fee; the contract.
+ * - Execution in blocks: the same checks against the parent block, where an expiration
+ *   before the next slot is refused (`getConsensusLogicOptimization` = 1, as on mainnet).
+ *   TRC-20 energy is capped at min(staked + (balance − call value) / price, fee_limit /
+ *   price), so a low fee limit is included and fails `OUT_OF_ENERGY`. A refused
+ *   transaction changes nothing: java-tron runs each one in its own revoking session.
  * - 3-second slots, solidification `solidDepth` blocks below the head, reorgs of
  *   unsolidified blocks only, and endpoints that lag.
- * It decodes transactions with the independent test protobuf codec and recovers signers
- * with `@noble/curves`, never with the code under test. Deterministic: no timers, no
+ * It decodes transactions with its own wire reader (below) and recovers signers with
+ * `@noble/curves`, never with the code under test. Deterministic: no timers, no
  * `Math.random`, no `Date.now`.
  */
 import { secp256k1 } from '@noble/curves/secp256k1';
@@ -21,9 +28,10 @@ import { keccak_256 } from '@noble/hashes/sha3';
 import { sha256 } from '@noble/hashes/sha256';
 import {
   addressFromPublicKey,
+  toBase58Address,
   toHexAddress,
 } from '../../../../src/adapters/tron/address';
-import type { TronRawData } from '../../../../src/adapters/tron/types';
+import type { TronContract, TronRawData } from '../../../../src/adapters/tron/types';
 import { fromHex, toHex, utf8ToBytes } from '../../../../src/core/util/bytes';
 import type { FakeClock } from '../../../../src/testing/fake-clock';
 import {
@@ -31,7 +39,7 @@ import {
   type FakeReply,
   type FakeRequest,
 } from '../../../../src/testing/fake-fetch';
-import { decodeRawData, decodeTransaction } from './protobuf';
+import { encodeTransaction } from './protobuf';
 
 export const GENESIS: Readonly<Record<string, string>> = {
   mainnet: '00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc',
@@ -48,13 +56,37 @@ export const PARAMS = {
   getMemoFee: 1_000_000n,
   getMaxFeeLimit: 15_000_000_000n,
   getFreeNetLimit: 600n,
+  /** `CommonParameter.maxCreateAccountTxSize`: a new account's transaction, without signatures. */
+  getMaxCreateAccountTxSize: 1_000n,
+  /** TRX never goes into a contract by a TransferContract (mainnet proposal). */
+  getForbidTransferToContract: 1n,
 };
 
 /** Energy of a TRC-20 transfer to an existing holder, and the extra for a new holder slot. */
 export const TRANSFER_ENERGY = 14_650n;
 export const NEW_HOLDER_ENERGY = 15_000n;
+/** Energy of a non-payable function's revert when a call carries TRX. */
+const NON_PAYABLE_ENERGY = 100n;
+/** `Constant.MAXIMUM_TIME_UNTIL_EXPIRATION`. */
 const MAX_EXPIRATION_MS = 86_400_000;
-const MAX_TX_BYTES = 512_000;
+/** `Constant.TRANSACTION_MAX_BYTE_SIZE` (500 KiB). */
+const MAX_TX_BYTES = 512_000n;
+/** `Constant.MAX_RESULT_SIZE_IN_TX`: result bytes counted per contract. */
+const MAX_RESULT_SIZE = 64n;
+/** `Constant.PER_SIGN_LENGTH` (java-tron accepts up to `MAX_PER_SIGN_LENGTH` = 68). */
+const SIGNATURE_BYTES = 65;
+/** `DynamicPropertiesStore` default `TOTAL_SIGN_NUM`. */
+const TOTAL_SIGN_NUM = 5;
+const SLOT_MS = 3_000;
+/** TronGrid's page limit. */
+const HISTORY_MAX_LIMIT = 200;
+/** `DecodeUtil.addressValid`: 21 bytes with the `0x41` prefix. */
+const ADDRESS = /^41[0-9a-f]{40}$/;
+const INT64_SPAN = 1n << 64n;
+const CONTRACT_TYPES: Readonly<Record<string, TronContract['type']>> = {
+  '1': 'TransferContract',
+  '31': 'TriggerSmartContract',
+};
 
 export interface NodeOptions {
   readonly clock: FakeClock;
@@ -95,14 +127,30 @@ interface Receipt {
   readonly netFee: bigint;
   readonly energyUsage: bigint;
   readonly energyFee: bigint;
+  /** The call's return data (`contractResult`), hex. */
+  readonly returned: string;
   readonly logs: readonly { address: string; topics: string[]; data: string }[];
+}
+
+/** Fields of the signed bytes that `TronRawData` does not carry, read exactly (int64). */
+export interface WireFields {
+  readonly expiration: bigint;
+  readonly timestamp: bigint;
+  readonly feeLimit: bigint;
+  readonly refBlockNum: bigint;
+  readonly callValue: bigint;
+  readonly permissionId: bigint;
 }
 
 export interface StoredTx {
   readonly id: string;
   readonly rawHex: string;
   readonly raw: TronRawData;
-  readonly signature: string;
+  readonly wire: WireFields;
+  readonly signatures: readonly string[];
+  /** The serialized size without `ret`, as java-tron counts it. */
+  readonly size: bigint;
+  /** Bandwidth: the size plus 64 result bytes (`BandwidthProcessor.consume`). */
   readonly bytes: bigint;
   receipt?: Receipt;
   blockNumber?: number;
@@ -126,6 +174,15 @@ class Refusal extends Error {
   }
 }
 
+/** `Wallet.broadcastTransaction`'s answers, verified. */
+const invalid = (message: string) =>
+  new Refusal('CONTRACT_VALIDATE_ERROR', `Contract validate error : ${message}`);
+const badSignature = (message: string) =>
+  new Refusal('SIGERROR', `Validate signature error: ${message}`);
+const expired = () => new Refusal('TRANSACTION_EXPIRATION_ERROR', 'Transaction expired');
+const insufficient = () =>
+  new Refusal('BANDWITH_ERROR', 'Account resource insufficient error.');
+
 const cloneState = (state: State): State => ({
   accounts: new Map([...state.accounts].map(([k, v]) => [k, { ...v }])),
   tokens: new Map(
@@ -137,6 +194,7 @@ const word = (value: bigint): string => value.toString(16).padStart(64, '0');
 const hexOf = (text: string): string => toHex(utf8ToBytes(text));
 const omitZero = (key: string, value: bigint): Record<string, bigint> =>
   value === 0n ? {} : { [key]: value };
+const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
 
 /** JSON with exact integers, as java-tron writes them: a bigint is a bare number literal. */
 function exactJson(value: unknown): string {
@@ -145,8 +203,301 @@ function exactJson(value: unknown): string {
   ).replace(/"#bigint:(-?\d+)#"/g, '$1');
 }
 
+// ---- the node's wire codec -------------------------------------------------------------
+
+/** Fields java-tron accepts that the driver's model does not carry. */
+export interface WireExtras {
+  /** `TriggerSmartContract.call_value` (field 3), sun; negative is written as int64. */
+  readonly callValue?: bigint;
+  /** `Transaction.Contract.Permission_id` (field 5). */
+  readonly permissionId?: number;
+  /** `Transaction.raw.ref_block_num` (field 3). */
+  readonly refBlockNum?: bigint;
+  /** `Transaction.raw.timestamp` (field 14), exact; replaces `raw.timestamp`. */
+  readonly timestamp?: bigint;
+}
+
+function wireVarint(value: bigint): number[] {
+  let v = value < 0n ? value + INT64_SPAN : value;
+  if (v < 0n || v >= INT64_SPAN) throw new TypeError('varint out of range');
+  const out: number[] = [];
+  do {
+    let byte = Number(v & 0x7fn);
+    v >>= 7n;
+    if (v > 0n) byte |= 0x80;
+    out.push(byte);
+  } while (v > 0n);
+  return out;
+}
+const wireTag = (field: number, wire: number): number[] =>
+  wireVarint(BigInt((field << 3) | wire));
+const wireInt = (field: number, value: bigint): number[] =>
+  value === 0n ? [] : [...wireTag(field, 0), ...wireVarint(value)];
+const wireBytes = (field: number, value: Uint8Array): number[] =>
+  value.length === 0
+    ? []
+    : [...wireTag(field, 2), ...wireVarint(BigInt(value.length)), ...value];
+
+/**
+ * `Transaction.raw` bytes with the extras java-tron accepts, in field order (canonical):
+ * without extras, the test codec's `encodeRawData` bytes.
+ */
+export function encodeWireRaw(raw: TronRawData, extras: WireExtras = {}): string {
+  const c = raw.contract;
+  const value =
+    c.type === 'TransferContract'
+      ? [
+          ...wireBytes(1, fromHex(c.owner)),
+          ...wireBytes(2, fromHex(c.to)),
+          ...wireInt(3, c.amount),
+        ]
+      : [
+          ...wireBytes(1, fromHex(c.owner)),
+          ...wireBytes(2, fromHex(c.contract)),
+          ...wireInt(3, extras.callValue ?? 0n),
+          ...wireBytes(4, fromHex(c.data)),
+        ];
+  const any = [
+    ...wireBytes(1, utf8ToBytes(`type.googleapis.com/protocol.${c.type}`)),
+    ...wireBytes(2, Uint8Array.from(value)),
+  ];
+  const contract = [
+    ...wireInt(1, c.type === 'TransferContract' ? 1n : 31n),
+    ...wireBytes(2, Uint8Array.from(any)),
+    ...wireInt(5, BigInt(extras.permissionId ?? 0)),
+  ];
+  return toHex(
+    Uint8Array.from([
+      ...wireBytes(1, fromHex(raw.refBlockBytes)),
+      ...wireInt(3, extras.refBlockNum ?? 0n),
+      ...wireBytes(4, fromHex(raw.refBlockHash)),
+      ...wireInt(8, BigInt(raw.expiration)),
+      ...(raw.data !== undefined ? wireBytes(10, fromHex(raw.data)) : []),
+      ...wireBytes(11, Uint8Array.from(contract)),
+      ...wireInt(14, extras.timestamp ?? BigInt(raw.timestamp)),
+      ...(raw.feeLimit !== undefined ? wireInt(18, BigInt(raw.feeLimit)) : []),
+    ]),
+  );
+}
+
+type WireValue = bigint | Uint8Array;
+type Message = Map<number, WireValue[]>;
+
+/** One protobuf message (wire types 0 and 2 only); anything else throws. */
+function readMessage(data: Uint8Array, allowed: readonly number[]): Message {
+  const out: Message = new Map();
+  let i = 0;
+  const varint = (): bigint => {
+    let result = 0n;
+    for (let shift = 0n; shift < 64n; shift += 7n) {
+      const byte = data[i++];
+      if (byte === undefined) throw new TypeError('truncated varint');
+      result |= BigInt(byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return result & (INT64_SPAN - 1n);
+    }
+    throw new TypeError('varint over 64 bits');
+  };
+  while (i < data.length) {
+    const key = varint();
+    const field = Number(key >> 3n);
+    const wire = Number(key & 7n);
+    if (!allowed.includes(field)) throw new TypeError(`unexpected field ${field}`);
+    let value: WireValue;
+    if (wire === 0) value = varint();
+    else if (wire === 2) {
+      const length = Number(varint());
+      if (i + length > data.length) throw new TypeError('truncated field');
+      value = data.subarray(i, i + length);
+      i += length;
+    } else throw new TypeError('unsupported wire type');
+    out.set(field, [...(out.get(field) ?? []), value]);
+  }
+  return out;
+}
+
+function single(message: Message, field: number): WireValue | undefined {
+  const values = message.get(field) ?? [];
+  if (values.length > 1) throw new TypeError(`repeated field ${field}`);
+  return values[0];
+}
+function bytesOf(message: Message, field: number): Uint8Array {
+  const value = single(message, field);
+  if (value === undefined) return new Uint8Array();
+  if (!(value instanceof Uint8Array)) throw new TypeError('wrong wire type');
+  return value;
+}
+/** An int64 field, signed as java-tron reads it. */
+function int64Of(message: Message, field: number): bigint {
+  const value = single(message, field) ?? 0n;
+  if (typeof value !== 'bigint') throw new TypeError('wrong wire type');
+  return value >= 1n << 63n ? value - INT64_SPAN : value;
+}
+
+interface ContractEntry {
+  readonly type: bigint;
+  readonly typeUrl: string;
+  readonly value: Uint8Array;
+  readonly permissionId: bigint;
+}
+
+/** What the node reads from a signed transaction. */
+interface Signed {
+  readonly rawHex: string;
+  readonly signatures: readonly string[];
+  /** The raw data's fields, or null when the node does not model them. */
+  readonly fields: Message | null;
+  readonly contracts: readonly ContractEntry[];
+  /** The first contract as the driver's model, or null when the node does not model it. */
+  readonly model: { readonly raw: TronRawData; readonly wire: WireFields } | null;
+}
+
+class Unparseable extends Error {}
+
+function readContract(bytes: WireValue): ContractEntry {
+  if (!(bytes instanceof Uint8Array)) throw new TypeError('wrong wire type');
+  const contract = readMessage(bytes, [1, 2, 5]);
+  const any = readMessage(bytesOf(contract, 2), [1, 2]);
+  return {
+    type: int64Of(contract, 1),
+    typeUrl: new TextDecoder().decode(bytesOf(any, 1)),
+    value: bytesOf(any, 2),
+    permissionId: int64Of(contract, 5),
+  };
+}
+
+function model(
+  fields: Message,
+  entry: ContractEntry,
+): { raw: TronRawData; wire: WireFields } | null {
+  const type = CONTRACT_TYPES[entry.type.toString()];
+  if (!type || entry.typeUrl !== `type.googleapis.com/protocol.${type}`) return null;
+  let contract: TronContract;
+  let callValue = 0n;
+  try {
+    if (type === 'TransferContract') {
+      const value = readMessage(entry.value, [1, 2, 3]);
+      contract = {
+        type,
+        owner: toHex(bytesOf(value, 1)),
+        to: toHex(bytesOf(value, 2)),
+        amount: int64Of(value, 3),
+      };
+    } else {
+      const value = readMessage(entry.value, [1, 2, 3, 4]);
+      contract = {
+        type,
+        owner: toHex(bytesOf(value, 1)),
+        contract: toHex(bytesOf(value, 2)),
+        data: toHex(bytesOf(value, 4)),
+      };
+      callValue = int64Of(value, 3);
+    }
+  } catch {
+    return null;
+  }
+  const wire: WireFields = {
+    expiration: int64Of(fields, 8),
+    timestamp: int64Of(fields, 14),
+    feeLimit: int64Of(fields, 18),
+    refBlockNum: int64Of(fields, 3),
+    callValue,
+    permissionId: entry.permissionId,
+  };
+  const memo = bytesOf(fields, 10);
+  return {
+    raw: {
+      refBlockBytes: toHex(bytesOf(fields, 1)),
+      refBlockHash: toHex(bytesOf(fields, 4)),
+      expiration: Number(wire.expiration),
+      timestamp: Number(wire.timestamp),
+      ...(wire.feeLimit !== 0n ? { feeLimit: Number(wire.feeLimit) } : {}),
+      ...(memo.length > 0 ? { data: toHex(memo) } : {}),
+      contract,
+    },
+    wire,
+  };
+}
+
+/** `Transaction.parseFrom` (throws `Unparseable`), then the node's reading of the raw data. */
+function decodeSigned(hex: unknown): Signed {
+  let rawBytes: Uint8Array;
+  let signatures: string[];
+  try {
+    if (typeof hex !== 'string' || !/^(?:[0-9a-fA-F]{2})*$/.test(hex)) {
+      throw new TypeError('not hex');
+    }
+    // `Transaction { raw_data = 1; repeated signature = 2; repeated ret = 5 }`; `ret` is
+    // cleared at admission (`resetResult`) and never counted.
+    const tx = readMessage(fromHex(hex), [1, 2, 5]);
+    rawBytes = bytesOf(tx, 1);
+    signatures = (tx.get(2) ?? []).map((s) => {
+      if (!(s instanceof Uint8Array)) throw new TypeError('wrong wire type');
+      return toHex(s);
+    });
+  } catch {
+    throw new Unparseable();
+  }
+  const rawHex = toHex(rawBytes);
+  try {
+    const fields = readMessage(rawBytes, [1, 3, 4, 8, 10, 11, 14, 18]);
+    const contracts = (fields.get(11) ?? []).map(readContract);
+    const first = contracts[0];
+    return {
+      rawHex,
+      signatures,
+      fields,
+      contracts,
+      model: first ? model(fields, first) : null,
+    };
+  } catch {
+    return { rawHex, signatures, fields: null, contracts: [], model: null };
+  }
+}
+
+/** `JsonFormat.printToString(transaction, true)`: every bytes field of these messages is hex. */
+function echo(signed: Signed): string {
+  const f = signed.fields;
+  const raw =
+    f === null
+      ? {}
+      : {
+          raw_data: {
+            ...(bytesOf(f, 1).length > 0
+              ? { ref_block_bytes: toHex(bytesOf(f, 1)) }
+              : {}),
+            ...omitZero('ref_block_num', int64Of(f, 3)),
+            ...(bytesOf(f, 4).length > 0 ? { ref_block_hash: toHex(bytesOf(f, 4)) } : {}),
+            ...omitZero('expiration', int64Of(f, 8)),
+            ...(bytesOf(f, 10).length > 0 ? { data: toHex(bytesOf(f, 10)) } : {}),
+            ...(signed.contracts.length > 0
+              ? {
+                  contract: signed.contracts.map((c) => ({
+                    type: CONTRACT_TYPES[c.type.toString()] ?? c.type.toString(),
+                    parameter: { type_url: c.typeUrl, value: toHex(c.value) },
+                    ...omitZero('Permission_id', c.permissionId),
+                  })),
+                }
+              : {}),
+            ...omitZero('timestamp', int64Of(f, 14)),
+            ...omitZero('fee_limit', int64Of(f, 18)),
+          },
+        };
+  return exactJson({
+    ...raw,
+    ...(signed.signatures.length > 0 ? { signature: signed.signatures } : {}),
+  });
+}
+
 /** A fee-on-transfer token's collector (mode 'fee'). */
 export const FEE_COLLECTOR = '41' + 'fe'.repeat(20);
+
+/** A foreign transaction's result when `place` puts it in a block. */
+export type PlacedResult = 'SUCCESS' | 'REVERT';
+
+type Intercept = (
+  request: FakeRequest,
+  signal: AbortSignal | undefined,
+) => FakeReply | undefined | Promise<FakeReply | undefined>;
 
 export class ScriptedTronNode {
   readonly fetch = new FakeFetch();
@@ -155,13 +506,12 @@ export class ScriptedTronNode {
   readonly #solidDepth: number;
   readonly #blocks: Block[] = [];
   readonly #pool: StoredTx[] = [];
+  /** Foreign transactions `place` queued for the next block. */
+  readonly #placed: StoredTx[] = [];
+  readonly #foreign = new Map<string, PlacedResult>();
   readonly #lag = new Map<string, number>();
   readonly #timestampLies = new Map<string, number>();
-  readonly #intercepts: {
-    endpoint: string;
-    path: string;
-    handler: (request: FakeRequest) => FakeReply | undefined;
-  }[] = [];
+  readonly #intercepts: { endpoint: string; path: string; handler: Intercept }[] = [];
   #salt = 0;
   /** Percent of the base energy a TRC-20 transfer costs (dynamic energy), default 100. */
   energyFactor = 100n;
@@ -185,7 +535,7 @@ export class ScriptedTronNode {
 
   endpoint(name: string): string {
     const url = `https://${name}.tron.test`;
-    this.fetch.route(`${url}/`, (request) => this.#serve(name, request));
+    this.fetch.route(`${url}/`, (request, signal) => this.#serve(name, request, signal));
     return url;
   }
 
@@ -277,13 +627,41 @@ export class ScriptedTronNode {
     this.#lag.set(endpoint, blocks);
   }
 
-  /** Answer `path` on `endpoint` with `handler` while it returns a reply. */
-  intercept(
-    endpoint: string,
-    path: string,
-    handler: (request: FakeRequest) => FakeReply | undefined,
-  ): void {
+  /**
+   * Answer `path` on `endpoint` with `handler` while it returns a reply. The handler gets
+   * the request's abort signal and may answer later (a Promise), so timeouts are scriptable.
+   */
+  intercept(endpoint: string, path: string, handler: Intercept): void {
     this.#intercepts.push({ endpoint, path, handler });
+  }
+
+  /**
+   * Puts a foreign transaction (any signed Transfer or TriggerSmartContract, a call value,
+   * a permission id or several signatures included) into the next mined block as is: the
+   * node neither validates nor executes it, so no state changes. Its receipt is `result`
+   * with no fee and no logs. Returns its txID; throws for bytes the node does not model.
+   */
+  place(hex: string, result: PlacedResult = 'SUCCESS'): string {
+    let signed: Signed;
+    try {
+      signed = decodeSigned(hex);
+    } catch {
+      throw new Error('place: not a signed transaction');
+    }
+    if (!signed.model || signed.contracts.length !== 1) {
+      throw new Error('place: one Transfer or TriggerSmartContract only');
+    }
+    if (
+      result === 'REVERT' &&
+      signed.model.raw.contract.type !== 'TriggerSmartContract'
+    ) {
+      throw new Error('place: only a contract call reverts');
+    }
+    const tx = this.#stored(signed, signed.model);
+    if (this.#known(tx.id)) throw new Error('place: a known transaction');
+    this.#foreign.set(tx.id, result);
+    this.#placed.push(tx);
+    return tx.id;
   }
 
   inPool(id: string): boolean {
@@ -306,7 +684,8 @@ export class ScriptedTronNode {
   /**
    * Mines one block at the next slot (at least one slot after the parent, and not before
    * the clock's slot). Pending transactions that are valid against the parent are
-   * executed in arrival order; expired or orphaned ones leave the pool.
+   * executed in arrival order; expired or orphaned ones leave the pool. Placed foreign
+   * transactions follow them.
    */
   mine(options: { readonly include?: boolean } = {}): number {
     const parent = this.#last;
@@ -335,6 +714,22 @@ export class ScriptedTronNode {
       }
     }
     this.#pool.push(...keep);
+    if (options.include !== false) {
+      for (const tx of this.#placed.splice(0)) {
+        tx.receipt = {
+          contractRet: this.#foreign.get(tx.id) ?? 'SUCCESS',
+          fee: 0n,
+          netUsage: 0n,
+          netFee: 0n,
+          energyUsage: 0n,
+          energyFee: 0n,
+          returned: '',
+          logs: [],
+        };
+        tx.blockNumber = parent.number + 1;
+        txs.push(tx);
+      }
+    }
     const number = parent.number + 1;
     const id = this.#blockId(number, parent.id, timestamp, txs);
     this.#blocks.push({ number, id, parentId: parent.id, timestamp, txs, state });
@@ -343,7 +738,8 @@ export class ScriptedTronNode {
 
   /**
    * Replaces the last `depth` blocks (never a solidified one) with empty blocks at the same
-   * heights and slots but other ids; their transactions go back to the pool.
+   * heights and slots but other ids; their transactions go back to the pool (placed ones
+   * back to the placed queue).
    */
   reorg(depth: number): void {
     if (depth < 1 || this.head - depth < this.solid) throw new Error('reorg too deep');
@@ -353,7 +749,8 @@ export class ScriptedTronNode {
       delete tx.receipt;
       delete tx.blockNumber;
     }
-    this.#pool.unshift(...returned);
+    this.#pool.unshift(...returned.filter((tx) => !this.#foreign.has(tx.id)));
+    this.#placed.unshift(...returned.filter((tx) => this.#foreign.has(tx.id)));
     for (const old of removed) {
       const parent = this.#last;
       this.#salt += 1;
@@ -380,12 +777,59 @@ export class ScriptedTronNode {
     return number.toString(16).padStart(16, '0') + digest.slice(16);
   }
 
+  #known(id: string): boolean {
+    return (
+      this.inPool(id) || this.#placed.some((tx) => tx.id === id) || !!this.transaction(id)
+    );
+  }
+
+  #stored(signed: Signed, read: { raw: TronRawData; wire: WireFields }): StoredTx {
+    const size = BigInt(encodeTransaction(signed.rawHex, signed.signatures).length / 2);
+    return {
+      id: toHex(sha256(fromHex(signed.rawHex))),
+      rawHex: signed.rawHex,
+      raw: read.raw,
+      wire: read.wire,
+      signatures: signed.signatures,
+      size,
+      bytes: size + MAX_RESULT_SIZE,
+    };
+  }
+
   // ---- rules ---------------------------------------------------------------------------
 
   /**
-   * TaPoS and expiration against `parent` (java-tron `validateTapos`, `validateCommon`). In a
-   * block, java-tron with `getConsensusLogicOptimization` = 1 (mainnet) also refuses an
-   * expiration before the next slot (`TransactionCapsule.checkExpiration`).
+   * `TransactionCapsule.validatePubSignature` and `checkWeight`. The owner permission (id 0)
+   * and the default active permission (id 2) each hold the owner's key alone, weight 1,
+   * threshold 1.
+   */
+  #checkSignature(tx: StoredTx): void {
+    const count = tx.signatures.length;
+    if (count === 0) throw badSignature('miss sig or contract');
+    if (count > TOTAL_SIGN_NUM) throw badSignature('too many signatures');
+    if (tx.wire.permissionId !== 0n && tx.wire.permissionId !== 2n) {
+      throw badSignature("permission isn't exit");
+    }
+    if (count > 1) {
+      throw badSignature(
+        `Signature count is ${count} more than key counts of permission : 1`,
+      );
+    }
+    const signer = this.#signer(tx.signatures[0] as string, tx.id);
+    // Not verified: the text for a signature no key can be recovered from.
+    if (signer === null) throw badSignature('sig error');
+    if (toHexAddress(signer) !== tx.raw.contract.owner) {
+      throw badSignature(
+        `${tx.id} is signed by ${signer} but it is not contained of permission.`,
+      );
+    }
+  }
+
+  /**
+   * `Manager.validateTapos` and `validateCommon` against `parent`. With
+   * `getConsensusLogicOptimization` = 1 (mainnet), the size with results is checked in
+   * blocks too, and a block refuses an expiration before the next slot
+   * (`TransactionCapsule.checkExpiration`).
    */
   #checkCommon(tx: StoredTx, parent: Block, inBlock: boolean): void {
     const refNumber = this.#blocks
@@ -397,21 +841,19 @@ export class ScriptedTronNode {
     if (!refNumber.some((b) => b.id.slice(16, 32) === tx.raw.refBlockHash)) {
       throw new Refusal('TAPOS_ERROR', 'Tapos check error.');
     }
-    if (tx.bytes > BigInt(MAX_TX_BYTES)) {
+    // The size without `ret` plus two result allowances. java-tron's second check (the
+    // serialized size alone) can never fail after this one, so it is not modelled.
+    const withResult = tx.size + 2n * MAX_RESULT_SIZE;
+    if (withResult > MAX_TX_BYTES) {
       throw new Refusal(
         'TOO_BIG_TRANSACTION_ERROR',
-        `Too big transaction, TxId ${tx.id}, the size is ${tx.bytes} bytes, maxTxSize ${MAX_TX_BYTES}`,
+        `Too big transaction with result, TxId ${tx.id}, the size is ${withResult} bytes, maxTxSize ${MAX_TX_BYTES}`,
       );
     }
-    if (
-      tx.raw.expiration <= parent.timestamp ||
-      tx.raw.expiration > parent.timestamp + MAX_EXPIRATION_MS
-    ) {
-      throw new Refusal('TRANSACTION_EXPIRATION_ERROR', 'Transaction expired');
-    }
-    if (inBlock && tx.raw.expiration < parent.timestamp + 3000) {
-      throw new Refusal('TRANSACTION_EXPIRATION_ERROR', 'Transaction expired');
-    }
+    const expiration = tx.wire.expiration;
+    const at = BigInt(parent.timestamp);
+    if (inBlock && expiration < at + BigInt(SLOT_MS)) throw expired();
+    if (expiration <= at || expiration > at + BigInt(MAX_EXPIRATION_MS)) throw expired();
   }
 
   #bandwidth(
@@ -429,9 +871,7 @@ export class ScriptedTronNode {
         owner.netUsed += cost;
         return { fee: 0n, usage: cost };
       }
-      if (owner.balance < this.params.getCreateAccountFee) {
-        throw new Refusal('BANDWITH_ERROR', 'Account resource insufficient error.');
-      }
+      if (owner.balance < this.params.getCreateAccountFee) throw insufficient();
       owner.balance -= this.params.getCreateAccountFee;
       return { fee: this.params.getCreateAccountFee, usage: 0n };
     }
@@ -444,9 +884,7 @@ export class ScriptedTronNode {
       return { fee: 0n, usage: bytes };
     }
     const fee = bytes * this.params.getTransactionFee;
-    if (owner.balance < fee) {
-      throw new Refusal('BANDWITH_ERROR', 'Account resource insufficient error.');
-    }
+    if (owner.balance < fee) throw insufficient();
     owner.balance -= fee;
     return { fee, usage: 0n };
   }
@@ -464,44 +902,54 @@ export class ScriptedTronNode {
     return { state: next, receipt: this.#apply(next, tx) };
   }
 
-  /** Validates and executes `tx` on `state` (mutating it); throws a `Refusal` when invalid. */
+  /**
+   * `Manager.processTransaction` from bandwidth on, on `state` (mutating it): bandwidth
+   * (`BandwidthProcessor.consume`), the memo fee (`consumeMemoFee`), then the contract.
+   * Throws a `Refusal` when invalid.
+   */
   #apply(state: State, tx: StoredTx): Receipt {
     const { contract } = tx.raw;
     const owner = state.accounts.get(contract.owner);
-    const signer = this.#signer(tx);
-    if (signer !== contract.owner) {
-      throw new Refusal('SIGERROR', `Validate signature error: ${tx.id} sig error`);
+    if (!owner) {
+      throw invalid(`account [${toBase58Address(contract.owner)}] does not exist`);
     }
+    const creates =
+      contract.type === 'TransferContract' &&
+      !state.accounts.has(contract.to) &&
+      !state.tokens.has(contract.to);
+    if (creates) {
+      const size = tx.size - BigInt(tx.signatures.length * SIGNATURE_BYTES);
+      if (size > this.params.getMaxCreateAccountTxSize) {
+        throw new Refusal(
+          'TOO_BIG_TRANSACTION_ERROR',
+          `Too big new account transaction, TxId ${tx.id}, the size is ${size} bytes, maxTxSize ${this.params.getMaxCreateAccountTxSize}`,
+        );
+      }
+    }
+    const net = this.#bandwidth(owner, tx, creates);
+    const memoFee = tx.raw.data !== undefined ? this.params.getMemoFee : 0n;
+    if (owner.balance < memoFee) throw insufficient();
+    owner.balance -= memoFee;
+    const paid = { fee: net.fee + memoFee, netUsage: net.usage, netFee: net.fee };
     if (contract.type === 'TransferContract') {
+      // TransferActuator.validate, then execute.
+      if (!ADDRESS.test(contract.owner)) throw invalid('Invalid ownerAddress!');
+      if (!ADDRESS.test(contract.to)) throw invalid('Invalid toAddress!');
       if (contract.to === contract.owner) {
-        throw new Refusal(
-          'CONTRACT_VALIDATE_ERROR',
-          'Contract validate error : Cannot transfer TRX to yourself.',
-        );
+        throw invalid('Cannot transfer TRX to yourself.');
       }
-      if (!owner) {
-        throw new Refusal(
-          'CONTRACT_VALIDATE_ERROR',
-          'Contract validate error : Validate TransferContract error, no OwnerAccount.',
-        );
+      if (contract.amount <= 0n) throw invalid('Amount must be greater than 0.');
+      if (
+        this.params.getForbidTransferToContract === 1n &&
+        state.tokens.has(contract.to)
+      ) {
+        throw invalid('Cannot transfer TRX to a smartContract.');
       }
-      if (contract.amount <= 0n) {
-        throw new Refusal(
-          'CONTRACT_VALIDATE_ERROR',
-          'Contract validate error : Amount must be greater than 0.',
-        );
-      }
-      const creates = !state.accounts.has(contract.to);
-      const net = this.#bandwidth(owner, tx, creates);
       const systemFee = creates ? this.params.getCreateNewAccountFeeInSystemContract : 0n;
-      const memoFee = tx.raw.data !== undefined ? this.params.getMemoFee : 0n;
-      if (owner.balance < contract.amount + systemFee + memoFee) {
-        throw new Refusal(
-          'CONTRACT_VALIDATE_ERROR',
-          'Contract validate error : Validate TransferContract error, balance is not sufficient.',
-        );
+      if (owner.balance < contract.amount + systemFee) {
+        throw invalid('Validate TransferContract error, balance is not sufficient.');
       }
-      owner.balance -= contract.amount + systemFee + memoFee;
+      owner.balance -= contract.amount + systemFee;
       const to = state.accounts.get(contract.to) ?? {
         balance: 0n,
         freeNetUsed: 0n,
@@ -513,84 +961,58 @@ export class ScriptedTronNode {
       to.balance += contract.amount;
       state.accounts.set(contract.to, to);
       return {
+        ...paid,
         contractRet: 'SUCCESS',
-        fee: net.fee + systemFee + memoFee,
-        netUsage: net.usage,
-        netFee: net.fee,
+        fee: paid.fee + systemFee,
         energyUsage: 0n,
         energyFee: 0n,
+        returned: '',
         logs: [],
       };
     }
-    if (!owner) {
-      throw new Refusal(
-        'CONTRACT_VALIDATE_ERROR',
-        'Contract validate error : No contract or not a valid smart contract',
-      );
-    }
-    const feeLimit = BigInt(tx.raw.feeLimit ?? 0);
-    if (feeLimit > this.params.getMaxFeeLimit) {
-      throw new Refusal(
-        'CONTRACT_VALIDATE_ERROR',
-        `Contract validate error : feeLimit must be >= 0 and <= ${this.params.getMaxFeeLimit}`,
-      );
-    }
+    // VMActuator.call: the contract, the call value, the fee limit, the energy limit, then
+    // the call value's transfer (MUtil.transfer), all before execution.
     const token = state.tokens.get(contract.contract);
-    if (!token) {
-      throw new Refusal(
-        'CONTRACT_VALIDATE_ERROR',
-        'Contract validate error : No contract or not a valid smart contract',
-      );
+    if (!token) throw invalid('No contract or not a smart contract');
+    const callValue = tx.wire.callValue;
+    if (callValue < 0n) throw invalid('callValue must be >= 0');
+    const feeLimit = tx.wire.feeLimit;
+    if (feeLimit < 0n || feeLimit > this.params.getMaxFeeLimit) {
+      throw invalid(`feeLimit must be >= 0 and <= ${this.params.getMaxFeeLimit}`);
     }
-    const net = this.#bandwidth(owner, tx, false);
-    const memoFee = tx.raw.data !== undefined ? this.params.getMemoFee : 0n;
-    if (owner.balance < memoFee) {
-      throw new Refusal('BANDWITH_ERROR', 'Account resource insufficient error.');
-    }
-    owner.balance -= memoFee;
     const price = this.params.getEnergyFee;
-    const call = this.#tokenCall(contract.contract, token, contract.owner, contract.data);
-    const available = owner.stakedEnergy - owner.energyUsed + owner.balance / price;
-    const limit = [available, feeLimit / price].reduce((a, b) => (a < b ? a : b));
+    const spendable = owner.balance > callValue ? owner.balance - callValue : 0n;
+    const staked = owner.stakedEnergy - owner.energyUsed;
+    const limit = min(staked + spendable / price, feeLimit / price);
+    if (owner.balance < callValue) {
+      throw invalid('Validate InternalTransfer error, balance is not sufficient.');
+    }
+    // The node's tokens are not payable, so a call with a value reverts and returns it.
+    const call = this.#tokenCall(
+      contract.contract,
+      token,
+      contract.owner,
+      contract.data,
+      callValue,
+    );
     const needed = call.energy;
     const used = needed <= limit ? needed : limit;
-    const fromStake = [used, owner.stakedEnergy - owner.energyUsed].reduce((a, b) =>
-      a < b ? a : b,
-    );
+    const fromStake = min(used, staked);
     const burned = (used - fromStake) * price;
     owner.energyUsed += fromStake;
     owner.balance -= burned;
-    const base = {
-      fee: net.fee + memoFee + burned,
-      netUsage: net.usage,
-      netFee: net.fee,
-    };
-    if (needed > limit) {
-      return {
-        ...base,
-        contractRet: 'OUT_OF_ENERGY',
-        energyUsage: fromStake,
-        energyFee: burned,
-        logs: [],
-      };
-    }
-    if (call.revert) {
-      return {
-        ...base,
-        contractRet: 'REVERT',
-        energyUsage: fromStake,
-        energyFee: burned,
-        logs: [],
-      };
-    }
-    call.commit?.();
-    return {
-      ...base,
-      contractRet: 'SUCCESS',
+    const spent = {
+      ...paid,
+      fee: paid.fee + burned,
       energyUsage: fromStake,
       energyFee: burned,
-      logs: call.logs,
     };
+    if (needed > limit) {
+      return { ...spent, contractRet: 'OUT_OF_ENERGY', returned: '', logs: [] };
+    }
+    if (call.revert) return { ...spent, contractRet: 'REVERT', returned: '', logs: [] };
+    call.commit?.();
+    return { ...spent, contractRet: 'SUCCESS', returned: call.result, logs: call.logs };
   }
 
   /** A TRC-20 call on `token` from `caller`: its result, energy, logs and state change. */
@@ -599,6 +1021,7 @@ export class ScriptedTronNode {
     token: Token,
     caller: string,
     data: string,
+    callValue = 0n,
   ): {
     readonly result: string;
     readonly energy: bigint;
@@ -606,6 +1029,9 @@ export class ScriptedTronNode {
     readonly logs: { address: string; topics: string[]; data: string }[];
     readonly commit?: () => void;
   } {
+    if (callValue > 0n) {
+      return { result: '', energy: NON_PAYABLE_ENERGY, revert: true, logs: [] };
+    }
     const selector = data.slice(0, 8);
     const arg = (i: number) => data.slice(8 + i * 64, 8 + (i + 1) * 64);
     const holder = (w: string) => `41${w.slice(24)}`;
@@ -701,55 +1127,73 @@ export class ScriptedTronNode {
     return { result: '', energy: 500n, revert: true, logs: [] };
   }
 
-  #signer(tx: StoredTx): string {
-    const sig = fromHex(tx.signature);
-    if (sig.length !== 65) return '';
+  /** The base58 signer recovered from a 65-byte signature over `id`, or null. */
+  #signer(signature: string, id: string): string | null {
+    const sig = fromHex(signature);
     const v = sig[64] as number;
     const recovery = v >= 27 ? v - 27 : v;
     try {
       const point = secp256k1.Signature.fromCompact(sig.subarray(0, 64))
         .addRecoveryBit(recovery)
-        .recoverPublicKey(fromHex(tx.id));
-      return toHexAddress(addressFromPublicKey(point.toRawBytes(true)));
+        .recoverPublicKey(fromHex(id));
+      return addressFromPublicKey(point.toRawBytes(true));
     } catch {
-      return '';
+      return null;
     }
   }
 
-  #admit(hex: string): { txid: string; transaction: string } {
-    let decoded: { rawHex: string; signatures: readonly string[] };
-    let raw: TronRawData;
+  /**
+   * `BroadcastHexServlet`: `{ result, code, message, transaction, txid }` for every parsed
+   * transaction (the message is plain text, `transaction` the parsed input as
+   * `JsonFormat.printToString(transaction, true)`), or `Util.printErrorMsg`'s `{ Error }`
+   * when the bytes do not parse.
+   */
+  #broadcast(input: unknown): Record<string, unknown> {
+    let signed: Signed;
     try {
-      decoded = decodeTransaction(hex);
-      raw = decodeRawData(decoded.rawHex);
-    } catch {
-      throw new Refusal(
-        'CONTRACT_VALIDATE_ERROR',
-        'Contract validate error : No contract!',
+      signed = decodeSigned(input);
+    } catch (error) {
+      if (!(error instanceof Unparseable)) throw error;
+      return {
+        Error:
+          'class com.google.protobuf.InvalidProtocolBufferException : the node cannot parse these bytes',
+      };
+    }
+    const envelope = {
+      transaction: echo(signed),
+      txid: toHex(sha256(fromHex(signed.rawHex))),
+    };
+    try {
+      this.#pool.push(this.#admit(signed));
+      return { result: true, code: 'SUCCESS', message: '', ...envelope };
+    } catch (error) {
+      if (!(error instanceof Refusal)) throw error;
+      return { result: false, code: error.code, message: error.message, ...envelope };
+    }
+  }
+
+  /** The admission order of `Wallet.broadcastTransaction` and `Manager.pushTransaction`. */
+  #admit(signed: Signed): StoredTx {
+    for (const s of signed.signatures) {
+      const size = s.length / 2;
+      // java-tron lets 66–68 bytes through to recovery; the node refuses every size but 65.
+      if (size !== SIGNATURE_BYTES) throw badSignature(`Signature size is ${size}`);
+    }
+    // No contract at all (verified), or a contract the node does not model (the brief's
+    // answer; java-tron would validate it as its type).
+    if (signed.contracts.length === 0 || !signed.model) throw invalid('No contract!');
+    const tx = this.#stored(signed, signed.model);
+    const head = this.#last;
+    if (tx.wire.expiration < BigInt(head.timestamp + SLOT_MS)) throw expired();
+    this.#checkSignature(tx);
+    if (signed.contracts.length !== 1) {
+      throw invalid(
+        `tx ${tx.id} contract size should be exactly 1, this is extend feature ,actual :${signed.contracts.length}`,
       );
     }
-    const id = toHex(sha256(fromHex(decoded.rawHex)));
-    for (const s of decoded.signatures) {
-      if (fromHex(s).length !== 65) {
-        throw new Refusal(
-          'SIGERROR',
-          `Validate signature error: Signature size is ${fromHex(s).length}`,
-        );
-      }
-    }
-    if (this.inPool(id) || this.transaction(id)) {
-      throw new Refusal('DUP_TRANSACTION_ERROR', 'Dup transaction.');
-    }
-    const tx: StoredTx = {
-      id,
-      rawHex: decoded.rawHex,
-      raw,
-      signature: decoded.signatures[0] ?? '',
-      // java-tron's bandwidth: the signed size without `ret`, plus 64 result bytes.
-      bytes: BigInt(fromHex(hex).length + 64),
-    };
-    const head = this.#last;
     this.#checkCommon(tx, head, false);
+    if (this.#known(tx.id))
+      throw new Refusal('DUP_TRANSACTION_ERROR', 'Dup transaction.');
     let pending = head.state;
     for (const earlier of this.#pool) {
       try {
@@ -759,12 +1203,7 @@ export class ScriptedTronNode {
       }
     }
     this.#tryApply(pending, tx);
-    this.#pool.push(tx);
-    // java-tron also echoes the transaction as a JSON string (tronweb parses it).
-    return {
-      txid: id,
-      transaction: JSON.stringify({ txID: id, raw_data_hex: tx.rawHex }),
-    };
+    return tx;
   }
 
   // ---- HTTP ----------------------------------------------------------------------------
@@ -774,12 +1213,13 @@ export class ScriptedTronNode {
     return { head, solid: Math.max(0, head - this.#solidDepth) };
   }
 
+  /** proto3 JSON (`JsonFormat`) drops default values: block 0 has no `number`. */
   #header(block: Block): Record<string, unknown> {
     return {
       blockID: block.id,
       block_header: {
         raw_data: {
-          number: block.number,
+          ...(block.number > 0 ? { number: block.number } : {}),
           txTrieRoot:
             block.txs.length === 0
               ? '0'.repeat(64)
@@ -796,42 +1236,49 @@ export class ScriptedTronNode {
 
   #txJson(tx: StoredTx): Record<string, unknown> {
     const c = tx.raw.contract;
+    const w = tx.wire;
     return {
       ...(tx.receipt ? { ret: [{ contractRet: tx.receipt.contractRet }] } : {}),
-      signature: [tx.signature],
+      signature: tx.signatures,
       txID: tx.id,
       raw_data: {
         contract: [
-          c.type === 'TransferContract'
-            ? {
-                parameter: {
-                  value: {
-                    amount: c.amount,
-                    owner_address: c.owner,
-                    to_address: c.to,
+          {
+            ...(c.type === 'TransferContract'
+              ? {
+                  parameter: {
+                    value: {
+                      amount: c.amount,
+                      owner_address: c.owner,
+                      to_address: c.to,
+                    },
+                    type_url: 'type.googleapis.com/protocol.TransferContract',
                   },
-                  type_url: 'type.googleapis.com/protocol.TransferContract',
-                },
-                type: 'TransferContract',
-              }
-            : {
-                parameter: {
-                  value: {
-                    data: c.data,
-                    owner_address: c.owner,
-                    contract_address: c.contract,
+                  type: 'TransferContract',
+                }
+              : {
+                  parameter: {
+                    value: {
+                      data: c.data,
+                      owner_address: c.owner,
+                      contract_address: c.contract,
+                      ...omitZero('call_value', w.callValue),
+                    },
+                    type_url: 'type.googleapis.com/protocol.TriggerSmartContract',
                   },
-                  type_url: 'type.googleapis.com/protocol.TriggerSmartContract',
-                },
-                type: 'TriggerSmartContract',
-              },
+                  type: 'TriggerSmartContract',
+                }),
+            ...omitZero('Permission_id', w.permissionId),
+          },
         ],
         ref_block_bytes: tx.raw.refBlockBytes,
+        ...omitZero('ref_block_num', w.refBlockNum),
         ref_block_hash: tx.raw.refBlockHash,
-        expiration: tx.raw.expiration,
+        expiration: w.expiration,
         ...(tx.raw.data !== undefined ? { data: tx.raw.data } : {}),
-        ...(tx.raw.feeLimit !== undefined ? { fee_limit: tx.raw.feeLimit } : {}),
-        timestamp: tx.raw.timestamp,
+        ...omitZero('fee_limit', w.feeLimit),
+        // The exact int64 of the bytes, even above 2^53.
+        ...omitZero('timestamp', w.timestamp),
       },
       raw_data_hex: tx.rawHex,
     };
@@ -846,7 +1293,7 @@ export class ScriptedTronNode {
       ...omitZero('fee', r.fee),
       blockNumber: block.number,
       blockTimeStamp: block.timestamp,
-      contractResult: [''],
+      contractResult: [r.returned],
       ...(trigger
         ? { contract_address: (tx.raw.contract as { contract: string }).contract }
         : {}),
@@ -883,8 +1330,12 @@ export class ScriptedTronNode {
   }
 
   /** Every JSON answer is written with exact integers, as java-tron does (A12). */
-  #serve(endpoint: string, request: FakeRequest): FakeReply {
-    const reply = this.#answer(endpoint, request);
+  async #serve(
+    endpoint: string,
+    request: FakeRequest,
+    signal: AbortSignal | undefined,
+  ): Promise<FakeReply> {
+    const reply = await this.#answer(endpoint, request, signal);
     if (reply instanceof Response || !('json' in reply) || reply.json === undefined) {
       return reply;
     }
@@ -896,11 +1347,15 @@ export class ScriptedTronNode {
     };
   }
 
-  #answer(endpoint: string, request: FakeRequest): FakeReply {
+  async #answer(
+    endpoint: string,
+    request: FakeRequest,
+    signal: AbortSignal | undefined,
+  ): Promise<FakeReply> {
     const path = request.url.pathname;
     for (const i of this.#intercepts) {
       if (i.endpoint === endpoint && i.path === path) {
-        const reply = i.handler(request);
+        const reply = await i.handler(request, signal);
         if (reply) return reply;
       }
     }
@@ -909,11 +1364,16 @@ export class ScriptedTronNode {
       request.method === 'POST' ? (request.json<Record<string, unknown>>() ?? {}) : {};
     const solidity = path.startsWith('/walletsolidity/');
     const limit = solidity ? view.solid : view.head;
+    // The solidity node serves solidified state, and it takes no transactions.
+    const state = (this.#blocks[limit] as Block).state;
     const visible = (tx: StoredTx | undefined) =>
       tx && tx.blockNumber !== undefined && tx.blockNumber <= limit ? tx : undefined;
     const name = path.replace(/^\/wallet(solidity)?\//, '');
     if (path === '/jsonrpc') return this.#jsonRpc(request, view.head, endpoint);
-    if (path.startsWith('/v1/accounts/')) return this.#history(request, view.solid);
+    if (path.startsWith('/v1/accounts/')) return this.#history(request, view);
+    if (solidity && (name === 'broadcasthex' || name === 'gettransactionfrompending')) {
+      return { status: 404, text: 'Not Found' };
+    }
     switch (name) {
       case 'getblock': {
         const block =
@@ -948,7 +1408,7 @@ export class ScriptedTronNode {
           },
         };
       case 'getaccount': {
-        const account = this.#blocks[view.head]?.state.accounts.get(String(body.address));
+        const account = state.accounts.get(String(body.address));
         if (!account) return { json: {} };
         return {
           json: {
@@ -959,7 +1419,7 @@ export class ScriptedTronNode {
         };
       }
       case 'getaccountresource': {
-        const account = this.#blocks[view.head]?.state.accounts.get(String(body.address));
+        const account = state.accounts.get(String(body.address));
         if (!account) return { json: {} };
         return {
           json: {
@@ -975,9 +1435,7 @@ export class ScriptedTronNode {
         };
       }
       case 'triggerconstantcontract': {
-        const token = this.#blocks[view.head]?.state.tokens.get(
-          String(body.contract_address),
-        );
+        const token = state.tokens.get(String(body.contract_address));
         if (!token) {
           return {
             json: {
@@ -993,6 +1451,7 @@ export class ScriptedTronNode {
           token,
           String(body.owner_address),
           String(body.data ?? ''),
+          typeof body.call_value === 'number' ? BigInt(body.call_value) : 0n,
         );
         return {
           json: {
@@ -1009,14 +1468,8 @@ export class ScriptedTronNode {
           },
         };
       }
-      case 'broadcasthex': {
-        try {
-          return { json: { result: true, ...this.#admit(String(body.transaction)) } };
-        } catch (error) {
-          if (!(error instanceof Refusal)) throw error;
-          return { json: { result: false, code: error.code, message: error.message } };
-        }
-      }
+      case 'broadcasthex':
+        return { json: this.#broadcast(body.transaction) };
       case 'gettransactionbyid': {
         const tx = visible(this.transaction(String(body.value)));
         return { json: tx ? this.#txJson(tx) : {} };
@@ -1052,7 +1505,7 @@ export class ScriptedTronNode {
             number: `0x${block.number.toString(16)}`,
             hash: `0x${block.id}`,
             parentHash: `0x${block.parentId}`,
-            timestamp: `0x${((block.timestamp - skew) / 1000).toString(16)}`,
+            timestamp: `0x${Math.floor((block.timestamp - skew) / 1000).toString(16)}`,
             transactions: block.txs.map((t) => `0x${t.id}`),
           }
         : null;
@@ -1075,14 +1528,19 @@ export class ScriptedTronNode {
     };
   }
 
-  /** TronGrid `/v1/accounts/:address/transactions[/trc20]`, confirmed (solidified) only. */
-  #history(request: FakeRequest, solid: number): FakeReply {
+  /**
+   * TronGrid `/v1/accounts/:address/transactions[/trc20]`: entries in blocks up to the
+   * head (reorgable), or solidified only with `only_confirmed=true`; at most 200 a page.
+   */
+  #history(request: FakeRequest, view: { head: number; solid: number }): FakeReply {
     const [, , , address, , kind] = request.url.pathname.split('/');
     const hex = toHexAddress(String(address));
-    const limit = Number(request.url.searchParams.get('limit') ?? '20');
-    const start = Number(request.url.searchParams.get('fingerprint') ?? '0');
+    const query = request.url.searchParams;
+    const upTo = query.get('only_confirmed') === 'true' ? view.solid : view.head;
+    const limit = Math.min(Number(query.get('limit') ?? '20'), HISTORY_MAX_LIMIT);
+    const start = Number(query.get('fingerprint') ?? '0');
     const txs = this.#blocks
-      .slice(1, solid + 1)
+      .slice(1, upTo + 1)
       .reverse()
       .flatMap((b) => [...b.txs].reverse());
     const trc20 = kind === 'trc20';
