@@ -1,0 +1,81 @@
+/**
+ * Solana provider presets (spec §11). Only URL templates verified against the provider's
+ * own documentation are listed (Plan 5 appendix); a preset refuses every other cluster with
+ * `CONFIG_INVALID`. Keyed URLs are `Secret`s, so the key never reaches logs or errors.
+ */
+import { ConfigError } from '../../core/errors/error';
+import type { PresetInput, ProviderPreset } from '../../core/registry/providers';
+import { reveal, secret } from '../../core/secret/secret';
+import type { EndpointConfig } from '../../core/transport/types';
+
+type Table = Readonly<Record<string, string>>;
+
+/** The rate-limited public endpoints the Solana documentation lists (not for production). */
+const PUBLIC: Table = {
+  mainnet: 'https://api.mainnet.solana.com',
+  devnet: 'https://api.devnet.solana.com',
+  testnet: 'https://api.testnet.solana.com',
+};
+
+/** `https://<host>.g.alchemy.com/v2/<key>`. */
+const ALCHEMY: Table = { mainnet: 'solana-mainnet', devnet: 'solana-devnet' };
+
+/** `https://<host>.infura.io/v3/<key>`. */
+const INFURA: Table = { mainnet: 'solana-mainnet', devnet: 'solana-devnet' };
+
+/** `https://rpc.ankr.com/<path>/<key>`. */
+const ANKR: Table = { mainnet: 'solana', devnet: 'solana_devnet' };
+
+const supports =
+  (table: Table) =>
+  (chain: string, network: string): boolean =>
+    chain === 'solana' && Object.hasOwn(table, network);
+
+function entry(table: Table, input: PresetInput): string {
+  const value = Object.hasOwn(table, input.network) ? table[input.network] : undefined;
+  // Unreachable through the catalog, which asks `supports` first.
+  if (value === undefined)
+    throw new Error(`no entry for ${input.chain}:${input.network}`);
+  return value;
+}
+
+/** The revealed key; the error names the preset and network, never the key. */
+function apiKeyOf(name: string, input: PresetInput): string {
+  const key: unknown = input.apiKey === undefined ? undefined : reveal(input.apiKey);
+  if (typeof key !== 'string' || key.trim() === '') {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `provider preset '${name}' requires a non-empty apiKey for ${input.chain}:${input.network}`,
+    );
+  }
+  return key;
+}
+
+function keyed(
+  name: string,
+  table: Table,
+  url: (value: string, key: string) => string,
+): ProviderPreset {
+  return {
+    name,
+    kind: 'rpc',
+    requiresApiKey: true,
+    supports: supports(table),
+    endpoints: (input): readonly EndpointConfig[] => [
+      { name, url: secret(url(entry(table, input), apiKeyOf(name, input))) },
+    ],
+  };
+}
+
+export const SOLANA_PRESETS: readonly ProviderPreset[] = Object.freeze([
+  {
+    name: 'public',
+    kind: 'rpc',
+    production: false,
+    supports: supports(PUBLIC),
+    endpoints: (input: PresetInput) => [{ name: 'public', url: entry(PUBLIC, input) }],
+  },
+  keyed('alchemy', ALCHEMY, (host, key) => `https://${host}.g.alchemy.com/v2/${key}`),
+  keyed('infura', INFURA, (host, key) => `https://${host}.infura.io/v3/${key}`),
+  keyed('ankr', ANKR, (path, key) => `https://rpc.ankr.com/${path}/${key}`),
+]);

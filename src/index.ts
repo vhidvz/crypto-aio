@@ -304,3 +304,9 @@ export type {
   UtxoUnspent,
   UtxoWalletOptions,
 } from './adapters/utxo/types';
+export type {
+  SolanaExt,
+  SolanaFeeDetails,
+  SolanaFeeOverride,
+  SolanaTokenAccount,
+} from './adapters/solana/types';
