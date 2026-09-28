@@ -28,7 +28,7 @@ import { isFeeSpeed, type FeeSpeed } from '../../core/model/fee';
 import type { DriverIntent, DriverOutput } from '../../core/model/intent';
 import type { RawTx, SignedTx, UnsignedTx } from '../../core/model/transaction';
 import { equalBytes } from '../../core/util/bytes';
-import { classifyBroadcastError } from './errors';
+import { classifyOwnBroadcast } from './errors';
 import {
   computeUnitLimitFor,
   detailsOf,
@@ -778,10 +778,12 @@ export function createSolanaBroadcaster(ctx: SolanaContext): Broadcaster {
         // Handoff §3, R16/R17: only a definitive, non-ambiguous node answer is classified:
         // by its code, then its structured data (a preflight failure's simulation result),
         // then its anchored text. Anything else may have been sent: rethrown unchanged.
+        // Lesson 21: a claimed bad signature stands only when these bytes carry one.
         const code = rpcCode(error);
         if (code === undefined) throw error;
         const failure = error as CryptoAioError;
-        return classifyBroadcastError(
+        return classifyOwnBroadcast(
+          Buffer.from(payload, 'base64'),
           code,
           rpcMessage(failure),
           failure.details?.rpcData,

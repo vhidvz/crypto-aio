@@ -657,6 +657,91 @@ describe('Solana end to end', () => {
     });
   });
 
+  describe("a node's rejection is a claim (lesson 21, F5-R15)", () => {
+    const PREFLIGHT_CLAIM = {
+      error: {
+        code: -32002,
+        message:
+          'Transaction simulation failed: Transaction did not pass signature verification',
+        data: { err: 'SignatureFailure', logs: [], accounts: null },
+      },
+    };
+    const VERIFICATION_CLAIM = {
+      error: { code: -32003, message: 'Transaction signature verification failure' },
+    };
+
+    /** Every Operation state this container moved to. */
+    function statesOf(env: Env): string[] {
+      const states: string[] = [];
+      env.aio.on('operation.state', (event) => states.push(event.to));
+      return states;
+    }
+
+    it('keeps the Operation when a lone endpoint claims a bad signature and keeps the bytes, then lands them once', async () => {
+      const { signer, calls } = countingSigner();
+      const env = await createSolanaEnv({ signer });
+      const states = statesOf(env);
+      // The only endpoint keeps the bytes, relays nothing, and claims a bad signature.
+      const kept: string[] = [];
+      env.node.intercept = (_endpoint, method, params) => {
+        if (method !== 'sendTransaction') return undefined;
+        kept.push(params[0] as string);
+        return PREFLIGHT_CLAIM;
+      };
+      const intent = { to: RECIPIENT, amount: SOL };
+      await expect(
+        env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
+      ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+      const op = await env.stores.operations.getByKey('default', 'k');
+      const ref = op?.attempts[0]?.ref.id ?? '';
+      // Not terminal: a caller has no reason to pay again, and no rebuild is allowed.
+      expect(op?.state).toBe('stalled');
+      await expect(env.run(env.bc.rebuild(op?.id ?? ''))).rejects.toMatchObject({
+        code: 'INVALID_TRANSITION',
+      });
+      const waiting = env.bc.waitForConfirmation(op?.id ?? '', { finality: 'final' });
+      waiting.catch(() => undefined);
+      await produceUntil(env, () => env.node.head.height >= 12n);
+      // Later, it relays the bytes it kept: they land, and the Operation confirms.
+      env.node.intercept = undefined;
+      expect(new Set(kept)).toEqual(new Set([op?.attempts[0]?.raw.data]));
+      env.node.submit(kept[0] ?? '');
+      const final = await env.produceWhile(waiting);
+      expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+      expect(env.node.landed(ref)?.err).toBeNull();
+      expect([env.node.balance(RECIPIENT), calls()]).toEqual([SOL, 1]);
+      expect(states).not.toContain('failed');
+    });
+
+    it('keeps the Operation when a lone endpoint relays the bytes but claims a bad signature', async () => {
+      const { signer, calls } = countingSigner();
+      const env = await createSolanaEnv({ signer });
+      const states = statesOf(env);
+      let relayed = false;
+      env.node.intercept = (_endpoint, method, params) => {
+        if (method !== 'sendTransaction') return undefined;
+        if (!relayed) {
+          relayed = true;
+          env.node.submit(params[0] as string);
+        }
+        return VERIFICATION_CLAIM;
+      };
+      const sub = env.bc.transfer(
+        { to: RECIPIENT, amount: SOL },
+        { idempotencyKey: 'k' },
+      );
+      await expect(env.run(sub)).rejects.toMatchObject({ code: 'TX_REFUSED' });
+      const op = await env.stores.operations.getByKey('default', 'k');
+      expect([op?.state, relayed]).toEqual(['stalled', true]);
+      const final = await env.produceWhile(
+        env.bc.waitForConfirmation(op?.id ?? '', { finality: 'final' }),
+      );
+      expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+      expect([env.node.balance(RECIPIENT), calls()]).toEqual([SOL, 1]);
+      expect(states).not.toContain('failed');
+    });
+  });
+
   it('scans final blocks for deposits: native, SPL, and an unresolved token (R35)', async () => {
     const env = await createSolanaEnv();
     env.node.createMint(MINT, 6);

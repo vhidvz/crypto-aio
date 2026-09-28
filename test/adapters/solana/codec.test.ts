@@ -21,6 +21,7 @@ import {
   decodeLength,
   encodeLength,
   messageSigners,
+  parseSignedTransaction,
   signedTransaction,
 } from '../../../src/adapters/solana/wire';
 import { PLACEHOLDER_ORIGIN, type Transport } from '../../../src/core/transport/types';
@@ -220,6 +221,36 @@ describe('the wire format on out-of-range values and untrusted bytes (lessons 19
     expect(signedTransaction([new Uint8Array(64)], message)).toHaveLength(
       1 + 64 + message.length,
     );
+  });
+
+  it('reads back a signed transaction whole: one signature per required signer (F5-R15)', () => {
+    const one = compileLegacy(KEY_ADDRESS, BLOCKHASH, [
+      systemTransfer(KEY_ADDRESS, RECIPIENT, 1n),
+    ]);
+    const two = compileLegacy(KEY_ADDRESS, BLOCKHASH, [
+      systemTransfer(RECIPIENT, KEY_ADDRESS, 1n),
+    ]);
+    const a = new Uint8Array(64).fill(1);
+    const b = new Uint8Array(64).fill(2);
+    const read = parseSignedTransaction(signedTransaction([a, b], two));
+    expect(read?.signatures).toEqual([a, b]);
+    expect(read?.message).toEqual(two);
+    expect(read?.parts.required).toBe(2);
+    const signed = signedTransaction([a], one);
+    expect(parseSignedTransaction(signed)?.message).toEqual(one);
+    for (const bad of [
+      new Uint8Array(),
+      Uint8Array.of(0, ...one), // no signature
+      signedTransaction([a, b], one), // more signatures than the header requires
+      signedTransaction([a], two), // fewer
+      signed.subarray(0, 1 + 63), // a signature cut short
+      signed.subarray(0, signed.length - 1), // a message cut short
+      Uint8Array.from([...signed, 0]), // a trailing byte
+      Uint8Array.from([0x81, 0x00, ...signed.subarray(1)]), // an aliased count
+      Uint8Array.of(0xff, 0xff, 0x03), // a count far beyond the bytes
+    ]) {
+      expect(parseSignedTransaction(bad)).toBeNull();
+    }
   });
 });
 

@@ -1,4 +1,9 @@
-import { classifyBroadcastError } from '../../../src/adapters/solana/errors';
+import {
+  classifyBroadcastError,
+  classifyOwnBroadcast,
+} from '../../../src/adapters/solana/errors';
+import { systemTransfer } from '../../../src/adapters/solana/programs';
+import { signedTransaction } from '../../../src/adapters/solana/wire';
 import {
   VARIANTS,
   computeUnitLimitFor,
@@ -39,6 +44,8 @@ import {
 import type { Transport } from '../../../src/core/transport/types';
 import { ProviderError } from '../../../src/core/errors/error';
 import { canonicalJson } from '../../../src/core/util/json';
+import { codec } from './support/tx';
+import { KEY_ADDRESS, MINT, RECIPIENT, RECIPIENT_KEY, sign } from './support/vectors';
 
 const rpcError = (code: number, message: string, ambiguous = false) =>
   new ProviderError('RPC_ERROR', `x failed: ${message}`, {
@@ -709,5 +716,132 @@ describe('broadcast classification (lesson 3, R24)', () => {
         simulation('BlockhashNotFound'),
       ),
     ).toEqual({ kind: 'already-known' });
+  });
+});
+
+describe('lesson 21: a claimed signature failure stands only for our bytes (F5-R15)', () => {
+  const pre = 'Transaction simulation failed: ';
+  const data = (err: unknown) =>
+    JSON.stringify({ err, logs: [], accounts: null, unitsConsumed: 0 });
+  // Every way a node can claim it: the preflight's structured error (with or without its
+  // text agreeing), the preflight's text alone, and -32003's text.
+  const claims = [
+    [
+      'preflight data',
+      -32002,
+      `${pre}Transaction did not pass signature verification`,
+      data('SignatureFailure'),
+    ],
+    [
+      'preflight text',
+      -32002,
+      `${pre}Transaction did not pass signature verification`,
+      undefined,
+    ],
+    [
+      'verification text',
+      -32003,
+      'Transaction signature verification failure',
+      undefined,
+    ],
+  ] as const;
+  const INVALID = { kind: 'rejected', reason: 'invalid signature' };
+  const CLAIMED = {
+    kind: 'refused',
+    code: 'TX_REFUSED',
+    reason: 'the node claimed an invalid signature',
+  };
+
+  const one = codec.compileMessage(KEY_ADDRESS, MINT, [
+    systemTransfer(KEY_ADDRESS, RECIPIENT, 1n),
+  ]);
+  // Two required signers: the fee payer, then the recipient (each signs its own transfer).
+  const two = codec.compileMessage(KEY_ADDRESS, MINT, [
+    systemTransfer(KEY_ADDRESS, MINT, 1n),
+    systemTransfer(RECIPIENT, KEY_ADDRESS, 1n),
+  ]);
+  const flip = (bytes: Uint8Array, at: number) => {
+    const out = bytes.slice();
+    out[at] = (out[at] as number) ^ 1;
+    return out;
+  };
+  const valid = signedTransaction([sign(one)], one);
+  const both = signedTransaction([sign(two), sign(two, RECIPIENT_KEY)], two);
+  const bad: readonly (readonly [string, Uint8Array])[] = [
+    ['a flipped signature bit', flip(valid, 1 + 10)],
+    ['a tampered message', flip(valid, valid.length - 1)],
+    ['another key', signedTransaction([sign(one, RECIPIENT_KEY)], one)],
+    [
+      'signatures out of order',
+      signedTransaction([sign(two, RECIPIENT_KEY), sign(two)], two),
+    ],
+    ['a bad second signature', signedTransaction([sign(two), sign(two)], two)],
+    ['an all-zero signature', signedTransaction([new Uint8Array(64)], one)],
+  ];
+
+  it.each(claims)(
+    'refuses a %s claim for bytes whose signatures all verify',
+    (_, code, text, raw) => {
+      for (const bytes of [valid, both]) {
+        const result = classifyOwnBroadcast(bytes, code, text, raw);
+        expect(result).toEqual(CLAIMED);
+        expect(Object.isFrozen(result)).toBe(true);
+        // The node at its word would have ended the Attempt.
+        expect(classifyBroadcastError(code, text, raw)).toEqual(INVALID);
+      }
+    },
+  );
+
+  it.each(claims)(
+    'keeps a %s rejection when our bytes carry a bad signature',
+    (_, code, text, raw) => {
+      for (const [, bytes] of bad) {
+        expect(classifyOwnBroadcast(bytes, code, text, raw)).toEqual(INVALID);
+      }
+    },
+  );
+
+  it('cannot confirm a claim for bytes that do not read: refused, never a throw', () => {
+    const [, code, text] = claims[2];
+    const unreadable = [
+      new Uint8Array(),
+      Uint8Array.of(0),
+      Uint8Array.of(1),
+      valid.subarray(0, valid.length - 1),
+      Uint8Array.from([...valid, 0]),
+      // A count that the message's header does not require (one signature, two signers).
+      signedTransaction([sign(two)], two),
+      // Two signatures where the header requires one.
+      signedTransaction([sign(one), sign(one)], one),
+      // An aliased (non-canonical) signature count.
+      Uint8Array.from([0x81, 0x00, ...valid.subarray(1)]),
+      // Far over the packet limit (lesson 20): refused before any signature is checked.
+      new Uint8Array(100_000).fill(1),
+    ];
+    for (const bytes of unreadable) {
+      expect(classifyOwnBroadcast(bytes, code, text)).toEqual(CLAIMED);
+    }
+  });
+
+  it('passes every other answer through as the node gave it', () => {
+    const answers = [
+      [-32002, `${pre}This transaction has already been processed`, undefined],
+      [-32002, `${pre}Blockhash not found`, undefined],
+      [-32002, 'reworded', data({ InstructionError: [2, { Custom: 1 }] })],
+      [
+        -32002,
+        `${pre}Transaction did not pass signature verification`,
+        data('BlockhashNotFound'),
+      ],
+      [-32003, `${pre}Transaction did not pass signature verification`, undefined],
+      [-32005, 'Node is behind by 42 slots', undefined],
+    ] as const;
+    for (const [code, text, raw] of answers) {
+      for (const bytes of [valid, flip(valid, 11), new Uint8Array()]) {
+        expect(classifyOwnBroadcast(bytes, code, text, raw)).toEqual(
+          classifyBroadcastError(code, text, raw),
+        );
+      }
+    }
   });
 });

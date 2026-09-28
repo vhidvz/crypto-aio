@@ -521,6 +521,48 @@ describe('the Solana broadcaster', () => {
     });
   });
 
+  it('refuses a signature failure a node claims for our valid bytes (lesson 21, F5-R15)', async () => {
+    const h = setup();
+    const { signed } = await signedFor(h, intent());
+    const text =
+      'Transaction simulation failed: Transaction did not pass signature verification';
+    const simulation = { err: 'SignatureFailure', logs: [], accounts: null };
+    // A lone endpoint that relays nothing and claims a bad signature, in each of its forms.
+    const claims = [
+      { code: -32002, message: text, data: simulation },
+      { code: -32002, message: text },
+      { code: -32003, message: 'Transaction signature verification failure' },
+    ];
+    for (const error of claims) {
+      h.node.intercept = (_endpoint, method) =>
+        method === 'sendTransaction' ? { error } : undefined;
+      expect(await h.run(h.broadcaster.broadcast(signed))).toEqual({
+        kind: 'refused',
+        code: 'TX_REFUSED',
+        reason: 'the node claimed an invalid signature',
+      });
+    }
+    // The same claims for bytes whose signature is genuinely bad stand.
+    const forged = Buffer.from(signed.raw.data, 'base64');
+    forged[5] = (forged[5] as number) ^ 1;
+    const bad = {
+      ...signed,
+      raw: { encoding: 'base64' as const, data: forged.toString('base64') },
+    };
+    for (const error of claims) {
+      h.node.intercept = (_endpoint, method) =>
+        method === 'sendTransaction' ? { error } : undefined;
+      expect(await h.run(h.broadcaster.broadcast(bad))).toEqual({
+        kind: 'rejected',
+        reason: 'invalid signature',
+      });
+    }
+    h.node.intercept = undefined;
+    expect(h.node.sendCount(signed.ref.id)).toBe(0);
+    // The node itself, honest, still takes our bytes.
+    expect(await h.run(h.broadcaster.broadcast(signed))).toEqual({ kind: 'accepted' });
+  });
+
   it('passes fanout and signal through, and rethrows every unclassified failure unchanged', async () => {
     const seen: unknown[] = [];
     const stub = (error: unknown): SolanaContext =>

@@ -154,6 +154,39 @@ export function messageSigners(message: Uint8Array): readonly string[] | null {
   return parts ? parts.keys.slice(0, parts.required).map(encodeBase58) : null;
 }
 
+/** A signed legacy transaction read back: its signatures, in signer order, and its message. */
+export interface SignedParts {
+  /** Views into the bytes, 64 each; one per required signer. */
+  readonly signatures: readonly Uint8Array[];
+  /** The message bytes the signatures sign (a view). */
+  readonly message: Uint8Array;
+  readonly parts: MessageParts;
+}
+
+/**
+ * The parts of `bytes`, or `null` unless it is exactly one signed legacy transaction: a
+ * canonical signature count equal to the message's required signers, 64 bytes per
+ * signature, then one well-formed legacy message (`parseMessage`) with nothing after it. The
+ * count is checked against the bytes that remain before anything is sliced, so the work is
+ * linear in the input (lesson 20).
+ */
+export function parseSignedTransaction(bytes: Uint8Array): SignedParts | null {
+  const count = decodeLength(bytes, 0);
+  if (!count || count.value === 0) return null;
+  if (count.value > (bytes.length - count.next) / SIGNATURE_BYTES) return null;
+  const start = count.next + SIGNATURE_BYTES * count.value;
+  const message = bytes.subarray(start);
+  const parts = parseMessage(message);
+  if (!parts || parts.required !== count.value) return null;
+  const signatures = Array.from({ length: count.value }, (_, i) =>
+    bytes.subarray(
+      count.next + SIGNATURE_BYTES * i,
+      count.next + SIGNATURE_BYTES * (i + 1),
+    ),
+  );
+  return { signatures, message, parts };
+}
+
 /** A signed transaction: the signatures (64 bytes each), in signer order, then the message. */
 export function signedTransaction(
   signatures: readonly Uint8Array[],

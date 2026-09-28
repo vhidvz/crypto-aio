@@ -10,9 +10,23 @@
  * `{"InstructionError":[3,{"Custom":1}]}`). When that result is readable it decides, not the
  * text one endpoint chose to show; otherwise the texts decide: agave's `TransactionError`
  * displays behind `sendTransaction`'s preflight prefix, matched whole.
+ *
+ * Lesson 21 (F5-R15): a node's rejection is a claim. `classifyBroadcastError` takes the node
+ * at its word; `classifyOwnBroadcast`, which the broadcaster uses, keeps a `rejected` only
+ * when the bytes that were sent really carry a signature that does not verify, checked here
+ * with the core's own ed25519 rule (the one that accepted our signer's signatures). A claim
+ * for bytes whose signatures all verify, or for bytes that do not read as one signed legacy
+ * transaction, is `refused`, which is not terminal. A terminal `rejected` lets a caller pay
+ * again, so an endpoint that relayed the bytes, or keeps them to relay later, would make
+ * that a second payment. The core verifies every signature before it is stored, so a true
+ * rejection of our own Attempt should not happen; a refusal costs liveness only, and the
+ * expiry proof still ends the Operation.
  */
 import type { BroadcastResult } from '../../core/driver/types';
+import { ed25519Scheme } from '../../core/registry/schemes';
+import { MAX_TRANSACTION_SIZE } from './programs';
 import { RPC_CODES, record } from './rpc';
+import { parseSignedTransaction } from './wire';
 
 const PREFLIGHT = 'Transaction simulation failed: ';
 
@@ -149,4 +163,45 @@ export function classifyBroadcastError(
   }
   if (err !== undefined) return refusalFor(err);
   return REFUSED.find((entry) => entry.pattern.test(message))?.result ?? DEFAULT_REFUSAL;
+}
+
+/** A rejection this driver cannot confirm for the bytes it sent: observed, never terminal. */
+const CLAIMED_INVALID_SIGNATURE = refused(
+  'TX_REFUSED',
+  'the node claimed an invalid signature',
+);
+
+/**
+ * Whether `sent` carries a signature that does not verify (each signature against its
+ * signer's key, in order, over the message), or `undefined` when the bytes do not read as
+ * one signed legacy transaction within the packet limit (lesson 20: refused before parsing).
+ */
+function carriesBadSignature(sent: Uint8Array): boolean | undefined {
+  if (sent.length > MAX_TRANSACTION_SIZE) return undefined;
+  const tx = parseSignedTransaction(sent);
+  if (!tx) return undefined;
+  return tx.signatures.some(
+    (signature, i) =>
+      !ed25519Scheme.verify({
+        publicKey: tx.parts.keys[i] as Uint8Array,
+        payload: tx.message,
+        signature,
+      }),
+  );
+}
+
+/**
+ * Lesson 21: the node's answer to `sent`, the bytes this driver sent. A `rejected` stands
+ * only when `sent` carries a signature that does not verify; otherwise the answer is
+ * `refused`. Every other answer is the node's, as `classifyBroadcastError` reads it.
+ */
+export function classifyOwnBroadcast(
+  sent: Uint8Array,
+  code: number | undefined,
+  message: string,
+  data?: unknown,
+): BroadcastResult {
+  const result = classifyBroadcastError(code, message, data);
+  if (result.kind !== 'rejected') return result;
+  return carriesBadSignature(sent) === true ? result : CLAIMED_INVALID_SIGNATURE;
 }
