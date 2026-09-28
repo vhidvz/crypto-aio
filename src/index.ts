@@ -286,6 +286,7 @@ export type { Clock } from './core/util/clock';
 // and `crypto-aio/tron`.
 export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './adapters/evm/types';
 export type {
+  TronExpiryOrdering,
   TronExt,
   TronFeeDetails,
   TronFeeOverride,

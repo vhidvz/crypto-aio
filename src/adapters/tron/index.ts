@@ -24,4 +24,10 @@ export {
   TRON_CAPABILITIES,
   TRON_INDEXER_CAPABILITIES,
 } from './network';
-export type { TronExt, TronFeeDetails, TronFeeOverride, TronResources } from './types';
+export type {
+  TronExpiryOrdering,
+  TronExt,
+  TronFeeDetails,
+  TronFeeOverride,
+  TronResources,
+} from './types';

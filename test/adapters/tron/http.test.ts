@@ -168,6 +168,10 @@ describe('TronApi', () => {
       key?.({ ...info, fee: 9, receipt: { ...info.receipt, energy_usage: 6 } }),
     ).toEqual(key?.(info));
     expect(key?.({ ...info, log: [] })).not.toEqual(key?.(info));
+    // M2 (F4-R14): the receipt's block time is compared too, so the quorum attests it.
+    expect(key?.({ ...info, blockTimeStamp: 2 })).not.toEqual(
+      key?.({ ...info, blockTimeStamp: 1 }),
+    );
     expect(quorumKeyFor('/wallet/getaccount')).toBeUndefined();
     // The negative scan stops on a block's timestamp, so the JSON-RPC key compares it (F4).
     const rpc = quorumKeyFor('/jsonrpc');

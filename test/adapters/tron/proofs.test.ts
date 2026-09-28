@@ -10,6 +10,7 @@ import {
   createTronProofs,
 } from '../../../src/adapters/tron/proofs';
 import { createTronReader } from '../../../src/adapters/tron/reader';
+import type { TronExpiryOrdering } from '../../../src/adapters/tron/types';
 import type { DriverIntent } from '../../../src/core/model/intent';
 import type { OrderingData } from '../../../src/core/model/ordering';
 import { toHex, utf8ToBytes } from '../../../src/core/util/bytes';
@@ -50,20 +51,29 @@ function setup(endpoints: readonly string[] = ['a', 'b']) {
     throw new Error('no reference block');
   };
   /**
-   * The ordering the builder records: the signed expiration and the TaPoS bound of the
-   * reference block. `submit` references the head, 60 s from its time, so a transaction still
-   * in the pool is read off the head right after it was submitted.
+   * The ordering the builder records: the signed expiration, the TaPoS bound of the
+   * reference block and its signed hash bytes. `submit` references the head, 60 s from its
+   * time, so a transaction still in the pool is read off the head right after it was
+   * submitted.
    */
-  const ordering = (id: string): OrderingData => {
+  const ordering = (id: string): TronExpiryOrdering => {
     const tx = h.node.transaction(id);
-    const head = h.node.block(h.node.head) as { timestamp: number };
+    const head = h.node.block(h.node.head) as { id: string; timestamp: number };
     return {
       kind: 'expiry',
       expiresAtMs: tx ? tx.raw.expiration : head.timestamp + 60_000,
       lastValidHeight: BigInt(tx ? referenced(tx.raw) : h.node.head) + TAPOS,
+      refBlockHash: tx ? tx.raw.refBlockHash.toLowerCase() : head.id.slice(16, 32),
     };
   };
-  return { ...h, proofs, mine, ordering };
+  /** The ordering of a transaction that references block `n`. */
+  const referencing = (n: number, expiresAtMs: number): TronExpiryOrdering => ({
+    kind: 'expiry',
+    expiresAtMs,
+    lastValidHeight: BigInt(n) + TAPOS,
+    refBlockHash: (h.node.block(n)?.id ?? '').slice(16, 32),
+  });
+  return { ...h, proofs, mine, ordering, referencing };
 }
 
 /** One mutable intercept per endpoint (intercepts accumulate; the first reply wins). */
@@ -203,11 +213,10 @@ describe('Tron proofs', () => {
     const h = setup();
     await h.mine(100);
     const unknown = 'ab'.repeat(32);
-    const expiry: OrderingData = {
-      kind: 'expiry',
-      expiresAtMs: (h.node.block(h.node.head)?.timestamp ?? 0) + 60_000,
-      lastValidHeight: 100n + TAPOS, // referencing block 100
-    };
+    const expiry = h.referencing(
+      100,
+      (h.node.block(h.node.head)?.timestamp ?? 0) + 60_000,
+    );
     await expect(
       h.run(h.proofs.includedFinal(ref(unknown), expiry, KEY_ADDRESS)),
     ).rejects.toMatchObject({
@@ -229,16 +238,22 @@ describe('Tron proofs', () => {
         .slice(before)
         .every((c) => c.tags.purpose === 'proof' && c.tags.quorum === 'proof'),
     ).toBe(true);
-    // Without the reference block, nothing bounds the scan from below: nothing is decided.
-    await expect(
-      h.run(
-        h.proofs.includedFinal(
-          ref(unknown),
-          { kind: 'expiry', expiresAtMs: expiry.expiresAtMs },
-          KEY_ADDRESS,
+    // Without the reference block's height or its signed hash, or with a hash that is not
+    // 8 lower-case bytes, nothing bounds the scan from below: nothing is decided (F4-R14).
+    const { refBlockHash, ...unhashed } = expiry;
+    for (const ordering of [
+      { kind: 'expiry', expiresAtMs: expiry.expiresAtMs },
+      unhashed,
+      { ...expiry, refBlockHash: refBlockHash.toUpperCase() },
+      { ...expiry, refBlockHash: `${refBlockHash}00` },
+      { ...expiry, refBlockHash: 7 },
+    ]) {
+      await expect(
+        h.run(
+          h.proofs.includedFinal(ref(unknown), ordering as OrderingData, KEY_ADDRESS),
         ),
-      ),
-    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    }
   });
 
   it('answers "not included" without a scan when the expiration passed before the reference block', async () => {
@@ -249,11 +264,7 @@ describe('Tron proofs', () => {
       await h.run(
         h.proofs.includedFinal(
           ref('cd'.repeat(32)),
-          {
-            kind: 'expiry',
-            expiresAtMs: h.node.block(10)?.timestamp ?? 0,
-            lastValidHeight: 20n + TAPOS,
-          },
+          h.referencing(20, h.node.block(10)?.timestamp ?? 0),
           KEY_ADDRESS,
         ),
       ),
@@ -268,11 +279,7 @@ describe('Tron proofs', () => {
     // Valid through the block 5 slots on, which is the first at its expiration.
     const expiration = (h.node.block(reference)?.timestamp ?? 0) + 15_000;
     const id = await submit(h, 'trx', { expiration });
-    const ordering: OrderingData = {
-      kind: 'expiry',
-      expiresAtMs: expiration,
-      lastValidHeight: BigInt(reference) + TAPOS,
-    };
+    const ordering = h.referencing(reference, expiration);
     for (let i = 0; i < 4; i++) {
       await h.clock.advance(3_000);
       h.node.mine({ include: false });
@@ -361,9 +368,12 @@ describe('Tron proofs', () => {
     const signed = await h.run(builder.assemble(unsigned, await signWithKey(unsigned)));
     await h.run(broadcaster.broadcast(signed));
     const reference = h.node.head;
-    expect(unsigned.ordering).toMatchObject({
-      lastValidHeight: BigInt(reference) + TAPOS,
-    });
+    expect(unsigned.ordering).toEqual(
+      h.referencing(
+        reference,
+        (unsigned.ordering as { expiresAtMs: number }).expiresAtMs,
+      ),
+    );
     await h.mine(1);
     expect(h.node.transaction(signed.ref.id)?.blockNumber).toBe(reference + 1);
     const index = lagIndex(h);
@@ -389,6 +399,68 @@ describe('Tron proofs', () => {
     });
   });
 
+  it('never answers "not included" when a forged head named another block at its height (F4-R14)', async () => {
+    const h = setup();
+    await h.mine(2);
+    const H = h.node.head;
+    const head = h.node.block(H) as { id: string; timestamp: number };
+    // A build-time endpoint claims the head is block H + 65,536 with block H's hash bytes
+    // behind that height: the signed reference is really block H (the same low 16 bits).
+    const n = H + 65_536;
+    const forged = n.toString(16).padStart(16, '0') + head.id.slice(16);
+    let forging = true;
+    for (const e of ['a', 'b']) {
+      h.node.intercept(e, '/wallet/getblock', (request) =>
+        forging && request.json().id_or_num === undefined
+          ? {
+              json: {
+                blockID: forged,
+                block_header: {
+                  raw_data: {
+                    number: n,
+                    parentHash: h.node.block(H - 1)?.id,
+                    timestamp: head.timestamp,
+                  },
+                },
+              },
+            }
+          : undefined,
+      );
+    }
+    const { builder, broadcaster } = createTronBuilder(h.ctx);
+    const intent: DriverIntent = {
+      asset: 'native',
+      outputs: [{ to: RECIPIENT, amount: 1_000n }],
+      from: KEY_ADDRESS,
+      fee: 'normal',
+    };
+    const build = { from: KEY_ADDRESS, keys: h.keys, wallet: {} };
+    const fee = await h.run(builder.estimateFee(intent, build));
+    const unsigned = await h.run(builder.build(intent, fee, build));
+    forging = false;
+    // The ordering holds the forged height, and the signed hash bytes of block H.
+    expect(unsigned.ordering).toMatchObject({
+      lastValidHeight: BigInt(n) + TAPOS,
+      refBlockHash: head.id.slice(16, 32),
+    });
+    const signed = await h.run(builder.assemble(unsigned, await signWithKey(unsigned)));
+    await h.run(broadcaster.broadcast(signed));
+    await h.mine(1);
+    expect(h.node.transaction(signed.ref.id)?.blockNumber).toBe(H + 1);
+    const index = lagIndex(h);
+    await h.mine(26); // past the expiration, solidified on both endpoints
+    expect(await h.run(h.proofs.expired(unsigned.ordering))).toBe(true);
+    // The stored height is above every block that could hold it, yet the transfer is in
+    // block H + 1: only the attested block that carries the signed hash bounds the scan.
+    await expect(
+      h.run(h.proofs.includedFinal(signed.ref, unsigned.ordering, KEY_ADDRESS)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    index.lagging = false;
+    expect(
+      await h.run(h.proofs.includedFinal(signed.ref, unsigned.ordering, KEY_ADDRESS)),
+    ).toMatchObject({ included: true, success: true, blockHeight: BigInt(H + 1) });
+  });
+
   it('serves block hashes at the latest and finalized levels', async () => {
     const h = setup();
     await h.mine(5);
@@ -405,7 +477,14 @@ describe('Tron proofs', () => {
  */
 function stubChain(
   length: number,
-  options: { holds?: [number, string]; parentOf?: [number, string] } = {},
+  options: {
+    holds?: [number, string];
+    parentOf?: [number, string];
+    /** What the latest-solidified read claims (one endpoint's word), when not the truth. */
+    head?: TronBlockHeader;
+    /** A halt: every block above `[0]` is `[1]` ms later than its slot. */
+    halt?: [number, number];
+  } = {},
 ) {
   const T0 = 1_790_000_000_000;
   const id = (n: number) =>
@@ -414,19 +493,18 @@ function stubChain(
     number: BigInt(n),
     id: id(n),
     parentId: n === 0 ? '0'.repeat(64) : id(n - 1),
-    timestamp: T0 + 3_000 * n,
+    timestamp:
+      T0 + 3_000 * n + (options.halt && n > options.halt[0] ? options.halt[1] : 0),
   });
   const reads: number[] = [];
+  const solidReads: number[] = [];
   const api = {
     transactionInfo: () => Promise.resolve(null),
-    block: (_scope: string, at: bigint | undefined) =>
-      Promise.resolve(
-        at === undefined
-          ? header(length - 1)
-          : at < BigInt(length)
-            ? header(Number(at))
-            : null,
-      ),
+    block: (_scope: string, at: bigint | undefined) => {
+      if (at === undefined) return Promise.resolve(options.head ?? header(length - 1));
+      solidReads.push(Number(at));
+      return Promise.resolve(at < BigInt(length) ? header(Number(at)) : null);
+    },
     rpcBlock: (hash: string): Promise<RpcBlock | null> => {
       const n = Number(BigInt(`0x${hash.slice(0, 16)}`));
       if (n >= length || hash !== id(n)) return Promise.resolve(null);
@@ -441,7 +519,18 @@ function stubChain(
       });
     },
   } as unknown as TronApi;
-  return { api, header, reads };
+  /** The ordering of a transaction whose signed reference is block `reference`. */
+  const referencing = (
+    reference: number,
+    expiresAtMs: number,
+    storedHeight = reference,
+  ): TronExpiryOrdering => ({
+    kind: 'expiry',
+    expiresAtMs,
+    lastValidHeight: BigInt(storedHeight) + TAPOS,
+    refBlockHash: id(reference).slice(16, 32),
+  });
+  return { api, header, reads, solidReads, referencing };
 }
 
 describe('Tron proofs: the scan window', () => {
@@ -452,11 +541,7 @@ describe('Tron proofs: the scan window', () => {
     // its expiration is only reached at block 69,990.
     const chain = stubChain(70_000, { holds: [65_545, tx] });
     const proofs = createTronProofs({ ...h.ctx, api: chain.api });
-    const ordering: OrderingData = {
-      kind: 'expiry',
-      expiresAtMs: chain.header(69_990).timestamp,
-      lastValidHeight: 10n + TAPOS,
-    };
+    const ordering = chain.referencing(10, chain.header(69_990).timestamp);
     await expect(
       proofs.includedFinal(ref(tx), ordering, KEY_ADDRESS),
     ).rejects.toMatchObject({
@@ -470,15 +555,120 @@ describe('Tron proofs: the scan window', () => {
     const h = setup();
     const chain = stubChain(40, { parentOf: [11, 'ee'.repeat(32)] });
     const proofs = createTronProofs({ ...h.ctx, api: chain.api });
-    const ordering: OrderingData = {
-      kind: 'expiry',
-      expiresAtMs: chain.header(20).timestamp,
-      lastValidHeight: 10n + TAPOS,
-    };
+    const ordering = chain.referencing(10, chain.header(20).timestamp);
     await expect(
       proofs.includedFinal(ref('ef'.repeat(32)), ordering, KEY_ADDRESS),
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
     expect(chain.reads).toEqual([20, 19, 18, 17, 16, 15, 14, 13, 12, 11]);
+  });
+
+  it('bounds the search for the first block at the expiration, whatever head one endpoint claims (M1)', async () => {
+    const h = setup();
+    // One endpoint claims a latest solidified block dated far in the future.
+    const truth = stubChain(70_000).header(69_999);
+    const chain = stubChain(70_000, {
+      head: { ...truth, timestamp: truth.timestamp + 1_000_000_000_000 },
+    });
+    const proofs = createTronProofs({ ...h.ctx, api: chain.api });
+    expect(
+      await proofs.expired(chain.referencing(10, chain.header(69_990).timestamp)),
+    ).toBe(true);
+    expect(chain.solidReads.length).toBeLessThan(40);
+  });
+
+  it('finds the first block at the expiration in a few reads across a long halt (M1)', async () => {
+    const h = setup();
+    // The chain halted for a day right after block 69,990: the slot estimate from the top
+    // lands a day of blocks too low, and a walk up from there would read them all.
+    const chain = stubChain(70_000, { halt: [69_990, 86_400_000] });
+    const proofs = createTronProofs({ ...h.ctx, api: chain.api });
+    expect(
+      await proofs.expired(chain.referencing(10, chain.header(69_990).timestamp + 1)),
+    ).toBe(true);
+    expect(chain.solidReads.length).toBeLessThan(60);
+  });
+
+  it('never takes a claimed latest block for the first block at the expiration (M1)', async () => {
+    const h = setup();
+    const tx = 'ef'.repeat(32);
+    const expiry = stubChain(70_000).header(69_990).timestamp;
+    // One endpoint claims block 69,980 as its latest, dated at or past the expiration: taken
+    // on its word, the scan would end below block 69,985, which holds the transaction.
+    const early = stubChain(70_000, { holds: [69_985, tx] });
+    const claimed = { ...early.header(69_980), timestamp: expiry };
+    const below = stubChain(70_000, { holds: [69_985, tx], head: claimed });
+    const proofs = createTronProofs({ ...h.ctx, api: below.api });
+    await expect(
+      proofs.includedFinal(ref(tx), below.referencing(69_970, expiry), KEY_ADDRESS),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    // Nor does a claim far below make the proof walk up from there.
+    const far = stubChain(70_000, { head: { ...early.header(100), timestamp: expiry } });
+    await expect(
+      createTronProofs({ ...h.ctx, api: far.api }).expired(far.referencing(10, expiry)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(far.solidReads.length).toBeLessThan(10);
+  });
+});
+
+describe('Tron proofs: a stored reference height that is not the signed reference (F4-R14)', () => {
+  // The chain's top is block 70,009; the expiration is block 70,000's time. The signed
+  // reference is block 4,454, while the build-time head claimed height 69,990
+  // (4,454 + 65,536: the same low 16 bits). Blocks 69,981…69,990 check TaPoS against block
+  // 4,454, so the transaction can be there.
+  const EXPIRY = 70_000;
+  const STORED = 69_990;
+  const SIGNED = STORED - 65_536;
+
+  it('finds a transaction the stored height would have skipped', async () => {
+    const h = setup();
+    const tx = 'ef'.repeat(32);
+    const chain = stubChain(70_010, { holds: [69_985, tx] });
+    const proofs = createTronProofs({ ...h.ctx, api: chain.api });
+    const ordering = chain.referencing(SIGNED, chain.header(EXPIRY).timestamp, STORED);
+    await expect(
+      proofs.includedFinal(ref(tx), ordering, KEY_ADDRESS),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(chain.reads).toEqual([69_990, 69_989, 69_988, 69_987, 69_986, 69_985]);
+  });
+
+  it('scans every block that checks TaPoS against the block carrying the signed hash', async () => {
+    const h = setup();
+    const chain = stubChain(70_010);
+    const proofs = createTronProofs({ ...h.ctx, api: chain.api });
+    const ordering = chain.referencing(SIGNED, chain.header(EXPIRY).timestamp, STORED);
+    expect(
+      await proofs.includedFinal(ref('ef'.repeat(32)), ordering, KEY_ADDRESS),
+    ).toEqual({
+      included: false,
+    });
+    // Blocks 41,201…69,990: the parent of each is within 24 h of the expiration
+    // (java-tron's MAXIMUM_TIME_UNTIL_EXPIRATION) and still holds block 4,454 for TaPoS.
+    expect(chain.reads).toHaveLength(69_990 - 41_200);
+    expect(chain.reads[0]).toBe(69_990);
+    expect(chain.reads.at(-1)).toBe(41_201);
+    // Both heights with the signed low 16 bits below the top were read under the quorum.
+    expect(chain.solidReads).toEqual(expect.arrayContaining([SIGNED, STORED]));
+  });
+
+  it('answers "not included" when no block at the signed low 16 bits carries the signed hash', async () => {
+    const h = setup();
+    const chain = stubChain(70_010);
+    const proofs = createTronProofs({ ...h.ctx, api: chain.api });
+    const ordering: TronExpiryOrdering = {
+      ...chain.referencing(SIGNED, chain.header(EXPIRY).timestamp, STORED),
+      refBlockHash: 'f0'.repeat(8),
+    };
+    expect(
+      await proofs.includedFinal(ref('ef'.repeat(32)), ordering, KEY_ADDRESS),
+    ).toEqual({
+      included: false,
+    });
+    // Every block up to the top checks TaPoS against one of these two, and neither matches.
+    expect(chain.reads).toEqual([]);
+    expect(chain.solidReads).toEqual(expect.arrayContaining([SIGNED, STORED]));
   });
 });
 
@@ -583,6 +773,25 @@ describe('Tron block source and history', () => {
     expect(limits).toEqual(['1', '1', '1', '200']);
     const own = await h.run(history.list(KEY_ADDRESS, { limit: 200 }));
     expect([...own.items.map((t) => t.id)].sort()).toEqual([...ids].sort());
+  });
+
+  it('decides nothing while the node holds a listed transaction only in its pool', async () => {
+    const h = setup(['a']);
+    const id = await submit(h, 'trx');
+    await h.mine(5);
+    const { rawHex } = h.node.transaction(id) as { rawHex: string };
+    const reader = createTronReader(h.ctx);
+    const history = createTronHistory(h.ctx, h.transport, (tx) =>
+      reader.getTransaction(tx),
+    );
+    h.node.intercept('a', '/wallet/gettransactionbyid', () => ({ json: {} }));
+    h.node.intercept('a', '/wallet/gettransactionfrompending', () => ({
+      json: { txID: id, raw_data_hex: rawHex },
+    }));
+    await expect(h.run(history.list(KEY_ADDRESS, { limit: 10 }))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
   });
 
   it('decides nothing when the node cannot serve a transaction the index lists', async () => {

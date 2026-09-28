@@ -6,7 +6,11 @@ import { bandwidthOf, createTronBuilder } from '../../../src/adapters/tron/build
 import { tronwebCodec } from '../../../src/adapters/tron/codec';
 import type { TronApi } from '../../../src/adapters/tron/http';
 import { MAX_EXPIRATION_MS } from '../../../src/adapters/tron/network';
-import type { TronCodec, TronRawData } from '../../../src/adapters/tron/types';
+import type {
+  TronCodec,
+  TronExpiryOrdering,
+  TronRawData,
+} from '../../../src/adapters/tron/types';
 import { ProviderError } from '../../../src/core/errors/error';
 import type { FeeEstimateDraft } from '../../../src/core/model/fee';
 import type { DriverIntent } from '../../../src/core/model/intent';
@@ -338,11 +342,13 @@ describe('Tron builder: build and assemble', () => {
     });
     expect(raw.expiration).toBeLessThanOrEqual(head.timestamp + 60_000);
     expect(raw.expiration).toBeGreaterThan(head.timestamp + 59_000);
-    // F4-R12: the TaPoS bound of the reference block, whose height its id carries.
+    // F4-R12, F4-R14: the TaPoS bound of the reference block, whose height its id carries,
+    // and the signed hash bytes of that block (`TronExpiryOrdering`).
     expect(unsigned.ordering).toEqual({
       kind: 'expiry',
       expiresAtMs: raw.expiration,
       lastValidHeight: BigInt(h.node.head) + 65_536n,
+      refBlockHash: head.id.slice(16, 32),
     });
     expect(unsigned.summary).toEqual({
       asset: 'tron:nile/native',
@@ -739,6 +745,22 @@ describe('Tron builder: build and assemble', () => {
           ...(plain.ordering as Extract<OrderingData, { kind: 'expiry' }>),
           lastValidHeight:
             (plain.ordering as { lastValidHeight: bigint }).lastValidHeight + 1n,
+        },
+      },
+      // F4-R14: another block's hash bytes, or none.
+      {
+        ...plain,
+        ordering: {
+          ...(plain.ordering as TronExpiryOrdering),
+          refBlockHash: 'f0'.repeat(8),
+        } satisfies TronExpiryOrdering as OrderingData,
+      },
+      {
+        ...plain,
+        ordering: {
+          kind: 'expiry',
+          expiresAtMs: (plain.ordering as TronExpiryOrdering).expiresAtMs,
+          lastValidHeight: (plain.ordering as TronExpiryOrdering).lastValidHeight,
         },
       },
       { ...call, summary: { ...call.summary, asset: 'tron:nile/native' } },

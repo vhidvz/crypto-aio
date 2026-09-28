@@ -23,18 +23,36 @@
  * - TaPoS: only a block above the reference block, and at most `TAPOS_WINDOW` above it, can
  *   hold it.
  *
- * "Not included" (lesson 16; F4-R11, F4-R12): the solidity index (and TronGrid behind a load
- * balancer) can lag, so an empty index answer is never taken as absence. `includedFinal`
- * answers `included: false` only once expiry is attested and a scan of every block that could
- * hold the transaction shows it absent: from the attested first block at or past the SIGNED
- * expiration (the ordering's `expiresAtMs`, which `assemble` binds to the signed bytes) down
- * to the block just above the reference block, whose height the ordering carries
- * (`lastValidHeight − TAPOS_WINDOW`, bound to the signed `ref_block_bytes`). The floor is the
- * attested reference-height block, never a time derived from the expiration: the build-time
- * head is a claim and the local clock may lead, so the expiration can sit any distance after
- * the reference. Each scanned block is read by hash under the quorum, its parent hash names
- * the next, and the walk must end on the attested reference-height block. A scanned block
- * that holds the transaction while the index says nothing decides nothing.
+ * "Not included" (lesson 16; F4-R11, F4-R12, F4-R14): the solidity index (and TronGrid behind
+ * a load balancer) can lag, so an empty index answer is never taken as absence.
+ * `includedFinal` answers `included: false` only once expiry is attested and a scan of every
+ * block that could hold the transaction shows it absent, from the attested first block at or
+ * past the SIGNED expiration (`expiresAtMs`, which `assemble` binds to the signed bytes) down
+ * to just above the reference block. The floor is never a time derived from the expiration:
+ * the build-time head and the local clock are claims, so the expiration can sit any distance
+ * after the reference.
+ * - The ordering (`TronExpiryOrdering`) carries the reference height the build-time head
+ *   claimed (`lastValidHeight − TAPOS_WINDOW`) and the signed `ref_block_hash`. Only the
+ *   height's low 16 bits are signed (`ref_block_bytes`), so the height is trusted only when
+ *   the attested solidified block there carries the signed hash: then the scan runs from the
+ *   top down to it.
+ * - Otherwise (another block there, or a height at or above the top) the proof searches the
+ *   heights TaPoS can match: every block up to the top checks the reference against the latest
+ *   block at or below its parent with the signed low 16 bits, and its parent is at most 24 h
+ *   before the expiration (`MAXIMUM_TIME_UNTIL_EXPIRATION`). So the attested blocks at those
+ *   heights, from one TaPoS window below that 24 h mark up to the top, are the only possible
+ *   references. None carries the signed hash: no block can hold the transaction. One does:
+ *   the blocks in its TaPoS window (and not before the 24 h mark) are scanned.
+ * - A missing or malformed stored hash decides nothing.
+ * Each scanned block is read by hash under the quorum, its parent hash names the next, and the
+ * walk must end on the attested block below the window. A scanned block that holds the
+ * transaction while the index says nothing decides nothing.
+ *
+ * Read cost, each read a quorum read: the reference check is one; a scan is one per block in
+ * the window (about 20 for a 60 s expiration). The search, only when the stored height is not
+ * the reference, adds a gallop and binary search for the block 24 h before the expiration
+ * (a few reads, logarithmic in missed slots) and one read per candidate height (two or three);
+ * a matched reference older than a day widens the scan to at most a day of blocks (28,800).
  */
 import type {
   AddressHistorySource,
@@ -58,6 +76,7 @@ import {
 } from './http';
 import { TAPOS_WINDOW } from './network';
 import type { TronContext } from './reader';
+import type { TronExpiryOrdering } from './types';
 
 function undecided(): ProviderError {
   return new ProviderError(
@@ -79,6 +98,13 @@ const PEER_SKEW = 2n;
 /** java-tron's block heights are `long`s. */
 const INT64_MAX = 2n ** 63n - 1n;
 const TX_ID = /^[0-9a-f]{64}$/;
+/** A signed `ref_block_hash`: 8 bytes, lower-case hex, as the builder stores it. */
+const REF_HASH = /^[0-9a-f]{16}$/;
+/**
+ * java-tron's `MAXIMUM_TIME_UNTIL_EXPIRATION` (`Constant.java`): `validateCommon` refuses an
+ * expiration more than 24 h after the parent block's time.
+ */
+const MAX_LIFETIME_MS = 86_400_000;
 
 /** The timestamp of a solidified-block answer, or -1 when it is not one (never agrees). */
 function solidTimestamp(answer: unknown): number {
@@ -87,25 +113,42 @@ function solidTimestamp(answer: unknown): number {
   return typeof raw?.timestamp === 'number' ? raw.timestamp : -1;
 }
 
+interface Bounds {
+  /** The signed expiration. */
+  readonly expiration: number;
+  /** The reference height the build-time head claimed: only its low 16 bits are signed. */
+  readonly reference: bigint;
+  /** The signed `ref_block_hash`. */
+  readonly refBlockHash: string;
+}
+
 /**
- * Where an Attempt can be, from its ordering: its signed expiration and its reference
- * block's height; null when either is missing or out of range, which decides nothing.
+ * Where an Attempt can be, from its `TronExpiryOrdering`; null when a field is missing or
+ * out of range, which decides nothing (F4-R14).
  */
-function attemptBounds(
-  ordering: OrderingData,
-): { readonly expiration: number; readonly reference: bigint } | null {
+function attemptBounds(ordering: OrderingData): Bounds | null {
   if (ordering.kind !== 'expiry') return null;
-  const { expiresAtMs, lastValidHeight } = ordering;
+  const { expiresAtMs, lastValidHeight, refBlockHash } =
+    ordering as Partial<TronExpiryOrdering>;
   if (
     !Number.isSafeInteger(expiresAtMs) ||
     typeof lastValidHeight !== 'bigint' ||
     lastValidHeight < TAPOS_WINDOW ||
-    lastValidHeight > INT64_MAX
+    lastValidHeight > INT64_MAX ||
+    typeof refBlockHash !== 'string' ||
+    !REF_HASH.test(refBlockHash)
   ) {
     return null;
   }
-  return { expiration: expiresAtMs as number, reference: lastValidHeight - TAPOS_WINDOW };
+  return {
+    expiration: expiresAtMs as number,
+    reference: lastValidHeight - TAPOS_WINDOW,
+    refBlockHash,
+  };
 }
+
+/** Bytes 8..16 of a block id: what a transaction's `ref_block_hash` names. */
+const hashBytes = (block: TronBlockHeader): string => block.id.slice(16, 32);
 
 /** Scanned blocks kept per driver: immutable chain data (spec §7), so a retry is cheap. */
 const SCAN_CACHE_SIZE = 1_024;
@@ -152,41 +195,73 @@ export function createTronProofs(ctx: TronContext): ProofSource {
   }
 
   /**
-   * The solidified block at or past `expiration` nearest to it, or null while the quorum
-   * has not solidified past it. Every endpoint has then solidified the first block at or past
-   * the expiration, and the walk reads only heights at or below it: no read can stall.
+   * The first solidified block at or past `time`, at or below `hi` (an attested block at or
+   * past it). Block timestamps strictly increase, so "at or past `time`" is monotone in the
+   * height: a gallop down from the slot estimate, then a binary search (M1). Every probe is
+   * an attested fixed-height read at or below `hi`, which every quorum endpoint has
+   * solidified, so none can stall; the slot spacing only picks the first probe.
+   */
+  async function firstAtOrAfter(
+    time: number,
+    hi: TronBlockHeader,
+  ): Promise<TronBlockHeader> {
+    let high = hi;
+    let low: TronBlockHeader | undefined;
+    let step = BigInt(Math.max(1, Math.floor((hi.timestamp - time) / SLOT_MS)));
+    while (low === undefined) {
+      if (high.number === 0n) return high;
+      const probe = await solidHeader(high.number > step ? high.number - step : 0n);
+      if (probe.timestamp < time) {
+        low = probe;
+      } else {
+        high = probe;
+        step *= 2n;
+      }
+    }
+    while (high.number - low.number > 1n) {
+      const mid = await solidHeader((low.number + high.number) / 2n);
+      if (mid.timestamp < time) low = mid;
+      else high = mid;
+    }
+    return high;
+  }
+
+  /**
+   * The first solidified block at or past `expiration`, or null while the quorum has not
+   * solidified past it. Only the predicate is attested: the latest block's height and time
+   * are one endpoint's word, so a block trailed by the peer skew is attested at its own height
+   * (a freshest endpoint then stalls nothing, lesson 17), and the search runs at or below it
+   * or, within the skew, up to the first block at the expiration, which every endpoint has
+   * solidified (M1: bounded, whatever the endpoint claimed).
    */
   async function expiryBlock(expiration: number): Promise<TronBlockHeader | null> {
-    const head = await passedExpiry(expiration);
-    if (!head) return null;
-    // Blocks are at least one slot apart, so this height is at or below the first block at
-    // or past the expiration; walk up to it.
-    const back = BigInt(Math.floor((head.timestamp - expiration) / SLOT_MS));
-    let top = await solidHeader(head.number > back ? head.number - back : 0n);
-    while (top.timestamp < expiration) top = await solidHeader(top.number + 1n);
+    const seen = await passedExpiry(expiration);
+    if (!seen) return null;
+    let top = await solidHeader(seen.number > PEER_SKEW ? seen.number - PEER_SKEW : 0n);
+    if (top.timestamp >= expiration) return firstAtOrAfter(expiration, top);
+    while (top.timestamp < expiration) {
+      if (top.number >= seen.number) throw undecided();
+      top = await solidHeader(top.number + 1n);
+    }
     return top;
   }
 
   /**
-   * Absence proven by scan (lesson 16); throws when anything cannot be decided. `top` is an
-   * attested solidified block at or past the expiration, so no block above it can hold the
-   * transaction; nor can a block at or below `reference`, or more than `TAPOS_WINDOW` above.
+   * No block above the attested `floor`, at or below `last` and `top`, holds `id`: walked by
+   * parent hash from the upper end, which must arrive at `floor`. Throws when anything cannot
+   * be decided. Every height read is below `top`, which every quorum endpoint has solidified.
    */
   async function absentAbove(
     id: string,
-    reference: bigint,
+    floor: TronBlockHeader,
     top: TronBlockHeader,
+    last: bigint,
   ): Promise<void> {
-    // The expiration passed before any block could reference: no block can hold it.
-    if (top.number <= reference) return;
-    const last = reference + TAPOS_WINDOW;
-    // Both heights are below `top`, which every quorum endpoint has solidified.
-    const [floor, start] = await Promise.all([
-      solidHeader(reference),
-      top.number > last ? solidHeader(last) : top,
-    ]);
+    const end = last < top.number ? last : top.number;
+    if (end <= floor.number) return;
+    const start = end === top.number ? top : await solidHeader(end);
     let hash = start.id;
-    for (let height = start.number; height > reference; height -= 1n) {
+    for (let height = start.number; height > floor.number; height -= 1n) {
       const block = await finalBlockByHash(hash, height);
       // Missing, or not the block the parent chain leads to: an endpoint is behind or lying.
       if (!block || block.number !== height) throw undecided();
@@ -194,9 +269,41 @@ export function createTronProofs(ctx: TronContext): ProofSource {
       if (block.transactions.includes(id)) throw undecided();
       hash = block.parentHash;
     }
-    // The walk is bound at both ends: it must arrive at the attested reference-height block.
+    // The walk is bound at both ends: it must arrive at the attested block below the window.
     if (hash !== floor.id) {
       throw contradiction('the scanned blocks do not lead to the reference block');
+    }
+  }
+
+  /**
+   * Absence proven by scan (lesson 16, F4-R14); throws when anything cannot be decided. `top`
+   * is the attested first block at or past the expiration: no block above it can hold `id`.
+   */
+  async function absent(id: string, bounds: Bounds, top: TronBlockHeader): Promise<void> {
+    const { reference, refBlockHash } = bounds;
+    // The stored height is the build-time head's claim: it bounds the scan only when the
+    // attested block there carries the signed hash bytes.
+    if (reference < top.number) {
+      const named = await solidHeader(reference);
+      if (hashBytes(named) === refBlockHash) {
+        await absentAbove(id, named, top, reference + TAPOS_WINDOW);
+        return;
+      }
+    }
+    // Otherwise, the heights TaPoS can match: the signed low 16 bits, below the top, from one
+    // TaPoS window below the first block within 24 h of the expiration (a block's parent is at
+    // or after it). Every block up to the top checks the reference against one of them.
+    const earliest = await firstAtOrAfter(bounds.expiration - MAX_LIFETIME_MS, top);
+    const low16 = reference % TAPOS_WINDOW;
+    const from =
+      earliest.number + 1n > TAPOS_WINDOW ? earliest.number + 1n - TAPOS_WINDOW : 0n;
+    let height = from + ((low16 - (from % TAPOS_WINDOW) + TAPOS_WINDOW) % TAPOS_WINDOW);
+    for (; height < top.number; height += TAPOS_WINDOW) {
+      const candidate = await solidHeader(height);
+      if (hashBytes(candidate) !== refBlockHash) continue;
+      // Its TaPoS window, less the blocks whose parent is more than 24 h before the expiration.
+      const floor = candidate.number >= earliest.number ? candidate : earliest;
+      await absentAbove(id, floor, top, candidate.number + TAPOS_WINDOW);
     }
   }
 
@@ -242,7 +349,7 @@ export function createTronProofs(ctx: TronContext): ProofSource {
       if (!bounds) throw undecided();
       const top = await expiryBlock(bounds.expiration);
       if (!top) throw undecided();
-      await absentAbove(id, bounds.reference, top);
+      await absent(id, bounds, top);
       return { included: false };
     },
 
@@ -354,8 +461,9 @@ export function createTronHistory(
       const items: DriverTransaction[] = [];
       for (const id of page.ids) {
         const tx = await getTransaction(id);
-        // The index lists it as confirmed: a node that serves nothing is behind.
-        if (!tx) throw notServable();
+        // The index lists it as confirmed: a node that serves nothing, or only its pool
+        // copy, is behind; listing that copy would move the cursor past it for good.
+        if (!tx || tx.observation.seen !== 'block') throw notServable();
         // Phase x skips the account's own calls: phase t listed them.
         if (!(phase === 'x' && tx.details.owner === owner)) items.push(tx);
       }

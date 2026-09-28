@@ -64,6 +64,25 @@ export interface TronFeeDetails {
 export type TronFeeOverride = { readonly feeLimit: bigint };
 
 /**
+ * The expiry ordering a Tron build records (F4-R12, F4-R14, F4-R15): the signed expiration,
+ * and the reference block the transaction names for TaPoS. `lastValidHeight` is the height
+ * the build-time head claimed plus the TaPoS window (65,536 blocks), so only its low 16 bits
+ * are signed (`ref_block_bytes`); `refBlockHash` is the signed `ref_block_hash`. A proof
+ * trusts the height only when the solidified block there carries `refBlockHash`; otherwise
+ * it searches the heights TaPoS can match. It is a core `expiry` ordering with one more
+ * property, which the core stores whole.
+ */
+export interface TronExpiryOrdering {
+  readonly kind: 'expiry';
+  /** `raw_data.expiration`, in milliseconds: invalid in a block whose parent is at or past it. */
+  readonly expiresAtMs: number;
+  /** The reference block's height (as the build-time head claimed it) plus 65,536. */
+  readonly lastValidHeight: bigint;
+  /** `raw_data.ref_block_hash`: bytes 8..16 of the reference block's id, 16 lower-case hex digits. */
+  readonly refBlockHash: string;
+}
+
+/**
  * The transport tags every Tron I/O call carries (R41): purpose, retry, quorum, fanout,
  * signal, an optional caller `quorumKey` that replaces the path's default consensus key
  * (lesson 17: a monotone predicate attested at its own height), and `exactIntegers` (A12),

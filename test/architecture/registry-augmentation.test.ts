@@ -196,6 +196,14 @@ export const tronExt: TronExt = tron.ext;
 export const tronFee: TronFeeOverride = { feeLimit: 1n };
 export type TronDetails = TronFeeDetails;
 export type Resources = TronResources;
+import type { OrderingData, TronExpiryOrdering } from 'crypto-aio';
+export const tronOrdering: TronExpiryOrdering = {
+  kind: 'expiry',
+  expiresAtMs: 1,
+  lastValidHeight: 65_536n,
+  refBlockHash: '00'.repeat(8),
+};
+export const coreOrdering: OrderingData = tronOrdering;
 `;
 
 /** Where the in-memory declaration files live: the `dist` of the tests. */

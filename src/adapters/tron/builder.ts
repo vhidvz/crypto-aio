@@ -74,7 +74,12 @@ import {
   TAPOS_WINDOW,
 } from './network';
 import { trc20Balance, trc20Contract, type TronContext } from './reader';
-import type { TronContract, TronFeeDetails, TronRawData } from './types';
+import type {
+  TronContract,
+  TronExpiryOrdering,
+  TronFeeDetails,
+  TronRawData,
+} from './types';
 
 /** The largest `int64` the codec writes from a JS number (lesson 19). */
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
@@ -303,14 +308,18 @@ const expiresAt = (ordering: OrderingData): number | undefined =>
   ordering.kind === 'expiry' ? ordering.expiresAtMs : undefined;
 
 /**
- * Whether an ordering's `lastValidHeight` is the TaPoS bound of the signed reference: a
- * reference height (`lastValidHeight − TAPOS_WINDOW`) whose bytes 6..8 are `refBlockBytes`.
- * The proofs scan down to that height (F4-R12).
+ * Whether an ordering names the signed reference block (F4-R12, F4-R14): a reference height
+ * (`lastValidHeight − TAPOS_WINDOW`) whose bytes 6..8 are the signed `ref_block_bytes`, and
+ * the signed `ref_block_hash` itself. The proofs trust the height only with the hash.
  */
-function boundToReference(ordering: OrderingData, refBlockBytes: string): boolean {
-  const last = ordering.kind === 'expiry' ? ordering.lastValidHeight : undefined;
+function boundToReference(ordering: OrderingData, raw: TronRawData): boolean {
+  if (ordering.kind !== 'expiry') return false;
+  const { lastValidHeight: last, refBlockHash } = ordering as Partial<TronExpiryOrdering>;
   if (typeof last !== 'bigint' || last < TAPOS_WINDOW) return false;
-  return ((last - TAPOS_WINDOW) & 0xffffn) === BigInt(`0x${refBlockBytes}`);
+  return (
+    ((last - TAPOS_WINDOW) & 0xffffn) === BigInt(`0x${raw.refBlockBytes}`) &&
+    refBlockHash === raw.refBlockHash
+  );
 }
 
 export function createTronBuilder(ctx: TronContext): {
@@ -480,6 +489,14 @@ export function createTronBuilder(ctx: TronContext): {
         throw invalid("the fee estimate does not cover this transaction's bandwidth");
       }
       const txId = toHex(sha256(fromHex(payload)));
+      // The negative proof scans from the reference block to the signed expiration; the
+      // height is the head's claim, so the signed hash bytes go with it (F4-R14).
+      const ordering: TronExpiryOrdering = {
+        kind: 'expiry',
+        expiresAtMs: expiration,
+        lastValidHeight: reference + TAPOS_WINDOW,
+        refBlockHash: raw.refBlockHash,
+      };
       return {
         payload: { encoding: 'hex', data: payload },
         expectedRef: { id: txId, idKind: 'tx-hash', canonical: true },
@@ -493,12 +510,7 @@ export function createTronBuilder(ctx: TronContext): {
             ...(key.keyRef ? { keyRef: key.keyRef } : {}),
           },
         ],
-        // The negative proof scans from the reference block to the signed expiration.
-        ordering: {
-          kind: 'expiry',
-          expiresAtMs: expiration,
-          lastValidHeight: reference + TAPOS_WINDOW,
-        },
+        ordering,
         fee,
         summary: {
           asset: assetId(ctx.chain.id, ctx.network.id, intent.asset),
@@ -560,7 +572,7 @@ export function createTronBuilder(ctx: TronContext): {
         !expected ||
         !carries(decoded, expected) ||
         expiresAt(unsigned.ordering) !== decoded.expiration ||
-        !boundToReference(unsigned.ordering, decoded.refBlockBytes) ||
+        !boundToReference(unsigned.ordering, decoded) ||
         unsigned.fee.kind !== 'tron' ||
         (expected.token === undefined
           ? decoded.feeLimit !== undefined

@@ -171,6 +171,8 @@ const infoKey = restKey((answer) => {
   return {
     id: lower(answer.id ?? null),
     block: answer.blockNumber ?? null,
+    // M2 (F4-R14): a proof binds the receipt to its block by this time, so it is attested.
+    time: answer.blockTimeStamp ?? null,
     result: answer.result ?? null,
     receipt: receipt.result ?? null,
     logs: logs.map((log) =>
