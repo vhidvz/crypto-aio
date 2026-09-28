@@ -1,4 +1,4 @@
-import { Cell, loadMessage } from '@ton/core';
+import { Cell, beginCell, loadMessage } from '@ton/core';
 import {
   MASTERCHAIN_SHARD,
   MONITOR,
@@ -192,7 +192,7 @@ describe('the toncenter API layer', () => {
     expect(await t.run(t.api.reachedMasterchain(t.node.head + 1, PROOF))).toBe(false);
   });
 
-  it('tags all 18 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
+  it('tags all 20 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
     const t = tonNode();
     t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
     const { wallet, hashNorm } = await withTransfer(t);
@@ -218,6 +218,10 @@ describe('the toncenter API layer', () => {
     await t.run(api.configParam(19, PROOF));
     await t.run(api.account(wallet, PROOF));
     await t.run(api.runGetMethod(wallet, 'seqno', [], PROOF));
+    expect(await t.run(api.jettonData(MASTER, PROOF))).toMatchObject({
+      exitCode: 0,
+      content: { kind: 'cell' },
+    });
     await t.run(api.estimateFee({ address: wallet, body }, PROOF));
     await t.run(api.send(next.boc, PROOF));
     await t.run(api.indexerHead(PROOF));
@@ -225,12 +229,16 @@ describe('the toncenter API layer', () => {
     const [tx] = await t.run(api.transactionsByMessage(hashNorm, PROOF));
     expect(await t.run(api.transaction(tx!.hash, PROOF))).toEqual(tx);
     await t.run(api.accountTransactions(wallet, { limit: 5 }, PROOF));
+    await t.run(api.accountTransactionsPage(wallet, { limit: 5 }, PROOF));
     await t.run(api.trace(tx!.hash, PROOF));
     expect(await t.run(api.jettonContent(MASTER, PROOF))).toEqual({
       decimals: '6',
       symbol: 'TST',
     });
-    expect(await t.run(api.tokenSymbol(MASTER, PROOF))).toBe('TST');
+    expect(await t.run(api.tokenInfo(MASTER, PROOF))).toEqual({
+      symbol: 'TST',
+      decimals: '6',
+    });
     expect(rpc.calls.map((call) => call.route)).toEqual([
       '/getMasterchainInfo',
       '/getMasterchainInfo',
@@ -240,6 +248,7 @@ describe('the toncenter API layer', () => {
       '/getConfigParam',
       '/getAddressInformation',
       '/runGetMethod',
+      '/runGetMethod',
       '/estimateFee',
       '/sendBocReturnHash',
     ]);
@@ -247,6 +256,7 @@ describe('the toncenter API layer', () => {
       '/masterchainInfo',
       '/blocks',
       '/transactionsByMessage',
+      '/transactions',
       '/transactions',
       '/transactions',
       '/traces',
@@ -788,7 +798,8 @@ describe('the toncenter API layer', () => {
     const calls: (() => Promise<unknown>)[] = [
       () => t.api.accountTransactions(FRIENDLY, { limit: 1 }, READ),
       () => t.api.jettonContent(FRIENDLY, READ),
-      () => t.api.tokenSymbol(FRIENDLY, READ),
+      () => t.api.accountTransactionsPage(FRIENDLY, { limit: 1 }, READ),
+      () => t.api.tokenInfo(FRIENDLY, READ),
     ];
     for (const call of calls) {
       await expect(t.run(call())).rejects.toMatchObject({
@@ -894,12 +905,12 @@ describe('the toncenter API layer', () => {
     await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toEqual(longest);
     for (const refused of ['S'.repeat(257), 7]) {
       symbol = refused;
-      await expect(t.run(t.api.tokenSymbol(MASTER, READ))).rejects.toMatchObject(
+      await expect(t.run(t.api.tokenInfo(MASTER, READ))).rejects.toMatchObject(
         malformedAnswer,
       );
     }
     symbol = 'S'.repeat(256);
-    await expect(t.run(t.api.tokenSymbol(MASTER, READ))).resolves.toBe(symbol);
+    await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toEqual({ symbol });
   });
 
   it('reads an over-long or ill-typed jetton name or uri as absent, and still refuses a bad symbol (F6-R8)', async () => {
@@ -964,11 +975,150 @@ describe('the toncenter API layer', () => {
     metadata = {
       [other]: { is_indexed: true, token_info: [{ valid: true, symbol: 'X' }] },
     };
-    await expect(t.run(t.api.tokenSymbol(MASTER, READ))).resolves.toBeUndefined();
+    await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toBeUndefined();
     metadata = { [MASTER]: 7 };
-    await expect(t.run(t.api.tokenSymbol(MASTER, READ))).rejects.toMatchObject(
+    await expect(t.run(t.api.tokenInfo(MASTER, READ))).rejects.toMatchObject(
       malformedAnswer,
     );
+  });
+
+  it('pages an account on the page as served: a transaction not yet final never ends it (F6-R12)', async () => {
+    const t = tonNode();
+    const { wallet } = await withTransfer(t);
+    for (let i = 0; i < 3; i++) {
+      t.node.inject(wallet, RECIPIENT, 1n, beginCell().endCell());
+    }
+    t.node.mine(2);
+    const all = await t.run(t.api.accountTransactions(RECIPIENT, { limit: 10 }, READ));
+    expect(all).toHaveLength(4);
+    const [, second, third, oldest] = all;
+    const first = await indexerBody(t, `/transactions?account=${RECIPIENT}&limit=2`);
+    const [top, ...rest] = first.transactions as Json[];
+    let newest: Json = { ...top, finality: 'pending' };
+    t.node.intercept = (_endpoint, route, request) =>
+      route === '/transactions' && !request.url.searchParams.has('end_lt')
+        ? { json: { ...first, transactions: [newest, ...rest] } }
+        : undefined;
+    // The newest is not final yet: left out, yet the full page still leads to the next.
+    const page = await t.run(
+      t.api.accountTransactionsPage(RECIPIENT, { limit: 2 }, READ),
+    );
+    expect(page.transactions.map((tx) => tx.hash)).toEqual([second!.hash]);
+    expect(page.next).toBe(second!.lt - 1n);
+    const older = await t.run(
+      t.api.accountTransactionsPage(RECIPIENT, { limit: 2, endLt: page.next! }, READ),
+    );
+    expect(older.transactions.map((tx) => tx.hash)).toEqual([third!.hash, oldest!.hash]);
+    expect(older.next).toBe(oldest!.lt - 1n);
+    // A page that is not full is the last one.
+    expect(
+      await t.run(
+        t.api.accountTransactionsPage(RECIPIENT, { limit: 2, endLt: older.next! }, READ),
+      ),
+    ).toEqual({ transactions: [] });
+    // A transaction not yet final still answers the query: another account's is malformed.
+    newest = { ...top, finality: 'pending', account: wallet.toUpperCase() };
+    await expect(
+      t.run(t.api.accountTransactionsPage(RECIPIENT, { limit: 2 }, READ)),
+    ).rejects.toMatchObject(malformedAnswer);
+  });
+
+  it("reads a jetton master's content cell, and one beyond a message's limits as oversized (lesson 20)", async () => {
+    const t = tonNode();
+    t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    expect(await t.run(t.api.jettonData(MASTER, READ))).toMatchObject({
+      exitCode: 0,
+      content: { kind: 'cell' },
+    });
+    expect(await t.run(t.api.jettonData(RECIPIENT, READ))).toEqual({ exitCode: -13 });
+    let stack: unknown[] = [];
+    t.node.intercept = (_endpoint, route) =>
+      route === '/runGetMethod'
+        ? { json: { ok: true, result: { exit_code: 0, stack } } }
+        : undefined;
+    // Only the content is read: the supply and the wallet code are held to nothing.
+    const withContent = (bytes: string) => [
+      ['num', 'not read'],
+      ['num', '-0x1'],
+      ['cell', { bytes: 'not read' }],
+      ['cell', { bytes }],
+      ['cell', { bytes: 'not read' }],
+    ];
+    stack = withContent(bocHeader(8192));
+    expect(await t.run(t.api.jettonData(MASTER, READ))).toEqual({
+      exitCode: 0,
+      content: { kind: 'cell', boc: bocHeader(8192) },
+    });
+    for (const oversized of [bocHeader(8193), bocHeader(1) + 'A'.repeat(2 ** 19)]) {
+      stack = withContent(oversized);
+      expect(await t.run(t.api.jettonData(MASTER, READ))).toEqual({
+        exitCode: 0,
+        content: { kind: 'oversized' },
+      });
+    }
+    // Not a TEP-74 master: no content.
+    for (const other of [[['num', '0x1']], [0, 0, 0, ['num', '0x1']]]) {
+      stack = other;
+      expect(await t.run(t.api.jettonData(MASTER, READ))).toEqual({ exitCode: 0 });
+    }
+    for (const refused of [withContent('not a BOC'), withContent(''), [0, 0, 0, 'x']]) {
+      stack = refused;
+      await expect(t.run(t.api.jettonData(MASTER, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    }
+  });
+
+  it('reads indexed token metadata only once indexed and valid; decimals from extra', async () => {
+    const t = tonNode();
+    let entry: unknown = {};
+    t.node.intercept = (_endpoint, route) =>
+      route === '/metadata' ? { json: { [MASTER.toUpperCase()]: entry } } : undefined;
+    const usdt = {
+      valid: true,
+      type: 'jetton_masters',
+      symbol: 'USD₮',
+      name: 'Tether USD',
+      extra: { decimals: '6', uri: 'https://tether.to/usdt-ton.json' },
+    };
+    entry = { is_indexed: true, token_info: [usdt] };
+    expect(await t.run(t.api.tokenInfo(MASTER, READ))).toEqual({
+      symbol: 'USD₮',
+      decimals: '6',
+      name: 'Tether USD',
+    });
+    // None yet: not indexed, nothing valid, only another kind of token.
+    const none: unknown[] = [
+      { is_indexed: false, token_info: [usdt] },
+      { is_indexed: true, token_info: [] },
+      { is_indexed: true, token_info: [{ ...usdt, valid: false }] },
+      { is_indexed: true, token_info: [{ ...usdt, type: 'nft_collections' }] },
+    ];
+    for (const item of none) {
+      entry = item;
+      await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toBeUndefined();
+    }
+    // A name over its limit is left out (F6-R8); decimals may be written as a number.
+    entry = {
+      token_info: [
+        { valid: true, symbol: 'S', name: 'N'.repeat(257), extra: { decimals: 9 } },
+      ],
+    };
+    expect(await t.run(t.api.tokenInfo(MASTER, READ))).toEqual({
+      symbol: 'S',
+      decimals: '9',
+    });
+    for (const extra of [
+      { decimals: '256' },
+      { decimals: -1 },
+      { decimals: 'six' },
+      'x',
+    ]) {
+      entry = { is_indexed: true, token_info: [{ ...usdt, extra }] };
+      await expect(t.run(t.api.tokenInfo(MASTER, READ))).rejects.toMatchObject(
+        malformedAnswer,
+      );
+    }
   });
 
   it('converts hashes and addresses strictly', () => {

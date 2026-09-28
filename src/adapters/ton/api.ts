@@ -73,15 +73,24 @@ function bocCellCount(bytes: Buffer): number | undefined {
 }
 
 /**
- * Lesson 20: whether a base64 BOC is within one message's limits: at most
- * `MAX_BODY_BOC_LENGTH` characters, and a header (its first 16 characters) declaring at most
- * `MAX_BODY_CELLS` cells. SDK-free, so the API layer bounds the cells it hands on (config
- * params, get-method stacks) and `cellFromBoc` the bodies it decodes.
+ * Lesson 20: a base64 BOC measured against one message's limits (at most
+ * `MAX_BODY_BOC_LENGTH` characters, and a header, its first 16 characters, declaring at most
+ * `MAX_BODY_CELLS` cells): `oversized` beyond them, `malformed` without a BOC header.
+ */
+function bocSize(boc: string): 'ok' | 'oversized' | 'malformed' {
+  if (boc.length === 0) return 'malformed';
+  const count = bocCellCount(Buffer.from(boc.slice(0, 16), 'base64'));
+  if (count === undefined) return 'malformed';
+  return boc.length > MAX_BODY_BOC_LENGTH || count > MAX_BODY_CELLS ? 'oversized' : 'ok';
+}
+
+/**
+ * Lesson 20: whether a base64 BOC is within one message's limits. SDK-free, so the API layer
+ * bounds the cells it hands on (config params, get-method stacks) and `cellFromBoc` the
+ * bodies it decodes.
  */
 export function bocWithinLimits(boc: string): boolean {
-  if (boc.length === 0 || boc.length > MAX_BODY_BOC_LENGTH) return false;
-  const count = bocCellCount(Buffer.from(boc.slice(0, 16), 'base64'));
-  return count !== undefined && count <= MAX_BODY_CELLS;
+  return bocSize(boc) === 'ok';
 }
 
 /**
@@ -308,6 +317,38 @@ export interface V3Trace {
   readonly traceId: string;
   readonly complete: boolean;
   readonly transactions: readonly V3Transaction[];
+}
+
+/** One page of an account's history, newest first. */
+export interface TransactionPage {
+  /** The page's committed transactions (not yet finalized ones are left out). */
+  readonly transactions: V3Transaction[];
+  /**
+   * The `endLt` of the next page, when the indexer's page was full. F6-R12: counted on the
+   * page as the indexer served it, before the transactions not yet final were left out, so
+   * a pager never stops early and never skips an older final transaction.
+   */
+  readonly next?: bigint;
+}
+
+/** A jetton master's TEP-64 content cell, as `get_jetton_data` returns it (entry 3). */
+export type JettonContentCell =
+  | { readonly kind: 'cell'; readonly boc: string }
+  /** Beyond one message's limits (lesson 20): never decoded. */
+  | { readonly kind: 'oversized' };
+
+export interface JettonData {
+  readonly exitCode: number;
+  /** Absent when the get-method failed or its fourth entry is not a cell. */
+  readonly content?: JettonContentCell;
+}
+
+/** A token's metadata as the indexer fetched it (for a jetton: its off-chain JSON). */
+export interface TokenInfo {
+  readonly symbol?: string;
+  /** 0..255, in decimal. */
+  readonly decimals?: string;
+  readonly name?: string;
 }
 
 // ---- parsers ------------------------------------------------------------------------------
@@ -540,6 +581,45 @@ export function runResultOf(body: unknown): RunResult {
 }
 
 /**
+ * `get_jetton_data`'s exit code and content cell (TEP-74: total supply, mintable, admin,
+ * content, wallet code). Only the content is read, so no other entry (a supply, a large
+ * wallet code) is held to anything. A content cell beyond one message's limits is reported
+ * `oversized`, never decoded (lesson 20): every endpoint returns the same chain data, so it
+ * is the token's own (lesson 13), not a malformed answer to retry forever. A stack that is
+ * not one, or a content entry without a BOC header, is malformed.
+ */
+function jettonDataFrom(result: unknown, route: string): JettonData {
+  const r = need(record(result), route);
+  const exitCode = need(int(r.exit_code), route);
+  const stack = need(Array.isArray(r.stack) ? r.stack : undefined, route);
+  if (exitCode !== 0) return { exitCode };
+  const entry: unknown = stack[3];
+  if (entry === undefined) return { exitCode };
+  if (!Array.isArray(entry) || entry.length !== 2) throw malformed(route);
+  const [type, data] = entry as [unknown, unknown];
+  if (
+    type !== 'cell' &&
+    type !== 'slice' &&
+    type !== 'tvm.Cell' &&
+    type !== 'tvm.Slice'
+  ) {
+    return { exitCode };
+  }
+  const boc = need(str(isRecord(data) ? data.bytes : data), route);
+  const size = bocSize(boc);
+  if (size === 'malformed') throw malformed(route);
+  return {
+    exitCode,
+    content: size === 'oversized' ? { kind: 'oversized' } : { kind: 'cell', boc },
+  };
+}
+
+/** A v2 `get_jetton_data` answer body, parsed; for callers' quorum keys (lesson 2). */
+export function jettonDataOf(body: unknown): JettonData {
+  return jettonDataFrom(v2Result(body, '/runGetMethod'), '/runGetMethod');
+}
+
+/**
  * A trace, parsed: its transactions in trace order, each listed once under its own hash
  * (a transaction counted twice would count its transfer twice). An emulated or not yet
  * finalized one is left out and leaves the trace incomplete.
@@ -601,6 +681,30 @@ function contentOf(value: unknown, route: string): Readonly<Record<string, strin
     content.decimals = String(decimals);
   }
   return content;
+}
+
+/**
+ * M4 and F6-R8: one `/metadata` token entry, the indexer's copy of the token's off-chain
+ * JSON: a bad symbol or decimals is malformed, as in `contentOf`; a name beyond its limit is
+ * absent. toncenter writes the JSON's decimals under `extra` (live, 2026-09-28).
+ */
+function tokenInfoOf(token: Json, route: string): TokenInfo {
+  const info: { symbol?: string; decimals?: string; name?: string } = {};
+  const symbol = optional(token.symbol, str, route);
+  if (symbol !== undefined) {
+    if (symbol.length > CONTENT_LIMITS.symbol) throw malformed(route);
+    info.symbol = symbol;
+  }
+  if (typeof token.name === 'string' && token.name.length <= CONTENT_LIMITS.name) {
+    info.name = token.name;
+  }
+  const extra = optional(token.extra, record, route);
+  const decimals = extra ? optional(extra.decimals, int, route) : undefined;
+  if (decimals !== undefined) {
+    if (decimals < 0 || decimals > 255) throw malformed(route);
+    info.decimals = String(decimals);
+  }
+  return info;
 }
 
 // ---- quorum facts (lesson 2) ---------------------------------------------------------------
@@ -853,6 +957,21 @@ export class TonApi {
     );
   }
 
+  /** A jetton master's `get_jetton_data`: its exit code and content cell (`jettonDataOf`). */
+  jettonData(master: string, tags: TonCallTags, seqno?: number): Promise<JettonData> {
+    return this.#v2Post(
+      '/runGetMethod',
+      {
+        address: master,
+        method: 'get_jetton_data',
+        stack: [],
+        ...(seqno !== undefined ? { seqno } : {}),
+      },
+      tags,
+      jettonDataFrom,
+    );
+  }
+
   /** The emulated source fees of an external message body (signature check skipped). */
   estimateFee(
     request: {
@@ -972,15 +1091,18 @@ export class TonApi {
   }
 
   /**
-   * An account's transactions (a raw address, M2), newest first, at or below `endLt` when
-   * given. An answer that breaks the query (another account, an lt out of order or above
-   * `endLt`, more than `limit`) is malformed: a verdict reads it as the account's history.
+   * One page of an account's transactions (a raw address, M2), newest first, at or below
+   * `endLt` when given, with the next page's `endLt` when this one was full. An answer that
+   * breaks the query (another account, an lt out of order or above `endLt`, more than
+   * `limit`), counting the transactions not yet final, is malformed: a verdict reads it as
+   * the account's history. F6-R12: `next` comes from the page as served, so a page whose
+   * newest transactions are not yet final still leads to the older ones.
    */
-  async accountTransactions(
+  async accountTransactionsPage(
     account: string,
     options: { readonly limit: number; readonly endLt?: bigint },
     tags: TonCallTags,
-  ): Promise<V3Transaction[]> {
+  ): Promise<TransactionPage> {
     const wanted = rawAddress(account);
     return this.#v3(
       '/transactions',
@@ -991,19 +1113,47 @@ export class TonApi {
         ...(options.endLt !== undefined ? { end_lt: options.endLt.toString() } : {}),
       },
       tags,
-      (body, route) => {
-        const txs = transactionsOf(body, route, options.limit);
+      (body, route): TransactionPage => {
+        if (
+          !isRecord(body) ||
+          !Array.isArray(body.transactions) ||
+          body.transactions.length > options.limit
+        ) {
+          throw malformed(route);
+        }
+        const transactions: V3Transaction[] = [];
         let below = options.endLt === undefined ? undefined : options.endLt + 1n;
-        for (const tx of txs) {
-          if (tx.account !== wanted || (below !== undefined && tx.lt >= below)) {
+        let last: bigint | undefined;
+        for (const item of body.transactions) {
+          const t = need(record(item), route);
+          const lt = need(u64(t.lt), route);
+          if (rawOf(t.account) !== wanted || (below !== undefined && lt >= below)) {
             throw malformed(route);
           }
-          below = tx.lt;
+          below = lt;
+          last = lt;
+          if (committed(item)) transactions.push(transactionOf(item, route));
         }
-        return txs;
+        const full = body.transactions.length === options.limit;
+        return {
+          transactions,
+          ...(full && last !== undefined && last > 0n ? { next: last - 1n } : {}),
+        };
       },
-      (txs) => txs.map(factsOf),
+      (page) => ({
+        transactions: page.transactions.map(factsOf),
+        next: page.next ?? null,
+      }),
     );
+  }
+
+  /** An account's committed transactions: one page (`accountTransactionsPage`). */
+  async accountTransactions(
+    account: string,
+    options: { readonly limit: number; readonly endLt?: bigint },
+    tags: TonCallTags,
+  ): Promise<V3Transaction[]> {
+    return (await this.accountTransactionsPage(account, options, tags)).transactions;
   }
 
   /** The trace that holds this transaction; null when the indexer has none (yet). */
@@ -1060,8 +1210,13 @@ export class TonApi {
     );
   }
 
-  /** The indexer's token symbol for a raw address (M2), when it has one. */
-  async tokenSymbol(address: string, tags: TonCallTags): Promise<string | undefined> {
+  /**
+   * The indexer's metadata for a raw token address (M2): its first valid jetton entry
+   * (`tokenInfoOf`). Undefined while the indexer has none: no entry (an unknown address, a
+   * lagging index or a dropped filter all read alike, I2), an entry not indexed yet, or no
+   * valid metadata fetched (yet), so a caller never takes it for a definitive answer.
+   */
+  async tokenInfo(address: string, tags: TonCallTags): Promise<TokenInfo | undefined> {
     const wanted = rawAddress(address);
     return this.#v3(
       '/metadata',
@@ -1073,6 +1228,7 @@ export class TonApi {
           // The answer is keyed by address; a lookup by id reads only its own entry (I2).
           if (rawOf(key) !== wanted) continue;
           const entry = need(record(value), route);
+          if (optional(entry.is_indexed, bool, route) === false) return undefined;
           const info =
             optional(
               entry.token_info,
@@ -1081,16 +1237,19 @@ export class TonApi {
             ) ?? [];
           for (const item of info) {
             const token = need(record(item), route);
-            if (token.valid === false) continue;
-            const symbol = optional(token.symbol, str, route);
-            if (symbol === undefined) continue;
-            if (symbol.length > CONTENT_LIMITS.symbol) throw malformed(route);
-            return symbol;
+            const type = optional(token.type, str, route);
+            if (
+              token.valid === false ||
+              (type !== undefined && type !== 'jetton_masters')
+            ) {
+              continue;
+            }
+            return tokenInfoOf(token, route);
           }
         }
         return undefined;
       },
-      (symbol) => symbol ?? null,
+      (info) => info ?? null,
     );
   }
 }

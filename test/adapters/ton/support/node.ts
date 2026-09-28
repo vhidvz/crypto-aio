@@ -1501,7 +1501,15 @@ export class ScriptedTonNode {
                 [upper(address)]: {
                   is_indexed: true,
                   token_info: [
-                    { valid: true, type: 'jetton_masters', symbol: jetton.symbol },
+                    {
+                      valid: true,
+                      type: 'jetton_masters',
+                      symbol: jetton.symbol,
+                      // Live toncenter writes the JSON's decimals under `extra`.
+                      ...(jetton.decimals !== undefined
+                        ? { extra: { decimals: String(jetton.decimals) } }
+                        : {}),
+                    },
                   ],
                 },
               }
