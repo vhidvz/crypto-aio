@@ -29,8 +29,10 @@ import type { Clock } from '../../core/util/clock';
 import { createTonAddressCodec } from './address';
 import {
   MONITOR,
+  PROOF,
   READ,
   jettonDataOf,
+  runResultOf,
   type BlockHeader,
   type RunResult,
   type TonApi,
@@ -141,10 +143,31 @@ const cellStack = (entry: RunResult['stack'][number] | undefined): string | unde
 const hashId = (id: string): string | undefined =>
   typeof id === 'string' && /^[0-9a-fA-F]{64}$/.test(id) ? id.toLowerCase() : undefined;
 
+/** The wallet address a `get_wallet_address` answer names; null when it names none. */
+function namedWallet(result: RunResult): string | null {
+  const boc = result.exitCode === 0 ? cellStack(result.stack[0]) : undefined;
+  return boc ? addressFromBoc(boc) : null;
+}
+
+/**
+ * Lesson 2: what endpoints must agree on for `get_wallet_address`: the exit code and the
+ * address it names, never the slice's serialization. It never throws: an answer that does
+ * not parse is itself a fact, which the parse then refuses (retryable).
+ */
+function walletAddressKey(body: unknown): unknown {
+  try {
+    const result = runResultOf(body);
+    return { exitCode: result.exitCode, wallet: namedWallet(result) };
+  } catch {
+    return 'malformed';
+  }
+}
+
 /**
  * The jetton wallet `master` assigns to `owner` (`get_wallet_address`), at masterchain
  * block `block` when given. Cached only when the proof quorum attested it (I5): the builder
  * sends jettons to it and the verdict checks it, so one endpoint's answer must never stick.
+ * Under a quorum the endpoints agree on the address itself (`walletAddressKey`).
  */
 export async function jettonWalletAddress(
   ctx: TonContext,
@@ -156,17 +179,20 @@ export async function jettonWalletAddress(
   const key = `${master}|${owner}`;
   const cached = ctx.jettonWallets.get(key);
   if (cached) return cached;
+  const keyed =
+    tags.quorum !== undefined && tags.quorumKey === undefined
+      ? { ...tags, quorumKey: walletAddressKey }
+      : tags;
   const result = await tokenCall(() =>
     ctx.api.runGetMethod(
       master,
       'get_wallet_address',
       [['tvm.Slice', addressArgument(owner)]],
-      tags,
+      keyed,
       block,
     ),
   );
-  const boc = result.exitCode === 0 ? cellStack(result.stack[0]) : undefined;
-  const address = boc ? addressFromBoc(boc) : null;
+  const address = namedWallet(result);
   if (!address) throw assetError('the jetton master gives no wallet address');
   if (tags.quorum !== undefined) ctx.jettonWallets.set(key, address);
   return address;
@@ -237,40 +263,67 @@ export async function verifyJettonWallet(
 
 /**
  * Lesson 20: the most cells one on-chain content value is read to (at most 127 bytes each,
- * about 8 KB); past them it is unreadable. A symbol or name takes a few cells: the bound
- * keeps an author's long texts readable while bounding the work on content anyone can
- * deploy.
+ * about 8 KB), snake or chunked alike; past them it is unreadable. A symbol or name takes a
+ * few cells: the bound keeps an author's long texts readable while bounding the work on
+ * content anyone can deploy.
  */
 const MAX_VALUE_CELLS = 64;
 /** The longest symbol and name kept: the indexer's limits (M4, `api.ts`). */
 const MAX_SYMBOL_LENGTH = 256;
 const MAX_NAME_LENGTH = 256;
 
+type Slice = ReturnType<Cell['beginParse']>;
+
 /**
- * A TEP-64 `ContentData` value as text: snake data (prefix 0x00, which some masters omit),
- * read in one pass (lesson 20: `@ton/core`'s `loadStringTail` recurses per cell and
- * concatenates at each level, quadratic in the chain). Undefined for chunked data (prefix
- * 0x01), a cell that is not whole bytes with at most one ref, or a chain past the bound.
+ * TEP-64 snake data, read in one pass (lesson 20: `@ton/core`'s `loadStringTail` recurses
+ * per cell and concatenates at each level, quadratic in the chain); undefined for a cell that
+ * is not whole bytes with at most one ref, or a chain past `MAX_VALUE_CELLS`.
  */
-function snakeText(value: Cell): string | undefined {
+function snakeBytes(first: Slice): Buffer | undefined {
+  let slice = first;
+  const chunks: Buffer[] = [];
+  for (let cells = 1; ; cells += 1) {
+    const bits = slice.remainingBits;
+    if (cells > MAX_VALUE_CELLS || bits % 8 !== 0 || slice.remainingRefs > 1) {
+      return undefined;
+    }
+    if (bits > 0) chunks.push(slice.loadBuffer(bits / 8));
+    if (slice.remainingRefs === 0) return Buffer.concat(chunks);
+    slice = slice.loadRef().beginParse();
+  }
+}
+
+/**
+ * TEP-64 chunked data (`chunks#01 data:ChunkedData`, `chunked_data#_ data:(HashmapE 32
+ * ^(SnakeData ~0))`): its chunks in index order, from 0 without a gap, each one cell of
+ * whole bytes and no refs; at most `MAX_VALUE_CELLS` of them. Undefined otherwise.
+ */
+function chunkedBytes(slice: Slice): Buffer | undefined {
+  const dict = slice.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
+  if (dict.size > MAX_VALUE_CELLS) return undefined;
+  const chunks: Buffer[] = [];
+  for (let index = 0; index < dict.size; index += 1) {
+    const chunk = dict.get(index)?.beginParse();
+    if (!chunk || chunk.remainingRefs !== 0 || chunk.remainingBits % 8 !== 0) {
+      return undefined;
+    }
+    chunks.push(chunk.loadBuffer(chunk.remainingBits / 8));
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * A TEP-64 `ContentData` value as text: snake data (prefix 0x00, which some masters omit) or
+ * chunked data (prefix 0x01), both bounded by `MAX_VALUE_CELLS`. Undefined when it does not
+ * read.
+ */
+function contentText(value: Cell): string | undefined {
   try {
-    let slice = value.beginParse();
-    if (slice.remainingBits >= 8) {
-      const prefix = slice.preloadUint(8);
-      if (prefix === 1) return undefined;
-      if (prefix === 0) slice.skip(8);
-    }
-    const chunks: Buffer[] = [];
-    for (let cells = 1; ; cells += 1) {
-      const bits = slice.remainingBits;
-      if (cells > MAX_VALUE_CELLS || bits % 8 !== 0 || slice.remainingRefs > 1) {
-        return undefined;
-      }
-      if (bits > 0) chunks.push(slice.loadBuffer(bits / 8));
-      if (slice.remainingRefs === 0) break;
-      slice = slice.loadRef().beginParse();
-    }
-    return Buffer.concat(chunks).toString('utf8');
+    const slice = value.beginParse();
+    const prefix = slice.remainingBits >= 8 ? slice.preloadUint(8) : undefined;
+    if (prefix === 0 || prefix === 1) slice.skip(8);
+    const bytes = prefix === 1 ? chunkedBytes(slice) : snakeBytes(slice);
+    return bytes?.toString('utf8');
   } catch {
     return undefined;
   }
@@ -312,7 +365,7 @@ function contentOf(cell: Cell): JettonContent {
     } = {};
     for (const key of ['decimals', 'symbol', 'name'] as const) {
       const value = dict.get(contentKey(key));
-      if (value) fields[key] = snakeText(value) ?? null;
+      if (value) fields[key] = contentText(value) ?? null;
     }
     return { fields, linked: dict.has(contentKey('uri')) };
   } catch {
@@ -331,57 +384,78 @@ function contentCell(boc: string): Cell | undefined {
 }
 
 /**
+ * Content cells parsed once per metadata read: a state-sized content takes about 2 s to
+ * decode (`MAX_STATE_BOC_LENGTH`), and the quorum's endpoints usually serve the same text.
+ */
+function contentCells(): (boc: string) => Cell | undefined {
+  const parsed = new Map<string, Cell | undefined>();
+  return (boc) => {
+    if (!parsed.has(boc)) parsed.set(boc, contentCell(boc));
+    return parsed.get(boc);
+  };
+}
+
+/**
  * M4: the facts endpoints must agree on for jetton metadata: the exit code and the content
  * cell's hash, never the rest of the answer (a total supply that moves between two reads,
  * lesson 17) nor the cell's serialization. It never throws: an answer that does not parse
  * is itself a fact, which the parse then refuses (retryable).
  */
-function jettonDataKey(body: unknown): unknown {
-  try {
-    const { exitCode, content } = jettonDataOf(body);
-    if (!content) return { exitCode };
-    if (content.kind === 'oversized') return { exitCode, content: 'oversized' };
-    const cell = contentCell(content.boc);
-    return { exitCode, content: cell ? cell.hash().toString('hex') : 'unparseable' };
-  } catch {
-    return 'malformed';
-  }
+function jettonDataKey(cellOf: (boc: string) => Cell | undefined) {
+  return (body: unknown): unknown => {
+    try {
+      const { exitCode, content } = jettonDataOf(body);
+      if (!content) return { exitCode };
+      if (content.kind === 'oversized') return { exitCode, content: 'oversized' };
+      const cell = cellOf(content.boc);
+      return { exitCode, content: cell ? cell.hash().toString('hex') : 'unparseable' };
+    } catch {
+      return 'malformed';
+    }
+  };
 }
 
 /**
  * D14 and lesson 13, under the proof quorum (M4). The master's content decides what it can:
- * - no master, or content beyond one message's limits (every endpoint serves the same
- *   chain data), or a layout or value that does not read: `ASSET_RESOLUTION`;
+ * - no master, or content beyond an account state's limits (every quorum endpoint agreed
+ *   on it), or a layout or value that does not read: `ASSET_RESOLUTION`;
  * - a content BOC that does not parse: the endpoint's fault, retryable (M6);
  * - content wholly on chain: its own symbol, and its decimals or TEP-64's default of 9;
  * - otherwise the off-chain JSON fills in what the chain does not state, as the indexer
- *   fetched it. A missing answer is "not yet" (retryable), never a default: an index that
- *   lags or drops its filter would otherwise cache 9 decimals for the container's life.
+ *   fetched it, and only those fields are judged (F6-R13): one the indexer holds but is not
+ *   one (agreed by the quorum) is the token's own `ASSET_RESOLUTION`. A missing answer is
+ *   "not yet" (retryable), never a default: an index that lags or drops its filter would
+ *   otherwise cache 9 decimals for the container's life, and a JSON that states no
+ *   decimals stays unresolved (F6-R13 M1: fund safety over liveness).
  */
 async function jettonMetadata(ctx: TonContext, master: string): Promise<AssetMetadata> {
+  const cellOf = contentCells();
   const data = await tokenCall(() =>
-    ctx.api.jettonData(master, { ...METADATA, quorumKey: jettonDataKey }),
+    ctx.api.jettonData(master, { ...METADATA, quorumKey: jettonDataKey(cellOf) }),
   );
   if (data.exitCode !== 0 || !data.content) {
     throw assetError('no jetton master at this address');
   }
   if (data.content.kind === 'oversized')
     throw assetError('the jetton content is unreadable');
-  const cell = contentCell(data.content.boc);
+  const cell = cellOf(data.content.boc);
   if (!cell) throw notYet('malformed jetton content answer');
   const { fields, linked } = contentOf(cell);
   if (fields.decimals === null) throw assetError('the jetton decimals are unreadable');
   if (fields.symbol === null) throw assetError('the jetton symbol is unreadable');
-  let { decimals, symbol } = fields;
+  let decimals: string | null | undefined = fields.decimals;
+  let symbol: string | null | undefined = fields.symbol;
   let name = fields.name ?? undefined;
   if (!linked) {
     decimals ??= '9';
   } else if (decimals === undefined || symbol === undefined) {
     const info = await tokenCall(() => ctx.api.tokenInfo(master, METADATA));
     if (!info) throw notYet('the jetton metadata is not indexed yet');
-    decimals ??= info.decimals;
-    symbol ??= info.symbol;
+    if (decimals === undefined) decimals = info.decimals;
+    if (symbol === undefined) symbol = info.symbol;
     name ??= info.name;
+    if (decimals === null) throw assetError('the jetton decimals are unreadable');
+    if (symbol === null) throw assetError('the jetton symbol is unreadable');
     if (decimals === undefined)
       throw notYet('the jetton metadata states no decimals yet');
   }
@@ -421,7 +495,11 @@ export function toDriverBlock(header: BlockHeader): DriverBlock {
 
 // ---- transactions and Attempts -------------------------------------------------------------
 
-/** The transaction a lookup id names (anyone's): by message hash, then by its own hash. */
+/**
+ * The transaction a lookup id names (anyone's): by message hash, then by its own hash. An
+ * external message can run more than once while it does not consume its seqno (C8-1); the
+ * run that consumed it is the one that took effect, so it is preferred (F6-R13 M5).
+ */
 async function findTransaction(
   ctx: TonContext,
   id: string,
@@ -430,7 +508,8 @@ async function findTransaction(
   const hash = hashId(id);
   if (!hash) return null;
   const byMessage = await ctx.api.transactionsByMessage(hash, tags);
-  const found = byMessage.find((tx) => tx.inMsg?.source === null) ?? byMessage[0];
+  const runs = byMessage.filter((tx) => tx.inMsg?.source === null);
+  const found = runs.find(consumesSeqno) ?? runs[0] ?? byMessage[0];
   return found ?? ctx.api.transaction(hash, tags);
 }
 
@@ -761,12 +840,14 @@ export function createTonExt(ctx: TonContext): TonExt {
     ton: {
       getSeqno: async (address) =>
         walletSeqno(ctx, ctx.codec.normalize(address).canonical, READ),
+      // F6-R13 M6: a caller sends jettons to it, so the proof quorum attests it (C8-4),
+      // and the attested answer is kept.
       jettonWallet: async (owner, master) =>
         jettonWalletAddress(
           ctx,
           jettonMaster(ctx, { standard: 'jetton', contract: master }),
           ctx.codec.normalize(owner).canonical,
-          READ,
+          PROOF,
         ),
     },
   };

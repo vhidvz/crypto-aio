@@ -116,6 +116,24 @@ function accountAnswer(balance: string, lt = '1') {
   };
 }
 
+/** A BOC header (magic b5ee9c72, 3-byte counts) declaring `cells` cells: 16 characters. */
+function stateHeader(cells: number): string {
+  return Buffer.from([
+    0xb5,
+    0xee,
+    0x9c,
+    0x72,
+    0x03,
+    0x01,
+    cells >> 16,
+    (cells >> 8) & 0xff,
+    cells & 0xff,
+    0,
+    0,
+    0,
+  ]).toString('base64');
+}
+
 /** A BOC header (magic b5ee9c72, 2-byte counts) declaring `cells` cells. */
 function bocHeader(cells: number): string {
   return Buffer.from([
@@ -192,7 +210,7 @@ describe('the toncenter API layer', () => {
     expect(await t.run(t.api.reachedMasterchain(t.node.head + 1, PROOF))).toBe(false);
   });
 
-  it('tags all 20 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
+  it('tags all 19 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
     const t = tonNode();
     t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
     const { wallet, hashNorm } = await withTransfer(t);
@@ -231,10 +249,6 @@ describe('the toncenter API layer', () => {
     await t.run(api.accountTransactions(wallet, { limit: 5 }, PROOF));
     await t.run(api.accountTransactionsPage(wallet, { limit: 5 }, PROOF));
     await t.run(api.trace(tx!.hash, PROOF));
-    expect(await t.run(api.jettonContent(MASTER, PROOF))).toEqual({
-      decimals: '6',
-      symbol: 'TST',
-    });
     expect(await t.run(api.tokenInfo(MASTER, PROOF))).toEqual({
       symbol: 'TST',
       decimals: '6',
@@ -260,7 +274,6 @@ describe('the toncenter API layer', () => {
       '/transactions',
       '/transactions',
       '/traces',
-      '/jetton/masters',
       '/metadata',
     ]);
     for (const call of [...rpc.calls, ...indexer.calls]) {
@@ -798,7 +811,6 @@ describe('the toncenter API layer', () => {
     const served = t.node.served.length;
     const calls: (() => Promise<unknown>)[] = [
       () => t.api.accountTransactions(FRIENDLY, { limit: 1 }, READ),
-      () => t.api.jettonContent(FRIENDLY, READ),
       () => t.api.accountTransactionsPage(FRIENDLY, { limit: 1 }, READ),
       () => t.api.tokenInfo(FRIENDLY, READ),
     ];
@@ -832,10 +844,6 @@ describe('the toncenter API layer', () => {
         `/blocks?workchain=-1&root_hash=${header.id.rootHash}&limit=1`,
         'blocks',
       ),
-      '/jetton/masters': await twice(
-        `/jetton/masters?address=${MASTER}`,
-        'jetton_masters',
-      ),
     };
     t.node.intercept = (_endpoint, route) =>
       Object.hasOwn(answers, route) ? { json: answers[route] } : undefined;
@@ -844,7 +852,6 @@ describe('the toncenter API layer', () => {
       () => t.api.transaction(tx.hash, READ),
       () => t.api.trace(tx.hash, READ),
       () => t.api.masterchainSeqnoOf(header.id.rootHash, READ),
-      () => t.api.jettonContent(MASTER, READ),
     ];
     for (const call of calls) {
       await expect(t.run(call())).rejects.toMatchObject(malformedAnswer);
@@ -854,22 +861,19 @@ describe('the toncenter API layer', () => {
   it('holds cells and jetton metadata to their limits (M4)', async () => {
     const t = tonNode();
     let bytes = '';
-    let content: Json = {};
     let symbol: unknown = '';
     t.node.intercept = (_endpoint, route) =>
       route === '/getConfigParam'
         ? { json: { ok: true, result: { config: { bytes } } } }
         : route === '/runGetMethod'
           ? { json: { ok: true, result: { exit_code: 0, stack: [['cell', { bytes }]] } } }
-          : route === '/jetton/masters'
-            ? { json: { jetton_masters: [{ address: MASTER, jetton_content: content }] } }
-            : route === '/metadata'
-              ? {
-                  json: {
-                    [MASTER]: { is_indexed: true, token_info: [{ valid: true, symbol }] },
-                  },
-                }
-              : undefined;
+          : route === '/metadata'
+            ? {
+                json: {
+                  [MASTER]: { is_indexed: true, token_info: [{ valid: true, symbol }] },
+                },
+              }
+            : undefined;
     const cells: (() => Promise<unknown>)[] = [
       () => t.api.configParam(19, READ),
       () => t.api.runGetMethod(MASTER, 'get_jetton_data', [], READ),
@@ -883,96 +887,25 @@ describe('the toncenter API layer', () => {
         await expect(t.run(call())).rejects.toMatchObject(malformedAnswer);
       }
     }
-    const refusedContent: Json[] = [
-      { symbol: 'S'.repeat(257) },
-      { decimals: '256' },
-      { decimals: 'six' },
-      { symbol: 7 },
-    ];
-    for (const refused of refusedContent) {
-      content = refused;
-      await expect(t.run(t.api.jettonContent(MASTER, READ))).rejects.toMatchObject(
-        malformedAnswer,
-      );
-    }
-    // The accepted ends; fields the driver does not read (an inline image) are left out.
-    const longest = {
-      symbol: 'S'.repeat(256),
-      name: 'N'.repeat(256),
-      uri: 'u'.repeat(1024),
-      decimals: '255',
-    };
-    content = { ...longest, image_data: 'x'.repeat(100_000) };
-    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toEqual(longest);
-    for (const refused of ['S'.repeat(257), 7]) {
-      symbol = refused;
-      await expect(t.run(t.api.tokenInfo(MASTER, READ))).rejects.toMatchObject(
-        malformedAnswer,
-      );
+    // F6-R13 M4: a symbol that is not one is the token's own data, which every endpoint
+    // agrees on: reported as unreadable (null) for the caller to judge, never retried.
+    for (const unreadable of ['S'.repeat(257), 7]) {
+      symbol = unreadable;
+      await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toEqual({
+        symbol: null,
+      });
     }
     symbol = 'S'.repeat(256);
     await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toEqual({ symbol });
   });
 
-  it('reads an over-long or ill-typed jetton name or uri as absent, and still refuses a bad symbol (F6-R8)', async () => {
+  it("reads a malformed metadata entry as malformed, and a stranger's as none yet (M5)", async () => {
     const t = tonNode();
-    let content: Json = {};
-    t.node.intercept = (_endpoint, route) =>
-      route === '/jetton/masters'
-        ? { json: { jetton_masters: [{ address: MASTER, jetton_content: content }] } }
-        : undefined;
-    // Author-set texts no verdict reads: every endpoint agrees on them, so refusing them
-    // would retry the token's metadata forever. They are left out, like an inline image.
-    content = {
-      symbol: 'TST',
-      decimals: '6',
-      name: 'N'.repeat(257),
-      uri: 'u'.repeat(1025),
-    };
-    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toEqual({
-      symbol: 'TST',
-      decimals: '6',
-    });
-    content = { symbol: 'TST', name: 7, uri: { href: 'x' } };
-    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toEqual({
-      symbol: 'TST',
-    });
-    // The symbol is read by the metadata the driver returns: a bad one is still malformed.
-    content = { symbol: 'S'.repeat(257), name: 'Test token' };
-    await expect(t.run(t.api.jettonContent(MASTER, READ))).rejects.toMatchObject(
-      malformedAnswer,
-    );
-  });
-
-  it('reads a malformed jetton master entry as malformed, not as unknown (M5)', async () => {
-    const t = tonNode();
-    let masters: unknown[] = [];
     let metadata: Json = {};
     t.node.intercept = (_endpoint, route) =>
-      route === '/jetton/masters'
-        ? { json: { jetton_masters: masters, address_book: {} } }
-        : route === '/metadata'
-          ? { json: metadata }
-          : undefined;
-    const refused: unknown[] = [
-      7,
-      null,
-      { address: MASTER },
-      { address: MASTER, jetton_content: 'x' },
-      { address: 'x', jetton_content: {} },
-    ];
-    for (const entry of refused) {
-      masters = [entry];
-      await expect(t.run(t.api.jettonContent(MASTER, READ))).rejects.toMatchObject(
-        malformedAnswer,
-      );
-    }
-    // Another master's entry (a dropped filter) is "none yet", as no entry is.
+      route === '/metadata' ? { json: metadata } : undefined;
+    // Another token's entry (a dropped filter) is "none yet", as no entry is.
     const other = `0:${'88'.repeat(32)}`;
-    masters = [{ address: other, jetton_content: { symbol: 'X' } }];
-    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toBeNull();
-    masters = [];
-    await expect(t.run(t.api.jettonContent(MASTER, READ))).resolves.toBeNull();
     metadata = {
       [other]: { is_indexed: true, token_info: [{ valid: true, symbol: 'X' }] },
     };
@@ -1024,7 +957,7 @@ describe('the toncenter API layer', () => {
     ).rejects.toMatchObject(malformedAnswer);
   });
 
-  it("reads a jetton master's content cell, and one beyond a message's limits as oversized (lesson 20)", async () => {
+  it("reads a jetton master's content cell, and one beyond an account state's limits as oversized (lesson 20, F6-R13 M3)", async () => {
     const t = tonNode();
     t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
     expect(await t.run(t.api.jettonData(MASTER, READ))).toMatchObject({
@@ -1045,12 +978,19 @@ describe('the toncenter API layer', () => {
       ['cell', { bytes }],
       ['cell', { bytes: 'not read' }],
     ];
-    stack = withContent(bocHeader(8192));
-    expect(await t.run(t.api.jettonData(MASTER, READ))).toEqual({
-      exitCode: 0,
-      content: { kind: 'cell', boc: bocHeader(8192) },
-    });
-    for (const oversized of [bocHeader(8193), bocHeader(1) + 'A'.repeat(2 ** 19)]) {
+    // The content is part of the master's state: more cells than a message may hold are
+    // read, up to the state's 2^16 cells (config param 43) and 2^24 characters.
+    for (const cells of [8193, 2 ** 16]) {
+      stack = withContent(stateHeader(cells));
+      expect(await t.run(t.api.jettonData(MASTER, READ))).toEqual({
+        exitCode: 0,
+        content: { kind: 'cell', boc: stateHeader(cells) },
+      });
+    }
+    for (const oversized of [
+      stateHeader(2 ** 16 + 1),
+      stateHeader(1) + 'A'.repeat(2 ** 24 - 16 + 1),
+    ]) {
       stack = withContent(oversized);
       expect(await t.run(t.api.jettonData(MASTER, READ))).toEqual({
         exitCode: 0,
@@ -1109,13 +1049,36 @@ describe('the toncenter API layer', () => {
       symbol: 'S',
       decimals: '9',
     });
+    // F6-R13 M4: decimals or a symbol that are not one are the token's own data, which
+    // every endpoint agrees on: reported unreadable (null), for the caller to judge only if
+    // it needs that field; never malformed, which would retry the token forever.
     for (const extra of [
       { decimals: '256' },
       { decimals: -1 },
       { decimals: 'six' },
+      { decimals: true },
       'x',
     ]) {
       entry = { is_indexed: true, token_info: [{ ...usdt, extra }] };
+      await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toEqual({
+        symbol: 'USD₮',
+        decimals: null,
+        name: 'Tether USD',
+      });
+    }
+    entry = { is_indexed: true, token_info: [{ ...usdt, symbol: ['USD₮'] }] };
+    await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toEqual({
+      symbol: null,
+      decimals: '6',
+      name: 'Tether USD',
+    });
+    // The answer's own structure is still the indexer's: malformed, retryable.
+    for (const broken of [
+      { is_indexed: 'yes', token_info: [usdt] },
+      { is_indexed: true, token_info: 'x' },
+      { is_indexed: true, token_info: [7] },
+    ]) {
+      entry = broken;
       await expect(t.run(t.api.tokenInfo(MASTER, READ))).rejects.toMatchObject(
         malformedAnswer,
       );

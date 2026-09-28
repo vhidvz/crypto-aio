@@ -54,6 +54,25 @@ export const MAX_BODY_CELLS = 1 << 13;
 export const MAX_BODY_BOC_LENGTH = 1 << 19;
 
 /**
+ * Lesson 20 and F6-R13: the most cells of a jetton master's content that `jettonData` hands
+ * on. The content is part of the master's account state, not a message, and TON caps a state
+ * at 2^16 cells and 2^16 × 1023 bits (config param 43, `max_acc_state_cells` and
+ * `max_acc_state_bits`, the node's defaults in `SizeLimitsConfig`, ton-blockchain/ton
+ * `crypto/block/mc-config.h`), so no content the chain holds is larger.
+ */
+export const MAX_STATE_CELLS = 1 << 16;
+
+/**
+ * Lesson 20 and F6-R13: the longest content BOC text `jettonData` hands on. The same limits
+ * give at most 2^16 × 1023 / 8 bytes of data in 2^16 cells, each with 2 descriptor bytes, 4
+ * three-byte refs, a rounding byte and a 4-byte index entry, plus a header and a checksum:
+ * under 9.7 MB, about 12.9 million base64 characters. Decoding a state of that size takes
+ * about 2 s (`@ton/core` 0.63.1, measured); only a master's metadata, read once per token
+ * and cached, can be that large.
+ */
+export const MAX_STATE_BOC_LENGTH = 1 << 24;
+
+/**
  * The cell count a BOC header declares, for the three layouts `@ton/core` reads (magic,
  * then the size byte or flags with the size in their low 3 bits, the offset size, and the
  * count in `size` bytes); undefined for anything else.
@@ -73,15 +92,19 @@ function bocCellCount(bytes: Buffer): number | undefined {
 }
 
 /**
- * Lesson 20: a base64 BOC measured against one message's limits (at most
- * `MAX_BODY_BOC_LENGTH` characters, and a header, its first 16 characters, declaring at most
- * `MAX_BODY_CELLS` cells): `oversized` beyond them, `malformed` without a BOC header.
+ * Lesson 20: a base64 BOC measured against limits, by default one message's (at most
+ * `maxLength` characters, and a header, its first 16 characters, declaring at most
+ * `maxCells` cells): `oversized` beyond them, `malformed` without a BOC header.
  */
-function bocSize(boc: string): 'ok' | 'oversized' | 'malformed' {
+function bocSize(
+  boc: string,
+  maxCells: number = MAX_BODY_CELLS,
+  maxLength: number = MAX_BODY_BOC_LENGTH,
+): 'ok' | 'oversized' | 'malformed' {
   if (boc.length === 0) return 'malformed';
   const count = bocCellCount(Buffer.from(boc.slice(0, 16), 'base64'));
   if (count === undefined) return 'malformed';
-  return boc.length > MAX_BODY_BOC_LENGTH || count > MAX_BODY_CELLS ? 'oversized' : 'ok';
+  return boc.length > maxLength || count > maxCells ? 'oversized' : 'ok';
 }
 
 /**
@@ -94,10 +117,11 @@ export function bocWithinLimits(boc: string): boolean {
 }
 
 /**
- * M4: the longest jetton metadata texts read from the indexer (decimals: 0..255). A longer
- * or ill-typed `symbol` is malformed; a `name` or `uri` beyond its limit is absent (F6-R8).
+ * M4: the longest token metadata texts read from the indexer (decimals: 0..255). A longer
+ * or ill-typed `symbol` is reported unreadable (F6-R13); a `name` beyond its limit is absent
+ * (F6-R8).
  */
-const CONTENT_LIMITS = { symbol: 256, name: 256, uri: 1024 } as const;
+const CONTENT_LIMITS = { symbol: 256, name: 256 } as const;
 
 type Json = Record<string, unknown>;
 
@@ -343,11 +367,16 @@ export interface JettonData {
   readonly content?: JettonContentCell;
 }
 
-/** A token's metadata as the indexer fetched it (for a jetton: its off-chain JSON). */
+/**
+ * A token's metadata as the indexer fetched it (for a jetton: its off-chain JSON). `null`
+ * marks a field the token's metadata holds but that is not one (ill-typed, out of range or
+ * over its limit): the token's own data, which every endpoint agrees on, for the caller to
+ * judge only if it uses that field (F6-R13).
+ */
 export interface TokenInfo {
-  readonly symbol?: string;
+  readonly symbol?: string | null;
   /** 0..255, in decimal. */
-  readonly decimals?: string;
+  readonly decimals?: string | null;
   readonly name?: string;
 }
 
@@ -583,10 +612,11 @@ export function runResultOf(body: unknown): RunResult {
 /**
  * `get_jetton_data`'s exit code and content cell (TEP-74: total supply, mintable, admin,
  * content, wallet code). Only the content is read, so no other entry (a supply, a large
- * wallet code) is held to anything. A content cell beyond one message's limits is reported
- * `oversized`, never decoded (lesson 20): every endpoint returns the same chain data, so it
- * is the token's own (lesson 13), not a malformed answer to retry forever. A stack that is
- * not one, or a content entry without a BOC header, is malformed.
+ * wallet code) is held to anything. A content cell beyond an account state's limits
+ * (`MAX_STATE_CELLS`, `MAX_STATE_BOC_LENGTH`) is reported `oversized`, never decoded
+ * (lesson 20): no chain content is that large, and a caller that agrees on it under the
+ * proof quorum takes it as the token's own (lesson 13), not as an answer to retry forever.
+ * A stack that is not one, or a content entry without a BOC header, is malformed.
  */
 function jettonDataFrom(result: unknown, route: string): JettonData {
   const r = need(record(result), route);
@@ -606,7 +636,7 @@ function jettonDataFrom(result: unknown, route: string): JettonData {
     return { exitCode };
   }
   const boc = need(str(isRecord(data) ? data.bytes : data), route);
-  const size = bocSize(boc);
+  const size = bocSize(boc, MAX_STATE_CELLS, MAX_STATE_BOC_LENGTH);
   if (size === 'malformed') throw malformed(route);
   return {
     exitCode,
@@ -655,54 +685,30 @@ function traceOf(value: unknown, route: string): V3Trace {
 }
 
 /**
- * M4: the indexed jetton content fields the driver reads, each within its limit. The symbol
- * and decimals become the token's metadata, so a bad one is malformed. A name or uri is
- * author-set text no verdict reads, which every endpoint agrees on: an over-long or
- * ill-typed one is left out, like an inline image, rather than retried forever (F6-R8:
- * lenient readers stay lenient on unbounded metadata).
- */
-function contentOf(value: unknown, route: string): Readonly<Record<string, string>> {
-  const c = need(record(value), route);
-  const content: Record<string, string> = {};
-  const symbol = optional(c.symbol, str, route);
-  if (symbol !== undefined) {
-    if (symbol.length > CONTENT_LIMITS.symbol) throw malformed(route);
-    content.symbol = symbol;
-  }
-  for (const field of ['name', 'uri'] as const) {
-    const text = c[field];
-    if (typeof text === 'string' && text.length <= CONTENT_LIMITS[field]) {
-      content[field] = text;
-    }
-  }
-  const decimals = optional(c.decimals, int, route);
-  if (decimals !== undefined) {
-    if (decimals < 0 || decimals > 255) throw malformed(route);
-    content.decimals = String(decimals);
-  }
-  return content;
-}
-
-/**
- * M4 and F6-R8: one `/metadata` token entry, the indexer's copy of the token's off-chain
- * JSON: a bad symbol or decimals is malformed, as in `contentOf`; a name beyond its limit is
+ * M4, F6-R8 and F6-R13: one `/metadata` token entry, the indexer's copy of the token's
+ * off-chain JSON. Only the fields a caller may use are read, and each as the token wrote it:
+ * a symbol or decimals that are not one are `null` (the token's own data, which every
+ * endpoint agrees on, so never malformed and retried forever); a name beyond its limit is
  * absent. toncenter writes the JSON's decimals under `extra` (live, 2026-09-28).
  */
-function tokenInfoOf(token: Json, route: string): TokenInfo {
-  const info: { symbol?: string; decimals?: string; name?: string } = {};
-  const symbol = optional(token.symbol, str, route);
-  if (symbol !== undefined) {
-    if (symbol.length > CONTENT_LIMITS.symbol) throw malformed(route);
-    info.symbol = symbol;
+function tokenInfoOf(token: Json): TokenInfo {
+  const info: { symbol?: string | null; decimals?: string | null; name?: string } = {};
+  const { symbol, name, extra } = token;
+  if (symbol !== undefined && symbol !== null) {
+    info.symbol =
+      typeof symbol === 'string' && symbol.length <= CONTENT_LIMITS.symbol
+        ? symbol
+        : null;
   }
-  if (typeof token.name === 'string' && token.name.length <= CONTENT_LIMITS.name) {
-    info.name = token.name;
-  }
-  const extra = optional(token.extra, record, route);
-  const decimals = extra ? optional(extra.decimals, int, route) : undefined;
-  if (decimals !== undefined) {
-    if (decimals < 0 || decimals > 255) throw malformed(route);
-    info.decimals = String(decimals);
+  if (typeof name === 'string' && name.length <= CONTENT_LIMITS.name) info.name = name;
+  if (extra !== undefined && extra !== null) {
+    const decimals = isRecord(extra) ? extra.decimals : null;
+    const value = int(decimals);
+    if (!isRecord(extra)) info.decimals = null;
+    else if (decimals !== undefined && decimals !== null) {
+      info.decimals =
+        value !== undefined && value >= 0 && value <= 255 ? String(value) : null;
+    }
   }
   return info;
 }
@@ -1179,38 +1185,6 @@ export class TonApi {
   }
 
   /**
-   * A jetton master's indexed content (`decimals`, `symbol`, `name`, `uri`; M4), for a raw
-   * master address (M2); null when the indexer has no entry for it (yet).
-   */
-  async jettonContent(
-    master: string,
-    tags: TonCallTags,
-  ): Promise<Readonly<Record<string, string>> | null> {
-    const wanted = rawAddress(master);
-    return this.#v3(
-      '/jetton/masters',
-      { address: master, limit: '1' },
-      tags,
-      (body, route) => {
-        if (
-          !isRecord(body) ||
-          !Array.isArray(body.jetton_masters) ||
-          body.jetton_masters.length > 1
-        ) {
-          throw malformed(route);
-        }
-        for (const item of body.jetton_masters) {
-          const entry = need(record(item), route);
-          // A lookup by id keeps only the master asked for (I2); its entry is well formed (M5).
-          if (need(rawOf(entry.address) ?? undefined, route) !== wanted) continue;
-          return contentOf(entry.jetton_content, route);
-        }
-        return null;
-      },
-    );
-  }
-
-  /**
    * The indexer's metadata for a raw token address (M2): its first valid jetton entry
    * (`tokenInfoOf`). Undefined while the indexer has none: no entry (an unknown address, a
    * lagging index or a dropped filter all read alike, I2), an entry not indexed yet, or no
@@ -1244,7 +1218,7 @@ export class TonApi {
             ) {
               continue;
             }
-            return tokenInfoOf(token, route);
+            return tokenInfoOf(token);
           }
         }
         return undefined;

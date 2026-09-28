@@ -619,21 +619,66 @@ function withContent(h: Harness, content: string): void {
     getMethod(route, request, 'get_jetton_data') ? jettonDataReply(content) : undefined;
 }
 
-/** A BOC header (magic b5ee9c72, 2-byte counts) declaring `cells` cells. */
+/** A BOC header (magic b5ee9c72, 3-byte counts) declaring `cells` cells. */
 function bocHeader(cells: number): string {
   return Buffer.from([
     0xb5,
     0xee,
     0x9c,
     0x72,
-    0x02,
+    0x03,
     0x01,
-    cells >> 8,
+    cells >> 16,
+    (cells >> 8) & 0xff,
     cells & 0xff,
+    0,
     0,
     0,
   ]).toString('base64');
 }
+
+/** TEP-64 chunked data (`chunks#01`): each part a chunk cell under its index. */
+function chunked(parts: readonly (string | Cell)[], keys = parts.map((_, i) => i)): Cell {
+  const dict = Dictionary.empty(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
+  parts.forEach((part, i) =>
+    dict.set(
+      keys[i] as number,
+      typeof part === 'string'
+        ? beginCell().storeBuffer(Buffer.from(part)).endCell()
+        : part,
+    ),
+  );
+  return beginCell().storeUint(1, 8).storeDict(dict).endCell();
+}
+
+/** `n` distinct cells as a tree (up to 4 refs each, so its depth stays small). */
+function cellTree(n: number): Cell {
+  const built: Cell[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const cell = beginCell().storeUint(i, 32);
+    for (let k = 1; k <= 4 && 4 * i + k < n; k++) cell.storeRef(built[4 * i + k] as Cell);
+    built[i] = cell.endCell();
+  }
+  return built[0] as Cell;
+}
+
+/** Off-chain content (TEP-64 `offchain#01`): the JSON's uri. */
+const OFFCHAIN = beginCell()
+  .storeUint(1, 8)
+  .storeStringTail('https://jetton.test/meta.json')
+  .endCell()
+  .toBoc()
+  .toString('base64');
+
+/** A `/metadata` answer for MASTER holding one valid jetton entry. */
+const metadataReply = (token: Json) => ({
+  json: {
+    [MASTER.toUpperCase()]: {
+      is_indexed: true,
+      token_info: [{ valid: true, type: 'jetton_masters', ...token }],
+    },
+  },
+});
 
 describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () => {
   it('observes the run that consumed the seqno when a request ran twice (C8-1)', async () => {
@@ -994,9 +1039,20 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
         retryable: false,
         message,
       });
-    // More cells than a message may hold, as every endpoint serves it: never decoded.
-    withContent(h, bocHeader(8193));
+    // More cells than an account state may hold, as every endpoint serves it: never
+    // decoded. Past a message's 2^13 cells is still content (a state holds 2^16).
+    withContent(h, bocHeader(2 ** 16 + 1));
     await refused('the jetton content is unreadable');
+    const big = onchainContent({
+      decimals: snake('6'),
+      symbol: snake('TST'),
+      image_data: cellTree(9000),
+    });
+    withContent(h, big);
+    expect(await h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).toEqual({
+      symbol: 'TST',
+      decimals: 6,
+    });
     withContent(h, beginCell().storeUint(2, 8).endCell().toBoc().toString('base64'));
     await refused('the jetton content is unreadable');
     // A value is read in one pass, to at most 64 cells: 64 one-byte cells read, 65 do not.
@@ -1014,9 +1070,36 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     await refused('the jetton has no symbol');
     withContent(h, onchainContent({ ...tst, decimals: snake('256') }));
     await refused('the jetton decimals are unreadable');
-    // Chunked data (prefix 0x01) is not read.
-    const chunked = beginCell().storeUint(1, 8).storeUint(0x41, 8).endCell();
-    withContent(h, onchainContent({ ...tst, symbol: chunked }));
+    // Chunked data (TEP-64 `chunks#01`): its chunks in index order, at most 64 of them,
+    // each one cell of whole bytes without refs, indexed from 0 without a gap.
+    withContent(h, onchainContent({ ...tst, symbol: chunked(['TS', 'T']) }));
+    expect(await h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).toEqual({
+      symbol: 'TST',
+      decimals: 6,
+    });
+    withContent(
+      h,
+      onchainContent({ decimals: chunked(['1', '2']), symbol: snake('TST') }),
+    );
+    expect(await h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).toEqual({
+      symbol: 'TST',
+      decimals: 12,
+    });
+    const letters = (n: number) => Array.from({ length: n }, () => 'A');
+    withContent(h, onchainContent({ ...tst, symbol: chunked(letters(64)) }));
+    expect(await h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).toEqual({
+      symbol: 'A'.repeat(64),
+      decimals: 6,
+    });
+    withContent(h, onchainContent({ ...tst, symbol: chunked(letters(65)) }));
+    await refused('the jetton symbol is unreadable');
+    withContent(h, onchainContent({ ...tst, symbol: chunked(['TS', 'T'], [0, 2]) }));
+    await refused('the jetton symbol is unreadable');
+    const withRef = beginCell()
+      .storeBuffer(Buffer.from('T'))
+      .storeRef(snake('x'))
+      .endCell();
+    withContent(h, onchainContent({ ...tst, symbol: chunked(['TS', withRef]) }));
     await refused('the jetton symbol is unreadable');
     // An unreadable name is left out (lenient); the token still resolves.
     withContent(h, onchainContent({ ...tst, name: snakeChain(30, 100) }));
@@ -1030,6 +1113,164 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
       decimals: 6,
       name: 'Test token',
     });
+  });
+
+  it("decides an oversized content the token's own only when the quorum agrees (F6-R13 M3)", async () => {
+    const h = tonHarness({ endpoints: ['a', 'b'] });
+    const tst = onchainContent({ decimals: snake('6'), symbol: snake('TST') });
+    let served: Record<string, string> = {};
+    h.node.intercept = (endpoint, route, request) =>
+      getMethod(route, request, 'get_jetton_data')
+        ? jettonDataReply(served[endpoint] as string)
+        : undefined;
+    served = { a: bocHeader(2 ** 16 + 1), b: tst };
+    await expect(h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).rejects.toMatchObject(
+      {
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      },
+    );
+    served = { a: bocHeader(2 ** 16 + 1), b: bocHeader(2 ** 16 + 1) };
+    await expect(h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).rejects.toMatchObject(
+      {
+        code: 'ASSET_RESOLUTION',
+        retryable: false,
+        message: 'the jetton content is unreadable',
+      },
+    );
+  });
+
+  it("reads the indexer's metadata under the proof quorum too (F6-R13 M2)", async () => {
+    const h = tonHarness({ endpoints: ['a', 'b'] });
+    let decimals: Record<string, string> = {};
+    h.node.intercept = (endpoint, route, request) =>
+      getMethod(route, request, 'get_jetton_data')
+        ? jettonDataReply(OFFCHAIN)
+        : route === '/metadata'
+          ? metadataReply({ symbol: 'OFF', extra: { decimals: decimals[endpoint] } })
+          : undefined;
+    decimals = { a: '6', b: '9' };
+    await expect(h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).rejects.toMatchObject(
+      {
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      },
+    );
+    decimals = { a: '6', b: '6' };
+    expect(await h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).toEqual({
+      symbol: 'OFF',
+      decimals: 6,
+    });
+  });
+
+  it("judges the indexer's metadata only by the fields it uses; a bad one is the token's own (F6-R13 M4)", async () => {
+    const h = tonHarness();
+    let content = OFFCHAIN;
+    let token: Json = {};
+    h.node.intercept = (_e, route, request) =>
+      getMethod(route, request, 'get_jetton_data')
+        ? jettonDataReply(content)
+        : route === '/metadata'
+          ? metadataReply(token)
+          : undefined;
+    const refused = (message: string) =>
+      expect(h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).rejects.toMatchObject({
+        code: 'ASSET_RESOLUTION',
+        retryable: false,
+        message,
+      });
+    // Off-chain: the indexer's copy decides, and a bad field it needs is the token's own.
+    token = { symbol: 'OFF', extra: { decimals: 'six' } };
+    await refused('the jetton decimals are unreadable');
+    token = { symbol: 7, extra: { decimals: '6' } };
+    await refused('the jetton symbol is unreadable');
+    // USDT's shape: decimals on chain, so the indexer's are never used or judged.
+    content = onchainContent({
+      decimals: snake('6'),
+      uri: snake('https://x.test/j.json'),
+    });
+    token = { symbol: 'USD₮', extra: { decimals: 'six' } };
+    expect(await h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).toEqual({
+      symbol: 'USD₮',
+      decimals: 6,
+    });
+    // A symbol on chain: the indexer's is never used or judged.
+    content = onchainContent({
+      symbol: snake('TST'),
+      uri: snake('https://x.test/j.json'),
+    });
+    token = { symbol: ['X'], extra: { decimals: '4' } };
+    expect(await h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).toEqual({
+      symbol: 'TST',
+      decimals: 4,
+    });
+  });
+
+  it('looks a lookup id up as the run that consumed the seqno (F6-R13 M5)', async () => {
+    const h = tonHarness();
+    const wallet = testWallet('v4r2', TESTNET);
+    const { boc, hashNorm } = v4Request(h, 0, [
+      [1, nativeMessage({ to: FRESH, value: GRAM, bounce: false })],
+    ]);
+    h.node.fund(wallet, GRAM / 10n);
+    h.node.submit(boc);
+    h.node.mine(2);
+    h.node.fund(wallet, 3n * GRAM);
+    h.node.submit(boc);
+    h.node.mine(3);
+    const runs = await h.run(h.ctx.api.transactionsByMessage(hashNorm, READ));
+    expect(runs.map(consumesSeqno)).toEqual([false, true]);
+    const found = await h.run(h.reader.getTransaction(hashNorm));
+    expect(found).toMatchObject({ id: runs[1]?.hash, observation: { success: true } });
+    const unmanaged = { id: hashNorm, idKind: 'message-hash' as const, canonical: false };
+    expect(await h.run(h.reader.observe(unmanaged, undefined, undefined))).toMatchObject({
+      txHash: runs[1]?.hash,
+      success: true,
+    });
+  });
+
+  it('derives ext.ton.jettonWallet under the proof quorum, and keeps it (F6-R13 M6)', async () => {
+    const h = tonHarness({ endpoints: ['a', 'b'] });
+    const owner = testWallet('v4r2', TESTNET);
+    h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    const tags: unknown[] = [];
+    const original = h.rpc.http.bind(h.rpc);
+    h.rpc.http = ((request, options) => {
+      if (request.route === '/runGetMethod') {
+        tags.push({ purpose: options?.purpose, quorum: options?.quorum });
+      }
+      return original(request, options);
+    }) as typeof h.rpc.http;
+    let edit = (bytes: string): string => bytes;
+    rewrite(
+      h,
+      (endpoint, route, request) =>
+        endpoint === 'b' && getMethod(route, request, 'get_wallet_address'),
+      (json) => {
+        const result = json.result as Json;
+        const [[type, cell]] = result.stack as [[string, Json]];
+        const bytes = edit(cell.bytes as string);
+        return { ...json, result: { ...result, stack: [[type, { ...cell, bytes }]] } };
+      },
+    );
+    // Another endpoint names another wallet: nothing is decided.
+    edit = () => addressArgumentOf(`0:${'66'.repeat(32)}`);
+    await expect(h.run(h.ext.ton.jettonWallet(owner, MASTER))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+    // The same address serialized otherwise agrees; the attested answer is kept.
+    edit = (bytes) =>
+      Cell.fromBoc(Buffer.from(bytes, 'base64'))[0]!
+        .toBoc({ idx: true, crc32: false })
+        .toString('base64');
+    const wallet = h.node.jettonWalletOf(MASTER, owner);
+    expect(await h.run(h.ext.ton.jettonWallet(owner, MASTER))).toBe(wallet);
+    const proof = { purpose: 'proof', quorum: 'proof' };
+    expect(tags).toEqual([proof, proof]);
+    const served = h.node.served.length;
+    expect(await h.run(h.ext.ton.jettonWallet(owner, MASTER))).toBe(wallet);
+    expect(h.node.served).toHaveLength(served);
   });
 
   it('refuses a frozen wallet from its state, before any get-method', async () => {
