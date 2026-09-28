@@ -73,8 +73,9 @@ const sats = (value: unknown, what: string): bigint =>
   BigInt(integer(value, what, Number(MAX_MONEY)));
 const u32 = (value: unknown, what: string): number => integer(value, what, 0xffffffff);
 /**
- * A transaction's 32-bit version, which Esplora servers print signed or unsigned. Chain data:
- * any version a block holds is read, whatever this library builds (version 2).
+ * A transaction's 32-bit version, which Esplora servers print signed or unsigned, as one
+ * signed value (`v | 0`), so both printings agree. Chain data: any version a block holds is
+ * read, whatever this library builds (version 2).
  */
 const txVersion = (value: unknown): number => {
   if (
@@ -84,7 +85,7 @@ const txVersion = (value: unknown): number => {
   ) {
     throw malformed('tx.version');
   }
-  return value as number;
+  return (value as number) | 0;
 };
 /**
  * A cumulative total of an address (every output it ever received or spent), read exactly

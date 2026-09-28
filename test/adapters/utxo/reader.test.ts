@@ -379,6 +379,99 @@ describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
       h.run(h.reader.observe(ref(h.spent), inputs(h.outpoint), OWN.address)),
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
+
+  it('decides nothing when the transaction read is refused (lesson 18, widened; M1)', async () => {
+    const h = await withSpend();
+    const refusals = [
+      { status: 400, text: 'Bad Request' },
+      { status: 410, text: 'Gone' },
+      { status: 422, text: 'Unprocessable Entity' },
+      { status: 403, text: 'Forbidden' },
+    ];
+    for (const refusal of refusals) {
+      h.node.intercept('a', (request) =>
+        request.url.pathname.endsWith(`/tx/${h.spent}`) ? refusal : undefined,
+      );
+      await expect(
+        h.run(h.reader.observe(ref(h.spent), inputs(h.outpoint), OWN.address)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      await expect(
+        h.run(h.reader.observe(ref(h.spent), undefined, undefined)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    }
+  });
+
+  it('decides nothing when the index contradicts itself (M2)', async () => {
+    const h = await utxoHarness();
+    const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
+    const outpoint = h.node.fund(legacy.address, 100_000n);
+    const [txid] = outpoint.split(':') as [string];
+    const ours = signedLegacySpend(
+      TEST_KEY,
+      [[txid, 0, h.node.transaction(txid)!.toHex()]],
+      [[PAYEE.script, 90_000n]],
+    );
+    const oursId = h.node.submit(ours);
+    const reader = chainReader(h.ctx);
+    const notFound = (id: string) =>
+      h.node.intercept('a', (request) =>
+        request.url.pathname.endsWith(`/tx/${id}`)
+          ? { status: 404, text: 'Transaction not found' }
+          : undefined,
+      );
+    // The spend names our transaction, which the transaction read does not know.
+    notFound(oursId);
+    await expect(
+      h.run(reader.observe(ref(oursId), inputs(outpoint), legacy.address)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    // A malleated copy its bytes prove ours, which the transaction read does not know.
+    const copy = malleate(ours, 'high-s');
+    h.node.mine(1, { extra: [copy] });
+    notFound(txidOfHex(copy));
+    await expect(
+      h.run(reader.observe(ref(oursId), inputs(outpoint), legacy.address)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    h.node.clearIntercept('a');
+    expect(
+      await h.run(reader.observe(ref(oursId), inputs(outpoint), legacy.address)),
+    ).toMatchObject({ seen: 'block', txHash: txidOfHex(copy) });
+  });
+
+  it('reads the first input only: a conflict on another input leaves it out too (M8)', async () => {
+    const h = await utxoHarness();
+    const first = h.node.fund(OWN.address, 100_000n);
+    const second = h.node.fund(OWN.address, 50_000n);
+    const [a] = first.split(':') as [string];
+    const [b] = second.split(':') as [string];
+    const ours = h.node.submit(
+      signedSpend(
+        TEST_KEY,
+        [
+          [a, 0, 100_000n],
+          [b, 0, 50_000n],
+        ],
+        [[PAYEE.script, 140_000n]],
+      ),
+    );
+    h.node.mine();
+    h.node.reorg(1, { drop: [ours] });
+    h.node.mine();
+    // A conflict on the second input only; the first is unspent.
+    h.node.submit(signedSpend(TEST_KEY, [[b, 0, 50_000n]], [[PAYEE.script, 40_000n]]));
+    const reader = chainReader(h.ctx);
+    const ordering = { kind: 'inputs' as const, inputs: [first, second] };
+    for (const mined of [false, true]) {
+      if (mined) h.node.mine();
+      h.calls.length = 0;
+      expect(await h.run(reader.observe(ref(ours), ordering, OWN.address))).toEqual({
+        seen: 'none',
+      });
+      expect(h.calls.map((c) => c.request.path)).toEqual([
+        `/tx/${ours}`,
+        `/tx/${a}/outspend/0`,
+      ]);
+    }
+  });
 });
 
 describe('raw transactions bound to the id asked for', () => {
@@ -462,10 +555,79 @@ describe('strict verdict fields, lenient chain data (lesson 6; lenient readers)'
     }
   });
 
-  it('reads any 32-bit version, signed or not, as the chain accepts it', async () => {
+  it('refuses an ill-typed outpoint index, value or status, never a default (M8)', async () => {
     const h = await served();
-    for (const version of [-1, -2_147_483_648, 4_294_967_295, 0]) {
-      h.serve({ ...h.honest, version });
+    const status = h.honest.status as Record<string, unknown>;
+    const withVin = (vary: (input: Record<string, unknown>) => unknown) => ({
+      ...h.honest,
+      vin: h.honest.vin.map(vary),
+    });
+    const variants: unknown[] = [
+      ...['0', -1, 4_294_967_296, 1.5, null].map((vout) =>
+        withVin((input) => ({ ...input, vout })),
+      ),
+      ...['90000', -1, 1.5, 2_100_000_000_000_001, null].flatMap((value) => [
+        { ...h.honest, vout: h.honest.vout.map((output) => ({ ...output, value })) },
+        withVin((input) => ({
+          ...input,
+          prevout: { ...(input.prevout as object), value },
+        })),
+      ]),
+      ...[
+        undefined,
+        null,
+        'confirmed',
+        { confirmed: 'true' },
+        { confirmed: 1 },
+        { confirmed: 0 },
+        { ...status, confirmed: 'yes' },
+        { confirmed: true },
+        { ...status, block_height: '2' },
+        { ...status, block_height: undefined },
+        { ...status, block_hash: 'x' },
+        { ...status, block_hash: undefined },
+      ].map((bad) => ({ ...h.honest, status: bad })),
+    ];
+    for (const json of variants) {
+      h.serve(json);
+      await expect(h.run(h.reader.getTransaction(h.spent))).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+  });
+
+  it('reads an output script as large as a block allows through /tx (a lenient reader)', async () => {
+    const h = await served();
+    h.serve({
+      ...h.honest,
+      vout: [
+        ...h.honest.vout,
+        {
+          scriptpubkey: `6a${'00'.repeat(3_989_999)}`,
+          scriptpubkey_asm: '',
+          scriptpubkey_type: 'op_return',
+          value: 0,
+        },
+      ],
+    });
+    expect(await h.run(h.reader.getTransaction(h.spent))).toMatchObject({
+      decoding: 'complete',
+      transfers: [{ locator: 'vout:0', to: PAYEE.address, amount: 90_000n }],
+    });
+  });
+
+  it('reads any 32-bit version, printed signed or not, as one signed value (M5)', async () => {
+    const h = await served();
+    for (const [printed, version] of [
+      [-1, -1],
+      [4_294_967_295, -1],
+      [-2_147_483_648, -2_147_483_648],
+      [2_147_483_648, -2_147_483_648],
+      [0, 0],
+      [2, 2],
+    ] as const) {
+      h.serve({ ...h.honest, version: printed });
       expect((await h.run(h.reader.getTransaction(h.spent)))?.details).toMatchObject({
         version,
       });
@@ -478,28 +640,43 @@ describe('strict verdict fields, lenient chain data (lesson 6; lenient readers)'
     }
   });
 
-  it('refuses an output address that does not match its script', async () => {
+  it('names every output by its script, whatever address the server prints (M4)', async () => {
     const h = await served();
-    h.serve({
+    const named = (address: (output: Record<string, unknown>) => unknown) => ({
       ...h.honest,
-      vout: h.honest.vout.map((output, n) =>
-        n === 0 ? { ...output, scriptpubkey_address: OWN.address } : output,
-      ),
-    });
-    await expect(h.run(h.reader.getTransaction(h.spent))).rejects.toMatchObject({
-      code: 'PROVIDER_UNAVAILABLE',
-      retryable: true,
-    });
-    h.serve({
-      ...h.honest,
-      vin: h.honest.vin.map((input) => ({
-        ...input,
-        prevout: { ...(input.prevout as object), scriptpubkey_address: PAYEE.address },
+      vout: h.honest.vout.map((output) => ({
+        ...output,
+        scriptpubkey_address: address(output),
       })),
+      vin: h.honest.vin.map((input) => {
+        const prevout = input.prevout as Record<string, unknown>;
+        return {
+          ...input,
+          prevout: { ...prevout, scriptpubkey_address: address(prevout) },
+        };
+      }),
     });
-    await expect(h.run(h.reader.getTransaction(h.spent))).rejects.toMatchObject({
-      code: 'PROVIDER_UNAVAILABLE',
-    });
+    const variants = [
+      // Left out: a deposit never decodes as `partial` for it.
+      named(() => undefined),
+      // Another address: a transfer is never credited to an address the output does not pay.
+      named((output) =>
+        output.scriptpubkey_address === OWN.address ? PAYEE.address : OWN.address,
+      ),
+    ];
+    for (const json of variants) {
+      h.serve(json);
+      expect(await h.run(h.reader.getTransaction(h.spent))).toMatchObject({
+        decoding: 'complete',
+        transfers: [
+          { locator: 'vout:0', from: [OWN.address], to: PAYEE.address, amount: 90_000n },
+        ],
+        details: {
+          vin: [{ address: OWN.address }],
+          vout: [{ n: 0, address: PAYEE.address }],
+        },
+      });
+    }
   });
 
   it('reads cumulative address sums beyond 21M BTC exactly; the balance is bounded', async () => {
@@ -598,17 +775,36 @@ describe('indexer lists', () => {
     expect(page.items.map((t) => t.id)).not.toContain(foreign);
   });
 
-  it('lists an unspent output named twice once', async () => {
+  it('lists an unspent output named twice once, and refuses two that disagree (M3)', async () => {
     const h = await utxoHarness();
     h.node.fund(OWN.address, 7_000n);
-    h.node.intercept('a', (request, _signal, honest) => {
-      if (!request.url.pathname.endsWith('/utxo')) return undefined;
-      const listed = (honest() as { json: unknown[] }).json;
-      return { json: [...listed, ...listed] };
-    });
+    type Utxo = Record<string, unknown>;
+    const serve = (vary: (utxo: Utxo) => Utxo) =>
+      h.node.intercept('a', (request, _signal, honest) => {
+        if (!request.url.pathname.endsWith('/utxo')) return undefined;
+        const listed = (honest() as { json: Utxo[] }).json;
+        return { json: [...listed, ...listed.map(vary)] };
+      });
+    serve((utxo) => ({ ...utxo }));
     expect((await h.run(listUnspent(h.ctx, OWN.address))).map((u) => u.value)).toEqual([
       7_000n,
     ]);
+    const disagreements: ((utxo: Utxo) => Utxo)[] = [
+      (utxo) => ({ ...utxo, value: 7_001 }),
+      (utxo) => ({ ...utxo, status: { confirmed: false } }),
+      (utxo) => ({ ...utxo, status: { ...(utxo.status as Utxo), block_height: 2 } }),
+      (utxo) => ({
+        ...utxo,
+        status: { ...(utxo.status as Utxo), block_hash: 'ee'.repeat(32) },
+      }),
+    ];
+    for (const vary of disagreements) {
+      serve(vary);
+      await expect(h.run(listUnspent(h.ctx, OWN.address))).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+    }
   });
 });
 

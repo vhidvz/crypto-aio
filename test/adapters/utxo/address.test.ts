@@ -2,6 +2,7 @@ import { secp256k1 } from '@noble/curves/secp256k1';
 import { hexToBytes } from '@noble/hashes/utils';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
 import {
+  addressFromScript,
   decodeAddress,
   dustThreshold,
   outputScript,
@@ -279,6 +280,64 @@ describe('outputScript (M2)', () => {
         }),
       );
     }
+  });
+});
+
+describe('addressFromScript (the inverse of outputScript; lesson 11)', () => {
+  const NETWORKS = [
+    [MAIN, bitcoin.networks.bitcoin],
+    [TEST, bitcoin.networks.testnet],
+    [REGTEST, bitcoin.networks.regtest],
+  ] as const;
+
+  it('names the five standard scripts as bitcoinjs-lib does, on every network', () => {
+    for (const [params, network] of NETWORKS) {
+      const scripts = [
+        ...(['p2wpkh', 'p2sh-p2wpkh', 'p2pkh', 'p2tr'] as const).map(
+          (type) => walletAddress(TEST_PUBKEY, type, params).script,
+        ),
+        outputScript('p2wsh', new Uint8Array(32).fill(0x11)),
+        outputScript('p2tr', hexToBytes(BIP86_OUTPUT_KEY)),
+      ];
+      for (const script of scripts) {
+        const named = addressFromScript(script, params);
+        expect(named?.canonical).toBe(bitcoin.address.fromOutputScript(script, network));
+        expect(toHex(decodeAddress(named!.canonical, params).script)).toBe(toHex(script));
+        expect(named).toEqual(decodeAddress(named!.canonical, params));
+      }
+    }
+  });
+
+  it('names the BIP350 scripts as the vectors do', () => {
+    for (const [address, script] of BIP350_VALID) {
+      expect(addressFromScript(hexToBytes(script), paramsOf(address))?.canonical).toBe(
+        address.toLowerCase(),
+      );
+    }
+  });
+
+  it('leaves every other script unnamed', () => {
+    const p2pkh = walletAddress(TEST_PUBKEY, 'p2pkh', MAIN).script;
+    const unnamed = [
+      new Uint8Array(0),
+      Uint8Array.of(0x21, ...TEST_PUBKEY, 0xac), // p2pk
+      Uint8Array.of(0x6a, 0x04, 1, 2, 3, 4), // OP_RETURN
+      Uint8Array.of(0x51, 0x21, ...TEST_PUBKEY, 0x51, 0xae), // bare multisig
+      Uint8Array.of(0x52, 0x20, ...new Uint8Array(32).fill(1)), // witness v2
+      Uint8Array.of(0x00, 0x15, ...new Uint8Array(21).fill(1)), // v0, 21 bytes
+      Uint8Array.of(0x51, 0x14, ...new Uint8Array(20).fill(1)), // v1, 20 bytes
+      Uint8Array.of(0x51, 0x02, 0x4e, 0x73), // pay-to-anchor
+      Uint8Array.of(...p2pkh, 0x00), // trailing byte
+      Uint8Array.of(...p2pkh.slice(0, 23), 0x88, 0xad), // OP_CHECKSIGVERIFY
+      Uint8Array.of(...p2pkh.slice(0, 23), 0x87, 0xac), // OP_EQUAL
+      Uint8Array.of(0xa9, 0x14, ...new Uint8Array(20).fill(1), 0x88), // p2sh, EQUALVERIFY
+      Uint8Array.of(0xaa, 0x14, ...new Uint8Array(20).fill(1), 0x87), // HASH256, not HASH160
+      p2pkh.slice(0, 24), // cut short
+      // The program of NOT_ON_CURVE (x = 5), which decodeAddress refuses too.
+      Uint8Array.of(0x51, 0x20, ...new Uint8Array(31), 5),
+      new Uint8Array(3_990_000).fill(0x6a),
+    ];
+    for (const script of unnamed) expect(addressFromScript(script, MAIN)).toBeUndefined();
   });
 });
 

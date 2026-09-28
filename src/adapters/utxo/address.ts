@@ -163,6 +163,59 @@ export function decodeAddress(address: string, params: AddressParams): DecodedAd
 }
 
 /**
+ * The address an output script pays on this network: the inverse of `outputScript` for the
+ * five standard types, as `decodeAddress` returns it. Any other script (a bare key or
+ * multisig, a data carrier, a future witness version or program length) has no address, and
+ * neither has a taproot key off the curve, which `decodeAddress` refuses.
+ */
+export function addressFromScript(
+  script: Uint8Array,
+  params: AddressParams,
+): DecodedAddress | undefined {
+  const [b0, b1, b2] = script;
+  const n = script.length;
+  let type: UtxoOutputType;
+  let program: Uint8Array;
+  if (
+    n === 25 &&
+    b0 === 0x76 &&
+    b1 === 0xa9 &&
+    b2 === 0x14 &&
+    script[23] === 0x88 &&
+    script[24] === 0xac
+  ) {
+    type = 'p2pkh';
+    program = script.slice(3, 23);
+  } else if (n === 23 && b0 === 0xa9 && b1 === 0x14 && script[22] === 0x87) {
+    type = 'p2sh';
+    program = script.slice(2, 22);
+  } else if (n === 22 && b0 === 0x00 && b1 === 0x14) {
+    type = 'p2wpkh';
+    program = script.slice(2);
+  } else if (n === 34 && b0 === 0x00 && b1 === 0x20) {
+    type = 'p2wsh';
+    program = script.slice(2);
+  } else if (n === 34 && b0 === 0x51 && b1 === 0x20 && isXOnlyPoint(script.slice(2))) {
+    type = 'p2tr';
+    program = script.slice(2);
+  } else {
+    return undefined;
+  }
+  const canonical =
+    type === 'p2pkh' || type === 'p2sh'
+      ? base58check.encode(
+          concatBytes(
+            Uint8Array.of(type === 'p2pkh' ? params.pubKeyHash : params.scriptHash),
+            program,
+          ),
+        )
+      : type === 'p2tr'
+        ? bech32m.encode(params.bech32, [1, ...bech32m.toWords(program)])
+        : bech32.encode(params.bech32, [0, ...bech32.toWords(program)]);
+  return { type, canonical, script: outputScript(type, program) };
+}
+
+/**
  * R58: accepts only a 33-byte compressed key on the curve; a 32-byte x-only key only for
  * `p2tr` (a Schnorr-only signer's key). Never a private key, never an uncompressed key.
  */

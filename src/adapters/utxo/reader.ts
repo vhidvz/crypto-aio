@@ -3,10 +3,6 @@
  * Every call carries the tags of the `ChainDriver` contract table: `read` for point
  * queries, `monitor` for heights and observations; address reads go to the indexer.
  */
-
-/** Esplora's page of address history (electrs' `CHAIN_TXS_PER_PAGE`). */
-const HISTORY_PAGE = 25;
-const MAX_HEIGHT = BigInt(Number.MAX_SAFE_INTEGER);
 import type {
   AddressCodec,
   AddressHistorySource,
@@ -31,6 +27,14 @@ import { canonicalTwinTxid, txidOfHex } from './codec';
 import { decodeTransaction, observationOf } from './decode';
 import { isHash, malformed } from './esplora';
 import type { EsploraTx, UtxoCallTags, UtxoOutputType, UtxoUnspent } from './types';
+
+/** Esplora's page of address history (electrs' `CHAIN_TXS_PER_PAGE`). */
+const HISTORY_PAGE = 25;
+const MAX_HEIGHT = BigInt(Number.MAX_SAFE_INTEGER);
+
+/** Two reads of one index that contradict each other decide nothing (retryable). */
+const contradiction = (reason: string): ProviderError =>
+  new ProviderError('PROVIDER_INCONSISTENT', reason, { retryable: true });
 
 const normalized = (canonical: string, type: UtxoOutputType): NormalizedAddress => ({
   canonical,
@@ -117,14 +121,10 @@ export function chainReader(ctx: UtxoContext): ChainReader {
   const block = async (hash: string, height?: bigint): Promise<DriverBlock | null> => {
     const found = await esplora.block(hash, READ);
     if (!found) return null;
-    // I2: the block at a height must say it is at that height (a reorg between the two reads,
-    // or a lie, decides nothing).
+    // I2: the block at a height must say it is at that height. A block's height never
+    // changes, so only a lie or a server bug trips this; it decides nothing (retryable).
     if (height !== undefined && found.height !== height) {
-      throw new ProviderError(
-        'PROVIDER_INCONSISTENT',
-        'the block at the height asked for is at another height',
-        { retryable: true },
-      );
+      throw contradiction('the block at the height asked for is at another height');
     }
     const transactionIds = await esplora.blockTxids(found.hash, READ);
     if (transactionIds.length !== found.txCount) throw malformed('block txids');
@@ -167,20 +167,20 @@ export function chainReader(ctx: UtxoContext): ChainReader {
     observe: async (ref, ordering, from) => {
       const id = ref.id.toLowerCase();
       if (!isHash(id)) return { seen: 'none' }; // I2
-      // `/tx/:txid/status` answers `confirmed: false` for a transaction it does not know, so
-      // visibility is read from `/tx/:txid`, which is a 404 then.
-      const tx = await esplora.tx(id, MONITOR);
-      if (tx?.status.confirmed) return observationOf(tx.txid, tx.status);
-      const first = ordering?.kind === 'inputs' ? ordering.inputs[0] : undefined;
-      // A status lookup by id (no ordering) reports the index as it is.
-      if (first === undefined)
-        return tx ? observationOf(tx.txid, tx.status) : { seen: 'none' };
-      const legacy = from !== undefined && p2pkhKeyHash(ctx, from) ? from : undefined;
-      // Unknown, and a segwit or taproot txid cannot be malleated: nothing more to learn.
-      if (!tx && legacy === undefined) return { seen: 'none' };
-      const input = parseOutpoint(first);
-      // Lesson 18: a refusal on these reads decides nothing (retryable).
+      // Lesson 18, widened: a refusal on any of these reads decides nothing (retryable).
       return proofRead(async () => {
+        // `/tx/:txid/status` answers `confirmed: false` for a transaction it does not know,
+        // so visibility is read from `/tx/:txid`, which is a 404 then.
+        const tx = await esplora.tx(id, MONITOR);
+        if (tx?.status.confirmed) return observationOf(tx.txid, tx.status);
+        const first = ordering?.kind === 'inputs' ? ordering.inputs[0] : undefined;
+        // A status lookup by id (no ordering) reports the index as it is.
+        if (first === undefined)
+          return tx ? observationOf(tx.txid, tx.status) : { seen: 'none' };
+        const legacy = from !== undefined && p2pkhKeyHash(ctx, from) ? from : undefined;
+        // Unknown, and a segwit or taproot txid cannot be malleated: nothing more to learn.
+        if (!tx && legacy === undefined) return { seen: 'none' };
+        const input = parseOutpoint(first);
         // F3-R8: full-mode electrs keeps serving a reorg-dropped transaction as unconfirmed,
         // and `/status` cannot tell a mempool transaction from one only in its txstore. The
         // first input's spender can: chain spends of a disconnected block are gone, then the
@@ -190,7 +190,8 @@ export function chainReader(ctx: UtxoContext): ChainReader {
         const spend = await esplora.outspend(input.txid, input.vout, MONITOR);
         if (!spend.spent || spend.txid === undefined) return { seen: 'none' };
         if (spend.txid === id) {
-          return tx ? observationOf(tx.txid, tx.status) : { seen: 'none' };
+          if (tx) return observationOf(tx.txid, tx.status);
+          throw contradiction('the index spends with a transaction it does not know');
         }
         // C2: our own p2pkh Attempt, mined as a malleated copy (observed evidence only; only
         // `includedFinal`'s quorum path can make it terminal).
@@ -200,7 +201,9 @@ export function chainReader(ctx: UtxoContext): ChainReader {
         )
           return { seen: 'none' };
         const copy = await esplora.tx(spend.txid, MONITOR);
-        return copy ? observationOf(copy.txid, copy.status) : { seen: 'none' };
+        if (!copy)
+          throw contradiction('the index spends with a transaction it does not know');
+        return observationOf(copy.txid, copy.status);
       });
     },
   };
@@ -247,8 +250,9 @@ export function addressHistory(ctx: UtxoContext): AddressHistorySource {
 }
 
 /**
- * `ext.utxo.listUnspent`: confirmed first (oldest first), then unconfirmed; an output the
- * indexer names twice is listed once.
+ * `ext.utxo.listUnspent`: confirmed first (oldest first), then unconfirmed. An output the
+ * indexer names twice alike is listed once; named twice differently (another value or
+ * status), the answer is malformed.
  */
 export async function listUnspent(
   ctx: UtxoContext,
@@ -256,12 +260,18 @@ export async function listUnspent(
 ): Promise<UtxoUnspent[]> {
   const canonical = decodeAddress(address, ctx.config.address).canonical;
   const listed = await ctx.esplora.addressUtxos(canonical, READ);
-  const seen = new Set<string>();
+  const seen = new Map<string, string>();
   const utxos = listed.filter((u) => {
     const key = `${u.txid}:${u.vout}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    const { confirmed, blockHeight, blockHash, blockTime } = u.status;
+    const facts = `${u.value}|${confirmed}|${blockHeight}|${blockHash}|${blockTime}`;
+    const known = seen.get(key);
+    if (known === undefined) {
+      seen.set(key, facts);
+      return true;
+    }
+    if (known !== facts) throw malformed('an unspent output listed twice, differently');
+    return false;
   });
   const height = (u: (typeof utxos)[number]) =>
     u.status.confirmed
