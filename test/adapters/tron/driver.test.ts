@@ -108,13 +108,15 @@ describe('tronwebDriverFactory', () => {
       { expirationMs: 1_000 },
       { expirationMs: 600_000 },
       { energyMarginPercent: 1.5 },
+      { maxFeeLimit: 0n },
+      { maxFeeLimit: 100_000_000 },
     ]) {
       await expect(driverOn({ driverOptions })).rejects.toMatchObject({
         code: 'CONFIG_INVALID',
       });
     }
     await expect(
-      driverOn({ driverOptions: { expirationMs: 120_000 } }),
+      driverOn({ driverOptions: { expirationMs: 120_000, maxFeeLimit: 500_000_000n } }),
     ).resolves.toBeDefined();
   });
 

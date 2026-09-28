@@ -489,6 +489,49 @@ describe('Tron end to end', () => {
       expect(env.node.balance(RECIPIENT)).toBe(13n);
     });
 
+    it('refuses before signing a fee limit that one endpoint inflates past maxFeeLimit (F4-R28)', async () => {
+      // A forged maximum fee limit and a 100× energy price: the estimate needs ~296 TRX,
+      // above the 100 TRX default bound, and an assert-style failure would burn it all.
+      const lying = { getMaxFeeLimit: 2n ** 60n, getEnergyFee: 10_000n };
+      const { signer, calls } = countingSigner();
+      const env = createTronEnv({ signer, node: { params: lying } });
+      withToken(env);
+      await expect(
+        env.run(
+          env.bc.transfer(
+            { asset: TOKEN, to: RECIPIENT, amount: 25n },
+            { idempotencyKey: 'fee' },
+          ),
+        ),
+      ).rejects.toMatchObject({
+        code: 'INVALID_INTENT',
+        message:
+          'the transfer needs more energy than maxFeeLimit allows (a Tron handle option, in sun)',
+      });
+      const op = await env.stores.operations.getByKey('default', 'fee');
+      expect(op?.state).toBe('failed');
+      expect(op?.attempts ?? []).toHaveLength(0);
+      expect(calls()).toBe(0);
+      // The operator's own bound lifts it: the same transfer then signs once and lands.
+      const lifted = createTronEnv({
+        signer,
+        node: { params: lying },
+        options: { maxFeeLimit: 400_000_000n },
+      });
+      withToken(lifted);
+      const sub = await lifted.run(
+        lifted.bc.transfer(
+          { asset: TOKEN, to: RECIPIENT, amount: 25n },
+          { idempotencyKey: 'fee' },
+        ),
+      );
+      const { signed } = await storedAttempt(lifted, sub.operationId);
+      expect(signed.feeLimit).toBe(355_800_000);
+      await lifted.mineWhile(sub.wait({ finality: 'final' }));
+      expect(lifted.node.tokenBalance(USDT, RECIPIENT)).toBe(25n);
+      expect(calls()).toBe(1);
+    });
+
     it("keeps the Operation when a lone endpoint answers 'rejected' for bytes it relayed (spec §8.2)", async () => {
       const { signer, calls } = countingSigner();
       const env = createTronEnv({ signer });

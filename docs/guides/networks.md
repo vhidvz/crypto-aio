@@ -84,17 +84,23 @@ optional memo. [Sending and receiving](./transactions.md) covers what else diffe
   (`chains.tron.options.energyMarginPercent`, an integer from 0 to 1,000). The transaction's
   `feeLimit` covers all of it, because Tron caps a call's energy by `feeLimit` even when
   staked TRX pays for it; the `energy` charge is the fee limit less what your staked energy
-  covers. The fee limit is at most the network's maximum, `getMaxFeeLimit` (15,000 TRX
-  today), and at most 2^53 − 1 sun: a transfer whose estimate needs more is refused with
-  `INVALID_INTENT` before signing. That maximum is the only ceiling the library applies, and
-  the node reports it, as it reports the prices and the simulated energy. To cap what one
-  transfer may burn, compare `ctx.fee` in your `beforeSign` hook
-  ([Keys, signers and secrets](./security.md)) with your own limit. The only override is
-  `{ feeLimit }` in sun, as a bigint (`TronFeeOverride`), on TRC-20 transfers, from the
-  estimate up to that maximum: a lower cap fails on chain (`OUT_OF_ENERGY`) and still pays.
-  A token's energy use can rise after the estimate (dynamic energy); when the margin is not
-  enough, the transfer is proven failed (`TX_REVERTED`, reason `out of energy`) and its fee
-  is burned.
+  covers. The node reports the simulated energy, the energy price and the network's maximum
+  fee limit (`getMaxFeeLimit`, 15,000 TRX today), and a call that fails on chain can burn its
+  whole fee limit. So the fee limit is also bounded by your own
+  `chains.tron.options.maxFeeLimit`, which no endpoint can raise: sun as a bigint, from 1 to
+  2^53 − 1, and 100 TRX by default (`DEFAULT_MAX_FEE_LIMIT`, enough for a transfer to a new
+  holder, about 130,000 energy, at 420 sun per energy with the margin). The fee limit is the
+  estimate plus its margin, at most the network's maximum and at most `maxFeeLimit`. A
+  transfer whose simulated energy alone needs more is refused with `INVALID_INTENT` before
+  signing; when `maxFeeLimit` is the bound, the message names it and `error.details` carries
+  `required` and `maxFeeLimit` (sun, as decimal strings), so raise it for a costlier token.
+  The only override is `{ feeLimit }` in sun, as a bigint (`TronFeeOverride`), on TRC-20
+  transfers, from the estimate up to both bounds: a lower cap fails on chain
+  (`OUT_OF_ENERGY`) and still pays. A token's energy use can rise after the estimate (dynamic
+  energy); when the margin, or a bound that cut it, is not enough, the transfer is proven
+  failed (`TX_REVERTED`, reason `out of energy`) and its fee is burned. For a tighter policy
+  per transfer, compare `ctx.fee` in your `beforeSign` hook
+  ([Keys, signers and secrets](./security.md)) with your own limit.
 - **Expiry, not replacement.** A transaction expires about `expirationMs` after its
   reference block, the head it was built on (or after the local clock, if that is earlier):
   60 s by default, from 10 s to 5 minutes (`chains.tron.options.expirationMs`). A build
@@ -183,7 +189,8 @@ configure({
       provider: ['tron', 'own-node'], // proofs cross-check both
       indexer: 'tron', // address history (TronGrid /v1)
       wallet: 'tron-hot',
-      options: { expirationMs: 120_000 }, // default 60_000, from 10_000 to 300_000
+      // expirationMs: default 60_000, from 10_000 to 300_000; maxFeeLimit: sun, default 100 TRX
+      options: { expirationMs: 120_000, maxFeeLimit: 50_000_000n },
     },
   },
 });
@@ -195,7 +202,7 @@ const sub = await tron.transfer(
   { idempotencyKey: 'withdrawal-42' },
 );
 await sub.wait({ finality: 'final' }); // the solidified block
-const cap: TronFeeOverride = { feeLimit: 30_000_000n }; // as `fee`: sun, at least the estimate
+const cap: TronFeeOverride = { feeLimit: 30_000_000n }; // as `fee`: sun, estimate to maxFeeLimit
 const { energy } = await tron.ext.tron.getResources(to);
 const client = await native(tron, 'tronweb'); // a TronWeb on the same transport
 ```

@@ -40,6 +40,8 @@ const PARAMS: ChainParameters = {
   maxFeeLimit: 15_000_000_000n,
 };
 const NONE = { activated: true, freeBandwidth: 0n, stakedBandwidth: 0n, energy: 0n };
+/** The largest handle bound (2^53 − 1 sun): only the network's maximum binds by default here. */
+const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 const input = (extra: Partial<TronFeeInput> = {}): TronFeeInput => ({
   fee: 'normal',
   params: PARAMS,
@@ -48,6 +50,7 @@ const input = (extra: Partial<TronFeeInput> = {}): TronFeeInput => ({
   activation: false,
   memo: false,
   marginPercent: 20,
+  maxFeeLimit: MAX_SAFE,
   ...extra,
 });
 const labels = (fee: ReturnType<typeof tronFee>) =>
@@ -204,7 +207,15 @@ describe('tronFee', () => {
     expect(tronFee(input({ energy: 125_000_000n })).details).toMatchObject({
       feeLimit: 15_000_000_000n,
     });
-    expect(() => tronFee(input({ energy: 125_000_001n }))).toThrow(
+    // F4-R28: min(estimate × margin, network maximum, maxFeeLimit). The ceiling caps the
+    // margin; only a simulated need above it is refused (a lower fee limit fails on chain).
+    expect(tronFee(input({ energy: 125_000_001n })).details).toMatchObject({
+      feeLimit: 15_000_000_000n,
+    });
+    expect(tronFee(input({ energy: 150_000_000n })).details).toMatchObject({
+      feeLimit: 15_000_000_000n,
+    });
+    expect(() => tronFee(input({ energy: 150_000_001n }))).toThrow(
       invalidIntent(/maximum fee limit/),
     );
     const at = (feeLimit: bigint, params = PARAMS) =>
@@ -220,13 +231,90 @@ describe('tronFee', () => {
     }
     expect(error).toEqual(invalidIntent(/maximum fee limit/));
     expect(String((error as Error).message)).not.toContain('15000000001');
-    // A network maximum above what a transaction can carry (2^53 − 1, the codec's bound).
+    // A network maximum above what a transaction can carry: the handle's bound, at most
+    // 2^53 − 1 (the codec's), binds, and the refusal names it, not the network (F4-R9 M2).
     const huge = { ...PARAMS, maxFeeLimit: 2n ** 64n };
     expect(at(2n ** 53n - 1n, huge).details).toMatchObject({ feeLimit: 2n ** 53n - 1n });
-    expect(() => at(2n ** 53n, huge)).toThrow(invalidIntent(/maximum fee limit/));
+    const optionBound = invalidIntent(/^feeLimit is above maxFeeLimit, /);
+    expect(() => at(2n ** 53n, huge)).toThrow(optionBound);
     expect(() =>
       tronFee(input({ energy: 2n ** 53n, params: { ...huge, energyFee: 1n } })),
-    ).toThrow(invalidIntent(/maximum fee limit/));
+    ).toThrow(invalidIntent(/^the transfer needs more energy than maxFeeLimit allows/));
+  });
+
+  it('bounds the fee limit by the handle option maxFeeLimit, whatever the node reports (F4-R28)', () => {
+    // 100 TRX, the default: a node that inflates the simulated energy, the energy price or its
+    // maximum fee limit cannot set a larger fee limit, which an assert-style failure burns.
+    const bound = 100_000_000n;
+    const lying = { ...PARAMS, maxFeeLimit: 2n ** 60n };
+    const at = (extra: Partial<TronFeeInput>) =>
+      tronFee(input({ maxFeeLimit: bound, params: lying, ...extra }));
+    // Within the bound, the estimate is unchanged: 30,000 energy + 20% at 100 sun.
+    expect(at({ energy: 30_000n }).details).toMatchObject({ feeLimit: 3_600_000n });
+    // A need of exactly the bound passes; the margin above it is capped, not refused.
+    expect(at({ energy: 1_000_000n }).details).toMatchObject({ feeLimit: bound });
+    expect(at({ energy: 900_000n }).details).toMatchObject({ feeLimit: bound });
+    expect(labels(at({ energy: 900_000n })).energy).toBe(bound);
+    // A need above it is refused before anything is built or signed, naming the option, and
+    // never by a silent cap that would fail on chain and still pay.
+    const refusal = (extra: Partial<TronFeeInput>): unknown => {
+      try {
+        return at(extra);
+      } catch (error) {
+        return error;
+      }
+    };
+    for (const extra of [
+      { energy: 1_000_001n },
+      { energy: 30_000n, params: { ...lying, energyFee: 1_000_000n } },
+    ]) {
+      const error = refusal(extra);
+      expect(error).toEqual(
+        expect.objectContaining({
+          code: 'INVALID_INTENT',
+          retryable: false,
+          message:
+            'the transfer needs more energy than maxFeeLimit allows (a Tron handle option, in sun)',
+        }),
+      );
+    }
+    expect((refusal({ energy: 1_000_001n }) as { details?: unknown }).details).toEqual({
+      required: '100000100',
+      maxFeeLimit: '100000000',
+    });
+    // An explicit { feeLimit } is bounded too: the handle's bound is the operator's own.
+    expect(at({ energy: 30_000n, fee: { feeLimit: bound } }).details).toMatchObject({
+      feeLimit: bound,
+    });
+    expect(refusal({ energy: 30_000n, fee: { feeLimit: bound + 1n } })).toEqual(
+      invalidIntent(/^feeLimit is above maxFeeLimit, /),
+    );
+    // Where the network's maximum is lower, it binds and is named: the option cannot lift it.
+    const low = { ...PARAMS, maxFeeLimit: 50_000_000n };
+    expect(() => at({ energy: 600_000n, params: low })).toThrow(
+      invalidIntent(
+        /^the transfer needs more energy than the network's maximum fee limit$/,
+      ),
+    );
+    expect(() =>
+      at({ energy: 30_000n, params: low, fee: { feeLimit: 50_000_001n } }),
+    ).toThrow(invalidIntent(/^feeLimit is above the network's maximum fee limit$/));
+    // A tie names the network too: raising the option would not help.
+    expect(() =>
+      at({ energy: 1_000_001n, params: { ...PARAMS, maxFeeLimit: bound } }),
+    ).toThrow(invalidIntent(/network's maximum fee limit/));
+    // A TRX transfer has no fee limit, so the bound never applies to it.
+    expect(
+      tronFee(input({ maxFeeLimit: 1n, activation: true })).details,
+    ).not.toHaveProperty('feeLimit');
+  });
+
+  it('refuses a handle bound outside 1 to 2^53 − 1 sun (CONFIG_INVALID)', () => {
+    for (const maxFeeLimit of [0n, -1n, MAX_SAFE + 1n, 5 as unknown as bigint]) {
+      expect(() => tronFee(input({ energy: 30_000n, maxFeeLimit }))).toThrow(
+        expect.objectContaining({ code: 'CONFIG_INVALID' }),
+      );
+    }
   });
 
   it('accepts a fee speed or exactly { feeLimit: bigint > 0 }; anything else is INVALID_INTENT', () => {
@@ -774,6 +862,7 @@ describe('classifyBroadcast on java-tron answers (scripted node)', () => {
       activation: !(await run(api.account(RECIPIENT_HEX, READ))).exists,
       memo: true,
       marginPercent: 20,
+      maxFeeLimit: 100_000_000n,
     });
     expect(await send(created.hex)).toEqual({ kind: 'accepted' });
     node.mine();
@@ -803,6 +892,7 @@ describe('classifyBroadcast on java-tron answers (scripted node)', () => {
       memo: false,
       energy: call.energy,
       marginPercent: 20,
+      maxFeeLimit: 100_000_000n,
     });
     const feeLimit = fee.details.feeLimit as bigint;
     const sent = signedTransaction(raw(contract, { feeLimit: Number(feeLimit) }));

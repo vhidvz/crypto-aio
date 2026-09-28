@@ -23,6 +23,7 @@ import {
   type FeeSpeed,
 } from '../../core/model/fee';
 import { malformed, type ChainParameters } from './http';
+import { MAX_ENCODABLE_FEE_LIMIT } from './network';
 import type { TronFeeDetails, TronFeeOverride, TronResources } from './types';
 
 export interface TronFeeInput {
@@ -42,17 +43,74 @@ export interface TronFeeInput {
    * network config's `energyMarginPercent`, an integer from 0 to 1,000.
    */
   readonly marginPercent: number;
+  /**
+   * The handle's fee-limit bound in sun (`TronNetworkConfig.maxFeeLimit`, F4-R28): from 1 to
+   * 2^53 − 1, the largest `fee_limit` the codec writes exactly (lesson 19).
+   */
+  readonly maxFeeLimit: bigint;
 }
 
-/**
- * The largest `fee_limit` a transaction can carry: the codec writes this `int64` field from
- * a JS number and refuses anything above 2^53 − 1 (lesson 19). A network whose
- * `getMaxFeeLimit` is higher is capped here, so an estimate is never unbuildable.
- */
-const MAX_ENCODABLE_FEE_LIMIT = BigInt(Number.MAX_SAFE_INTEGER);
+/** The fee-limit ceiling, and which bound sets it. */
+export interface FeeLimitCeiling {
+  readonly value: bigint;
+  /** `network`: `getMaxFeeLimit`, which no option can lift; `option`: the handle's bound. */
+  readonly bound: 'network' | 'option';
+}
 
 function invalid(message: string): ValidationError {
   return new ValidationError('INVALID_INTENT', message);
+}
+
+/**
+ * The largest fee limit a TRC-20 transfer may carry (F4-R28; one function for the estimate and
+ * its size bound, F4-R12 M4): the network's `getMaxFeeLimit` (VMActuator refuses more) and the
+ * handle's `maxFeeLimit`. The node reports its maximum, as it reports the energy price and the
+ * simulated energy, so only the handle's bound is the operator's own. That bound is at most
+ * 2^53 − 1, so the ceiling is always encodable; on a tie the network is named, since raising
+ * the option would not help.
+ */
+export function feeLimitCeiling(
+  params: Pick<ChainParameters, 'maxFeeLimit'>,
+  maxFeeLimit: bigint,
+): FeeLimitCeiling {
+  if (
+    typeof maxFeeLimit !== 'bigint' ||
+    maxFeeLimit < 1n ||
+    maxFeeLimit > MAX_ENCODABLE_FEE_LIMIT
+  ) {
+    // The network config bounds it; anything else is a driver bug, never the caller's intent.
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'maxFeeLimit must be a bigint of sun from 1 to 2^53 − 1',
+    );
+  }
+  return params.maxFeeLimit <= maxFeeLimit
+    ? { value: params.maxFeeLimit, bound: 'network' }
+    : { value: maxFeeLimit, bound: 'option' };
+}
+
+/**
+ * What exceeds the ceiling, named after the bound that sets it. A need above the handle's
+ * bound carries it and the need (decimal strings), so the caller sees what to allow.
+ */
+function aboveCeiling(ceiling: FeeLimitCeiling, need?: bigint): ValidationError {
+  if (ceiling.bound === 'network') {
+    return invalid(
+      need !== undefined
+        ? "the transfer needs more energy than the network's maximum fee limit"
+        : "feeLimit is above the network's maximum fee limit",
+    );
+  }
+  if (need === undefined) {
+    return invalid(
+      'feeLimit is above maxFeeLimit, the Tron handle option that bounds it (in sun)',
+    );
+  }
+  return new ValidationError(
+    'INVALID_INTENT',
+    'the transfer needs more energy than maxFeeLimit allows (a Tron handle option, in sun)',
+    { details: { required: need.toString(), maxFeeLimit: ceiling.value.toString() } },
+  );
 }
 
 /**
@@ -115,24 +173,22 @@ export function tronFee(input: TronFeeInput): FeeEstimateDraft {
   let energyDetails: Pick<TronFeeDetails, 'energy' | 'energyPrice' | 'feeLimit'> = {};
   if (input.energy !== undefined) {
     const need = ceilDiv(input.energy * BigInt(100 + marginPercent), 100n);
-    const minimum = need * params.energyFee;
-    // VMActuator: `feeLimit must be >= 0 and <= getMaxFeeLimit`; and what the codec encodes.
-    const ceiling = min(params.maxFeeLimit, MAX_ENCODABLE_FEE_LIMIT);
-    if (minimum > ceiling) {
-      throw invalid(
-        "the transfer needs more energy than the network's maximum fee limit",
-      );
-    }
-    let feeLimit = minimum;
+    // F4-R28: fee limit = min(estimate × margin, network maximum, maxFeeLimit). The ceiling
+    // caps the margin, never the simulated energy itself: a fee limit below that fails on
+    // chain (out of energy) and still pays, so a need above the ceiling is refused before
+    // anything is signed.
+    const ceiling = feeLimitCeiling(params, input.maxFeeLimit);
+    const cost = input.energy * params.energyFee;
+    if (cost > ceiling.value) throw aboveCeiling(ceiling, cost);
+    const estimate = min(need * params.energyFee, ceiling.value);
+    let feeLimit = estimate;
     if (override) {
-      if (override.feeLimit < minimum) {
+      if (override.feeLimit < estimate) {
         throw invalid(
           'feeLimit is below the estimated energy cost; the transaction would fail on chain and still pay',
         );
       }
-      if (override.feeLimit > ceiling) {
-        throw invalid("feeLimit is above the network's maximum fee limit");
-      }
+      if (override.feeLimit > ceiling.value) throw aboveCeiling(ceiling);
       feeLimit = override.feeLimit;
     }
     const covered = resources.energy * params.energyFee;

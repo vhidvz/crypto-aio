@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for `native(bc, 'tronweb')`; also `bc.ext.tron.getResources(address)`, a typed
   `ChainRegistry` entry for `tron`, and the root type exports `TronExt`, `TronFeeDetails`,
   `TronFeeOverride`, `TronResources` and `TronExpiryOrdering`.
+- The Tron handle option `maxFeeLimit` (sun, a bigint; default 100 TRX, exported as
+  `DEFAULT_MAX_FEE_LIMIT`): a TRC-20 transfer's fee limit is at most min(the estimate plus
+  its margin, the network's maximum, `maxFeeLimit`), and a transfer whose simulated energy
+  needs more is refused with `INVALID_INTENT` before signing. The node reports its maximum,
+  the energy price and the simulated energy, so this is the one bound no endpoint can raise.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers

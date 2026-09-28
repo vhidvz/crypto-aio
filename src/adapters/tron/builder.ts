@@ -66,7 +66,7 @@ import {
 import { decodeTransferCall, encodeTransfer } from './abi';
 import { addressFromPublicKey, toHexAddress } from './address';
 import { classifyOwnBroadcast, txBytesOf } from './errors';
-import { feeSun, tronFee } from './fees';
+import { feeLimitCeiling, feeSun, tronFee } from './fees';
 import { BROADCAST, READ, malformed, withSignal, type TronBlockHeader } from './http';
 import {
   MAX_EXPIRATION_MS,
@@ -224,13 +224,15 @@ function summaryTransfer(
 
 /**
  * The fee fields a build writes, from this transfer's own `tron` estimate: the bandwidth
- * the estimate covers and, for TRC-20 only, a positive fee limit. The limit is handed to the
- * codec as a number and its `safe()` refuses one it cannot hold exactly (lesson 19): it is
- * never rounded into the bytes.
+ * the estimate covers and, for TRC-20 only, a positive fee limit within the handle's
+ * `maxFeeLimit` (F4-R28), wherever the estimate came from. The limit is handed to the codec
+ * as a number and its `safe()` refuses one it cannot hold exactly (lesson 19): it is never
+ * rounded into the bytes.
  */
 function feeFields(
   fee: FeeEstimateDraft,
   p: Prepared,
+  maxFeeLimit: bigint,
 ): { readonly bandwidth: bigint; readonly feeLimit?: number } {
   const details = fee.details as Partial<TronFeeDetails>;
   const mismatch = () =>
@@ -247,6 +249,11 @@ function feeFields(
     return { bandwidth: details.bandwidth };
   }
   if (typeof details.feeLimit !== 'bigint' || details.feeLimit <= 0n) throw mismatch();
+  if (details.feeLimit > maxFeeLimit) {
+    throw invalid(
+      'the fee limit is above maxFeeLimit, the Tron handle option that bounds it (in sun)',
+    );
+  }
   return { bandwidth: details.bandwidth, feeLimit: Number(details.feeLimit) };
 }
 
@@ -387,9 +394,9 @@ export function createTronBuilder(ctx: TronContext): {
         p.token === undefined ? undefined : tokenEnergy(p, build.signal),
       ]);
       // An upper bound of the built size: no expiration jitter, a later timestamp, and the
-      // largest fee limit a build can carry, min(getMaxFeeLimit, 2^53 − 1) (lesson 19).
+      // largest fee limit a build can carry (the ceiling `tronFee` applies, F4-R12 M4).
       const now = ctx.clock.now();
-      const ceiling = params.maxFeeLimit < MAX_SAFE ? params.maxFeeLimit : MAX_SAFE;
+      const ceiling = feeLimitCeiling(params, config.maxFeeLimit).value;
       const provisional = codec.encodeRaw({
         ...refFields(block),
         expiration: Math.min(block.timestamp, now) + config.expirationMs,
@@ -407,6 +414,7 @@ export function createTronBuilder(ctx: TronContext): {
         memo: p.memo !== undefined,
         ...(energy !== undefined ? { energy } : {}),
         marginPercent: config.energyMarginPercent,
+        maxFeeLimit: config.maxFeeLimit,
       });
     },
 
@@ -430,7 +438,7 @@ export function createTronBuilder(ctx: TronContext): {
     async build(intent, fee, build): Promise<UnsignedTx> {
       const p = prepare(intent);
       const key = signingKey(build.keys, p.owner);
-      const fees = feeFields(fee, p);
+      const fees = feeFields(fee, p, config.maxFeeLimit);
       const block = await head(build.signal);
       const now = ctx.clock.now();
       if (now - block.timestamp > config.expirationMs / 2) {

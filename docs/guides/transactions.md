@@ -73,8 +73,9 @@ check still runs.
 On Tron, `slow`, `normal` and `fast` give the same estimate, since Tron has no fee market.
 The `tron` fee has `bandwidth`, `energy`, `activation` and `memo` charges, all in TRX and
 each possibly 0, as an `upper` bound. A TRC-20 transfer's `feeLimit` covers its simulated
-energy plus a margin, up to the network's maximum fee limit; `{ feeLimit }` may raise it to
-that maximum but never set it below the estimate.
+energy plus a margin, up to the network's maximum fee limit and the handle's `maxFeeLimit`
+option (100 TRX by default); `{ feeLimit }` may raise it to the lower of the two but never
+set it below the estimate.
 [Tron networks](./networks.md#tron-networks) explains the charges and the ceiling.
 
 ### Cold, offline and asynchronous signing

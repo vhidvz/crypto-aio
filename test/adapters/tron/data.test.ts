@@ -30,6 +30,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
         identity: genesis,
         expirationMs: 60_000,
         energyMarginPercent: 20,
+        maxFeeLimit: 100_000_000n,
       });
     }
     expect(TRON_CHAIN).toMatchObject({
@@ -165,13 +166,14 @@ describe('Tron chain data (verified, Appendix A)', () => {
     }
   });
 
-  it('refuses an unknown option key, naming the key and never its value (lesson 10)', () => {
+  it('refuses an unknown option key, listing the accepted names and echoing neither the key nor its value (lesson 10, F3-R16)', () => {
     const nile = TRON_CHAIN.networks.nile as NetworkInfo;
     for (const [key, value] of [
       ['expirationMS', 120_000],
       ['feeLimit', 'value-that-must-stay-private'],
       ['constructor', 7_777],
       ['extra', undefined],
+      ['sk_live_0123456789abcdef', 1],
     ] as const) {
       let caught: unknown;
       try {
@@ -179,11 +181,70 @@ describe('Tron chain data (verified, Appendix A)', () => {
       } catch (error) {
         caught = error;
       }
-      expect(caught).toMatchObject({ code: 'CONFIG_INVALID' });
+      expect(caught).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message:
+          "Tron network tron:nile: unknown option; the Tron driver's options are 'expirationMs', 'energyMarginPercent' and 'maxFeeLimit'",
+      });
       const { message } = caught as Error;
-      expect(message).toContain(`unknown option '${key}'`);
+      expect(message).not.toContain(key);
       expect(message).not.toContain(String(value));
     }
+  });
+
+  it('bounds the fee limit by maxFeeLimit: 100 TRX by default, options › network params › default (F4-R28)', () => {
+    const nile = TRON_CHAIN.networks.nile as NetworkInfo;
+    const own = (params: Record<string, unknown>): NetworkInfo => ({ ...nile, params });
+    const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+    expect(tronNetworkConfig(TRON_CHAIN, nile).maxFeeLimit).toBe(100_000_000n);
+    expect(tronNetworkConfig(TRON_CHAIN, nile, { maxFeeLimit: 1n }).maxFeeLimit).toBe(1n);
+    expect(
+      tronNetworkConfig(TRON_CHAIN, nile, { maxFeeLimit: MAX_SAFE }).maxFeeLimit,
+    ).toBe(MAX_SAFE);
+    // A network of your own may set its own bound; a handle option still wins.
+    expect(
+      tronNetworkConfig(TRON_CHAIN, own({ maxFeeLimit: 250_000_000n })).maxFeeLimit,
+    ).toBe(250_000_000n);
+    expect(
+      tronNetworkConfig(TRON_CHAIN, own({ maxFeeLimit: 250_000_000n }), {
+        maxFeeLimit: 5_000_000n,
+      }).maxFeeLimit,
+    ).toBe(5_000_000n);
+    // Sun as a bigint, from 1 to 2^53 − 1 (what the codec writes exactly, lesson 19); the
+    // message names where the value came from, never the value.
+    const refusal = (network: NetworkInfo, options?: Record<string, unknown>): string => {
+      let caught: unknown;
+      try {
+        tronNetworkConfig(TRON_CHAIN, network, options);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: 'CONFIG_INVALID' });
+      return (caught as Error).message;
+    };
+    for (const value of [
+      0n,
+      -1n,
+      MAX_SAFE + 1n,
+      2n ** 64n,
+      100_000_000,
+      '100000000',
+      null,
+    ]) {
+      expect(refusal(nile, { maxFeeLimit: value })).toBe(
+        'Tron network tron:nile: maxFeeLimit must be a bigint of sun from 1 to 2^53 − 1',
+      );
+      expect(refusal(own({ maxFeeLimit: value }))).toBe(
+        'Tron network tron:nile: params.maxFeeLimit must be a bigint of sun from 1 to 2^53 − 1',
+      );
+      // A bad network value fails loudly even where an option would override it.
+      expect(refusal(own({ maxFeeLimit: value }), { maxFeeLimit: 1n })).toContain(
+        'params.maxFeeLimit',
+      );
+    }
+    expect(refusal(nile, { maxFeeLimit: 12_345_678_901_234_567n })).not.toContain(
+      '12345678901234567',
+    );
   });
 
   it('refuses a capability override the Tron driver cannot serve (F4-R2 M3)', () => {
@@ -243,16 +304,19 @@ describe('Tron chain data (verified, Appendix A)', () => {
     );
     // A name is shown only when short and plain, so a pasted value never reaches a message.
     const long = 'x'.repeat(100_000);
-    for (const [network, options] of [
-      [withCapabilities({ add: [long] }), undefined],
-      [withCapabilities({ remove: [long] }), undefined],
-      [withCapabilities({ add: ['memo\nsecret-value'] }), undefined],
-      [nile, { [long]: 1 }],
-    ] as const) {
-      const message = refusal(network, options);
+    for (const network of [
+      withCapabilities({ add: [long] }),
+      withCapabilities({ remove: [long] }),
+      withCapabilities({ add: ['memo\nsecret-value'] }),
+    ]) {
+      const message = refusal(network);
       expect(message).toContain('(name not shown)');
       expect(message.length).toBeLessThan(200);
       expect(message).not.toContain('secret-value');
     }
+    // An option key is never shown at all: the refusal lists the accepted names instead.
+    const message = refusal(nile, { [long]: 1 });
+    expect(message).toContain('unknown option;');
+    expect(message.length).toBeLessThan(200);
   });
 });

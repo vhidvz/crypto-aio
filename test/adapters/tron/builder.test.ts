@@ -219,22 +219,105 @@ describe('Tron builder: fees and funds', () => {
   });
 
   it('keeps an estimate buildable when the network maximum fee limit exceeds 2^53 − 1', async () => {
-    const h = setup({ node: { params: { getMaxFeeLimit: 2n ** 60n } } });
+    const h = setup({
+      node: { params: { getMaxFeeLimit: 2n ** 60n } },
+      driverOptions: { maxFeeLimit: MAX_SAFE },
+    });
     const fee = await h.run(h.builder.estimateFee(token(10n), h.build));
     expect(fee.details).toMatchObject({ feeLimit: 3_558_000n });
     const unsigned = await h.run(h.builder.build(token(10n), fee, h.build));
     expect(decodeRawData(unsigned.payload.data).feeLimit).toBe(3_558_000);
     // Lesson 19 boundaries: 2^53 − 1 is written exactly; 2^53 goes through the codec's
-    // safe() and is refused, never rounded.
+    // safe() and is refused, never rounded (a config beyond what tronNetworkConfig accepts,
+    // so only the codec can refuse it).
     const limit = (feeLimit: bigint) => ({
       ...fee,
       details: { ...fee.details, feeLimit },
     });
     const max = await h.run(h.builder.build(token(10n), limit(MAX_SAFE), h.build));
     expect(decodeRawData(max.payload.data).feeLimit).toBe(Number.MAX_SAFE_INTEGER);
+    const unbounded = createTronBuilder({
+      ...h.ctx,
+      config: { ...h.ctx.config, maxFeeLimit: 2n ** 60n },
+    });
     await expect(
-      h.run(h.builder.build(token(10n), limit(MAX_SAFE + 1n), h.build)),
-    ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+      h.run(unbounded.builder.build(token(10n), limit(MAX_SAFE + 1n), h.build)),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      message:
+        'cannot encode a Tron transaction: fee_limit must be a safe non-negative integer',
+    });
+  });
+
+  it('bounds the fee limit by maxFeeLimit (100 TRX by default), whatever one endpoint reports (F4-R28)', async () => {
+    // One endpoint forges its maximum fee limit and inflates the energy price: 29,650 energy
+    // at 10,000 sun is about 296 TRX, which an assert-style failure on chain would burn.
+    const lying = { getMaxFeeLimit: 2n ** 60n, getEnergyFee: 10_000n };
+    const h = setup({ node: { params: lying } });
+    await expect(h.run(h.builder.estimateFee(token(10n), h.build))).rejects.toMatchObject(
+      {
+        code: 'INVALID_INTENT',
+        message:
+          'the transfer needs more energy than maxFeeLimit allows (a Tron handle option, in sun)',
+        details: { required: '296500000', maxFeeLimit: '100000000' },
+      },
+    );
+    // It inflates the simulated energy instead: the same bound holds.
+    const inflated = setup({ node: { params: { getMaxFeeLimit: 2n ** 60n } } });
+    const transfer = encodeTransfer(RECIPIENT, 10n);
+    inflated.node.intercept('main', '/wallet/triggerconstantcontract', (request) =>
+      request.json<{ data: string }>().data === transfer
+        ? {
+            json: {
+              constant_result: ['00'.repeat(31) + '01'],
+              result: { result: true },
+              energy_used: 5_000_000,
+              transaction: { ret: [{}] },
+            },
+          }
+        : undefined,
+    );
+    await expect(
+      inflated.run(inflated.builder.estimateFee(token(10n), inflated.build)),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      details: { maxFeeLimit: '100000000' },
+    });
+    // The operator may lift the bound: the fee limit is then the estimate, up to that bound.
+    const lifted = setup({
+      node: { params: lying },
+      driverOptions: { maxFeeLimit: 400_000_000n },
+    });
+    const fee = await lifted.run(lifted.builder.estimateFee(token(10n), lifted.build));
+    // (14,650 + 15,000 new-holder) × 1.2 = 35,580 energy at 10,000 sun.
+    expect(fee.details).toMatchObject({ energy: 35_580n, feeLimit: 355_800_000n });
+    // A bound between the need (296.5 TRX) and the margin caps the margin.
+    const capped = setup({
+      node: { params: lying },
+      driverOptions: { maxFeeLimit: 300_000_000n },
+    });
+    const at = await capped.run(capped.builder.estimateFee(token(10n), capped.build));
+    expect(at.details).toMatchObject({ feeLimit: 300_000_000n });
+    const unsigned = await capped.run(capped.builder.build(token(10n), at, capped.build));
+    expect(decodeRawData(unsigned.payload.data).feeLimit).toBe(300_000_000);
+  });
+
+  it('refuses before signing a fee limit above maxFeeLimit, wherever the estimate came from (F4-R28)', async () => {
+    const h = setup();
+    const fee = await h.run(h.builder.estimateFee(token(10n), h.build));
+    const limit = (feeLimit: bigint) => ({
+      ...fee,
+      details: { ...fee.details, feeLimit },
+    });
+    const at = await h.run(h.builder.build(token(10n), limit(100_000_000n), h.build));
+    expect(decodeRawData(at.payload.data).feeLimit).toBe(100_000_000);
+    await expect(
+      h.run(h.builder.build(token(10n), limit(100_000_001n), h.build)),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      message:
+        'the fee limit is above maxFeeLimit, the Tron handle option that bounds it (in sun)',
+    });
   });
 
   it('refuses a single TRX transfer above 2^53 - 1 sun before any I/O (D20, lesson 19)', async () => {
@@ -503,11 +586,11 @@ describe('Tron builder: build and assemble', () => {
       [token(10n), withDetails(tokenFee, { feeLimit: -1n }), notTron],
       [token(10n), withDetails(tokenFee, { feeLimit: 3_558_000 }), notTron],
       [trx(TRX), withDetails(trxFee, { bandwidth: undefined }), notTron],
-      // Lesson 19 through the codec's safe(): never rounded into the raw data.
+      // Above the handle's bound (F4-R28), before the codec's safe() (pinned above).
       [
         token(10n),
         withDetails(tokenFee, { feeLimit: MAX_SAFE + 1n }),
-        /fee_limit must be/,
+        /above maxFeeLimit/,
       ],
       // Smaller than the transaction it would pay for.
       [trx(TRX), withDetails(trxFee, { bandwidth: 100n }), /does not cover/],

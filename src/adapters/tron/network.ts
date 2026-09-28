@@ -35,6 +35,18 @@ export const MAX_EXPIRATION_MS = 300_000;
  */
 export const TAPOS_WINDOW = 65_536n;
 export const DEFAULT_ENERGY_MARGIN_PERCENT = 20;
+/**
+ * The largest fee limit a TRC-20 transfer carries unless the handle's `maxFeeLimit` option
+ * allows more: 100 TRX, in sun (F4-R28). The network's own maximum (`getMaxFeeLimit`, 15,000
+ * TRX on mainnet), the energy price and the simulated energy all come from one endpoint's
+ * answer, and a call that fails through an INVALID opcode (a Solidity `assert`) burns its
+ * whole fee limit, so this operator bound is the only one no node can raise. It covers a
+ * TRC-20 transfer to a new holder (about 130,000 energy) at 420 sun per energy, margin
+ * included.
+ */
+export const DEFAULT_MAX_FEE_LIMIT = 100_000_000n;
+/** The largest `fee_limit` the codec writes exactly (lesson 19): 2^53 − 1 sun. */
+export const MAX_ENCODABLE_FEE_LIMIT = BigInt(Number.MAX_SAFE_INTEGER);
 /** Memo bytes (UTF-8) accepted in `raw_data.data` (D9). */
 export const MAX_MEMO_BYTES = 256;
 
@@ -43,6 +55,8 @@ export interface TronNetworkConfig {
   readonly identity: string;
   readonly expirationMs: number;
   readonly energyMarginPercent: number;
+  /** The largest fee limit a transfer may carry, in sun: from 1 to 2^53 − 1 (F4-R28). */
+  readonly maxFeeLimit: bigint;
 }
 
 /**
@@ -50,11 +64,20 @@ export interface TronNetworkConfig {
  * refused, so a typo such as `expirationMS` fails loudly instead of leaving the default in
  * place (lesson 10).
  */
-const OPTION_KEYS: ReadonlySet<string> = new Set(['expirationMs', 'energyMarginPercent']);
+const OPTION_KEYS: readonly string[] = Object.freeze([
+  'expirationMs',
+  'energyMarginPercent',
+  'maxFeeLimit',
+]);
+/** The accepted option names, as a refusal lists them. */
+const OPTION_NAMES = `${OPTION_KEYS.slice(0, -1)
+  .map((key) => `'${key}'`)
+  .join(', ')} and '${OPTION_KEYS.at(-1) as string}'`;
 
 /**
- * A name from the configuration (an option key, a capability) as an error may show it: a
- * short plain identifier only, so a pasted value never reaches a message or a log.
+ * A capability name from the network entry as an error may show it: a short plain
+ * identifier only, so a pasted value never reaches a message or a log. Option keys are never
+ * shown (F3-R16).
  */
 function named(key: unknown): string {
   return typeof key === 'string' && /^[A-Za-z0-9_.:-]{1,40}$/.test(key)
@@ -116,6 +139,18 @@ function integerIn(
   return value as number;
 }
 
+/** A fee-limit bound: a bigint of sun from 1 to what the codec writes exactly (lesson 19). */
+function feeLimitBound(
+  value: unknown,
+  name: string,
+  fail: (reason: string) => never,
+): bigint {
+  if (typeof value !== 'bigint' || value < 1n || value > MAX_ENCODABLE_FEE_LIMIT) {
+    fail(`${name} must be a bigint of sun from 1 to 2^53 − 1`);
+  }
+  return value as bigint;
+}
+
 export function tronNetworkConfig(
   chain: ChainInfo,
   network: NetworkInfo,
@@ -136,10 +171,24 @@ export function tronNetworkConfig(
   if (network.feeModel !== 'tron') fail(`its fee model must be 'tron'`);
   if (network.finality.kind !== 'solidified') fail(`its finality must be 'solidified'`);
   checkCapabilities(network, fail);
-  // The error names the key only, never its value.
+  // F3-R16: the refusal lists the accepted names and shows neither the caller's key, which
+  // may be a pasted secret, nor its value.
   for (const key of Object.keys(options)) {
-    if (!OPTION_KEYS.has(key)) fail(`unknown option ${named(key)}`);
+    if (!OPTION_KEYS.includes(key)) {
+      fail(`unknown option; the Tron driver's options are ${OPTION_NAMES}`);
+    }
   }
+  // F4-R28: the handle's option, else the network entry's own, else 100 TRX. A network
+  // value is checked even where an option overrides it, so a bad entry fails loudly.
+  const ownBound = network.params?.maxFeeLimit;
+  const networkBound =
+    ownBound === undefined
+      ? undefined
+      : feeLimitBound(ownBound, 'params.maxFeeLimit', fail);
+  const maxFeeLimit =
+    options.maxFeeLimit !== undefined
+      ? feeLimitBound(options.maxFeeLimit, 'maxFeeLimit', fail)
+      : (networkBound ?? DEFAULT_MAX_FEE_LIMIT);
   return {
     identity: network.identity as string,
     expirationMs:
@@ -156,5 +205,6 @@ export function tronNetworkConfig(
       options.energyMarginPercent === undefined
         ? DEFAULT_ENERGY_MARGIN_PERCENT
         : integerIn(options.energyMarginPercent, 0, 1_000, 'energyMarginPercent', fail),
+    maxFeeLimit,
   };
 }

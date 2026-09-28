@@ -50,7 +50,10 @@ export interface TronFeeDetails {
   readonly energy?: bigint;
   /** TRC-20 only: the chain's price of one energy unit, in sun (`getEnergyFee`). */
   readonly energyPrice?: bigint;
-  /** TRC-20 only: `raw_data.fee_limit`, which caps the energy the call may use. */
+  /**
+   * TRC-20 only: `raw_data.fee_limit`, which caps the energy the call may use:
+   * min(energy × price, the network's maximum, the handle's `maxFeeLimit`).
+   */
   readonly feeLimit?: bigint;
   /** A TRX transfer to an address that is not activated yet pays account creation. */
   readonly activation: boolean;
@@ -59,7 +62,8 @@ export interface TronFeeDetails {
 /**
  * An explicit Tron fee (`TransferIntent.fee`): TRC-20 transfers only. `feeLimit` (sun)
  * replaces the estimated fee limit; it may not be lower than the estimated energy cost,
- * because a lower cap makes the transaction fail on chain (`OUT_OF_ENERGY`) and still pay.
+ * because a lower cap makes the transaction fail on chain (`OUT_OF_ENERGY`) and still pay,
+ * nor higher than the network's maximum or the handle's `maxFeeLimit` option.
  */
 export type TronFeeOverride = { readonly feeLimit: bigint };
 
