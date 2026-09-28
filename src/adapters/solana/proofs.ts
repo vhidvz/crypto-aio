@@ -6,10 +6,12 @@
  * is a quorum read of `getBlock(slot, { commitment: 'finalized' })` keyed on its consensus
  * fields, so an endpoint that has not finalized it answers nothing and decides nothing.
  *
- * The expiry height itself is not taken on trust either (F5-R9): the build read it from
- * one endpoint. Before a verdict rests on it, the quorum attests that the finalized block
- * at the slot the build recorded has the transaction's blockhash and sits exactly
- * `BLOCKHASH_VALIDITY` heights below it.
+ * The expiry height itself is never taken on trust (F5-R9, F5-R10): the build read it from
+ * one endpoint. A verdict rests on the height the quorum attests for the transaction's
+ * blockhash: when the finalized block at the slot the build recorded carries it, that
+ * block's height plus `BLOCKHASH_VALIDITY` is the last valid height, whatever was recorded;
+ * otherwise the finalized block at the recorded height minus `BLOCKHASH_VALIDITY` must carry
+ * it, which confirms the recorded height without the slot (M1). Neither decides nothing.
  *
  * A transaction is proven absent (lesson 16) only by reading every block of its window
  * under finality: each block certifies its own height and its parent's hash, from the
@@ -19,6 +21,13 @@
  *
  * Lesson 18, widened: only a definitive negative proof answers "no". Every other RPC error
  * on these paths decides nothing (`undecided`: a retryable `PROVIDER_UNAVAILABLE`).
+ *
+ * Tags: every read a verdict rests on carries the contract table's proof tags (`ChainDriver`
+ * in the core's `driver/types.ts`: purpose `proof`, quorum `'proof'`), with two deliberate
+ * exceptions, both single-endpoint `monitor` reads of hints the quorum then re-attests: the
+ * finalized height behind `finalizedHead` (the one unanchored head, lesson 17), and the
+ * height-to-slot lookups of `HeightIndex` (`attestedBlock`). A wrong hint names a block the
+ * quorum does not attest at that height, so it only ever decides nothing.
  */
 import type { BlockSource, DriverBlock, ProofSource } from '../../core/driver/types';
 import { ProviderError } from '../../core/errors/error';
@@ -81,16 +90,15 @@ export function windowOf(lastValidHeight: bigint): {
 
 /** Signatures proven absent from their finalized windows, kept per driver (spec §7). */
 const ABSENT_MEMO = 1_024;
-/** Attested blockhash anchors (immutable chain data), kept per driver. */
+/** Attested last valid heights by blockhash (immutable chain data), kept per driver. */
 const ANCHOR_MEMO = 1_024;
 
 /** Library policy: an unanchored head trails one endpoint's view by this peer skew. */
 export const PEER_SKEW = 2n;
 
-/** Adds `key` to a bounded memo, dropping the oldest entry past `size`. */
-function remember(memo: Set<string>, key: string, size: number): void {
-  memo.add(key);
-  if (memo.size > size) memo.delete(memo.values().next().value as string);
+/** Drops a bounded memo's oldest entry once it holds more than `size`. */
+function trim(memo: Set<string> | Map<string, unknown>, size: number): void {
+  if (memo.size > size) memo.delete(memo.keys().next().value as string);
 }
 
 async function finalizedHeight(ctx: SolanaContext): Promise<bigint> {
@@ -121,74 +129,112 @@ async function finalizedPast(ctx: SolanaContext, height: bigint): Promise<boolea
   return past(result);
 }
 
-/** What an expiry verdict rests on: the height, and the blockhash that fixes it. */
-interface Anchor {
+/** What a build recorded with the height: one endpoint's word until attested. */
+interface Recorded {
   readonly lastValidHeight: bigint;
   readonly blockhash: string;
-  readonly slot: bigint;
+  /** Absent when not recorded, or not a slot a request can name exactly. */
+  readonly slot?: bigint;
 }
 
-/** Our own expiry ordering's height, or `undefined` for any other ordering. */
+/** Our own expiry ordering's recorded height, or `undefined` for any other ordering. */
 const lastValidOf = (ordering: OrderingData): bigint | undefined =>
   ordering.kind === 'expiry' ? ordering.lastValidHeight : undefined;
 
+/** The blockhash an expiry ordering names, if any (the key of the attested heights). */
+const blockhashOf = (ordering: OrderingData): string | undefined => {
+  const { blockhash } = ordering as Partial<SolanaExpiryOrdering>;
+  return typeof blockhash === 'string' ? blockhash : undefined;
+};
+
 /**
  * The blockhash and slot a build recorded with the height (`SolanaExpiryOrdering`). An
- * ordering without them, or with ill-typed ones, can never be attested: it decides nothing.
+ * ordering without a blockhash can never be attested: it decides nothing. A missing or
+ * ill-typed slot only leaves the slot-free check (M1).
  */
-function anchorOf(ordering: OrderingData, lastValidHeight: bigint): Anchor {
-  const { blockhash, blockhashSlot } = ordering as Partial<SolanaExpiryOrdering>;
-  if (
-    decodeBase58(blockhash, 32) === null ||
-    typeof blockhashSlot !== 'bigint' ||
-    blockhashSlot < 0n ||
-    blockhashSlot > BigInt(Number.MAX_SAFE_INTEGER)
-  ) {
+function recordedOf(ordering: OrderingData, lastValidHeight: bigint): Recorded {
+  const { blockhash, blockhashSlot: slot } = ordering as Partial<SolanaExpiryOrdering>;
+  if (decodeBase58(blockhash, 32) === null) {
     throw new ProviderError(
       'PROVIDER_UNAVAILABLE',
       'the expiry ordering does not name the blockhash its height belongs to',
     );
   }
-  return { lastValidHeight, blockhash: blockhash as string, slot: blockhashSlot };
+  const exact =
+    typeof slot === 'bigint' && slot >= 0n && slot <= BigInt(Number.MAX_SAFE_INTEGER);
+  return { lastValidHeight, blockhash: blockhash as string, ...(exact ? { slot } : {}) };
 }
 
 const BLOCKHASH_BLOCK = "the block of the transaction's blockhash";
+const LIE =
+  'the recorded expiry height disagrees with its blockhash; using the attested one';
 
 /**
- * F5-R9: attests that the finalized block at `anchor.slot` has `anchor.blockhash` and sits
- * `BLOCKHASH_VALIDITY` heights below `anchor.lastValidHeight`, which ties the height to the
- * signed message (agave answers `getLatestBlockhash` from one bank: its slot, its last
- * blockhash and that blockhash's last valid height). The quorum key is that verdict only.
- * A skipped, pruned or not yet finalized slot, a disagreement or a block elsewhere all
- * decide nothing: the recorded height is never used unattested.
+ * F5-R10: the height of the finalized block at `slot` when it carries `blockhash`, or
+ * `null` when the slot does not anchor it (another block there, a skipped or pruned slot,
+ * no finalized block yet). The quorum key is the block's height and whether its hash
+ * matches, so the height adopted is every endpoint's, never the first answer's. Only a
+ * hash match yields a height; a disagreement or any other error decides nothing.
  */
-async function attestBlockhash(ctx: SolanaContext, anchor: Anchor): Promise<void> {
-  const verdict = (result: unknown): 'anchored' | 'elsewhere' | null => {
+async function heightAtSlot(
+  ctx: SolanaContext,
+  blockhash: string,
+  slot: bigint,
+): Promise<bigint | null> {
+  const key = (result: unknown) => {
     if (result === null) return null;
     const header = blockHeader(result);
-    return header.blockhash === anchor.blockhash &&
-      header.blockHeight + BLOCKHASH_VALIDITY === anchor.lastValidHeight
-      ? 'anchored'
-      : 'elsewhere';
+    return {
+      height: header.blockHeight.toString(),
+      matches: header.blockhash === blockhash,
+    };
   };
   let result: unknown;
   try {
     result = await call(
       ctx.transport,
       'getBlock',
-      [Number(anchor.slot), headerOptions('finalized')],
-      { ...PROOF, quorumKey: verdict },
+      [Number(slot), headerOptions('finalized')],
+      { ...PROOF, quorumKey: key },
     );
   } catch (error) {
-    if (isGone(error)) throw gone(BLOCKHASH_BLOCK);
-    if (isNotAvailable(error)) throw notYet(BLOCKHASH_BLOCK);
+    if (isNotAvailable(error)) return null;
     throw undecided(error, BLOCKHASH_BLOCK);
   }
-  const seen = verdict(result);
-  if (seen === null) throw notYet(BLOCKHASH_BLOCK);
-  if (seen !== 'anchored') {
-    throw inconsistent('the blockhash is not in the block its transaction was built on');
+  if (result === null) return null;
+  const header = blockHeader(result);
+  return header.blockhash === blockhash ? header.blockHeight : null;
+}
+
+/**
+ * The last valid height the quorum attests for a recorded expiry. agave answers
+ * `getLatestBlockhash` from one bank (its slot, its last blockhash, and that blockhash's
+ * last valid height: `block_height + MAX_PROCESSING_AGE`), so an honest record anchors at
+ * its slot. When it does, the attested block's height plus `BLOCKHASH_VALIDITY` is the
+ * answer, and a recorded height that disagrees is a build-time lie: logged (fixed text) and
+ * ignored. When the slot does not anchor the blockhash, the block at the recorded height
+ * minus `BLOCKHASH_VALIDITY` must carry it (M1), which confirms the recorded height. Only a
+ * lie in both the slot and the height is never attested: it decides nothing, for good.
+ */
+async function attestLastValid(ctx: SolanaContext, recorded: Recorded): Promise<bigint> {
+  const at =
+    recorded.slot === undefined
+      ? null
+      : await heightAtSlot(ctx, recorded.blockhash, recorded.slot);
+  if (at !== null) {
+    const last = at + BLOCKHASH_VALIDITY;
+    if (last !== recorded.lastValidHeight) ctx.log.warn(LIE);
+    return last;
   }
+  const height = recorded.lastValidHeight - BLOCKHASH_VALIDITY;
+  const block = height < 0n ? null : await attestedBlock(ctx, height, 'finalized');
+  if (!block) throw notYet(BLOCKHASH_BLOCK);
+  if (block.header.blockhash !== recorded.blockhash) {
+    throw inconsistent(
+      'neither the recorded slot nor the recorded height holds the blockhash',
+    );
+  }
+  return recorded.lastValidHeight;
 }
 
 /**
@@ -230,6 +276,12 @@ async function attestedBlock(
     throw inconsistent(`the block at slot ${slot} is not at height ${height}`);
   }
   return { slot, header };
+}
+
+/** The window a verdict reads: an attested last valid height, and its blockhash. */
+interface Anchor {
+  readonly lastValidHeight: bigint;
+  readonly blockhash: string;
 }
 
 /**
@@ -344,13 +396,22 @@ function guarded<A extends unknown[], R>(
 
 export function createSolanaProofs(ctx: SolanaContext): ProofSource {
   const absent = new Set<string>();
-  const anchors = new Set<string>();
-  /** F5-R9: `attestBlockhash`, once per anchor (the answer is final). */
-  const attested = async (anchor: Anchor): Promise<void> => {
-    const key = `${anchor.slot}:${anchor.blockhash}:${anchor.lastValidHeight}`;
-    if (anchors.has(key)) return;
-    await attestBlockhash(ctx, anchor);
-    remember(anchors, key, ANCHOR_MEMO);
+  /** Attested last valid heights by blockhash: a blockhash names one block, for good. */
+  const anchors = new Map<string, bigint>();
+  const known = (ordering: OrderingData): bigint | undefined => {
+    const blockhash = blockhashOf(ordering);
+    return blockhash === undefined ? undefined : anchors.get(blockhash);
+  };
+  /** The attested last valid height of `ordering` (F5-R10), remembered once attested. */
+  const attested = async (ordering: OrderingData, recorded: bigint): Promise<Anchor> => {
+    const record = recordedOf(ordering, recorded);
+    let last = anchors.get(record.blockhash);
+    if (last === undefined) {
+      last = await attestLastValid(ctx, record);
+      anchors.set(record.blockhash, last);
+      trim(anchors, ANCHOR_MEMO);
+    }
+    return { lastValidHeight: last, blockhash: record.blockhash };
   };
   /**
    * A finalized `getTransaction` answer, read under that method's quorum key, is the only
@@ -414,23 +475,33 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
       const found = await finalTransaction(ctx, ref.id);
       if (found !== null) return included(found, ref.id, from);
       // Lesson 16: an index that shows nothing proves nothing; only the window can.
-      const last = lastValidOf(ordering);
-      if (last === undefined) throw notYet('proof that the transaction is absent');
+      const recorded = lastValidOf(ordering);
+      if (recorded === undefined) throw notYet('proof that the transaction is absent');
+      const remembered = known(ordering);
+      if (remembered !== undefined && absent.has(`${ref.id}:${remembered}`)) {
+        return { included: false };
+      }
+      // The window's last block (lastValidBlockHeight + 1, I1) is final everywhere, at the
+      // attested height (F5-R10). An early "no" at the recorded one only delays.
+      const pastWindow = () => notYet('finality past the transaction window');
+      if (remembered === undefined && !(await finalizedPast(ctx, recorded))) {
+        throw pastWindow();
+      }
+      const anchor = await attested(ordering, recorded);
+      const last = anchor.lastValidHeight;
+      if (last !== recorded || remembered !== undefined) {
+        if (!(await finalizedPast(ctx, last))) throw pastWindow();
+      }
       const key = `${ref.id}:${last}`;
-      if (absent.has(key)) return { included: false };
-      // The window's last block (lastValidBlockHeight + 1, I1) is final everywhere.
-      if (!(await finalizedPast(ctx, last))) {
-        throw notYet('finality past the transaction window');
+      if (!absent.has(key)) {
+        if (!(await absentFromWindow(ctx, ref.id, anchor))) {
+          throw inconsistent(
+            'a block of the window holds a transaction its index does not show',
+          );
+        }
+        absent.add(key);
+        trim(absent, ABSENT_MEMO);
       }
-      // F5-R9: the window is placed only by an attested height.
-      const anchor = anchorOf(ordering, last);
-      await attested(anchor);
-      if (!(await absentFromWindow(ctx, ref.id, anchor))) {
-        throw inconsistent(
-          'a block of the window holds a transaction its index does not show',
-        );
-      }
-      remember(absent, key, ABSENT_MEMO);
       return { included: false };
     },
 
@@ -438,12 +509,16 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
     slotConsumed: async () => false,
 
     async expired(ordering) {
-      const last = lastValidOf(ordering);
+      const recorded = lastValidOf(ordering);
       // "Not expired" is the safe answer: it never declares a transaction dead.
-      if (last === undefined || !(await finalizedPast(ctx, last))) return false;
-      // F5-R9: "expired" rests on the height only once the quorum attests it.
-      await attested(anchorOf(ordering, last));
-      return true;
+      if (recorded === undefined) return false;
+      const remembered = known(ordering);
+      if (remembered !== undefined) return finalizedPast(ctx, remembered);
+      // An early "no" at the recorded height only delays.
+      if (!(await finalizedPast(ctx, recorded))) return false;
+      // F5-R10: "expired" rests on the attested height, and its own predicate read.
+      const { lastValidHeight } = await attested(ordering, recorded);
+      return lastValidHeight === recorded || finalizedPast(ctx, lastValidHeight);
     },
 
     async blockHash(height, level) {

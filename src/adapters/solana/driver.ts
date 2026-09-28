@@ -1,6 +1,13 @@
 /**
  * The Solana driver (spec §15), over the `SolanaCodec` of `@solana/web3.js`. One factory
  * serves every Solana cluster; each network's registry data configures it.
+ *
+ * Every I/O call carries the tags of the `ChainDriver` contract table (core
+ * `driver/types.ts`), with one documented exception on the proof paths (`proofs.ts`): the
+ * finalized height behind `finalizedHead` (the one unanchored head, lesson 17) and the
+ * height-to-slot lookups of `HeightIndex` are single-endpoint `monitor` reads. They are
+ * hints only: the proof quorum then attests the block they name, its height and its hash,
+ * so a wrong hint decides nothing.
  */
 import type { ChainDriver, DriverFactory } from '../../core/driver/types';
 import type { EndpointCall, HealthProbes, Transport } from '../../core/transport/types';

@@ -85,10 +85,11 @@ export type Commitment = 'confirmed' | 'finalized';
 /**
  * The expiry ordering a Solana build records (F5-R9): the recent blockhash's
  * `lastValidBlockHeight`, the blockhash itself and the slot of its block, all from one
- * `getLatestBlockhash` answer. Proofs use the height only once the quorum attests that the
- * finalized block at `blockhashSlot` has hash `blockhash` and sits exactly 150 heights
- * below `lastValidHeight` (agave's `MAX_PROCESSING_AGE`), so no endpoint proposes the
- * height a verdict rests on (lesson 17).
+ * `getLatestBlockhash` answer, so one endpoint's word. A verdict rests on the height the
+ * proof quorum attests for `blockhash` instead (F5-R10): the finalized block at
+ * `blockhashSlot`, when it carries the blockhash, gives the last valid height as its own
+ * height plus 150 (agave's `MAX_PROCESSING_AGE`); otherwise the finalized block 150 below
+ * `lastValidHeight` must carry it. No endpoint proposes the height (lesson 17).
  */
 export interface SolanaExpiryOrdering {
   readonly kind: 'expiry';

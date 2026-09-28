@@ -4,7 +4,11 @@
  * owner's history holds only the transactions that name the owner itself.
  */
 import type { AddressHistorySource, DriverTransaction } from '../../core/driver/types';
-import { ProviderError, ValidationError } from '../../core/errors/error';
+import {
+  ProviderError,
+  ValidationError,
+  type CryptoAioError,
+} from '../../core/errors/error';
 import { decodeTransaction } from './decode';
 import { isSignature } from './keys';
 import { readTransaction, type SolanaContext } from './reader';
@@ -39,9 +43,11 @@ export function createSolanaHistory(ctx: SolanaContext): AddressHistorySource {
         // M2: a backend that does not hold the cursor's transaction (another backend
         // behind a load balancer, or a pruned one) decides nothing.
         if (rpcCode(error) === RPC_CODES.FILTER_TRANSACTION_NOT_FOUND) {
+          // The node's error stays reachable: its cause and where it happened.
           throw new ProviderError(
             'PROVIDER_UNAVAILABLE',
             'the endpoint does not know the history cursor',
+            { cause: error, context: (error as CryptoAioError).context },
           );
         }
         throw error;

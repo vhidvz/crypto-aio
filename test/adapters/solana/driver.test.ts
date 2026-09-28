@@ -1,4 +1,3 @@
-import { base58 } from '@scure/base';
 import { Connection, VersionedMessage } from '@solana/web3.js';
 import { SOLANA_CHAIN } from '../../../src/adapters/solana/chains';
 import {
@@ -9,7 +8,8 @@ import {
 import type { SolanaExpiryOrdering } from '../../../src/adapters/solana/types';
 import { web3DriverFactory } from '../../../src/adapters/solana/web3';
 import type { BuildContext, ChainDriver } from '../../../src/core/driver/types';
-import { noopLogger } from '../../../src/core/events/logger';
+import type { CryptoAioError } from '../../../src/core/errors/error';
+import { noopLogger, type Logger } from '../../../src/core/events/logger';
 import type { NetworkInfo } from '../../../src/core/model/chain';
 import type { DriverIntent } from '../../../src/core/model/intent';
 import type { OrderingData } from '../../../src/core/model/ordering';
@@ -38,6 +38,7 @@ interface TransactionJson {
 async function driverFor(
   endpoints: readonly Endpoint[] = ['a', 'b'],
   indexer?: Transport,
+  log: Logger = noopLogger,
 ) {
   const t = nodeTransport({}, endpoints);
   const { transport, calls } = recording(t.transport);
@@ -48,7 +49,7 @@ async function driverFor(
     transport,
     ...(indexer ? { indexer } : {}),
     clock: t.clock,
-    log: noopLogger,
+    log,
     options: {},
   });
   t.node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -321,10 +322,7 @@ describe('Solana proofs', () => {
         ),
       ]),
     );
-    const ordering: OrderingData = {
-      kind: 'expiry',
-      lastValidHeight: h.node.head.height + 150n,
-    };
+    const ordering = expiryAt(h.node.head);
     h.node.produce(3);
     /** Endpoint b formats (or alters) its finalized transaction answer. */
     const reformat = (mutate: (tx: TransactionJson) => void) => {
@@ -925,9 +923,18 @@ describe('the Solana block source', () => {
       method === 'getSignaturesForAddress'
         ? { error: { code: -32020, message: 'Transaction x not found' } }
         : undefined;
-    await expect(
-      h.run(h.driver.history!.list(RECIPIENT, { limit: 2, cursor: '1'.repeat(64) })),
-    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    const error = await h
+      .run(h.driver.history!.list(RECIPIENT, { limit: 2, cursor: '1'.repeat(64) }))
+      .catch((e: unknown) => e as CryptoAioError);
+    expect(error).toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    // The node's own error stays reachable (fix round M3).
+    const cause = (error as CryptoAioError).cause as CryptoAioError;
+    expect(cause).toMatchObject({ code: 'RPC_ERROR', details: { rpcCode: -32020 } });
+    expect((error as CryptoAioError).context).toEqual(cause.context);
+    expect(cause.context).toMatchObject({
+      endpointId: 'main',
+      transportId: 'solana-test',
+    });
   });
 
   it('pages address history newest first, with the chain’s own status', async () => {
@@ -1021,60 +1028,157 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     expect(message.recentBlockhash).toBe(head.hash);
   });
 
-  const lies: readonly [
+  /** A logger that keeps every warning's text (fixed texts only, R24). */
+  const warningsOf = (warnings: string[]): Logger => {
+    const log: Logger = {
+      debug: () => undefined,
+      info: () => undefined,
+      warn: (message) => warnings.push(message),
+      error: () => undefined,
+      child: () => log,
+    };
+    return log;
+  };
+
+  /** Whether any block of a window was read (a scan: `getBlock` with signatures). */
+  const scanned = (h: Harness) =>
+    h.calls.filter(
+      (c) =>
+        c.method === 'getBlock' &&
+        (c.params as [number, { transactionDetails?: string }])[1].transactionDetails ===
+          'signatures',
+    );
+
+  const LIE =
+    'the recorded expiry height disagrees with its blockhash; using the attested one';
+
+  const heightLies: readonly [string, bigint][] = [
+    ['lower', -100n],
+    ['higher', 100n],
+  ];
+  it.each(heightLies)(
+    'adopts the attested height over a %s recorded one, then proves expiry at it (F5-R10)',
+    async (_what, shift) => {
+      const warnings: string[] = [];
+      const h = await driverFor(['a', 'b'], undefined, warningsOf(warnings));
+      h.node.produce(105);
+      const real = h.node.head.height + 150n;
+      lying(h, (answer) => {
+        answer.value.lastValidBlockHeight += Number(shift);
+      });
+      const { ordering, id } = await built(h);
+      h.node.intercept = undefined;
+      expect(ordering).toMatchObject({ lastValidHeight: real + shift });
+      // Every endpoint has finalized past the lower of the two heights, not the higher.
+      produceTo(h, (shift < 0n ? real + shift : real) + 3n);
+      // The verdict first. A lower recorded height has passed: its predicate, the anchor,
+      // then the predicate again at the attested height, which has not. A higher one has
+      // not passed: its predicate alone (an early "no" only delays).
+      h.calls.length = 0;
+      expect(await verdicts(h, id, ordering, 1)).toEqual(['decides nothing']);
+      expect(h.calls.map((c) => c.method)).toEqual(
+        shift < 0n
+          ? ['getTransaction', 'getBlockHeight', 'getBlock', 'getBlockHeight']
+          : ['getTransaction', 'getBlockHeight'],
+      );
+      // Not expired, asked twice (a lower recorded height answers the second from the
+      // remembered anchor), and nothing decided: the index, then one predicate read.
+      expect(await h.run(h.driver.proofs.expired(ordering))).toBe(false);
+      expect(await h.run(h.driver.proofs.expired(ordering))).toBe(false);
+      h.calls.length = 0;
+      expect(await verdicts(h, id, ordering)).toEqual(Array(6).fill('decides nothing'));
+      expect(h.calls.map((c) => c.method)).toEqual(
+        Array(6).fill(['getTransaction', 'getBlockHeight']).flat(),
+      );
+      expect(scanned(h)).toEqual([]);
+      // The true height passes (and, for a higher recorded one, the recorded one too: an
+      // early "not expired" from it only delays).
+      produceTo(h, real + (shift > 0n ? shift : 0n) + 3n);
+      expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
+      h.calls.length = 0;
+      expect(
+        await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).toEqual({ included: false });
+      // The window read is the true one: 151 blocks, through the true height + 1.
+      const slots = scanned(h).map((c) => (c.params as [number])[0]);
+      expect(slots).toHaveLength(151);
+      expect([slots[0], slots[150]]).toEqual([
+        Number(h.node.block(real - 149n)?.slot),
+        Number(h.node.block(real + 1n)?.slot),
+      ]);
+      // Proven absent at the attested height: the next verdict reads only the index.
+      h.calls.length = 0;
+      expect(
+        await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).toEqual({ included: false });
+      expect(h.calls.map((c) => c.method)).toEqual(['getTransaction']);
+      // The build-time lie is logged once, as fixed text.
+      expect(warnings).toEqual([LIE]);
+    },
+  );
+
+  it('asks the predicate again at the attested height when expiry is asked first (F5-R10)', async () => {
+    const h = await driverFor();
+    h.node.produce(105);
+    const real = h.node.head.height + 150n;
+    lying(h, (answer) => {
+      answer.value.lastValidBlockHeight -= 100;
+    });
+    const { ordering } = await built(h);
+    h.node.intercept = undefined;
+    produceTo(h, real - 100n + 3n);
+    h.calls.length = 0;
+    expect(await h.run(h.driver.proofs.expired(ordering))).toBe(false);
+    expect(h.calls.map((c) => [c.method, c.tags.purpose, c.tags.quorum])).toEqual([
+      ['getBlockHeight', 'proof', 'proof'],
+      ['getBlock', 'proof', 'proof'],
+      ['getBlockHeight', 'proof', 'proof'],
+    ]);
+  });
+
+  const bothLies: readonly [
     string,
     (answer: BlockhashAnswer, h: Harness, skipped: bigint) => void,
-    string,
   ][] = [
     [
-      'a lower last valid height',
-      (answer) => {
-        answer.value.lastValidBlockHeight -= 100;
-      },
-      'PROVIDER_INCONSISTENT',
-    ],
-    [
-      'a lower height, with the slot of the block 150 below it',
+      'the slot of the block 150 below it',
       (answer, h) => {
-        answer.value.lastValidBlockHeight -= 100;
         const below = h.node.block(BigInt(answer.value.lastValidBlockHeight) - 150n);
         answer.context.slot = Number(below?.slot);
       },
-      'PROVIDER_INCONSISTENT',
     ],
     [
-      'a lower height, with a skipped slot',
+      'a skipped slot',
       (answer, _h, skipped) => {
-        answer.value.lastValidBlockHeight -= 100;
         answer.context.slot = Number(skipped);
       },
-      'PROVIDER_UNAVAILABLE',
     ],
   ];
-  it.each(lies)(
-    'never proves expiry from %s while the transfer can still land',
-    async (_what, lie, code) => {
+  it.each(bothLies)(
+    'decides nothing when the height and %s are both lies, and the transfer still lands',
+    async (_what, lie) => {
       const h = await driverFor();
       h.node.produce(100);
       const skipped = h.node.head.slot + 1n;
       h.node.skip(1);
       h.node.produce(5);
       const real = h.node.head.height + 150n;
-      lying(h, (answer) => lie(answer, h, skipped));
-      const { ordering, raw } = await built(h);
+      lying(h, (answer) => {
+        answer.value.lastValidBlockHeight -= 100;
+        lie(answer, h, skipped);
+      });
+      const { ordering, raw, id } = await built(h);
       h.node.intercept = undefined;
       const lowered = real - 100n;
       expect(ordering).toMatchObject({ lastValidHeight: lowered });
-      // Every endpoint has finalized past the lowered height; the blockhash is still valid.
       produceTo(h, lowered + 3n);
+      // Neither the slot nor the height places the blockhash: stuck, never a verdict.
       await expect(h.run(h.driver.proofs.expired(ordering))).rejects.toMatchObject({
-        code,
+        code: 'PROVIDER_INCONSISTENT',
         retryable: true,
       });
-      const id = base58.encode(Buffer.from(raw, 'base64').subarray(1, 65));
       expect(await verdicts(h, id, ordering)).toEqual(Array(6).fill('decides nothing'));
-      // Never scanned a window it cannot place.
-      expect(h.node.served.map((s) => s.method)).not.toContain('getBlocks');
+      expect(scanned(h)).toEqual([]);
       // The transfer still lands, and is proven included.
       expect(h.node.submit(raw)).toBe(id);
       h.node.produce(3);
@@ -1085,8 +1189,36 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     },
   );
 
+  it('decides nothing when endpoints agree on the blockhash but not on its height (F5-R10)', async () => {
+    const h = await driverFor(['a', 'b']);
+    h.node.produce(2);
+    const { id, ordering } = transfer(h);
+    h.node.drop(id);
+    produceTo(h, 160n);
+    const slot = Number((ordering as SolanaExpiryOrdering).blockhashSlot);
+    h.node.intercept = (endpoint, method, params) => {
+      if (endpoint !== 'b' || method !== 'getBlock' || params[0] !== slot) {
+        return undefined;
+      }
+      const block = h.node.answer(endpoint, method, params) as Record<string, unknown>;
+      return { result: { ...block, blockHeight: Number(block.blockHeight) + 1 } };
+    };
+    await expect(h.run(h.driver.proofs.expired(ordering))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+    expect(await verdicts(h, id, ordering)).toEqual(Array(6).fill('decides nothing'));
+    expect(scanned(h)).toEqual([]);
+    h.node.intercept = undefined;
+    expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
+    expect(
+      await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+    ).toEqual({ included: false });
+  });
+
   it('still proves an honest build expired and absent', async () => {
-    const h = await driverFor();
+    const warnings: string[] = [];
+    const h = await driverFor(['a', 'b'], undefined, warningsOf(warnings));
     h.node.produce(2);
     const { ordering, id } = await built(h);
     const last = (ordering as SolanaExpiryOrdering).lastValidHeight;
@@ -1098,12 +1230,57 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     expect(
       await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
     ).toEqual({ included: false });
+    expect(warnings).toEqual([]);
   });
+
+  const slotLies: readonly [
+    string,
+    (ordering: SolanaExpiryOrdering, h: Harness, skipped: bigint) => unknown,
+  ][] = [
+    [
+      'no slot on record',
+      ({ kind, lastValidHeight, blockhash }) => ({ kind, lastValidHeight, blockhash }),
+    ],
+    [
+      'the slot of another block',
+      (ordering, h) => ({ ...ordering, blockhashSlot: h.node.block(1n)?.slot }),
+    ],
+    [
+      'a skipped slot',
+      (ordering, _h, skipped) => ({ ...ordering, blockhashSlot: skipped }),
+    ],
+    [
+      'a slot no block has reached yet',
+      (ordering) => ({ ...ordering, blockhashSlot: 10_000n }),
+    ],
+    [
+      'a slot beyond the exactly readable range',
+      (ordering) => ({ ...ordering, blockhashSlot: 2n ** 53n }),
+    ],
+  ];
+  it.each(slotLies)(
+    'confirms a true height by the block at its own height, with %s (M1)',
+    async (_what, alter) => {
+      const h = await driverFor();
+      h.node.produce(1);
+      const skipped = h.node.head.slot + 1n;
+      h.node.skip(1);
+      h.node.produce(1);
+      const { id, ordering } = transfer(h);
+      h.node.drop(id);
+      produceTo(h, 160n);
+      const altered = alter(ordering as SolanaExpiryOrdering, h, skipped) as OrderingData;
+      expect(await h.run(h.driver.proofs.expired(altered))).toBe(true);
+      expect(
+        await h.run(h.driver.proofs.includedFinal(ref(id), altered, KEY_ADDRESS)),
+      ).toEqual({ included: false });
+    },
+  );
 
   const unattestable: readonly [
     string,
     readonly Endpoint[],
-    (ordering: SolanaExpiryOrdering, h: Harness, skipped: bigint) => unknown,
+    (ordering: SolanaExpiryOrdering, h: Harness) => unknown,
     string,
   ][] = [
     [
@@ -1119,25 +1296,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
       'PROVIDER_UNAVAILABLE',
     ],
     [
-      'a slot beyond the exactly readable range',
-      ['main'],
-      (ordering) => ({ ...ordering, blockhashSlot: 2n ** 53n }),
-      'PROVIDER_UNAVAILABLE',
-    ],
-    [
-      'a slot no block has reached yet',
-      ['main'],
-      (ordering) => ({ ...ordering, blockhashSlot: 10_000n }),
-      'PROVIDER_UNAVAILABLE',
-    ],
-    [
-      'a skipped slot',
-      ['main'],
-      (ordering, _h, skipped) => ({ ...ordering, blockhashSlot: skipped }),
-      'PROVIDER_UNAVAILABLE',
-    ],
-    [
-      'a slot the endpoint pruned',
+      'the block pruned from the endpoint',
       [{ name: 'pruned', firstAvailableHeight: 50 }],
       (ordering) => ordering,
       'PROVIDER_UNAVAILABLE',
@@ -1169,20 +1328,17 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     'decides nothing with %s',
     async (_what, endpoints, alter, code) => {
       const h = await driverFor(endpoints);
-      h.node.produce(1);
-      const skipped = h.node.head.slot + 1n;
-      h.node.skip(1);
-      h.node.produce(1);
+      h.node.produce(2);
       const { id, ordering } = transfer(h);
       h.node.drop(id);
       produceTo(h, 160n);
-      const altered = alter(ordering as SolanaExpiryOrdering, h, skipped) as OrderingData;
+      const altered = alter(ordering as SolanaExpiryOrdering, h) as OrderingData;
       await expect(h.run(h.driver.proofs.expired(altered))).rejects.toMatchObject({
         code,
         retryable: true,
       });
       expect(await verdicts(h, id, altered)).toEqual(Array(6).fill('decides nothing'));
-      expect(h.node.served.map((s) => s.method)).not.toContain('getBlocks');
+      expect(scanned(h)).toEqual([]);
     },
   );
 
@@ -1203,6 +1359,7 @@ describe('Solana proofs of failure', () => {
   it('proves a failed transfer failed, with a fixed reason (P6-2)', async () => {
     const h = await driverFor(['main']);
     h.node.produce(2);
+    const before = [h.node.balance(KEY_ADDRESS), h.node.balance(RECIPIENT)];
     // More than the sender holds: it lands, charged its fee, and fails.
     const id = h.node.submit(
       signedTx(h.node.head.hash, [systemTransfer(KEY_ADDRESS, RECIPIENT, 20n * SOL)]),
@@ -1211,6 +1368,11 @@ describe('Solana proofs of failure', () => {
     const ordering = expiryAt(h.node.head);
     h.node.produce(3);
     expect(h.node.landed(id)?.err).not.toBeNull();
+    // Charged its signature fee, and nothing moved.
+    expect([h.node.balance(KEY_ADDRESS), h.node.balance(RECIPIENT)]).toEqual([
+      (before[0] as bigint) - 5_000n,
+      before[1],
+    ]);
     expect(
       await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
     ).toEqual({
