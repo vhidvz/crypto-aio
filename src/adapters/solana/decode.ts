@@ -17,6 +17,7 @@
 import type { DriverTransaction, DriverTransfer } from '../../core/driver/types';
 import { canonicalJson } from '../../core/util/json';
 import {
+  MAX_COMPUTE_UNIT_LIMIT,
   MAX_TRANSACTION_SIZE,
   MEMO_PROGRAM,
   MEMO_V1_PROGRAM,
@@ -35,12 +36,27 @@ const MAX_ACCOUNT_KEYS = 256;
 const MAX_ADDRESS_CHARS = 44;
 const MAX_SIGNATURE_CHARS = 88;
 /**
+ * Every outer instruction takes at least 3 bytes of the packet (its program index and its
+ * account and data lengths).
+ */
+const MAX_OUTER_INSTRUCTIONS = Math.floor(MAX_TRANSACTION_SIZE / 3);
+/**
+ * A generous bound on one instruction's inner instructions that keeps old blocks readable:
+ * every CPI costs at least 1,000 compute units, and no instruction ever ran on more than
+ * 1.4 M. (Today's runtime also caps a transaction's whole trace at 64.)
+ */
+const MAX_INNER_INSTRUCTIONS = Number(MAX_COMPUTE_UNIT_LIMIT / 1_000n);
+/** A CPI's instruction data is at most 10 KiB (agave `MAX_CPI_INSTRUCTION_DATA_LEN`). */
+const MAX_CPI_INSTRUCTION_DATA = 10_240;
+/**
  * A real `TransactionError` nests three levels (`{"InstructionError":[0,{"Custom":1}]}`)
  * and holds a few short values: anything far larger is not one.
  */
 const MAX_ERROR_DEPTH = 6;
 const MAX_ERROR_VALUES = 64;
 const MAX_ERROR_TEXT = 256;
+/** A `TransactionError` variant name, such as `AccountInUse` or `InstructionError`. */
+const ERROR_VARIANT = /^[A-Z][A-Za-z0-9]{0,63}$/;
 
 const TOKEN_PROGRAMS: readonly string[] = [TOKEN_PROGRAM, TOKEN_2022_PROGRAM];
 
@@ -65,6 +81,8 @@ interface Instruction {
   readonly type?: string;
   readonly info: Json | null;
   readonly parsedText?: string;
+  /** A parsed text (an inner memo) too long for any CPI to carry: not kept. */
+  readonly textTooLong?: true;
 }
 
 interface TokenBalance {
@@ -121,16 +139,42 @@ function bounded(value: unknown, depth: number, budget: { left: number }): boole
   }
 }
 
-/** `meta.err`: required; `null`, or a `TransactionError` (a string or a small object). */
+/**
+ * `meta.err`: required; `null`, or a `TransactionError`: a unit variant's name
+ * (`"AccountInUse"`), or an object with exactly one variant name as its key and a small
+ * value (`{"InstructionError":[0,{"Custom":1}]}`). A drifted `{}` or free text is malformed.
+ */
 function executionError(value: unknown): unknown {
   if (value === null) return null;
+  const object = record(value);
+  const [variant, ...others] = object ? Object.keys(object) : [];
   const valid =
     typeof value === 'string'
-      ? text(value, MAX_ERROR_TEXT)
-      : record(value) !== null &&
+      ? ERROR_VARIANT.test(value)
+      : variant !== undefined &&
+        others.length === 0 &&
+        ERROR_VARIANT.test(variant) &&
         bounded(value, MAX_ERROR_DEPTH, { left: MAX_ERROR_VALUES });
   if (!valid) throw malformed('transaction status');
   return value;
+}
+
+/**
+ * The deprecated `meta.status` (`{"Ok":null}` or `{"Err":…}`) may be left out; when a node
+ * reports it, it must say what `meta.err` says, or the answer drifted.
+ */
+function checkStatus(status: unknown, err: unknown): void {
+  if (absent(status)) return;
+  const object = record(status);
+  const [variant, ...others] = object ? Object.keys(object) : [];
+  const agrees =
+    object !== null &&
+    others.length === 0 &&
+    (err === null
+      ? variant === 'Ok' && object.Ok === null
+      : variant === 'Err' &&
+        canonicalJson(executionError(object.Err)) === canonicalJson(err));
+  if (!agrees) throw malformed('transaction status');
 }
 
 function tokenBalances(value: unknown, keys: number): Map<number, TokenBalance> {
@@ -167,26 +211,33 @@ function instruction(value: unknown, locator: string, inner: boolean): Instructi
   const programId = address(ix.programId, 'instruction');
   const { parsed } = ix;
   const object = record(parsed);
-  // A parsed memo is its UTF-8 text, which no transaction can make longer than itself.
-  if (
-    !absent(parsed) &&
-    !object &&
-    !(typeof parsed === 'string' && parsed.length <= MAX_TRANSACTION_SIZE)
-  ) {
+  if (!absent(parsed) && !object && typeof parsed !== 'string') {
     throw malformed('instruction');
   }
+  // A parsed memo is its UTF-8 text. The packet bounds an outer one, so a longer one is
+  // malformed. An inner one is a CPI's data, and a reader never refuses what the chain
+  // accepts: past the CPI data limit, the text is not kept and the decoding is partial.
+  const tooLong =
+    typeof parsed === 'string' &&
+    parsed.length > (inner ? MAX_CPI_INSTRUCTION_DATA : MAX_TRANSACTION_SIZE);
+  if (tooLong && !inner) throw malformed('instruction');
   return {
     locator,
     inner,
     programId,
     ...(typeof object?.type === 'string' ? { type: object.type } : {}),
     info: record(object?.info),
-    ...(typeof parsed === 'string' ? { parsedText: parsed } : {}),
+    ...(typeof parsed === 'string'
+      ? tooLong
+        ? { textTooLong: true as const }
+        : { parsedText: parsed }
+      : {}),
   };
 }
 
 /** Outer instructions, each followed by its inner ones (a group per outer instruction). */
 function instructions(outer: readonly unknown[], groups: unknown): Instruction[] {
+  if (outer.length > MAX_OUTER_INSTRUCTIONS) throw malformed('instructions');
   const inner = new Map<number, readonly unknown[]>();
   if (!absent(groups)) {
     if (!Array.isArray(groups)) throw malformed('inner instructions');
@@ -200,7 +251,8 @@ function instructions(outer: readonly unknown[], groups: unknown): Instruction[]
         index < 0 ||
         index >= outer.length ||
         inner.has(index) ||
-        !Array.isArray(g.instructions)
+        !Array.isArray(g.instructions) ||
+        g.instructions.length > MAX_INNER_INSTRUCTIONS
       ) {
         throw malformed('inner instructions');
       }
@@ -264,11 +316,13 @@ export function parseTransaction(value: unknown, signature?: string): ParsedTran
   ) {
     throw malformed('version');
   }
+  const err = executionError(meta.err);
+  checkStatus(meta.status, err);
   return {
     signature: id,
     keys,
     accountIndex,
-    err: executionError(meta.err),
+    err,
     fee: u64(meta.fee, 'fee'),
     preBalances: balances(meta.preBalances),
     postBalances: balances(meta.postBalances),
@@ -339,10 +393,10 @@ function tokenMove(ix: Instruction): TokenMove | null {
   };
 }
 
-const memoText = (ix: Instruction): string | undefined =>
-  ix.programId === MEMO_PROGRAM || ix.programId === MEMO_V1_PROGRAM
-    ? ix.parsedText
-    : undefined;
+/** A parsed memo instruction (its text kept, or too long to keep). */
+const isMemo = (ix: Instruction): boolean =>
+  (ix.programId === MEMO_PROGRAM || ix.programId === MEMO_V1_PROGRAM) &&
+  (ix.parsedText !== undefined || ix.textTooLong === true);
 
 /** A token program ran, or could have: named by an instruction, or keyed for a CPI. */
 const tokenProgramKeyed = (tx: ParsedTransaction): boolean =>
@@ -446,17 +500,17 @@ export function decodeTransaction(
   place: BlockPlace,
 ): DriverTransaction {
   const success = tx.err === null;
-  const memos = tx.instructions.flatMap((ix) => {
-    const memo = memoText(ix);
-    return memo === undefined ? [] : [memo];
-  });
-  const memo = memos.length === 1 ? memos[0] : undefined;
+  const memos = tx.instructions.filter(isMemo);
+  // The one memo, when its text was kept.
+  const memo = memos.length === 1 ? memos[0]?.parsedText : undefined;
   // A failed transaction moved nothing but its fee. A successful one can be checked only
-  // with its inner instructions, and with its token balances when a token program ran.
+  // with its inner instructions, and with its token balances when a token program ran. A
+  // text too long to keep is unexplained too.
   let complete =
-    !success ||
-    (tx.innerInstructions === 'present' &&
-      (tx.tokenBalances === 'present' || !tokenProgramKeyed(tx)));
+    (!success ||
+      (tx.innerInstructions === 'present' &&
+        (tx.tokenBalances === 'present' || !tokenProgramKeyed(tx)))) &&
+    !tx.instructions.some((ix) => ix.textTooLong);
   const natives: NativeMove[] = [];
   const tokens: { readonly move: TokenMove; readonly mint: string }[] = [];
   const transfers: DriverTransfer[] = [];
@@ -564,7 +618,12 @@ export function touches(
   return false;
 }
 
-/** An account's balance of `mint` before and after, as the classic Token program holds it. */
+/**
+ * An account's balance of `mint` before and after, as the classic Token program holds it.
+ * The owning program comes from each balance's `programId`, which the provider must report
+ * (current agave does). Through a provider that leaves it out, no SPL verdict ever decides:
+ * a cost in liveness only, never a wrong verdict.
+ */
 function holding(
   tx: ParsedTransaction,
   address: string,
@@ -618,6 +677,8 @@ function landed(tx: ParsedTransaction, move: TokenMove): boolean {
  * the sender signed its own `transferChecked`, or balances of another mint or program
  * (lesson 18, widened; a retryable `PROVIDER_INCONSISTENT`). Seeing no transfer never
  * passes; a failed transaction never lands; a native transfer keeps the chain's status.
+ * The balances must carry `programId` (current agave reports it): without it, SPL verdicts
+ * through that provider never decide, which costs liveness only.
  */
 export function tokenTransfersLanded(tx: ParsedTransaction, from: string): boolean {
   if (tx.err !== null) return false;

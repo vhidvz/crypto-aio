@@ -330,6 +330,7 @@ describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict pat
   type Fixture = {
     meta: {
       err: unknown;
+      status?: unknown;
       preTokenBalances?: unknown;
       postTokenBalances: { uiTokenAmount: { amount: string } }[];
     };
@@ -352,6 +353,7 @@ describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict pat
     // A failed transaction moved nothing.
     const failed = fixture();
     failed.meta.err = { InstructionError: [2, { Custom: 1 }] };
+    failed.meta.status = { Err: failed.meta.err };
     expect(landed(failed)).toBe(false);
     // A native transfer: the chain's status is the verdict.
     expect(landed(nativeTx(), 'A')).toBe(true);
@@ -418,6 +420,22 @@ function widen(tx: Devnet, count: number): void {
   for (const field of ['preBalances', 'postBalances']) {
     (tx.meta[field] as unknown[]).push(...Array<number>(extra).fill(0));
   }
+}
+
+/** `count` instructions of an unknown program, as `jsonParsed` shows them unparsed. */
+const opaque = (count: number): Json[] =>
+  Array.from({ length: count }, () => ({ programId: 'Prog', accounts: [], data: '1' }));
+
+/** Pads the outer instruction list to `count` instructions. */
+function lengthen(tx: Devnet, count: number): void {
+  const list = tx.transaction.message.instructions!;
+  list.push(...opaque(count - list.length));
+}
+
+/** Sets `meta.err` and leaves the deprecated `meta.status` out. */
+function failWith(tx: Devnet, err: unknown): void {
+  tx.meta.err = err;
+  delete tx.meta.status;
 }
 
 const nested = (depth: number): unknown => {
@@ -498,6 +516,34 @@ describe('a missing or ill-typed field is malformed, never a default (lesson 6, 
       'a memo longer than a transaction',
       (tx) => (tx.transaction.message.instructions![3]!.parsed = 'm'.repeat(1_233)),
     ],
+    // With no status to contradict it (a node may leave the deprecated status out).
+    ['an empty execution error', (tx) => failWith(tx, {})],
+    [
+      'an execution error naming two variants',
+      (tx) => failWith(tx, { AccountInUse: null, InstructionError: [0, 'GenericError'] }),
+    ],
+    ['a free-text execution error', (tx) => failWith(tx, 'not an error')],
+    [
+      'an execution error keyed by free text',
+      (tx) => failWith(tx, { 'not a variant': 1 }),
+    ],
+    [
+      'a status that failed while the error is null',
+      (tx) => (tx.meta.status = { Err: 'AccountInUse' }),
+    ],
+    ['an error while the status is ok', (tx) => (tx.meta.err = 'AccountInUse')],
+    [
+      'a status naming another error',
+      (tx) => {
+        tx.meta.err = { InstructionError: [2, { Custom: 1 }] };
+        tx.meta.status = { Err: { InstructionError: [2, { Custom: 2 }] } };
+      },
+    ],
+    ['more outer instructions than a packet holds', (tx) => lengthen(tx, 411)],
+    [
+      'more inner instructions under one instruction than its compute allows',
+      (tx) => (tx.meta.innerInstructions = [{ index: 2, instructions: opaque(1_401) }]),
+    ],
   ];
   it.each(refused)('refuses %s', (_, change) => {
     expect(() => parseTransaction(devnet(change))).toThrow(UNAVAILABLE);
@@ -519,8 +565,27 @@ describe('a missing or ill-typed field is malformed, never a default (lesson 6, 
       { InstructionError: [0, { BorshIoError: 'Unknown' }] },
       { InsufficientFundsForRent: { account_index: 1 } },
     ]) {
-      expect(parseTransaction(devnet((tx) => (tx.meta.err = err))).err).toEqual(err);
+      const failed = devnet((tx) => {
+        tx.meta.err = err;
+        tx.meta.status = { Err: err };
+      });
+      expect(parseTransaction(failed).err).toEqual(err);
+      // The status is deprecated: a node may leave it out.
+      expect(
+        parseTransaction(
+          devnet((tx) => {
+            tx.meta.err = err;
+            delete tx.meta.status;
+          }),
+        ).err,
+      ).toEqual(err);
     }
+    // 410 outer instructions (3 bytes each at least), 1,400 inner under one of them.
+    const longest = devnet((tx) => {
+      lengthen(tx, 410);
+      tx.meta.innerInstructions = [{ index: 2, instructions: opaque(1_400) }];
+    });
+    expect(parseTransaction(longest).instructions).toHaveLength(1_810);
   });
 
   it('binds a lookup to the signature asked for: another transaction decides nothing', () => {
@@ -646,5 +711,62 @@ describe('the landing guard reads balances by account, mint and program (phantom
     expect(landed(zero(false))).toBe(false);
     // Whatever the balances say, the signed record moved nothing.
     expect(landed(zero(true))).toBe(false);
+  });
+
+  it('needs the sender debited: a credit alone is no transfer from the sender (F5-R6 M1)', () => {
+    // The recipient gained 1,000 while the sender's account kept its 406,000.
+    const credited = devnet(
+      (tx) => (tx.meta.postTokenBalances![0]!.uiTokenAmount.amount = '406000'),
+    );
+    expect(landed(credited)).toBe(false);
+  });
+
+  it('decides nothing when the node reported no token balances at all (F5-R6 M5)', () => {
+    const bare = devnet((tx) => {
+      delete tx.meta.preTokenBalances;
+      delete tx.meta.postTokenBalances;
+    });
+    expect(() => landed(bare)).toThrow(
+      expect.objectContaining({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+        message: 'the endpoints cannot show the token balances yet',
+      }),
+    );
+  });
+});
+
+describe('inner memos never refuse a transaction (F5-R6 I1)', () => {
+  /** The transfer, with its memo moved into a CPI (a CPI's data reaches 10 KiB). */
+  const innerMemo = (text: string) =>
+    parseTransaction(
+      devnet((tx) => {
+        tx.transaction.message.instructions!.splice(3, 1);
+        tx.meta.innerInstructions = [
+          {
+            index: 2,
+            instructions: [
+              { program: 'spl-memo', programId: MEMO, parsed: text, stackHeight: 2 },
+            ],
+          },
+        ];
+      }),
+    );
+
+  it('reads inner memos up to a CPI data limit, past the packet size', () => {
+    for (const length of [1_233, 10_240]) {
+      const decoded = decodeTransaction(innerMemo('m'.repeat(length)), PLACE);
+      expect(decoded.transfers[0]?.memo).toHaveLength(length);
+      expect(decoded.decoding).toBe('complete');
+    }
+  });
+
+  it('keeps no text beyond it: no memo, and partial', () => {
+    const decoded = decodeTransaction(innerMemo('m'.repeat(10_241)), PLACE);
+    expect([decoded.transfers[0]?.memo, decoded.decoding]).toEqual([
+      undefined,
+      'partial',
+    ]);
+    expect(decoded.transfers).toHaveLength(1);
   });
 });

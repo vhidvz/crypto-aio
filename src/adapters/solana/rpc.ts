@@ -255,7 +255,10 @@ const tokenBalances = (list: unknown): unknown =>
  * R59, lesson 2: a finalized transaction's consensus facts, as far as a verdict reads them
  * (slot, error, signatures, account keys, token balances, token transfer instructions).
  * Formatting that honest providers differ on (`uiAmount` floats, `stackHeight`, `owner` and
- * `programId` on balances, log messages, compute units, `blockTime`) is left out.
+ * `programId` on balances, log messages, compute units, `blockTime`) is left out. The landing
+ * guard (`decode.ts`) still requires `programId` on the transfer's balances: providers must
+ * report it (current agave does), and through one that leaves it out no SPL verdict ever
+ * decides, which costs liveness only.
  */
 function transactionKey(result: unknown): unknown {
   if (result === null) return null;
