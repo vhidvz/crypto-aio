@@ -13,8 +13,10 @@
  *
  * The RPC surface is agave's too: size limits before decoding, base58 unless `encoding`
  * says otherwise, sanitizing (signature count, compute budget) before any preflight, a
- * simulation's blockhash window six blocks short, and `processed` refused where agave
- * refuses it. It accepts only what the codec writes: canonical legacy transactions.
+ * simulation's blockhash window six blocks short, `processed` refused where agave refuses
+ * it, each endpoint's first available block, and the native mint known without its account
+ * in token-account filters. It accepts only what the codec writes: canonical legacy
+ * transactions.
  *
  * Each transaction runs on a copy of the state and commits only whole: a refused one
  * leaves no trace in blocks, balances or the mempool, across forks too, and each block
@@ -36,6 +38,8 @@ export const ATA = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 export const MEMO = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 export const BUDGET = 'ComputeBudget111111111111111111111111111111';
 export const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+/** Wrapped SOL: agave's RPC knows it as the Token program's without its account. */
+export const NATIVE_MINT = 'So11111111111111111111111111111111111111112';
 
 /** The node's own compute-unit model (not chain facts; each within real magnitudes). */
 const COST = {
@@ -1281,6 +1285,14 @@ export class ScriptedSolanaNode {
         return this.genesisHash;
       case 'getSlot':
         return this.#bank(view, config(0).commitment).slot;
+      case 'getFirstAvailableBlock': {
+        // agave `get_first_available_block` (rpc.rs): the local ledger's first block, or
+        // long-term storage's when that answers with a lower one; a failing long-term
+        // storage answers none, so the local ledger's first block stands.
+        const local = view.bigtableFailsBelow ?? 0n;
+        const first = local > view.firstAvailable ? local : view.firstAvailable;
+        return this.#blocks[Number(first)]?.slot ?? this.#nextSlot;
+      }
       case 'getBlockHeight':
         return this.#bank(view, config(0).commitment).height;
       case 'getLatestBlockhash': {
@@ -1395,7 +1407,12 @@ export class ScriptedSolanaNode {
     const filter = (params[1] ?? {}) as Record<string, unknown>;
     let program: string;
     let mint: string | undefined;
-    if (typeof filter.mint === 'string') {
+    if (filter.mint === NATIVE_MINT) {
+      // agave `get_mint_owner_and_additional_data` (parsed_token_accounts.rs): the native
+      // mint is the Token program's, and its account is never read.
+      program = TOKEN;
+      mint = NATIVE_MINT;
+    } else if (typeof filter.mint === 'string') {
       const account = bank.state.get(filter.mint);
       if (!account) throw new RpcFailure(-32602, 'Invalid param: could not find mint');
       if (account.data.length !== 82 || account.data[45] !== 1) {

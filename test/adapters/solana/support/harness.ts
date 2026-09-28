@@ -1,7 +1,13 @@
+import { SOLANA_CHAIN } from '../../../../src/adapters/solana/chains';
+import { HeightIndex } from '../../../../src/adapters/solana/heights';
+import { solanaNetworkConfig } from '../../../../src/adapters/solana/network';
+import type { SolanaContext } from '../../../../src/adapters/solana/reader';
 import type { SolanaCallTags } from '../../../../src/adapters/solana/types';
+import { createWeb3Codec } from '../../../../src/adapters/solana/web3';
 import { EventBus } from '../../../../src/core/events/bus';
 import { noopLogger } from '../../../../src/core/events/logger';
 import type { AioEvent } from '../../../../src/core/events/types';
+import type { NetworkInfo } from '../../../../src/core/model/chain';
 import { HttpTransport } from '../../../../src/core/transport/http-transport';
 import type { Transport } from '../../../../src/core/transport/types';
 import { FakeClock, drive } from '../../../../src/testing/fake-clock';
@@ -11,6 +17,7 @@ import {
   type EndpointOptions,
   type NodeOptions,
 } from './node';
+import { KEY_ADDRESS, KEY_PUBLIC } from './vectors';
 
 export type Endpoint =
   string | ({ readonly name: string } & (EndpointOptions | BalancedOptions));
@@ -65,4 +72,28 @@ export function recording(transport: Transport) {
     },
   });
   return { transport: wrapped, calls };
+}
+
+/** A Solana driver context for devnet over a scripted node. */
+export function solanaHarness(
+  options: {
+    readonly endpoints?: readonly Endpoint[];
+    readonly node?: Omit<NodeOptions, 'clock'>;
+  } = {},
+) {
+  const t = nodeTransport(options.node, options.endpoints);
+  const network = SOLANA_CHAIN.networks.devnet as NetworkInfo;
+  const { transport, calls } = recording(t.transport);
+  const ctx: SolanaContext = {
+    transport,
+    codec: createWeb3Codec(t.transport),
+    chain: SOLANA_CHAIN,
+    network,
+    config: solanaNetworkConfig(SOLANA_CHAIN, network),
+    heights: new HeightIndex(transport),
+    log: noopLogger,
+    nextVariant: () => 0,
+  };
+  const keys = [{ scheme: 'ed25519', publicKey: KEY_PUBLIC }];
+  return { ...t, ctx, calls, keys, from: KEY_ADDRESS };
 }

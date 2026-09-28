@@ -1137,6 +1137,50 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     });
   });
 
+  it('names its first available block, and knows the native mint, as agave does (Task 6)', async () => {
+    const node = new ScriptedSolanaNode({ clock: new FakeClock() });
+    const urls = {
+      main: node.endpoint('main'),
+      pruned: node.endpoint('pruned', { firstAvailableHeight: 3 }),
+      bt: node.endpoint('bt', { bigtableFailsBelow: 4n }),
+    };
+    node.skip(2);
+    node.produce(6);
+    const call = async (url: string, method: string, params: unknown[] = []) =>
+      JSON.parse(
+        await (
+          await node.fetch.fetch(url, {
+            method: 'POST',
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+          })
+        ).text(),
+      ) as { result?: unknown; error?: { code: number; message: string } };
+    // agave `get_first_available_block` (rpc.rs, v4.3.0 825efd1): the local ledger's first
+    // block, or long-term storage's when that answers with a lower one.
+    expect((await call(urls.main, 'getFirstAvailableBlock')).result).toBe(0);
+    expect((await call(urls.pruned, 'getFirstAvailableBlock')).result).toBe(
+      Number(node.block(3n)?.slot),
+    );
+    expect((await call(urls.bt, 'getFirstAvailableBlock')).result).toBe(
+      Number(node.block(4n)?.slot),
+    );
+    // agave `get_mint_owner_and_additional_data` (parsed_token_accounts.rs): the native
+    // mint is the Token program's without reading its account.
+    const NATIVE_MINT = 'So11111111111111111111111111111111111111112';
+    const list = (owner: string) =>
+      call(urls.main, 'getTokenAccountsByOwner', [
+        owner,
+        { mint: NATIVE_MINT },
+        { commitment: 'confirmed', encoding: 'base64' },
+      ]);
+    expect(node.account(NATIVE_MINT)).toBeUndefined();
+    expect((await list(RECIPIENT)).result).toMatchObject({ value: [] });
+    const wrapped = node.mintTo(NATIVE_MINT, KEY_ADDRESS, 5n);
+    expect((await list(KEY_ADDRESS)).result).toMatchObject({
+      value: [{ pubkey: wrapped }],
+    });
+  });
+
   it('answers faults at the HTTP level: a Retry-After, a gateway error, a hang until aborted', async () => {
     const node = new ScriptedSolanaNode({ clock: new FakeClock() });
     const url = node.endpoint('main');
