@@ -20,15 +20,17 @@ cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<ve
 npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM and Tron families are on
-`main` and in the next release. Install only the SDK you use next to the package: for EVM
-chains `npm install ethers`, or `npm install web3` and `library: 'web3'` on the handle, since
-ethers is the default; for Tron `npm install tronweb`. A missing SDK fails with
-`DEPENDENCY_MISSING` and the exact install command. The package has five entry points:
+Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM, UTXO and Tron
+families are on `main` and in the next release. Install only the SDK you use next to the
+package: for EVM chains `npm install ethers`, or `npm install web3` and `library: 'web3'` on
+the handle, since ethers is the default; for Bitcoin `npm install bitcoinjs-lib`; for Tron
+`npm install tronweb`. A missing SDK fails with `DEPENDENCY_MISSING` and the exact install
+command. The package has six entry points:
 
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
 import { evmChainPlugin } from 'crypto-aio/evm'; // EVM extras and SDK client types
+import 'crypto-aio/utxo'; // Bitcoin SDK client types (native(bc, 'bitcoinjs-lib'))
 import { MAX_MEMO_BYTES } from 'crypto-aio/tron'; // Tron constants and the SDK client type
 import { createFakeEnv } from 'crypto-aio/testing'; // test kit and the fake chain
 import { native } from 'crypto-aio/native'; // escape hatch to the SDK client
@@ -167,11 +169,54 @@ Tron works the same way with `npm install tronweb` and `chain: 'tron'`.
 [Tron networks](./networks.md#tron-networks) shows a configuration and what differs: TronGrid
 keys, fees and fee limits, expiry instead of replacement, and why mainnet needs a key.
 
+## Configuring a real network (Bitcoin)
+
+Install the SDK with `npm install bitcoinjs-lib`. Bitcoin reads everything from Esplora
+servers, named twice: as the `provider` (blocks, transactions, fee estimates, broadcasts and
+proofs) and as the `indexer` (the wallet's unspent outputs, balances and history). The
+`mempool` (mempool.space) and `blockstream` (blockstream.info) presets are free,
+rate-limited public services, and `public` uses both. Run your own Esplora for production
+and configure it as `{ endpoints: [{ url }] }`.
+
+```ts
+import { CryptoAio, localSigner, secret, type UtxoFeeOverride } from 'crypto-aio';
+
+const aio = new CryptoAio({
+  signers: { hot: localSigner({ secp256k1: secret(process.env.BTC_KEY ?? '') }) },
+  wallets: { treasury: { signer: 'hot', utxo: { addressType: 'p2wpkh' } } },
+  chains: {
+    bitcoin: {
+      network: 'mainnet', provider: ['mempool', 'blockstream'], indexer: 'mempool', wallet: 'treasury',
+    },
+  },
+  lifecycle: { broadcastFanout: 2 }, // send each transaction to both providers
+});
+const btc = aio.blockchain({ chain: 'bitcoin' });
+const fee: UtxoFeeOverride = { satPerVByte: '2.5' }; // or 'slow' | 'normal' | 'fast'
+const sub = await btc.transfer(
+  {
+    outputs: [
+      { to: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', amount: '0.001' },
+      { to: 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr', amount: 25_000n },
+    ],
+    fee,
+  },
+  { idempotencyKey: 'payout-42' },
+);
+await sub.wait({ finality: 'final' }); // 6 confirmations
+```
+
+Amounts are BTC as decimal strings or satoshis as `bigint`. Two independent providers let
+proofs cross-check: with one Esplora endpoint, its operator alone decides finality. See
+[Bitcoin networks](./networks.md#bitcoin-networks) for the address types, the fee options,
+replace and cancel, and the limits, such as the public services' 500-output limit per
+address.
+
 ## Next steps
 
 - [Core concepts](./concepts.md): the vocabulary behind this example.
 - [Tutorial](./tutorial.md): ten short, hands-on steps that exercise the main concepts.
 - [Sending and receiving](./transactions.md): withdrawals, deposits, and error handling.
 - [Keys, signers and secrets](./security.md): signers, policy hooks, and a production checklist.
-- [Using any blockchain network](./networks.md): the EVM and Tron networks, adding your own,
-  and what is planned.
+- [Using any blockchain network](./networks.md): the EVM, Bitcoin and Tron networks, adding
+  your own, and what is planned.

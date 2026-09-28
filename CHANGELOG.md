@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bc.ext.evm.getNonce(address, 'latest' | 'pending')`.
 - Typed `ChainRegistry` entries for the seven EVM chains and their networks, and the root
   type exports `EvmExt`, `EvmFeeDetails` and `EvmFeeOverride`.
+- The UTXO family, built in: Bitcoin (mainnet, testnet, testnet4, signet, regtest) with
+  bitcoinjs-lib 7 as an optional peer dependency, over an Esplora indexer (`mempool`,
+  `blockstream` and `public` presets).
+- p2wpkh, p2sh-p2wpkh, p2pkh and p2tr wallets; PSBT signing payloads with one request per
+  input, and signed PSBTs through `submitSignatures`; batch outputs; `{ satPerVByte }` fee
+  overrides and an absurd-fee guard; coin selection (`accumulative`, `all`); BIP125 replace
+  and cancel; 6-confirmation finality under the proof quorum; block scanning and address
+  history; `bc.ext.utxo.listUnspent` and `bc.ext.utxo.coinSelection`.
+- The `crypto-aio/utxo` entry: `UTXO_CAPABILITIES`, `UTXO_PEER_DEPENDENCIES`, the SDK-free
+  `Utxo*` types (also exported from `crypto-aio`, with the typed `bitcoin` `ChainRegistry`
+  entry) and the type of `native(bc, 'bitcoinjs-lib')`.
+- `wallet.utxo.allowExternalChangeAddress`: without it, a `changeAddress` that the wallet's
+  key or `xpub` does not derive is refused with `CONFIG_INVALID` (an addition to the spec's
+  `utxo` wallet options).
 - The Tron family, built in: `tron` on mainnet, Shasta and Nile, with tronweb 6 as an optional
   peer dependency; TRX and TRC-20 transfers with memos; the `tron` fee kind (`bandwidth`,
   `energy`, `activation` and `memo` charges, any of which may be 0) with a `{ feeLimit }`

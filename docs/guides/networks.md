@@ -15,16 +15,16 @@ data and imports no SDK. There are three ways a network becomes available.
 | --- | --- | --- | --- |
 | fake | `fakechain`, `fakeexpiry`, `fakeseqno` (`local`) | nonce, expiry, seqno | **Works today**, from `crypto-aio/testing` (register `fakePlugin()`) |
 | EVM (ethers, web3) | Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | nonce | **Works today**, built in ([details](#evm-networks)) |
-| UTXO (bitcoinjs-lib + Esplora) | Bitcoin mainnet, testnet, testnet4, signet, regtest | inputs | Planned, Plan 3 |
+| UTXO (bitcoinjs-lib + Esplora) | Bitcoin mainnet, testnet, testnet4, signet, regtest | inputs | **Works today**, built in ([details](#bitcoin-networks)) |
 | Tron (tronweb) | mainnet, shasta, nile | expiry | **Works today**, built in ([details](#tron-networks)) |
 | Solana (@solana/web3.js) | mainnet, devnet, testnet | expiry | Planned, Plan 5 |
 | TON (@ton/ton) | mainnet, testnet | seqno + expiry | Planned, Plan 6 |
 
-Plans 3, 5 and 6 are the next roadmap milestones (see the [status](./index.md#status)); a
+Plans 5 and 6 are the next roadmap milestones (see the [status](./index.md#status)); a
 planned chain fails with `ConfigError` (`CONFIG_INVALID`, "unknown chain"). Built-in
-families, today the EVM and Tron families, register in the package's composition root.
-Install only the SDK you use (`npm install crypto-aio ethers`, or `tronweb` for Tron); a
-missing one fails with `DEPENDENCY_MISSING`.
+families, today the EVM, UTXO and Tron families, register in the package's composition
+root. Install only the SDK you use (`npm install crypto-aio ethers`, or `bitcoinjs-lib` for
+Bitcoin, or `tronweb` for Tron); a missing one fails with `DEPENDENCY_MISSING`.
 
 ### EVM networks
 
@@ -55,6 +55,172 @@ ethers and web3 clients.
 - **Not in this release:** address history (it needs an indexer; `history()` throws
   `UNSUPPORTED_CAPABILITY`), contract calls other than ERC-20 `transfer`, and `ext.evm`
   beyond `getNonce`.
+
+### Bitcoin networks
+
+The UTXO driver serves `bitcoin` with bitcoinjs-lib 7 (ECC over `@noble/curves`, no WASM). It
+reads everything from Esplora servers: the `provider` serves blocks, transactions, fee
+estimates, broadcasts and proofs, and the `indexer`, which is required, serves the wallet's
+unspent outputs, balances and history. A handle without a `provider` or an `indexer` falls
+back to the `public` preset for it, with a logged warning.
+
+| Network | Presets | Explorer |
+| --- | --- | --- |
+| `mainnet` | `mempool`, `blockstream`, `public` | blockstream.info |
+| `testnet` (v3) | `mempool`, `blockstream`, `public` | blockstream.info/testnet |
+| `testnet4` | `mempool`, `public` (mempool.space only) | none |
+| `signet` | `mempool`, `blockstream`, `public` | blockstream.info/signet |
+| `regtest` | none: configure your own Esplora | none |
+
+The driver's options go in `chains.bitcoin.options`, and an unknown one fails with
+`CONFIG_INVALID`. Fee rates are `bigint` sat/kvB (1,000 sat/kvB is 1 sat/vB):
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `maxFeeRate` | `1_000_000n` (1,000 sat/vB) | The highest fee rate a transaction may pay |
+| `maxFee` | `10_000_000n` sat (0.1 BTC) | The highest fee a transaction may pay |
+| `maxEstimatedFeeRate` | `200_000n` (200 sat/vB) | The highest rate a fee estimate may set |
+| `nonWitnessUtxo` | `true` | Each segwit v0 input carries its previous transaction |
+| `minInputConfirmations` | `1` | The confirmations an output needs before it is spent |
+| `coinSelection` | `'accumulative'` | `'accumulative'` or `'all'` |
+| `rbf` | `true` | Every input signals BIP125 replaceability |
+
+- **Endpoints.** Each endpoint must answer the network's genesis hash at `/block-height/0`,
+  or it is disabled. A custom signet shares the default signet's genesis block, so it passes
+  this check: point a `signet` handle only at the signet you mean. mempool.space and
+  blockstream.info publish no rate limit, so the presets set none; a 429 is retried with
+  backoff (`RATE_LIMITED`). Both refuse to list more than 500 unspent outputs of one
+  address: `/address/:address/utxo` answers HTTP 400, a non-retryable `RPC_ERROR`, so a
+  wallet with more cannot estimate or send through them. For production, and for any large
+  wallet, run your own Esplora (electrs) and configure it as `{ endpoints: [{ url }] }`, as
+  both the `provider` and the `indexer`; give an endpoint a `rateLimit` (`{ rps, burst? }`)
+  when its operator sets one.
+- **Wallets.** `wallet.utxo.addressType` is `p2wpkh` (the default), `p2sh-p2wpkh`, `p2pkh` or
+  `p2tr` (key path only, BIP86). Change goes to the sending address, or to
+  `wallet.utxo.changeAddress`, which must be an address the wallet derives: one of the four
+  types of the wallet's key or, with an `xpub`, one of the first 20 addresses of the wallet's
+  type on its `xpubPath` (default `0/{index}`) or on `1/{index}`. Another address fails with
+  `CONFIG_INVALID` before anything is signed, so a mistyped address can never receive your
+  change. To send change to another key's address on purpose, also set
+  `wallet.utxo.allowExternalChangeAddress: true` (see
+  [security](./security.md#bitcoin-safeguards)). `bc.deriveAddress(wallet, index)` derives
+  addresses of the wallet's type from its `xpub`. An extended public key made for the other
+  network class (a mainnet key on a test network, or a test-network key on mainnet) fails
+  with `CONFIG_INVALID`.
+- **Outputs.** A destination may be any p2pkh, p2sh, p2wpkh, p2wsh or p2tr address of the
+  network; other witness versions fail with `INVALID_ADDRESS`. An amount below its output's
+  dust threshold (546 sat for p2pkh, 540 for p2sh, 294 for p2wpkh, 330 for p2wsh and p2tr)
+  fails with `INVALID_AMOUNT`. A transfer pays at most 1,000 outputs, and a transaction
+  above the standard 400,000 weight units fails with `INVALID_INTENT`.
+- **Fees.** `slow`, `normal` and `fast` read Esplora's estimates for 144, 6 and 2 blocks (or
+  the nearest faster target the endpoint has), never below 1 sat/vB. Without an estimate, a
+  test network pays 1 sat/vB and mainnet fails with a retryable `PROVIDER_UNAVAILABLE`.
+  Overrides are `{ satPerVByte: 3n }` or `{ satPerVByte: '2.5' }` (`UtxoFeeOverride`), at
+  least 1 sat/vB (`FEE_TOO_LOW` below). A built transaction's fee is `exact`
+  (`details.satPerKvB`, `details.vsize`); its size counts the largest possible signatures,
+  so the real rate is never lower. `estimateFee` is `expected`, since the build selects the
+  coins again. A fee above `maxFeeRate` or `maxFee` fails with `INVALID_INTENT` before
+  anything is signed, explicit overrides included: raise them on purpose.
+- **Fee estimates above the cap.** An estimate above `maxEstimatedFeeRate` is taken for a
+  faulty endpoint: it decides nothing, and the call fails with a retryable
+  `PROVIDER_UNAVAILABLE`. During a fee spike, `fast` and `normal` can exceed it; raise the
+  option, use a slower speed, or pass an explicit `{ satPerVByte }`. testnet3's estimates
+  can be far above it (264 sat/vB for up to 6 blocks in September 2026): use `slow` or
+  `satPerVByte` there.
+- **Coins.** `accumulative` (the default) spends the largest outputs first; `all` spends
+  every eligible output (a sweep). Only outputs with `minInputConfirmations` confirmations
+  are spent. `0` also spends unconfirmed ones, but a transfer that spends an output of a
+  transaction that is then replaced, or dropped for good, can never confirm, and the library
+  cannot prove it failed, so its Operation stays open with its inputs held. Outputs held by another
+  live Operation are never selected, and change below the dust threshold goes to the fee.
+  `bc.ext.utxo.listUnspent(address)` lists an address's unspent outputs, and
+  `bc.ext.utxo.coinSelection({ from, outputs, fee?, exclude? })`, with amounts in
+  satoshis, previews a selection without signing.
+- **Signing.** One request per input: ECDSA (BIP143, or legacy for `p2pkh`) for `p2wpkh`,
+  `p2sh-p2wpkh` and `p2pkh`, and Schnorr with the BIP341 key-path tweak for `p2tr`. A `p2tr`
+  request's `publicKey` is the tweaked output key and its `params.tweak` the tweak, so a
+  `callbackSigner` signs with the private key tweaked as BIP341 describes (`localSigner`
+  does this). A `p2tr` wallet needs a signer with a `secp256k1-schnorr` key: an ECDSA-only
+  signer, such as a KMS key, fails at signing, before anything is broadcast.
+- **Cold signing.** `prepareTransfer` returns the PSBT (base64) as `unsigned.payload` for a
+  cold or hardware signer; hand the signed PSBT back to `submitSignatures` (see
+  [transactions](./transactions.md)). `unsigned.expectedRef` is the txid, except on `p2pkh`,
+  whose txid depends on its signatures. The PSBT carries no key origins (BIP32 derivation
+  paths), so a hardware wallet that needs them to find its key needs a coordinator that adds
+  them. The signed PSBT may add signatures, final scripts, key origins and the fields a
+  coordinator adds for its change outputs; anything that could change the spend, and any
+  other field, fails with `INVALID_INTENT`. A signer whose PSBT is refused can still return
+  signature bundles, one per request.
+- **Input values.** Each `p2pkh` input, and each segwit v0 input while `nonWitnessUtxo` is on,
+  carries its previous transaction, which must hash to the input's txid. So the indexer's
+  value for that input is checked (a mismatch is a retryable `PROVIDER_INCONSISTENT`), and a
+  hardware wallet can check the fee. Keep it on. Turning it off saves one read per input,
+  but segwit v0 values are then the indexer's word, which is what the BIP143 fee attack on
+  hardware signers relies on. A `p2tr` input never carries it: a taproot signature commits
+  to every input's amount, so a wrong value from the indexer makes the transaction invalid,
+  never costlier. Such a transaction, like a segwit v0 one built on a wrong value with the
+  option off, is refused, and the transfer stalls (below).
+- **Broadcasts.** A node's claim that a transaction is invalid ends a transfer
+  (`TX_REJECTED`) only when the driver confirms it for the bytes it sent: bytes that do not
+  decode, or a consensus rule that the bytes alone break. Every other claim, and every
+  policy refusal, is `refused`, and the transfer stalls with its inputs held, since the
+  node may have relayed it. So one lying endpoint cannot free your coins for a second
+  payment, but it can refuse every broadcast. Configure several endpoints and set
+  `lifecycle.broadcastFanout` to 2 or more: `transfer`, `rebroadcast`, `replace` and
+  `cancel` then send to that many endpoints at once, and one acceptance is enough.
+- **Stalled transfers.** A signed transfer that a node refused is `stalled` (`FEE_TOO_LOW`,
+  or `TX_REFUSED`, for example when an input is missing or already spent). `abandon`
+  refuses it (`INVALID_TRANSITION`): its signed bytes may already be relayed and can still
+  be mined, so its inputs stay held and no other transfer can spend them twice. Workers
+  keep observing it, and it moves on by itself once a node holds it or a block includes it.
+  Otherwise, `rebroadcast` it after fixing the cause, or `replace` or `cancel` it: each
+  replacement or cancel spends all of the original's inputs, so at most one of them lands.
+  If another transaction spends one of its inputs at finality (the key spent those coins
+  outside the library, for example), it fails with `TX_REPLACED` and its inputs are
+  released. When its bytes are invalid for good (built on a wrong input value, above), a
+  replacement or cancel reuses those values and is refused too, so only such a spend ends
+  it.
+- **Replace and cancel** use BIP125 RBF. A replacement or cancel spends every input of the
+  transaction it replaces (a replacement may add confirmed outputs of the wallet), and it
+  must pay the old fee plus 1 sat/vB of its own size, at a higher rate. Below that it fails
+  with `FEE_TOO_LOW`; it never raises the fee on its own, so a speed that estimates too low
+  fails too: pass a higher `{ satPerVByte }`. A cancel pays everything but its fee back to
+  the sending address, never to a `changeAddress`, at the least valid fee unless you pass
+  one. If the recipient already spent an output with a child transaction (CPFP), the node
+  also counts the child's fee: the replacement fails with `FEE_TOO_LOW`, the original stays
+  live, and a higher explicit fee, one that also covers the child, resolves it.
+- **Finality** is 6 confirmations on every network, attested by the proof quorum;
+  `waitForConfirmation` waits for 1 confirmation by default. Proofs read the `provider`
+  endpoints. With one endpoint, a proof quorum of 1, that one operator decides finality and
+  whether a transfer was replaced: it is fully trusted. Configure at least two independent
+  endpoints, ideally three: with two, an outage of one eventually leaves the other deciding
+  alone. The `public` preset uses mempool.space and blockstream.info, except on testnet4,
+  where it has mempool.space only.
+- **Reorgs.** A full-mode Esplora (electrs), such as the public services, keeps serving a
+  transaction that a reorg took out of its block as unconfirmed, even when no mempool holds
+  it. The library observes your Operations through their first input, so it sees such an
+  Attempt as dropped and rebroadcasts it. A lookup by transaction id alone
+  (`getTransaction`, or the status of a transaction the library does not manage) still
+  shows it as unconfirmed.
+- **Malleated transactions.** A miner can mine a `p2pkh` transaction under another txid (the
+  same effect, with a different encoding of its signature script). The library recognises
+  the copy as your payment: the Operation becomes `final` and `executed`, the observation's
+  `txHash` is the copy's txid, and the Attempt keeps the original id. So
+  `getTransaction(original)` is `null` while `getTransaction(copy)` shows the payment, and
+  `replacedBy` on sibling Attempts names the original id. Segwit and taproot txids cannot be
+  malleated.
+- **Known limits.** No tokens and no OP_RETURN memo (a `memo` fails with
+  `UNSUPPORTED_CAPABILITY`). `getBalance` and `history()` count confirmed transactions only.
+  Newly mined coins (coinbase outputs) are not told apart: a wallet that receives block
+  rewards cannot spend them for 100 confirmations, and a transfer that selects one earlier
+  is refused by the node; `rebroadcast` it once the output has matured.
+
+`native(bc, 'bitcoinjs-lib')` returns `{ bitcoin, network, esplora(path) }`: the bitcoinjs-lib
+module (with this library's ECC backend installed), the network's parameters and a GET to
+the handle's `provider` through its transport. Import `crypto-aio/utxo` once to type it.
+That entry names bitcoinjs-lib's types, so a project that type-checks libraries
+(`skipLibCheck: false`) needs bitcoinjs-lib installed to import it; `crypto-aio` itself never
+does.
 
 ### Tron networks
 

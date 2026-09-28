@@ -26,8 +26,10 @@ valid (`TX_REJECTED`): such bytes can never land, so that verdict needs no chain
 The library ships in roadmap milestones called plans. Plan 1, the core, and Plan 2, the
 **EVM family**, are complete: Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain,
 Arbitrum, Optimism and Base, through ethers (the default) or web3. The fake family from
-`crypto-aio/testing` is a deterministic, in-memory chain for learning and testing. Plan 4,
-the **Tron family** (tronweb), is complete too. The other real chain families are planned.
+`crypto-aio/testing` is a deterministic, in-memory chain for learning and testing. Plan 3,
+the **UTXO family**, and Plan 4, the **Tron family**, are complete too: Bitcoin (mainnet,
+testnet, testnet4, signet, regtest) through bitcoinjs-lib and an Esplora indexer, and Tron
+through tronweb. The other real chain families are planned.
 
 **Only in-memory stores ship.** They work in one process and lose everything on restart.
 In production you supply your own `OperationStore`, `LockManager`, `SequenceStore` and
@@ -41,7 +43,7 @@ in `crypto-aio/testing`; see [Testing an adapter or a store](./networks.md#testi
 | Durable stores (Postgres, Redis, …) | Not shipped: bring your own |
 | Fake chain family (`fakechain`, `fakeexpiry`, `fakeseqno`) from `crypto-aio/testing` | Works today |
 | EVM: Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base (ethers, web3) | Works today; no address history yet (it needs an indexer) |
-| UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Planned, Plan 3 |
+| UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Works today; no tokens, no OP_RETURN memo |
 | Tron (tronweb) | Works today; address history needs an indexer provider (`trongrid` or `public`) |
 | Solana (@solana/web3.js) | Planned, Plan 5 |
 | TON (@ton/ton) | Planned, Plan 6 |
@@ -50,10 +52,12 @@ in `crypto-aio/testing`; see [Testing an adapter or a store](./networks.md#testi
 `npm install ethers`, or `npm install web3` and `library: 'web3'` on the handle, since ethers
 is the default; see
 [Configuring a real network](./quick-start.md#configuring-a-real-network-evm).
+`chain: 'bitcoin'` needs `npm install bitcoinjs-lib`; see
+[Configuring a real network (Bitcoin)](./quick-start.md#configuring-a-real-network-bitcoin).
 `Blockchain.create({ chain: 'tron', provider: … })` works once tronweb is installed
 (`npm install tronweb`); mainnet needs a TronGrid key or another provider, see
 [Tron networks](./networks.md#tron-networks). A chain of a planned family, such as
-`bitcoin`, still fails with `ConfigError` (`CONFIG_INVALID`, "unknown chain"). In these
+`solana`, still fails with `ConfigError` (`CONFIG_INVALID`, "unknown chain"). In these
 guides, an example for a planned family is marked **"shape of the API once the adapter ships
 (planned)"**.
 
@@ -66,7 +70,7 @@ guides, an example for a planned family is marked **"shape of the API once the a
 | [Tutorial](./tutorial.md) | Check your understanding with 10 hands-on steps on the fake chain, about 20 minutes |
 | [Sending and receiving](./transactions.md) | Build withdrawals and deposit scanning, and handle errors |
 | [Keys, signers and secrets](./security.md) | Choose a signer, add a policy hook, protect secrets, go to production |
-| [Using any blockchain network](./networks.md) | See what each EVM and Tron network supports, add your own, or write a chain family plugin |
+| [Using any blockchain network](./networks.md) | See what each EVM, Bitcoin and Tron network supports, add your own, or write a chain family plugin |
 
 ## API reference
 
@@ -76,6 +80,6 @@ The API reference is generated from the source with TypeDoc:
 pnpm doc
 ```
 
-Then open `docs/api/index.html` in a browser. The reference covers the five entry points:
-`crypto-aio`, `crypto-aio/evm`, `crypto-aio/tron`, `crypto-aio/testing` and
-`crypto-aio/native`. It also includes these guides.
+Then open `docs/api/index.html` in a browser. The reference covers the six entry points:
+`crypto-aio`, `crypto-aio/evm`, `crypto-aio/utxo`, `crypto-aio/tron`, `crypto-aio/testing`
+and `crypto-aio/native`. It also includes these guides.

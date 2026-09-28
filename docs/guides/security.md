@@ -189,6 +189,36 @@ const client = await native(env.bc, 'fake-sdk'); // native(eth, 'ethers'), nativ
 - It is **outside the stable API**. It is not covered by semver, and the SDK's behaviour is
   yours to manage.
 
+## Bitcoin safeguards
+
+On Bitcoin, a wrong fee or change address burns funds, and an Esplora endpoint is trusted
+for what it reports. The driver's guards:
+
+- **Absurd fees.** A fee above `options.maxFeeRate` (1,000 sat/vB) or `options.maxFee`
+  (0.1 BTC) fails with `INVALID_INTENT`, on every transfer, replacement and cancel,
+  explicit overrides included. A fee estimate above `options.maxEstimatedFeeRate`
+  (200 sat/vB) is not trusted, so one endpoint cannot set an absurd rate.
+- **Change address.** Every transaction's change goes to `wallet.utxo.changeAddress` when it
+  is set, so it must be an address the wallet's own key or `xpub` derives. Any other
+  address fails with `CONFIG_INVALID`. `wallet.utxo.allowExternalChangeAddress: true` lifts
+  that check for a change address of another key, such as a cold wallet's. With it, a
+  mistyped but valid address loses every change output, so set it only for an address you
+  have verified. A cancel always pays back to the sending address.
+- **Input values.** Keep `options.nonWitnessUtxo` on (the default). Each `p2pkh` and segwit
+  v0 input then carries its previous transaction, whose bytes must hash to the input's
+  txid, so the indexer cannot misstate what you spend, and a hardware signer can check the
+  fee. A `p2tr` signature commits to every input's amount, so a misstated value makes the
+  transaction invalid, never costlier.
+- **Endpoints.** With a single Esplora endpoint as the `provider`, its operator alone decides
+  finality and whether a transfer was replaced. Use two independent endpoints, ideally
+  three. A node's claim that your transaction is invalid ends a transfer only when the
+  driver confirms it for the bytes it sent, so a lying endpoint cannot free your coins for a
+  second payment. It can still refuse to relay them, which several endpoints and
+  `lifecycle.broadcastFanout` of 2 or more route around.
+
+See [Bitcoin networks](./networks.md#bitcoin-networks) for the defaults and how a refused
+transfer resolves.
+
 ## Production checklist
 
 - [ ] One `new CryptoAio({ namespace })` per tenant. Scopes are not tenant boundaries.
@@ -210,3 +240,6 @@ const client = await native(env.bc, 'fake-sdk'); // native(eth, 'ethers'), nativ
 - [ ] Credit and complete only on `final` with `proven` evidence. Dedupe deposits on the
       transfer id.
 - [ ] `await aio.close()` on shutdown.
+- [ ] Bitcoin: your own Esplora, with two or three independent endpoints as the `provider`;
+      `lifecycle.broadcastFanout` of 2 or more; `nonWitnessUtxo` left on; and
+      `allowExternalChangeAddress` only for a verified address.
