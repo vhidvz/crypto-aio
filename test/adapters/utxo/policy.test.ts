@@ -7,12 +7,14 @@ import {
   vsizeOf,
   type Spendable,
 } from '../../../src/adapters/utxo/coinselect';
+import * as errors from '../../../src/adapters/utxo/errors';
 import {
-  classifyBroadcast,
   classifyOwnBroadcast,
+  nodeClaim,
   parseNodeError,
   type TxBytes,
 } from '../../../src/adapters/utxo/errors';
+import type { BroadcastResult } from '../../../src/core/driver/types';
 import {
   assertSaneFee,
   feeAt,
@@ -324,27 +326,27 @@ describe('broadcast classification (lesson 3, R24)', () => {
     [
       -26,
       'bad-txns-in-belowout, value in (100) < value out (200)',
-      { kind: 'rejected', reason: 'invalid by consensus rules' },
+      { kind: 'invalid', reason: 'invalid by consensus rules' },
     ],
     [
       -26,
       'bad-txns-inputs-duplicate',
-      { kind: 'rejected', reason: 'invalid by consensus rules' },
+      { kind: 'invalid', reason: 'invalid by consensus rules' },
     ],
     [
       -26,
       'mandatory-script-verify-flag-failed (Signature must be zero for failed CHECK(MULTI)SIG operation)',
-      { kind: 'rejected', reason: 'script verification failed' },
+      { kind: 'invalid', reason: 'script verification failed' },
     ],
     [
       -26,
       'block-script-verify-flag-failed (Invalid Schnorr signature)',
-      { kind: 'rejected', reason: 'script verification failed' },
+      { kind: 'invalid', reason: 'script verification failed' },
     ],
     [
       -22,
       'TX decode failed. Make sure the tx has at least one input.',
-      { kind: 'rejected', reason: 'the transaction does not decode' },
+      { kind: 'invalid', reason: 'the transaction does not decode' },
     ],
     [
       -26,
@@ -417,10 +419,8 @@ describe('broadcast classification (lesson 3, R24)', () => {
       { kind: 'refused', code: 'TX_REFUSED', reason: 'the node refused the transaction' },
     ],
   ] as const)('%s %s', (code, message, expected) => {
-    expect(classifyBroadcast(parseNodeError(blockstream(code, message)))).toEqual(
-      expected,
-    );
-    expect(classifyBroadcast(parseNodeError(mempool(code, message)))).toEqual(expected);
+    expect(nodeClaim(parseNodeError(blockstream(code, message)))).toEqual(expected);
+    expect(nodeClaim(parseNodeError(mempool(code, message)))).toEqual(expected);
   });
 
   const REFUSED_BY_NODE = {
@@ -438,7 +438,7 @@ describe('broadcast classification (lesson 3, R24)', () => {
       [
         -26,
         `block-script-verify-flag-failed (Invalid Schnorr signature)${tail}`,
-        { kind: 'rejected', reason: 'script verification failed' },
+        { kind: 'invalid', reason: 'script verification failed' },
       ],
       [
         -26,
@@ -449,12 +449,10 @@ describe('broadcast classification (lesson 3, R24)', () => {
       [-26, `dust${tail}`, REFUSED_BY_NODE],
     ] as const) {
       expect(mempool(code, message).length).toBeGreaterThan(300);
-      expect(classifyBroadcast(parseNodeError(cut(blockstream(code, message))))).toEqual(
+      expect(nodeClaim(parseNodeError(cut(blockstream(code, message))))).toEqual(
         expected,
       );
-      expect(classifyBroadcast(parseNodeError(cut(mempool(code, message))))).toEqual(
-        expected,
-      );
+      expect(nodeClaim(parseNodeError(cut(mempool(code, message))))).toEqual(expected);
     }
   });
 
@@ -475,15 +473,15 @@ describe('broadcast classification (lesson 3, R24)', () => {
         message: 'block-script-verify-flag-failed (Invalid Schnorr signature)',
       },
     ]) {
-      expect(classifyBroadcast(error)).toEqual(REFUSED_BY_NODE);
+      expect(nodeClaim(error)).toEqual(REFUSED_BY_NODE);
     }
-    expect(classifyBroadcast(parseNodeError('bad-txns-inputs-duplicate'))).toEqual(
+    expect(nodeClaim(parseNodeError('bad-txns-inputs-duplicate'))).toEqual(
       REFUSED_BY_NODE,
     );
   });
 
   it('defaults an unknown body to a refusal and never echoes node text', () => {
-    const result = classifyBroadcast(parseNodeError('<html>bad gateway 1.2.3.4</html>'));
+    const result = nodeClaim(parseNodeError('<html>bad gateway 1.2.3.4</html>'));
     expect(result).toEqual({
       kind: 'refused',
       code: 'TX_REFUSED',
@@ -496,20 +494,20 @@ describe('broadcast classification (lesson 3, R24)', () => {
     // The cap is pinned by structure, not time: an answer past the first 1,024 characters
     // is never read, so it cannot decide anything.
     expect(
-      classifyBroadcast(
+      nodeClaim(
         parseNodeError('x'.repeat(1_024) + blockstream(-26, 'bad-txns-inputs-duplicate')),
       ),
     ).toEqual(REFUSED_BY_NODE);
     const hostile = 'sendrawtransaction RPC error: {'.repeat(100_000 / 31 + 1);
     expect(hostile.length).toBeGreaterThan(100_000);
-    expect(classifyBroadcast(parseNodeError(hostile))).toEqual(REFUSED_BY_NODE);
+    expect(nodeClaim(parseNodeError(hostile))).toEqual(REFUSED_BY_NODE);
     const tail = 'x'.repeat(100_000);
     for (const body of [
       blockstream(-26, `bad-txns-inputs-duplicate, ${tail}`),
       mempool(-26, `bad-txns-inputs-duplicate, ${tail}`),
     ]) {
-      expect(classifyBroadcast(parseNodeError(body))).toEqual({
-        kind: 'rejected',
+      expect(nodeClaim(parseNodeError(body))).toEqual({
+        kind: 'invalid',
         reason: 'invalid by consensus rules',
       });
     }
@@ -567,10 +565,21 @@ describe("a node's rejection is a claim (lesson 21)", () => {
       // Bytes that do not decode prove no `CheckTransaction` reason.
       expect(claim(reason, undefined)).toEqual(CLAIMED);
     }
-    // bitcoind names an out-of-range value first (`vout-negative`, `vout-toolarge`); the
-    // total counts only when every value is in range.
-    for (const values of [[-1n, MAX_MONEY, 2n], [MAX_MONEY + 1n]]) {
+    // bitcoind checks the outputs in order and stops at the first failure: an out-of-range
+    // value (`vout-negative`, `vout-toolarge`) before the total passes MAX_MONEY names that
+    // reason; a total past MAX_MONEY first names the total, whatever follows (F3-R14 N1).
+    for (const values of [
+      [-1n, MAX_MONEY, 2n],
+      [MAX_MONEY + 1n],
+      [1n, MAX_MONEY + 1n, MAX_MONEY],
+    ]) {
       expect(claim('bad-txns-txouttotal-toolarge', tx({ values }))).toEqual(CLAIMED);
+    }
+    for (const values of [
+      [MAX_MONEY, 2n, -1n],
+      [MAX_MONEY, 1n, MAX_MONEY + 1n],
+    ]) {
+      expect(claim('bad-txns-txouttotal-toolarge', tx({ values }))).toEqual(CONSENSUS);
     }
     // bitcoind's null outpoint is the zero txid AND vout 0xffffffff.
     const zero = { txid: '00'.repeat(32), vout: 0 };
@@ -600,7 +609,7 @@ describe("a node's rejection is a claim (lesson 21)", () => {
       'mandatory-script-verify-flag-failed (Signature must be zero for failed CHECK(MULTI)SIG operation)',
       'block-script-verify-flag-failed (Script evaluated without error but finished with a false/empty top stack element)',
     ]) {
-      expect(classifyBroadcast({ code: -26, message: reason }).kind).toBe('rejected');
+      expect(nodeClaim({ code: -26, message: reason }).kind).toBe('invalid');
       expect(claim(reason, tx())).toEqual(CLAIMED);
       expect(claim(reason, bad)).toEqual(CLAIMED);
       expect(claim(reason, undefined)).toEqual(CLAIMED);
@@ -616,9 +625,23 @@ describe("a node's rejection is a claim (lesson 21)", () => {
       [-25, 'bad-txns-vin-empty'],
     ] as const) {
       const error = { code, message };
-      expect(classifyOwnBroadcast(error, tx({ inputs: [] }))).toEqual(
-        classifyBroadcast(error),
-      );
+      expect(classifyOwnBroadcast(error, tx({ inputs: [] }))).toEqual(nodeClaim(error));
     }
+  });
+
+  it('exports no classifier that takes the node at its word (final review M4)', () => {
+    // The parser's claim of invalid bytes is not a verdict: `invalid` is no BroadcastResult
+    // kind, so no Broadcaster can return it; only classifyOwnBroadcast, given the bytes that
+    // were sent, makes a `rejected`.
+    const claim = nodeClaim({ code: -26, message: 'bad-txns-inputs-duplicate' });
+    expect(claim).toEqual({ kind: 'invalid', reason: 'invalid by consensus rules' });
+    // @ts-expect-error a node's claim is not a broadcast verdict (lesson 21)
+    const verdict: BroadcastResult = claim;
+    expect(verdict.kind).not.toBe('rejected');
+    expect(Object.keys(errors).sort()).toEqual([
+      'classifyOwnBroadcast',
+      'nodeClaim',
+      'parseNodeError',
+    ]);
   });
 });

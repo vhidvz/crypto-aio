@@ -9,7 +9,7 @@ import {
   utxoBuilder,
   utxoReplacement,
 } from '../../../src/adapters/utxo/builder';
-import { classifyBroadcast, parseNodeError } from '../../../src/adapters/utxo/errors';
+import { nodeClaim, parseNodeError } from '../../../src/adapters/utxo/errors';
 import { chainReader, listUnspent } from '../../../src/adapters/utxo/reader';
 import { XPUB_CHANGE_SEARCH } from '../../../src/adapters/utxo/spend';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
@@ -680,6 +680,8 @@ describe('build and assemble', () => {
     const h = await funded();
     const cases: [DriverIntent, BuildContext, string][] = [
       [intent(100n), build(), 'INVALID_AMOUNT'],
+      // F3-R15: a memo reaches the driver only if a network wrongly advertises `memo`.
+      [intent(10_000n, { memo: 'invoice 7' }), build(), 'UNSUPPORTED_CAPABILITY'],
       [
         intent(10_000n, { asset: { standard: 'brc20', contract: 'ordi' } }),
         build(),
@@ -980,8 +982,8 @@ describe('broadcast', () => {
         `sendrawtransaction RPC error ${code}: ${message}`,
         `sendrawtransaction RPC error: ${JSON.stringify({ code, message })}`,
       ]) {
-        // The pure classifier takes the node at its word; the broadcaster checks our bytes.
-        expect(classifyBroadcast(parseNodeError(text)).kind).toBe('rejected');
+        // The parser reads the node's claim; the broadcaster checks it against our bytes.
+        expect(nodeClaim(parseNodeError(text)).kind).toBe('invalid');
         h.node.intercept('a', (request, _signal, honest) => {
           if (request.method !== 'POST') return undefined;
           honest();

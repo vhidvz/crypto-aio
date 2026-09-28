@@ -12,9 +12,11 @@
  * bitcoind's structured answer never ends an Attempt. Reasons are fixed literals: bitcoind's
  * texts carry txids, amounts and fee rates (R24).
  *
- * Lesson 21 (F3-R11): a node's rejection is a claim. `classifyBroadcast` takes the node at its
- * word; `classifyOwnBroadcast` keeps a `rejected` only when the claimed reason holds for the
- * bytes that were sent, checked here, and makes every other one `refused` (non-terminal).
+ * Lesson 21 (F3-R11): a node's rejection is a claim. `nodeClaim` only parses what the node
+ * claims, and a claimed consensus failure is `invalid`, a kind no `Broadcaster` may return.
+ * `classifyOwnBroadcast`, the only classifier, keeps a `rejected` only when the claimed reason
+ * holds for the bytes that were sent, checked here, and makes every other one `refused`
+ * (non-terminal). No export takes the node at its word (final review M4).
  */
 import type { BroadcastResult } from '../../core/driver/types';
 
@@ -117,7 +119,7 @@ const CLAIMS: readonly (readonly [number, string, RegExp, string])[] = REJECTED.
 );
 
 /** The rejected reason bitcoind's answer claims, or `undefined` when it claims none. */
-function claimOf(error: NodeError, message: string) {
+function claimedReason(error: NodeError, message: string) {
   return CLAIMS.find(([code, , pattern]) => error.code === code && pattern.test(message));
 }
 
@@ -134,11 +136,20 @@ const SPENT = reason(
   'bad-txns-spends-conflicting-tx',
 );
 
-export function classifyBroadcast(error: NodeError): BroadcastResult {
+/**
+ * What bitcoind's answer claims, parsed: it decides nothing. A claimed consensus failure is
+ * `invalid`, which is no `BroadcastResult`: only `classifyOwnBroadcast` turns it into a
+ * `rejected` verdict, and only for bytes its reason holds for (lesson 21).
+ */
+export type NodeClaim =
+  | Extract<BroadcastResult, { readonly kind: 'already-known' | 'refused' }>
+  | { readonly kind: 'invalid'; readonly reason: string };
+
+export function nodeClaim(error: NodeError): NodeClaim {
   const message = error.message.trim();
   if (ALREADY_KNOWN.test(message) || error.code === -27) return { kind: 'already-known' };
-  const claim = claimOf(error, message);
-  if (claim) return { kind: 'rejected', reason: claim[3] };
+  const claim = claimedReason(error, message);
+  if (claim) return { kind: 'invalid', reason: claim[3] };
   if (FEE_TOO_LOW.test(message)) {
     return { kind: 'refused', code: 'FEE_TOO_LOW', reason: 'fee too low for the node' };
   }
@@ -192,9 +203,16 @@ const BYTE_RULES: Readonly<Record<string, (tx: TxBytes) => boolean>> = {
   'bad-txns-oversize': (tx) => tx.strippedSize * 4 > MAX_BLOCK_WEIGHT,
   'bad-txns-vout-negative': (tx) => tx.values.some((value) => value < 0n),
   'bad-txns-vout-toolarge': (tx) => tx.values.some((value) => value > MAX_MONEY),
-  'bad-txns-txouttotal-toolarge': (tx) =>
-    tx.values.every((value) => value >= 0n && value <= MAX_MONEY) &&
-    tx.values.reduce((sum, value) => sum + value, 0n) > MAX_MONEY,
+  // bitcoind's loop: each output in order, stopping at the first that fails (F3-R14 N1).
+  'bad-txns-txouttotal-toolarge': (tx) => {
+    let total = 0n;
+    for (const value of tx.values) {
+      if (value < 0n || value > MAX_MONEY) return false; // `vout-negative`, `-toolarge`
+      total += value;
+      if (total > MAX_MONEY) return true;
+    }
+    return false;
+  },
   'bad-txns-inputs-duplicate': (tx) =>
     new Set(tx.inputs.map((input) => `${input.txid}:${input.vout}`)).size <
     tx.inputs.length,
@@ -221,11 +239,12 @@ export function classifyOwnBroadcast(
   error: NodeError,
   bytes: TxBytes | undefined,
 ): BroadcastResult {
-  const result = classifyBroadcast(error);
-  if (result.kind !== 'rejected') return result;
-  const name = claimOf(error, error.message.trim())?.[1];
-  if (name === DECODE_FAILED) return bytes === undefined ? result : UNCONFIRMED;
+  const claim = nodeClaim(error);
+  if (claim.kind !== 'invalid') return claim;
+  const rejected: BroadcastResult = { kind: 'rejected', reason: claim.reason };
+  const name = claimedReason(error, error.message.trim())?.[1];
+  if (name === DECODE_FAILED) return bytes === undefined ? rejected : UNCONFIRMED;
   const rule =
     name !== undefined && Object.hasOwn(BYTE_RULES, name) ? BYTE_RULES[name] : undefined;
-  return bytes !== undefined && rule?.(bytes) ? result : UNCONFIRMED;
+  return bytes !== undefined && rule?.(bytes) ? rejected : UNCONFIRMED;
 }

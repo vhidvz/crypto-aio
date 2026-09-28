@@ -11,7 +11,7 @@ import {
   type PlannedInput,
   type PreviousTx,
 } from '../../../src/adapters/utxo/codec';
-import { classifyBroadcast, parseNodeError } from '../../../src/adapters/utxo/errors';
+import { nodeClaim, parseNodeError } from '../../../src/adapters/utxo/errors';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
 import type { UtxoAddressType } from '../../../src/adapters/utxo/types';
 import { tweakPrivateKey } from '../../../src/core/signing/local';
@@ -430,11 +430,10 @@ describe('what the real codec produces (Task 5)', () => {
   );
 
   it.each(['blockstream', 'mempool'] as const)(
-    '%s: a consensus-invalid signature is refused on v30 and rejected on v29, through the classifier',
+    '%s: a consensus-invalid signature is refused on v30 and claimed invalid on v29, through the parser',
     async (errorFormat) => {
       // The transport keeps 300 characters of a 4xx body (details.body).
-      const classify = (body: string) =>
-        classifyBroadcast(parseNodeError(body.slice(0, 300)));
+      const classify = (body: string) => nodeClaim(parseNodeError(body.slice(0, 300)));
       const v30 = setup({ errorFormat });
       const bad30 = forged(codecSpend(v30.node, 'p2wpkh').hex, 'p2wpkh');
       const body30 = (await v30.post(bad30)).text;
@@ -449,7 +448,7 @@ describe('what the real codec produces (Task 5)', () => {
       const body29 = (await v29.post(bad29)).text;
       expect(body29.length).toBeGreaterThan(300);
       expect(classify(body29)).toEqual({
-        kind: 'rejected',
+        kind: 'invalid',
         reason: 'script verification failed',
       });
     },
