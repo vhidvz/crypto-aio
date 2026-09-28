@@ -20,7 +20,44 @@ import type { FeeOverride } from '../../../src/core/model/fee';
 const chain = TON_CHAINS[0] as ChainInfo;
 const mainnet = chain.networks.mainnet as NetworkInfo;
 
+/** A config name that could be a pasted secret: a toncenter key, an xprv, a token, a blob. */
+const SECRET_SHAPED = [
+  'a1b2'.repeat(16),
+  `xprv${'K'.repeat(107)}`,
+  'apiKey=hunter2',
+  'bearer:0123456789abcdef',
+  'x'.repeat(100_000),
+];
+
 describe('TON network config', () => {
+  it("never echoes a caller's key or capability name into an error (F3-R16)", () => {
+    for (const name of SECRET_SHAPED) {
+      const patches: readonly Partial<NetworkInfo>[] = [
+        { params: { [name]: 1 } },
+        { params: { maxNetworkFee: { [name]: 1n } } },
+        { capabilities: { add: [name] } },
+        { capabilities: { remove: [name] } },
+        { feeModel: name as 'ton' },
+        { finality: { kind: name } as unknown as NetworkInfo['finality'] },
+      ];
+      for (const patch of patches) {
+        let thrown: unknown;
+        try {
+          tonNetworkConfig(chain, { ...mainnet, ...patch });
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toMatchObject({ code: 'CONFIG_INVALID' });
+        const message = (thrown as Error).message;
+        expect([name.slice(0, 12), message.includes(name.slice(0, 8))]).toEqual([
+          name.slice(0, 12),
+          false,
+        ]);
+        expect(message.length).toBeLessThan(200);
+      }
+    }
+  });
+
   it('reads the global id, lifetime and jetton values of the built-in networks', () => {
     expect(tonNetworkConfig(chain, mainnet)).toEqual({
       globalId: -239,
@@ -161,8 +198,12 @@ describe('TON network config', () => {
       [{ basechain: '1000' }, 'maxNetworkFee.basechain'],
       [{ masterchain: MAX_COINS + 1n }, 'maxNetworkFee.masterchain'],
       [{ masterchain: null }, 'maxNetworkFee.masterchain'],
-      [{ shardchain: 1n }, "'shardchain'"],
-      [{ [long]: 1n }, `'${'w'.repeat(64)}'`],
+      // F3-R16: the caller's key is never echoed; the accepted names are.
+      [
+        { shardchain: 1n },
+        "params.maxNetworkFee takes only 'basechain' and 'masterchain'",
+      ],
+      [{ [long]: 1n }, "params.maxNetworkFee takes only 'basechain' and 'masterchain'"],
     ];
     for (const [value, name] of bad) {
       let thrown: unknown;
@@ -174,33 +215,50 @@ describe('TON network config', () => {
       expect(thrown).toMatchObject({ code: 'CONFIG_INVALID' });
       const message = (thrown as Error).message;
       expect(message).toContain(name);
-      expect(message).not.toContain('w'.repeat(65));
+      expect(message).not.toMatch(/shardchain|ww/);
       expect(message.length).toBeLessThan(200);
     }
   });
 
-  it('allows only its own options and capabilities, naming a refused one briefly (M2)', () => {
+  it('allows only its own options and capabilities, listing what it accepts (M2, F3-R16)', () => {
     const long = 'k'.repeat(100_000);
+    const options =
+      'TON network ton:mainnet: params has a key that is not a TON network option ' +
+      '(validForSeconds, jettonAttached, jettonForwardAmount, finalitySkewBlocks, maxNetworkFee)';
     const cases: readonly (readonly [Partial<NetworkInfo>, string])[] = [
-      [{ params: { jettonAttachd: 1n } }, "'jettonAttachd'"],
-      [{ params: { [long]: 1 } }, `'${'k'.repeat(64)}'`],
-      [{ capabilities: { add: ['fee-market-1559'] } }, "'fee-market-1559'"],
+      [{ params: { jettonAttachd: 1n } }, options],
+      [{ params: { [long]: 1 } }, options],
+      // A core capability's name is a fixed word, never the caller's text: it is shown.
+      [
+        { capabilities: { add: ['fee-market-1559'] } },
+        "TON network ton:mainnet: 'fee-market-1559' is not available on TON",
+      ],
       // One output per transfer (Task 9): no network can offer TON batches.
-      [{ capabilities: { add: ['batch-transfer'] } }, "'batch-transfer'"],
-      [{ capabilities: { remove: [long] } }, `'${'k'.repeat(64)}'`],
+      [
+        { capabilities: { add: ['batch-transfer'] } },
+        "TON network ton:mainnet: 'batch-transfer' is not available on TON",
+      ],
+      [
+        { capabilities: { remove: [long] } },
+        'TON network ton:mainnet: an unknown capability is not available on TON',
+      ],
+      [
+        { feeModel: long as 'ton' },
+        "TON network ton:mainnet: its fee model must be 'ton'",
+      ],
+      [
+        { finality: { kind: long } as unknown as NetworkInfo['finality'] },
+        "TON network ton:mainnet: its finality must be 'masterchain'",
+      ],
     ];
-    for (const [patch, name] of cases) {
+    for (const [patch, expected] of cases) {
       let thrown: unknown;
       try {
         tonNetworkConfig(chain, { ...mainnet, ...patch });
       } catch (error) {
         thrown = error;
       }
-      expect(thrown).toMatchObject({ code: 'CONFIG_INVALID' });
-      const message = (thrown as Error).message;
-      expect(message).toContain(name);
-      expect(message).not.toContain('k'.repeat(65));
-      expect(message.length).toBeLessThan(200);
+      expect(thrown).toMatchObject({ code: 'CONFIG_INVALID', message: expected });
     }
     // Its own capabilities may each be added back or removed.
     expect(

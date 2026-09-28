@@ -121,19 +121,38 @@ describe('TON wallet identity (spec §9)', () => {
     expect(() => at({ version: 'v5r1', subwalletNumber: 32768 })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining('32768') }),
     );
-    // M3: an unknown key is named, but never more than 64 characters of it.
-    const key = 'k'.repeat(100_000);
-    let error: unknown;
-    try {
-      at({ version: 'v4r2', [key]: 1 });
-    } catch (caught) {
-      error = caught;
+    // M3, F3-R16: an unknown key is never echoed (it could be a pasted secret); the
+    // accepted settings are listed instead.
+    for (const [version, key, expected] of [
+      [
+        'v4r2',
+        'k'.repeat(100_000),
+        'TON wallet: a v4r2 wallet takes only version, workchain, subwalletId',
+      ],
+      [
+        'v4r2',
+        'a1b2'.repeat(16),
+        'TON wallet: a v4r2 wallet takes only version, workchain, subwalletId',
+      ],
+      [
+        'v5r1',
+        'apiKey=hunter2',
+        'TON wallet: a v5r1 wallet takes only version, workchain, subwalletNumber, networkGlobalId',
+      ],
+      [
+        'v5r1',
+        'subwalletId',
+        'TON wallet: a v5r1 wallet takes only version, workchain, subwalletNumber, networkGlobalId',
+      ],
+    ] as const) {
+      let error: unknown;
+      try {
+        at({ version, [key]: 1 });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toMatchObject({ code: 'CONFIG_INVALID', message: expected });
     }
-    expect(error).toMatchObject({
-      code: 'CONFIG_INVALID',
-      message: expect.stringContaining(`'${'k'.repeat(64)}' is not a v4r2 setting`),
-    });
-    expect((error as Error).message.length).toBeLessThan(120);
   });
 
   it('refuses a v5r1 wallet id of another network before any key is used (lesson 5)', () => {

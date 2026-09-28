@@ -4,7 +4,7 @@
  * SDK-free.
  */
 import { ConfigError } from '../../core/errors/error';
-import type { Capability } from '../../core/model/capability';
+import { KNOWN_CAPABILITIES, type Capability } from '../../core/model/capability';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
 import { MAX_COINS } from './fees';
 
@@ -66,8 +66,15 @@ export const DEFAULT_MAX_NETWORK_FEE: TonFeeCeiling = Object.freeze({
 
 const WORKCHAINS: ReadonlySet<string> = new Set(['basechain', 'masterchain']);
 
-/** A caller's name in an error: at most 64 characters (lesson 20). */
-const named = (value: unknown): string => `'${String(value).slice(0, 64)}'`;
+/**
+ * A capability as an error may show it (F3-R16): a core capability's name is a fixed word, so
+ * it is shown; any other text could be a pasted secret, so it is not. Unknown option keys are
+ * never echoed either; their errors list the accepted names instead.
+ */
+const shown = (capability: Capability): string =>
+  (KNOWN_CAPABILITIES as readonly string[]).includes(capability)
+    ? `'${capability}'`
+    : 'an unknown capability';
 
 export interface TonNetworkConfig {
   /** Config param 19; the network identity. */
@@ -108,14 +115,18 @@ export function tonNetworkConfig(
     fail('the global id must be an int32');
   }
   if (network.feeModel !== 'ton') {
-    fail(`fee model ${named(network.feeModel)} is not 'ton'`);
+    fail(`its fee model must be 'ton'`);
   }
   if (network.finality.kind !== 'masterchain') {
-    fail(`finality ${named(network.finality.kind)} is not 'masterchain'`);
+    fail(`its finality must be 'masterchain'`);
   }
   const params = network.params ?? {};
   for (const key of Object.keys(params)) {
-    if (!OPTIONS.has(key)) fail(`params key ${named(key)} is not a TON network option`);
+    if (!OPTIONS.has(key)) {
+      fail(
+        `params has a key that is not a TON network option (${[...OPTIONS].join(', ')})`,
+      );
+    }
   }
   // Own keys only; an explicit `undefined` is absent, so the library default applies.
   const param = (key: string, fallback: unknown): unknown => {
@@ -145,7 +156,7 @@ export function tonNetworkConfig(
     ...TON_INDEXER_CAPABILITIES,
   ]);
   const own = (c: Capability): Capability =>
-    OWN_CAPABILITIES.has(c) ? c : fail(`${named(c)} is not available on TON`);
+    OWN_CAPABILITIES.has(c) ? c : fail(`${shown(c)} is not available on TON`);
   for (const c of network.capabilities?.add ?? []) capabilities.add(own(c));
   for (const c of network.capabilities?.remove ?? []) capabilities.delete(own(c));
   return {
@@ -163,7 +174,7 @@ export function tonNetworkConfig(
 /**
  * `params.maxNetworkFee`: `{ basechain?, masterchain? }`, each a positive bigint within Coins
  * (the charge is compared with nanogram amounts); a workchain left out keeps its default.
- * Any other key, or value, is `CONFIG_INVALID` with a bounded name (M2).
+ * Any other key, or value, is `CONFIG_INVALID`, which never echoes the key (M2, F3-R16).
  */
 function feeCeiling(value: unknown, fail: (reason: string) => never): TonFeeCeiling {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -172,7 +183,7 @@ function feeCeiling(value: unknown, fail: (reason: string) => never): TonFeeCeil
   const record = value as Readonly<Record<string, unknown>>;
   for (const key of Object.keys(record)) {
     if (!WORKCHAINS.has(key)) {
-      fail(`params.maxNetworkFee key ${named(key)} is not 'basechain' or 'masterchain'`);
+      fail(`params.maxNetworkFee takes only 'basechain' and 'masterchain'`);
     }
   }
   const bound = (key: keyof TonFeeCeiling): bigint => {

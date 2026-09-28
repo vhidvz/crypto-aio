@@ -47,6 +47,7 @@ const OPTIONS: ts.CompilerOptions = {
     'crypto-aio/tron': [join(ROOT, 'src', 'adapters', 'tron', 'index.ts')],
     'crypto-aio/utxo': [join(ROOT, 'src', 'adapters', 'utxo', 'index.ts')],
     'crypto-aio/solana': [join(ROOT, 'src', 'adapters', 'solana', 'index.ts')],
+    'crypto-aio/ton': [join(ROOT, 'src', 'adapters', 'ton', 'index.ts')],
   },
 };
 
@@ -277,6 +278,58 @@ describe('Solana registry augmentation (R37)', () => {
   }, 120_000);
 });
 
+/** The TON family's built-in chain is typed from the entry; its SDK client from `crypto-aio/ton`. */
+const USE_TON = `
+import { CryptoAio, type TonExt, type TonFeeOverride } from 'crypto-aio';
+import { native } from 'crypto-aio/native';
+import 'crypto-aio/ton';
+const aio = new CryptoAio({ env: false });
+export const ton = aio.blockchain({ chain: 'ton', network: 'testnet', library: '@ton/ton' });
+export const ext: TonExt = ton.ext;
+export const fee: TonFeeOverride = { attached: 50_000_000n };
+export async function seqno(): Promise<bigint> {
+  return ton.ext.ton.getSeqno('0:0000000000000000000000000000000000000000000000000000000000000000');
+}
+export async function height(): Promise<number> {
+  const client = await native(aio.blockchain({ chain: 'ton' }), '@ton/ton');
+  return (await client.getMasterchainInfo()).latestSeqno;
+}
+`;
+
+describe('TON registry augmentation (R37)', () => {
+  it('types the TON chain, networks, library, ext and native client next to EVM and a user client, in both file orders', () => {
+    const first = compile({
+      'augment.ts': AUGMENT,
+      'ton.ts': USE_TON,
+      'evm.ts': USE_EVM,
+      'acme.ts': USE_ACME,
+    });
+    expect(first.errors).toEqual([]);
+    const second = compile(
+      {
+        'acme.ts': USE_ACME,
+        'evm.ts': USE_EVM,
+        'ton.ts': USE_TON,
+        'augment.ts': AUGMENT,
+      },
+      first.program,
+    );
+    expect(second.errors).toEqual([]);
+  }, 120_000);
+
+  it('rejects a network or library the TON family does not have', () => {
+    const wrong = USE_TON.replace("network: 'testnet'", "network: 'sepolia'").replace(
+      "library: '@ton/ton'",
+      "library: 'ethers'",
+    );
+    const { errors } = compile({ 'ton.ts': wrong });
+    expect(errors).toEqual([
+      expect.stringContaining(`'"sepolia"' is not assignable`),
+      expect.stringContaining(`'"ethers"' is not assignable`),
+    ]);
+  }, 120_000);
+});
+
 /** A consumer of the main entry only; a user with no SDK installed at all. */
 const USE_MAIN = `
 import { CryptoAio, type EvmExt, type EvmFeeDetails, type EvmFeeOverride } from 'crypto-aio';
@@ -317,6 +370,12 @@ export const solanaFee: SolanaFeeOverride = { computeUnitPrice: 1n };
 export type SolanaDetails = SolanaFeeDetails;
 export type Account = SolanaTokenAccount;
 export type Ordering = SolanaExpiryOrdering;
+import type { TonExt, TonFeeDetails, TonFeeOverride, TonWalletIdentity } from 'crypto-aio';
+export const ton = aio.blockchain({ chain: 'ton', network: 'testnet' });
+export const tonExt: TonExt = ton.ext;
+export const tonFee: TonFeeOverride = { attached: 1n };
+export type TonDetails = TonFeeDetails;
+export const wallet: TonWalletIdentity = { version: 'v5r1' };
 `;
 
 /** Where the in-memory declaration files live: the `dist` of the tests. */
@@ -347,6 +406,7 @@ function declarations(): ReadonlyMap<string, string> {
     join(ROOT, 'src', 'adapters', 'tron', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'utxo', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'solana', 'index.ts'),
+    join(ROOT, 'src', 'adapters', 'ton', 'index.ts'),
   ];
   const { diagnostics } = ts.createProgram(entries, options, host).emit();
   expect(diagnostics.map(message)).toEqual([]);
@@ -355,9 +415,10 @@ function declarations(): ReadonlyMap<string, string> {
 
 /**
  * A user with no SDK installed who type-checks every library file, against the declarations
- * `dist` ships. Mapping `ethers`, `web3`, `bitcoinjs-lib`, `tronweb` and `@solana/web3.js` to
- * a missing path in `paths` is not enough (resolution then falls back to node_modules), so
- * the host hides the packages; the controls below prove they do not resolve.
+ * `dist` ships. Mapping `ethers`, `web3`, `bitcoinjs-lib`, `tronweb`, `@solana/web3.js` and
+ * `@ton/*` to a missing path in `paths` is not enough (resolution then falls back to
+ * node_modules), so the host hides the packages; the controls below prove they do not
+ * resolve.
  */
 const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
   options: {
@@ -369,14 +430,17 @@ const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
       'crypto-aio/tron': [join(DTS, 'adapters', 'tron', 'index.d.ts')],
       'crypto-aio/utxo': [join(DTS, 'adapters', 'utxo', 'index.d.ts')],
       'crypto-aio/solana': [join(DTS, 'adapters', 'solana', 'index.d.ts')],
+      'crypto-aio/ton': [join(DTS, 'adapters', 'ton', 'index.d.ts')],
     },
   },
   // Every SDK scope: bitcoinjs-lib with its whole dependency scope (its types pull in bip174,
   // valibot and varuint-bitcoin; @noble/hashes is a dependency of this library anyway),
   // tronweb with the packages its types pull in (axios, bignumber.js, eventemitter3, ethers),
-  // and every `@solana/*` package, not only the SDK: the main entry needs none of them.
+  // every `@solana/*` package, not only the SDK, and every `@ton/*` package with every
+  // package the three TON SDKs declare (axios, dataloader, zod, jssha, tweetnacl; their types
+  // name axios and zod): the main entry needs none of them.
   hidden:
-    /[\\/]node_modules[\\/](ethers|web3|bitcoinjs-lib|bip174|valibot|varuint-bitcoin|uint8array-tools|bech32|bs58check|bs58|base-x|tronweb|axios|bignumber\.js|eventemitter3|@solana)[\\/]/,
+    /[\\/]node_modules[\\/](ethers|web3|bitcoinjs-lib|bip174|valibot|varuint-bitcoin|uint8array-tools|bech32|bs58check|bs58|base-x|tronweb|axios|bignumber\.js|eventemitter3|@solana|@ton|dataloader|zod|jssha|tweetnacl)[\\/]/,
   files: dts,
 });
 
@@ -386,7 +450,28 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     dts = declarations();
   }, 120_000);
 
-  it('type-checks `crypto-aio` with no SDK resolvable (ethers, web3, bitcoinjs-lib, tronweb, @solana/*), under skipLibCheck: false', () => {
+  it('hides the whole TON dependency scope: every package the TON SDKs declare', () => {
+    const hidden = withoutSdks(new Map()).hidden as RegExp;
+    const declared = ['@ton/ton', '@ton/core', '@ton/crypto'].flatMap((sdk) => {
+      const pkg = JSON.parse(
+        ts.sys.readFile(join(ROOT, 'node_modules', sdk, 'package.json')) ?? '{}',
+      ) as { dependencies?: Record<string, string> };
+      return [sdk, ...Object.keys(pkg.dependencies ?? {})];
+    });
+    expect(declared).toEqual(expect.arrayContaining(['axios', 'zod']));
+    for (const name of declared) {
+      expect([name, hidden.test(join(ROOT, 'node_modules', name, 'index.d.ts'))]).toEqual(
+        [name, true],
+      );
+    }
+    for (const kept of ['debug', '@noble/hashes', '@types/node', 'typescript']) {
+      expect([kept, hidden.test(join(ROOT, 'node_modules', kept, 'index.d.ts'))]).toEqual(
+        [kept, false],
+      );
+    }
+  });
+
+  it('type-checks `crypto-aio` with no SDK resolvable (ethers, web3, bitcoinjs-lib, tronweb, @solana/*, @ton/*), under skipLibCheck: false', () => {
     const { errors, everywhere } = compile(
       { 'main.ts': USE_MAIN },
       undefined,
@@ -447,6 +532,19 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     expect(everywhere()).toEqual([
       expect.stringMatching(
         /__dts__\/adapters\/solana\/index\.d\.ts: Cannot find module '@solana\/web3\.js'/,
+      ),
+    ]);
+  }, 120_000);
+
+  it('control: `crypto-aio/ton` does need the SDK types (R81), so @ton/ton really is unresolvable', () => {
+    const { everywhere } = compile(
+      { 'main.ts': `${USE_MAIN}import 'crypto-aio/ton';\n` },
+      undefined,
+      withoutSdks(dts),
+    );
+    expect(everywhere()).toEqual([
+      expect.stringMatching(
+        /__dts__\/adapters\/ton\/index\.d\.ts: Cannot find module '@ton\/ton'/,
       ),
     ]);
   }, 120_000);

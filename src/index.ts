@@ -6,6 +6,7 @@
  */
 import { evmPlugin } from './adapters/evm/plugin';
 import { solanaPlugin } from './adapters/solana/plugin';
+import { tonPlugin } from './adapters/ton/plugin';
 import { tronPlugin } from './adapters/tron/plugin';
 import { utxoPlugin } from './adapters/utxo/plugin';
 import { setBuiltinPlugins } from './core/container/builtins';
@@ -17,6 +18,7 @@ const BUILTIN_PLUGINS: readonly Plugin[] = [
   utxoPlugin(),
   tronPlugin(),
   solanaPlugin(),
+  tonPlugin(),
 ];
 setBuiltinPlugins(BUILTIN_PLUGINS);
 
@@ -290,7 +292,7 @@ export type { LogFields, LogLevel, LogWriter, Logger } from './core/events/logge
 export type { Clock } from './core/util/clock';
 
 // Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/evm`,
-// `crypto-aio/solana`, `crypto-aio/tron` and `crypto-aio/utxo`.
+// `crypto-aio/solana`, `crypto-aio/ton`, `crypto-aio/tron` and `crypto-aio/utxo`.
 export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './adapters/evm/types';
 export type {
   TronExpiryOrdering,
