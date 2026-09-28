@@ -166,16 +166,16 @@ export interface SignedParts {
 /**
  * The parts of `bytes`, or `null` unless it is exactly one signed legacy transaction: a
  * canonical signature count equal to the message's required signers, 64 bytes per
- * signature, then one well-formed legacy message (`parseMessage`) with nothing after it. The
- * count is checked against the bytes that remain before anything is sliced, so the work is
- * linear in the input (lesson 20).
+ * signature, then one well-formed legacy message (`parseMessage`) with nothing after it. No
+ * signature is sliced before the count matches the header, so the work is linear in the
+ * input (lesson 20).
  */
 export function parseSignedTransaction(bytes: Uint8Array): SignedParts | null {
   const count = decodeLength(bytes, 0);
-  if (!count || count.value === 0) return null;
-  if (count.value > (bytes.length - count.next) / SIGNATURE_BYTES) return null;
-  const start = count.next + SIGNATURE_BYTES * count.value;
-  const message = bytes.subarray(start);
+  if (!count) return null;
+  // A count beyond the bytes leaves an empty message, which does not parse; a message
+  // always requires a signer, so a zero count never matches its header.
+  const message = bytes.subarray(count.next + SIGNATURE_BYTES * count.value);
   const parts = parseMessage(message);
   if (!parts || parts.required !== count.value) return null;
   const signatures = Array.from({ length: count.value }, (_, i) =>

@@ -2,7 +2,7 @@ import {
   classifyBroadcastError,
   classifyOwnBroadcast,
 } from '../../../src/adapters/solana/errors';
-import { systemTransfer } from '../../../src/adapters/solana/programs';
+import { MEMO_PROGRAM, systemTransfer } from '../../../src/adapters/solana/programs';
 import { signedTransaction } from '../../../src/adapters/solana/wire';
 import {
   VARIANTS,
@@ -45,7 +45,14 @@ import type { Transport } from '../../../src/core/transport/types';
 import { ProviderError } from '../../../src/core/errors/error';
 import { canonicalJson } from '../../../src/core/util/json';
 import { codec } from './support/tx';
-import { KEY_ADDRESS, MINT, RECIPIENT, RECIPIENT_KEY, sign } from './support/vectors';
+import {
+  KEY_ADDRESS,
+  MINT,
+  RECIPIENT,
+  RECIPIENT_KEY,
+  compileLegacy,
+  sign,
+} from './support/vectors';
 
 const rpcError = (code: number, message: string, ambiguous = false) =>
   new ProviderError('RPC_ERROR', `x failed: ${message}`, {
@@ -815,7 +822,14 @@ describe('lesson 21: a claimed signature failure stands only for our bytes (F5-R
       signedTransaction([sign(one), sign(one)], one),
       // An aliased (non-canonical) signature count.
       Uint8Array.from([0x81, 0x00, ...valid.subarray(1)]),
-      // Far over the packet limit (lesson 20): refused before any signature is checked.
+      // Over the packet limit, never bytes we sent: refused before any signature is
+      // checked (lesson 20), even well formed with a bad signature.
+      signedTransaction(
+        [new Uint8Array(64)],
+        compileLegacy(KEY_ADDRESS, MINT, [
+          { programId: MEMO_PROGRAM, accounts: [], data: new Uint8Array(1_300).fill(97) },
+        ]),
+      ),
       new Uint8Array(100_000).fill(1),
     ];
     for (const bytes of unreadable) {
