@@ -6,10 +6,11 @@ import {
   internal,
   storeMessage,
   storeMessageRelaxed,
+  storeOutList,
   type Cell,
   type MessageRelaxed,
 } from '@ton/core';
-import { WalletContractV4 } from '@ton/ton';
+import { WalletContractV4, WalletContractV5R1 } from '@ton/ton';
 import {
   MONITOR,
   type V3Message,
@@ -34,7 +35,11 @@ import {
   consumesSeqno,
   isOwnAttempt,
 } from '../../../src/adapters/ton/trace';
-import { normalizedHash } from '../../../src/adapters/ton/wallets';
+import {
+  normalizedHash,
+  resolveIdentity,
+  walletIdOf,
+} from '../../../src/adapters/ton/wallets';
 import { signedBoc, testWallet, tonNode } from './support/harness';
 import { NODE_FEES } from './support/node';
 import { KEY, PUBLIC_KEY } from './support/vectors';
@@ -113,8 +118,12 @@ describe('the attempt verdict (D11)', () => {
     expect(() => attemptVerdict(dropped, trace)).toThrow(
       expect.objectContaining({ code: 'PROVIDER_INCONSISTENT', retryable: true }),
     );
-    // Only the wallet's own record of a skipped action proves the skip.
-    const skipped = { ...dropped, action: { ...root.action!, skippedActions: 1 } };
+    // Only the wallet's own record of a skipped action proves the skip (M1: a skipped
+    // message is one the action phase did not create).
+    const skipped = {
+      ...dropped,
+      action: { ...root.action!, skippedActions: 1, msgsCreated: 0 },
+    };
     expect(attemptVerdict(skipped, trace)).toEqual({
       kind: 'failed',
       reason: REASONS.skipped,
@@ -127,10 +136,18 @@ describe('the attempt verdict (D11)', () => {
       nativeMessage({ to: FRESH, value: GRAM, bounce: true }),
     ]);
     t.node.mine(3);
-    expect((await verdictAfter(t, hashNorm)).verdict).toEqual({
-      kind: 'failed',
-      reason: REASONS.bounced,
-    });
+    const { root, trace, verdict } = await verdictAfter(t, hashNorm);
+    expect(verdict).toEqual({ kind: 'failed', reason: REASONS.bounced });
+    // I1: a bounceable message whose compute phase failed always gets a bounce phase
+    // (collator.cpp): a record without one lacks data, and is never a delivery.
+    const unbounced = replaced(trace!, FRESH, ({ bounce: _bounce, ...tx }) => tx);
+    expect(() => attemptVerdict(root, unbounced)).toThrow(inconsistent);
+    // The flag we signed decides, even when the indexer leaves the delivery's out.
+    const unflagged = replaced(trace!, FRESH, ({ bounce: _bounce, ...tx }) => ({
+      ...tx,
+      inMsg: { ...tx.inMsg!, bounce: null },
+    }));
+    expect(() => attemptVerdict(withoutFlags(root), unflagged)).toThrow(inconsistent);
   });
 
   it('fails a batch when one of its outputs bounced', async () => {
@@ -233,6 +250,18 @@ describe('the attempt verdict (D11)', () => {
       const { trace, verdict } = await verdictAfter(t, hashNorm);
       expect(trace?.complete).toBe(true);
       expect(verdict).toEqual({ kind: 'failed', reason: REASONS.jettonBounced });
+      // M6: a verified wallet's zero credit moved nothing, so no transfer is decoded.
+      const recipientWallet = t.node.jettonWalletOf(MASTER, FRESH);
+      const verified = { address: recipientWallet, owner: FRESH, master: MASTER };
+      const arrival = trace!.transactions.find((tx) => tx.account === recipientWallet)!;
+      const notification = trace!.transactions.find((tx) => tx.account === FRESH)!;
+      for (const tx of [arrival, notification]) {
+        const decoded = decodeTransaction(tx, { jetton: verified });
+        expect(decoded.transfers.some((x) => x.source === 'token-event')).toBe(false);
+      }
+      expect(decodeTransaction(notification, { jetton: verified }).decoding).toBe(
+        'complete',
+      );
     });
 
     it('fails a jetton transfer whose credit the recipient wallet rolled back', async () => {
@@ -283,6 +312,12 @@ describe('the attempt verdict (D11)', () => {
         outMsgs: tx.outMsgs.map((m) => (m === onward ? { ...m, source: MASTER } : m)),
       }));
       expect(() => attemptVerdict(root, disowned)).toThrow(inconsistent);
+      // The arrival's copy of the message carries another bounce flag than the hop's.
+      const reflagged = replaced(trace!, recipientWallet, (tx) => ({
+        ...tx,
+        inMsg: { ...tx.inMsg!, bounce: !tx.inMsg!.bounce },
+      }));
+      expect(() => attemptVerdict(root, reflagged)).toThrow(inconsistent);
       // A jetton wallet whose record lacks its action phase proves no failure.
       const { action: _action, ...unrecorded } = hop;
       const silent = replaced(trace!, senderWallet, () => ({
@@ -366,45 +401,86 @@ describe('only a request that consumed its seqno is decided (lessons 16–18)', 
     });
   });
 
-  it('fails a W5 request refused after it committed its seqno (137), as the node and the chain record it', async () => {
+  it('fails a W5 request refused after it committed its seqno (137), decided from the wallet transaction alone', async () => {
     const t = tonNode();
-    const { hashNorm } = await send(t, () => [
-      nativeMessage({ to: FRESH, value: GRAM, bounce: false }),
+    const wallet = testWallet('v5r1', TESTNET);
+    t.node.fund(wallet, 3n * GRAM);
+    // Send mode 1, without +2: W5 commits the next seqno with an empty action list, then
+    // throws 137 (wallet_v5.fc).
+    const { boc, hashNorm } = w5Request(t, [
+      [1, nativeMessage({ to: FRESH, value: GRAM, bounce: false })],
     ]);
+    t.node.submit(boc);
     t.node.mine();
     const { root } = await verdictAfter(t, hashNorm);
+    // transaction.cpp: `success = accepted && committed`, so the compute phase succeeded
+    // with 137 and the committed, empty action list ran; nothing is aborted.
+    expect(root).toMatchObject({
+      aborted: false,
+      compute: { success: true, exitCode: 137 },
+      action: { success: true, msgsCreated: 0 },
+      outMsgs: [],
+    });
+    expect(t.node.seqno(wallet)).toBe(1);
+    expect(consumesSeqno(root)).toBe(true);
+    expect(attemptVerdict(root, null)).toEqual({
+      kind: 'failed',
+      reason: REASONS.walletFailed,
+    });
+    expect(executed(root)).toBe(false);
+    // M1: W5 commits an empty action list before it throws: a message it created would
+    // contradict the chain's own record.
+    const created: V3Message = {
+      hash: 'aa'.repeat(32),
+      source: wallet,
+      destination: FRESH,
+      value: GRAM,
+      bounce: false,
+      bounced: false,
+      bodyHash: beginCell().endCell().hash().toString('hex'),
+    };
+    const threwAndSent = {
+      ...root,
+      action: { ...root.action!, msgsCreated: 1 },
+      outMsgs: [created],
+    };
+    expect(() => attemptVerdict(threwAndSent, null)).toThrow(inconsistent);
+    // M4: an indexer that wrote the refusal as a failed compute phase: W5's alone, since
+    // no other wallet commits its seqno and then throws 137.
     const { action: _action, ...computeOnly } = root;
-    // The scripted node's record: a failed compute phase with 137.
-    const nodeRecord: V3Transaction = {
+    const failedCompute: V3Transaction = {
       ...computeOnly,
+      aborted: true,
+      compute: { skipped: false, success: false, exitCode: 137 },
+    };
+    expect(consumesSeqno(failedCompute)).toBe(true);
+    expect(attemptVerdict(failedCompute, null)).toEqual({
+      kind: 'failed',
+      reason: REASONS.walletFailed,
+    });
+    // Any other failed compute phase left the old seqno: it decides nothing.
+    const uncommitted = {
+      ...failedCompute,
+      compute: { ...failedCompute.compute, exitCode: 9 },
+    };
+    expect(consumesSeqno(uncommitted)).toBe(false);
+    expect(attemptVerdict(uncommitted, null)).toEqual({ kind: 'pending' });
+    // A v4r2 request never throws 137: the same record consumed nothing there.
+    const v4 = tonNode();
+    const sent = await send(v4, () => [
+      nativeMessage({ to: FRESH, value: GRAM, bounce: false }),
+    ]);
+    v4.node.mine();
+    const { root: v4root } = await verdictAfter(v4, sent.hashNorm);
+    const { action: _v4action, ...v4compute } = v4root;
+    const v4failed: V3Transaction = {
+      ...v4compute,
       aborted: true,
       compute: { skipped: false, success: false, exitCode: 137 },
       outMsgs: [],
     };
-    // The chain's (transaction.cpp: `success = accepted && committed`): the compute phase
-    // succeeded with 137, and the empty action list committed before it ran.
-    const chainRecord: V3Transaction = {
-      ...root,
-      compute: { skipped: false, success: true, exitCode: 137 },
-      action: { success: true, resultCode: 0, skippedActions: 0, msgsCreated: 0 },
-      outMsgs: [],
-    };
-    for (const tx of [nodeRecord, chainRecord]) {
-      expect(consumesSeqno(tx)).toBe(true);
-      // Decided from the wallet transaction alone.
-      expect(attemptVerdict(tx, null)).toEqual({
-        kind: 'failed',
-        reason: REASONS.walletFailed,
-      });
-      expect(executed(tx)).toBe(false);
-    }
-    // Any other failed compute phase left the old seqno: it decides nothing.
-    const uncommitted = {
-      ...nodeRecord,
-      compute: { ...nodeRecord.compute, exitCode: 9 },
-    };
-    expect(consumesSeqno(uncommitted)).toBe(false);
-    expect(attemptVerdict(uncommitted, null)).toEqual({ kind: 'pending' });
+    expect(consumesSeqno(v4failed)).toBe(false);
+    expect(attemptVerdict(v4failed, null)).toEqual({ kind: 'pending' });
   });
 });
 
@@ -434,12 +510,23 @@ describe('what moved to a native recipient (M7)', () => {
       nativeMessage({ to: reverter, value: GRAM, bounce: false }),
     ]);
     t.node.mine(2);
-    const { trace, verdict } = await verdictAfter(t, hashNorm);
+    const { root, trace, verdict } = await verdictAfter(t, hashNorm);
     expect(trace?.transactions.find((tx) => tx.account === reverter)).toMatchObject({
       aborted: true,
       compute: { success: false },
     });
     expect(verdict).toEqual({ kind: 'success', legs: [] });
+    // I1: only a bounceable message has a bounce phase (transaction.cpp `bounce_enabled`):
+    // a bounce on this one is a record the chain never writes, never a refund.
+    const bouncedBack = replaced(trace!, reverter, (tx) => ({ ...tx, bounce: 'ok' }));
+    expect(() => attemptVerdict(root, bouncedBack)).toThrow(inconsistent);
+    // The flag we signed decides, even when the indexer leaves the delivery's out.
+    const unflagged = replaced(trace!, reverter, (tx) => ({
+      ...tx,
+      bounce: 'ok',
+      inMsg: { ...tx.inMsg!, bounce: null },
+    }));
+    expect(() => attemptVerdict(withoutFlags(root), unflagged)).toThrow(inconsistent);
   });
 
   it('counts a failed action phase at the recipient as delivered, unless it bounced (+16)', async () => {
@@ -506,12 +593,75 @@ describe('an answer that contradicts the chain or the request decides nothing (l
       { ...root, action: { ...root.action!, skippedActions: 1 } },
       // Not an external request.
       { ...root, inMsg: { ...root.inMsg!, source: FRESH } },
+      // I1: the message went out with another bounce flag than the one signed.
+      { ...root, outMsgs: [{ ...out, bounce: true }] },
     ];
     for (const tx of contradictions) {
       expect(() => attemptVerdict(tx, trace)).toThrow(inconsistent);
     }
     expect(() => executed({ ...root, aborted: true })).toThrow(inconsistent);
     expect(() => consumesSeqno(noAction)).toThrow(inconsistent);
+    // M3: a skipped compute phase never succeeded, and always aborts (transaction.cpp).
+    const deposit = trace!.transactions.find((tx) => tx.account === FRESH)!;
+    expect(deposit).toMatchObject({ aborted: true, compute: { skipped: true } });
+    // I1 in decoding: a bounce on a non-bounceable deposit would drop a credit; a failed
+    // bounceable one without a bounce would credit value that went back.
+    expect(() => executed({ ...deposit, bounce: 'ok' })).toThrow(inconsistent);
+    expect(() =>
+      executed({ ...deposit, inMsg: { ...deposit.inMsg!, bounce: true } }),
+    ).toThrow(inconsistent);
+    expect(() => executed({ ...deposit, aborted: false })).toThrow(inconsistent);
+    expect(() =>
+      executed({
+        ...deposit,
+        aborted: false,
+        compute: { skipped: true, success: true },
+        action: { success: true, resultCode: 0, skippedActions: 0, msgsCreated: 0 },
+      }),
+    ).toThrow(inconsistent);
+  });
+
+  it("cross-checks the chain's own counters (M1)", async () => {
+    const t = tonNode();
+    const request = nativeMessage({ to: FRESH, value: GRAM, bounce: false });
+    const { hashNorm } = await send(t, () => [request, request]);
+    t.node.mine(2);
+    const { root, trace } = await verdictAfter(t, hashNorm);
+    expect(attemptVerdict(root, trace)).toEqual({ kind: 'success', legs: [] });
+    const [first] = root.outMsgs;
+    const counters: V3Transaction[] = [
+      // One message listed twice.
+      { ...root, outMsgs: [first!, first!] },
+      // Another count of created messages than listed.
+      { ...root, action: { ...root.action!, msgsCreated: 3 } },
+      // Another count of skipped messages than missing.
+      {
+        ...root,
+        outMsgs: [],
+        action: { ...root.action!, skippedActions: 3, msgsCreated: 0 },
+      },
+    ];
+    for (const tx of counters) {
+      expect(() => attemptVerdict(tx, trace)).toThrow(inconsistent);
+    }
+  });
+
+  it('checks every output before it decides (M2)', async () => {
+    const t = tonNode();
+    const other = `0:${'12'.repeat(32)}`;
+    const { hashNorm } = await send(t, () => [
+      nativeMessage({ to: FRESH, value: GRAM, bounce: true }),
+      nativeMessage({ to: other, value: GRAM, bounce: false }),
+    ]);
+    t.node.mine(3);
+    const { root, trace, verdict } = await verdictAfter(t, hashNorm);
+    expect(verdict).toEqual({ kind: 'failed', reason: REASONS.bounced });
+    // The first output bounced; the second one's delivery contradicts the message sent.
+    const elsewhere = replaced(trace!, other, (tx) => ({
+      ...tx,
+      account: `0:${'13'.repeat(32)}`,
+    }));
+    expect(() => attemptVerdict(root, elsewhere)).toThrow(inconsistent);
   });
 
   it('refuses a trace whose delivery is not the message the wallet sent', async () => {
@@ -532,6 +682,11 @@ describe('an answer that contradicts the chain or the request decides nothing (l
         ...trace!,
         transactions: [...trace!.transactions, { ...hop, hash: 'ef'.repeat(32) }],
       },
+      // A transaction that did not run sends nothing but its bounce.
+      replaced(trace!, FRESH, (tx) => ({
+        ...tx,
+        outMsgs: [{ ...root.outMsgs[0]!, hash: 'dd'.repeat(32), source: FRESH }],
+      })),
       // A bounce phase follows only a failed phase.
       replaced(trace!, FRESH, (tx) => ({
         ...tx,
@@ -544,6 +699,23 @@ describe('an answer that contradicts the chain or the request decides nothing (l
     for (const next of traces) {
       expect(() => attemptVerdict(root, next)).toThrow(inconsistent);
     }
+    // I1: the delivery carries another bounce flag than the message the wallet signed,
+    // decided by the signed flag although the indexer left the sent copy's out.
+    const reflagged = replaced(trace!, FRESH, (tx) => ({
+      ...tx,
+      aborted: false,
+      compute: { skipped: false, success: true, exitCode: 0 },
+      action: { success: true, resultCode: 0, skippedActions: 0, msgsCreated: 0 },
+      inMsg: { ...tx.inMsg!, bounce: true },
+    }));
+    expect(() => attemptVerdict(withoutFlags(root), reflagged)).toThrow(inconsistent);
+    // I1: the message went out with another flag than signed, the delivery's left out.
+    const sentOtherwise = { ...root, outMsgs: [{ ...root.outMsgs[0]!, bounce: true }] };
+    const unflagged = replaced(trace!, FRESH, (tx) => ({
+      ...tx,
+      inMsg: { ...tx.inMsg!, bounce: null },
+    }));
+    expect(() => attemptVerdict(sentOtherwise, unflagged)).toThrow(inconsistent);
   });
 
   it('refuses to judge a request message that is neither a plain transfer nor a jetton transfer', async () => {
@@ -759,6 +931,11 @@ describe('transaction decoding (lesson 15)', () => {
   });
 });
 
+/** `root` as an indexer that leaves its outgoing messages' bounce flags out writes it. */
+function withoutFlags(root: V3Transaction): V3Transaction {
+  return { ...root, outMsgs: root.outMsgs.map((m) => ({ ...m, bounce: null })) };
+}
+
 /** `trace` with the transaction of `account` replaced by `change(tx)`. */
 function replaced(
   trace: V3Trace,
@@ -822,6 +999,47 @@ function v4Request(
     .storeBuffer(Buffer.from(signature))
     .storeSlice(cell.beginParse())
     .endCell();
+  const message = beginCell()
+    .store(storeMessage(external({ to: contract.address, body, init: contract.init })))
+    .endCell();
+  return {
+    boc: message.toBoc().toString('base64'),
+    hashNorm: Buffer.from(normalizedHash(message)).toString('hex'),
+  };
+}
+
+/**
+ * A deploying v5r1 request with its own send mode per action (the driver always signs
+ * `SEND_MODE`, which carries +2), from the test key's wallet.
+ */
+function w5Request(
+  t: ReturnType<typeof tonNode>,
+  actions: readonly (readonly [number, MessageRelaxed])[],
+): { readonly boc: string; readonly hashNorm: string } {
+  const key = Buffer.from(PUBLIC_KEY, 'hex');
+  const contract = WalletContractV5R1.create({
+    publicKey: key,
+    walletId: {
+      networkGlobalId: TESTNET,
+      context: { workchain: 0, walletVersion: 'v5r1', subwalletNumber: 0 },
+    },
+  });
+  expect(contract.address.toRawString()).toBe(testWallet('v5r1', TESTNET));
+  const identity = resolveIdentity({ ton: { version: 'v5r1' } }, TESTNET);
+  const list = beginCell()
+    .store(
+      storeOutList(actions.map(([mode, outMsg]) => ({ type: 'sendMsg', mode, outMsg }))),
+    )
+    .endCell();
+  const signing = beginCell()
+    .storeUint(OP.w5SignedExternal, 32)
+    .storeInt(walletIdOf(identity, key), 32)
+    .storeUint(Math.floor(t.clock.now() / 1000) + 60, 32)
+    .storeUint(0, 32)
+    .storeMaybeRef(list)
+    .storeBit(false);
+  const signature = ed25519.sign(signing.endCell().hash(), Buffer.from(KEY, 'hex'));
+  const body = signing.storeBuffer(Buffer.from(signature)).endCell();
   const message = beginCell()
     .store(storeMessage(external({ to: contract.address, body, init: contract.init })))
     .endCell();

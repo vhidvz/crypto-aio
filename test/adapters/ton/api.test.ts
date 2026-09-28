@@ -469,8 +469,9 @@ describe('the toncenter API layer', () => {
       expect(await t.run(t.api.transactionsByMessage(hashNorm, READ))).toEqual([]);
       expect(await t.run(t.api.trace(tx!.hash, READ))).toMatchObject({ complete: false });
     }
-    // An indexer that writes no `finality` still needs each transaction's masterchain block.
-    for (finality of ['finalized', 2, undefined]) {
+    // An indexer that writes no `finality` (absent or null, M7) still needs each
+    // transaction's masterchain block.
+    for (finality of ['finalized', 2, undefined, null]) {
       expect(await t.run(t.api.transactionsByMessage(hashNorm, READ))).toHaveLength(1);
       expect(await t.run(t.api.trace(tx!.hash, READ))).toMatchObject({ complete: true });
     }

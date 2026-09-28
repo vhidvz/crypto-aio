@@ -43,18 +43,34 @@ export interface VerifiedJettonWallet {
 /**
  * Whether the contract ran its inbound message to the end, so its state changes and
  * outgoing messages stand: its compute and action phases both succeeded. The chain records
- * nothing else (transaction.cpp): `aborted` is exactly "not ran", an action phase follows
- * exactly a successful compute phase, and a bounce phase only a failure. A record that
- * breaks any of these contradicts the chain: a retryable `PROVIDER_INCONSISTENT`, which
- * decides nothing (lesson 18, widened), never a default (lesson 6). A transaction type
- * without a compute phase (read as skipped) records no `aborted` worth comparing.
+ * nothing else (transaction.cpp, collator.cpp):
+ * - an action phase follows exactly a successful compute phase, and a skipped compute
+ *   phase never succeeded;
+ * - `aborted` is exactly "not ran" (M3: a skipped compute phase included);
+ * - a bounce phase exists exactly for a bounceable inbound message (`bounce_enabled`, the
+ *   message's own flag; never an external one or a bounce) whose phases failed, and always
+ *   when its compute phase did (I1);
+ * - the outgoing messages are distinct, as many as the action phase created when it ran,
+ *   and nothing but the bounce when it did not (M1).
+ * A record that breaks any of these contradicts the chain: a retryable
+ * `PROVIDER_INCONSISTENT`, which decides nothing (lesson 18, widened), never a default
+ * (lesson 6).
  */
 export function ran(tx: V3Transaction): boolean {
-  const done = tx.compute.success && tx.action?.success === true;
+  const { compute, action, inMsg, outMsgs } = tx;
+  const done = compute.success && action?.success === true;
+  // Unknown (null) when the indexer leaves an inbound internal message's flag out.
+  const bounceable = !inMsg || inMsg.source === null ? false : inMsg.bounce;
   if (
-    (tx.action !== undefined) !== tx.compute.success ||
-    (!tx.compute.skipped && tx.aborted === done) ||
-    (tx.bounce !== undefined && done)
+    (action !== undefined) !== compute.success ||
+    (compute.skipped && compute.success) ||
+    tx.aborted === done ||
+    (tx.bounce !== undefined && (done || bounceable === false)) ||
+    (bounceable === true && !compute.success && tx.bounce === undefined) ||
+    new Set(outMsgs.map((m) => m.hash)).size !== outMsgs.length ||
+    (done
+      ? outMsgs.length !== action?.msgsCreated
+      : outMsgs.some((m) => m.bounced !== true))
   ) {
     throw new ProviderError(
       'PROVIDER_INCONSISTENT',
@@ -204,8 +220,9 @@ export function decodeTransaction(
     }
     if (body.cell && jettonsMoved(tx, body.kind)) {
       const jetton = jettonTransfer(tx, body.cell, options.jetton);
-      if (jetton) transfers.push(jetton);
-      else partial = true;
+      if (!jetton) partial = true;
+      // M6: a zero credit moved nothing, as a zero native value does not.
+      else if (jetton.amount > 0n) transfers.push(jetton);
     }
   }
   tx.outMsgs.forEach((out, index) => {
