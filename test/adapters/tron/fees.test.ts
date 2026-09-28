@@ -251,6 +251,32 @@ describe('tronFee', () => {
       );
     }
   });
+
+  it('refuses a TRC-20 estimate without positive energy, and any without positive bandwidth (F4-R9)', () => {
+    for (const energy of [0n, -1n]) {
+      for (const fee of ['normal', { feeLimit: 1_000_000n }] as const) {
+        expect(() => tronFee(input({ energy, fee }))).toThrow(
+          invalidIntent(
+            /^cannot estimate a Tron fee: the simulated energy must be positive$/,
+          ),
+        );
+      }
+    }
+    for (const bandwidth of [0n, -1n]) {
+      for (const energy of [undefined, 30_000n]) {
+        expect(() =>
+          tronFee(input({ bandwidth, ...(energy ? { energy } : {}) })),
+        ).toThrow(
+          invalidIntent(/^cannot estimate a Tron fee: the bandwidth must be positive$/),
+        );
+      }
+    }
+    // The smallest real values still estimate.
+    expect(labels(tronFee(input({ bandwidth: 1n, energy: 1n })))).toEqual({
+      bandwidth: 1_000n,
+      energy: 200n,
+    });
+  });
 });
 
 const refused = (code: string, reason: string) => ({ kind: 'refused', code, reason });

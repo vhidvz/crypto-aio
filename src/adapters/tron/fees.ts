@@ -84,6 +84,14 @@ export function tronFee(input: TronFeeInput): FeeEstimateDraft {
       'energyMarginPercent must be a non-negative integer',
     );
   }
+  // F4-R9: every transaction consumes bandwidth, and a TRC-20 call energy; a zero or negative
+  // one would give a fee limit of 0, which fails on chain (out of energy) and still pays.
+  if (bandwidth <= 0n) {
+    throw invalid('cannot estimate a Tron fee: the bandwidth must be positive');
+  }
+  if (input.energy !== undefined && input.energy <= 0n) {
+    throw invalid('cannot estimate a Tron fee: the simulated energy must be positive');
+  }
   const override = feeOverrideOf(input.fee);
   const charges: FeeChargeDraft[] = [];
   const charge = (label: string, amount: bigint) =>

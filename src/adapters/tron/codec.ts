@@ -4,7 +4,8 @@
  * client. No I/O here: driver requests go straight to the transport (lesson 1), so no
  * tronweb code sits on a request path. Decoding is strict (lesson 4): the decoded fields
  * must re-encode to exactly the input bytes, so bytes with fields this model does not carry
- * (a permission id, `ref_block_num`, a call value) are refused.
+ * (a permission id, `ref_block_num`, a call value) are refused. Reading chain history
+ * (`readRaw`) is lenient, and reports a call's value rather than dropping it.
  */
 import { TronWeb, providers, utils } from 'tronweb';
 import { ValidationError } from '../../core/errors/error';
@@ -74,6 +75,14 @@ function contractJson(contract: TronContract): Record<string, unknown> {
   }
   if (!ADDRESS.test(contract.contract)) refuse('bad contract address');
   if (!HEX.test(contract.data) || contract.data.length === 0) refuse('bad call data');
+  // What `readRaw` reports of a chain call is never written: the driver's calls carry no value.
+  if (
+    contract.callValue !== undefined ||
+    contract.callTokenValue !== undefined ||
+    contract.tokenId !== undefined
+  ) {
+    refuse('a contract call with a value');
+  }
   return {
     type: 'TriggerSmartContract',
     parameter: {
@@ -207,6 +216,35 @@ export function transferAmount(rawHex: string): bigint | null {
   return typeof amount === 'bigint' && amount <= INT64_MAX ? amount : null;
 }
 
+type CallValues = Pick<
+  Extract<TronContract, { type: 'TriggerSmartContract' }>,
+  'callValue' | 'callTokenValue' | 'tokenId'
+>;
+
+/**
+ * SDK-free and exact (A12; tronweb reads these `int64`s as rounded numbers): the TRX and
+ * TRC-10 value of the single TriggerSmartContract in `Transaction.raw` bytes (fields 3, 5
+ * and 6), each only when non-zero; `null` when unreadable or negative (VMActuator refuses a
+ * negative value, so no block holds one).
+ */
+function callValues(bytes: Uint8Array): CallValues | null {
+  const entry = singular(onlyContract(bytes));
+  if (entry?.get(1) !== 31n) return null; // ContractType.TriggerSmartContract
+  const call = singular(bytesOf(singular(bytesOf(entry.get(2)))?.get(2)));
+  if (!call) return null;
+  const values: Record<string, bigint> = {};
+  for (const [field, name] of [
+    [3, 'callValue'],
+    [5, 'callTokenValue'],
+    [6, 'tokenId'],
+  ] as const) {
+    const value = call.get(field) ?? 0n;
+    if (typeof value !== 'bigint' || value > INT64_MAX) return null;
+    if (value !== 0n) values[name] = value;
+  }
+  return values;
+}
+
 type Decoded = {
   contract?: { type?: string; parameter?: { value?: Record<string, unknown> } }[];
   data?: string;
@@ -273,6 +311,8 @@ function read(hex: string): TronRawData {
           owner: hexField(value.owner_address),
           contract: hexField(value.contract_address),
           data: hexField(value.data),
+          // TRX or a TRC-10 token sent with the call, never dropped (F4-R3).
+          ...(callValues(fromHex(hex)) ?? malformed()),
         };
   const raw: TronRawData = {
     refBlockBytes: hexField(decoded.ref_block_bytes),

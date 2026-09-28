@@ -724,4 +724,86 @@ describe('TronApi', () => {
     }
     expect(h.clock.pending).toBe(0);
   });
+
+  it('reads block 0 as its header alone, and never asks for its receipts (F4-R7)', async () => {
+    const h = nodeTransport();
+    // java-tron answers `{}` there, which no receipt list reads as: a scan would retry it.
+    expect(
+      await h.run(
+        h.api.post('/wallet/gettransactioninfobyblocknum', { num: 0 }, MONITOR),
+      ),
+    ).toEqual({});
+    h.calls.splice(0);
+    expect(await h.run(h.api.blockWithTransactions(0n, MONITOR))).toEqual({
+      header: expect.objectContaining({ number: 0n, id: h.node.block(0)?.id }),
+      transactions: [],
+      infos: [],
+    });
+    expect(h.calls.map((c) => [c.path, c.tags.purpose])).toEqual([
+      ['/wallet/getblock', 'monitor'],
+    ]);
+    h.node.mine();
+    expect((await h.run(h.api.blockWithTransactions(1n, MONITOR)))?.header.number).toBe(
+      1n,
+    );
+  });
+
+  it('confirms a contract structurally through getcontract, bound to the address asked', async () => {
+    const h = nodeTransport();
+    h.node.fund(KEY_ADDRESS, 1n);
+    h.node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    expect(await h.run(h.api.contractExists(USDT_HEX, READ))).toBe(true);
+    // An account without a contract, and no account at all.
+    expect(await h.run(h.api.contractExists(KEY_HEX, READ))).toBe(false);
+    expect(await h.run(h.api.contractExists(RECIPIENT_HEX, READ))).toBe(false);
+    expect(h.calls.at(-1)).toEqual({
+      path: '/wallet/getcontract',
+      tags: { purpose: 'read', retry: 'safe', exactIntegers: true },
+    });
+    h.node.intercept('main', '/wallet/getcontract', () => ({
+      json: { contract_address: RECIPIENT_HEX, bytecode: '00' },
+    }));
+    await expect(h.run(h.api.contractExists(USDT_HEX, READ))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    // Under a quorum: absent, present, an error and a notice are four different answers.
+    const key = quorumKeyFor('/wallet/getcontract');
+    const present = { contract_address: USDT_HEX, bytecode: '60', name: 'a' };
+    expect(key?.({})).toEqual({ absent: true });
+    expect(key?.({ ...present, name: 'b', origin_energy_limit: 5 })).toEqual(
+      key?.(present),
+    );
+    expect(key?.({ ...present, contract_address: RECIPIENT_HEX })).not.toEqual(
+      key?.(present),
+    );
+    expect(key?.({ Error: 'x' })).not.toEqual(key?.({}));
+    expect(key?.({ notice: 'maintenance' })).not.toEqual(key?.({}));
+  });
+
+  it('reads a constant call that ran without energy as malformed, never as 0 (F4-R9)', async () => {
+    const h = nodeTransport();
+    h.node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    let energy: unknown;
+    h.node.intercept('main', '/wallet/triggerconstantcontract', () => ({
+      json: {
+        result: { result: true },
+        constant_result: ['6'.padStart(64, '0')],
+        ...(energy === undefined ? {} : { energy_used: energy }),
+        transaction: { ret: [{}] },
+      },
+    }));
+    for (const value of [undefined, 0, -1, '300', 1.5]) {
+      energy = value;
+      await expect(
+        h.run(h.api.constantCall(KEY_HEX, USDT_HEX, '313ce567', READ)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    }
+    energy = 1;
+    expect(await h.run(h.api.constantCall(KEY_HEX, USDT_HEX, '313ce567', READ))).toEqual({
+      kind: 'ok',
+      result: '6'.padStart(64, '0'),
+      energy: 1n,
+    });
+  });
 });

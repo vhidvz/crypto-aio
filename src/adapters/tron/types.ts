@@ -83,13 +83,23 @@ export interface TronTransferContract {
   readonly amount: bigint;
 }
 
-/** A contract call without TRX value (`TriggerSmartContract`), e.g. a TRC-20 `transfer`. */
+/**
+ * A contract call (`TriggerSmartContract`), e.g. a TRC-20 `transfer`. The driver builds calls
+ * without value; a chain call may also send TRX or a TRC-10 token, which `readRaw` reports
+ * (exactly, and only when non-zero) and `encodeRaw` refuses.
+ */
 export interface TronTriggerContract {
   readonly type: 'TriggerSmartContract';
   readonly owner: string;
   readonly contract: string;
   /** ABI call data, lower-case hex without `0x`. */
   readonly data: string;
+  /** Read only: TRX sent to the contract with the call (`call_value`), in sun. */
+  readonly callValue?: bigint;
+  /** Read only: a TRC-10 amount sent with the call (`call_token_value`). */
+  readonly callTokenValue?: bigint;
+  /** Read only: the TRC-10 token id of `callTokenValue` (`token_id`). */
+  readonly tokenId?: bigint;
 }
 
 export type TronContract = TronTransferContract | TronTriggerContract;
@@ -127,7 +137,9 @@ export interface TronCodec {
   /**
    * Lenient reading of any chain transaction's raw bytes (already bound to its txID): the
    * contract of a Transfer or TriggerSmartContract even with fields this model does not
-   * carry, or `null` for other contract types and anything unreadable. Never throws.
+   * carry (a call's TRX or TRC-10 value is reported), or `null` for other contract types and
+   * anything unreadable. Display only: `timestamp` (client-set, so it may be rounded or
+   * negative), and `feeLimit` (left out when a number cannot hold it exactly). Never throws.
    */
   readRaw(hex: string): TronRawData | null;
   /** A fresh TronWeb instance whose providers send through `transport` (R34). */

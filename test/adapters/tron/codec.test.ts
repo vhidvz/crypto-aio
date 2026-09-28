@@ -44,6 +44,7 @@ import {
 import { transferAmount, tronwebCodec } from '../../../src/adapters/tron/codec';
 import type { TronRawData, TronTransferContract } from '../../../src/adapters/tron/types';
 import { fromHex, toHex, utf8ToBytes } from '../../../src/core/util/bytes';
+import { encodeWireRaw } from './support/node';
 import { decodeRawData, encodeRawData, encodeTransaction } from './support/protobuf';
 import {
   KEY,
@@ -483,6 +484,49 @@ describe('tronwebCodec', () => {
     expect(transferAmount(v.rawHex)).toBe(200_800n);
     // Strict decoding refuses it: we never encode a timestamp above 2^53 - 1.
     expect(() => tronwebCodec.decodeRaw(v.rawHex)).toThrow(
+      expect.objectContaining({ code: 'INVALID_INTENT' }),
+    );
+  });
+
+  it("reads a call's TRX and TRC-10 value exactly, and never encodes one (Task 6)", () => {
+    const raw: TronRawData = {
+      refBlockBytes: '0000',
+      refBlockHash: '00'.repeat(8),
+      expiration: 1,
+      timestamp: 1,
+      contract: {
+        type: 'TriggerSmartContract',
+        owner: KEY_HEX,
+        contract: USDT_HEX,
+        data: encodeTransfer(RECIPIENT, 5n),
+      },
+    };
+    const values = { callValue: 2n ** 60n + 1n, callTokenValue: 7n, tokenId: 1_000_001n };
+    // tronweb reads these int64s as numbers (2^60 + 1 would round): read from the bytes.
+    expect(tronwebCodec.readRaw(encodeWireRaw(raw, values))).toEqual({
+      ...raw,
+      contract: { ...raw.contract, ...values },
+    });
+    expect(tronwebCodec.readRaw(encodeWireRaw(raw, { callValue: 3n }))).toEqual({
+      ...raw,
+      contract: { ...raw.contract, callValue: 3n },
+    });
+    // Zero values are absent on the wire, and in the model.
+    expect(tronwebCodec.readRaw(encodeWireRaw(raw))).toEqual(raw);
+    // A negative value is never in a block (VMActuator refuses it).
+    expect(tronwebCodec.readRaw(encodeWireRaw(raw, { callValue: -1n }))).toBeNull();
+    expect(tronwebCodec.readRaw(encodeWireRaw(raw, { tokenId: -5n }))).toBeNull();
+    // The driver never writes a value, and strict decoding refuses bytes that carry one.
+    for (const extra of [
+      { callValue: 1n },
+      { callTokenValue: 1n },
+      { tokenId: 1_000_001n },
+    ]) {
+      expect(() =>
+        tronwebCodec.encodeRaw({ ...raw, contract: { ...raw.contract, ...extra } }),
+      ).toThrow(expect.objectContaining({ code: 'INVALID_INTENT' }));
+    }
+    expect(() => tronwebCodec.decodeRaw(encodeWireRaw(raw, { callValue: 1n }))).toThrow(
       expect.objectContaining({ code: 'INVALID_INTENT' }),
     );
   });

@@ -207,6 +207,11 @@ const constantCallKey = restKey((answer) => {
   };
 });
 
+/** Whether a contract is there, and which: `{}` (none) keys as absent (`restKey`). */
+const contractKey = restKey((answer) => ({
+  contract: lower(answer.contract_address ?? null),
+}));
+
 function rpcBlockKey(result: unknown): unknown {
   if (!isObject(result)) return result;
   // M3: an envelope without a result is an error, whatever else it holds.
@@ -231,6 +236,7 @@ const QUORUM_KEYS: Readonly<Record<string, QuorumKey>> = {
   '/walletsolidity/gettransactionbyid': transactionKey,
   '/wallet/gettransactionbyid': transactionKey,
   '/wallet/triggerconstantcontract': constantCallKey,
+  '/wallet/getcontract': contractKey,
   '/jsonrpc': rpcBlockKey,
 };
 
@@ -511,7 +517,13 @@ export class TronApi {
     return header;
   }
 
-  /** A block with its transactions and their infos (the scanner's read). */
+  /**
+   * A block with its transactions and their infos (the scanner's read). Block 0 is its
+   * header alone (F4-R7): java-tron answers `{}` to `gettransactioninfobyblocknum` there
+   * (`GetTransactionInfoByBlockNumServlet`, GreatVoyage-v4.8.2.2; Nile checked 2026-09-27),
+   * a malformed answer the scanner would retry for ever, and genesis holds only the chain's
+   * initial allocations, which are not reported.
+   */
   async blockWithTransactions(
     height: bigint,
     tags: TronCallTags,
@@ -520,6 +532,10 @@ export class TronApi {
     readonly transactions: readonly TronTxJson[];
     readonly infos: readonly TronTxInfo[];
   } | null> {
+    if (height === 0n) {
+      const genesis = await this.block('full', 0n, tags);
+      return genesis ? { header: genesis, transactions: [], infos: [] } : null;
+    }
     const answer = await this.post(
       '/wallet/getblock',
       { id_or_num: height.toString(), detail: true },
@@ -657,14 +673,42 @@ export class TronApi {
         retryable: true,
       });
     }
-    const energy = uintOr0(answer.energy_used, 'energy used');
     const tx =
       answer.transaction === undefined ? {} : object(answer.transaction, 'transaction');
     const ret = Array.isArray(tx.ret) && isObject(tx.ret[0]) ? tx.ret[0].ret : undefined;
-    if (ret === 'FAILED') return { kind: 'failed', energy };
+    if (ret === 'FAILED') {
+      return { kind: 'failed', energy: uintOr0(answer.energy_used, 'energy used') };
+    }
     const out = answer.constant_result;
     if (!Array.isArray(out) || out.length !== 1) throw malformed('constant result');
+    // F4-R9: a call that ran used energy, and the fee estimate is built on it; a missing or
+    // zero `energy_used` is a malformed answer, never 0 (a 0 fee limit fails on chain).
+    const energy = uint(answer.energy_used, 'energy used');
+    if (energy === 0n) throw malformed('energy used');
     return { kind: 'ok', result: hex(out[0], 'constant result'), energy };
+  }
+
+  /**
+   * Whether `addressHex` holds a contract (`/wallet/getcontract`): java-tron answers `{}`
+   * when the account or its contract does not exist (`Wallet.getContract`, GreatVoyage-v4.8.2.2
+   * `d5c3d1d1`), else the `SmartContract`. The structural check behind a constant call's
+   * "no contract" text before anyone caches it; an answer about another address is
+   * malformed.
+   */
+  async contractExists(addressHex: string, tags: TronCallTags): Promise<boolean> {
+    const answer = object(
+      await this.post('/wallet/getcontract', { value: addressHex }, tags),
+      'contract',
+    );
+    if (Object.keys(answer).length === 0) return false;
+    const address = answer.contract_address;
+    if (
+      address !== undefined &&
+      (typeof address !== 'string' || address.toLowerCase() !== addressHex.toLowerCase())
+    ) {
+      throw malformed('contract address');
+    }
+    return true;
   }
 
   /**

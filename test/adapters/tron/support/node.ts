@@ -1688,7 +1688,27 @@ export class ScriptedTronNode {
         const tx = this.#pool.find((t) => t.id === body.value);
         return { json: tx && view.head === this.head ? this.#txJson(tx) : {} };
       }
+      case 'getcontract': {
+        // `Wallet.getContract`: `{}` unless the account holds a contract, else its
+        // `SmartContract` (bytes as hex).
+        const address = String(body.value);
+        const token = state.tokens.get(address);
+        if (!token) return { json: {} };
+        return {
+          json: {
+            origin_address: '41' + 'ab'.repeat(20),
+            contract_address: address,
+            bytecode: '6080604052',
+            consume_user_resource_percent: 100,
+            name: token.symbol,
+            origin_energy_limit: 10_000_000,
+            code_hash: toHex(sha256(utf8ToBytes(address))),
+          },
+        };
+      }
       case 'gettransactioninfobyblocknum': {
+        // `GetTransactionInfoByBlockNumServlet` answers `{}` for `num <= 0` (checked on Nile).
+        if (typeof body.num === 'number' && body.num <= 0) return { json: {} };
         const block = this.#findBlock(body.num, limit);
         return { json: block ? block.txs.map((t) => this.#infoJson(t)) : [] };
       }
