@@ -6,7 +6,7 @@
  */
 import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/abstract/utils';
 import { secp256k1 } from '@noble/curves/secp256k1';
-import { SigningError, ValidationError } from '../../core/errors/error';
+import { SigningError, ValidationError, isCryptoAioError } from '../../core/errors/error';
 import type { SignatureBundle, SigningRequest } from '../../core/signing/types';
 import { concatBytes, equalBytes, fromHex, toHex } from '../../core/util/bytes';
 import { hash160, outputScript, type WalletAddress } from './address';
@@ -110,6 +110,21 @@ function assertEncodable(
   }
 }
 
+const PREVIOUS_UNDECODABLE = 'a previous transaction does not decode';
+const PREVIOUS_MISMATCH = 'a previous transaction does not match its outpoint';
+
+/**
+ * Whether `error` is `buildTx`'s refusal of an input's previous transaction (`prevTxHex`):
+ * bytes that do not decode, or bytes whose output disagrees with the input's txid, value or
+ * script. A caller that read those from a provider maps it to the provider.
+ */
+export function isPreviousTxRefusal(error: unknown): boolean {
+  return (
+    isCryptoAioError(error, 'INVALID_INTENT') &&
+    (error.message === PREVIOUS_UNDECODABLE || error.message === PREVIOUS_MISMATCH)
+  );
+}
+
 /**
  * Checks a previous transaction's bytes against the outpoint, value and script it funds,
  * and returns them without the witness for BIP174 `non_witness_utxo`: Bitcoin Core's form
@@ -121,9 +136,7 @@ function assertPrevious(
   script: Uint8Array,
 ): Uint8Array {
   const prev = decodeTxHex(prevTxHex);
-  if (!prev) {
-    throw new ValidationError('INVALID_INTENT', 'a previous transaction does not decode');
-  }
+  if (!prev) throw new ValidationError('INVALID_INTENT', PREVIOUS_UNDECODABLE);
   const output = prev.outs[input.vout];
   if (
     prev.getId() !== input.txid ||
@@ -131,10 +144,7 @@ function assertPrevious(
     output.value !== input.value ||
     !equalBytes(output.script, script)
   ) {
-    throw new ValidationError(
-      'INVALID_INTENT',
-      'a previous transaction does not match its outpoint',
-    );
+    throw new ValidationError('INVALID_INTENT', PREVIOUS_MISMATCH);
   }
   const bare = prev.clone();
   bare.ins.forEach((_, index) => bare.setWitness(index, []));

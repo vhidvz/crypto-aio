@@ -21,6 +21,7 @@ import {
   parseOutpoint,
   proofRead,
   parseWalletOptions,
+  withSignal,
   type UtxoContext,
 } from './context';
 import { canonicalTwinTxid, txidOfHex } from './codec';
@@ -252,14 +253,16 @@ export function addressHistory(ctx: UtxoContext): AddressHistorySource {
 /**
  * `ext.utxo.listUnspent`: confirmed first (oldest first), then unconfirmed. An output the
  * indexer names twice alike is listed once; named twice differently (another value or
- * status), the answer is malformed.
+ * status), the answer is malformed. Coin selection reads the wallet's outputs through it
+ * (`spendable`, with the build's signal).
  */
 export async function listUnspent(
   ctx: UtxoContext,
   address: string,
+  signal?: AbortSignal,
 ): Promise<UtxoUnspent[]> {
   const canonical = decodeAddress(address, ctx.config.address).canonical;
-  const listed = await ctx.esplora.addressUtxos(canonical, READ);
+  const listed = await ctx.esplora.addressUtxos(canonical, withSignal(READ, signal));
   const seen = new Map<string, string>();
   const utxos = listed.filter((u) => {
     const key = `${u.txid}:${u.vout}`;
