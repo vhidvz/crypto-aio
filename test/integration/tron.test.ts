@@ -6,14 +6,20 @@
  *   `/jsonrpc` (default: the `public` preset, TronGrid without a key).
  *
  * Nothing is signed or broadcast. The builder refuses a head older than half the expiration
- * window, so the first check also reads the head's age against the local clock. The negative
- * inclusion proof (F4-R12, F4-R14) runs on live blocks: a transaction id that was never built,
- * with a `TronExpiryOrdering` naming a solidified block as its reference, is proven absent
- * from the attested reference block and a scan up to the first block past its expiration.
+ * window, and a clock lagging the network by nearly a window makes every build expire at
+ * birth, so one check reads the head's age by the local clock as the builder does. The
+ * negative inclusion proof (F4-R12, F4-R14) runs on live blocks: a transaction id that was
+ * never built, with a `TronExpiryOrdering` naming a solidified block as its reference, is
+ * proven absent from every block above the attested reference block, up to the first block
+ * at or past its expiration.
  */
 import { randomBytes } from 'node:crypto';
-import { CryptoAio, secret, type ProviderRef } from '../../src';
-import { DEFAULT_EXPIRATION_MS, type TronExpiryOrdering } from '../../src/adapters/tron';
+import { CryptoAio, isCryptoAioError, secret, type ProviderRef } from '../../src';
+import {
+  DEFAULT_EXPIRATION_MS,
+  MIN_EXPIRATION_MS,
+  type TronExpiryOrdering,
+} from '../../src/adapters/tron';
 import { TAPOS_WINDOW } from '../../src/adapters/tron/network';
 // The proofs' own read, which the public API does not expose (as the EVM suite's R78 probe).
 import { internalsOf } from '../../src/core/blockchain/internal';
@@ -25,14 +31,35 @@ const url = process.env.CRYPTO_AIO_IT_TRON_URL;
 const provider: ProviderRef = url ? { endpoints: [{ url: secret(url) }] } : 'public';
 /** The black-hole account, which exists on every Tron network. */
 const BLACK_HOLE = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb';
+/** One block slot. */
+const SLOT_MS = 3_000;
 /**
  * How far below the solidified head the proof's reference block sits: 40 blocks, about two
- * minutes, so its one-minute expiration window closes well below the solidified head.
+ * minutes, so its expiration window closes well below the solidified head.
  */
 const REFERENCE_DEPTH = 40n;
+/** Tries of the proof: an undecided answer is retried, one slot apart. */
+const PROOF_TRIES = 3;
 const suite = enabled ? describe : describe.skip;
 
 const open = (aio: CryptoAio) => aio.blockchain({ chain: 'tron', network, provider });
+
+/**
+ * `read`, tried again only on a retryable failure: a proof that decides nothing (lesson 16)
+ * answered correctly, and a lagging load-balanced backend or a 429 passes.
+ */
+async function retried<T>(read: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await read();
+    } catch (error) {
+      if (attempt >= PROOF_TRIES || !isCryptoAioError(error) || !error.retryable) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, SLOT_MS));
+    }
+  }
+}
 
 suite(`Tron integration on ${network}`, () => {
   it('checks block 0, then reads heights, a solidified block, a balance and a fee', async () => {
@@ -46,11 +73,6 @@ suite(`Tron integration on ${network}`, () => {
       expect(status.finalizedHeight).toBeLessThanOrEqual(status.height);
       const block = await bc.getBlock(status.finalizedHeight);
       expect(block?.hash).toMatch(/^[0-9a-f]{64}$/);
-      // A build here would reference this head, and refuses one older than half the window.
-      const head = await bc.getBlock(status.height);
-      expect(Date.now() - Number(head?.timestamp)).toBeLessThanOrEqual(
-        DEFAULT_EXPIRATION_MS / 2,
-      );
       expect((await bc.getBalance(BLACK_HOLE)).amount.asset.id).toBe(
         `tron:${network}/native`,
       );
@@ -64,7 +86,39 @@ suite(`Tron integration on ${network}`, () => {
     } finally {
       await aio.close();
     }
-  }, 60_000);
+  }, 120_000);
+
+  it('reads a head that a build would accept, by the local clock', async () => {
+    const aio = new CryptoAio({ env: false });
+    try {
+      const bc = open(aio);
+      await bc.ready();
+      // As the builder does: the head, then the clock at once. The block's time comes after,
+      // so the second read's latency is not counted as the head's age.
+      const height = await bc.getBlockHeight();
+      const seenAt = Date.now();
+      const head = await bc.getBlock(height);
+      if (head?.timestamp === undefined) {
+        throw new Error(`the endpoint named head ${height}, then served no block there`);
+      }
+      const age = seenAt - head.timestamp;
+      // The builder refuses a head older than half the window, and anchors the expiration at
+      // the earlier of the head's time and the clock: a clock behind the head by the window
+      // less one slot builds transactions that expire at birth.
+      if (age > DEFAULT_EXPIRATION_MS / 2) {
+        throw new Error(
+          `the head block is ${age} ms old by the local clock: the local clock leads the network, or the endpoint serves a stale head; every build would be refused`,
+        );
+      }
+      if (-age > DEFAULT_EXPIRATION_MS - SLOT_MS) {
+        throw new Error(
+          `the head block is ${-age} ms ahead of the local clock: the local clock lags the network; every build would expire at birth`,
+        );
+      }
+    } finally {
+      await aio.close();
+    }
+  }, 120_000);
 
   it('proves a transaction id that was never built absent after its expiration', async () => {
     const aio = new CryptoAio({ env: false });
@@ -74,24 +128,26 @@ suite(`Tron integration on ${network}`, () => {
       const { finalizedHeight } = await bc.getNetworkStatus();
       const reference = await bc.getBlock(finalizedHeight - REFERENCE_DEPTH);
       if (reference?.timestamp === undefined) throw new Error('no reference block');
-      // What a build on this reference block would record (the builder's ordering).
+      // What a build on this reference block records with the shortest window the network
+      // config accepts and no jitter: the scan then walks about four blocks.
       const ordering: TronExpiryOrdering = {
         kind: 'expiry',
-        expiresAtMs: reference.timestamp + DEFAULT_EXPIRATION_MS,
+        expiresAtMs: reference.timestamp + MIN_EXPIRATION_MS,
         lastValidHeight: reference.height + TAPOS_WINDOW,
         refBlockHash: reference.hash.slice(16, 32),
       };
       const id = randomBytes(32).toString('hex');
       const { driver } = await internalsOf(bc).pooled();
-      await expect(
+      const proof = await retried(() =>
         driver.proofs.includedFinal(
           { id, idKind: 'tx-hash', canonical: true },
           ordering,
           BLACK_HOLE,
         ),
-      ).resolves.toEqual({ included: false });
+      );
+      expect(proof).toEqual({ included: false });
     } finally {
       await aio.close();
     }
-  }, 60_000);
+  }, 180_000);
 });
