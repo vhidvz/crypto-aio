@@ -9,14 +9,19 @@ import {
   networkOf,
   type PlannedInput,
 } from '../../../src/adapters/utxo/codec';
+import { classifyBroadcast, parseNodeError } from '../../../src/adapters/utxo/errors';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
 import type { UtxoAddressType } from '../../../src/adapters/utxo/types';
 import { tweakPrivateKey } from '../../../src/core/signing/local';
 import type { SignatureBundle } from '../../../src/core/signing/types';
-import { fromHex } from '../../../src/core/util/bytes';
+import { fromHex, toHex } from '../../../src/core/util/bytes';
 import { FakeClock } from '../../../src/testing/fake-clock';
 import { hang } from '../../../src/testing/fake-fetch';
-import { ScriptedEsploraNode, type ScriptedEsploraNodeOptions } from './support/node';
+import {
+  ScriptedEsploraNode,
+  assertModelled,
+  type ScriptedEsploraNodeOptions,
+} from './support/node';
 import {
   malleate,
   nativeSigner,
@@ -55,6 +60,19 @@ const json = (reply: { text: string }) =>
 const refusal = (code: number, text: string) =>
   `sendrawtransaction RPC error ${code}: ${text}`;
 
+/** A script failure as bitcoind words it: `CScriptCheck` names the input and what it spends. */
+function scriptRefusal(reason: string, hex: string, index = 0): string {
+  const tx = bitcoin.Transaction.fromHex(hex);
+  const input = tx.ins[index]!;
+  const prev = toHex(Uint8Array.from(input.hash).reverse());
+  const wtxid = toHex(Uint8Array.from(tx.getHash(true)).reverse());
+  return `${reason}, input ${index} of ${tx.getId()} (wtxid ${wtxid}), spending ${prev}:${input.index}`;
+}
+
+const SIG_NULLFAIL = 'Signature must be zero for failed CHECK(MULTI)SIG operation';
+const EVAL_FALSE =
+  'Script evaluated without error but finished with a false/empty top stack element';
+
 /** A transaction edited after signing (only for checks that run before the scripts). */
 function edited(
   hex: string,
@@ -63,6 +81,28 @@ function edited(
   const tx = bitcoin.Transaction.fromHex(hex);
   edit(tx);
   return tx.toHex();
+}
+
+/** A spend of `txid:0` (100,000 sat) paying `fee`, padded with an OP_RETURN to `vsize`. */
+function paddedSpend(txid: string, fee: bigint, vsize: number): string {
+  let size = Math.max(0, vsize - 130);
+  for (let tries = 0; tries < 50; tries++) {
+    const hex = signedSpend(
+      TEST_KEY,
+      [[txid, 0, 100_000n]],
+      [
+        [PAYEE, 100_000n - fee],
+        [bitcoin.script.compile([0x6a, new Uint8Array(size).fill(0x2a)]), 0n],
+      ],
+    );
+    const got = bitcoin.Transaction.fromHex(hex).virtualSize();
+    if (got === vsize) return hex;
+    size = Math.max(
+      0,
+      size + Math.sign(vsize - got) * Math.max(1, Math.abs(vsize - got) - 1),
+    );
+  }
+  throw new Error(`no padding gives ${vsize} vB`);
 }
 
 /** A p2wpkh spend of TEST_KEY's outputs with a chosen lock time and version. */
@@ -237,8 +277,15 @@ describe('ScriptedEsploraNode', () => {
     const witness = forgedTx.ins[0]!.witness;
     witness[0] = Uint8Array.from(witness[0]!);
     witness[0][10] = witness[0][10]! ^ 1;
-    expect((await post(forgedTx.toHex())).text).toContain(
-      'block-script-verify-flag-failed',
+    // Bitcoin Core 30 checks scripts once, with the standard flags.
+    expect((await post(forgedTx.toHex())).text).toBe(
+      `sendrawtransaction RPC error: ${JSON.stringify({
+        code: -26,
+        message: scriptRefusal(
+          `mempool-script-verify-flag-failed (${SIG_NULLFAIL})`,
+          forgedTx.toHex(),
+        ),
+      })}`,
     );
   });
 
@@ -303,8 +350,9 @@ describe('ScriptedEsploraNode', () => {
       ['op-nop', 'scriptsig-not-pushonly'],
     ];
     for (const [kind, text] of refusals) {
-      expect((await post(malleate(ours, kind))).text).toBe(
-        `sendrawtransaction RPC error -26: ${text}`,
+      const copy = malleate(ours, kind);
+      expect((await post(copy)).text).toBe(
+        refusal(-26, kind === 'op-nop' ? text : scriptRefusal(text, copy)),
       );
     }
     const copy = malleate(ours, 'high-s');
@@ -329,12 +377,13 @@ describe('what the real codec produces (Task 5)', () => {
     async (type) => {
       const { node, post } = setup();
       const spent = codecSpend(node, type);
-      const failure =
-        type === 'p2tr'
-          ? 'Invalid Schnorr signature'
-          : 'Signature must be zero for failed CHECK(MULTI)SIG operation';
-      expect((await post(forged(spent.hex, type))).text).toBe(
-        refusal(-26, `block-script-verify-flag-failed (${failure})`),
+      const failure = type === 'p2tr' ? 'Invalid Schnorr signature' : SIG_NULLFAIL;
+      const bad = forged(spent.hex, type);
+      expect((await post(bad)).text).toBe(
+        refusal(
+          -26,
+          scriptRefusal(`mempool-script-verify-flag-failed (${failure})`, bad),
+        ),
       );
       expect(await post(spent.hex)).toEqual({ status: 200, text: spent.txid });
       if (type !== 'p2pkh') {
@@ -349,23 +398,60 @@ describe('what the real codec produces (Task 5)', () => {
     },
   );
 
-  it('uses the reject texts of Bitcoin Core before v30 with legacyScriptErrors', async () => {
-    const { node, post } = setup({ legacyScriptErrors: true });
-    const spent = codecSpend(node, 'p2wpkh');
-    expect((await post(forged(spent.hex, 'p2wpkh'))).text).toBe(
-      refusal(
-        -26,
-        'mandatory-script-verify-flag-failed (Signature must be zero for failed CHECK(MULTI)SIG operation)',
-      ),
-    );
-    const legacy = codecSpend(node, 'p2pkh');
-    expect((await post(malleate(legacy.hex, 'high-s'))).text).toBe(
-      refusal(
-        -26,
-        'non-mandatory-script-verify-flag (Non-canonical signature: S value is unnecessarily high)',
-      ),
-    );
-  });
+  it.each(['p2wpkh', 'p2sh-p2wpkh', 'p2pkh', 'p2tr'] as const)(
+    '%s: checks again with the consensus flags under legacyScriptErrors (Bitcoin Core 29)',
+    async (type) => {
+      const { node, post } = setup({ legacyScriptErrors: true });
+      const spent = codecSpend(node, type);
+      const bad = forged(spent.hex, type);
+      // A consensus failure reports the second check's error.
+      const failure = type === 'p2tr' ? 'Invalid Schnorr signature' : EVAL_FALSE;
+      expect((await post(bad)).text).toBe(
+        refusal(
+          -26,
+          scriptRefusal(`mandatory-script-verify-flag-failed (${failure})`, bad),
+        ),
+      );
+      if (type === 'p2pkh') {
+        const high = malleate(spent.hex, 'high-s');
+        expect((await post(high)).text).toBe(
+          refusal(
+            -26,
+            scriptRefusal(
+              'non-mandatory-script-verify-flag (Non-canonical signature: S value is unnecessarily high)',
+              high,
+            ),
+          ),
+        );
+      }
+    },
+  );
+
+  it.each(['blockstream', 'mempool'] as const)(
+    '%s: a consensus-invalid signature is refused on v30 and rejected on v29, through the classifier',
+    async (errorFormat) => {
+      // The transport keeps 300 characters of a 4xx body (details.body).
+      const classify = (body: string) =>
+        classifyBroadcast(parseNodeError(body.slice(0, 300)));
+      const v30 = setup({ errorFormat });
+      const bad30 = forged(codecSpend(v30.node, 'p2wpkh').hex, 'p2wpkh');
+      const body30 = (await v30.post(bad30)).text;
+      expect(body30.length).toBeGreaterThan(300);
+      expect(classify(body30)).toEqual({
+        kind: 'refused',
+        code: 'TX_REFUSED',
+        reason: 'the node refused the transaction',
+      });
+      const v29 = setup({ errorFormat, legacyScriptErrors: true });
+      const bad29 = forged(codecSpend(v29.node, 'p2wpkh').hex, 'p2wpkh');
+      const body29 = (await v29.post(bad29)).text;
+      expect(body29.length).toBeGreaterThan(300);
+      expect(classify(body29)).toEqual({
+        kind: 'rejected',
+        reason: 'script verification failed',
+      });
+    },
+  );
 });
 
 describe("bitcoind's checks, in bitcoind's order", () => {
@@ -699,28 +785,53 @@ describe('mempool policy', () => {
     expect(node.inMempool(idOf(wide))).toBe(true);
   });
 
-  it("compares fee rates as bitcoind's CFeeRate does: sat/kvB, truncated", async () => {
-    const { post, spend, txid } = setup();
-    // 901 sat for 141 vB and 703 sat for 110 vB: 6.3901 and 6.3909 sat/vB, both 6,390 sat/kvB.
-    const original = signedSpend(
-      TEST_KEY,
-      [[txid, 0, 100_000n]],
-      [
-        [PAYEE, 90_000n],
-        [OWN.script, 9_099n],
-      ],
-    );
-    const replacement = spend(99_297n);
-    expect(bitcoin.Transaction.fromHex(original).virtualSize()).toBe(141);
-    expect(bitcoin.Transaction.fromHex(replacement).virtualSize()).toBe(110);
-    await post(original);
-    expect((await post(replacement)).text).toBe(
-      refusal(
-        -26,
-        `insufficient fee, rejecting replacement ${idOf(replacement)}; new feerate 0.00006390 BTC/kvB <= old feerate 0.00006390 BTC/kvB`,
-      ),
-    );
-  });
+  it.each([false, true])(
+    'compares fee rates exactly (v30), or as truncated sat/kvB (v29, truncatedFeeRates %s)',
+    async (truncatedFeeRates) => {
+      const { post, spend, txid } = setup({ truncatedFeeRates });
+      // 901 sat for 141 vB and 703 sat for 110 vB: 6.3901 and 6.3909 sat/vB, both 6,390 sat/kvB.
+      const original = signedSpend(
+        TEST_KEY,
+        [[txid, 0, 100_000n]],
+        [
+          [PAYEE, 90_000n],
+          [OWN.script, 9_099n],
+        ],
+      );
+      const replacement = spend(99_297n);
+      expect(bitcoin.Transaction.fromHex(original).virtualSize()).toBe(141);
+      expect(bitcoin.Transaction.fromHex(replacement).virtualSize()).toBe(110);
+      await post(original);
+      // v30 compares exactly: a higher rate, so rule 3 (the absolute fee) refuses it.
+      expect((await post(replacement)).text).toBe(
+        refusal(
+          -26,
+          truncatedFeeRates
+            ? `insufficient fee, rejecting replacement ${idOf(replacement)}; new feerate 0.00006390 BTC/kvB <= old feerate 0.00006390 BTC/kvB`
+            : `insufficient fee, rejecting replacement ${idOf(replacement)}, less fees than conflicting txs; 0.00000703 < 0.00000901`,
+        ),
+      );
+    },
+  );
+
+  it.each([false, true])(
+    'accepts 10,046 sat for 1,999 vB over 1,000 sat for 199 vB on v30 only (truncatedFeeRates %s)',
+    async (truncatedFeeRates) => {
+      const { post, txid } = setup({ truncatedFeeRates });
+      // 5.02512 and 5.02551 sat/vB: both 5,025 sat/kvB when truncated.
+      const original = paddedSpend(txid, 1_000n, 199);
+      const replacement = paddedSpend(txid, 10_046n, 1_999);
+      expect(await post(original)).toMatchObject({ status: 200 });
+      expect((await post(replacement)).text).toBe(
+        truncatedFeeRates
+          ? refusal(
+              -26,
+              `insufficient fee, rejecting replacement ${idOf(replacement)}; new feerate 0.00005025 BTC/kvB <= old feerate 0.00005025 BTC/kvB`,
+            )
+          : idOf(replacement),
+      );
+    },
+  );
 
   it('refuses a replacement of more than 100 transactions (rule 5)', async () => {
     const { node, post } = setup();
@@ -767,7 +878,7 @@ describe('atomic application and immutable records', () => {
     await post(first);
     // It passes every replacement rule, then fails its signature: nothing may change.
     const bad = forged(spend(95_000n), 'p2wpkh');
-    expect((await post(bad)).text).toContain('block-script-verify-flag-failed');
+    expect((await post(bad)).text).toContain('mempool-script-verify-flag-failed');
     expect(node.inMempool(idOf(first))).toBe(true);
     expect(json(await get(`/tx/${txid}/outspend/0`))).toMatchObject({
       txid: idOf(first),
@@ -818,6 +929,11 @@ describe('atomic application and immutable records', () => {
     expect((await get(`/block/${stale}`)).status).toBe(404);
     // electrs' txstore is append-only: a stale block's txids and transactions stay readable.
     expect(JSON.parse((await get(`/block/${stale}/txids`)).text)).toContain(idOf(parent));
+    // Blockstream's electrs checks a block's header before paging its transactions.
+    expect(await get(`/block/${stale}/txs`)).toEqual({
+      status: 404,
+      text: 'Block not found',
+    });
     expect(json(await get(`/tx/${idOf(parent)}`)).status).toEqual({ confirmed: false });
     expect(json(await get(`/tx/${txid}/outspend/0`))).toEqual({ spent: false });
     // An electrs in light mode reads transactions from bitcoind by their confirming block.
@@ -895,6 +1011,80 @@ describe('scripted faults', () => {
   });
 });
 
+describe('the modelled electrs: Blockstream new-index or mempool/electrs (M1)', () => {
+  it('answers as mempool/electrs does with errorFormat "mempool"', async () => {
+    const { node, post, get, txid } = setup({ errorFormat: 'mempool' });
+    const parent = signedSpend(TEST_KEY, [[txid, 0, 100_000n]], [[OWN.script, 99_000n]]);
+    await post(parent);
+    const [stale] = node.mine() as [string];
+    node.reorg(1, { drop: [idOf(parent)] });
+    node.mine();
+    // Its txstore serves a stale block's transactions; in light mode bitcoind has no index.
+    expect(JSON.parse((await get(`/block/${stale}/txs`)).text)).toHaveLength(2);
+    const light = node.endpoint('light', { lightMode: true });
+    const lightTxs = await node.fetch.fetch(`${light}/block/${stale}/txs`);
+    expect({ status: lightTxs.status, text: await lightTxs.text() }).toEqual({
+      status: 400,
+      text: 'missing tx',
+    });
+    // The range first (404), then the page boundary, with its own spelling.
+    expect(await get(`/block/${stale}/txs/50`)).toEqual({
+      status: 404,
+      text: 'start index out of range',
+    });
+    expect(await get(`/block/${stale}/txs/1`)).toEqual({
+      status: 400,
+      text: 'start index must be a multipication of 25',
+    });
+    expect(await get('/tx/xyz')).toEqual({ status: 400, text: 'Invalid hex hash' });
+    expect(await get('/address/nope')).toEqual({
+      status: 400,
+      text: 'Invalid Bitcoin address',
+    });
+    // A testnet-family backend takes any testnet-family address (tb1 on regtest).
+    const tb = bitcoin.address.fromOutputScript(OWN.script, bitcoin.networks.testnet);
+    expect(json(await get(`/address/${tb}`))).toMatchObject({
+      address: tb,
+      chain_stats: { funded_txo_sum: 100_000 },
+    });
+  });
+
+  it.each(['blockstream', 'mempool'] as const)(
+    "%s: orders one block's address history as its electrs does",
+    async (errorFormat) => {
+      const { node, post, spend, get } = setup({ errorFormat });
+      const out = spend(90_000n);
+      await post(out);
+      const [late] = node.fund(OWN.address, 5_000n, { mempool: true }).split(':') as [
+        string,
+      ];
+      node.mine();
+      const page = JSON.parse((await get(`/address/${OWN.address}/txs/chain`)).text) as {
+        txid: string;
+      }[];
+      // Blockstream: spending rows before funding rows; mempool/electrs: the block position,
+      // last first.
+      expect(page.slice(0, 2).map((t) => t.txid)).toEqual(
+        errorFormat === 'blockstream' ? [idOf(out), late] : [late, idOf(out)],
+      );
+    },
+  );
+});
+
+describe('paths the node does not model (M2)', () => {
+  it('records one met through fetch, and fails the test that met it', async () => {
+    const { node, post, spend } = setup();
+    const truc = edited(spend(90_000n), (tx) => {
+      tx.version = 3;
+    });
+    await expect(post(truc)).rejects.toThrow(/TRUC/);
+    expect(node.unmodelled).toEqual([expect.stringMatching(/TRUC/)]);
+    // The check every test file runs after each test (this one clears the node's list).
+    expect(() => assertModelled()).toThrow(/unmodelled paths: .*TRUC/);
+    expect(() => assertModelled()).not.toThrow();
+  });
+});
+
 describe('Esplora routes', () => {
   it('serves blocks, their pages and timestamps as electrs does', async () => {
     const { node, get } = setup();
@@ -916,13 +1106,14 @@ describe('Esplora routes', () => {
     expect(block.timestamp).toBe((one.timestamp as number) + 1);
     expect(JSON.parse((await get(`/block/${hash}/txs`)).text)).toHaveLength(25);
     expect(JSON.parse((await get(`/block/${hash}/txs/25`)).text)).toHaveLength(6);
-    expect(await get(`/block/${hash}/txs/50`)).toEqual({
-      status: 404,
-      text: 'start index out of range',
-    });
-    expect(await get(`/block/${hash}/txs/10`)).toEqual({
+    // Blockstream's electrs checks the page boundary first, then the range, both 400.
+    expect(await get(`/block/${hash}/txs/60`)).toEqual({
       status: 400,
-      text: 'start index must be a multipication of 25',
+      text: 'start index must be a multiple of 25',
+    });
+    expect(await get(`/block/${hash}/txs/50`)).toEqual({
+      status: 400,
+      text: 'start index out of range',
     });
     expect(JSON.parse((await get(`/block/${hash}/txids`)).text)).toEqual(
       node.blockTxids(2),
@@ -977,9 +1168,27 @@ describe('Esplora routes', () => {
         (await get(`/address/${OWN.address}/txs/chain/${'ab'.repeat(32)}`)).text,
       ),
     ).toEqual([]);
-    expect(await get('/address/nope')).toEqual({
+    // Blockstream's electrs answers rust-bitcoin 0.32's parse error.
+    expect(await get('/address/nope')).toEqual({ status: 400, text: 'base58 error' });
+    expect(await get(`/address/${'1'.repeat(51)}`)).toEqual({
       status: 400,
-      text: 'Invalid Bitcoin address',
+      text: 'legacy address base58 string',
+    });
+    const program = new Uint8Array(20).fill(7);
+    expect(await get(`/address/${bitcoin.address.toBech32(program, 0, 'tc')}`)).toEqual({
+      status: 400,
+      text: 'tried to parse an unknown hrp',
+    });
+    expect(await get(`/address/${bitcoin.address.toBase58Check(program, 0x30)}`)).toEqual(
+      {
+        status: 400,
+        text: 'legacy address base58 prefix',
+      },
+    );
+    const tb = bitcoin.address.fromOutputScript(OWN.script, bitcoin.networks.testnet);
+    expect(await get(`/address/${tb}`)).toEqual({
+      status: 400,
+      text: 'Address on invalid network',
     });
     expect(await get('/address/bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4')).toEqual({
       status: 400,

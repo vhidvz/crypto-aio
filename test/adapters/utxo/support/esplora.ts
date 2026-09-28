@@ -1,8 +1,13 @@
 /**
  * The Esplora REST layer of the scripted node (test-only): what one endpoint shows (its view
  * of the chain and the mempool, I1) and electrs' routes and answer shapes over that view.
+ * Two servers are modelled, by the node's `errorFormat`: Blockstream's electrs (new-index
+ * branch, `blockstream`) and mempool/electrs (`mempool`). They share the routes, and differ
+ * in their page checks, a disconnected block's transactions, invalid-id and invalid-address
+ * texts, and the order of an address's history within a block.
  */
 import { sha256 } from '@noble/hashes/sha256';
+import { createBase58check } from '@scure/base';
 import { bitcoin, type Network } from '../../../../src/adapters/utxo/sdk';
 import { concatBytes, equalBytes, fromHex, toHex } from '../../../../src/core/util/bytes';
 import type { FakeReply } from '../../../../src/testing/fake-fetch';
@@ -13,6 +18,41 @@ import { compactSizeLength, solve, type ScriptType } from './script';
 const PAGE = 25;
 const outpointOf = (txid: string, vout: number): string => `${txid}:${vout}`;
 const reversedHex = (hash: Uint8Array): string => toHex(Uint8Array.from(hash).reverse());
+const base58check = createBase58check(sha256);
+
+/**
+ * rust-bitcoin 0.32's `Address::from_str` (both electrs builds use it): `undefined` when the
+ * string is an address of some network, else the top of its `ParseError` text. A segwit
+ * decode comes first; anything else is read as a base58 legacy address of at most 50
+ * characters (so base58 never sees a long string: lesson 20).
+ */
+function addressParseError(address: string): string | undefined {
+  try {
+    const { version, prefix, data } = bitcoin.address.fromBech32(address);
+    const program =
+      version === 0
+        ? data.length === 20 || data.length === 32
+        : version <= 16 && data.length >= 2 && data.length <= 40;
+    if (program) {
+      return ['bc', 'tb', 'bcrt'].includes(prefix)
+        ? undefined
+        : 'tried to parse an unknown hrp';
+    }
+  } catch {
+    // Not a segwit address: rust-bitcoin reads it as a legacy one.
+  }
+  if (address.length > 50) return 'legacy address base58 string';
+  let payload: Uint8Array;
+  try {
+    payload = base58check.decode(address);
+  } catch {
+    return 'base58 error';
+  }
+  if (payload.length !== 21) return 'legacy address base58 data';
+  return [0x00, 0x05, 0x6f, 0xc4].includes(payload[0] as number)
+    ? undefined
+    : 'legacy address base58 prefix';
+}
 
 /** What one endpoint shows: blocks up to `height` and the mempool it holds. */
 export interface View {
@@ -247,22 +287,30 @@ export class EsploraApi {
 
   /** An address's output script, or electrs' refusal text. */
   #addressScript(address: string): Uint8Array | string {
-    if (address.length <= 100) {
-      try {
-        return bitcoin.address.toOutputScript(address, this.network);
-      } catch {
-        const { bitcoin: main, testnet, regtest } = bitcoin.networks;
-        for (const network of [main, testnet, regtest]) {
-          try {
-            bitcoin.address.toOutputScript(address, network);
-            return 'Address on invalid network';
-          } catch {
-            // Not this network either.
-          }
+    const error = addressParseError(address);
+    if (this.variant === 'mempool') {
+      // mempool/electrs: one text for every parse error; a testnet-family backend (testnet,
+      // signet, testnet4, regtest) takes an address of any of them.
+      if (error !== undefined) return 'Invalid Bitcoin address';
+      const { bitcoin: main, testnet, regtest } = bitcoin.networks;
+      const family =
+        this.network.bech32 === main.bech32 ? [main] : [this.network, testnet, regtest];
+      for (const network of family) {
+        try {
+          return bitcoin.address.toOutputScript(address, network);
+        } catch {
+          // Another network of the family, maybe.
         }
       }
+      return 'Address on invalid network';
     }
-    return 'Invalid Bitcoin address';
+    // Blockstream's electrs: rust-bitcoin's own text, then `is_valid_for_network`.
+    if (error !== undefined) return error;
+    try {
+      return bitcoin.address.toOutputScript(address, this.network);
+    } catch {
+      return 'Address on invalid network';
+    }
   }
 
   #addressStats(entries: Iterable<Entry>, script: Uint8Array): Record<string, number> {
@@ -339,7 +387,25 @@ export class EsploraApi {
     const touches = (entry: Entry) =>
       entry.outs.some((o) => equalBytes(o.script, script)) ||
       entry.prevouts.some((p) => equalBytes(p.script, script));
-    const history = [...confirmed].reverse().filter(touches);
+    const spends = (entry: Entry) =>
+      entry.prevouts.some((p) => equalBytes(p.script, script));
+    // Blockstream's history index is keyed by (height, spending or funding, txid bytes), read
+    // in reverse; mempool/electrs sorts a page by height and block position, last first.
+    const byTxidBytes = (a: Entry, b: Entry) => {
+      const [x, y] = [a, b].map((e) => reversedHex(fromHex(e.txid))) as [string, string];
+      return x < y ? 1 : x > y ? -1 : 0;
+    };
+    const history: Entry[] = [];
+    for (let h = view.height; h >= 0; h--) {
+      const entries = (state.chain[h] as Block).entries.filter(touches);
+      if (this.variant === 'mempool') history.push(...[...entries].reverse());
+      else {
+        history.push(
+          ...entries.filter(spends).sort(byTxidBytes),
+          ...entries.filter((e) => !spends(e)).sort(byTxidBytes),
+        );
+      }
+    }
     // electrs ignores a cursor that is not a txid, and answers nothing after an unknown one.
     const cursor = lastSeen !== undefined ? parseHash(lastSeen) : undefined;
     let from = 0;
@@ -354,6 +420,11 @@ export class EsploraApi {
     };
   }
 
+  /** rust-bitcoin's hex error for a malformed id, as each electrs maps it. */
+  #badHash(): string {
+    return this.variant === 'mempool' ? 'Invalid hex hash' : 'Invalid hex string';
+  }
+
   #blockRoute(state: State, view: View, parts: readonly string[]): FakeReply | undefined {
     const [, id, sub, start] = parts;
     const n = parts.length;
@@ -361,7 +432,7 @@ export class EsploraApi {
       n === 2 || (n === 3 && sub === 'txids') || ((n === 3 || n === 4) && sub === 'txs');
     if (!shape) return undefined;
     const hash = parseHash(id as string);
-    if (hash === undefined) return { status: 400, text: 'Invalid hex string' };
+    if (hash === undefined) return { status: 400, text: this.#badHash() };
     const active = state.chain.find((b) => b.hash === hash && b.height <= view.height);
     if (n === 2) {
       return active
@@ -374,17 +445,33 @@ export class EsploraApi {
     if (!block) return { status: 404, text: 'Block not found' };
     if (sub === 'txids') return { json: block.entries.map((entry) => entry.txid) };
     const first = start === undefined ? 0 : (parseNumber(start, 0xffffffff) ?? 0);
-    if (first >= block.entries.length) {
-      return { status: 404, text: 'start index out of range' };
+    const page = block.entries.slice(first, first + PAGE);
+    if (this.variant === 'blockstream') {
+      // It checks the block's header first (the active chain only), then the page boundary,
+      // then the range, both 400.
+      if (!active) return { status: 404, text: 'Block not found' };
+      if (first % PAGE !== 0) {
+        return { status: 400, text: `start index must be a multiple of ${PAGE}` };
+      }
+      if (first >= block.entries.length) {
+        return { status: 400, text: 'start index out of range' };
+      }
+    } else {
+      if (first >= block.entries.length) {
+        return { status: 404, text: 'start index out of range' };
+      }
+      if (first % PAGE !== 0) {
+        return { status: 400, text: `start index must be a multipication of ${PAGE}` };
+      }
+      // In light mode it reads each transaction from bitcoind by its confirming block: one
+      // that is neither confirmed nor in the mempool is missing.
+      const missing = (entry: Entry) =>
+        this.#confirmedIn(state, view, entry.txid) === undefined &&
+        !view.pooled.has(entry.txid);
+      if (view.lightMode && page.some(missing))
+        return { status: 400, text: 'missing tx' };
     }
-    if (first % PAGE !== 0) {
-      return { status: 400, text: `start index must be a multipication of ${PAGE}` };
-    }
-    return {
-      json: block.entries
-        .slice(first, first + PAGE)
-        .map((entry) => this.#txJson(state, view, entry)),
-    };
+    return { json: page.map((entry) => this.#txJson(state, view, entry)) };
   }
 
   #txRoute(state: State, view: View, parts: readonly string[]): FakeReply | undefined {
@@ -396,7 +483,7 @@ export class EsploraApi {
       (n === 4 && sub === 'outspend');
     if (!shape) return undefined;
     const txid = parseHash(id as string);
-    if (txid === undefined) return { status: 400, text: 'Invalid hex string' };
+    if (txid === undefined) return { status: 400, text: this.#badHash() };
     if (sub === 'status') return { json: this.#status(state, view, txid) };
     if (sub === 'outspend') {
       const vout = parseNumber(index as string, 0xffffffff);

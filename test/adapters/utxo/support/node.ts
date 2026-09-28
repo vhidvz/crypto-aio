@@ -10,12 +10,14 @@
  *   `CheckTxInputs` (coinbase maturity, values), standard inputs and witnesses, ephemeral
  *   dust, the relay and mempool minimum fees, the ancestor and descendant limits (with the
  *   CPFP carve-out) and spends of a conflict; then the replacement rules of Bitcoin Core
- *   28-30 in their order (6, 5, 2, 3 and 4); then every input's script, policy flags first
- *   and consensus flags to tell `mempool-` from `block-script-verify-flag-failed`; then
- *   `maxfeerate` (-25). Every other refusal is -26.
+ *   28-30 in their order (6, 5, 2, 3 and 4; rule 6 compares rates exactly, as v30 does);
+ *   then every input's script with the standard flags, once (v30: every failure reads
+ *   `mempool-script-verify-flag-failed (…), input …`; `legacyScriptErrors` keeps v29's
+ *   consensus re-check); then `maxfeerate` (-25). Every other refusal is -26.
  * - Scripts (`script.ts`) are interpreted for the standard templates (p2pkh, p2sh-p2wpkh,
  *   p2wpkh, p2wsh, p2tr key path, bare `OP_TRUE`), with bitcoinjs' signature hashes and
- *   `@noble/curves`. An opcode or spend path outside them throws: this node never guesses.
+ *   `@noble/curves`. An opcode or spend path outside them throws an `UnmodelledError`, which
+ *   `unmodelled` records when met through `fetch`: this node never guesses.
  * - Blocks: a test mines them (`mine`, whose `extra` transactions are held to consensus
  *   rules only, as a miner's block is), disconnects them (`reorg`, which re-adds their
  *   transactions with the fee limits bypassed, as bitcoind does) and evicts from the mempool.
@@ -50,6 +52,7 @@ import {
 import { EsploraApi } from './esplora';
 import {
   ScriptFailure,
+  UnmodelledError,
   compactSizeLength,
   hasValidOps,
   isP2sh,
@@ -97,6 +100,7 @@ const OP_TRUE = Uint8Array.of(0x51);
 /** Block rewards pay an anyone-can-spend p2wsh (witness script `OP_TRUE`). */
 const MINER_SCRIPT = Uint8Array.of(0x00, 0x20, ...sha256(OP_TRUE));
 
+/** The Esplora server modelled: Blockstream's electrs (new-index) or mempool/electrs. */
 export type ErrorFormat = 'blockstream' | 'mempool';
 
 export interface ScriptedEsploraNodeOptions {
@@ -109,8 +113,23 @@ export interface ScriptedEsploraNodeOptions {
   readonly dustRelayFee?: bigint;
   /** `false`: pre-v28 opt-in RBF (a conflict must signal BIP125). */
   readonly fullRbf?: boolean;
-  /** Reject-reason texts of Bitcoin Core before v30 (`mandatory-script-verify-flag-failed`). */
+  /**
+   * Bitcoin Core 29's script checks: a failure is checked again with the consensus flags, and
+   * reads `mandatory-script-verify-flag-failed` or `non-mandatory-script-verify-flag`. Bitcoin
+   * Core 30 checks once, with the standard flags: every failure reads
+   * `mempool-script-verify-flag-failed`.
+   */
   readonly legacyScriptErrors?: boolean;
+  /**
+   * Bitcoin Core 29 and earlier compare replacement fee rates as `CFeeRate`s: sat/kvB,
+   * truncated. Bitcoin Core 30 compares them exactly (`FeeFrac`).
+   */
+  readonly truncatedFeeRates?: boolean;
+  /**
+   * The Esplora server modelled, by its error format: Blockstream's electrs (new-index) or
+   * mempool/electrs. Their paging checks, a disconnected block's transactions, invalid-id
+   * and invalid-address texts, and history order within a block follow each one's source.
+   */
   readonly errorFormat?: ErrorFormat;
 }
 
@@ -172,6 +191,7 @@ export interface Input {
 /** A decoded transaction. Never handed out: `transaction()` decodes a copy. */
 export interface Parsed {
   readonly txid: string;
+  readonly wtxid: string;
   readonly hex: string;
   readonly version: number;
   readonly locktime: number;
@@ -290,6 +310,7 @@ function parsedOf(tx: Transaction): Parsed {
   const weight = tx.weight();
   return Object.freeze({
     txid: tx.getId(),
+    wtxid: reversedHex(tx.getHash(true)),
     hex: tx.toHex(),
     version: tx.version >>> 0,
     locktime: tx.locktime >>> 0,
@@ -389,10 +410,32 @@ function sequenceLocksPass(
   return minHeight < height && minTime < mtpAt(chain, height - 1);
 }
 
+/** `CScriptCheck`'s debug text: which input failed, and the output it spends. */
+const inputOf = (tx: Parsed, index: number): string => {
+  const input = tx.ins[index] as Input;
+  return `input ${index} of ${tx.txid} (wtxid ${tx.wtxid}), spending ${input.txid}:${input.vout}`;
+};
+
 const signalsRbf = (tx: Parsed): boolean =>
   tx.ins.some((input) => input.sequence <= 0xfffffffd);
 
 // ---- the node ------------------------------------------------------------------------------
+
+/** Nodes of the running test: after it, none may have met an unmodelled path (M2). */
+const live = new Set<ScriptedEsploraNode>();
+
+/**
+ * Throws when a node of the running test met a path it does not model (and forgets the
+ * test's nodes). Every test file that uses the node runs it after each test.
+ */
+export function assertModelled(): void {
+  const met = [...live].flatMap((node) => node.unmodelled);
+  live.clear();
+  if (met.length > 0) {
+    throw new Error(`the scripted Esplora node met unmodelled paths: ${met.join('; ')}`);
+  }
+}
+if (typeof afterEach === 'function') afterEach(assertModelled);
 
 export class ScriptedEsploraNode {
   readonly fetch = new FakeFetch();
@@ -400,6 +443,11 @@ export class ScriptedEsploraNode {
   readonly options: Required<Omit<ScriptedEsploraNodeOptions, 'clock' | 'network'>>;
   /** Raw bodies POSTed to `/tx` that reached the node, in order (accepted or not). */
   readonly broadcasts: string[] = [];
+  /**
+   * Paths met through `fetch` that this node does not model (M2): the driver sees them as a
+   * network failure, so every test file that uses the node fails a test that leaves one.
+   */
+  readonly unmodelled: string[] = [];
   readonly #clock: FakeClock;
   readonly #endpoints = new Map<string, EndpointConfig>();
   readonly #intercepts = new Map<string, EsploraIntercept>();
@@ -413,6 +461,7 @@ export class ScriptedEsploraNode {
   constructor(options: ScriptedEsploraNodeOptions) {
     // bitcoinjs needs an ECC backend for taproot addresses.
     useNobleEcc();
+    live.add(this);
     this.#clock = options.clock;
     this.network = options.network ?? bitcoin.networks.regtest;
     this.options = Object.freeze({
@@ -424,6 +473,7 @@ export class ScriptedEsploraNode {
       dustRelayFee: options.dustRelayFee ?? 3_000n,
       fullRbf: options.fullRbf ?? true,
       legacyScriptErrors: options.legacyScriptErrors ?? false,
+      truncatedFeeRates: options.truncatedFeeRates ?? false,
       errorFormat: options.errorFormat ?? 'blockstream',
     });
     this.#api = new EsploraApi(this.network, this.options.errorFormat);
@@ -818,7 +868,7 @@ export class ScriptedEsploraNode {
   /** `IsStandardTx`. */
   #checkStandard(tx: Parsed): void {
     if (tx.version === 3) {
-      throw new Error('the scripted node does not model TRUC (version 3) transactions');
+      throw new UnmodelledError('TRUC (version 3) transactions');
     }
     if (tx.version < 1 || tx.version > 3) throw rejected('version');
     if (tx.weight > MAX_STANDARD_TX_WEIGHT) throw rejected('tx-size');
@@ -1060,7 +1110,10 @@ export class ScriptedEsploraNode {
     for (const txid of conflicts) {
       const original = entryOfPool(txid);
       const old = (original.fee * 1000n) / BigInt(original.vsize);
-      if (rate <= old) {
+      const lower = this.options.truncatedFeeRates
+        ? rate <= old
+        : fee * BigInt(original.vsize) <= original.fee * BigInt(tx.vsize);
+      if (lower) {
         throw rejected(
           `insufficient fee, rejecting replacement ${tx.txid}; new feerate ${formatRate(rate)} <= old feerate ${formatRate(old)}`,
         );
@@ -1139,29 +1192,27 @@ export class ScriptedEsploraNode {
     }
   }
 
-  #scriptText(reason: string, consensus: boolean): string {
-    const legacy = this.options.legacyScriptErrors;
-    if (consensus) {
-      return legacy
-        ? `mandatory-script-verify-flag-failed (${reason})`
-        : `block-script-verify-flag-failed (${reason})`;
-    }
-    return legacy
-      ? `non-mandatory-script-verify-flag (${reason})`
-      : `mempool-script-verify-flag-failed (${reason})`;
-  }
-
   /**
-   * `CheckInputScripts` with the standard flags; a failure is checked again with the
-   * consensus flags alone, which tells a policy refusal from a consensus one (the text of
-   * the first failure either way).
+   * `CheckInputScripts` with the standard flags. Bitcoin Core 30 checks once: every failure is
+   * `mempool-script-verify-flag-failed` (TX_NOT_STANDARD). Bitcoin Core 29
+   * (`legacyScriptErrors`) checks a failure again with the consensus flags alone: when that
+   * passes it is `non-mandatory-script-verify-flag` with the first error, otherwise
+   * `mandatory-script-verify-flag-failed` with the second. `CScriptCheck` names the input.
    */
   #checkScripts(tx: Parsed, prevouts: readonly Output[]): void {
     for (let index = 0; index < tx.ins.length; index++) {
       const first = this.#scriptError(tx, prevouts, index, true);
       if (first === undefined) continue;
-      const consensus = this.#scriptError(tx, prevouts, index, false) !== undefined;
-      throw rejected(this.#scriptText(first, consensus));
+      const where = inputOf(tx, index);
+      if (!this.options.legacyScriptErrors) {
+        throw rejected(`mempool-script-verify-flag-failed (${first}), ${where}`);
+      }
+      const second = this.#scriptError(tx, prevouts, index, false);
+      throw rejected(
+        second === undefined
+          ? `non-mandatory-script-verify-flag (${first}), ${where}`
+          : `mandatory-script-verify-flag-failed (${second}), ${where}`,
+      );
     }
   }
 
@@ -1219,7 +1270,11 @@ export class ScriptedEsploraNode {
     const prevouts = spendable.map((coin) => coin.output);
     for (let index = 0; index < tx.ins.length; index++) {
       const error = this.#scriptError(tx, prevouts, index, false);
-      if (error !== undefined) throw invalidBlock(this.#scriptText(error, true));
+      if (error === undefined) continue;
+      const text = this.options.legacyScriptErrors
+        ? 'mandatory-script-verify-flag-failed'
+        : 'block-script-verify-flag-failed';
+      throw invalidBlock(`${text} (${error}), ${inputOf(tx, index)}`);
     }
     return entryOf(tx, 'tx', prevouts, fee);
   }
@@ -1355,7 +1410,14 @@ export class ScriptedEsploraNode {
     signal: AbortSignal | undefined,
   ): Promise<FakeReply> {
     let answer: FakeReply | undefined;
-    const honest = () => (answer ??= this.#answer(name, request));
+    const honest = (): FakeReply => {
+      try {
+        return (answer ??= this.#answer(name, request));
+      } catch (error) {
+        if (error instanceof UnmodelledError) this.unmodelled.push(error.message);
+        throw error;
+      }
+    };
     const intercept = this.#intercepts.get(name);
     if (intercept) {
       const reply = await intercept(request, signal, honest);

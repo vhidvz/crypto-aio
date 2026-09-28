@@ -61,6 +61,18 @@ export interface Checker {
 export type SigVersion = 'base' | 'v0';
 
 export class ScriptFailure extends Error {}
+
+/**
+ * A path this node does not model (an opcode, taproot script-path spending, TRUC): thrown so
+ * a test never passes on a guess. `ScriptedEsploraNode.unmodelled` records one met through
+ * `fetch`, where it would otherwise look like a network failure.
+ */
+export class UnmodelledError extends Error {
+  constructor(what: string) {
+    super(`the scripted node does not model ${what}`);
+    this.name = 'UnmodelledError';
+  }
+}
 const fail = (reason: string): never => {
   throw new ScriptFailure(reason);
 };
@@ -368,8 +380,8 @@ export function evalScript(
       const sig = stack.pop()!;
       stack.push(checksig(sig, pubkey, script, sigversion, checker) ? TRUE : FALSE);
     } else {
-      throw new Error(
-        `the scripted node does not model opcode 0x${code.toString(16)}: extend it or use a standard script`,
+      throw new UnmodelledError(
+        `opcode 0x${code.toString(16)}: extend it or use a standard script`,
       );
     }
   }
@@ -445,7 +457,7 @@ export function verifyWitnessProgram(
     const last = stack[stack.length - 1]!;
     const annex = stack.length >= 2 && last[0] === 0x50 ? stack.pop() : undefined;
     if (stack.length === 1) return checkTaprootKey(stack[0]!, program, checker, annex);
-    throw new Error('the scripted node does not model taproot script-path spending');
+    throw new UnmodelledError('taproot script-path spending');
   }
   const anchor = version === 1 && program.length === 2 && program[0] === 0x4e;
   if (!p2sh && anchor && program[1] === 0x73) return; // pay-to-anchor
