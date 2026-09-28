@@ -2,6 +2,10 @@
  * What coin selection spends and pays: the planned outputs of an intent (strict addresses,
  * no dust), the wallet's eligible outputs (not reserved by another live Operation, and
  * confirmed as deeply as `minInputConfirmations` asks), and the fee rate of a fee spec.
+ *
+ * This module loads bitcoinjs-lib (`spendable` reads through `reader.ts`, which imports the
+ * codec and `sdk.ts`), so only modules behind the manifest's `load()` may import it; an
+ * SDK-free module (the plugin, an entry's types) must not (review M8).
  */
 import type { WalletKey, WalletOptions } from '../../core/driver/types';
 import { ConfigError, ValidationError } from '../../core/errors/error';

@@ -26,7 +26,7 @@ import {
 } from './context';
 import { canonicalTwinTxid, txidOfHex } from './codec';
 import { decodeTransaction, observationOf } from './decode';
-import { isHash, malformed } from './esplora';
+import { MAX_MONEY, isHash, malformed } from './esplora';
 import type { EsploraTx, UtxoCallTags, UtxoOutputType, UtxoUnspent } from './types';
 
 /** Esplora's page of address history (electrs' `CHAIN_TXS_PER_PAGE`). */
@@ -253,8 +253,8 @@ export function addressHistory(ctx: UtxoContext): AddressHistorySource {
 /**
  * `ext.utxo.listUnspent`: confirmed first (oldest first), then unconfirmed. An output the
  * indexer names twice alike is listed once; named twice differently (another value or
- * status), the answer is malformed. Coin selection reads the wallet's outputs through it
- * (`spendable`, with the build's signal).
+ * status), the answer is malformed, and so is a list worth more than every bitcoin. Coin
+ * selection reads the wallet's outputs through it (`spendable`, with the build's signal).
  */
 export async function listUnspent(
   ctx: UtxoContext,
@@ -276,6 +276,11 @@ export async function listUnspent(
     if (known !== facts) throw malformed('an unspent output listed twice, differently');
     return false;
   });
+  // Each value is in range (the parser), but no address holds more than every bitcoin: under
+  // coinSelection `all`, such a listing would build change above MAX_MONEY (review M1).
+  if (utxos.reduce((sum, u) => sum + u.value, 0n) > MAX_MONEY) {
+    throw malformed('unspent outputs worth more than every bitcoin');
+  }
   const height = (u: (typeof utxos)[number]) =>
     u.status.confirmed
       ? (u.status.blockHeight as bigint)

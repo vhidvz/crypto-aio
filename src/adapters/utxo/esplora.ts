@@ -32,7 +32,7 @@ type Json = Readonly<Record<string, unknown>>;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 /** Bitcoin Core's `MAX_MONEY`: no output, and no balance, is larger. */
-const MAX_MONEY = 2_100_000_000_000_000n;
+export const MAX_MONEY = 2_100_000_000_000_000n;
 
 /**
  * Lowercase hex of whole bytes. A flat character class, not `([0-9a-f]{2})+`: that pattern

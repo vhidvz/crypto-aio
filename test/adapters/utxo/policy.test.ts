@@ -7,7 +7,12 @@ import {
   vsizeOf,
   type Spendable,
 } from '../../../src/adapters/utxo/coinselect';
-import { classifyBroadcast, parseNodeError } from '../../../src/adapters/utxo/errors';
+import {
+  classifyBroadcast,
+  classifyOwnBroadcast,
+  parseNodeError,
+  type TxBytes,
+} from '../../../src/adapters/utxo/errors';
 import {
   assertSaneFee,
   feeAt,
@@ -507,6 +512,113 @@ describe('broadcast classification (lesson 3, R24)', () => {
         kind: 'rejected',
         reason: 'invalid by consensus rules',
       });
+    }
+  });
+});
+
+describe("a node's rejection is a claim (lesson 21)", () => {
+  const MAX_MONEY = 2_100_000_000_000_000n;
+  const A = { txid: 'aa'.repeat(32), vout: 0 };
+  const B = { txid: 'bb'.repeat(32), vout: 1 };
+  const NULL = { txid: '00'.repeat(32), vout: 0xffffffff };
+  const tx = (extra: Partial<TxBytes> = {}): TxBytes => ({
+    inputs: [A],
+    values: [1_000n],
+    strippedSize: 110,
+    ...extra,
+  });
+  const CLAIMED = {
+    kind: 'refused',
+    code: 'TX_REFUSED',
+    reason: 'the node claimed the transaction is invalid',
+  };
+  const CONSENSUS = { kind: 'rejected', reason: 'invalid by consensus rules' };
+  const claim = (message: string, bytes: TxBytes | undefined, code = -26) =>
+    classifyOwnBroadcast({ code, message }, bytes);
+
+  it('keeps a byte-only rejection exactly when its reason holds for the bytes', () => {
+    // [reason, bytes it holds for, bytes it does not hold for]
+    const cases: [string, TxBytes, TxBytes][] = [
+      ['bad-txns-vin-empty', tx({ inputs: [] }), tx()],
+      ['bad-txns-vout-empty', tx({ values: [] }), tx()],
+      [
+        'bad-txns-oversize',
+        tx({ strippedSize: 1_000_001 }),
+        tx({ strippedSize: 1_000_000 }),
+      ],
+      ['bad-txns-vout-negative', tx({ values: [5n, -1n] }), tx({ values: [0n] })],
+      [
+        'bad-txns-vout-toolarge',
+        tx({ values: [MAX_MONEY + 1n] }),
+        tx({ values: [MAX_MONEY] }),
+      ],
+      [
+        'bad-txns-txouttotal-toolarge',
+        tx({ values: [MAX_MONEY, 1n] }),
+        tx({ values: [MAX_MONEY - 1n, 1n] }),
+      ],
+      ['bad-txns-inputs-duplicate', tx({ inputs: [A, B, A] }), tx({ inputs: [A, B] })],
+      ['bad-txns-prevout-null', tx({ inputs: [A, NULL] }), tx({ inputs: [NULL] })],
+      ['coinbase', tx({ inputs: [NULL] }), tx({ inputs: [A, NULL] })],
+    ];
+    for (const [reason, holds, fails] of cases) {
+      expect(claim(`${reason}, detail`, holds)).toEqual(CONSENSUS);
+      expect(claim(reason, fails)).toEqual(CLAIMED);
+      // Bytes that do not decode prove no `CheckTransaction` reason.
+      expect(claim(reason, undefined)).toEqual(CLAIMED);
+    }
+    // bitcoind names an out-of-range value first (`vout-negative`, `vout-toolarge`); the
+    // total counts only when every value is in range.
+    for (const values of [[-1n, MAX_MONEY, 2n], [MAX_MONEY + 1n]]) {
+      expect(claim('bad-txns-txouttotal-toolarge', tx({ values }))).toEqual(CLAIMED);
+    }
+    // bitcoind's null outpoint is the zero txid AND vout 0xffffffff.
+    const zero = { txid: '00'.repeat(32), vout: 0 };
+    expect(claim('bad-txns-prevout-null', tx({ inputs: [A, zero] }))).toEqual(CLAIMED);
+    expect(claim('coinbase', tx({ inputs: [zero] }))).toEqual(CLAIMED);
+    // A null outpoint beside another is prevout-null; a coinbase is not.
+    expect(claim('bad-txns-prevout-null', tx({ inputs: [NULL, NULL] }))).toEqual(
+      CONSENSUS,
+    );
+  });
+
+  it('keeps a decode failure only for bytes that do not decode', () => {
+    const message = 'TX decode failed. Make sure the tx has at least one input.';
+    expect(claim(message, undefined, -22)).toEqual({
+      kind: 'rejected',
+      reason: 'the transaction does not decode',
+    });
+    expect(claim(message, tx(), -22)).toEqual(CLAIMED);
+  });
+
+  it('never keeps a reason that depends on the spent outputs', () => {
+    const bad = tx({ inputs: [], values: [] });
+    for (const reason of [
+      'bad-txns-in-belowout, value in (0.001) < value out (0.002)',
+      'bad-txns-inputvalues-outofrange',
+      'bad-txns-fee-outofrange',
+      'mandatory-script-verify-flag-failed (Signature must be zero for failed CHECK(MULTI)SIG operation)',
+      'block-script-verify-flag-failed (Script evaluated without error but finished with a false/empty top stack element)',
+    ]) {
+      expect(classifyBroadcast({ code: -26, message: reason }).kind).toBe('rejected');
+      expect(claim(reason, tx())).toEqual(CLAIMED);
+      expect(claim(reason, bad)).toEqual(CLAIMED);
+      expect(claim(reason, undefined)).toEqual(CLAIMED);
+    }
+  });
+
+  it('leaves every answer that is not a rejection as the classifier gives it', () => {
+    for (const [code, message] of [
+      [-26, 'min relay fee not met, 100 < 141'],
+      [-25, 'bad-txns-inputs-missingorspent'],
+      [-27, 'Transaction outputs already in utxo set'],
+      [-26, 'dust'],
+      [-25, 'bad-txns-vin-empty'],
+    ] as const) {
+      const error = { code, message };
+      expect(classifyOwnBroadcast(error, tx({ inputs: [] }))).toEqual(
+        classifyBroadcast(error),
+      );
     }
   });
 });

@@ -8,13 +8,15 @@ import {
   utxoBuilder,
   utxoReplacement,
 } from '../../../src/adapters/utxo/builder';
-import { chainReader } from '../../../src/adapters/utxo/reader';
+import { classifyBroadcast, parseNodeError } from '../../../src/adapters/utxo/errors';
+import { chainReader, listUnspent } from '../../../src/adapters/utxo/reader';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
 import type { BuildContext } from '../../../src/core/driver/types';
 import { ProviderError } from '../../../src/core/errors/error';
 import type { DriverIntent } from '../../../src/core/model/intent';
 import type { SignedTx, UnsignedTx } from '../../../src/core/model/transaction';
 import type { SigningContext } from '../../../src/core/signing/types';
+import { fromHex } from '../../../src/core/util/bytes';
 import { utxoHarness, type HarnessOptions } from './support/harness';
 import { nativeSigner, signedSpend } from './support/tx';
 import {
@@ -45,6 +47,45 @@ const bare = (data: string): SignedTx => ({
   raw: { encoding: 'hex', data },
   ref: { id: '', idKind: 'txid', canonical: true },
 });
+/** Bitcoin Core's `MAX_MONEY`. */
+const MAX_MONEY = 2_100_000_000_000_000n;
+/** Lesson 21: a rejection the driver cannot confirm for these bytes (non-terminal). */
+const CLAIMED = {
+  kind: 'refused',
+  code: 'TX_REFUSED',
+  reason: 'the node claimed the transaction is invalid',
+} as const;
+/** An override of `rate` sat/kvB, as the decimal sat/vB string it is. */
+const override = (rate: bigint) => ({
+  satPerVByte: `${rate / 1_000n}.${(rate % 1_000n).toString().padStart(3, '0')}`,
+});
+
+/**
+ * The least replacement `replace` builds (its rate by bisection, in sat/kvB): one sat/kvB
+ * less is `FEE_TOO_LOW`, before anything is signed.
+ */
+async function leastReplacement(
+  replace: (rate: bigint) => Promise<UnsignedTx>,
+): Promise<UnsignedTx> {
+  const allowed = (rate: bigint) =>
+    replace(rate).then(
+      () => true,
+      (error: unknown) => {
+        if ((error as { code?: string }).code === 'FEE_TOO_LOW') return false;
+        throw error;
+      },
+    );
+  let low = 1_000n;
+  let high = 100_000n;
+  expect(await allowed(low)).toBe(false);
+  while (high - low > 1n) {
+    const mid = (low + high) / 2n;
+    if (await allowed(mid)) high = mid;
+    else low = mid;
+  }
+  return replace(high);
+}
+
 /** The node's 400 for a made-up consensus refusal (Blockstream's format). */
 const FABRICATED = {
   status: 400,
@@ -258,6 +299,33 @@ describe('build and assemble', () => {
     expect(result).toEqual({ kind: 'accepted' });
   });
 
+  it('decides nothing on a listing worth more than every bitcoin (review M1)', async () => {
+    // Each value is in range, but together they exceed the supply: under `all`, the change
+    // would be above MAX_MONEY, which is the indexer's error, not the caller's.
+    const h = await funded([100_000n, 200_000n], { options: { coinSelection: 'all' } });
+    type Utxo = Record<string, unknown>;
+    h.node.intercept('a', (request, _signal, honest) =>
+      request.url.pathname.endsWith('/utxo')
+        ? {
+            json: (honest() as { json: Utxo[] }).json.map((utxo) => ({
+              ...utxo,
+              value: 1_500_000_000_000_000,
+            })),
+          }
+        : undefined,
+    );
+    await expect(h.make(intent(50_000n))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    await expect(h.run(listUnspent(h.ctx, OWN.address))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    h.node.clearIntercept('a');
+    expect((await h.make(intent(50_000n))).fee.details).toMatchObject({ inputs: 2 });
+  });
+
   it("sends change to an address the wallet's key derives, or elsewhere only by opt-out (A19)", async () => {
     const h = await funded([100_000n, 100_000n]);
     const changeOutput = (unsigned: UnsignedTx) =>
@@ -289,7 +357,8 @@ describe('build and assemble', () => {
       'message',
       expect.stringContaining(foreign),
     );
-    // Cancel pays to the change address too, so it is checked there as well.
+    // A cancel pays the sending address (M3), but a misconfigured change address is refused
+    // there too, as on every other path.
     const sent = await h.make(intent(10_000n));
     await expect(
       h.run(
@@ -594,9 +663,11 @@ describe('broadcast', () => {
     }
   });
 
-  it('refuses a bad signature on Bitcoin Core 30, and rejects it on 29 (F3-R8)', async () => {
-    // v30 checks scripts once, with the policy flags: `mempool-script-verify-flag-failed`
-    // (refused). v29 checks again with the consensus flags: `mandatory-…` (rejected).
+  it('refuses a bad signature on Bitcoin Core 30 and 29 alike (F3-R8, lesson 21)', async () => {
+    // v30 checks scripts once, with the policy flags: `mempool-script-verify-flag-failed`, a
+    // refusal. v29 checks again with the consensus flags and claims `mandatory-…`, a
+    // rejection; a script failure depends on the spent outputs, so it is never confirmed
+    // here (the core verifies every signature before assembly).
     for (const legacyScriptErrors of [false, true]) {
       const h = await funded([100_000n], { node: { legacyScriptErrors } });
       const unsigned = await h.make(intent(50_000n));
@@ -613,7 +684,7 @@ describe('broadcast', () => {
       const signed = await h.run(h.builder.assemble(unsigned, signatures));
       expect(await h.run(h.broadcaster.broadcast(signed))).toEqual(
         legacyScriptErrors
-          ? { kind: 'rejected', reason: 'script verification failed' }
+          ? CLAIMED
           : {
               kind: 'refused',
               code: 'TX_REFUSED',
@@ -641,25 +712,139 @@ describe('broadcast', () => {
     });
   });
 
-  it("gives the engine's own-ref guard what it needs when an endpoint relays, then makes up a -26", async () => {
+  it("refuses a node's claim that our valid bytes are invalid, whatever reason it names (lesson 21)", async () => {
+    // Every reason the classifier takes for a rejection, in both Esplora formats. An endpoint
+    // that relays our bytes and then claims one must not end the Attempt: its inputs would
+    // leave the reservations, and a caller's retry could pay twice.
+    const claims: [number, string][] = [
+      [-26, 'bad-txns-vin-empty'],
+      [-26, 'bad-txns-vout-empty'],
+      [-26, 'bad-txns-oversize'],
+      [-26, 'bad-txns-vout-negative'],
+      [-26, 'bad-txns-vout-toolarge'],
+      [-26, 'bad-txns-txouttotal-toolarge'],
+      [-26, 'bad-txns-inputs-duplicate'],
+      [-26, 'bad-txns-prevout-null'],
+      [-26, 'bad-txns-in-belowout, value in (0.001) < value out (0.002)'],
+      [-26, 'bad-txns-inputvalues-outofrange'],
+      [-26, 'bad-txns-fee-outofrange'],
+      [-26, 'coinbase'],
+      [
+        -26,
+        'mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)',
+      ],
+      [
+        -26,
+        'block-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)',
+      ],
+      [-22, 'TX decode failed. Make sure the tx has at least one input.'],
+    ];
     const h = await funded([100_000n]);
     const unsigned = await h.make(intent(50_000n));
     const signed = await h.sign(unsigned);
-    h.node.intercept('a', (request, _signal, honest) => {
-      if (request.method !== 'POST') return undefined;
-      honest();
-      return FABRICATED;
-    });
-    expect(await h.run(h.broadcaster.broadcast(signed))).toEqual({
-      kind: 'rejected',
-      reason: 'invalid by consensus rules',
-    });
+    for (const [code, message] of claims) {
+      for (const text of [
+        `sendrawtransaction RPC error ${code}: ${message}`,
+        `sendrawtransaction RPC error: ${JSON.stringify({ code, message })}`,
+      ]) {
+        // The pure classifier takes the node at its word; the broadcaster checks our bytes.
+        expect(classifyBroadcast(parseNodeError(text)).kind).toBe('rejected');
+        h.node.intercept('a', (request, _signal, honest) => {
+          if (request.method !== 'POST') return undefined;
+          honest();
+          return { status: 400, text };
+        });
+        expect(await h.run(h.broadcaster.broadcast(signed))).toEqual(CLAIMED);
+        expect(await h.run(h.broadcaster.broadcast(bare(signed.raw.data)))).toEqual(
+          CLAIMED,
+        );
+      }
+    }
     h.node.clearIntercept('a');
-    // Spec §8.2: the engine believes a refusal only when its own lookup cannot see the
-    // Attempt (`seenOwnRef`); here it can, so one endpoint's answer ends nothing.
+    // The endpoint relayed the bytes: the Attempt is live, and it confirms.
     expect(
       await h.run(chainReader(h.ctx).observe(signed.ref, unsigned.ordering, OWN.address)),
     ).toMatchObject({ seen: 'mempool', txHash: signed.ref.id });
+    h.node.mine();
+    expect(h.node.confirmations(signed.ref.id)).toBe(1);
+  });
+
+  it('rejects bytes the node proves invalid when the reason holds for them here (lesson 21)', async () => {
+    const h = await funded([100_000n]);
+    const [txid] = (h.outpoints[0] as string).split(':') as [string];
+    const spent = fromHex(txid).reverse();
+    const none = new Uint8Array(32);
+    /** A hand-built transaction; out-of-range values bypass bitcoinjs' own check. */
+    const raw = (
+      inputs: readonly (readonly [Uint8Array, number])[],
+      values: readonly bigint[],
+      script: Uint8Array = PAYEE.script,
+    ) => {
+      const tx = new bitcoin.Transaction();
+      tx.version = 2;
+      for (const [hash, index] of inputs) {
+        tx.addInput(hash, index, 0xfffffffd, Uint8Array.of(0x01, 0x01));
+      }
+      for (const value of values) tx.outs.push({ script, value });
+      return tx.toHex();
+    };
+    const consensus = { kind: 'rejected', reason: 'invalid by consensus rules' };
+    const cases: [string, unknown][] = [
+      ['00'.repeat(100), { kind: 'rejected', reason: 'the transaction does not decode' }],
+      [raw([[spent, 0]], []), consensus], // bad-txns-vout-empty
+      [raw([[spent, 0]], [0n], new Uint8Array(1_000_001)), consensus], // bad-txns-oversize
+      [raw([[spent, 0]], [-1n]), consensus], // bad-txns-vout-negative
+      [raw([[spent, 0]], [MAX_MONEY + 1n]), consensus], // bad-txns-vout-toolarge
+      [raw([[spent, 0]], [MAX_MONEY, MAX_MONEY]), consensus], // bad-txns-txouttotal-toolarge
+      [
+        raw(
+          [
+            [spent, 0],
+            [spent, 0],
+          ],
+          [1_000n],
+        ),
+        consensus,
+      ], // bad-txns-inputs-duplicate
+      [
+        raw(
+          [
+            [spent, 0],
+            [none, 0xffffffff],
+          ],
+          [1_000n],
+        ),
+        consensus,
+      ], // bad-txns-prevout-null
+      [raw([[none, 0xffffffff]], [1_000n]), consensus], // coinbase
+    ];
+    for (const [hex, expected] of cases) {
+      expect(await h.run(h.broadcaster.broadcast(bare(hex)))).toEqual(expected);
+    }
+    // Value in < value out depends on the spent output: the node's word only, refused.
+    const belowOut = bitcoin.Transaction.fromHex(
+      signedSpend(TEST_KEY, [[txid, 0, 100_000n]], [[PAYEE.script, 90_000n]]),
+    );
+    (belowOut.outs[0] as { value: bigint }).value = 100_001n;
+    expect(await h.run(h.broadcaster.broadcast(bare(belowOut.toHex())))).toEqual(CLAIMED);
+    expect(h.node.broadcasts).toHaveLength(cases.length + 1);
+  });
+
+  it("checks a bare broadcast's answer against the bytes' own txid (M7)", async () => {
+    const h = await funded([100_000n]);
+    const signed = await h.sign(await h.make(intent(50_000n)));
+    h.node.intercept('a', (request, _signal, honest) => {
+      if (request.method !== 'POST') return undefined;
+      honest();
+      return { text: 'ab'.repeat(32) };
+    });
+    await expect(
+      h.run(h.broadcaster.broadcast(bare(signed.raw.data))),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', ambiguous: true });
+    h.node.clearIntercept('a');
+    expect(await h.run(h.broadcaster.broadcast(bare(signed.raw.data)))).toEqual({
+      kind: 'accepted',
+    });
   });
 
   it("takes an honest endpoint's acceptance over another's made-up -26 in a fanout", async () => {
@@ -676,8 +861,11 @@ describe('broadcast', () => {
 });
 
 describe('replace and cancel', () => {
-  async function pending(values: readonly bigint[] = [100_000n, 200_000n]) {
-    const h = await funded(values);
+  async function pending(
+    values: readonly bigint[] = [100_000n, 200_000n],
+    options: HarnessOptions = {},
+  ) {
+    const h = await funded(values, options);
     const original = await h.make(intent(50_000n, { fee: 'slow' }));
     const { signed: sent } = await h.send(original);
     return { ...h, original, sent };
@@ -743,9 +931,6 @@ describe('replace and cancel', () => {
   });
 
   it('replaces at the least fee it allows, which Bitcoin Core 30 (exact) and 29 (truncated) accept', async () => {
-    const override = (rate: bigint) => ({
-      satPerVByte: `${rate / 1_000n}.${(rate % 1_000n).toString().padStart(3, '0')}`,
-    });
     // Rules 3 and 4 bind when the change pays the bump; rule 6 binds when an input is added
     // to an original that had no change (2,500 sat for 110 vB, then about 22.9 sat/vB).
     const cases: [readonly bigint[], bigint][] = [
@@ -760,28 +945,73 @@ describe('replace and cancel', () => {
         });
         const original = await h.make(intent(amount, { fee: 'fast' }));
         expect((await h.send(original)).result).toEqual({ kind: 'accepted' });
-        const replace = (rate: bigint) =>
-          h.run(h.policy.buildReplacement!(original, override(rate), build()));
-        const allowed = (rate: bigint) =>
-          replace(rate).then(
-            () => true,
-            (error: unknown) => {
-              if ((error as { code?: string }).code === 'FEE_TOO_LOW') return false;
-              throw error;
-            },
-          );
-        let low = 1_000n;
-        let high = 100_000n;
-        expect(await allowed(low)).toBe(false);
-        while (high - low > 1n) {
-          const mid = (low + high) / 2n;
-          if (await allowed(mid)) high = mid;
-          else low = mid;
-        }
-        const { result } = await h.send(await replace(high));
+        const least = await leastReplacement((rate) =>
+          h.run(h.policy.buildReplacement!(original, override(rate), build())),
+        );
+        const { result } = await h.send(least);
         expect(result).toEqual({ kind: 'accepted' });
       }
     }
+  });
+
+  it('replaces an original whose legacy signatures are a byte short of the estimate (M1, M5)', async () => {
+    // Two p2pkh inputs signed with 70-byte DER signatures (71 with the sighash byte, one
+    // less than the estimate counts): the original is 335 vB, not 337. An input is added, so
+    // rule 6 binds, and the least replacement the builder allows must still beat the
+    // original's real rate. Without the M1 slack (a vbyte per legacy input) it does not.
+    const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
+    const ctx = build({ from: legacy.address });
+    for (const version of [{}, { truncatedFeeRates: true }]) {
+      const h = await utxoHarness({ node: { incrementalRelayFee: 1_000n, ...version } });
+      for (const value of [60_000n, 50_000n, 40_000n]) h.node.fund(legacy.address, value);
+      const builder = utxoBuilder(h.ctx, h.network);
+      const i = intent(103_000n, { from: legacy.address, fee: 'fast' });
+      const original = await h.run(
+        builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx),
+      );
+      expect(original.fee.details).toMatchObject({ vsize: 337, inputs: 2, change: 0n });
+      const short = original.signingRequests.map((r) => {
+        for (let n = 0; ; n++) {
+          const sig = secp256k1.sign(r.payload, TEST_KEY, {
+            lowS: true,
+            extraEntropy: sha256(utf8ToBytes(`short ${n}`)),
+          });
+          const bytes = sig.toCompactRawBytes();
+          if (bitcoin.script.signature.encode(bytes, 1).length === 71) {
+            return { requestId: r.id, bytes };
+          }
+        }
+      });
+      const sent = await h.run(builder.assemble(original, short));
+      const broadcaster = utxoBroadcaster(h.ctx);
+      expect(await h.run(broadcaster.broadcast(sent))).toEqual({ kind: 'accepted' });
+      expect(h.node.transaction(sent.ref.id)?.virtualSize()).toBe(335);
+      const policy = utxoReplacement(h.ctx, h.network);
+      const least = await leastReplacement((rate) =>
+        h.run(policy.buildReplacement!(original, override(rate), ctx)),
+      );
+      expect(least.fee.details).toMatchObject({ inputs: 3 });
+      const result = await testSigner().sign(least.signingRequests, {} as SigningContext);
+      if (result.status !== 'signed') throw new Error('the local signer signs at once');
+      const next = await h.run(builder.assemble(least, result.signatures));
+      expect(await h.run(broadcaster.broadcast(next))).toEqual({ kind: 'accepted' });
+      expect(h.node.inMempool(next.ref.id)).toBe(true);
+    }
+  });
+
+  it('runs the absurd-fee guard on replacements and cancels too (M6)', async () => {
+    const h = await pending([60_000n, 100_000n], { options: { maxFee: 5_000n } });
+    // 600 sat/vB for the two inputs a bump needs, and 50 sat/vB for a 110 vB cancel: both
+    // pay more than maxFee.
+    await expect(
+      h.run(h.policy.buildReplacement!(h.original, { satPerVByte: 600n }, build())),
+    ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+    await expect(
+      h.run(h.policy.buildCancel!(h.original, build(), { satPerVByte: 50n })),
+    ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
+    await expect(
+      h.run(h.policy.buildCancel!(h.original, build(), { satPerVByte: 40n })),
+    ).resolves.toMatchObject({ fee: { charges: [{ amount: 4_400n }] } });
   });
 
   it('stays live through a stale spend view: a stale outspend, then a fresh one naming our own txid', async () => {
@@ -809,7 +1039,29 @@ describe('replace and cancel', () => {
     expect(h.node.inMempool(signed.ref.id)).toBe(true);
   });
 
-  it('cancels to the change address at the minimum bump, or at a given fee', async () => {
+  it('cancels to the sending address itself, never to a configured change address (M3)', async () => {
+    const h = await pending([100_000n]);
+    const payees = (unsigned: UnsignedTx) =>
+      bitcoin.Psbt.fromBase64(unsigned.payload.data, {
+        network: bitcoin.networks.regtest,
+      }).txOutputs.map((o) => bitcoin.address.fromOutputScript(o.script, h.network));
+    const foreign = walletAddress(OTHER_PUBKEY, 'p2tr', REGTEST).address;
+    const own = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST).address;
+    // An opted-out external address, or another address of the wallet's own key: a cancel
+    // sends everything, so it pays the sending address.
+    for (const utxo of [
+      { changeAddress: foreign, allowExternalChangeAddress: true },
+      { changeAddress: own },
+    ]) {
+      const cancel = await h.run(
+        h.policy.buildCancel!(h.original, build({ wallet: { utxo } })),
+      );
+      expect(payees(cancel)).toEqual([OWN.address]);
+      expect(cancel.summary.outputs.map((o) => o.to)).toEqual([OWN.address]);
+    }
+  });
+
+  it('cancels to the sending address at the minimum bump, or at a given fee', async () => {
     const h = await pending([100_000n]);
     const { policy } = h;
     const cancel = await h.run(policy.buildCancel!(h.original, build()));

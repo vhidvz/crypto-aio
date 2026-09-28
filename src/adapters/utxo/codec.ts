@@ -11,6 +11,7 @@ import type { SignatureBundle, SigningRequest } from '../../core/signing/types';
 import { concatBytes, equalBytes, fromHex, toHex } from '../../core/util/bytes';
 import { hash160, outputScript, type WalletAddress } from './address';
 import type { PlannedOutput, Spendable } from './coinselect';
+import type { TxBytes } from './errors';
 import { bitcoin, useNobleEcc, type Network, type Psbt, type Transaction } from './sdk';
 import {
   SIGHASH_ALL,
@@ -444,6 +445,27 @@ export function txidOfHex(hex: string): string {
     throw new ValidationError('INVALID_INTENT', 'a transaction does not decode');
   }
   return tx.getId();
+}
+
+/**
+ * Lesson 21: raw transaction hex, decoded strictly, as the broadcaster checks a node's claims
+ * against it: its txid, outpoints, output values (signed 64-bit, as bitcoind reads them) and
+ * size without witness data. `undefined` when it does not decode.
+ */
+export function txBytesOf(
+  hex: string,
+): (TxBytes & { readonly txid: string }) | undefined {
+  const tx = decodeTxHex(hex);
+  if (!tx) return undefined;
+  return {
+    txid: tx.getId(),
+    inputs: tx.ins.map((input) => ({
+      txid: toHex(Uint8Array.from(input.hash).reverse()),
+      vout: input.index,
+    })),
+    values: tx.outs.map((output) => output.value),
+    strippedSize: tx.byteLength(false),
+  };
 }
 
 /**

@@ -11,6 +11,10 @@
  * `rejected` reason counts only under the code bitcoind answers it with, so a text outside
  * bitcoind's structured answer never ends an Attempt. Reasons are fixed literals: bitcoind's
  * texts carry txids, amounts and fee rates (R24).
+ *
+ * Lesson 21 (F3-R11): a node's rejection is a claim. `classifyBroadcast` takes the node at its
+ * word; `classifyOwnBroadcast` keeps a `rejected` only when the claimed reason holds for the
+ * bytes that were sent, checked here, and makes every other one `refused` (non-terminal).
  */
 import type { BroadcastResult } from '../../core/driver/types';
 
@@ -72,15 +76,18 @@ const ALREADY_KNOWN = reason(
   'Transaction already in block chain',
 );
 
+/** bitcoind's -22 (`RPC_DESERIALIZATION_ERROR`) reason: the hex does not decode. */
+const DECODE_FAILED = 'TX decode failed';
+
 /**
  * Consensus failures of these exact bytes (bitcoind `CheckTransaction`, consensus scripts),
  * each under the code bitcoind answers it with: -26 (`RPC_VERIFY_REJECTED`, a mempool
  * rejection) or -22 (`RPC_DESERIALIZATION_ERROR`, undecodable hex).
  */
-const REJECTED: readonly (readonly [number, RegExp, string])[] = [
+const REJECTED: readonly (readonly [number, readonly string[], string])[] = [
   [
     -26,
-    reason(
+    [
       'bad-txns-vin-empty',
       'bad-txns-vout-empty',
       'bad-txns-oversize',
@@ -93,16 +100,26 @@ const REJECTED: readonly (readonly [number, RegExp, string])[] = [
       'bad-txns-inputvalues-outofrange',
       'bad-txns-fee-outofrange',
       'coinbase',
-    ),
+    ],
     'invalid by consensus rules',
   ],
   [
     -26,
-    reason('mandatory-script-verify-flag-failed', 'block-script-verify-flag-failed'),
+    ['mandatory-script-verify-flag-failed', 'block-script-verify-flag-failed'],
     'script verification failed',
   ],
-  [-22, reason('TX decode failed'), 'the transaction does not decode'],
+  [-22, [DECODE_FAILED], 'the transaction does not decode'],
 ];
+
+/** Each rejected reason's own anchored pattern, with the code and the verdict text. */
+const CLAIMS: readonly (readonly [number, string, RegExp, string])[] = REJECTED.flatMap(
+  ([code, names, text]) => names.map((name) => [code, name, reason(name), text] as const),
+);
+
+/** The rejected reason bitcoind's answer claims, or `undefined` when it claims none. */
+function claimOf(error: NodeError, message: string) {
+  return CLAIMS.find(([code, , pattern]) => error.code === code && pattern.test(message));
+}
 
 const FEE_TOO_LOW = reason(
   'min relay fee not met',
@@ -120,10 +137,8 @@ const SPENT = reason(
 export function classifyBroadcast(error: NodeError): BroadcastResult {
   const message = error.message.trim();
   if (ALREADY_KNOWN.test(message) || error.code === -27) return { kind: 'already-known' };
-  for (const [code, pattern, text] of REJECTED) {
-    if (error.code === code && pattern.test(message))
-      return { kind: 'rejected', reason: text };
-  }
+  const claim = claimOf(error, message);
+  if (claim) return { kind: 'rejected', reason: claim[3] };
   if (FEE_TOO_LOW.test(message)) {
     return { kind: 'refused', code: 'FEE_TOO_LOW', reason: 'fee too low for the node' };
   }
@@ -139,4 +154,78 @@ export function classifyBroadcast(error: NodeError): BroadcastResult {
     code: 'TX_REFUSED',
     reason: 'the node refused the transaction',
   };
+}
+
+/**
+ * A transaction's bytes as bitcoind's byte-only checks read them (lesson 21), decoded here
+ * from the hex that was sent: its outpoints, its output values as signed 64-bit integers, and
+ * its size without witness data.
+ */
+export interface TxBytes {
+  readonly inputs: readonly { readonly txid: string; readonly vout: number }[];
+  readonly values: readonly bigint[];
+  readonly strippedSize: number;
+}
+
+/** Bitcoin Core's `MAX_MONEY` and `MAX_BLOCK_WEIGHT`. */
+const MAX_MONEY = 2_100_000_000_000_000n;
+const MAX_BLOCK_WEIGHT = 4_000_000;
+const NULL_TXID = '0'.repeat(64);
+
+const isNull = (input: TxBytes['inputs'][number]): boolean =>
+  input.txid === NULL_TXID && input.vout === 0xffffffff;
+const isCoinbase = (tx: TxBytes): boolean =>
+  tx.inputs.length === 1 && isNull(tx.inputs[0] as TxBytes['inputs'][number]);
+
+/**
+ * bitcoind's reasons the bytes alone decide (`CheckTransaction`, and ATMP's `coinbase`), each
+ * as bitcoind tests it. The others (`bad-txns-in-belowout`, `-inputvalues-outofrange`,
+ * `-fee-outofrange` and every script check) depend on the spent outputs, and have no rule: the
+ * builder pays from values the previous transactions authenticate (M15, on by default) and the
+ * core verifies every signature, so they cannot hold for our own bytes, and a node that claims
+ * one is not believed. (With `nonWitnessUtxo` off, a lying indexer's value makes the bytes
+ * invalid for real; they are then refused, never rejected: liveness only, never a payment.)
+ */
+const BYTE_RULES: Readonly<Record<string, (tx: TxBytes) => boolean>> = {
+  'bad-txns-vin-empty': (tx) => tx.inputs.length === 0,
+  'bad-txns-vout-empty': (tx) => tx.values.length === 0,
+  'bad-txns-oversize': (tx) => tx.strippedSize * 4 > MAX_BLOCK_WEIGHT,
+  'bad-txns-vout-negative': (tx) => tx.values.some((value) => value < 0n),
+  'bad-txns-vout-toolarge': (tx) => tx.values.some((value) => value > MAX_MONEY),
+  'bad-txns-txouttotal-toolarge': (tx) =>
+    tx.values.every((value) => value >= 0n && value <= MAX_MONEY) &&
+    tx.values.reduce((sum, value) => sum + value, 0n) > MAX_MONEY,
+  'bad-txns-inputs-duplicate': (tx) =>
+    new Set(tx.inputs.map((input) => `${input.txid}:${input.vout}`)).size <
+    tx.inputs.length,
+  'bad-txns-prevout-null': (tx) => !isCoinbase(tx) && tx.inputs.some(isNull),
+  coinbase: isCoinbase,
+};
+
+/** A rejection this driver cannot confirm for the bytes it sent: observed, never terminal. */
+const UNCONFIRMED: BroadcastResult = {
+  kind: 'refused',
+  code: 'TX_REFUSED',
+  reason: 'the node claimed the transaction is invalid',
+};
+
+/**
+ * Lesson 21: the node's answer to bytes this driver sent, `bytes` being those bytes decoded
+ * strictly (`undefined` when they do not decode). A terminal `rejected` frees the Attempt's
+ * inputs for a caller's retry, and if a lying or buggy endpoint relayed the bytes before it
+ * claimed them invalid, the retry and the original can both confirm: a double payment. So a
+ * rejection stands only when its claimed reason holds for `bytes`: an undecodable hex for
+ * `TX decode failed`, a byte rule for a `CheckTransaction` reason. Anything else is `refused`.
+ */
+export function classifyOwnBroadcast(
+  error: NodeError,
+  bytes: TxBytes | undefined,
+): BroadcastResult {
+  const result = classifyBroadcast(error);
+  if (result.kind !== 'rejected') return result;
+  const name = claimOf(error, error.message.trim())?.[1];
+  if (name === DECODE_FAILED) return bytes === undefined ? result : UNCONFIRMED;
+  const rule =
+    name !== undefined && Object.hasOwn(BYTE_RULES, name) ? BYTE_RULES[name] : undefined;
+  return bytes !== undefined && rule?.(bytes) ? result : UNCONFIRMED;
 }

@@ -8,8 +8,10 @@
  *   confirmed ones), so each new Attempt conflicts with every earlier one (handoff §3:
  *   exclusion is not transitive). Neither ever raises a fee on its own: a fee below the
  *   replacement floor is `FEE_TOO_LOW` (R30, Plan 2 D12).
+ * - A cancel pays everything back to the sending address itself (M3).
  * - Broadcast answers are classified by `errors.ts`; an ambiguous transport failure is
- *   rethrown unclassified (R16/R17).
+ *   rethrown unclassified (R16/R17). A node's rejection is a claim (lesson 21): it stands
+ *   only when its reason holds for the bytes that were sent, checked here; else `refused`.
  */
 import type {
   BroadcastResult,
@@ -36,6 +38,7 @@ import {
   buildTx,
   isPreviousTxRefusal,
   signaturesFromPsbt,
+  txBytesOf,
   viewPsbt,
   SEQUENCE_FINAL_LOCKTIME,
   SEQUENCE_RBF,
@@ -51,7 +54,7 @@ import {
   type Spendable,
 } from './coinselect';
 import { READ, withSignal, type UtxoContext } from './context';
-import { classifyBroadcast, parseNodeError } from './errors';
+import { classifyOwnBroadcast, parseNodeError } from './errors';
 import { assertSaneFee, feeAt, replacementFloor } from './fees';
 import type { Network } from './sdk';
 import {
@@ -411,14 +414,17 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
       ) {
         throw new ValidationError('INVALID_INTENT', 'a raw Bitcoin transaction is hex');
       }
+      const hex = data.toLowerCase();
       try {
-        const txid = await ctx.esplora.broadcast(signed.raw.data.toLowerCase(), {
+        const txid = await ctx.esplora.broadcast(hex, {
           purpose: 'broadcast',
           retry: 'ambiguous-on-failure',
           ...(options.fanout !== undefined ? { fanout: options.fanout } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
         });
-        if (signed.ref.id !== '' && txid !== signed.ref.id) {
+        // M7: a bare broadcast (no ref) is checked against the bytes' own txid.
+        const expected = signed.ref.id !== '' ? signed.ref.id : txBytesOf(hex)?.txid;
+        if (txid !== expected) {
           // The node accepted something under another id: the outcome is unknown.
           throw new ProviderError(
             'PROVIDER_UNAVAILABLE',
@@ -430,13 +436,17 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
         }
         return { kind: 'accepted' };
       } catch (error) {
-        // A definitive 400 is bitcoind's answer; anything else is rethrown (R16/R17).
+        // A definitive 400 is bitcoind's answer; anything else is rethrown (R16/R17). Lesson
+        // 21: a rejection stands only when its reason holds for these bytes, checked here.
         if (
           isCryptoAioError(error, 'RPC_ERROR') &&
           !error.ambiguous &&
           error.details?.status === 400
         ) {
-          return classifyBroadcast(parseNodeError(String(error.details.body ?? '')));
+          return classifyOwnBroadcast(
+            parseNodeError(String(error.details.body ?? '')),
+            txBytesOf(hex),
+          );
         }
         throw error;
       }
@@ -505,10 +515,14 @@ export function utxoReplacement(ctx: UtxoContext, network: Network): Replacement
     async buildCancel(previous, build, fee) {
       const sender = senderOf(ctx, build.from);
       const prev = previousOf(scope, previous, sender);
-      const change = changeOf(scope, build, sender);
+      // M3: a cancel pays everything back to the sending address itself, never to a
+      // configured change address (under `allowExternalChangeAddress` an external one). A
+      // misconfigured change address is still refused here, as on every path (A19).
+      changeOf(scope, build, sender);
+      const own = sender.from;
       const total = prev.inputs.reduce((sum, i) => sum + i.value, 0n);
       const vsize = vsizeOf(
-        txWeight(sender.type, prev.inputs.length, [change.script.length]),
+        txWeight(sender.type, prev.inputs.length, [own.script.length]),
       );
       const floor = replacementFloor(
         { fee: prev.paid, vsize: prev.vsize, minVsize: prev.minVsize },
@@ -522,7 +536,7 @@ export function utxoReplacement(ctx: UtxoContext, network: Network): Replacement
         paid = feeAt(rate, vsize);
         if (paid < floor) throw tooLow();
       }
-      const dust = dustThreshold(change.script, config.dustRelayFee);
+      const dust = dustThreshold(own.script, config.dustRelayFee);
       if (total - paid < dust) throw insufficient('a cancel', paid + dust, total);
       const value = total - paid;
       return unsignedFor(
@@ -530,13 +544,13 @@ export function utxoReplacement(ctx: UtxoContext, network: Network): Replacement
         build,
         sender,
         { ok: true, inputs: prev.inputs, change: 0n, fee: paid, vsize },
-        [{ script: change.script, value }],
-        change.script,
+        [{ script: own.script, value }],
+        own.script,
         rate,
         fee === undefined ? 'custom' : speedOf(fee),
         {
           asset: previous.summary.asset,
-          outputs: [{ to: change.canonical, amount: value.toString() }],
+          outputs: [{ to: own.canonical, amount: value.toString() }],
         },
       );
     },
