@@ -42,9 +42,16 @@ import {
   loadMessage,
   loadMessageRelaxed,
   loadOutList,
+  storeMessage,
   storeMessageRelaxed,
   storeStateInit,
+  storeTransaction,
+  type AccountStatus,
+  type DictionaryValue,
+  type Message,
   type MessageRelaxed,
+  type TransactionComputePhase,
+  type TransactionDescriptionGeneric,
 } from '@ton/core';
 import {
   WalletContractV4,
@@ -142,6 +149,8 @@ interface Account {
   jettonWallet?: JettonWallet;
   /** A contract that throws on every inbound internal message. */
   reverter?: boolean;
+  /** It holds an extra currency: a +128+32 destroy leaves it uninitialized (F6-R21). */
+  extraCurrency?: boolean;
   lastLt: bigint;
   lastHash: string;
 }
@@ -157,6 +166,8 @@ interface Msg {
   readonly hashNorm?: string;
   /** The `StateInit` the message carries, used or not. */
   readonly initState?: Cell;
+  /** The message as the chain holds it: its cell goes into the raw transaction. */
+  readonly message: Message;
 }
 
 /** toncenter v3's account statuses. */
@@ -175,6 +186,11 @@ interface Tx {
   readonly description: Record<string, unknown>;
   readonly inMsg: Msg;
   readonly outMsgs: readonly Msg[];
+  /** The transaction cell (block.tlb `transaction$0111`): `hash` is its hash (F6-R21). */
+  readonly raw: Cell;
+  /** The account's previous transaction (0 and zeros at the start of a chain). */
+  readonly prevLt: bigint;
+  readonly prevHash: string;
 }
 
 interface Queued {
@@ -238,6 +254,8 @@ type Actions =
       readonly out: readonly Msg[];
       readonly forwardFees: bigint;
       readonly skipped: number;
+      /** +128+32 carried the whole balance and asked to delete the account. */
+      readonly destroy?: boolean;
     }
   | { readonly ok: false; readonly resultCode: number; readonly skipped: number };
 
@@ -356,6 +374,15 @@ export class ScriptedTonNode {
    */
   freeze(address: string): void {
     this.#account(normalizeParam(address)).status = 'frozen';
+    this.#sealState();
+  }
+
+  /**
+   * The account holds an extra currency: a +128+32 destroy leaves it uninitialized in the
+   * same chain rather than deleted (transaction.cpp, F6-R21).
+   */
+  holdExtraCurrency(address: string): void {
+    this.#account(normalizeParam(address)).extraCurrency = true;
     this.#sealState();
   }
 
@@ -666,14 +693,53 @@ export class ScriptedTonNode {
     return sha(`${kind}:${this.#counter}`).toString('hex');
   }
 
-  #record(tx: Omit<Tx, 'hash' | 'lt'>, hash = this.#hashOf('tx')): Tx {
+  /**
+   * Records a transaction as the chain does (F6-R21): its cell (block.tlb
+   * `transaction$0111`, transaction.cpp `Transaction::serialize`) links to the account's
+   * previous transaction, and the cell's hash names it (`last_trans_hash_ =
+   * root->get_hash()`). Without a `traceId`, it is its trace's root, named after itself.
+   */
+  #record(
+    tx: Omit<Tx, 'hash' | 'lt' | 'raw' | 'prevLt' | 'prevHash' | 'traceId'> & {
+      readonly traceId?: string;
+    },
+  ): Tx {
     this.#lt += 1000n;
-    const full: Tx = { ...tx, hash, lt: this.#lt };
     const account = this.#account(tx.account);
-    account.lastLt = full.lt;
-    account.lastHash = full.hash;
+    const lt = this.#lt;
+    const raw = rawTransaction(tx, lt, account.lastLt, account.lastHash);
+    const hash = raw.hash().toString('hex');
+    const full: Tx = {
+      ...tx,
+      traceId: tx.traceId ?? hash,
+      hash,
+      lt,
+      raw,
+      prevLt: account.lastLt,
+      prevHash: account.lastHash,
+    };
+    account.lastLt = lt;
+    account.lastHash = hash;
     this.#txs.push(full);
     return full;
+  }
+
+  /**
+   * transaction.cpp `acc_delete_req` (+128+32 with the balance at zero): the code, data and
+   * seqno go. The account is deleted, and the collator drops it from ShardAccounts with its
+   * last transaction (collator.cpp `lookup_delete`), so a later transaction starts a new
+   * chain (`init_new`: `last_trans_lt_ = 0`); one holding an extra currency stays,
+   * uninitialized, in the same chain (`remaining_balance.is_zero() ? acc_deleted :
+   * acc_uninit`).
+   */
+  #destroy(address: string): void {
+    const account = this.#account(address);
+    account.status = 'uninitialized';
+    delete account.wallet;
+    if (!account.extraCurrency) {
+      account.lastLt = 0n;
+      account.lastHash = '0'.repeat(64);
+    }
   }
 
   #send(msg: Msg, traceId: string, seqno: number): void {
@@ -688,14 +754,33 @@ export class ScriptedTonNode {
     body: Cell,
     bounced = false,
   ): Msg {
+    // A unique creation lt, as the chain gives each message (the hash then names it).
+    this.#counter += 1;
+    const message: Message = {
+      info: {
+        type: 'internal',
+        ihrDisabled: true,
+        bounce,
+        bounced,
+        src: Address.parseRaw(source),
+        dest: Address.parseRaw(destination),
+        value: { coins: value },
+        ihrFee: 0n,
+        forwardFee: 0n,
+        createdLt: BigInt(this.#counter),
+        createdAt: 0,
+      },
+      body,
+    };
     return {
-      hash: this.#hashOf('msg'),
+      hash: beginCell().store(storeMessage(message)).endCell().hash().toString('hex'),
       source,
       destination,
       value,
       bounce,
       bounced,
       body,
+      message,
     };
   }
 
@@ -705,21 +790,25 @@ export class ScriptedTonNode {
    * value; else the value) and whether an unpayable message is skipped (+2) or fails the
    * phase with 37 (`no_funds`), whether the balance cannot pay it or its value cannot pay
    * its own fee. A failed phase sends nothing and leaves the balance; the list stays valid
-   * and earlier skips count. A flag this node does not model (+16 included) fails it too
+   * and earlier skips count. +128 carries the whole remaining balance, its fees out of it
+   * (`act_rec.mode &= ~1`); +128+32 (`(mode & 0xa0) == 0xa0`) then asks to delete the
+   * account (F6-R21). A flag this node does not model (+16, +64 included) fails the phase
    * (34), never guessed. Only +16 would bounce an action failure, so none bounces here.
    */
   #actions(account: Account, from: string, requested: readonly Requested[]): Actions {
     let balance = account.balance;
     let forwardFees = 0n;
     let skipped = 0;
+    let destroy = false;
     const out: Msg[] = [];
     for (const { mode, message } of requested) {
-      if (message.info.type !== 'internal' || (mode & ~3) !== 0) {
+      if (message.info.type !== 'internal' || (mode & ~(1 | 2 | 32 | 128)) !== 0) {
         return { ok: false, resultCode: 34, skipped };
       }
       const fwd = forwardFee(message, from);
-      const value = message.info.value.coins;
-      const separately = (mode & 1) !== 0;
+      const all = (mode & 128) !== 0;
+      const value = all ? balance : message.info.value.coins;
+      const separately = !all && (mode & 1) !== 0;
       const cost = separately ? value + fwd : value;
       if ((!separately && value < fwd) || balance < cost) {
         if ((mode & 2) === 0) return { ok: false, resultCode: 37, skipped };
@@ -737,9 +826,10 @@ export class ScriptedTonNode {
           message.body,
         ),
       );
+      if (all && (mode & 32) !== 0) destroy = true;
     }
     account.balance = balance;
-    return { ok: true, out, forwardFees, skipped };
+    return { ok: true, out, forwardFees, skipped, ...(destroy ? { destroy } : {}) };
   }
 
   #processExternal(cell: Cell, seqno: number): void {
@@ -771,41 +861,37 @@ export class ScriptedTonNode {
     // The `StateInit` activates the account whatever happens next (transaction.cpp).
     account.status = 'active';
     account.wallet = wallet;
-    // The trace is named after its root transaction, as toncenter's `trace_id` (M3).
-    const traceId = this.#hashOf('tx');
+    // The root of its trace: the trace is named after it, as toncenter's `trace_id` (M3).
     const record = (
       totalFees: bigint,
       description: Record<string, unknown>,
       outMsgs: readonly Msg[],
-    ): void => {
-      this.#record(
-        {
-          account: dest,
-          now,
-          mcSeqno: seqno,
-          traceId,
-          totalFees,
-          origStatus,
-          endStatus: 'active',
-          description: { type: 'ord', ...description },
-          inMsg: {
-            hash: cell.hash().toString('hex'),
-            source: null,
-            destination: dest,
-            value: null,
-            bounce: false,
-            bounced: false,
-            body: message.body,
-            hashNorm: normalizedHash(cell),
-            ...(init
-              ? { initState: beginCell().store(storeStateInit(init)).endCell() }
-              : {}),
-          },
-          outMsgs,
+      endStatus: V3Status = 'active',
+    ): Tx =>
+      this.#record({
+        account: dest,
+        now,
+        mcSeqno: seqno,
+        totalFees,
+        origStatus,
+        endStatus,
+        description: { type: 'ord', ...description },
+        inMsg: {
+          hash: cell.hash().toString('hex'),
+          source: null,
+          destination: dest,
+          value: null,
+          bounce: false,
+          bounced: false,
+          body: message.body,
+          hashNorm: normalizedHash(cell),
+          ...(init
+            ? { initState: beginCell().store(storeStateInit(init)).endCell() }
+            : {}),
+          message,
         },
-        traceId,
-      );
-    };
+        outMsgs,
+      });
     if (outOfGas) {
       record(
         charged,
@@ -851,16 +937,19 @@ export class ScriptedTonNode {
       return;
     }
     wallet.seqno += 1;
-    record(
+    const tx = record(
       fees + actions.forwardFees,
       {
         aborted: false,
         compute_ph: computed,
         action: actionPhase(actions, request.messages.length),
+        ...(actions.destroy ? { destroyed: true } : {}),
       },
       actions.out,
+      actions.destroy ? (account.extraCurrency ? 'uninit' : 'nonexist') : 'active',
     );
-    for (const msg of actions.out) this.#send(msg, traceId, seqno);
+    if (actions.destroy) this.#destroy(dest);
+    for (const msg of actions.out) this.#send(msg, tx.traceId, seqno);
   }
 
   #deliver(item: Queued, seqno: number, now: number): void {
@@ -870,6 +959,7 @@ export class ScriptedTonNode {
     const value = msg.value ?? 0n;
     const out: Msg[] = [];
     let aborted = false;
+    let destroy = false;
     let compute: Record<string, unknown> = {
       skipped: false,
       success: true,
@@ -944,6 +1034,7 @@ export class ScriptedTonNode {
           if (actions.ok) {
             wallet.seqno += 1;
             out.push(...actions.out);
+            destroy = actions.destroy === true;
           } else {
             // The action phase failed: the seqno rolls back (no `commit()` here), and with
             // no +16 nothing bounces, so the relayed value stays at the wallet (F6-R7).
@@ -1027,37 +1118,41 @@ export class ScriptedTonNode {
         }
       }
     }
-    this.#record(
-      {
-        account: msg.destination,
-        now,
-        mcSeqno: seqno,
-        traceId,
-        totalFees: NODE_FEES.internalGas,
-        origStatus,
-        endStatus: v3Status(account),
-        description: {
-          type: 'ord',
-          aborted,
-          compute_ph: compute,
-          ...(action
-            ? { action }
-            : aborted
-              ? {}
-              : {
-                  action: actionPhase(
-                    { ok: true, out, forwardFees: 0n, skipped: 0 },
-                    out.length,
-                  ),
-                }),
-          ...(bounce ? { bounce } : {}),
-        },
-        inMsg: msg,
-        outMsgs: out,
+    const tx = this.#record({
+      account: msg.destination,
+      now,
+      mcSeqno: seqno,
+      // A delivery is its trace's root when injected (M3): named after itself.
+      ...(item.root ? {} : { traceId }),
+      totalFees: NODE_FEES.internalGas,
+      origStatus,
+      endStatus: destroy
+        ? account.extraCurrency
+          ? 'uninit'
+          : 'nonexist'
+        : v3Status(account),
+      description: {
+        type: 'ord',
+        aborted,
+        ...(destroy ? { destroyed: true } : {}),
+        compute_ph: compute,
+        ...(action
+          ? { action }
+          : aborted
+            ? {}
+            : {
+                action: actionPhase(
+                  { ok: true, out, forwardFees: 0n, skipped: 0 },
+                  out.length,
+                ),
+              }),
+        ...(bounce ? { bounce } : {}),
       },
-      item.root ? traceId : undefined,
-    );
-    for (const next of out) this.#send(next, traceId, seqno);
+      inMsg: msg,
+      outMsgs: out,
+    });
+    if (destroy) this.#destroy(msg.destination);
+    for (const next of out) this.#send(next, tx.traceId, seqno);
   }
 
   readonly #failing = new Set<string>();
@@ -1142,14 +1237,7 @@ export class ScriptedTonNode {
     const ok = (result: unknown): FakeReply => ({
       json: { ok: true, result, '@extra': 'x' },
     });
-    const mcId = (b: Block) => ({
-      '@type': 'ton.blockIdExt',
-      workchain: -1,
-      shard: '-9223372036854775808',
-      seqno: b.seqno,
-      root_hash: b64(Buffer.from(b.rootHash, 'hex')),
-      file_hash: b64(Buffer.from(b.fileHash, 'hex')),
-    });
+    const mcId = mcBlockId;
     const shardId = (top: Block['shards'][number]) => ({
       '@type': 'ton.blockIdExt',
       workchain: 0,
@@ -1328,6 +1416,43 @@ export class ScriptedTonNode {
         );
         return fees(gas, fwd);
       }
+      case '/getTransactions': {
+        // The liteserver's own list: from the transaction (lt, hash) back along the
+        // account's `prev_trans` links, each with its raw cell (`data`), as far as this
+        // endpoint's view holds them (F6-R21).
+        const address = normalizeParam(q.get('address'));
+        const limit = Number(q.get('limit') ?? '10');
+        const lt = bigParam(q.get('lt'));
+        const hash = q.get('hash');
+        const view = this.#viewHead(name);
+        const held = new Map(
+          this.#txs
+            .filter((t) => t.account === address && t.mcSeqno <= view)
+            .map((t) => [t.hash, t]),
+        );
+        const newest = [...held.values()].at(-1);
+        let at: Tx | undefined =
+          lt !== null && hash !== null ? held.get(hexParam(hash)) : newest;
+        if (lt !== null && at?.lt !== lt) {
+          throw new Error('LITE_SERVER_UNKNOWN: cannot load transaction: not found');
+        }
+        const rows: unknown[] = [];
+        while (at && rows.length < limit) {
+          const t: Tx = at;
+          rows.push({
+            '@type': 'raw.transaction',
+            address: { '@type': 'accountAddress', account_address: address },
+            utime: t.now,
+            data: t.raw.toBoc().toString('base64'),
+            transaction_id: transactionId(t.lt, t.hash),
+            fee: t.totalFees.toString(),
+            storage_fee: '0',
+            other_fee: '0',
+          });
+          at = t.prevLt === 0n ? undefined : held.get(t.prevHash);
+        }
+        return ok(rows);
+      }
       case '/sendBocReturnHash': {
         const { boc } = request.json<{ boc: string }>();
         // Checked against this endpoint's own view (M6), then again at inclusion.
@@ -1353,12 +1478,17 @@ export class ScriptedTonNode {
     stack: [string, string][],
   ): unknown {
     const account = block.state.get(address);
+    // Live toncenter names the masterchain block and the account's last transaction.
     const result = (exitCode: number, entries: unknown[]) => ({
       '@type': 'smc.runResult',
       gas_used: 100,
       stack: entries,
       exit_code: exitCode,
-      block_id: {},
+      block_id: mcBlockId(block),
+      last_transaction_id: transactionId(
+        account?.lastLt ?? 0n,
+        account?.lastHash ?? '0'.repeat(64),
+      ),
     });
     if (!account || account.status !== 'active') return result(-13, []);
     const cellOf = (raw: string | null) => [
@@ -1756,6 +1886,170 @@ function jettonContent(jetton: Jetton): Cell {
   return beginCell().storeUint(0, 8).storeDict(dict).endCell();
 }
 
+function mcBlockId(b: Block): Record<string, unknown> {
+  return {
+    '@type': 'ton.blockIdExt',
+    workchain: -1,
+    shard: '-9223372036854775808',
+    seqno: b.seqno,
+    root_hash: b64(Buffer.from(b.rootHash, 'hex')),
+    file_hash: b64(Buffer.from(b.fileHash, 'hex')),
+  };
+}
+
+function transactionId(lt: bigint, hash: string): Record<string, unknown> {
+  return {
+    '@type': 'internal.transactionId',
+    lt: lt.toString(),
+    hash: b64(Buffer.from(hash, 'hex')),
+  };
+}
+
+/** A message in an `out_msgs` dictionary (block.tlb `HashmapE 15 ^(Message Any)`). */
+const MESSAGE_VALUE: DictionaryValue<Message> = {
+  serialize: (src, builder) => {
+    builder.storeRef(beginCell().store(storeMessage(src)));
+  },
+  parse: (slice) => loadMessage(slice.loadRef().beginParse()),
+};
+
+const RAW_STATUS: Readonly<Record<V3Status, AccountStatus>> = {
+  nonexist: 'non-existing',
+  uninit: 'uninitialized',
+  active: 'active',
+  frozen: 'frozen',
+};
+
+const NO_SIZE = { cells: 0n, bits: 0n };
+
+/** The chain's own description of a transaction the node wrote in v3's form. */
+function rawDescription(
+  d: Record<string, unknown>,
+  inbound: Msg,
+): TransactionDescriptionGeneric {
+  const c = d.compute_ph as { skipped: boolean; success?: boolean; exit_code?: number };
+  const computePhase: TransactionComputePhase = c.skipped
+    ? { type: 'skipped', reason: 'no-state' }
+    : {
+        type: 'vm',
+        success: c.success === true,
+        messageStateUsed: false,
+        accountActivated: false,
+        gasFees: 0n,
+        gasUsed: 0n,
+        gasLimit: 0n,
+        mode: 0,
+        exitCode: c.exit_code ?? 0,
+        vmSteps: 0,
+        vmInitStateHash: 0n,
+        vmFinalStateHash: 0n,
+      };
+  const a = d.action as
+    | {
+        success: boolean;
+        valid: boolean;
+        no_funds: boolean;
+        result_code: number;
+        tot_actions: number;
+        skipped_actions: number;
+        msgs_created: number;
+        status_change?: string;
+      }
+    | undefined;
+  const bounce = (d.bounce as { type: string } | undefined)?.type;
+  return {
+    type: 'generic',
+    creditFirst: inbound.source !== null && !inbound.bounce,
+    computePhase,
+    ...(a
+      ? {
+          actionPhase: {
+            success: a.success,
+            valid: a.valid,
+            noFunds: a.no_funds,
+            statusChange: a.status_change === 'deleted' ? 'deleted' : 'unchanged',
+            resultCode: a.result_code,
+            totalActions: a.tot_actions,
+            specActions: 0,
+            skippedActions: a.skipped_actions,
+            messagesCreated: a.msgs_created,
+            actionListHash: 0n,
+            totalMessageSize: NO_SIZE,
+          },
+        }
+      : {}),
+    ...(bounce === 'ok'
+      ? {
+          bouncePhase: {
+            type: 'ok',
+            messageSize: NO_SIZE,
+            messageFees: 0n,
+            forwardFees: 0n,
+          },
+        }
+      : bounce === 'nofunds'
+        ? {
+            bouncePhase: {
+              type: 'no-funds',
+              messageSize: NO_SIZE,
+              requiredForwardFees: 0n,
+            },
+          }
+        : bounce === 'negfunds'
+          ? { bouncePhase: { type: 'negative-funds' } }
+          : {}),
+    aborted: d.aborted === true,
+    destroyed: d.destroyed === true,
+  };
+}
+
+/**
+ * A transaction's cell as the chain serializes it (block.tlb `transaction$0111`,
+ * transaction.cpp `Transaction::serialize`): the account, its lt, the previous
+ * transaction's hash and lt, the time, the statuses, the messages, the fees, a state
+ * update and the description.
+ */
+function rawTransaction(
+  tx: Pick<
+    Tx,
+    | 'account'
+    | 'now'
+    | 'origStatus'
+    | 'endStatus'
+    | 'inMsg'
+    | 'outMsgs'
+    | 'totalFees'
+    | 'description'
+  >,
+  lt: bigint,
+  prevLt: bigint,
+  prevHash: string,
+): Cell {
+  const outMessages = Dictionary.empty(Dictionary.Keys.Uint(15), MESSAGE_VALUE);
+  tx.outMsgs.forEach((m, index) => outMessages.set(index, m.message));
+  return beginCell()
+    .store(
+      storeTransaction({
+        address: BigInt(`0x${tx.account.slice(tx.account.indexOf(':') + 1)}`),
+        lt,
+        prevTransactionHash: BigInt(`0x${prevHash}`),
+        prevTransactionLt: prevLt,
+        now: tx.now,
+        outMessagesCount: tx.outMsgs.length,
+        oldStatus: RAW_STATUS[tx.origStatus],
+        endStatus: RAW_STATUS[tx.endStatus],
+        inMessage: tx.inMsg.message,
+        outMessages,
+        totalFees: { coins: tx.totalFees },
+        stateUpdate: { oldHash: sha(`state:${lt}:old`), newHash: sha(`state:${lt}:new`) },
+        description: rawDescription(tx.description, tx.inMsg),
+        raw: Cell.EMPTY,
+        hash: () => Buffer.alloc(32),
+      }),
+    )
+    .endCell();
+}
+
 function msgJson(m: Msg): Record<string, unknown> {
   return {
     hash: b64(Buffer.from(m.hash, 'hex')),
@@ -1829,7 +2123,12 @@ function jettonWalletAddress(master: string, owner: string): string {
 
 /** An account's v3 status: an uninitialized account without a balance does not exist. */
 function v3Status(account: Account | undefined): V3Status {
-  if (!account || (account.status === 'uninitialized' && account.balance === 0n)) {
+  if (
+    !account ||
+    (account.status === 'uninitialized' &&
+      account.balance === 0n &&
+      !account.extraCurrency)
+  ) {
     return 'nonexist';
   }
   return account.status === 'uninitialized' ? 'uninit' : account.status;
@@ -1849,6 +2148,7 @@ function actionPhase(actions: Actions, total: number): Record<string, unknown> {
         tot_actions: total,
         skipped_actions: actions.skipped,
         msgs_created: actions.out.length,
+        ...(actions.destroy ? { status_change: 'deleted' } : {}),
       }
     : {
         // `valid` is set once the list parses, before any message is sent (transaction.cpp).

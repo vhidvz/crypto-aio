@@ -5,6 +5,7 @@ import {
   PROOF,
   READ,
   TonApi,
+  boundRunResultOf,
   hashHex,
   rawOf,
 } from '../../../src/adapters/ton/api';
@@ -210,7 +211,7 @@ describe('the toncenter API layer', () => {
     expect(await t.run(t.api.reachedMasterchain(t.node.head + 1, PROOF))).toBe(false);
   });
 
-  it('tags all 19 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
+  it('tags all 22 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
     const t = tonNode();
     t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
     const { wallet, hashNorm } = await withTransfer(t);
@@ -234,8 +235,14 @@ describe('the toncenter API layer', () => {
     await t.run(api.blockHeader(shard!, PROOF));
     const header = await t.run(api.masterchainHeader(head, PROOF));
     await t.run(api.configParam(19, PROOF));
-    await t.run(api.account(wallet, PROOF));
+    const state = await t.run(api.account(wallet, PROOF));
     await t.run(api.runGetMethod(wallet, 'seqno', [], PROOF));
+    await t.run(api.runGetMethodAt(wallet, 'seqno', [], PROOF, head));
+    expect(
+      await t.run(
+        api.rawTransactions(wallet, { lt: state.lastLt, hash: state.lastHash }, 4, PROOF),
+      ),
+    ).toHaveLength(1);
     expect(await t.run(api.jettonData(MASTER, PROOF))).toMatchObject({
       exitCode: 0,
       content: { kind: 'cell' },
@@ -243,6 +250,7 @@ describe('the toncenter API layer', () => {
     await t.run(api.estimateFee({ address: wallet, body }, PROOF));
     await t.run(api.send(next.boc, PROOF));
     await t.run(api.indexerHead(PROOF));
+    expect(await t.run(api.indexerReached(head, PROOF))).toBe(true);
     expect(await t.run(api.masterchainSeqnoOf(header.id.rootHash, PROOF))).toBe(head);
     const [tx] = await t.run(api.transactionsByMessage(hashNorm, PROOF));
     expect(await t.run(api.transaction(tx!.hash, PROOF))).toEqual(tx);
@@ -263,10 +271,13 @@ describe('the toncenter API layer', () => {
       '/getAddressInformation',
       '/runGetMethod',
       '/runGetMethod',
+      '/getTransactions',
+      '/runGetMethod',
       '/estimateFee',
       '/sendBocReturnHash',
     ]);
     expect(indexer.calls.map((call) => call.route)).toEqual([
+      '/masterchainInfo',
       '/masterchainInfo',
       '/blocks',
       '/transactionsByMessage',
@@ -1109,5 +1120,143 @@ describe('the toncenter API layer', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('the toncenter API layer: authenticated chain reads (F6-R21)', () => {
+  /** Where `match` holds, the node's own answer as `edit` makes it (read past the intercept). */
+  function rewrite(
+    t: ReturnType<typeof tonNode>,
+    route: string,
+    edit: (json: Json) => unknown,
+  ): void {
+    let inner = false;
+    t.node.intercept = (_endpoint, served, request) => {
+      if (inner || served !== route) return undefined;
+      inner = true;
+      return (async () => {
+        try {
+          const response = await t.node.fetch.fetch(request.url.href, {
+            method: request.method,
+            ...(request.body !== undefined ? { body: request.body } : {}),
+          });
+          return { json: edit((await response.json()) as Json) };
+        } finally {
+          inner = false;
+        }
+      })();
+    };
+  }
+
+  it('binds a state and a get-method to the block and state they were read at (I2, I3, M7)', async () => {
+    const t = tonNode();
+    const { wallet } = await withTransfer(t);
+    const head = await t.run(t.api.masterchainHead(MONITOR));
+    const header = await t.run(t.api.masterchainHeader(head, PROOF));
+    const state = await t.run(t.api.account(wallet, PROOF, head));
+    expect(state.block).toEqual(header.id);
+    const [deploy] = t.node.transactions();
+    expect(state).toMatchObject({ lastLt: deploy!.lt, lastHash: deploy!.hash });
+    const bound = await t.run(t.api.runGetMethodAt(wallet, 'seqno', [], PROOF, head));
+    expect(bound).toEqual({
+      exitCode: 0,
+      stack: [{ type: 'num', value: 1n }],
+      block: header.id,
+      lastTransaction: { lt: deploy!.lt, hash: deploy!.hash },
+    });
+    // The parser a caller's quorum key reads is the same one.
+    const answer = await t.run(
+      t.rpc.http<unknown>({
+        method: 'POST',
+        path: '/runGetMethod',
+        body: { address: wallet, method: 'seqno', stack: [], seqno: head },
+      }),
+    );
+    expect(boundRunResultOf(answer)).toEqual(bound);
+    // An answer that names no block or no last transaction binds nothing: malformed.
+    for (const field of ['block_id', 'last_transaction_id']) {
+      rewrite(t, '/runGetMethod', (json) => {
+        const { [field]: _dropped, ...result } = json.result as Json;
+        return { ...json, result };
+      });
+      await expect(
+        t.run(t.api.runGetMethodAt(wallet, 'seqno', [], READ, head)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    }
+  });
+
+  it('reads raw transactions with their cells, capped before decoding (lesson 20)', async () => {
+    const t = tonNode();
+    const { wallet } = await withTransfer(t);
+    const state = await t.run(t.api.account(wallet, READ));
+    const from = { lt: state.lastLt, hash: state.lastHash };
+    const [row] = await t.run(t.api.rawTransactions(wallet, from, 4, PROOF));
+    const [deploy] = t.node.transactions();
+    expect(row).toEqual({
+      lt: deploy!.lt,
+      hash: deploy!.hash,
+      boc: deploy!.raw.toBoc().toString('base64'),
+    });
+    const refused = async (edit: (rows: Json[]) => unknown) => {
+      rewrite(t, '/getTransactions', (json) => ({
+        ...json,
+        result: edit(json.result as Json[]),
+      }));
+      await expect(
+        t.run(t.api.rawTransactions(wallet, from, 1, READ)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    };
+    // More rows than asked, a row without its id or cell, a cell past an account's limits.
+    await refused((rows) => [...rows, ...rows]);
+    await refused((rows) => rows.map(({ transaction_id: _id, ...rest }) => rest));
+    await refused((rows) => rows.map(({ data: _data, ...rest }) => rest));
+    // A header (size 4 bytes) claiming 2^20 cells, beyond an account state's 2^16.
+    const oversized = Buffer.from([
+      0xb5, 0xee, 0x9c, 0x72, 0x04, 0x01, 0, 0x10, 0, 0, 0, 1,
+    ]);
+    await refused((rows) =>
+      rows.map((r) => ({ ...r, data: oversized.toString('base64') })),
+    );
+    await refused((rows) => rows.map((r) => ({ ...r, data: 'A'.repeat(100_000) })));
+    t.node.intercept = undefined;
+    // A non-raw address is refused before any request (M2).
+    const served = t.node.served.length;
+    await expect(
+      t.run(t.api.rawTransactions(FRIENDLY, from, 1, PROOF)),
+    ).rejects.toMatchObject({ code: 'INVALID_ADDRESS' });
+    expect(t.node.served).toHaveLength(served);
+  });
+
+  it("reads the chain's account statuses on v3 transactions, and nothing else for them", async () => {
+    const t = tonNode();
+    const { wallet } = await withTransfer(t);
+    const [deploy] = await t.run(t.api.accountTransactions(wallet, { limit: 1 }, READ));
+    expect(deploy).toMatchObject({ origStatus: 'uninit', endStatus: 'active' });
+    rewrite(t, '/transactions', (json) => ({
+      ...json,
+      transactions: (json.transactions as Json[]).map(
+        ({ orig_status: _o, end_status: _e, ...tx }) => tx,
+      ),
+    }));
+    const [bare] = await t.run(t.api.accountTransactions(wallet, { limit: 1 }, READ));
+    expect(bare?.origStatus).toBeUndefined();
+    expect(bare?.endStatus).toBeUndefined();
+    rewrite(t, '/transactions', (json) => ({
+      ...json,
+      transactions: (json.transactions as Json[]).map((tx) => ({
+        ...tx,
+        end_status: 'deleted',
+      })),
+    }));
+    await expect(
+      t.run(t.api.accountTransactions(wallet, { limit: 1 }, READ)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+  });
+
+  it('attests that the indexer reached a block with a predicate', async () => {
+    const t = tonNode({ indexerLag: 2 }, ['a', 'b']);
+    t.node.mine(5);
+    expect(await t.run(t.api.indexerReached(t.node.head - 2, PROOF))).toBe(true);
+    expect(await t.run(t.api.indexerReached(t.node.head, PROOF))).toBe(false);
   });
 });

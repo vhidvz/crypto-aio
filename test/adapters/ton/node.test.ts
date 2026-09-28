@@ -7,6 +7,7 @@ import {
   external,
   internal,
   loadMessage,
+  loadTransaction,
   storeMessage,
   storeMessageRelaxed,
   storeOutList,
@@ -1406,5 +1407,248 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
       endpoint: 'main',
       route: '/getMasterchainInfo',
     });
+  });
+});
+
+describe('the scripted toncenter node: the raw chain, deletion and re-deploy (F6-R21)', () => {
+  const PAYER = `0:${'33'.repeat(32)}`;
+  type RawRow = { data: string; transaction_id: { lt: string; hash: string } };
+
+  /** The account's raw transactions from `(lt, hash)` back, through the v2 liteserver API. */
+  async function rawChain(
+    s: ReturnType<typeof setup>,
+    lt: bigint,
+    hash: string,
+    limit = 16,
+  ) {
+    const query = new URLSearchParams({
+      address: s.wallet,
+      lt: lt.toString(),
+      hash,
+      limit: String(limit),
+    });
+    const answer = await get(`${s.v2}/getTransactions?${query.toString()}`, s.fetchFn);
+    expect(answer.status).toBe(200);
+    return (answer.json.result as RawRow[]).map((row) => {
+      const cell = Cell.fromBoc(Buffer.from(row.data, 'base64'))[0]!;
+      return { row, cell, tx: loadTransaction(cell.beginParse()) };
+    });
+  }
+
+  const hex = (value: bigint) => value.toString(16).padStart(64, '0');
+
+  /** A v4r2 request for the test key's wallet sending everything, then deleting it. */
+  const destroy = (s: ReturnType<typeof setup>, seqno: number, mode = 128 + 32) =>
+    v4Modes({
+      seqno,
+      validUntil: s.now() + 60,
+      deploy: false,
+      messages: [[mode, nativeMessage({ to: RECIPIENT, value: 0n, bounce: false })]],
+    });
+
+  const pay = (s: ReturnType<typeof setup>, seqno: number, deploy: boolean) =>
+    v4Modes({
+      seqno,
+      validUntil: s.now() + 60,
+      deploy,
+      messages: [
+        [SEND_MODE, nativeMessage({ to: RECIPIENT, value: GRAM, bounce: false })],
+      ],
+    });
+
+  it('serves raw transaction cells hashed and linked as the chain links them', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 3n * GRAM);
+    s.node.submit(pay(s, 0, true));
+    s.node.mine();
+    s.node.inject(PAYER, s.wallet, GRAM, beginCell().endCell());
+    s.node.mine();
+    s.node.submit(pay(s, 1, false));
+    s.node.mine();
+    const account = await get(
+      `${s.v2}/getAddressInformation?address=${s.wallet}`,
+      s.fetchFn,
+    );
+    const last = (
+      account.json.result as { last_transaction_id: { lt: string; hash: string } }
+    ).last_transaction_id;
+    const lastHash = Buffer.from(last.hash, 'base64').toString('hex');
+    const chain = await rawChain(s, BigInt(last.lt), lastHash);
+    expect(chain).toHaveLength(3);
+    // Each cell hashes to its id; each links to the one before; the first starts the chain.
+    let expected = { lt: BigInt(last.lt), hash: lastHash };
+    for (const { row, cell, tx } of chain) {
+      expect(cell.hash().toString('hex')).toBe(expected.hash);
+      expect(Buffer.from(row.transaction_id.hash, 'base64').toString('hex')).toBe(
+        expected.hash,
+      );
+      expect(tx.lt).toBe(expected.lt);
+      expect(hex(tx.address)).toBe(s.wallet.slice(2));
+      expected = { lt: tx.prevTransactionLt, hash: hex(tx.prevTransactionHash) };
+    }
+    expect(expected).toEqual({ lt: 0n, hash: '0'.repeat(64) });
+    // The indexer names each transaction by the same hash, with the chain's statuses.
+    const v3 = s.node.transactions().filter((tx) => tx.account === s.wallet);
+    expect(v3.map((tx) => tx.hash).reverse()).toEqual(
+      chain.map(({ cell }) => cell.hash().toString('hex')),
+    );
+    expect(chain.map(({ tx }) => [tx.oldStatus, tx.endStatus]).reverse()).toEqual([
+      ['uninitialized', 'active'],
+      ['active', 'active'],
+      ['active', 'active'],
+    ]);
+    const [newest, deposit] = chain;
+    expect(newest?.tx.inMessage?.info.type).toBe('external-in');
+    expect(deposit?.tx.inMessage?.info.type).toBe('internal');
+    // A page starts where it is asked to, and a transaction it does not hold is refused.
+    const rest = await rawChain(
+      s,
+      chain[1]!.tx.lt,
+      chain[1]!.cell.hash().toString('hex'),
+    );
+    expect(rest).toHaveLength(2);
+    const missing = await get(
+      `${s.v2}/getTransactions?address=${s.wallet}&lt=1&hash=${'ab'.repeat(32)}&limit=4`,
+      s.fetchFn,
+    );
+    expect(missing.status).toBe(500);
+  });
+
+  it('names the block and the last transaction in every get-method answer', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 3n * GRAM);
+    s.node.submit(pay(s, 0, true));
+    s.node.mine(2);
+    const answer = await post(
+      `${s.v2}/runGetMethod`,
+      { address: s.wallet, method: 'seqno', stack: [], seqno: 2 },
+      s.fetchFn,
+    );
+    const [tx] = s.node.transactions();
+    expect(answer.json.result).toMatchObject({
+      exit_code: 0,
+      block_id: {
+        workchain: -1,
+        shard: '-9223372036854775808',
+        seqno: 2,
+        root_hash: Buffer.from(s.node.block(2)!.rootHash, 'hex').toString('base64'),
+      },
+      last_transaction_id: {
+        lt: tx!.lt.toString(),
+        hash: Buffer.from(tx!.hash, 'hex').toString('base64'),
+      },
+    });
+  });
+
+  it('sends the whole balance with +128, and deletes the account with +128+32', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 3n * GRAM);
+    s.node.submit(pay(s, 0, true));
+    s.node.mine();
+    const before = s.node.balance(s.wallet);
+    s.node.submit(destroy(s, 1, 128));
+    s.node.mine(2);
+    // +128 alone: everything leaves, the wallet stays (a zero-balance active account).
+    expect(s.node.balance(s.wallet)).toBe(0n);
+    expect(s.node.status(s.wallet)).toBe('active');
+    expect(s.node.seqno(s.wallet)).toBe(2);
+    expect(s.node.balance(RECIPIENT)).toBeGreaterThan(GRAM + before / 2n);
+    s.node.inject(PAYER, s.wallet, GRAM, beginCell().endCell());
+    s.node.mine();
+    s.node.submit(destroy(s, 2));
+    s.node.mine(2);
+    // +128+32: transaction.cpp `acc_delete_req`, then the collator drops the account
+    // (collator.cpp: `lookup_delete` from ShardAccounts), its last transaction included.
+    expect(s.node.status(s.wallet)).toBe('uninitialized');
+    expect(s.node.balance(s.wallet)).toBe(0n);
+    expect(s.node.seqno(s.wallet)).toBe(0);
+    const deleting = s.node
+      .transactions()
+      .filter((tx) => tx.account === s.wallet)
+      .at(-1);
+    expect(deleting).toMatchObject({ origStatus: 'active', endStatus: 'nonexist' });
+    expect(deleting?.description).toMatchObject({
+      aborted: false,
+      destroyed: true,
+      action: { success: true, status_change: 'deleted' },
+    });
+    const state = await get(
+      `${s.v2}/getAddressInformation?address=${s.wallet}`,
+      s.fetchFn,
+    );
+    expect(state.json.result).toMatchObject({
+      state: 'uninitialized',
+      balance: '0',
+      last_transaction_id: { lt: '0', hash: Buffer.alloc(32).toString('base64') },
+    });
+    // A deleted wallet takes no external message: it cannot pay the import.
+    expect(() => s.node.submit(pay(s, 3, false))).toThrow(
+      /Failed to unpack account state/,
+    );
+  });
+
+  it('re-deploys a deleted wallet by its StateInit: a new chain, from seqno 0', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 3n * GRAM);
+    s.node.submit(pay(s, 0, true));
+    s.node.mine();
+    s.node.submit(destroy(s, 1));
+    s.node.mine(2);
+    s.node.inject(PAYER, s.wallet, 2n * GRAM, beginCell().endCell());
+    s.node.mine();
+    const refund = s.node
+      .transactions()
+      .filter((tx) => tx.account === s.wallet)
+      .at(-1)!;
+    expect(refund).toMatchObject({ origStatus: 'nonexist', endStatus: 'uninit' });
+    const [first] = await rawChain(s, refund.lt, refund.hash, 1);
+    // A re-created account starts a new chain (transaction.cpp `init_new`).
+    expect(first?.tx.prevTransactionLt).toBe(0n);
+    expect(first?.tx.prevTransactionHash).toBe(0n);
+    s.node.submit(pay(s, 0, true));
+    s.node.mine();
+    expect(s.node.status(s.wallet)).toBe('active');
+    expect(s.node.seqno(s.wallet)).toBe(1);
+  });
+
+  it('leaves the account uninitialized, in the same chain, when it holds an extra currency', async () => {
+    const s = setup('v4r2');
+    s.node.fund(s.wallet, 3n * GRAM);
+    s.node.submit(pay(s, 0, true));
+    s.node.mine();
+    s.node.holdExtraCurrency(s.wallet);
+    s.node.submit(destroy(s, 1));
+    s.node.mine(2);
+    // transaction.cpp: `acc_status = remaining_balance.is_zero() ? acc_deleted : acc_uninit`.
+    expect(s.node.status(s.wallet)).toBe('uninitialized');
+    const [destroying] = s.node
+      .transactions()
+      .filter((tx) => tx.account === s.wallet)
+      .slice(-1);
+    expect(destroying).toMatchObject({ origStatus: 'active', endStatus: 'uninit' });
+    const state = await get(
+      `${s.v2}/getAddressInformation?address=${s.wallet}`,
+      s.fetchFn,
+    );
+    const last = (state.json.result as { last_transaction_id: { lt: string } })
+      .last_transaction_id;
+    expect(last.lt).toBe(destroying!.lt.toString());
+    s.node.inject(PAYER, s.wallet, 2n * GRAM, beginCell().endCell());
+    s.node.mine();
+    s.node.submit(pay(s, 0, true));
+    s.node.mine();
+    expect(s.node.seqno(s.wallet)).toBe(1);
+    const newest = s.node
+      .transactions()
+      .filter((tx) => tx.account === s.wallet)
+      .at(-1)!;
+    const chain = await rawChain(s, newest.lt, newest.hash);
+    // One chain: the re-deploy, the refund, the destroying request, the first deploy.
+    expect(chain.map(({ tx }) => [tx.oldStatus, tx.endStatus])).toEqual([
+      ['uninitialized', 'active'],
+      ['uninitialized', 'uninitialized'],
+      ['active', 'uninitialized'],
+      ['uninitialized', 'active'],
+    ]);
   });
 });

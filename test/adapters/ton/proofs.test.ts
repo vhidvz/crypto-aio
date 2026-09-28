@@ -5,8 +5,10 @@ import {
   beginCell,
   external,
   loadMessage,
+  loadTransaction,
   storeMessage,
   storeMessageRelaxed,
+  storeTransaction,
   type MessageRelaxed,
 } from '@ton/core';
 import { WalletContractV4 } from '@ton/ton';
@@ -17,11 +19,13 @@ import {
 } from '../../../src/adapters/ton/messages';
 import {
   CONSUMER_PAGES,
+  WALK_PAGES,
   createTonHistory,
   createTonProofs,
 } from '../../../src/adapters/ton/proofs';
 import { REASONS } from '../../../src/adapters/ton/trace';
 import { normalizedHash } from '../../../src/adapters/ton/wallets';
+import type { OrderingData } from '../../../src/core/model/ordering';
 import type { AttemptRef } from '../../../src/core/model/transaction';
 import type { FakeRequest } from '../../../src/testing/fake-fetch';
 import { tonHarness } from './support/context';
@@ -35,6 +39,7 @@ const TESTNET = -3;
 const GRAM = 1_000_000_000n;
 const FRESH = `0:${'11'.repeat(32)}`;
 const PAYER = `0:${'33'.repeat(32)}`;
+const ZERO_HASH = Buffer.alloc(32).toString('base64');
 const ref = (id: string): AttemptRef => ({
   id,
   idKind: 'message-hash',
@@ -264,6 +269,11 @@ describe('TON proofs (lesson 17, final form)', () => {
     ]);
     s.h.node.submit(theirs.boc);
     s.h.node.mine(FINALITY_SKEW + 3);
+    // F6-R21: never while ours may still run (a reset could bring the seqno back).
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), ours.ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    await s.tick(80);
     expect(
       await s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), ours.ordering, s.from)),
     ).toEqual({ included: false });
@@ -650,6 +660,10 @@ describe('TON proofs (lesson 17, final form)', () => {
       h.node.mine(FINALITY_SKEW + 3);
       expect(h.node.seqno(from)).toBe(2);
       hideLookups(h);
+      for (let i = 0; i < 80; i++) {
+        await h.clock.advance(1_000);
+        h.node.mine();
+      }
       expect(
         await h.run(
           proofs.includedFinal(
@@ -743,12 +757,9 @@ describe('TON proofs (lesson 17, final form)', () => {
     it('pages on the page as served, past deposits the indexer does not call final (F6-R12)', async () => {
       const s = setup();
       const ours = await s.pay();
-      const theirs = await s.request([
-        nativeMessage({ to: FRESH, value: 7n, bounce: false }),
-      ]);
-      s.h.node.submit(theirs.boc);
+      s.h.node.submit(ours.boc);
       s.h.node.mine();
-      // A full page of deposits lands after the request that consumed our seqno.
+      // A full page of deposits lands after our transfer, which consumed our seqno.
       for (let i = 0; i < 64; i++) {
         s.h.node.inject(PAYER, s.from, 1_000_000n, beginCell().endCell());
       }
@@ -769,9 +780,15 @@ describe('TON proofs (lesson 17, final form)', () => {
               }
             : json,
       );
+      // The hash lookup misses: only the consumer search (a positive hint) finds ours.
+      const inner = s.h.node.intercept;
+      s.h.node.intercept = (endpoint, route, request, signal) =>
+        route === '/transactionsByMessage'
+          ? { json: { transactions: [], address_book: {} } }
+          : inner?.(endpoint, route, request, signal);
       expect(
         await s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), ours.ordering, s.from)),
-      ).toEqual({ included: false });
+      ).toMatchObject({ included: true, success: true });
       expect(pages).toBe(2);
     });
 
@@ -879,7 +896,29 @@ describe('TON proofs (lesson 17, final form)', () => {
           fields: { code: 'SEQNO_CONSUMER_NOT_FOUND' },
         },
       ]);
-    });
+      // Expired: the liteserver's own chain decides, within its cap, else nothing (F6-R21).
+      s.h.node.intercept = undefined;
+      await s.tick(80);
+      warnings.length = 0;
+      let walked = 0;
+      rewrite(
+        s.h,
+        (_e, route) => route === '/getTransactions',
+        (json) => {
+          walked += 1;
+          return json;
+        },
+      );
+      await expect(
+        s.h.run(proofs.includedFinal(ref(ours.hashNorm), ours.ordering, s.from)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      expect(walked).toBe(WALK_PAGES);
+      expect(warnings).toContainEqual({
+        message: 'the wallet history is beyond the proof window',
+        fields: { code: 'TX_CHAIN_WALK_EXHAUSTED' },
+      });
+      // Over 500 transactions, walked twice: a Jest guard, no driver timer.
+    }, 20_000);
   });
 
   describe('lookups bound to the block asked (the board: id-bound lookups)', () => {
@@ -1131,6 +1170,644 @@ describe('TON proofs (lesson 17, final form)', () => {
         false,
       );
     });
+  });
+});
+
+describe('"not included" rests on the chain\'s own transactions (F6-R21)', () => {
+  /** A v4r2 request of the test key's wallet sending everything and deleting it (+128+32). */
+  const destroy = (s: ReturnType<typeof setup>, seqno: number) =>
+    v4Request(seqno, s.now() + 60, [
+      [128 + 32, nativeMessage({ to: PAYER, value: 0n, bounce: false })],
+    ]);
+  /** A transfer of the test key's wallet (a deploy at seqno 0): its request and ordering. */
+  const transfer = async (s: ReturnType<typeof setup>, seqno: number, value = GRAM) => {
+    const validUntil = s.now() + 60;
+    const signed = await signedBoc('v4r2', TESTNET, {
+      seqno,
+      validUntil,
+      deploy: seqno === 0,
+      messages: [nativeMessage({ to: FRESH, value, bounce: false })],
+    });
+    return {
+      ...signed,
+      ordering: { kind: 'seqno' as const, seqno: BigInt(seqno), validUntil },
+    };
+  };
+  const refund = (s: ReturnType<typeof setup>) => {
+    s.h.node.inject(PAYER, s.from, 2n * GRAM, beginCell().endCell());
+    s.h.node.mine();
+  };
+  const final = (
+    s: ReturnType<typeof setup>,
+    t: { readonly hashNorm: string; readonly ordering: OrderingData },
+  ) => s.h.run(s.proofs.includedFinal(ref(t.hashNorm), t.ordering, s.from));
+
+  it("never takes our own earlier, expired request for the seqno for our landed transfer's consumer (I1)", async () => {
+    const s = setup();
+    // Attempt A for seqno 0 never lands and expires; its rebuild B, for seqno 0 again, lands.
+    const a = await s.pay();
+    await s.tick(80);
+    const b = await s.pay();
+    s.h.node.submit(b.boc);
+    s.h.node.mine(13);
+    expect(s.h.node.balance(FRESH)).toBe(GRAM);
+    const aMessage = loadMessage(
+      Cell.fromBoc(Buffer.from(a.boc, 'base64'))[0]!.beginParse(),
+    );
+    const aCell = Cell.fromBoc(Buffer.from(a.boc, 'base64'))[0]!;
+    // A lone lying indexer loses B and shows A's genuine body, run before A expired, in its place.
+    const lie = (json: Json) => ({
+      ...json,
+      transactions: (json.transactions as Json[]).map((tx) => {
+        const inMsg = tx.in_msg as Json;
+        if (inMsg.source !== null) return tx;
+        return {
+          ...tx,
+          now: a.ordering.validUntil - 5,
+          in_msg: {
+            ...inMsg,
+            hash: aCell.hash().toString('base64'),
+            hash_norm: Buffer.from(a.hashNorm, 'hex').toString('base64'),
+            message_content: {
+              ...(inMsg.message_content as Json),
+              hash: aMessage.body.hash().toString('base64'),
+              body: aMessage.body.toBoc().toString('base64'),
+            },
+          },
+        };
+      }),
+    });
+    const lying = (everywhere: boolean) => {
+      rewrite(
+        s.h,
+        (_e, route, request) =>
+          route === '/transactions' &&
+          (everywhere || request.url.searchParams.has('account')),
+        lie,
+      );
+      const inner = s.h.node.intercept;
+      s.h.node.intercept = (endpoint, route, request, signal) =>
+        route === '/transactionsByMessage'
+          ? { json: { transactions: [], address_book: {} } }
+          : inner?.(endpoint, route, request, signal);
+    };
+    lying(true);
+    // B may still run as far as the proof knows: nothing is decided.
+    await expect(final(s, b)).rejects.toMatchObject({ retryable: true });
+    await s.tick(80);
+    // Expired: the liteserver's chain holds B itself; the lying record is never proof.
+    await expect(final(s, b)).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+    lying(false);
+    expect(await final(s, b)).toMatchObject({ included: true, success: true });
+  });
+
+  it('never proves "not included" once the wallet was deleted and re-deployed after our transfer (C1)', async () => {
+    const s = setup();
+    const theirs = await transfer(s, 0, 7n);
+    s.h.node.submit(theirs.boc);
+    s.h.node.mine();
+    const ours = await transfer(s, 1);
+    s.h.node.submit(ours.boc);
+    s.h.node.mine();
+    // Software sharing the key sends everything and deletes the wallet; anyone re-funds and
+    // re-deploys it from its StateInit: its seqno is back at 1, our slot.
+    s.h.node.submit(destroy(s, 2).boc);
+    s.h.node.mine();
+    expect(s.h.node.status(s.from)).toBe('uninitialized');
+    refund(s);
+    s.h.node.submit((await transfer(s, 0, 5n)).boc);
+    s.h.node.mine(2);
+    expect(s.h.node.seqno(s.from)).toBe(1);
+    expect(s.h.node.balance(FRESH)).toBe(GRAM + 12n);
+    await s.tick(80);
+    // The indexer's lookup by hash still finds ours: proven.
+    expect(await final(s, ours)).toMatchObject({
+      included: true,
+      success: true,
+    });
+    // Once it misses, the chain the liteserver holds starts after the deletion: nothing.
+    hideLookups(s.h);
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    // The new incarnation consumes seqno 1 again, with another message: still nothing.
+    s.h.node.intercept = undefined;
+    s.h.node.submit((await transfer(s, 1, 3n)).boc);
+    s.h.node.mine(FINALITY_SKEW + 3);
+    expect(s.h.node.seqno(s.from)).toBe(2);
+    hideLookups(s.h);
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
+  it('never proves "not included" for our slot 0 on a wallet deleted after our transfer (C1, I6)', async () => {
+    const s = setup();
+    const ours = await transfer(s, 0);
+    s.h.node.submit(ours.boc);
+    s.h.node.mine();
+    s.h.node.submit(destroy(s, 1).boc);
+    s.h.node.mine();
+    await s.tick(80);
+    hideLookups(s.h);
+    // Left non-existent: its history shows the wallet ran.
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    // Re-funded, still uninitialized: its chain starts after the deletion.
+    s.h.node.intercept = undefined;
+    refund(s);
+    hideLookups(s.h);
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
+  it('finds our transfer behind a destroy that kept the account in the same chain', async () => {
+    const s = setup();
+    const theirs = await transfer(s, 0, 7n);
+    s.h.node.submit(theirs.boc);
+    s.h.node.mine();
+    const ours = await transfer(s, 1);
+    s.h.node.submit(ours.boc);
+    s.h.node.mine();
+    // An extra currency keeps the destroyed account, uninitialized (transaction.cpp).
+    s.h.node.holdExtraCurrency(s.from);
+    s.h.node.submit(destroy(s, 2).boc);
+    s.h.node.mine();
+    refund(s);
+    s.h.node.submit((await transfer(s, 0, 5n)).boc);
+    s.h.node.mine();
+    expect(s.h.node.seqno(s.from)).toBe(1);
+    await s.tick(80);
+    hideLookups(s.h);
+    expect(await final(s, ours)).toMatchObject({
+      included: true,
+      success: true,
+    });
+  });
+
+  it('decides the honest cases: a first send that expired, and a replacement, after a real deposit', async () => {
+    const s = setup();
+    s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+    s.h.node.mine();
+    const ours = await transfer(s, 0);
+    await s.tick(80);
+    expect(await final(s, ours)).toEqual({ included: false });
+    const replaced = setup();
+    replaced.h.node.inject(PAYER, replaced.from, GRAM, beginCell().endCell());
+    replaced.h.node.mine();
+    const mine = await transfer(replaced, 0);
+    replaced.h.node.submit((await transfer(replaced, 0, 7n)).boc);
+    replaced.h.node.mine();
+    await replaced.tick(80);
+    expect(await final(replaced, mine)).toEqual({ included: false });
+  });
+
+  it('ends the walk at the window: a history older than our message is not read', async () => {
+    const s = setup();
+    s.h.node.submit((await transfer(s, 0, 7n)).boc);
+    s.h.node.mine();
+    for (let i = 0; i < 40; i++) {
+      s.h.node.inject(PAYER, s.from, 1_000_000n, beginCell().endCell());
+    }
+    s.h.node.mine();
+    await s.tick(200);
+    const ours = await transfer(s, 1);
+    await s.tick(80);
+    let walked = 0;
+    rewrite(
+      s.h,
+      (_e, route) => route === '/getTransactions',
+      (json) => {
+        walked += 1;
+        return json;
+      },
+    );
+    expect(await final(s, ours)).toEqual({ included: false });
+    expect(walked).toBe(1);
+  });
+
+  it('finds the consumer of our seqno past the window when the window is too short', async () => {
+    const s = setup();
+    // Built when the lifetime was an hour (validForSeconds lowered since): ours lands early.
+    const validUntil = s.now() + 3_600;
+    const ours = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil,
+      deploy: true,
+      messages: [nativeMessage({ to: FRESH, value: GRAM, bounce: false })],
+    });
+    s.h.node.submit(ours.boc);
+    s.h.node.mine();
+    s.h.node.inject(PAYER, s.from, 1_000_000n, beginCell().endCell());
+    s.h.node.mine();
+    for (let i = 0; i < 70; i++) {
+      await s.h.clock.advance(60_000);
+      s.h.node.mine();
+    }
+    // The indexer has lost it altogether: only the liteserver's chain shows it.
+    s.h.node.intercept = (_endpoint, route) =>
+      route === '/transactionsByMessage' || route === '/transactions'
+        ? { json: { transactions: [], address_book: {} } }
+        : undefined;
+    await expect(
+      s.h.run(
+        s.proofs.includedFinal(
+          ref(ours.hashNorm),
+          { kind: 'seqno', seqno: 0n, validUntil },
+          s.from,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    // With its record back (the proof reads it by the hash the chain gives), proven.
+    s.h.node.intercept = (_endpoint, route, request) =>
+      route === '/transactionsByMessage' ||
+      (route === '/transactions' && request.url.searchParams.has('account'))
+        ? { json: { transactions: [], address_book: {} } }
+        : undefined;
+    expect(
+      await s.h.run(
+        s.proofs.includedFinal(
+          ref(ours.hashNorm),
+          { kind: 'seqno', seqno: 0n, validUntil },
+          s.from,
+        ),
+      ),
+    ).toMatchObject({ included: true, success: true });
+  });
+
+  it("never takes a liteserver's answer that is not the chain's (a foreign cell, a dropped transaction)", async () => {
+    const s = setup();
+    s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+    s.h.node.mine();
+    const ours = await transfer(s, 0);
+    s.h.node.submit((await transfer(s, 0, 7n)).boc);
+    s.h.node.mine();
+    s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+    s.h.node.mine();
+    await s.tick(80);
+    for (const edit of [
+      // Each row carries the next row's cell.
+      (rows: Json[]) =>
+        rows.map((row, i) => ({ ...row, data: rows[(i + 1) % rows.length]!.data })),
+      // The newest transaction is dropped.
+      (rows: Json[]) => rows.slice(1),
+      // The same transaction rewritten (a fee changed): its id, lt and account, not its hash.
+      (rows: Json[]) =>
+        rows.map((row) => {
+          const cell = Cell.fromBoc(Buffer.from(String(row.data), 'base64'))[0]!;
+          const tx = loadTransaction(cell.beginParse());
+          const forged = beginCell()
+            .store(
+              storeTransaction({
+                ...tx,
+                totalFees: { coins: tx.totalFees.coins + 1n },
+              }),
+            )
+            .endCell();
+          return { ...row, data: forged.toBoc().toString('base64') };
+        }),
+      // Another account's transaction under the right id.
+      (rows: Json[]) =>
+        rows.map((row) => ({
+          ...row,
+          data: s.h.node
+            .transactions()
+            .find((tx) => tx.account === FRESH)!
+            .raw.toBoc()
+            .toString('base64'),
+        })),
+    ]) {
+      rewrite(
+        s.h,
+        (_e, route) => route === '/getTransactions',
+        (json) => ({ ...json, result: edit(json.result as Json[]) }),
+      );
+      await expect(final(s, ours)).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+    }
+    s.h.node.intercept = undefined;
+    expect(await final(s, ours)).toEqual({ included: false });
+  });
+
+  it('binds the seqno and the state to the attested block and the account state (I2, I3, M7)', async () => {
+    const s = setup();
+    const ours = await s.pay();
+    s.h.node.submit((await transfer(s, 0, 7n)).boc);
+    s.h.node.mine();
+    await s.tick(80);
+    const edits: [string, (result: Json) => Json][] = [
+      [
+        '/runGetMethod',
+        (r) => ({
+          ...r,
+          block_id: {
+            ...(r.block_id as Json),
+            seqno: Number((r.block_id as Json).seqno) - 1,
+          },
+        }),
+      ],
+      [
+        '/runGetMethod',
+        (r) => ({ ...r, block_id: { ...(r.block_id as Json), root_hash: ZERO_HASH } }),
+      ],
+      [
+        '/runGetMethod',
+        (r) => ({
+          ...r,
+          last_transaction_id: { ...(r.last_transaction_id as Json), hash: ZERO_HASH },
+        }),
+      ],
+      [
+        '/getAddressInformation',
+        (r) => ({ ...r, block_id: { ...(r.block_id as Json), root_hash: ZERO_HASH } }),
+      ],
+      [
+        '/getAddressInformation',
+        (r) => ({ ...r, block_id: { ...(r.block_id as Json), workchain: 0 } }),
+      ],
+    ];
+    for (const [route, edit] of edits) {
+      rewrite(
+        s.h,
+        (_e, served, request) =>
+          served === route &&
+          (route !== '/runGetMethod' ||
+            request.json<{ method: string }>().method === 'seqno'),
+        (json) => ({ ...json, result: edit(json.result as Json) }),
+      );
+      await expect(final(s, ours)).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+    }
+    s.h.node.intercept = undefined;
+    expect(await final(s, ours)).toEqual({ included: false });
+  });
+
+  it('walks to the chain start behind an activation inside the window, however short the window (a lowered lifetime)', async () => {
+    const s = setup();
+    // Built with an hour's lifetime (validForSeconds lowered since): ours lands at once.
+    const validUntil = s.now() + 3_600;
+    const ours = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil,
+      deploy: true,
+      messages: [nativeMessage({ to: FRESH, value: GRAM, bounce: false })],
+    });
+    s.h.node.submit(ours.boc);
+    s.h.node.mine();
+    s.h.node.submit(destroy(s, 1).boc);
+    s.h.node.mine();
+    refund(s); // the new chain starts before the (too short) window
+    for (let i = 0; i < 59; i++) {
+      await s.h.clock.advance(60_000);
+      s.h.node.mine();
+    }
+    s.h.node.submit((await transfer(s, 0, 5n)).boc); // the re-deploy, inside the window
+    s.h.node.mine();
+    await s.tick(80);
+    hideLookups(s.h);
+    await expect(
+      final(s, {
+        hashNorm: ours.hashNorm,
+        ordering: { kind: 'seqno', seqno: 0n, validUntil },
+      }),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+  });
+
+  it('decides nothing after a reset inside the window, even when ours never ran (F6-R21 b)', async () => {
+    const s = setup();
+    s.h.node.submit((await transfer(s, 0, 7n)).boc);
+    s.h.node.mine();
+    s.h.node.holdExtraCurrency(s.from);
+    s.h.node.submit(destroy(s, 1).boc);
+    s.h.node.mine();
+    refund(s);
+    s.h.node.submit((await transfer(s, 0, 5n)).boc);
+    s.h.node.mine();
+    const ours = await transfer(s, 1); // never sent
+    await s.tick(80);
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
+  it('decides nothing while the indexer has not reached the attested block (d)', async () => {
+    const s = setup();
+    const ours = await s.pay();
+    await s.tick(80);
+    s.h.node.indexerLag = 200;
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    s.h.node.indexerLag = 0;
+    expect(await final(s, ours)).toEqual({ included: false });
+  });
+
+  it('never takes a forged relayed request the chain ran for the consumer of our seqno (A23)', async () => {
+    const h = tonHarness();
+    const proofs = createTonProofs(h.ctx);
+    const from = testWallet('v5r1', TESTNET);
+    h.node.fund(from, 5n * GRAM);
+    const validUntil = Math.floor(h.clock.now() / 1000) + 3_600;
+    const ours = await signedBoc('v5r1', TESTNET, {
+      seqno: 0,
+      validUntil,
+      deploy: true,
+      messages: [nativeMessage({ to: FRESH, value: GRAM, bounce: false })],
+    });
+    h.node.submit(ours.boc);
+    h.node.mine();
+    const deposit = () => {
+      h.node.inject(PAYER, from, 1_000_000n, beginCell().endCell());
+      h.node.mine();
+    };
+    deposit();
+    // Anyone can post a relayed body claiming our seqno: the wallet runs it and ignores it.
+    h.node.inject(
+      `0:${'22'.repeat(32)}`,
+      from,
+      50_000_000n,
+      relayedBody(TESTNET, {
+        seqno: 0,
+        validUntil,
+        messages: [nativeMessage({ to: FRESH, value: 2n, bounce: false })],
+        seed: 'ab'.repeat(32),
+      }),
+    );
+    h.node.mine();
+    deposit();
+    for (let i = 0; i < 70; i++) {
+      await h.clock.advance(60_000);
+      h.node.mine();
+    }
+    for (let i = 0; i < 20; i++) {
+      await h.clock.advance(1_000);
+      h.node.mine();
+    }
+    h.node.intercept = (_endpoint, route, request) =>
+      route === '/transactionsByMessage' ||
+      (route === '/transactions' && request.url.searchParams.has('account'))
+        ? { json: { transactions: [], address_book: {} } }
+        : undefined;
+    expect(
+      await h.run(
+        proofs.includedFinal(
+          ref(ours.hashNorm),
+          { kind: 'seqno', seqno: 0n, validUntil },
+          from,
+        ),
+      ),
+    ).toMatchObject({ included: true, success: true });
+  });
+
+  it("reads an earlier history with the ruling's never-ran rule: any run, or no statuses, decides nothing (d)", async () => {
+    const s = setup();
+    const ours = await s.pay(); // never sent; the wallet has no transaction at all
+    await s.tick(80);
+    const row = (lt: bigint, patch: Json): Json => ({
+      account: s.from.toUpperCase(),
+      hash: Buffer.alloc(32, Number(lt % 255n) + 1).toString('base64'),
+      lt: lt.toString(),
+      now: 1,
+      mc_block_seqno: 1,
+      trace_id: Buffer.alloc(32, 7).toString('base64'),
+      orig_status: 'nonexist',
+      end_status: 'uninit',
+      total_fees: '0',
+      description: {
+        type: 'ord',
+        aborted: true,
+        compute_ph: { skipped: true, reason: 'no_state' },
+      },
+      in_msg: null,
+      out_msgs: [],
+      ...patch,
+    });
+    const history = (rows: (endLt: bigint) => Json[]) =>
+      rewrite(
+        s.h,
+        (_e, route, request) =>
+          route === '/transactions' && request.url.searchParams.has('account'),
+        (json, request) => {
+          const endLt = request.url.searchParams.get('end_lt');
+          return {
+            ...json,
+            transactions: rows(endLt === null ? 1_000_000n : BigInt(endLt)),
+          };
+        },
+      );
+    // An earlier deposit that never ran the code: harmless (d).
+    history(() => [row(500n, {})]);
+    expect(await final(s, ours)).toEqual({ included: false });
+    // The code ran, or the indexer does not say what the account was: nothing.
+    for (const patch of [
+      {
+        description: {
+          type: 'ord',
+          aborted: false,
+          compute_ph: { skipped: false, success: true, exit_code: 0 },
+          action: {
+            success: true,
+            valid: true,
+            no_funds: false,
+            result_code: 0,
+            tot_actions: 0,
+            skipped_actions: 0,
+            msgs_created: 0,
+          },
+        },
+      },
+      { orig_status: undefined },
+      { end_status: undefined },
+      { end_status: 'active' },
+      { orig_status: 'frozen', end_status: 'frozen' },
+    ]) {
+      history(() => [row(500n, patch)]);
+      await expect(final(s, ours)).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+    // A history past the window decides nothing either.
+    history((endLt) => Array.from({ length: 64 }, (_, i) => row(endLt - BigInt(i), {})));
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
+  it("reads an active wallet's chain start strictly: any earlier history decides nothing (c)", async () => {
+    const s = setup();
+    s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+    s.h.node.mine();
+    const ours = await transfer(s, 0);
+    s.h.node.submit((await transfer(s, 0, 7n)).boc);
+    s.h.node.mine();
+    await s.tick(80);
+    expect(await final(s, ours)).toEqual({ included: false });
+    // Below the chain's first transaction, the indexer holds a row: another incarnation,
+    // even one whose code never ran, is not the first creation.
+    rewrite(
+      s.h,
+      (_e, route, request) =>
+        route === '/transactions' && request.url.searchParams.get('limit') === '1',
+      (json, request) => ({
+        ...json,
+        transactions: [
+          {
+            account: s.from.toUpperCase(),
+            hash: Buffer.alloc(32, 9).toString('base64'),
+            lt: request.url.searchParams.get('end_lt'),
+            now: 1,
+            mc_block_seqno: 1,
+            trace_id: Buffer.alloc(32, 9).toString('base64'),
+            orig_status: 'nonexist',
+            end_status: 'uninit',
+            total_fees: '0',
+            description: {
+              type: 'ord',
+              aborted: true,
+              compute_ph: { skipped: true, reason: 'no_state' },
+            },
+            in_msg: null,
+            out_msgs: [],
+          },
+        ],
+      }),
+    );
+    await expect(final(s, ours)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
+  it('decides nothing for a lifetime that is no time (M9)', async () => {
+    const s = setup();
+    const ours = await s.pay();
+    await s.tick(80);
+    const unset = { kind: 'seqno' as const, seqno: 0n, validUntil: 0 };
+    await expect(s.h.run(s.proofs.expired(unset))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), unset, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(await final(s, ours)).toEqual({ included: false });
   });
 });
 

@@ -265,6 +265,8 @@ export interface AccountState {
   readonly lastHash: string;
   /** The masterchain block the state was read at. */
   readonly blockSeqno: number;
+  /** That block's full id (F6-R21 M7): a proof binds the state to the block it asked for. */
+  readonly block: BlockId;
   /** The state's time (seconds): the chain's `now` for the next message. */
   readonly syncUtime: number;
 }
@@ -279,6 +281,35 @@ export interface RunResult {
   readonly exitCode: number;
   readonly stack: readonly StackEntry[];
 }
+
+/** A transaction's id: its logical time and hash (lower-case hex). */
+export interface TransactionId {
+  readonly lt: bigint;
+  readonly hash: string;
+}
+
+/**
+ * A get-method's result with what it was run on (F6-R21 I2): the masterchain block and the
+ * account's last transaction there, as live toncenter answers name them.
+ */
+export interface BoundRunResult extends RunResult {
+  readonly block: BlockId;
+  readonly lastTransaction: TransactionId;
+}
+
+/**
+ * One transaction as the liteserver serves it (v2 `getTransactions`): its id and its raw
+ * cell (base64 BOC, within an account state's limits, lesson 20), which a caller hashes
+ * itself: only a cell whose hash is the id it expects authenticates anything (F6-R21).
+ */
+export interface RawTransaction {
+  readonly lt: bigint;
+  readonly hash: string;
+  readonly boc: string;
+}
+
+/** toncenter v3's account statuses (`orig_status`, `end_status`). */
+export type V3AccountStatus = 'nonexist' | 'uninit' | 'active' | 'frozen';
 
 export interface SourceFees {
   readonly importFee: bigint;
@@ -332,6 +363,9 @@ export interface V3Transaction {
   };
   /** The bounce phase's type (`ok`, `nofunds`, `negfunds`), when there was one. */
   readonly bounce?: string;
+  /** The account's status before and after, when the indexer writes them (F6-R21). */
+  readonly origStatus?: V3AccountStatus;
+  readonly endStatus?: V3AccountStatus;
   readonly inMsg: V3Message | null;
   readonly outMsgs: readonly V3Message[];
 }
@@ -500,11 +534,24 @@ function bounceOf(value: unknown, route: string): string | undefined {
   return type;
 }
 
+const V3_STATUSES: ReadonlySet<unknown> = new Set([
+  'nonexist',
+  'uninit',
+  'active',
+  'frozen',
+]);
+
+/** A v3 account status: one of the four (lesson 6: well typed when present). */
+const accountStatus = (value: unknown): V3AccountStatus | undefined =>
+  V3_STATUSES.has(value) ? (value as V3AccountStatus) : undefined;
+
 export function transactionOf(value: unknown, route: string): V3Transaction {
   const t = need(record(value), route);
   const d = need(record(t.description), route);
   const action = actionOf(d.action, route);
   const bounce = bounceOf(d.bounce, route);
+  const origStatus = optional(t.orig_status, accountStatus, route);
+  const endStatus = optional(t.end_status, accountStatus, route);
   return {
     hash: need(hashHex(t.hash), route),
     lt: need(u64(t.lt), route),
@@ -517,6 +564,8 @@ export function transactionOf(value: unknown, route: string): V3Transaction {
     compute: computeOf(d, route),
     ...(action ? { action } : {}),
     ...(bounce !== undefined ? { bounce } : {}),
+    ...(origStatus !== undefined ? { origStatus } : {}),
+    ...(endStatus !== undefined ? { endStatus } : {}),
     inMsg:
       t.in_msg === null || t.in_msg === undefined ? null : messageOf(t.in_msg, route),
     outMsgs: need(Array.isArray(t.out_msgs) ? t.out_msgs : undefined, route).map((m) =>
@@ -585,15 +634,23 @@ function accountOf(result: unknown, route: string): AccountState {
       : state === 'uninitialized' || state === 'uninit' || state === 'nonexist'
         ? 'uninitialized'
         : undefined;
-  const last = need(record(r.last_transaction_id), route);
+  const last = transactionIdOf(r.last_transaction_id, route);
+  const block = blockIdOf(r.block_id, route);
   return {
     balance: need(coins(r.balance), route),
     status: need(status, route),
-    lastLt: need(u64(last.lt), route),
-    lastHash: need(hashHex(last.hash), route),
-    blockSeqno: blockIdOf(r.block_id, route).seqno,
+    lastLt: last.lt,
+    lastHash: last.hash,
+    blockSeqno: block.seqno,
+    block,
     syncUtime: need(int(r.sync_utime), route),
   };
+}
+
+/** A v2 `internal.transactionId`: lt and hash. */
+function transactionIdOf(value: unknown, route: string): TransactionId {
+  const id = need(record(value), route);
+  return { lt: need(u64(id.lt), route), hash: need(hashHex(id.hash), route) };
 }
 
 function runOf(result: unknown, route: string): RunResult {
@@ -607,6 +664,42 @@ function runOf(result: unknown, route: string): RunResult {
 /** A v2 `runGetMethod` answer body, parsed; for callers' quorum predicates (lesson 17). */
 export function runResultOf(body: unknown): RunResult {
   return runOf(v2Result(body, '/runGetMethod'), '/runGetMethod');
+}
+
+/** A get-method's result with its block and the account's last transaction (I2). */
+function boundRunOf(result: unknown, route: string): BoundRunResult {
+  const r = need(record(result), route);
+  return {
+    ...runOf(result, route),
+    block: blockIdOf(r.block_id, route),
+    lastTransaction: transactionIdOf(r.last_transaction_id, route),
+  };
+}
+
+/** A v2 `runGetMethod` answer body with its binding, parsed; for callers' quorum keys. */
+export function boundRunResultOf(body: unknown): BoundRunResult {
+  return boundRunOf(v2Result(body, '/runGetMethod'), '/runGetMethod');
+}
+
+/**
+ * A v2 `getTransactions` result: at most `limit` rows, each with its id and a raw cell
+ * within an account state's limits, checked in the BOC header before anyone decodes it
+ * (lesson 20). What the rows are is for the caller to prove by their hashes.
+ */
+function rawTransactionsOf(
+  result: unknown,
+  route: string,
+  limit: number,
+): RawTransaction[] {
+  if (!Array.isArray(result) || result.length > limit) throw malformed(route);
+  return result.map((item): RawTransaction => {
+    const row = need(record(item), route);
+    const { lt, hash } = transactionIdOf(row.transaction_id, route);
+    const boc = need(str(row.data), route);
+    if (bocSize(boc, MAX_STATE_CELLS, MAX_STATE_BOC_LENGTH) !== 'ok')
+      throw malformed(route);
+    return { lt, hash, boc };
+  });
 }
 
 /**
@@ -963,6 +1056,47 @@ export class TonApi {
     );
   }
 
+  /**
+   * A get-method at masterchain block `seqno`, with the block and the account's last
+   * transaction the answer names (F6-R21 I2): a caller binds the result to the state it
+   * read, since an endpoint that drops the block answers at its own latest state.
+   */
+  runGetMethodAt(
+    address: string,
+    method: string,
+    stack: readonly (readonly [string, string])[],
+    tags: TonCallTags,
+    seqno: number,
+  ): Promise<BoundRunResult> {
+    return this.#v2Post(
+      '/runGetMethod',
+      { address, method, stack, seqno },
+      tags,
+      boundRunOf,
+    );
+  }
+
+  /**
+   * Up to `limit` of an account's transactions (a raw address, M2) from `from` back, as the
+   * liteserver serves them (v2 `getTransactions`), each with its raw cell. Under a quorum
+   * the endpoints agree on the ids; the cells are the caller's to hash (F6-R21).
+   */
+  async rawTransactions(
+    address: string,
+    from: TransactionId,
+    limit: number,
+    tags: TonCallTags,
+  ): Promise<RawTransaction[]> {
+    rawAddress(address);
+    return this.#v2(
+      '/getTransactions',
+      { address, lt: from.lt.toString(), hash: from.hash, limit: String(limit) },
+      tags,
+      (result, route) => rawTransactionsOf(result, route, limit),
+      (rows) => rows.map(({ lt, hash }) => ({ lt, hash })),
+    );
+  }
+
   /** A jetton master's `get_jetton_data`: its exit code and content cell (`jettonDataOf`). */
   jettonData(master: string, tags: TonCallTags, seqno?: number): Promise<JettonData> {
     return this.#v2Post(
@@ -1035,6 +1169,17 @@ export class TonApi {
         seqno: need(int(last.seqno), route),
         globalId: need(int(last.global_id), route),
       };
+    });
+  }
+
+  /**
+   * Whether the indexer has indexed masterchain block `seqno`. Under a quorum the key is
+   * this predicate (lesson 17): indexers past `seqno` agree whatever their heads.
+   */
+  indexerReached(seqno: number, tags: TonCallTags): Promise<boolean> {
+    return this.#v3('/masterchainInfo', {}, tags, (body, route) => {
+      const last = need(isRecord(body) ? record(body.last) : undefined, route);
+      return need(int(last.seqno), route) >= seqno;
     });
   }
 
