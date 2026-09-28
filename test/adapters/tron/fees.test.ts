@@ -1072,6 +1072,27 @@ describe('txBytesOf (lesson 21)', () => {
     }
   });
 
+  it('never throws on any truncation or byte flip of signed bytes, and never overstates a size (F4-R23 review)', () => {
+    for (const hex of [OURS, TRIGGER, signedHex({ data: '68656c6c6f' })]) {
+      let read = 0;
+      for (let n = 0; n <= hex.length; n += 2) {
+        if (txBytesOf(hex.slice(0, n)) !== undefined) read += 1;
+      }
+      for (let p = 0; p < hex.length; p += 2) {
+        for (const byte of ['00', 'ff', '80', '7f', '01']) {
+          const flipped = hex.slice(0, p) + byte + hex.slice(p + 2);
+          const r = txBytesOf(flipped);
+          if (r !== undefined) {
+            read += 1;
+            expect(r.size).toBeLessThanOrEqual(flipped.length / 2);
+          }
+        }
+      }
+      // The whole input reads; most mutants do not.
+      expect(read).toBeGreaterThan(0);
+    }
+  });
+
   it('reads no input longer than twice java-tron’s transaction limit (lesson 20)', () => {
     const memo = (bytes: number) => signedHex({ data: '61'.repeat(bytes) });
     expect(txBytesOf(memo(520_000))?.size).toBeGreaterThan(512_000);
@@ -1094,6 +1115,43 @@ describe('classifyOwnBroadcast (lesson 21: a rejection is a claim)', () => {
     const expected = classifyBroadcast(CLAIMS[claim]);
     expect(expected).toMatchObject({ kind: 'rejected' });
     expect(ownOutcome(CLAIMS[claim], hex)).toEqual(expected);
+  });
+
+  it('judges the signature and size claims only on bytes with one signature, whose txID has no smaller valid form (F4-R23)', () => {
+    const [signature] = decodeTransaction(OURS).signatures as [string];
+    const short = 'ab'.repeat(64);
+    const raw = encodeRawData(BASE);
+    const big = encodeRawData({ ...BASE, data: '61'.repeat(520_000) });
+    // A relayer may drop a signature and land the same txID: extra signatures make no claim
+    // hold, whatever the one it points at.
+    for (const signatures of [
+      [signature, short],
+      [short, signature],
+      [short, short],
+      [],
+    ]) {
+      expect(ownOutcome(CLAIMS.signature, encodeTransaction(raw, signatures))).toEqual(
+        UNCONFIRMED,
+      );
+    }
+    expect(
+      ownOutcome(CLAIMS.tooBig, encodeTransaction(big, [signature, signature])),
+    ).toEqual(UNCONFIRMED);
+    // java-tron reads only a signature's first 65 bytes (checkWeight), so padding can be
+    // trimmed off: the size claim holds only with one plain 65-byte signature.
+    const padded = `${signature}00`;
+    for (const claim of ['tooBig', 'tooBigWithResult'] as const) {
+      expect(ownOutcome(CLAIMS[claim], encodeTransaction(big, [padded]))).toEqual(
+        UNCONFIRMED,
+      );
+      expect(ownOutcome(CLAIMS[claim], encodeTransaction(big, [signature]))).toEqual(
+        rejected('transaction too large'),
+      );
+    }
+    // One short signature: no form of this txID is signed (lesson 21 unchanged).
+    expect(ownOutcome(CLAIMS.signature, encodeTransaction(raw, [short]))).toEqual(
+      rejected('malformed signature'),
+    );
   });
 
   it('keeps a negative amount rejected, as java-tron reads the int64', () => {

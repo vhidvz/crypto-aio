@@ -30,10 +30,10 @@
  * Broadcasts are classified here (`classifyOwnBroadcast`), never under a quorum: a transport
  * failure, an unreadable reply or a node answer that may follow pooling is thrown ambiguous
  * (possibly sent). A node's rejection is a claim (lesson 21): it stands only when its reason
- * holds for the bytes that were sent, read back from them; otherwise it is a refusal. A `TX_EXPIRED` refusal is the node's view at its own head, a hint and
- * not proof: Tron has no nonce, so a second Attempt could land beside the first. The
- * broadcaster never re-sends or rebuilds on it; only an attested expiry (the proofs) lets
- * the core build again.
+ * holds for the bytes that were sent, read back from them; otherwise it is a refusal. A
+ * `TX_EXPIRED` refusal is the node's view at its own head, a hint and not proof: Tron has no
+ * nonce, so a second Attempt could land beside the first. The broadcaster never re-sends or
+ * rebuilds on it; only an attested expiry (the proofs) lets the core build again.
  */
 import { sha256 } from '@noble/hashes/sha256';
 import type {

@@ -7,8 +7,9 @@
  * - `rejected` only on definitive evidence: the refusal code plus an exact, anchored text
  *   that consensus also refuses for these bytes on every node at every time — a signature
  *   under 65 bytes, no contract, a transfer to self, a non-positive amount, or a size over
- *   the constant 512,000-byte limit. Numbers in those texts must show the defect: a text
- *   that contradicts itself decides nothing.
+ *   the constant 512,000-byte limit (the signature and size rules only for bytes with one
+ *   signature, F4-R23). Numbers in those texts must show the defect: a text that
+ *   contradicts itself decides nothing.
  * - Refusal codes java-tron gives before it pools the transaction are `refused`, the
  *   default for any text: account state, permissions, chain parameters and node policy
  *   can change.
@@ -23,8 +24,9 @@
  *
  * Lesson 21 (F4-R20): a node's rejection is a claim. `classifyBroadcast` takes the node at
  * its word; `classifyOwnBroadcast`, which the broadcaster uses, keeps a `rejected` only when
- * the claimed reason holds for the bytes that were sent (`txBytesOf`, read here without an
- * SDK), and makes every other one `refused`, which is not terminal. A terminal `rejected`
+ * the claimed reason holds for the bytes that were sent (`txBytesOf`, read with the SDK-free
+ * reader the codec shares, `protobuf.ts`, F4-R22), and makes every other one `refused`, which
+ * is not terminal. A terminal `rejected`
  * lets a caller pay again, so a lying endpoint that relayed the bytes, or keeps them to relay
  * later, would make that a second payment. Our builder refuses every byte-only defect before
  * signing, so a true rejection of our own bytes should not happen; a refusal costs liveness
@@ -34,6 +36,7 @@ import type { BroadcastResult } from '../../core/driver/types';
 import { ProviderError } from '../../core/errors/error';
 import { fromHex, toHex, utf8ToBytes } from '../../core/util/bytes';
 import type { BroadcastAnswer } from './http';
+import { bytesOf, singular, wireFields, type WireValue } from './protobuf';
 
 type RefusalCode = Extract<BroadcastResult, { kind: 'refused' }>['code'];
 
@@ -85,8 +88,18 @@ interface Permanent {
   readonly result: BroadcastResult;
 }
 
+/**
+ * F4-R23: the signature and size rules measure the bytes as sent, while what lands is the
+ * txID with any signatures. A relayer may drop a signature, and java-tron reads only a
+ * signature's first 65 bytes (`checkWeight`), so it may trim padding too. So a claim holds
+ * only for bytes whose txID has no smaller valid form: one signature and, for the size, one
+ * of exactly 65 bytes.
+ */
+const oneSignature = (tx: TronTxBytes): boolean => tx.signatures.length === 1;
+
 /** The size rules: java-tron measures the transaction without `ret` (lesson 21). */
-const oversize = (tx: TronTxBytes): boolean => tx.size > MAX_TX_BYTES;
+const oversize = (tx: TronTxBytes): boolean =>
+  oneSignature(tx) && tx.signatures[0] === MIN_SIGNATURE_BYTES && tx.size > MAX_TX_BYTES;
 
 const PERMANENT: readonly Permanent[] = [
   {
@@ -96,7 +109,7 @@ const PERMANENT: readonly Permanent[] = [
     code: 'SIGERROR',
     text: /^Validate signature error: Signature size is (0|[1-9]\d{0,9})$/,
     shows: (size) => size < MIN_SIGNATURE_BYTES,
-    holds: (tx) => tx.signatures.some((size) => size < MIN_SIGNATURE_BYTES),
+    holds: (tx) => oneSignature(tx) && (tx.signatures[0] as number) < MIN_SIGNATURE_BYTES,
     result: rejected('malformed signature'),
   },
   {
@@ -253,76 +266,9 @@ const TRANSFER_URL = 'type.googleapis.com/protocol.TransferContract';
 /** `ContractType.TransferContract`. */
 const TRANSFER_TYPE = 1n;
 
-interface WireField {
-  readonly field: number;
-  readonly value: bigint | Uint8Array;
-  /** The field's encoded length, tag included. */
-  readonly length: number;
-}
-
-/**
- * One protobuf message's fields, in order: varints as bigints, length-delimited fields as
- * bytes; `null` for anything else (a fixed-width or group field, a truncated field, a varint
- * over 64 bits, field number 0). Linear in the input.
- */
-function wireFields(bytes: Uint8Array): WireField[] | null {
-  const out: WireField[] = [];
-  let i = 0;
-  const varint = (): bigint | null => {
-    let result = 0n;
-    for (let shift = 0n; shift < 64n; shift += 7n) {
-      const byte = bytes[i++];
-      // The tenth byte carries the 64th bit only.
-      if (byte === undefined || (shift === 63n && byte > 1)) return null;
-      result |= BigInt(byte & 0x7f) << shift;
-      if ((byte & 0x80) === 0) return result;
-    }
-    return null;
-  };
-  while (i < bytes.length) {
-    const start = i;
-    const key = varint();
-    if (key === null || key >> 3n === 0n) return null;
-    let value: bigint | Uint8Array;
-    if ((key & 7n) === 0n) {
-      const read = varint();
-      if (read === null) return null;
-      value = read;
-    } else if ((key & 7n) === 2n) {
-      const length = varint();
-      if (length === null || length > BigInt(bytes.length - i)) return null;
-      value = bytes.subarray(i, i + Number(length));
-      i += Number(length);
-    } else return null;
-    out.push({ field: Number(key >> 3n), value, length: i - start });
-  }
-  return out;
-}
-
-type Kinds = Readonly<Record<number, 'varint' | 'bytes'>>;
-
-/**
- * A message's fields by number, each known, of its wire type and at most once; `null`
- * otherwise, so a value is never guessed between protobuf's merge and last-wins rules.
- */
-function singular(
-  bytes: Uint8Array,
-  kinds: Kinds,
-): Map<number, bigint | Uint8Array> | null {
-  const fields = wireFields(bytes);
-  if (!fields) return null;
-  const out = new Map<number, bigint | Uint8Array>();
-  for (const { field, value } of fields) {
-    const kind = Object.hasOwn(kinds, field) ? kinds[field] : undefined;
-    if (kind === undefined || out.has(field)) return null;
-    if ((kind === 'varint') !== (typeof value === 'bigint')) return null;
-    out.set(field, value);
-  }
-  return out;
-}
-
-const bytesField = (value: bigint | Uint8Array | undefined): Uint8Array =>
-  value instanceof Uint8Array ? value : new Uint8Array();
+/** A field's bytes, or none: absent fields read as empty, as java-tron reads them. */
+const bytesField = (value: WireValue | undefined): Uint8Array =>
+  bytesOf(value) ?? new Uint8Array();
 
 /**
  * The bytes a broadcast sent, as the lesson 21 checks read them, SDK-free: `Transaction`
@@ -338,7 +284,7 @@ export function txBytesOf(hex: string): TronTxBytes | undefined {
   } catch {
     return undefined;
   }
-  const outer = wireFields(bytes);
+  const outer = wireFields(bytes, 'refuse');
   if (!outer) return undefined;
   let raw: Uint8Array | undefined;
   let size = 0;
@@ -351,7 +297,7 @@ export function txBytesOf(hex: string): TronTxBytes | undefined {
     // `ret` (field 5): java-tron clears it before it measures the transaction.
     if (field !== 5) size += length;
   }
-  const fields = raw ? wireFields(raw) : null;
+  const fields = raw ? wireFields(raw, 'refuse') : null;
   if (!fields) return undefined;
   const contracts = fields.filter((f) => f.field === 11);
   const read = { size, signatures, contracts: contracts.length };

@@ -13,6 +13,7 @@ import { fromHex } from '../../core/util/bytes';
 import type { HttpRequest, Transport } from '../../core/transport/types';
 import { PLACEHOLDER_ORIGIN } from '../../core/transport/types';
 import { tronDriverFactory } from './driver';
+import { bytesOf, singular, wireFields } from './protobuf';
 import type { TronCodec, TronContract, TronRawData } from './types';
 
 const TYPE_URL = 'type.googleapis.com/protocol.';
@@ -121,81 +122,15 @@ function encodeRaw(raw: TronRawData): string {
     .toLowerCase();
 }
 
-type Field = { readonly field: number; readonly value: bigint | Uint8Array | null };
-
-/**
- * The fields of one protobuf message, in order: varints as bigints, length-delimited as
- * bytes, fixed-width as `null` (skipped). `null` for malformed bytes: a truncated field, a
- * varint over 64 bits, a group or field number 0.
- */
-function fieldList(bytes: Uint8Array): Field[] | null {
-  const out: Field[] = [];
-  let i = 0;
-  const varint = (): bigint | null => {
-    let result = 0n;
-    for (let shift = 0n; shift < 64n; shift += 7n) {
-      const byte = bytes[i++];
-      // The tenth byte carries the 64th bit only.
-      if (byte === undefined || (shift === 63n && byte > 1)) return null;
-      result |= BigInt(byte & 0x7f) << shift;
-      if ((byte & 0x80) === 0) return result;
-    }
-    return null;
-  };
-  while (i < bytes.length) {
-    const key = varint();
-    if (key === null) return null;
-    const field = Number(key >> 3n);
-    const wire = Number(key & 7n);
-    if (field === 0) return null;
-    if (wire === 0) {
-      const value = varint();
-      if (value === null) return null;
-      out.push({ field, value });
-    } else if (wire === 2) {
-      const length = varint();
-      if (length === null || i + Number(length) > bytes.length) return null;
-      out.push({ field, value: bytes.subarray(i, i + Number(length)) });
-      i += Number(length);
-    } else if (wire === 1 || wire === 5) {
-      i += wire === 1 ? 8 : 4;
-      if (i > bytes.length) return null;
-      out.push({ field, value: null });
-    } else return null;
-  }
-  return out;
-}
-
-/**
- * A message whose fields are all singular, by number; `null` when a field number repeats,
- * so a value is never guessed between protobuf's merge and last-wins rules.
- */
-function singular(
-  bytes: Uint8Array | null,
-): Map<number, bigint | Uint8Array | null> | null {
-  const list = bytes ? fieldList(bytes) : null;
-  if (!list) return null;
-  const out = new Map<number, bigint | Uint8Array | null>();
-  for (const { field, value } of list) {
-    if (out.has(field)) return null;
-    out.set(field, value);
-  }
-  return out;
-}
-
 /**
  * The `Contract` of `Transaction.raw` bytes when there is exactly one (raw field 11; java-tron
  * requires one), else `null`. Other repeated raw fields, such as the unused `auths`, are
  * client metadata and stay readable.
  */
 function onlyContract(raw: Uint8Array): Uint8Array | null {
-  const contracts = fieldList(raw)?.filter((f) => f.field === 11) ?? [];
-  const value = contracts.length === 1 ? contracts[0]?.value : null;
-  return value instanceof Uint8Array ? value : null;
+  const contracts = wireFields(raw, 'opaque')?.filter((f) => f.field === 11) ?? [];
+  return contracts.length === 1 ? bytesOf(contracts[0]?.value) : null;
 }
-
-const bytesOf = (value: bigint | Uint8Array | null | undefined): Uint8Array | null =>
-  value instanceof Uint8Array ? value : null;
 
 /**
  * SDK-free and exact: the amount of the single TransferContract in `Transaction.raw` bytes

@@ -566,6 +566,44 @@ describe('Tron end to end', () => {
       expect(calls()).toBe(1);
     });
 
+    it('ends at a proven expiry, never failed, when a lone endpoint claims a rejection on every broadcast and relays nothing (F4-R23)', async () => {
+      const { signer, calls } = countingSigner();
+      const env = createTronEnv({ signer });
+      // It keeps every copy it is sent, relays none, and claims each invalid.
+      const held: string[] = [];
+      env.node.intercept('main', '/wallet/broadcasthex', (request) => {
+        held.push(request.body ?? '');
+        return {
+          json: {
+            result: false,
+            code: 'CONTRACT_VALIDATE_ERROR',
+            message: 'Contract validate error : Amount must be greater than 0.',
+          },
+        };
+      });
+      await expect(
+        env.run(
+          env.bc.transfer({ to: RECIPIENT, amount: 12n }, { idempotencyKey: 'liar' }),
+        ),
+      ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+      const op = await env.stores.operations.getByKey('default', 'liar');
+      expect(op?.state).toBe('stalled');
+      // The liveness half of lesson 21: the proofs end it, as expired and never as failed.
+      await expect(
+        env.mineWhile(env.bc.waitForConfirmation(op?.id ?? '', { finality: 'final' }), {
+          maxBlocks: 100,
+        }),
+      ).rejects.toMatchObject({ code: 'TX_EXPIRED' });
+      const after = await env.stores.operations.getByKey('default', 'liar');
+      expect(after?.state).toBe('expired');
+      expect(
+        await env.stores.operations.getObservation(after?.attempts[0]?.id ?? ''),
+      ).toMatchObject({ state: 'expired', evidence: 'proven' });
+      expect(held.length).toBeGreaterThanOrEqual(1);
+      expect(calls()).toBe(1);
+      expect(env.node.balance(RECIPIENT)).toBe(0n);
+    });
+
     it.each(CLAIMS)(
       "never ends the Operation on a lone endpoint's unverified claim %s: %s (lesson 21)",
       async (code, message) => {
