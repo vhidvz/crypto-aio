@@ -25,8 +25,13 @@ import {
   walletIdOf,
 } from '../../../src/adapters/ton/wallets';
 import { hang } from '../../../src/testing/fake-fetch';
-import { NODE_FEES } from './support/node';
-import { relayedBody, signedBoc, testWallet, tonNode } from './support/harness';
+import { NODE_FEES, type ScriptedTonNode } from './support/node';
+import {
+  relayedBody,
+  signedBoc,
+  testWallet,
+  tonNode as makeNode,
+} from './support/harness';
 import { KEY, PUBLIC_KEY } from './support/vectors';
 
 const TESTNET = -3;
@@ -53,6 +58,41 @@ async function get(url: string, fetchFn: typeof fetch) {
     json: (await response.json()) as Record<string, unknown>,
   };
 }
+
+/** Every node a test makes: after the test, each of its transactions is shape-checked. */
+const made: ScriptedTonNode[] = [];
+
+function tonNode(...args: Parameters<typeof makeNode>) {
+  const t = makeNode(...args);
+  made.push(t.node);
+  return t;
+}
+
+/**
+ * F6-R11, transaction.cpp: `compute_ph.success = accepted && committed`; the action phase
+ * exists exactly when the compute phase succeeded (`act`); `aborted = !(act && action
+ * succeeded)`. Every transaction the node writes has that shape.
+ */
+afterEach(() => {
+  for (const node of made.splice(0)) {
+    for (const tx of node.transactions()) {
+      const d = tx.description as {
+        aborted: boolean;
+        compute_ph: { success?: boolean };
+        action?: { success: boolean };
+      };
+      const act = d.compute_ph.success === true;
+      expect({ hash: tx.hash, action: d.action !== undefined }).toEqual({
+        hash: tx.hash,
+        action: act,
+      });
+      expect({ hash: tx.hash, aborted: d.aborted }).toEqual({
+        hash: tx.hash,
+        aborted: !(act && d.action?.success === true),
+      });
+    }
+  }
+});
 
 function setup(version: 'v4r2' | 'v5r1' = 'v4r2', options = {}) {
   const t = tonNode(options);
@@ -385,7 +425,7 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     expect(source.in_fwd_fee).toBe(Number(NODE_FEES.importFee));
   });
 
-  it('commits a W5 seqno, then aborts with 137, for a request without send mode +2', async () => {
+  it('commits a W5 seqno, then throws 137, for a request without send mode +2 (transaction.cpp)', async () => {
     const s = setup('v5r1');
     s.node.fund(s.wallet, GRAM);
     const identity = resolveIdentity({ ton: { version: 'v5r1' } }, TESTNET);
@@ -423,10 +463,31 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     s.node.mine(2);
     expect(s.node.seqno(s.wallet)).toBe(1);
     const [tx] = s.node.transactions();
-    expect(tx?.description).toMatchObject({
-      aborted: true,
-      compute_ph: { exit_code: 137 },
-    });
+    // F6-R11: `success = accepted && committed`, and the VM committed before the throw, so
+    // the compute phase succeeded with 137; the empty action list committed with the seqno
+    // then runs, and the transaction is not aborted. The indexer reports it so.
+    const [served] = (
+      await get(`${s.v3}/transactions?account=${s.wallet}&limit=1`, s.fetchFn)
+    ).json.transactions as { description: Record<string, unknown> }[];
+    for (const description of [tx?.description, served?.description]) {
+      expect(description).toEqual({
+        type: 'ord',
+        aborted: false,
+        compute_ph: { skipped: false, success: true, exit_code: 137 },
+        action: {
+          success: true,
+          valid: true,
+          no_funds: false,
+          result_code: 0,
+          tot_actions: 0,
+          skipped_actions: 0,
+          msgs_created: 0,
+        },
+      });
+    }
+    expect(tx?.totalFees).toBe(
+      NODE_FEES.importFee + NODE_FEES.gasV5 + NODE_FEES.deployGas,
+    );
     // M3: the trace is named after its root transaction.
     expect(tx?.traceId).toBe(tx?.hash);
     expect(tx?.outMsgs).toHaveLength(0);

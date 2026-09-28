@@ -809,13 +809,17 @@ export class ScriptedTonNode {
       return;
     }
     if (request.withoutIgnoreErrors) {
-      // wallet_v5.fc: `commit()` keeps the seqno, then error 137 aborts the transaction.
+      // wallet_v5.fc: `commit()` stores the next seqno with an empty action list, then the
+      // contract throws 137. transaction.cpp: `success = accepted && committed`, so the
+      // compute phase succeeded (with 137), the committed empty list runs, and the
+      // transaction is not aborted (F6-R11).
       wallet.seqno += 1;
       record(
         fees,
         {
-          aborted: true,
-          compute_ph: { skipped: false, success: false, exit_code: 137 },
+          aborted: false,
+          compute_ph: { skipped: false, success: true, exit_code: 137 },
+          action: actionPhase({ ok: true, out: [], forwardFees: 0n, skipped: 0 }, 0),
         },
         [],
       );
@@ -1032,14 +1036,10 @@ export class ScriptedTonNode {
             : aborted
               ? {}
               : {
-                  action: {
-                    success: true,
-                    valid: true,
-                    result_code: 0,
-                    skipped_actions: 0,
-                    msgs_created: out.length,
-                    tot_actions: out.length,
-                  },
+                  action: actionPhase(
+                    { ok: true, out, forwardFees: 0n, skipped: 0 },
+                    out.length,
+                  ),
                 }),
           ...(bounce ? { bounce } : {}),
         },
@@ -1784,12 +1784,16 @@ function v3Status(account: Account | undefined): V3Status {
   return account.status === 'uninitialized' ? 'uninit' : account.status;
 }
 
-/** The v3 `action` description of an action phase. */
+/**
+ * The v3 `action` description of an action phase. It exists only when the compute phase
+ * succeeded, and the transaction is aborted unless both succeeded (transaction.cpp).
+ */
 function actionPhase(actions: Actions, total: number): Record<string, unknown> {
   return actions.ok
     ? {
         success: true,
         valid: true,
+        no_funds: false,
         result_code: 0,
         tot_actions: total,
         skipped_actions: actions.skipped,
