@@ -5,6 +5,7 @@
 import { BITCOIN_CHAIN } from '../../../../src/adapters/utxo/chains';
 import { networkOf } from '../../../../src/adapters/utxo/codec';
 import type { UtxoContext } from '../../../../src/adapters/utxo/context';
+import { utxoDriverFactory } from '../../../../src/adapters/utxo/driver';
 import { EsploraClient } from '../../../../src/adapters/utxo/esplora';
 import { utxoNetworkConfig } from '../../../../src/adapters/utxo/network';
 import { EventBus } from '../../../../src/core/events/bus';
@@ -96,3 +97,17 @@ export async function utxoHarness(options: HarnessOptions = {}) {
 }
 
 export type Harness = Awaited<ReturnType<typeof utxoHarness>>;
+
+/** The whole driver from the factory, over the harness's two transports (Task 9). */
+export async function withDriver(h: Harness) {
+  return utxoDriverFactory.create({
+    chain: BITCOIN_CHAIN,
+    network: REGTEST_NETWORK,
+    library: 'bitcoinjs-lib',
+    transport: h.transport,
+    indexer: h.indexer,
+    clock: h.clock,
+    log: noopLogger,
+    options: h.options.options ?? {},
+  });
+}
