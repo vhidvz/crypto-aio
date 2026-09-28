@@ -7,7 +7,9 @@ import {
   assembleTx,
   buildTx,
   networkOf,
+  previousTxOf,
   type PlannedInput,
+  type PreviousTx,
 } from '../../../src/adapters/utxo/codec';
 import { classifyBroadcast, parseNodeError } from '../../../src/adapters/utxo/errors';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
@@ -140,7 +142,7 @@ function codecSpend(node: ScriptedEsploraNode, type: UtxoAddressType) {
       txid,
       vout: 0,
       value,
-      prevTxHex: node.transaction(txid)!.toHex(),
+      prevTx: previousTxOf(node.transaction(txid)!.toHex()) as PreviousTx,
     };
   });
   const outputs = [

@@ -15,7 +15,7 @@ import {
   isCryptoAioError,
 } from '../../core/errors/error';
 import type { HttpRequest, Transport } from '../../core/transport/types';
-import { txidOfHex } from './codec';
+import { previousTxOf, txidOfHex, type PreviousTx } from './codec';
 import type {
   EsploraAddressStats,
   EsploraBlock,
@@ -31,6 +31,11 @@ import type {
 type Json = Readonly<Record<string, unknown>>;
 
 const HEX64 = /^[0-9a-f]{64}$/;
+/**
+ * F3-R14: the previous transactions one client keeps, by count and by bytes without the
+ * witness (a larger one is not kept). A typical one is a few hundred bytes.
+ */
+export const PREVIOUS_TX_CACHE = Object.freeze({ entries: 1_000, bytes: 8_000_000 });
 /** Bitcoin Core's `MAX_MONEY`: no output, and no balance, is larger. */
 export const MAX_MONEY = 2_100_000_000_000_000n;
 
@@ -250,11 +255,27 @@ function segment(value: string, kind: 'id' | 'address'): string {
   return value;
 }
 
+/** The txid of strictly decoded transaction hex, or `undefined` (lesson 20). */
+function txidOf(hex: string): { readonly txid: string } | undefined {
+  try {
+    return { txid: txidOfHex(hex) };
+  } catch {
+    return undefined;
+  }
+}
+
 /** One Esplora endpoint family (the `rpc` transport) and its address index (`indexer`). */
 export class EsploraClient {
+  readonly #previous = new Map<string, PreviousTx>();
+  #previousBytes = 0;
+
   constructor(
     private readonly chain: Transport,
     private readonly indexer: Transport,
+    private readonly cache: {
+      readonly entries: number;
+      readonly bytes: number;
+    } = PREVIOUS_TX_CACHE,
   ) {}
 
   #get<T>(
@@ -358,39 +379,101 @@ export class EsploraClient {
   }
 
   /**
-   * The raw transaction, as hex, bound to `txid`: bytes that do not decode strictly are
+   * `/tx/:txid/hex`, decoded strictly once and bound to `txid`: bytes that do not decode are
    * malformed, and the bytes of another transaction are a retryable `PROVIDER_INCONSISTENT`,
    * so a garbled answer is never taken for the caller's error. The decoder's cap is the
-   * largest transaction a block can hold (lesson 20), never what this library builds.
+   * largest transaction a block can hold (lesson 20), never what this library builds. Under
+   * a quorum, each endpoint's answer is keyed on the txid its bytes hash to, and the answer
+   * the quorum returns is not decoded again (F3-R9 M9).
    */
-  txHex(txid: string, tags: UtxoCallTags): Promise<string | null> {
-    return this.#orNull(async () => {
-      const answer = await this.#get(
-        this.chain,
-        `/tx/${segment(txid, 'id')}/hex`,
-        '/tx/:txid/hex',
-        tags,
-        'text',
-      );
+  async #rawTx<T extends { readonly txid: string }>(
+    txid: string,
+    tags: UtxoCallTags,
+    decode: (hex: string) => T | undefined,
+  ): Promise<{ readonly hex: string; readonly tx: T }> {
+    const decoded = new Map<string, T | undefined>();
+    const read = (answer: unknown): { hex: string; tx: T | undefined } => {
       const hex = typeof answer === 'string' ? answer.trim() : '';
-      if (hex.length === 0 || !isHex(hex)) throw malformed('tx hex');
-      let id: string;
-      try {
-        // Strict: capped at the largest transaction a block holds before decoding (lesson
-        // 20), and no bytes after the transaction.
-        id = txidOfHex(hex);
-      } catch {
-        throw malformed('tx hex');
+      if (!decoded.has(hex)) {
+        decoded.set(hex, hex.length > 0 && isHex(hex) ? decode(hex) : undefined);
       }
-      if (id !== txid) {
-        throw new ProviderError(
-          'PROVIDER_INCONSISTENT',
-          'the transaction bytes do not hash to the id asked for',
-          { retryable: true },
-        );
+      return { hex, tx: decoded.get(hex) };
+    };
+    const keyed: UtxoCallTags =
+      tags.quorum === undefined
+        ? tags
+        : {
+            ...tags,
+            // A throwing key counts as a disagreement.
+            quorumKey: (answer) => {
+              const { tx } = read(answer);
+              if (!tx) throw malformed('tx hex');
+              return tx.txid;
+            },
+          };
+    const answer = await this.#get(
+      this.chain,
+      `/tx/${segment(txid, 'id')}/hex`,
+      '/tx/:txid/hex',
+      keyed,
+      'text',
+    );
+    const { hex, tx } = read(answer);
+    if (!tx) throw malformed('tx hex');
+    if (tx.txid !== txid) {
+      throw new ProviderError(
+        'PROVIDER_INCONSISTENT',
+        'the transaction bytes do not hash to the id asked for',
+        { retryable: true },
+      );
+    }
+    return { hex, tx };
+  }
+
+  /** The raw transaction, as hex, bound to `txid` (see `#rawTx`). */
+  txHex(txid: string, tags: UtxoCallTags): Promise<string | null> {
+    return this.#orNull(async () => (await this.#rawTx(txid, tags, txidOf)).hex);
+  }
+
+  /**
+   * F3-R14: an input's previous transaction, decoded once and bound to `txid` (see
+   * `#rawTx`). Its bytes authenticate themselves, so it is kept per txid, whatever endpoint
+   * served it, in a bounded cache: a replacement's inputs are read once per client.
+   */
+  async previousTx(txid: string, tags: UtxoCallTags): Promise<PreviousTx | null> {
+    const cached = this.#previous.get(txid);
+    if (cached) {
+      this.#previous.delete(txid);
+      this.#previous.set(txid, cached);
+      return cached;
+    }
+    const found = await this.#orNull(
+      async () => (await this.#rawTx(txid, tags, previousTxOf)).tx,
+    );
+    if (found) this.#remember(found);
+    return found;
+  }
+
+  #remember(tx: PreviousTx): void {
+    if (tx.bytes.length > this.cache.bytes) return;
+    const old = this.#previous.get(tx.txid);
+    if (old) {
+      this.#previous.delete(tx.txid);
+      this.#previousBytes -= old.bytes.length;
+    }
+    this.#previous.set(tx.txid, tx);
+    this.#previousBytes += tx.bytes.length;
+    // The oldest go first (a Map iterates in insertion order).
+    for (const [id, entry] of this.#previous) {
+      if (
+        this.#previous.size <= this.cache.entries &&
+        this.#previousBytes <= this.cache.bytes
+      ) {
+        break;
       }
-      return hex;
-    });
+      this.#previous.delete(id);
+      this.#previousBytes -= entry.bytes.length;
+    }
   }
 
   async outspend(

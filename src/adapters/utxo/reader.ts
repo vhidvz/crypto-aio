@@ -24,7 +24,7 @@ import {
   withSignal,
   type UtxoContext,
 } from './context';
-import { canonicalTwinTxid, txidOfHex } from './codec';
+import { canonicalTwinTxid } from './codec';
 import { decodeTransaction, observationOf } from './decode';
 import { MAX_MONEY, isHash, malformed } from './esplora';
 import type { EsploraTx, UtxoCallTags, UtxoOutputType, UtxoUnspent } from './types';
@@ -81,11 +81,11 @@ function p2pkhKeyHash(ctx: UtxoContext, from: string): Uint8Array | undefined {
 
 /**
  * C2: whether `spender` is a miner-malleated copy of our p2pkh Attempt `refId`. Its raw
- * bytes are read under `tags` and authenticate themselves: under a quorum the answers are
- * keyed on the txid they hash to, and the client refuses bytes that do not hash to
- * `spender` (a retryable `PROVIDER_INCONSISTENT`). They are then canonicalized: equality
- * with `refId` proves the same version, lock time, outpoints, sequences and outputs. Segwit
- * and taproot txids exclude the witness and cannot be malleated, so nothing is read for them.
+ * bytes are read under `tags` and authenticate themselves: under a quorum the client keys
+ * the answers on the txid they hash to, and it refuses bytes that do not hash to `spender`
+ * (a retryable `PROVIDER_INCONSISTENT`). They are then canonicalized: equality with `refId`
+ * proves the same version, lock time, outpoints, sequences and outputs. Segwit and taproot
+ * txids exclude the witness and cannot be malleated, so nothing is read for them.
  */
 export async function isOwnCopy(
   ctx: UtxoContext,
@@ -96,12 +96,7 @@ export async function isOwnCopy(
 ): Promise<boolean> {
   const keyHash = p2pkhKeyHash(ctx, from);
   if (!keyHash) return false;
-  const hex = await ctx.esplora.txHex(spender, {
-    ...tags,
-    ...(tags.quorum !== undefined
-      ? { quorumKey: (answer: unknown) => txidOfHex(String(answer).trim()) }
-      : {}),
-  });
+  const hex = await ctx.esplora.txHex(spender, tags);
   if (hex === null) {
     throw new ProviderError(
       'PROVIDER_UNAVAILABLE',

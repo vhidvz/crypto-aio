@@ -10,7 +10,9 @@ import {
   assembleTx,
   buildTx,
   networkOf,
+  previousTxOf,
   type PlannedInput,
+  type PreviousTx,
 } from '../../../src/adapters/utxo/codec';
 import type { UtxoAddressType } from '../../../src/adapters/utxo/types';
 import { tweakPrivateKey } from '../../../src/core/signing/local';
@@ -83,7 +85,7 @@ function vector(type: UtxoAddressType) {
     txid: tx.getId(),
     vout: 0,
     value: tx.outs[0]!.value,
-    ...(type === 'p2tr' ? {} : { prevTxHex: tx.toHex() }),
+    ...(type === 'p2tr' ? {} : { prevTx: previousTxOf(tx.toHex()) as PreviousTx }),
   }));
   const outputs = [
     { script: PAYEE.script, value: 100_000n },

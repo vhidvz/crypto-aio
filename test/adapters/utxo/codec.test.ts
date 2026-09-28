@@ -8,11 +8,14 @@ import {
   assembleTx,
   buildTx,
   canonicalTwinTxid,
+  isPreviousTxRefusal,
   networkOf,
+  previousTxOf,
   signaturesFromPsbt,
   txidOfHex,
   viewPsbt,
   type PlannedInput,
+  type PreviousTx,
 } from '../../../src/adapters/utxo/codec';
 import {
   bitcoin,
@@ -27,6 +30,11 @@ import type { SignatureBundle, SigningRequest } from '../../../src/core/signing/
 import { concatBytes, toHex } from '../../../src/core/util/bytes';
 import { fundingTx, malleate, nativeSigner, nativeTaprootSigner } from './support/tx';
 import { OTHER_KEY, OTHER_PUBKEY, TEST_KEY, TEST_PUBKEY } from './support/vectors';
+import { thrown } from '../../helpers';
+
+/** A previous transaction, as the Esplora client decodes it (F3-R14). */
+const previousOf = (tx: Transaction): PreviousTx =>
+  previousTxOf(tx.toHex()) as PreviousTx;
 
 const PARAMS = { bech32: 'bcrt', pubKeyHash: 0x6f, scriptHash: 0xc4 };
 const NETWORK = networkOf(PARAMS);
@@ -43,7 +51,7 @@ function setup(type: UtxoAddressType) {
     txid: tx.getId(),
     vout: 0,
     value: tx.outs[0]!.value,
-    ...(type === 'p2pkh' ? { prevTxHex: tx.toHex() } : {}),
+    ...(type === 'p2pkh' ? { prevTx: previousOf(tx) } : {}),
   }));
   const outputs = [
     { script: PAYEE.script, value: 100_000n },
@@ -197,26 +205,35 @@ describe('buildTx and assembleTx', () => {
       vout: 0,
       value: 50_000n,
     };
-    for (const prevTxHex of [other.toHex(), undefined, 'zz']) {
+    for (const prevTx of [previousOf(other), undefined]) {
       expect(() =>
         buildTx(
           NETWORK,
           wallet,
-          [{ ...input, ...(prevTxHex ? { prevTxHex } : {}) }],
+          [{ ...input, ...(prevTx ? { prevTx } : {}) }],
           [],
           SEQUENCE_RBF,
         ),
       ).toThrow(expect.objectContaining({ code: 'INVALID_INTENT' }));
     }
-    expect(() =>
-      buildTx(
-        NETWORK,
-        wallet,
-        [{ ...input, value: 60_000n, prevTxHex: funding.toHex() }],
-        [],
-        SEQUENCE_RBF,
-      ),
-    ).toThrow(expect.objectContaining({ code: 'INVALID_INTENT' }));
+    expect(previousTxOf('zz')).toBeUndefined();
+    // Another value, or an output the transaction does not have (F3-R14 (a)).
+    for (const wrong of [
+      { ...input, value: 60_000n },
+      { ...input, vout: 1, outpoint: `${funding.getId()}:1` },
+    ]) {
+      const refusal = thrown(() =>
+        buildTx(
+          NETWORK,
+          wallet,
+          [{ ...wrong, prevTx: previousOf(funding) }],
+          [],
+          SEQUENCE_RBF,
+        ),
+      );
+      expect(refusal).toMatchObject({ code: 'INVALID_INTENT' });
+      expect(isPreviousTxRefusal(refusal)).toBe(true);
+    }
   });
 
   it('carries the verified previous transaction for segwit v0 inputs (M15), never for p2tr', () => {
@@ -228,7 +245,7 @@ describe('buildTx and assembleTx', () => {
         txid: funding.getId(),
         vout: 0,
         value: 50_000n,
-        prevTxHex: funding.toHex(),
+        prevTx: previousOf(funding),
       };
       const built = buildTx(
         NETWORK,
@@ -250,7 +267,7 @@ describe('buildTx and assembleTx', () => {
               ...input,
               txid: wrongScript.getId(),
               outpoint: `${wrongScript.getId()}:0`,
-              prevTxHex: wrongScript.toHex(),
+              prevTx: previousOf(wrongScript),
             },
           ],
           [{ script: PAYEE.script, value: 40_000n }],
@@ -839,7 +856,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
     ];
     const inputs = base.inputs.map((i, index) => ({
       ...i,
-      prevTxHex: funding[index]!.toHex(),
+      prevTx: previousOf(funding[index]!),
     }));
     const built = buildTx(NETWORK, base.wallet, inputs, base.outputs, SEQUENCE_RBF);
     expect(built.digests).toEqual(base.built.digests);
@@ -1257,29 +1274,15 @@ describe('untrusted transaction hex (lesson 20)', () => {
       expect(canonicalTwinTxid(huge, keyHash)).toBeUndefined();
       const wallet = walletAddress(TEST_PUBKEY, 'p2pkh', PARAMS);
       const funding = fundingTx(wallet.script, 50_000n, 1);
-      const input = {
-        outpoint: `${funding.getId()}:0`,
-        txid: funding.getId(),
-        vout: 0,
-        value: 50_000n,
-      };
-      expect(() =>
-        buildTx(NETWORK, wallet, [{ ...input, prevTxHex: huge }], [], SEQUENCE_RBF),
-      ).toThrow(expect.objectContaining({ code: 'INVALID_INTENT' }));
-      // Nothing larger than a block reached the decoder (a new PSBT decodes an empty one).
+      expect(previousTxOf(huge)).toBeUndefined();
+      // Nothing larger than a block reached the decoder.
       expect(fromBuffer.mock.calls.filter(([bytes]) => bytes.length > 4_000_000)).toEqual(
         [],
       );
-      // A previous transaction with trailing junk is refused too, with our own error.
-      expect(() =>
-        buildTx(
-          NETWORK,
-          wallet,
-          [{ ...input, prevTxHex: `${funding.toHex()}zz` }],
-          [],
-          SEQUENCE_RBF,
-        ),
-      ).toThrow(expect.objectContaining({ code: 'INVALID_INTENT' }));
+      // A previous transaction with trailing junk does not decode either.
+      expect(previousTxOf(`${funding.toHex()}zz`)).toBeUndefined();
+      expect(previousTxOf(`${funding.toHex()}00`)).toBeUndefined();
+      expect(previousTxOf(funding.toHex())?.txid).toBe(funding.getId());
     } finally {
       fromBuffer.mockRestore();
     }

@@ -4,6 +4,9 @@
  * - `build` spends only outputs not held by another live Operation (`ctx.excludeInputs`),
  *   pays change to the wallet's change address, and records the spent outpoints as the
  *   `inputs` ordering. The fee is `exact` once built; the absurd-fee guard runs first.
+ * - Every input a build, a replacement or a cancel spends is authenticated against its
+ *   previous transaction first (F3-R14): the indexer's value and script count only when the
+ *   bytes that hash to the outpoint's txid say the same.
  * - Replacements and cancels keep EVERY input of the Attempt they replace (and may add
  *   confirmed ones), so each new Attempt conflicts with every earlier one (handoff §3:
  *   exclusion is not transitive). Neither ever raises a fee on its own: a fee below the
@@ -35,6 +38,7 @@ import type { SignatureBundle, SigningRequest } from '../../core/signing/types';
 import { dustThreshold, type DecodedAddress, type WalletAddress } from './address';
 import {
   assembleTx,
+  assertPrevious,
   buildTx,
   isPreviousTxRefusal,
   signaturesFromPsbt,
@@ -44,6 +48,7 @@ import {
   SEQUENCE_RBF,
   type BuiltTx,
   type PlannedInput,
+  type PreviousTx,
 } from './codec';
 import {
   selectCoins,
@@ -134,50 +139,18 @@ const insufficient = (
     details: { required: required.toString(), available: available.toString() },
   });
 
-/** p2pkh inputs carry their previous transaction (BIP174 `non_witness_utxo`). */
-async function withPrevTxs(
-  scope: Scope,
-  wallet: WalletAddress,
-  inputs: readonly Spendable[],
-  signal?: AbortSignal,
-): Promise<PlannedInput[]> {
-  // p2pkh needs them (D12); segwit v0 carries them for hardware wallets (M15); taproot
-  // commits to every input amount in its signature hash, so it never needs them.
-  const wanted =
-    wallet.type === 'p2pkh' ||
-    (wallet.type !== 'p2tr' && scope.ctx.config.nonWitnessUtxo);
-  if (!wanted) return [...inputs];
-  return Promise.all(
-    inputs.map(async (input) => {
-      const prevTxHex = await scope.ctx.esplora.txHex(
-        input.txid,
-        withSignal(READ, signal),
-      );
-      if (prevTxHex === null) {
-        throw new ProviderError(
-          'PROVIDER_UNAVAILABLE',
-          'the previous transaction of an input is not available',
-        );
-      }
-      return { ...input, prevTxHex };
-    }),
-  );
-}
+/** F3-R14 (M3): at most this many previous transactions are read at once for one build. */
+export const PREVIOUS_TX_READS = 4;
 
 /**
- * `buildTx`, with its refusal of a previous transaction put on the provider: the inputs'
- * outpoints and values are the indexer's, and their previous transactions are bound to their
- * txids (`txHex`), so authentic bytes that disagree with the indexer's output decide nothing
- * (retryable), never a user error.
+ * A refusal of a previous transaction put on the provider: the inputs' outpoints and values
+ * are the indexer's, and their previous transactions are bound to their txids, so authentic
+ * bytes that disagree with the indexer's output decide nothing (retryable), never a user
+ * error.
  */
-function builtFor(
-  scope: Scope,
-  wallet: WalletAddress,
-  inputs: readonly PlannedInput[],
-  outputs: readonly PlannedOutput[],
-): BuiltTx {
+function onProvider<T>(work: () => T): T {
   try {
-    return buildTx(scope.network, wallet, inputs, outputs, scope.sequence);
+    return work();
   } catch (error) {
     if (!isPreviousTxRefusal(error)) throw error;
     throw new ProviderError(
@@ -186,6 +159,76 @@ function builtFor(
       { retryable: true, cause: error },
     );
   }
+}
+
+/** The previous transaction of each txid, read at most `PREVIOUS_TX_READS` at a time. */
+async function previousTxs(
+  scope: Scope,
+  txids: readonly string[],
+  signal?: AbortSignal,
+): Promise<ReadonlyMap<string, PreviousTx>> {
+  const found = new Map<string, PreviousTx>();
+  let next = 0;
+  let failed = false;
+  const reader = async (): Promise<void> => {
+    while (!failed && next < txids.length) {
+      const txid = txids[next++] as string;
+      try {
+        const prev = await scope.ctx.esplora.previousTx(txid, withSignal(READ, signal));
+        if (prev === null) {
+          throw new ProviderError(
+            'PROVIDER_UNAVAILABLE',
+            'the previous transaction of an input is not available',
+          );
+        }
+        found.set(txid, prev);
+      } catch (error) {
+        failed = true; // the other readers stop at their next step
+        throw error;
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(PREVIOUS_TX_READS, txids.length) }, reader),
+  );
+  return found;
+}
+
+/**
+ * F3-R14: every input's value and script, authenticated against its previous transaction
+ * (all wallet types, whatever `nonWitnessUtxo` says), so the node never judges bytes built
+ * on an indexer's wrong value, and an outpoint its transaction does not have (a phantom that
+ * nothing would ever spend, so never proven dead) is never built on. p2pkh inputs carry it
+ * (D12), and segwit v0 ones while `nonWitnessUtxo` is on (M15); taproot never does: BIP341
+ * commits to every amount, and `signed-psbt.ts` refuses one on a taproot input.
+ */
+async function authenticated(
+  scope: Scope,
+  wallet: WalletAddress,
+  inputs: readonly Spendable[],
+  signal?: AbortSignal,
+): Promise<PlannedInput[]> {
+  const embed =
+    wallet.type === 'p2pkh' ||
+    (wallet.type !== 'p2tr' && scope.ctx.config.nonWitnessUtxo);
+  const txs = await previousTxs(scope, [...new Set(inputs.map((i) => i.txid))], signal);
+  return inputs.map((input) => {
+    const prevTx = txs.get(input.txid) as PreviousTx;
+    onProvider(() => assertPrevious(prevTx, input, wallet.script));
+    return embed ? { ...input, prevTx } : { ...input };
+  });
+}
+
+/** `buildTx`, with its refusal of a previous transaction put on the provider. */
+function builtFor(
+  scope: Scope,
+  wallet: WalletAddress,
+  inputs: readonly PlannedInput[],
+  outputs: readonly PlannedOutput[],
+): BuiltTx {
+  return onProvider(() =>
+    buildTx(scope.network, wallet, inputs, outputs, scope.sequence),
+  );
 }
 
 /** The unsigned transaction for a selection: PSBT, one request per input, exact fee, ordering. */
@@ -206,7 +249,7 @@ async function unsignedFor(
     selection.change > 0n
       ? [...outputs, { script: changeScript, value: selection.change }]
       : [...outputs];
-  const inputs = await withPrevTxs(scope, wallet, selection.inputs, build.signal);
+  const inputs = await authenticated(scope, wallet, selection.inputs, build.signal);
   const built = builtFor(scope, wallet, inputs, all);
   const signingRequests: SigningRequest[] = built.digests.map((digest, index) => ({
     id: `in:${index}`,

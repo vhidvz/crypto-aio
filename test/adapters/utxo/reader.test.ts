@@ -1,6 +1,7 @@
 import { walletAddress } from '../../../src/adapters/utxo/address';
 import { txidOfHex } from '../../../src/adapters/utxo/codec';
-import { READ } from '../../../src/adapters/utxo/context';
+import { PROOF, READ } from '../../../src/adapters/utxo/context';
+import { EsploraClient } from '../../../src/adapters/utxo/esplora';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
 import {
   addressCodec,
@@ -501,6 +502,88 @@ describe('raw transactions bound to the id asked for', () => {
         retryable: true,
       });
     }
+  });
+
+  it('keys a quorum on the txid the bytes hash to, and decodes each answer once (F3-R9 M9)', async () => {
+    const h = await utxoHarness({ endpoints: ['a', 'b'] });
+    const outpoint = h.node.fund(OWN.address, 100_000n);
+    const [funding] = outpoint.split(':') as [string];
+    // A segwit spend: one endpoint serves it without its witness (the same txid).
+    const spent = h.node.submit(
+      signedSpend(TEST_KEY, [[funding, 0, 100_000n]], [[PAYEE.script, 90_000n]]),
+    );
+    const full = h.node.transaction(spent)!;
+    const bare = full.clone();
+    bare.ins.forEach((_, index) => bare.setWitness(index, []));
+    // Both answers are served as they are, so only the client decodes.
+    const serve = (name: string, text: string) =>
+      h.node.intercept(name, (request) =>
+        request.url.pathname.endsWith(`/tx/${spent}/hex`) ? { text } : undefined,
+      );
+    serve('a', full.toHex());
+    const fromBuffer = jest.spyOn(bitcoin.Transaction, 'fromBuffer');
+    try {
+      for (const [text, decodes] of [
+        [`${full.toHex()}\n`, 1], // a trailing newline: the same answer once trimmed
+        [bare.toHex(), 2], // other bytes, the same txid: both decoded, once each
+      ] as const) {
+        serve('b', text);
+        fromBuffer.mockClear();
+        const hex = await h.run(h.ctx.esplora.txHex(spent, PROOF));
+        expect(fromBuffer).toHaveBeenCalledTimes(decodes);
+        expect(txidOfHex(hex as string)).toBe(spent);
+      }
+      // Another transaction's bytes never agree with ours.
+      serve('b', h.node.transaction(funding)!.toHex());
+      await expect(h.run(h.ctx.esplora.txHex(spent, PROOF))).rejects.toMatchObject({
+        retryable: true,
+      });
+    } finally {
+      fromBuffer.mockRestore();
+    }
+  });
+
+  it('keeps previous transactions per txid, oldest out first, within its bounds (F3-R14)', async () => {
+    const h = await utxoHarness();
+    const [t0, t1, t2] = [1_000n, 2_000n, 3_000n].map(
+      (value) => (h.node.fund(OWN.address, value).split(':') as [string])[0],
+    ) as [string, string, string];
+    const reads: string[] = [];
+    h.node.intercept('a', (request) => {
+      const [, , , txid, hex] = request.url.pathname.split('/');
+      if (hex === 'hex') reads.push(txid as string);
+      return undefined;
+    });
+    const readAll = async (client: EsploraClient, txids: readonly string[]) => {
+      reads.length = 0;
+      for (const txid of txids) {
+        const prev = await h.run(client.previousTx(txid, READ));
+        expect(prev?.txid).toBe(txid);
+      }
+      return [...reads];
+    };
+    // By count: two kept; a hit refreshes an entry.
+    const two = new EsploraClient(h.transport, h.indexer, {
+      entries: 2,
+      bytes: 1_000_000,
+    });
+    expect(await readAll(two, [t0, t1, t2, t2, t1, t0, t1])).toEqual([t0, t1, t2, t0]);
+    // By bytes: room for one of them only.
+    const size = (txid: string) =>
+      (h.node.transaction(txid) as { byteLength(): number }).byteLength();
+    const one = new EsploraClient(h.transport, h.indexer, {
+      entries: 10,
+      bytes: size(t0) + size(t1) - 1,
+    });
+    expect(await readAll(one, [t0, t1, t0, t1])).toEqual([t0, t1, t0, t1]);
+    // One larger than the whole budget is never kept.
+    const none = new EsploraClient(h.transport, h.indexer, {
+      entries: 10,
+      bytes: size(t0) - 1,
+    });
+    expect(await readAll(none, [t0, t0])).toEqual([t0, t0]);
+    // A 404 is `null`, and it is not kept.
+    expect(await h.run(two.previousTx('ab'.repeat(32), READ))).toBeNull();
   });
 
   it('reads a transaction as large as a block allows (a lenient reader)', async () => {

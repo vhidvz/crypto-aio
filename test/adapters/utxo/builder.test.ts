@@ -4,6 +4,7 @@ import { utf8ToBytes } from '@noble/hashes/utils';
 import { HDKey } from '@scure/bip32';
 import { walletAddress } from '../../../src/adapters/utxo/address';
 import {
+  PREVIOUS_TX_READS,
   utxoBroadcaster,
   utxoBuilder,
   utxoReplacement,
@@ -18,7 +19,7 @@ import type { SignedTx, UnsignedTx } from '../../../src/core/model/transaction';
 import type { SigningContext } from '../../../src/core/signing/types';
 import { fromHex } from '../../../src/core/util/bytes';
 import { utxoHarness, type HarnessOptions } from './support/harness';
-import { nativeSigner, signedSpend } from './support/tx';
+import { nativeSigner, nativeTaprootSigner, signedSpend } from './support/tx';
 import {
   OTHER_PUBKEY,
   REGTEST,
@@ -169,11 +170,15 @@ describe('build and assemble', () => {
         const unsigned = await h.run(
           builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx),
         );
-        // p2pkh always needs its previous transaction (D12); p2tr never (BIP341, M15).
-        const readsPrevious = type === 'p2pkh' || (nonWitnessUtxo && type !== 'p2tr');
-        expect(h.calls.some((c) => c.request.route === '/tx/:txid/hex')).toBe(
-          readsPrevious,
-        );
+        // Every input's previous transaction is read (F3-R14). p2pkh always carries it
+        // (D12), segwit v0 while M15 is on, and p2tr never (BIP341).
+        expect(h.calls.some((c) => c.request.route === '/tx/:txid/hex')).toBe(true);
+        const embeds = type === 'p2pkh' || (nonWitnessUtxo && type !== 'p2tr');
+        expect(
+          bitcoin.Psbt.fromBase64(unsigned.payload.data, {
+            network: bitcoin.networks.regtest,
+          }).data.inputs[0]?.nonWitnessUtxo !== undefined,
+        ).toBe(embeds);
         const [request] = unsigned.signingRequests;
         if (type === 'p2tr') {
           expect(request).toMatchObject({
@@ -297,6 +302,187 @@ describe('build and assemble', () => {
     h.node.clearIntercept('a');
     const { result } = await h.send(await h.make(intent(50_000n)));
     expect(result).toEqual({ kind: 'accepted' });
+  });
+
+  it('authenticates every input against its previous transaction, p2tr and M15 off included, and embeds it only for p2pkh and M15 (F3-R14)', async () => {
+    type Utxo = Record<string, unknown>;
+    const cases = [
+      ['p2tr', true],
+      ['p2wpkh', false],
+      ['p2sh-p2wpkh', false],
+    ] as const;
+    for (const [type, nonWitnessUtxo] of cases) {
+      const h = await utxoHarness({ options: { nonWitnessUtxo } });
+      const wallet = walletAddress(TEST_PUBKEY, type, REGTEST);
+      h.node.fund(wallet.address, 100_000n);
+      const builder = utxoBuilder(h.ctx, h.network);
+      const ctx = build({ from: wallet.address });
+      const i = intent(40_000n, { from: wallet.address });
+      const make = async () =>
+        h.run(builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx));
+      // A lying indexer's value: a BIP341 (p2tr) or BIP143 signature commits to it, so the
+      // node would refuse our bytes for good. It decides nothing here, before signing.
+      for (const value of [100_001, 99_999]) {
+        h.node.intercept('a', (request, _signal, honest) =>
+          request.url.pathname.endsWith('/utxo')
+            ? {
+                json: (honest() as { json: Utxo[] }).json.map((u) => ({ ...u, value })),
+              }
+            : undefined,
+        );
+        await expect(make()).rejects.toMatchObject({
+          code: 'PROVIDER_INCONSISTENT',
+          retryable: true,
+        });
+      }
+      h.node.clearIntercept('a');
+      const unsigned = await make();
+      // Read once, then kept: the bytes authenticate themselves.
+      expect(h.calls.filter((c) => c.request.route === '/tx/:txid/hex')).toHaveLength(1);
+      // Authenticated, not embedded: p2tr never carries one (signed-psbt.ts refuses it), and
+      // M15 off keeps its PSBTs as they were.
+      const psbt = bitcoin.Psbt.fromBase64(unsigned.payload.data, {
+        network: bitcoin.networks.regtest,
+      });
+      expect(psbt.data.inputs[0]?.nonWitnessUtxo).toBeUndefined();
+      expect(psbt.data.inputs[0]?.witnessUtxo?.value).toBe(100_000n);
+    }
+  });
+
+  it('never builds on an outpoint its previous transaction does not have (F3-R14 (a))', async () => {
+    type Utxo = Record<string, unknown>;
+    for (const type of ['p2tr', 'p2wpkh'] as const) {
+      const h = await utxoHarness();
+      const wallet = walletAddress(TEST_PUBKEY, type, REGTEST);
+      h.node.fund(wallet.address, 100_000n);
+      const builder = utxoBuilder(h.ctx, h.network);
+      const ctx = build({ from: wallet.address });
+      // Only both outputs pay 150,000: the phantom one is always selected.
+      const i = intent(150_000n, { from: wallet.address });
+      const make = async () =>
+        h.run(builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx));
+      const phantoms: [(utxo: Utxo) => Utxo, string][] = [
+        // An output index its transaction does not have: nothing would ever spend it, so an
+        // Attempt built on it could never be proven dead.
+        [(utxo) => ({ ...utxo, vout: 7 }), 'PROVIDER_INCONSISTENT'],
+        // A transaction the chain does not have.
+        [(utxo) => ({ ...utxo, txid: 'ab'.repeat(32) }), 'PROVIDER_UNAVAILABLE'],
+      ];
+      for (const [vary, code] of phantoms) {
+        h.node.intercept('a', (request, _signal, honest) => {
+          if (!request.url.pathname.endsWith('/utxo')) return undefined;
+          const listed = (honest() as { json: Utxo[] }).json;
+          return { json: [...listed, ...listed.map(vary)] };
+        });
+        await expect(make()).rejects.toMatchObject({ code, retryable: true });
+      }
+    }
+  });
+
+  it('authenticates the inputs a replacement adds; the ones it keeps come from the cache (F3-R14 (c))', async () => {
+    type Utxo = Record<string, unknown>;
+    const wallet = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST);
+    const h = await utxoHarness();
+    const [kept, added] = [60_000n, 30_000n].map((value) =>
+      h.node.fund(wallet.address, value),
+    ) as [string, string];
+    const builder = utxoBuilder(h.ctx, h.network);
+    const policy = utxoReplacement(h.ctx, h.network);
+    const ctx = build({ from: wallet.address });
+    const i = intent(50_000n, { from: wallet.address, fee: 'slow' });
+    const original = await h.run(
+      builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx),
+    );
+    expect(original.ordering).toEqual({ kind: 'inputs', inputs: [kept] });
+    h.calls.length = 0;
+    const replace = () =>
+      h.run(policy.buildReplacement!(original, { satPerVByte: 150n }, ctx));
+    // 150 sat/vB cannot come out of the change: the replacement adds the 30,000 output,
+    // whose value the indexer lies about.
+    h.node.intercept('a', (request, _signal, honest) =>
+      request.url.pathname.endsWith('/utxo')
+        ? {
+            json: (honest() as { json: Utxo[] }).json.map((u) =>
+              `${String(u.txid)}:${String(u.vout)}` === added
+                ? { ...u, value: 30_500 }
+                : u,
+            ),
+          }
+        : undefined,
+    );
+    await expect(replace()).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+    h.node.clearIntercept('a');
+    const replacement = await replace();
+    expect(replacement.ordering).toEqual({
+      kind: 'inputs',
+      inputs: [kept, added].sort(),
+    });
+    const reads = h.calls
+      .filter((c) => c.request.route === '/tx/:txid/hex')
+      .map((c) => c.request.path);
+    // The kept input's previous transaction was read for the original; the added one's once.
+    expect(reads).toEqual([`/tx/${added.split(':')[0]}/hex`]);
+  });
+
+  it('reads previous transactions a few at a time, and each once per client (F3-R14 (d), M3)', async () => {
+    const h = await funded(
+      Array.from({ length: 12 }, () => 10_000n),
+      { options: { coinSelection: 'all' } },
+    );
+    let open = 0;
+    let most = 0;
+    const reads: string[] = [];
+    h.node.intercept('a', async (request) => {
+      if (!request.url.pathname.endsWith('/hex')) return undefined;
+      reads.push(request.url.pathname);
+      open++;
+      most = Math.max(most, open);
+      await h.clock.sleep(10);
+      open--;
+      return undefined;
+    });
+    const unsigned = await h.make(intent(50_000n));
+    expect(unsigned.fee.details).toMatchObject({ inputs: 12 });
+    expect(reads).toHaveLength(12);
+    expect(most).toBe(PREVIOUS_TX_READS);
+    reads.length = 0;
+    await h.make(intent(60_000n));
+    expect(reads).toHaveLength(0);
+  });
+
+  it('keeps a cold-signed p2tr PSBT acceptable: its previous transactions are read, never embedded (F3-R14 (b))', async () => {
+    const h = await utxoHarness();
+    const wallet = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST);
+    h.node.fund(wallet.address, 60_000n);
+    h.node.fund(wallet.address, 70_000n);
+    const builder = utxoBuilder(h.ctx, h.network);
+    const ctx = build({ from: wallet.address });
+    const i = intent(100_000n, { from: wallet.address });
+    const unsigned = await h.run(
+      builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx),
+    );
+    expect(h.calls.filter((c) => c.request.route === '/tx/:txid/hex')).toHaveLength(2);
+    const psbt = bitcoin.Psbt.fromBase64(unsigned.payload.data, {
+      network: bitcoin.networks.regtest,
+    });
+    expect(psbt.data.inputs.map((input) => input.nonWitnessUtxo)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    psbt.signAllInputs(nativeTaprootSigner(TEST_KEY, wallet.tweak as Uint8Array));
+    const bundles = builder.signaturesFrom(unsigned, {
+      encoding: 'base64',
+      data: psbt.toBase64(),
+    });
+    expect(bundles.map((b) => b.requestId)).toEqual(['in:0', 'in:1']);
+    const signed = await h.run(builder.assemble(unsigned, bundles));
+    expect(signed.ref).toEqual(unsigned.expectedRef);
+    expect(await h.run(utxoBroadcaster(h.ctx).broadcast(signed))).toEqual({
+      kind: 'accepted',
+    });
   });
 
   it('decides nothing on a listing worth more than every bitcoin (review M1)', async () => {

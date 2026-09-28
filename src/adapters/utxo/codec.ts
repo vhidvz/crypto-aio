@@ -31,13 +31,25 @@ export { SIGHASH_ALL, SIGHASH_DEFAULT } from './signed-psbt';
 export const SEQUENCE_RBF = 0xfffffffd;
 export const SEQUENCE_FINAL_LOCKTIME = 0xfffffffe;
 
+/**
+ * A previous transaction, decoded strictly once (F3-R14, F3-R7): its txid, its outputs, and
+ * its bytes without the witness (Bitcoin Core's `TX_NO_WITNESS` form, which BIP174
+ * `non_witness_utxo` carries). Only `previousTxOf` makes one, so its txid is the hash of its
+ * bytes: they authenticate themselves.
+ */
+export interface PreviousTx {
+  readonly txid: string;
+  readonly outputs: readonly { readonly value: bigint; readonly script: Uint8Array }[];
+  readonly bytes: Uint8Array;
+}
+
 export interface PlannedInput extends Spendable {
   /**
-   * The full previous transaction (BIP174 `non_witness_utxo`), txid-checked: required for
-   * p2pkh, and added for segwit v0 so hardware wallets can check the input amounts (D12).
-   * The PSBT carries it without its witness, as Bitcoin Core writes it.
+   * The previous transaction to carry in the PSBT (BIP174 `non_witness_utxo`), checked
+   * against the input's outpoint, value and script: required for p2pkh, and added for segwit
+   * v0 so hardware wallets can check the input amounts (D12). Never on p2tr.
    */
-  readonly prevTxHex?: string;
+  readonly prevTx?: PreviousTx;
 }
 
 export interface BuiltTx {
@@ -69,13 +81,45 @@ const txidBytes = (txid: string): Uint8Array => fromHex(txid).reverse();
  * transaction (bitcoinjs' own `fromHex` stops quietly at the first non-hex character).
  */
 function decodeTxHex(hex: string): Transaction | undefined {
+  return decodeTxBytes(hex)?.tx;
+}
+
+function decodeTxBytes(
+  hex: string,
+): { readonly tx: Transaction; readonly raw: Uint8Array } | undefined {
   if (typeof hex !== 'string' || hex.length > 2 * MAX_TX_BYTES) return undefined;
   if (hex.length % 2 !== 0 || !HEX.test(hex)) return undefined;
   try {
-    return bitcoin.Transaction.fromBuffer(fromHex(hex));
+    const raw = fromHex(hex);
+    return { tx: bitcoin.Transaction.fromBuffer(raw), raw };
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Untrusted transaction hex (a node's answer) as a previous transaction, decoded strictly
+ * once (lesson 20: capped before decoding); `undefined` when it does not decode.
+ */
+export function previousTxOf(hex: string): PreviousTx | undefined {
+  const decoded = decodeTxBytes(hex);
+  if (!decoded) return undefined;
+  const { tx, raw } = decoded;
+  let bytes = raw;
+  if (tx.hasWitnesses()) {
+    const bare = tx.clone();
+    bare.ins.forEach((_, index) => bare.setWitness(index, []));
+    bytes = bare.toBuffer();
+  }
+  return {
+    txid: tx.getId(),
+    // Copies: a cached previous transaction keeps no view of the bytes with the witness.
+    outputs: tx.outs.map((output) => ({
+      value: output.value,
+      script: Uint8Array.from(output.script),
+    })),
+    bytes,
+  };
 }
 
 /**
@@ -111,45 +155,36 @@ function assertEncodable(
   }
 }
 
-const PREVIOUS_UNDECODABLE = 'a previous transaction does not decode';
 const PREVIOUS_MISMATCH = 'a previous transaction does not match its outpoint';
 
 /**
- * Whether `error` is `buildTx`'s refusal of an input's previous transaction (`prevTxHex`):
- * bytes that do not decode, or bytes whose output disagrees with the input's txid, value or
- * script. A caller that read those from a provider maps it to the provider.
+ * Whether `error` is `assertPrevious`'s refusal: a previous transaction whose output
+ * disagrees with the input's txid, value or script, or that has no such output. A caller
+ * that read those from a provider maps it to the provider.
  */
 export function isPreviousTxRefusal(error: unknown): boolean {
-  return (
-    isCryptoAioError(error, 'INVALID_INTENT') &&
-    (error.message === PREVIOUS_UNDECODABLE || error.message === PREVIOUS_MISMATCH)
-  );
+  return isCryptoAioError(error, 'INVALID_INTENT') && error.message === PREVIOUS_MISMATCH;
 }
 
 /**
- * Checks a previous transaction's bytes against the outpoint, value and script it funds,
- * and returns them without the witness for BIP174 `non_witness_utxo`: Bitcoin Core's form
- * (TX_NO_WITNESS), and smaller. The txid, which is all that authenticates them, is the same.
+ * F3-R14: an input is what its previous transaction says: `prev` is the outpoint's
+ * transaction (its txid, which the bytes hash to), and it has the output, with the input's
+ * value and the wallet's script. Otherwise `INVALID_INTENT` (`isPreviousTxRefusal`).
  */
-function assertPrevious(
-  prevTxHex: string,
+export function assertPrevious(
+  prev: PreviousTx,
   input: Spendable,
   script: Uint8Array,
-): Uint8Array {
-  const prev = decodeTxHex(prevTxHex);
-  if (!prev) throw new ValidationError('INVALID_INTENT', PREVIOUS_UNDECODABLE);
-  const output = prev.outs[input.vout];
+): void {
+  const output = prev.outputs[input.vout];
   if (
-    prev.getId() !== input.txid ||
+    prev.txid !== input.txid ||
     !output ||
     output.value !== input.value ||
     !equalBytes(output.script, script)
   ) {
     throw new ValidationError('INVALID_INTENT', PREVIOUS_MISMATCH);
   }
-  const bare = prev.clone();
-  bare.ins.forEach((_, index) => bare.setWitness(index, []));
-  return bare.toBuffer();
 }
 
 /**
@@ -175,16 +210,14 @@ export function buildTx(
   psbt.setVersion(2);
   psbt.setLocktime(0);
   for (const input of inputs) {
-    if (wallet.type === 'p2pkh' && input.prevTxHex === undefined) {
+    if (wallet.type === 'p2pkh' && input.prevTx === undefined) {
       throw new ValidationError(
         'INVALID_INTENT',
         'a p2pkh input needs its verified previous transaction',
       );
     }
-    const prevTx =
-      input.prevTxHex !== undefined
-        ? assertPrevious(input.prevTxHex, input, wallet.script)
-        : undefined;
+    if (input.prevTx !== undefined) assertPrevious(input.prevTx, input, wallet.script);
+    const prevTx = input.prevTx?.bytes;
     psbt.addInput({
       hash: input.txid,
       index: input.vout,

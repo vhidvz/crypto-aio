@@ -181,10 +181,10 @@ const isCoinbase = (tx: TxBytes): boolean =>
  * bitcoind's reasons the bytes alone decide (`CheckTransaction`, and ATMP's `coinbase`), each
  * as bitcoind tests it. The others (`bad-txns-in-belowout`, `-inputvalues-outofrange`,
  * `-fee-outofrange` and every script check) depend on the spent outputs, and have no rule: the
- * builder pays from values the previous transactions authenticate (M15, on by default) and the
- * core verifies every signature, so they cannot hold for our own bytes, and a node that claims
- * one is not believed. (With `nonWitnessUtxo` off, a lying indexer's value makes the bytes
- * invalid for real; they are then refused, never rejected: liveness only, never a payment.)
+ * builder spends only outputs whose value and script their previous transaction authenticates
+ * (every input, every wallet type, whatever `nonWitnessUtxo` says: F3-R14), and the core
+ * verifies every signature, so they cannot hold for our own bytes, and a node that claims one
+ * is not believed.
  */
 const BYTE_RULES: Readonly<Record<string, (tx: TxBytes) => boolean>> = {
   'bad-txns-vin-empty': (tx) => tx.inputs.length === 0,
