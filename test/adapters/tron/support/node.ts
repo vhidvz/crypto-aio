@@ -139,14 +139,20 @@ export interface WireFields {
   readonly feeLimit: bigint;
   readonly refBlockNum: bigint;
   readonly callValue: bigint;
+  /** `TriggerSmartContract.call_token_value` and `token_id` (TRC-10). */
+  readonly callTokenValue: bigint;
+  readonly tokenId: bigint;
   readonly permissionId: bigint;
 }
 
 export interface StoredTx {
   readonly id: string;
+  /** `getRawData().toByteArray()`: the raw data re-serialized, which the txID hashes. */
   readonly rawHex: string;
   readonly raw: TronRawData;
   readonly wire: WireFields;
+  /** How many contracts the raw data holds (java-tron includes only exactly one). */
+  readonly contracts: number;
   readonly signatures: readonly string[];
   /** The serialized size without `ret`, as java-tron counts it. */
   readonly size: bigint;
@@ -183,6 +189,15 @@ const expired = () => new Refusal('TRANSACTION_EXPIRATION_ERROR', 'Transaction e
 const insufficient = () =>
   new Refusal('BANDWITH_ERROR', 'Account resource insufficient error.');
 
+const emptyAccount = (): Account => ({
+  balance: 0n,
+  freeNetUsed: 0n,
+  stakedNet: 0n,
+  netUsed: 0n,
+  stakedEnergy: 0n,
+  energyUsed: 0n,
+});
+
 const cloneState = (state: State): State => ({
   accounts: new Map([...state.accounts].map(([k, v]) => [k, { ...v }])),
   tokens: new Map(
@@ -209,13 +224,49 @@ function exactJson(value: unknown): string {
 export interface WireExtras {
   /** `TriggerSmartContract.call_value` (field 3), sun; negative is written as int64. */
   readonly callValue?: bigint;
+  /** `TriggerSmartContract.call_token_value` (field 5), a TRC-10 amount. */
+  readonly callTokenValue?: bigint;
+  /** `TriggerSmartContract.token_id` (field 6), a TRC-10 id. */
+  readonly tokenId?: bigint;
   /** `Transaction.Contract.Permission_id` (field 5). */
   readonly permissionId?: number;
   /** `Transaction.raw.ref_block_num` (field 3). */
   readonly refBlockNum?: bigint;
   /** `Transaction.raw.timestamp` (field 14), exact; replaces `raw.timestamp`. */
   readonly timestamp?: bigint;
+  /** Contracts after the first (java-tron refuses more than one). */
+  readonly moreContracts?: readonly TronContract[];
 }
+
+/** One `Transaction.Result` (`ret`, field 5 of `Transaction`): enum values as numbers. */
+export interface WireResult {
+  readonly fee?: bigint;
+  /** `code`: 0 SUCESS, 1 FAILED. */
+  readonly ret?: number;
+  /** `contractResult`: 1 SUCCESS, 2 REVERT, 10 OUT_OF_ENERGY, … */
+  readonly contractRet?: number;
+}
+
+/** `Transaction.Result` enum names (Tron.proto), as `JsonFormat` prints them. */
+const RESULT_CODES = ['SUCESS', 'FAILED'];
+const CONTRACT_RESULTS = [
+  'DEFAULT',
+  'SUCCESS',
+  'REVERT',
+  'BAD_JUMP_DESTINATION',
+  'OUT_OF_MEMORY',
+  'PRECOMPILED_CONTRACT',
+  'STACK_TOO_SMALL',
+  'STACK_TOO_LARGE',
+  'ILLEGAL_OPERATION',
+  'STACK_OVERFLOW',
+  'OUT_OF_ENERGY',
+  'OUT_OF_TIME',
+  'JVM_STACK_OVER_FLOW',
+  'UNKNOWN',
+  'TRANSFER_FAILED',
+  'INVALID_CODE',
+];
 
 function wireVarint(value: bigint): number[] {
   let v = value < 0n ? value + INT64_SPAN : value;
@@ -237,13 +288,14 @@ const wireBytes = (field: number, value: Uint8Array): number[] =>
   value.length === 0
     ? []
     : [...wireTag(field, 2), ...wireVarint(BigInt(value.length)), ...value];
+/** An entry of a repeated message field: written even when empty. */
+const wireEntry = (field: number, value: Uint8Array | readonly number[]): number[] => [
+  ...wireTag(field, 2),
+  ...wireVarint(BigInt(value.length)),
+  ...value,
+];
 
-/**
- * `Transaction.raw` bytes with the extras java-tron accepts, in field order (canonical):
- * without extras, the test codec's `encodeRawData` bytes.
- */
-export function encodeWireRaw(raw: TronRawData, extras: WireExtras = {}): string {
-  const c = raw.contract;
+function contractBytes(c: TronContract, extras: WireExtras): number[] {
   const value =
     c.type === 'TransferContract'
       ? [
@@ -256,16 +308,26 @@ export function encodeWireRaw(raw: TronRawData, extras: WireExtras = {}): string
           ...wireBytes(2, fromHex(c.contract)),
           ...wireInt(3, extras.callValue ?? 0n),
           ...wireBytes(4, fromHex(c.data)),
+          ...wireInt(5, extras.callTokenValue ?? 0n),
+          ...wireInt(6, extras.tokenId ?? 0n),
         ];
   const any = [
     ...wireBytes(1, utf8ToBytes(`type.googleapis.com/protocol.${c.type}`)),
     ...wireBytes(2, Uint8Array.from(value)),
   ];
-  const contract = [
+  return [
     ...wireInt(1, c.type === 'TransferContract' ? 1n : 31n),
     ...wireBytes(2, Uint8Array.from(any)),
     ...wireInt(5, BigInt(extras.permissionId ?? 0)),
   ];
+}
+
+/**
+ * `Transaction.raw` bytes with the extras java-tron accepts, in field order (canonical):
+ * without extras, the test codec's `encodeRawData` bytes. The extras of a contract apply to
+ * the first one only.
+ */
+export function encodeWireRaw(raw: TronRawData, extras: WireExtras = {}): string {
   return toHex(
     Uint8Array.from([
       ...wireBytes(1, fromHex(raw.refBlockBytes)),
@@ -273,9 +335,31 @@ export function encodeWireRaw(raw: TronRawData, extras: WireExtras = {}): string
       ...wireBytes(4, fromHex(raw.refBlockHash)),
       ...wireInt(8, BigInt(raw.expiration)),
       ...(raw.data !== undefined ? wireBytes(10, fromHex(raw.data)) : []),
-      ...wireBytes(11, Uint8Array.from(contract)),
+      ...wireEntry(11, contractBytes(raw.contract, extras)),
+      ...(extras.moreContracts ?? []).flatMap((c) => wireEntry(11, contractBytes(c, {}))),
       ...wireInt(14, extras.timestamp ?? BigInt(raw.timestamp)),
       ...(raw.feeLimit !== undefined ? wireInt(18, BigInt(raw.feeLimit)) : []),
+    ]),
+  );
+}
+
+/** A signed `Transaction` with `ret` entries (field 5), which java-tron parses and clears. */
+export function encodeWireTransaction(
+  rawHex: string,
+  signatures: readonly string[],
+  results: readonly WireResult[] = [],
+): string {
+  return toHex(
+    Uint8Array.from([
+      ...wireBytes(1, fromHex(rawHex)),
+      ...signatures.flatMap((s) => wireEntry(2, fromHex(s))),
+      ...results.flatMap((r) =>
+        wireEntry(5, [
+          ...wireInt(1, r.fee ?? 0n),
+          ...wireInt(2, BigInt(r.ret ?? 0)),
+          ...wireInt(3, BigInt(r.contractRet ?? 0)),
+        ]),
+      ),
     ]),
   );
 }
@@ -283,8 +367,11 @@ export function encodeWireRaw(raw: TronRawData, extras: WireExtras = {}): string
 type WireValue = bigint | Uint8Array;
 type Message = Map<number, WireValue[]>;
 
-/** One protobuf message (wire types 0 and 2 only); anything else throws. */
-function readMessage(data: Uint8Array, allowed: readonly number[]): Message {
+/**
+ * One protobuf message (wire types 0 and 2 only); any other wire type, and a field outside
+ * `allowed` (null: any field), throws.
+ */
+function readMessage(data: Uint8Array, allowed: readonly number[] | null): Message {
   const out: Message = new Map();
   let i = 0;
   const varint = (): bigint => {
@@ -301,7 +388,9 @@ function readMessage(data: Uint8Array, allowed: readonly number[]): Message {
     const key = varint();
     const field = Number(key >> 3n);
     const wire = Number(key & 7n);
-    if (!allowed.includes(field)) throw new TypeError(`unexpected field ${field}`);
+    if (field === 0 || (allowed !== null && !allowed.includes(field))) {
+      throw new TypeError(`unexpected field ${field}`);
+    }
     let value: WireValue;
     if (wire === 0) value = varint();
     else if (wire === 2) {
@@ -342,8 +431,11 @@ interface ContractEntry {
 
 /** What the node reads from a signed transaction. */
 interface Signed {
+  /** The raw data re-serialized (`getRawData().toByteArray()`), or as sent when unread. */
   readonly rawHex: string;
   readonly signatures: readonly string[];
+  /** The input's `ret` entries, which java-tron parses, echoes and then clears. */
+  readonly results: readonly Message[];
   /** The raw data's fields, or null when the node does not model them. */
   readonly fields: Message | null;
   readonly contracts: readonly ContractEntry[];
@@ -365,6 +457,37 @@ function readContract(bytes: WireValue): ContractEntry {
   };
 }
 
+/**
+ * The raw data as protobuf-java re-serializes it: fields in number order, defaults left
+ * out, minimal varints. `Any.value` is opaque bytes and stays as sent.
+ */
+function canonicalRaw(fields: Message, contracts: readonly ContractEntry[]): string {
+  return toHex(
+    Uint8Array.from([
+      ...wireBytes(1, bytesOf(fields, 1)),
+      ...wireInt(3, int64Of(fields, 3)),
+      ...wireBytes(4, bytesOf(fields, 4)),
+      ...wireInt(8, int64Of(fields, 8)),
+      ...wireBytes(10, bytesOf(fields, 10)),
+      ...contracts.flatMap((c) =>
+        wireEntry(11, [
+          ...wireInt(1, c.type),
+          ...wireBytes(
+            2,
+            Uint8Array.from([
+              ...wireBytes(1, utf8ToBytes(c.typeUrl)),
+              ...wireBytes(2, c.value),
+            ]),
+          ),
+          ...wireInt(5, c.permissionId),
+        ]),
+      ),
+      ...wireInt(14, int64Of(fields, 14)),
+      ...wireInt(18, int64Of(fields, 18)),
+    ]),
+  );
+}
+
 function model(
   fields: Message,
   entry: ContractEntry,
@@ -373,6 +496,8 @@ function model(
   if (!type || entry.typeUrl !== `type.googleapis.com/protocol.${type}`) return null;
   let contract: TronContract;
   let callValue = 0n;
+  let callTokenValue = 0n;
+  let tokenId = 0n;
   try {
     if (type === 'TransferContract') {
       const value = readMessage(entry.value, [1, 2, 3]);
@@ -383,7 +508,7 @@ function model(
         amount: int64Of(value, 3),
       };
     } else {
-      const value = readMessage(entry.value, [1, 2, 3, 4]);
+      const value = readMessage(entry.value, [1, 2, 3, 4, 5, 6]);
       contract = {
         type,
         owner: toHex(bytesOf(value, 1)),
@@ -391,6 +516,8 @@ function model(
         data: toHex(bytesOf(value, 4)),
       };
       callValue = int64Of(value, 3);
+      callTokenValue = int64Of(value, 5);
+      tokenId = int64Of(value, 6);
     }
   } catch {
     return null;
@@ -401,6 +528,8 @@ function model(
     feeLimit: int64Of(fields, 18),
     refBlockNum: int64Of(fields, 3),
     callValue,
+    callTokenValue,
+    tokenId,
     permissionId: entry.permissionId,
   };
   const memo = bytesOf(fields, 10);
@@ -422,39 +551,54 @@ function model(
 function decodeSigned(hex: unknown): Signed {
   let rawBytes: Uint8Array;
   let signatures: string[];
+  let results: Message[];
   try {
     if (typeof hex !== 'string' || !/^(?:[0-9a-fA-F]{2})*$/.test(hex)) {
       throw new TypeError('not hex');
     }
     // `Transaction { raw_data = 1; repeated signature = 2; repeated ret = 5 }`; `ret` is
-    // cleared at admission (`resetResult`) and never counted.
+    // echoed, then cleared at admission (`resetResult`) and never counted.
     const tx = readMessage(fromHex(hex), [1, 2, 5]);
     rawBytes = bytesOf(tx, 1);
-    signatures = (tx.get(2) ?? []).map((s) => {
-      if (!(s instanceof Uint8Array)) throw new TypeError('wrong wire type');
-      return toHex(s);
-    });
+    const entries = (field: number) =>
+      (tx.get(field) ?? []).map((v) => {
+        if (!(v instanceof Uint8Array)) throw new TypeError('wrong wire type');
+        return v;
+      });
+    signatures = entries(2).map((s) => toHex(s));
+    results = entries(5).map((r) => readMessage(r, null));
   } catch {
     throw new Unparseable();
   }
-  const rawHex = toHex(rawBytes);
   try {
     const fields = readMessage(rawBytes, [1, 3, 4, 8, 10, 11, 14, 18]);
     const contracts = (fields.get(11) ?? []).map(readContract);
     const first = contracts[0];
     return {
-      rawHex,
+      rawHex: canonicalRaw(fields, contracts),
       signatures,
+      results,
       fields,
       contracts,
       model: first ? model(fields, first) : null,
     };
   } catch {
-    return { rawHex, signatures, fields: null, contracts: [], model: null };
+    return {
+      rawHex: toHex(rawBytes),
+      signatures,
+      results,
+      fields: null,
+      contracts: [],
+      model: null,
+    };
   }
 }
 
-/** `JsonFormat.printToString(transaction, true)`: every bytes field of these messages is hex. */
+/**
+ * `JsonFormat.printToString(transaction, true)` of the parsed input: every bytes field of
+ * these messages is hex, and `ret` is kept (its fee, ret and contractRet; the node prints no
+ * other `Result` field).
+ */
 function echo(signed: Signed): string {
   const f = signed.fields;
   const raw =
@@ -482,9 +626,21 @@ function echo(signed: Signed): string {
             ...omitZero('fee_limit', int64Of(f, 18)),
           },
         };
+  const name = (names: readonly string[], value: bigint): string =>
+    names[Number(value)] ?? value.toString();
+  const results = signed.results.map((r) => {
+    const code = int64Of(r, 2);
+    const contractRet = int64Of(r, 3);
+    return {
+      ...omitZero('fee', int64Of(r, 1)),
+      ...(code !== 0n ? { ret: name(RESULT_CODES, code) } : {}),
+      ...(contractRet !== 0n ? { contractRet: name(CONTRACT_RESULTS, contractRet) } : {}),
+    };
+  });
   return exactJson({
     ...raw,
     ...(signed.signatures.length > 0 ? { signature: signed.signatures } : {}),
+    ...(results.length > 0 ? { ret: results } : {}),
   });
 }
 
@@ -557,14 +713,7 @@ export class ScriptedTronNode {
     const accounts = this.#last.state.accounts;
     let account = accounts.get(hex);
     if (!account) {
-      account = {
-        balance: 0n,
-        freeNetUsed: 0n,
-        stakedNet: 0n,
-        netUsed: 0n,
-        stakedEnergy: 0n,
-        energyUsed: 0n,
-      };
+      account = emptyAccount();
       accounts.set(hex, account);
     }
     return account;
@@ -636,10 +785,17 @@ export class ScriptedTronNode {
   }
 
   /**
-   * Puts a foreign transaction (any signed Transfer or TriggerSmartContract, a call value,
-   * a permission id or several signatures included) into the next mined block as is: the
-   * node neither validates nor executes it, so no state changes. Its receipt is `result`
-   * with no fee and no logs. Returns its txID; throws for bytes the node does not model.
+   * Puts a foreign transaction (a signed Transfer or TriggerSmartContract, with a call value,
+   * TRC-10 fields, a permission id or several signatures) into the next mined block. It is
+   * never for driver-built transactions: those go through `/wallet/broadcasthex`.
+   * - At mining, the node applies java-tron's checks that need no key (exactly one
+   *   contract, TaPoS, the size and the expiration against the parent, 1 to 5 signatures,
+   *   41… addresses, a positive TRX amount) and drops a transaction that fails them, as a
+   *   transaction whose reference block a reorg orphaned.
+   * - It verifies no signature and charges no fee. A SUCCESS TRX transfer moves its amount
+   *   (the sender must hold it), so the recipient exists; a contract call changes nothing.
+   * - Its receipt is `result`, with no fee and no logs.
+   * Returns its txID; throws for bytes the node does not model and for a known txID.
    */
   place(hex: string, result: PlacedResult = 'SUCCESS'): string {
     let signed: Signed;
@@ -648,8 +804,8 @@ export class ScriptedTronNode {
     } catch {
       throw new Error('place: not a signed transaction');
     }
-    if (!signed.model || signed.contracts.length !== 1) {
-      throw new Error('place: one Transfer or TriggerSmartContract only');
+    if (!signed.model) {
+      throw new Error('place: a Transfer or TriggerSmartContract only');
     }
     if (
       result === 'REVERT' &&
@@ -716,6 +872,7 @@ export class ScriptedTronNode {
     this.#pool.push(...keep);
     if (options.include !== false) {
       for (const tx of this.#placed.splice(0)) {
+        if (!this.#placeInBlock(tx, parent, state)) continue;
         tx.receipt = {
           contractRet: this.#foreign.get(tx.id) ?? 'SUCCESS',
           fee: 0n,
@@ -777,6 +934,31 @@ export class ScriptedTronNode {
     return number.toString(16).padStart(16, '0') + digest.slice(16);
   }
 
+  /**
+   * java-tron's checks of a block's transaction that need no key; then a SUCCESS TRX
+   * transfer's amount moves (no fee). False drops `tx`.
+   */
+  #placeInBlock(tx: StoredTx, parent: Block, state: State): boolean {
+    const count = tx.signatures.length;
+    if (tx.contracts !== 1 || count < 1 || count > TOTAL_SIGN_NUM) return false;
+    try {
+      this.#checkCommon(tx, parent, true);
+    } catch {
+      return false;
+    }
+    const c = tx.raw.contract;
+    if (!ADDRESS.test(c.owner)) return false;
+    if (c.type === 'TriggerSmartContract') return ADDRESS.test(c.contract);
+    if (!ADDRESS.test(c.to) || c.to === c.owner || c.amount <= 0n) return false;
+    const owner = state.accounts.get(c.owner);
+    if (!owner || owner.balance < c.amount) return false;
+    owner.balance -= c.amount;
+    const to = state.accounts.get(c.to) ?? emptyAccount();
+    to.balance += c.amount;
+    state.accounts.set(c.to, to);
+    return true;
+  }
+
   #known(id: string): boolean {
     return (
       this.inPool(id) || this.#placed.some((tx) => tx.id === id) || !!this.transaction(id)
@@ -790,6 +972,7 @@ export class ScriptedTronNode {
       rawHex: signed.rawHex,
       raw: read.raw,
       wire: read.wire,
+      contracts: signed.contracts.length,
       signatures: signed.signatures,
       size,
       bytes: size + MAX_RESULT_SIZE,
@@ -950,14 +1133,7 @@ export class ScriptedTronNode {
         throw invalid('Validate TransferContract error, balance is not sufficient.');
       }
       owner.balance -= contract.amount + systemFee;
-      const to = state.accounts.get(contract.to) ?? {
-        balance: 0n,
-        freeNetUsed: 0n,
-        stakedNet: 0n,
-        netUsed: 0n,
-        stakedEnergy: 0n,
-        energyUsed: 0n,
-      };
+      const to = state.accounts.get(contract.to) ?? emptyAccount();
       to.balance += contract.amount;
       state.accounts.set(contract.to, to);
       return {
@@ -971,11 +1147,23 @@ export class ScriptedTronNode {
       };
     }
     // VMActuator.call: the contract, the call value, the fee limit, the energy limit, then
-    // the call value's transfer (MUtil.transfer), all before execution.
+    // the call value's transfer (MUtil.transfer) and the TRC-10 one (MUtil.transferToken),
+    // all before execution.
     const token = state.tokens.get(contract.contract);
     if (!token) throw invalid('No contract or not a smart contract');
     const callValue = tx.wire.callValue;
+    const { callTokenValue, tokenId } = tx.wire;
     if (callValue < 0n) throw invalid('callValue must be >= 0');
+    if (callTokenValue < 0n) throw invalid('tokenValue must be >= 0');
+    // checkTokenValueAndId (VMConstant.MIN_TOKEN_ID = 1,000,000).
+    if (tokenId <= 1_000_000n && tokenId !== 0n) {
+      throw invalid('tokenId must be > 1000000');
+    }
+    if (callTokenValue > 0n && tokenId === 0n) {
+      throw invalid(
+        `invalid arguments with tokenValue = ${callTokenValue}, tokenId = ${tokenId}`,
+      );
+    }
     const feeLimit = tx.wire.feeLimit;
     if (feeLimit < 0n || feeLimit > this.params.getMaxFeeLimit) {
       throw invalid(`feeLimit must be >= 0 and <= ${this.params.getMaxFeeLimit}`);
@@ -987,6 +1175,8 @@ export class ScriptedTronNode {
     if (owner.balance < callValue) {
       throw invalid('Validate InternalTransfer error, balance is not sufficient.');
     }
+    // VMUtils.validateForSmartContract (TRC-10): the node issues no TRC-10 asset.
+    if (callTokenValue > 0n) throw invalid('No asset !');
     // The node's tokens are not payable, so a call with a value reverts and returns it.
     const call = this.#tokenCall(
       contract.contract,
@@ -1213,23 +1403,28 @@ export class ScriptedTronNode {
     return { head, solid: Math.max(0, head - this.#solidDepth) };
   }
 
-  /** proto3 JSON (`JsonFormat`) drops default values: block 0 has no `number`. */
+  /**
+   * proto3 JSON (`JsonFormat`) drops default values. java-tron builds block 0 from config
+   * (`BlockUtil.newGenesisBlockCapsule`; mainnet `timestamp = "0"`, config.conf:399) with
+   * number 0, no version and no witness signature, so its header serves none of the four.
+   * The node keeps block 0's own slot time for its rules (TaPoS, expiration).
+   */
   #header(block: Block): Record<string, unknown> {
+    const genesis = block.number === 0;
     return {
       blockID: block.id,
       block_header: {
         raw_data: {
-          ...(block.number > 0 ? { number: block.number } : {}),
+          ...(genesis ? {} : { number: block.number }),
           txTrieRoot:
             block.txs.length === 0
               ? '0'.repeat(64)
               : toHex(sha256(utf8ToBytes(block.id))),
           witness_address: '41' + 'ab'.repeat(20),
           parentHash: block.parentId,
-          version: 32,
-          timestamp: block.timestamp,
+          ...(genesis ? {} : { version: 32, timestamp: block.timestamp }),
         },
-        witness_signature: 'ff'.repeat(65),
+        ...(genesis ? {} : { witness_signature: 'ff'.repeat(65) }),
       },
     };
   }
@@ -1263,6 +1458,8 @@ export class ScriptedTronNode {
                       owner_address: c.owner,
                       contract_address: c.contract,
                       ...omitZero('call_value', w.callValue),
+                      ...omitZero('call_token_value', w.callTokenValue),
+                      ...omitZero('token_id', w.tokenId),
                     },
                     type_url: 'type.googleapis.com/protocol.TriggerSmartContract',
                   },
@@ -1514,7 +1711,11 @@ export class ScriptedTronNode {
             number: `0x${block.number.toString(16)}`,
             hash: `0x${block.id}`,
             parentHash: `0x${block.parentId}`,
-            timestamp: `0x${Math.floor((block.timestamp - skew) / 1000).toString(16)}`,
+            // BlockResult: toJsonHex(time / 1000); block 0's time is 0 (see #header).
+            timestamp:
+              block.number === 0
+                ? '0x0'
+                : `0x${Math.floor((block.timestamp - skew) / 1000).toString(16)}`,
             transactions: block.txs.map((t) => `0x${t.id}`),
           }
         : null;

@@ -13,6 +13,7 @@ import {
   ScriptedTronNode,
   TRANSFER_ENERGY,
   encodeWireRaw,
+  encodeWireTransaction,
   type WireExtras,
 } from './support/node';
 import { encodeRawData, encodeTransaction } from './support/protobuf';
@@ -33,6 +34,19 @@ const OTHER = addressFromPublicKey(secp256k1.getPublicKey(OTHER_KEY, true));
 const OTHER_HEX = toHexAddress(OTHER);
 const word = (value: bigint): string => value.toString(16).padStart(64, '0');
 const TRANSFER_DATA = `a9059cbb${word(BigInt(`0x${RECIPIENT_HEX.slice(2)}`))}${word(10n)}`;
+const idOf = (rawHex: string): string => toHex(sha256(fromHex(rawHex)));
+/** A minimal protobuf varint, hex. */
+function varintHex(value: bigint): string {
+  let v = value;
+  let out = '';
+  do {
+    let byte = Number(v & 0x7fn);
+    v >>= 7n;
+    if (v > 0n) byte |= 0x80;
+    out += byte.toString(16).padStart(2, '0');
+  } while (v > 0n);
+  return out;
+}
 
 function setup() {
   const clock = new FakeClock(1_790_000_000_000);
@@ -462,19 +476,42 @@ describe('ScriptedTronNode', () => {
     expect(junk.Error).toMatch(/^class /);
   });
 
-  it("omits block 0's number on /wallet and /walletsolidity, as proto3 JSON does", async () => {
-    const { node, post } = setup();
+  it('serves block 0 as java-tron builds it: no number, timestamp, version or witness signature', async () => {
+    const { node, url, post } = setup();
     node.mine();
-    for (const path of ['/wallet/getblockbynum', '/walletsolidity/getblockbynum']) {
-      const genesis = await post(path, { num: 0 });
-      expect(genesis.blockID).toBe(GENESIS.nile);
-      const raw = (genesis.block_header as { raw_data: Record<string, unknown> })
-        .raw_data;
-      expect(raw).not.toHaveProperty('number');
-      expect(raw).toHaveProperty('timestamp');
+    const genesis = [
+      await post('/wallet/getblockbynum', { num: 0 }),
+      await post('/walletsolidity/getblockbynum', { num: 0 }),
+      await post('/wallet/getblock', { id_or_num: '0', detail: false }),
+    ];
+    for (const block of genesis) {
+      expect(block.blockID).toBe(GENESIS.nile);
+      const header = block.block_header as { raw_data: Record<string, unknown> };
+      // Fix round 2: proto3 JSON drops block 0's zero timestamp too (the brief kept it).
+      for (const key of ['number', 'timestamp', 'version']) {
+        expect(header.raw_data).not.toHaveProperty(key);
+      }
+      expect(header).not.toHaveProperty('witness_signature');
     }
-    const one = await post('/wallet/getblockbynum', { num: 1 });
-    expect(one).toMatchObject({ block_header: { raw_data: { number: 1 } } });
+    expect(await post('/wallet/getblockbynum', { num: 1 })).toMatchObject({
+      block_header: {
+        raw_data: { number: 1, version: 32, timestamp: node.block(1)?.timestamp },
+        witness_signature: expect.any(String),
+      },
+    });
+    const rpc = (await (
+      await node.fetch.fetch(`${url}/jsonrpc`, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: 1,
+          method: 'eth_getBlockByNumber',
+          params: ['0x0', false],
+        }),
+      })
+    ).json()) as { result: { timestamp: string } };
+    expect(rpc.result.timestamp).toBe('0x0');
+    // The node's own rules keep block 0's slot time.
+    expect(node.block(0)?.timestamp).toBeGreaterThan(0);
   });
 
   it('serves /v1 history from the head by default, solidified only when confirmed, at most 200 a page', async () => {
@@ -882,6 +919,196 @@ describe('ScriptedTronNode', () => {
       expect(tronwebCodec.decodeRaw(rawHex)).toEqual(raws[i]);
       expect(tronwebCodec.readRaw(rawHex)).toEqual(raws[i]);
     }
+  });
+
+  it('accepts ret, ref_block_num and the default active permission as java-tron does, and echoes ret', async () => {
+    const { node, trx, broadcast, post } = setup();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    node.fund(RECIPIENT, 1n);
+    // `ret` is parsed, echoed, then cleared: the same txID, and bandwidth without it.
+    const rawHex = encodeRawData(trx(1n));
+    const id = idOf(rawHex);
+    const sig = signTxId(id);
+    const withRet = await broadcast(
+      encodeWireTransaction(rawHex, [sig], [{ contractRet: 1 }, { fee: 5n, ret: 1 }]),
+    );
+    expect(withRet).toMatchObject({ result: true, txid: id });
+    expect(JSON.parse(withRet.transaction as string)).toMatchObject({
+      signature: [sig],
+      ret: [{ contractRet: 'SUCCESS' }, { fee: 5, ret: 'FAILED' }],
+    });
+    // `ref_block_num` is signed over and served.
+    const numbered = signRawHex(encodeWireRaw(trx(2n), { refBlockNum: 7n }));
+    expect(await broadcast(numbered.hex)).toMatchObject({
+      result: true,
+      txid: numbered.id,
+    });
+    // Permission 2 (the default active permission) holds the owner's key; 1 and 3 do not exist.
+    const active = signRawHex(encodeWireRaw(trx(3n), { permissionId: 2 }));
+    expect(await broadcast(active.hex)).toMatchObject({ result: true });
+    for (const permissionId of [1, 3]) {
+      expect(
+        await broadcast(signRawHex(encodeWireRaw(trx(4n), { permissionId })).hex),
+      ).toMatchObject({
+        code: 'SIGERROR',
+        message: "Validate signature error: permission isn't exit",
+      });
+    }
+    node.mine();
+    expect(node.transaction(id)?.size).toBe(
+      BigInt(encodeTransaction(rawHex, [sig]).length / 2),
+    );
+    expect(
+      await post('/wallet/gettransactionbyid', { value: numbered.id }),
+    ).toMatchObject({
+      raw_data: { ref_block_num: 7 },
+    });
+    expect(await post('/wallet/gettransactionbyid', { value: active.id })).toMatchObject({
+      raw_data: { contract: [{ Permission_id: 2 }] },
+    });
+  });
+
+  it('refuses two contracts, and checks the next slot before the signature (texts Task 5 matches)', async () => {
+    const { node, trx, ref, broadcast } = setup();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    node.fund(RECIPIENT, 1n);
+    const two = signRawHex(encodeWireRaw(trx(1n), { moreContracts: [trx(2n).contract] }));
+    expect(await broadcast(two.hex)).toMatchObject({
+      code: 'CONTRACT_VALIDATE_ERROR',
+      message: `Contract validate error : tx ${two.id} contract size should be exactly 1, this is extend feature ,actual :2`,
+    });
+    // Wallet.broadcastTransaction checks the next slot before pushTransaction checks the
+    // signature: a late transaction signed by the wrong key is refused as expired.
+    const late = signedTransaction(
+      trx(1n, { expiration: ref().timestamp + 2_999 }),
+      OTHER_KEY,
+    );
+    expect(await broadcast(late.hex)).toMatchObject({
+      code: 'TRANSACTION_EXPIRATION_ERROR',
+      message: 'Transaction expired',
+    });
+  });
+
+  it('hashes the re-serialized raw data: a non-canonical encoding signed as sent fails SIGERROR', async () => {
+    const { node, trx, broadcast, post } = setup();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    node.fund(RECIPIENT, 1n);
+    const raw = trx(1n);
+    const canonical = encodeRawData(raw);
+    const expiration = `40${varintHex(BigInt(raw.expiration))}`;
+    const timestamp = `70${varintHex(BigInt(raw.timestamp))}`;
+    expect(canonical.endsWith(timestamp)).toBe(true);
+    const last = parseInt(expiration.slice(-2), 16) | 0x80;
+    const variants = [
+      // fee_limit = 0 written out
+      `${canonical}900100`,
+      // timestamp (field 14) first
+      `${timestamp}${canonical.slice(0, -timestamp.length)}`,
+      // the expiration's varint one byte too long
+      canonical.replace(expiration, `${expiration.slice(0, -2)}${last.toString(16)}00`),
+    ];
+    const signedBySomeoneElse = new RegExp(
+      `^Validate signature error: ${idOf(canonical)} is signed by T\\w+ but it is not contained of permission\\.$`,
+    );
+    for (const variant of variants) {
+      expect(variant).not.toBe(canonical);
+      expect(await broadcast(signRawHex(variant).hex)).toMatchObject({
+        code: 'SIGERROR',
+        message: expect.stringMatching(signedBySomeoneElse),
+      });
+    }
+    // Signed over the re-serialized bytes, the same encoding is admitted under their txID,
+    // and the node serves them, not the input.
+    const answer = await broadcast(
+      encodeTransaction(variants[0] as string, [signTxId(idOf(canonical))]),
+    );
+    expect(answer).toMatchObject({ result: true, txid: idOf(canonical) });
+    node.mine();
+    expect(
+      await post('/wallet/gettransactionbyid', { value: idOf(canonical) }),
+    ).toMatchObject({ raw_data_hex: canonical });
+  });
+
+  it("reads call_token_value and token_id: java-tron's TRC-10 refusals, and a placed movement served", async () => {
+    const { node, call, sendWire, post } = setup();
+    node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
+    node.mintToken(USDT, KEY_ADDRESS, 50n);
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    const cases: [WireExtras, string][] = [
+      [{ callTokenValue: -1n, tokenId: 1_000_001n }, 'tokenValue must be >= 0'],
+      [{ callTokenValue: 5n, tokenId: 5n }, 'tokenId must be > 1000000'],
+      [{ callTokenValue: 5n }, 'invalid arguments with tokenValue = 5, tokenId = 0'],
+      [{ callTokenValue: 5n, tokenId: 1_000_001n }, 'No asset !'],
+    ];
+    for (const [extras, message] of cases) {
+      expect(await sendWire(call(10_000_000), extras)).toMatchObject({
+        code: 'CONTRACT_VALIDATE_ERROR',
+        message: `Contract validate error : ${message}`,
+      });
+    }
+    const moved = signRawHex(
+      encodeWireRaw(call(10_000_000), { callTokenValue: 5n, tokenId: 1_000_001n }),
+    );
+    expect(node.place(moved.hex)).toBe(moved.id);
+    node.mine();
+    expect(await post('/wallet/gettransactionbyid', { value: moved.id })).toMatchObject({
+      raw_data: {
+        contract: [
+          { parameter: { value: { call_token_value: 5, token_id: 1_000_001 } } },
+        ],
+      },
+    });
+  });
+
+  it('places only what a block could hold, and moves the TRX of a placed transfer', async () => {
+    const { node, trx, ref, get } = setup();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    const transfer = (amount: bigint, extra: Partial<TronRawData> = {}, to = OTHER_HEX) =>
+      trx(amount, {
+        contract: { type: 'TransferContract', owner: KEY_HEX, to, amount },
+        ...extra,
+      });
+    const withSignatures = (raw: TronRawData, count: number) => {
+      const rawHex = encodeRawData(raw);
+      return encodeTransaction(rawHex, Array<string>(count).fill(signTxId(idOf(rawHex))));
+    };
+    const moved = node.place(signedTransaction(transfer(TRX)).hex);
+    const dropped = [
+      node.place(signedTransaction(transfer(0n)).hex),
+      node.place(signedTransaction(transfer(1n, {}, '41' + '55'.repeat(19))).hex),
+      node.place(signedTransaction(transfer(2n, {}, KEY_HEX)).hex),
+      node.place(withSignatures(transfer(3n), 0)),
+      node.place(withSignatures(transfer(4n), 6)),
+      node.place(
+        signRawHex(
+          encodeWireRaw(transfer(5n), { moreContracts: [transfer(6n).contract] }),
+        ).hex,
+      ),
+      node.place(signedTransaction(transfer(7n, { expiration: ref().timestamp })).hex),
+      node.place(signedTransaction(transfer(8n, { refBlockHash: '00'.repeat(8) })).hex),
+      node.place(signedTransaction(transfer(100n * TRX)).hex),
+    ];
+    node.mine();
+    expect(node.transaction(moved)?.blockNumber).toBe(1);
+    for (const id of dropped) expect(node.transaction(id)).toBeUndefined();
+    expect(node.balance(OTHER)).toBe(TRX);
+    expect(node.balance(KEY_ADDRESS)).toBe(9n * TRX);
+    const history = await get(`/v1/accounts/${OTHER}/transactions`);
+    expect(history.data.map((t) => t.txID)).toEqual([moved]);
+  });
+
+  it('drops a placed transaction whose reference block a reorg orphaned', async () => {
+    const { node, trx } = setup();
+    node.fund(KEY_ADDRESS, 10n * TRX);
+    node.mine();
+    const id = node.place(signedTransaction(trx(TRX)).hex);
+    node.mine();
+    expect(node.transaction(id)?.blockNumber).toBe(2);
+    expect(node.balance(RECIPIENT)).toBe(TRX);
+    node.reorg(2);
+    node.mine();
+    expect(node.transaction(id)).toBeUndefined();
+    expect(node.exists(RECIPIENT)).toBe(false);
   });
 
   it("encodes the wire extras canonically: without them, the bytes are the test codec's", () => {
