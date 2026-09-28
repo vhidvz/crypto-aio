@@ -83,6 +83,21 @@ export interface TonFeeOverride {
 }
 
 /**
+ * The seqno ordering a TON build records (F6-R29): the signed seqno and `valid_until`, and
+ * `validFrom`, the chain time the build ran at (the state's `sync_utime`, and never later
+ * than the local clock), in seconds. The message cannot run in a block older than that, less
+ * the builder's chain-time tolerance, so a proof that it was not included walks the
+ * wallet's history back to there, whatever the network's `validForSeconds` is now. It is a
+ * core `seqno` ordering with one more property, which the core stores whole.
+ */
+export interface TonSeqnoOrdering {
+  readonly kind: 'seqno';
+  readonly seqno: bigint;
+  readonly validUntil: number;
+  readonly validFrom: number;
+}
+
+/**
  * The transport tags every TON I/O call carries (R41). A caller's `quorumKey` replaces the
  * call's default consensus key (lesson 17): proofs attest a monotone predicate, such as
  * "my seqno is above n", instead of comparing data read at a moving head.

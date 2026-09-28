@@ -26,6 +26,7 @@ import {
   DEFAULT_MAX_NETWORK_FEE,
   TON_CAPABILITIES,
 } from '../../../src/adapters/ton/network';
+import type { TonSeqnoOrdering } from '../../../src/adapters/ton/types';
 import { SEND_MODE } from '../../../src/adapters/ton/wallets';
 import type { BuildContext } from '../../../src/core/driver/types';
 import type { LogFields } from '../../../src/core/events/logger';
@@ -1255,6 +1256,46 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     const unsigned = await s.h.run(s.builder.build(s.intent(), fee, s.build()));
     expect(unsigned.ordering).toMatchObject({
       validUntil: Math.floor(s.h.clock.now() / 1000) + CHAIN_TIME_TOLERANCE - 1 + 60,
+    });
+  });
+
+  it("records the build's chain time with the lifetime, never later than the local clock (F6-R29)", async () => {
+    const s = setup();
+    s.h.node.fund(s.from, GRAM);
+    const fee = await s.h.run(s.builder.estimateFee(s.intent(), s.build()));
+    const now = Math.floor(s.h.clock.now() / 1000);
+    const built = async () =>
+      (await s.h.run(s.builder.build(s.intent(), fee, s.build())))
+        .ordering as TonSeqnoOrdering;
+    expect(await built()).toEqual({
+      kind: 'seqno',
+      seqno: 0n,
+      validUntil: now + 60,
+      validFrom: now,
+    });
+    const skewed = (seconds: number) => {
+      s.h.node.intercept = (_e, route, request) => {
+        if (route !== '/getAddressInformation') return undefined;
+        s.h.node.intercept = undefined;
+        return s.h.node.fetch.fetch(request.url.href).then(async (response) => {
+          const body = (await response.json()) as { result: { sync_utime: number } };
+          body.result.sync_utime += seconds;
+          return { json: body };
+        });
+      };
+    };
+    // An endpoint ahead of the clock sets the lifetime, but not when the message began:
+    // it may run as soon as it is signed (review N1).
+    skewed(CHAIN_TIME_TOLERANCE - 10);
+    expect(await built()).toMatchObject({
+      validUntil: now + CHAIN_TIME_TOLERANCE - 10 + 60,
+      validFrom: now,
+    });
+    // Behind the clock, the endpoint's own time is the earlier one.
+    skewed(-100);
+    expect(await built()).toMatchObject({
+      validUntil: now - 100 + 60,
+      validFrom: now - 100,
     });
   });
 

@@ -52,7 +52,9 @@ import {
   traceBlock,
   type TonContext,
 } from './reader';
+import { CHAIN_TIME_TOLERANCE } from './builder';
 import { attemptVerdict, consumesSeqno, isOwnAttempt } from './trace';
+import type { TonSeqnoOrdering } from './types';
 import { externalHashOf, requestIsOwn } from './wallets';
 
 /** How far back the consumer of a seqno is searched: pages of `CONSUMER_PAGE` transactions. */
@@ -151,6 +153,28 @@ function coversBasechain(tops: readonly BlockId[]): boolean {
     next = end;
   }
   return next === SHARD_SPACE;
+}
+
+/** The lifetimes a network may configure (`validForSeconds`, network.ts). */
+const MIN_VALID_FOR = 10;
+const MAX_VALID_FOR = 86_400;
+
+/**
+ * F6-R29 (review N1): the earliest chain time our message can have run at. The build
+ * recorded it (`TonSeqnoOrdering.validFrom`); less the builder's chain-time tolerance, it
+ * covers an endpoint whose time ran ahead of the chain within that tolerance, whatever the
+ * network's `validForSeconds` is now. Without a well-formed record (an attempt built before
+ * it), the widest lifetime any network allows before `validUntil`, less the tolerance.
+ */
+function windowStartOf(slot: { readonly validUntil: number }): number {
+  const { validUntil } = slot;
+  const { validFrom } = slot as Partial<TonSeqnoOrdering>;
+  const recorded =
+    typeof validFrom === 'number' &&
+    Number.isSafeInteger(validFrom) &&
+    validFrom <= validUntil - MIN_VALID_FOR &&
+    validFrom >= validUntil - MAX_VALID_FOR - CHAIN_TIME_TOLERANCE;
+  return (recorded ? validFrom : validUntil - MAX_VALID_FOR) - CHAIN_TIME_TOLERANCE;
 }
 
 /** M9: a lifetime is a positive chain time; the reservation's placeholder 0 is none. */
@@ -484,19 +508,18 @@ async function noEarlierHistory(
 }
 
 /**
- * F6-R21 (d): the wallet's code never ran in the history the indexer holds below lt
- * `below` (all of it without one), under the proof quorum: no compute phase that ran, and
- * no status with code. A row without its statuses, or a history past the window, decides
- * nothing.
+ * F6-R21 (d): an account without a chain at `head` (never created, or deleted with its last
+ * transaction): its code never ran in the history the indexer holds, under the proof
+ * quorum: no compute phase that ran, and no status with code. A row without its statuses,
+ * or a history past the window, decides nothing.
  */
-async function neverRanBefore(
+async function neverRan(
   ctx: TonContext,
   wallet: string,
   head: BlockHeader,
-  below: bigint | undefined,
 ): Promise<void> {
   await indexedThrough(ctx, head);
-  let endLt = below === undefined ? undefined : below - 1n;
+  let endLt: bigint | undefined;
   for (let page = 0; page < HISTORY_PAGES; page++) {
     const { transactions, next } = await ctx.api.accountTransactionsPage(
       wallet,
@@ -529,25 +552,26 @@ async function neverRanBefore(
  * state's last transaction:
  * - our message (its TEP-467 hash computed here) run to the end: ours, proven by the caller;
  * - otherwise "absent" only when the chain shows no reset: the walk reaches the earliest
- *   time our message could have run (`validUntil − validForSeconds`, the builder's chain
- *   time, D8) with, when our seqno is consumed at `head`, its consumer found (another
- *   request, by its signed header, M8); or it reaches the chain's start, which the anchored
- *   indexer history settles (c, d).
+ *   time our message could have run (`windowStart`, from the attempt's own record, F6-R29)
+ *   with, when our seqno is consumed at `head`, its consumer found (another request, by its
+ *   signed header, M8); or it reaches the chain's start inside that window, and the anchored
+ *   indexer history holds nothing earlier (c).
  * An activation, a destruction, or a consumer of a lower seqno first is a reset: from then
- * on the wallet must never have run, as far as the chain goes; a walk past its cap decides
- * nothing. An uninitialized wallet (d) must never have run at all.
+ * on the wallet must never have run, as far as the chain goes back into the window; a walk
+ * past its cap decides nothing. An uninitialized wallet (d) must never have run in the
+ * window (N4: our message cannot have run before it), nor, without a chain, at all.
  */
 async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence> {
   const needConsumer = q.active && q.seqno > q.slot.seqno;
   if (q.state.lastLt === 0n) {
     // No chain at `head`: never created, or deleted with its last transaction (d).
     if (q.active) throw inconsistent('an active account without a transaction');
-    await neverRanBefore(ctx, q.wallet, q.head, undefined);
+    await neverRan(ctx, q.wallet, q.head);
     return { absent: true };
   }
-  const windowStart = q.slot.validUntil - ctx.config.validForSeconds;
+  const windowStart = windowStartOf(q.slot);
   const key = publicKeyAt(ctx, q.wallet, PROOF, q.head.id.seqno);
-  let neverRan = !q.active;
+  let codeless = !q.active;
   let consumerFound = false;
   let reset = false;
   let ours: string | undefined;
@@ -568,10 +592,8 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
         ours = hash;
         return true;
       }
-      if (!neverRan && tx.now < windowStart && (!needConsumer || consumerFound)) {
-        return true;
-      }
-      if (neverRan) {
+      if (tx.now < windowStart && (!needConsumer || consumerFound)) return true;
+      if (codeless) {
         if (t.ran || t.lived || t.destruction) reset = true;
         return false;
       }
@@ -583,7 +605,7 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
       }
       if (t.activation) {
         if (needConsumer && !consumerFound) reset = true;
-        neverRan = true;
+        codeless = true;
       }
       return false;
     },
@@ -591,10 +613,7 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
   if (ours !== undefined) return { ours };
   if (end === 'exhausted') throw walkExhausted(ctx);
   if (reset || (needConsumer && !consumerFound)) throw resetSuspected(ctx);
-  if (end === 'start') {
-    if (q.active) await noEarlierHistory(ctx, q.wallet, q.head, first);
-    else await neverRanBefore(ctx, q.wallet, q.head, first);
-  }
+  if (end === 'start') await noEarlierHistory(ctx, q.wallet, q.head, first);
   return { absent: true };
 }
 

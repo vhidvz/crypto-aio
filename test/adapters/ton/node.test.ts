@@ -1611,6 +1611,30 @@ describe('the scripted toncenter node: the raw chain, deletion and re-deploy (F6
     expect(s.node.seqno(s.wallet)).toBe(1);
   });
 
+  it('leaves a non-existing account without a chain when a delivery to it bounces (N3)', async () => {
+    const s = setup('v4r2');
+    const nowhere = `0:${'44'.repeat(32)}`;
+    s.node.inject(PAYER, nowhere, GRAM, beginCell().endCell(), true);
+    s.node.mine(2);
+    const [bounced] = s.node.transactions().filter((tx) => tx.account === nowhere);
+    expect(bounced).toMatchObject({ origStatus: 'nonexist', endStatus: 'nonexist' });
+    expect(bounced?.description).toMatchObject({ bounce: { type: 'ok' } });
+    // transaction.cpp `compute_state`: uninit, not activated, zero balance → account_none,
+    // which the collator never stores: no last transaction.
+    const state = await get(
+      `${s.v2}/getAddressInformation?address=${nowhere}`,
+      s.fetchFn,
+    );
+    expect(state.json.result).toMatchObject({
+      balance: '0',
+      last_transaction_id: { lt: '0', hash: Buffer.alloc(32).toString('base64') },
+    });
+    s.node.inject(PAYER, nowhere, GRAM, beginCell().endCell());
+    s.node.mine();
+    const deposit = s.node.transactions().filter((tx) => tx.account === nowhere)[1];
+    expect(deposit).toMatchObject({ prevLt: 0n, prevHash: '0'.repeat(64) });
+  });
+
   it('leaves the account uninitialized, in the same chain, when it holds an extra currency', async () => {
     const s = setup('v4r2');
     s.node.fund(s.wallet, 3n * GRAM);

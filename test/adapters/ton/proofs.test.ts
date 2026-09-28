@@ -25,6 +25,8 @@ import {
 } from '../../../src/adapters/ton/proofs';
 import { REASONS } from '../../../src/adapters/ton/trace';
 import { normalizedHash } from '../../../src/adapters/ton/wallets';
+import { CHAIN_TIME_TOLERANCE } from '../../../src/adapters/ton/builder';
+import type { TonSeqnoOrdering } from '../../../src/adapters/ton/types';
 import type { OrderingData } from '../../../src/core/model/ordering';
 import type { AttemptRef } from '../../../src/core/model/transaction';
 import type { FakeRequest } from '../../../src/testing/fake-fetch';
@@ -64,7 +66,14 @@ function setup(options: Parameters<typeof tonHarness>[0] = {}) {
       deploy: true,
       messages,
     });
-    return { ...signed, ordering: { kind: 'seqno' as const, seqno: 0n, validUntil } };
+    // As the builder records it (F6-R29): the lifetime, and the chain time it began.
+    const ordering: TonSeqnoOrdering = {
+      kind: 'seqno',
+      seqno: 0n,
+      validUntil,
+      validFrom: now(),
+    };
+    return { ...signed, ordering };
   };
   const pay = (bounce = false) =>
     request([nativeMessage({ to: FRESH, value: GRAM, bounce })]);
@@ -1190,7 +1199,12 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     });
     return {
       ...signed,
-      ordering: { kind: 'seqno' as const, seqno: BigInt(seqno), validUntil },
+      ordering: {
+        kind: 'seqno' as const,
+        seqno: BigInt(seqno),
+        validUntil,
+        validFrom: s.now(),
+      },
     };
   };
   const refund = (s: ReturnType<typeof setup>) => {
@@ -1379,7 +1393,8 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
       s.h.node.inject(PAYER, s.from, 1_000_000n, beginCell().endCell());
     }
     s.h.node.mine();
-    await s.tick(200);
+    // Older than the recorded start, less the chain-time tolerance.
+    await s.tick(CHAIN_TIME_TOLERANCE + 100);
     const ours = await transfer(s, 1);
     await s.tick(80);
     let walked = 0;
@@ -1792,6 +1807,208 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     await expect(final(s, ours)).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
       retryable: true,
+    });
+  });
+
+  describe("the window starts at the attempt's own chain time (F6-R29, review N1)", () => {
+    /**
+     * Theirs takes seqno 0; ours (seqno 1, `ordering`) lands and pays at once; software
+     * sharing the key deletes the wallet, which is re-funded and re-deployed at seqno 1 again.
+     */
+    async function resetAfterOurs(s: ReturnType<typeof setup>, validUntil: number) {
+      s.h.node.submit((await transfer(s, 0, 7n)).boc);
+      s.h.node.mine();
+      const ours = await signedBoc('v4r2', TESTNET, {
+        seqno: 1,
+        validUntil,
+        deploy: false,
+        messages: [nativeMessage({ to: FRESH, value: GRAM, bounce: false })],
+      });
+      s.h.node.submit(ours.boc);
+      s.h.node.mine(2);
+      expect(s.h.node.balance(FRESH)).toBe(GRAM + 7n);
+      s.h.node.submit(destroy(s, 2).boc);
+      s.h.node.mine();
+      refund(s);
+      s.h.node.submit((await transfer(s, 0, 5n)).boc);
+      s.h.node.mine();
+      expect(s.h.node.seqno(s.from)).toBe(1);
+      await s.tick(validUntil - s.now() + 40);
+      hideLookups(s.h);
+      return ours;
+    }
+
+    it('never misses a reset because validForSeconds was lowered since the build (the reviewer residual)', async () => {
+      const s = setup();
+      const builtAt = s.now();
+      // Built with a lifetime of 360 s; the network's validForSeconds is 60 now.
+      const validUntil = builtAt + 360;
+      const ours = await resetAfterOurs(s, validUntil);
+      for (const ordering of [
+        { kind: 'seqno' as const, seqno: 1n, validUntil, validFrom: builtAt },
+        // An ordering without the recorded start (before this field): the widest window.
+        { kind: 'seqno' as const, seqno: 1n, validUntil },
+      ]) {
+        await expect(
+          final(s, { hashNorm: ours.hashNorm, ordering }),
+        ).rejects.toMatchObject({
+          code: 'PROVIDER_UNAVAILABLE',
+          retryable: true,
+        });
+      }
+    });
+
+    it('never misses a reset because the build endpoint ran ahead of the clock', async () => {
+      const s = setup();
+      const builtAt = s.now();
+      // The endpoint's chain time was 290 s ahead (within CHAIN_TIME_TOLERANCE): the
+      // lifetime runs from it, but the message ran at once.
+      const validUntil = builtAt + 290 + 60;
+      const ours = await resetAfterOurs(s, validUntil);
+      await expect(
+        final(s, {
+          hashNorm: ours.hashNorm,
+          ordering: { kind: 'seqno', seqno: 1n, validUntil, validFrom: builtAt },
+        } as { hashNorm: string; ordering: TonSeqnoOrdering }),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    });
+
+    it('never misses a reset because the local clock ran ahead of the chain at the build', async () => {
+      const s = setup();
+      const builtAt = s.now();
+      // Both the clock and the endpoint 200 s ahead of the chain (within the tolerance): the
+      // recorded start is 200 s after the message could run.
+      const validUntil = builtAt + 200 + 60;
+      const ours = await resetAfterOurs(s, validUntil);
+      await expect(
+        final(s, {
+          hashNorm: ours.hashNorm,
+          ordering: { kind: 'seqno', seqno: 1n, validUntil, validFrom: builtAt + 200 },
+        } as { hashNorm: string; ordering: TonSeqnoOrdering }),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    });
+
+    it('includes the window start itself: a message may run exactly the tolerance before the recorded start', async () => {
+      const s = setup();
+      const builtAt = s.now();
+      // The clock a whole tolerance ahead of the chain: ours, and the reset, run in the very
+      // second the window starts.
+      const validUntil = builtAt + CHAIN_TIME_TOLERANCE + 60;
+      const ours = await resetAfterOurs(s, validUntil);
+      await expect(
+        final(s, {
+          hashNorm: ours.hashNorm,
+          ordering: {
+            kind: 'seqno',
+            seqno: 1n,
+            validUntil,
+            validFrom: builtAt + CHAIN_TIME_TOLERANCE,
+          },
+        } as { hashNorm: string; ordering: TonSeqnoOrdering }),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    });
+
+    it('takes the widest window when the recorded start is missing or malformed', async () => {
+      const s = setup();
+      const builtAt = s.now();
+      const validUntil = builtAt + 360;
+      const ours = await resetAfterOurs(s, validUntil);
+      for (const validFrom of [
+        'x',
+        Number.NaN,
+        1.5,
+        -1,
+        validUntil + 1,
+        validUntil - 5,
+        validUntil - 86_701,
+        10n,
+      ]) {
+        await expect(
+          final(s, {
+            hashNorm: ours.hashNorm,
+            ordering: { kind: 'seqno', seqno: 1n, validUntil, validFrom } as never,
+          }),
+        ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      }
+    });
+
+    it('still decides an honest replacement whatever the recorded start says', async () => {
+      const s = setup();
+      s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+      s.h.node.mine();
+      const ours = await transfer(s, 0);
+      s.h.node.submit((await transfer(s, 0, 7n)).boc);
+      s.h.node.mine();
+      await s.tick(80);
+      expect(await final(s, ours)).toEqual({ included: false });
+      const { validFrom: _dropped, ...legacy } = ours.ordering as TonSeqnoOrdering;
+      expect(await final(s, { hashNorm: ours.hashNorm, ordering: legacy })).toEqual({
+        included: false,
+      });
+    });
+
+    it("stops an uninitialized wallet's walk at the window (N4)", async () => {
+      const s = setup();
+      for (let i = 0; i < 40; i++) {
+        s.h.node.inject(PAYER, s.from, 1_000_000n, beginCell().endCell());
+      }
+      s.h.node.mine();
+      await s.tick(CHAIN_TIME_TOLERANCE + 100);
+      const ours = await transfer(s, 0); // the first send: never lands
+      await s.tick(80);
+      let walked = 0;
+      rewrite(
+        s.h,
+        (_e, route) => route === '/getTransactions',
+        (json) => {
+          walked += 1;
+          return json;
+        },
+      );
+      expect(await final(s, ours)).toEqual({ included: false });
+      expect(walked).toBe(1);
+    });
+
+    it('reads a chain start inside the window strictly, for an uninitialized wallet too (N4)', async () => {
+      const s = setup();
+      s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+      s.h.node.mine();
+      const ours = await transfer(s, 0);
+      await s.tick(80);
+      expect(await final(s, ours)).toEqual({ included: false });
+      // An earlier row, even one where the code never ran: another incarnation.
+      rewrite(
+        s.h,
+        (_e, route, request) =>
+          route === '/transactions' && request.url.searchParams.has('end_lt'),
+        (json, request) => ({
+          ...json,
+          transactions: [
+            {
+              account: s.from.toUpperCase(),
+              hash: Buffer.alloc(32, 9).toString('base64'),
+              lt: request.url.searchParams.get('end_lt'),
+              now: 1,
+              mc_block_seqno: 1,
+              trace_id: Buffer.alloc(32, 9).toString('base64'),
+              orig_status: 'nonexist',
+              end_status: 'uninit',
+              total_fees: '0',
+              description: {
+                type: 'ord',
+                aborted: true,
+                compute_ph: { skipped: true, reason: 'no_state' },
+              },
+              in_msg: null,
+              out_msgs: [],
+            },
+          ],
+        }),
+      );
+      await expect(final(s, ours)).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
     });
   });
 

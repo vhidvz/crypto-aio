@@ -91,7 +91,7 @@ import {
   walletSeqno,
   type TonContext,
 } from './reader';
-import type { TonFeeDetails } from './types';
+import type { TonFeeDetails, TonSeqnoOrdering } from './types';
 
 /** The id of the one signing request (spec §15: 1 × ed25519 over the signing cell hash). */
 export const REQUEST_ID = 'wallet';
@@ -558,7 +558,17 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
       const state = await walletState(ctx, build.from);
       // M3 and D8: the lifetime runs from the endpoint's chain time, bounded by the local
       // clock; Task 10 proves expiry against attested chain time, never a node's clock.
-      const validUntil = chainTime(ctx, state) + config.validForSeconds;
+      const now = chainTime(ctx, state);
+      const validUntil = now + config.validForSeconds;
+      // F6-R29: when the message may first run, for the proof's window: the chain time, but
+      // never later than the local clock (an endpoint ahead of it sets only the lifetime).
+      const validFrom = Math.min(now, Math.floor(ctx.clock.now() / 1000));
+      const ordering: TonSeqnoOrdering = {
+        kind: 'seqno',
+        seqno: BigInt(seqno),
+        validUntil,
+        validFrom,
+      };
       assertDeployable(state, seqno);
       const deploy = state.status === 'uninitialized';
       const { message, jettonWallet } = await messageOf(
@@ -595,7 +605,7 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
           data: unsigned.message.toBoc().toString('base64'),
         },
         signingRequests: [request],
-        ordering: { kind: 'seqno', seqno: BigInt(seqno), validUntil },
+        ordering,
         fee,
         summary: {
           asset: assetId(ctx.chain.id, ctx.network.id, plan.jetton?.asset ?? 'native'),

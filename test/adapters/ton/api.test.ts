@@ -1190,7 +1190,15 @@ describe('the toncenter API layer: authenticated chain reads (F6-R21)', () => {
     const { wallet } = await withTransfer(t);
     const state = await t.run(t.api.account(wallet, READ));
     const from = { lt: state.lastLt, hash: state.lastHash };
+    const queries: URLSearchParams[] = [];
+    t.node.intercept = (_endpoint, route, request) => {
+      if (route === '/getTransactions') queries.push(request.url.searchParams);
+      return undefined;
+    };
     const [row] = await t.run(t.api.rawTransactions(wallet, from, 4, PROOF));
+    // N2: a walk may reach old history, which only archive liteservers hold.
+    expect(queries.map((q) => q.get('archival'))).toEqual(['true']);
+    t.node.intercept = undefined;
     const [deploy] = t.node.transactions();
     expect(row).toEqual({
       lt: deploy!.lt,

@@ -1090,7 +1090,14 @@ export class TonApi {
     rawAddress(address);
     return this.#v2(
       '/getTransactions',
-      { address, lt: from.lt.toString(), hash: from.hash, limit: String(limit) },
+      {
+        address,
+        lt: from.lt.toString(),
+        hash: from.hash,
+        limit: String(limit),
+        // N2: a walk may reach old history, which only archive liteservers hold.
+        archival: 'true',
+      },
       tags,
       (result, route) => rawTransactionsOf(result, route, limit),
       (rows) => rows.map(({ lt, hash }) => ({ lt, hash })),

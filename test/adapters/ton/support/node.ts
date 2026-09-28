@@ -720,6 +720,12 @@ export class ScriptedTonNode {
     };
     account.lastLt = lt;
     account.lastHash = hash;
+    // N3: an account left non-existing is `account_none` (transaction.cpp `compute_state`:
+    // uninitialized, not activated, zero balance), which the collator never stores: no chain.
+    if (tx.endStatus === 'nonexist') {
+      account.lastLt = 0n;
+      account.lastHash = '0'.repeat(64);
+    }
     this.#txs.push(full);
     return full;
   }

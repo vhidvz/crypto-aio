@@ -323,6 +323,7 @@ export type {
   TonExt,
   TonFeeDetails,
   TonFeeOverride,
+  TonSeqnoOrdering,
   TonWalletIdentity,
   TonWalletVersion,
 } from './adapters/ton/types';

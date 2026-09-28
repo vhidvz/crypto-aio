@@ -20,6 +20,7 @@ export type {
   TonExt,
   TonFeeDetails,
   TonFeeOverride,
+  TonSeqnoOrdering,
   TonWalletIdentity,
   TonWalletVersion,
 } from './types';
