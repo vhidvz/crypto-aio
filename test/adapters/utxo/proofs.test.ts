@@ -149,6 +149,43 @@ describe('proofs (lessons 14, 16, 17)', () => {
     ).toEqual({ included: false });
   });
 
+  it('proves a final malleated copy included even while the transaction view puts ours in a block not yet final (C2 before D-T9-1, F3-R12 M3)', async () => {
+    const h = await utxoHarness();
+    const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
+    const outpoint = h.node.fund(legacy.address, 100_000n);
+    const [txid] = outpoint.split(':') as [string];
+    const prev = h.node.transaction(txid)!.toHex();
+    const ours = signedLegacySpend(
+      TEST_KEY,
+      [[txid, 0, prev]],
+      [[PAYEE.script, 90_000n]],
+    );
+    const copy = malleate(ours, 'junk-push');
+    h.node.mine(1, { extra: [copy] });
+    h.node.mine(5);
+    const oursId = txidOfHex(ours);
+    // The transaction view puts ours in the tip block, which is not final: it decides
+    // nothing, and the final copy of ours in its input's spend is our payment.
+    const tip = await (await get(h, `/block-height/${h.node.height}`)).text();
+    const view = await getJson(h, `/tx/${txidOfHex(copy)}`);
+    h.node.intercept('a', (request) =>
+      request.url.pathname.endsWith(`/tx/${oursId}`)
+        ? {
+            json: {
+              ...view,
+              txid: oursId,
+              status: { confirmed: true, block_height: h.node.height, block_hash: tip },
+            },
+          }
+        : undefined,
+    );
+    const proofs = proofSource(h.ctx);
+    expect(
+      await h.run(proofs.includedFinal(ref(oursId), inputs(outpoint), legacy.address)),
+    ).toMatchObject({ included: true, blockHeight: 2n, txHash: txidOfHex(copy) });
+    expect(h.calls.map((c) => c.request.path)).toContain(`/tx/${oursId}`);
+  });
+
   it('counts a mempool spend as consumed at latest only', async () => {
     const h = await withSpend();
     expect(
@@ -464,6 +501,37 @@ describe('"not included" needs an attested final spend by another transaction (C
     expect(await included()).toMatchObject({ included: true, txHash: txidOfHex(copy) });
   });
 
+  it('compares block hashes as parsed, so a trailing newline never splits the quorum (F3-R12 M1)', async () => {
+    const h = await withSpend({ endpoints: ['a', 'b'] });
+    h.node.mine(8);
+    const serve = (edit: (text: string) => string) =>
+      h.node.intercept('b', (request, _signal, honest) => {
+        if (!request.url.pathname.includes('/block-height/')) return undefined;
+        const reply = honest() as { status?: number; text: string };
+        return reply.status === undefined ? { text: edit(reply.text) } : reply;
+      });
+    serve((hash) => `${hash}\n`);
+    const head = await h.run(h.proofs.finalizedHead());
+    expect(await h.run(h.proofs.blockHash(head.height, 'finalized'))).toBe(head.hash);
+    expect(
+      await h.run(h.proofs.includedFinal(ref(h.spent), inputs(h.outpoint), OWN.address)),
+    ).toMatchObject({
+      included: true,
+      blockHash: await h.run(h.proofs.blockHash(2n, 'finalized')),
+    });
+    const keyed = h.calls.filter(
+      (c) => c.request.route === '/block-height/:height' && c.options.quorum === 'proof',
+    );
+    expect(keyed.length).toBeGreaterThan(0);
+    expect(keyed.every((c) => c.options.quorumKey !== undefined)).toBe(true);
+    // Another hash is still a disagreement, which decides nothing.
+    serve(() => 'ee'.repeat(32));
+    await expect(h.run(h.proofs.finalizedHead())).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+  });
+
   it('decides nothing when two endpoints disagree on any fact of the verdict (lesson 2)', async () => {
     const h = await withSpend({ endpoints: ['a', 'b'] });
     h.node.mine(6);
@@ -639,7 +707,10 @@ describe('block source: every page bound to its block (I2, lenient readers)', ()
       h.run(h.blocks.transactions(h.header, { assets }));
     expect(await all([])).toHaveLength(31);
     expect(await all(['native'])).toHaveLength(31);
+    // A filter naming no native asset: nothing to page (F3-R12 M2).
+    h.calls.length = 0;
     expect(await all([{ standard: 'erc20', contract: 'x' }])).toEqual([]);
+    expect(h.calls.map((c) => c.request.route)).not.toContain('/block/:hash/txs/:start');
   });
 
   it("keeps a watched address's spend to outputs no address names (filtered by script)", async () => {

@@ -43,6 +43,7 @@ import {
   isHash,
   isNotFound,
   malformed,
+  parseHash,
   parseHeight,
   parseOutspend,
   parseTx,
@@ -71,6 +72,13 @@ const contradiction = (reason: string): ProviderError =>
 const stale = (): ProviderError =>
   contradiction('the including block is no longer the block at its height');
 
+/**
+ * F3-R12 M1 (the board's "quorum on what you parse"): a block hash read under the proof
+ * quorum is compared as `parseHash` reads it, so two honest endpoints that differ only by
+ * whitespace agree, and the key is exactly the value the verdict uses.
+ */
+const HASH_PROOF = { ...PROOF, quorumKey: parseHash };
+
 export function proofSource(ctx: UtxoContext): ProofSource {
   const { esplora, config } = ctx;
   const depth = BigInt(config.confirmations) - 1n;
@@ -86,7 +94,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
 
   /** The quorum's hash at `height` must be `hash`; otherwise the answer was stale. */
   const assertCanonical = async (height: bigint, hash: string): Promise<void> => {
-    if ((await esplora.blockHashAt(height, PROOF)) !== hash) throw stale();
+    if ((await esplora.blockHashAt(height, HASH_PROOF)) !== hash) throw stale();
   };
 
   /** The transaction that spent `input` in a final, canonical block (quorum-attested). */
@@ -123,7 +131,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
       }
       const final = anchor - depth;
       const height = final < 0n ? 0n : final;
-      const hash = await esplora.blockHashAt(height, PROOF);
+      const hash = await esplora.blockHashAt(height, HASH_PROOF);
       if (hash === null)
         throw undecided('the final block is not visible to the proof endpoints');
       return { height, hash };
@@ -205,7 +213,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
     async blockHash(height, level) {
       if (outOfRange(height)) return null;
       if (level === 'finalized' && !(await holds(height + depth))) return null;
-      return esplora.blockHashAt(height, PROOF);
+      return esplora.blockHashAt(height, HASH_PROOF);
     },
   };
 
@@ -266,6 +274,9 @@ export function blockSource(ctx: UtxoContext): BlockSource {
       if (meta.txCount < 1 || meta.txCount > MAX_BLOCK_TXS) {
         throw malformed('block.tx_count');
       }
+      // `filter.assets` is a hint: a list without the native asset wants tokens only, and a
+      // Bitcoin block has none, so nothing is paged (F3-R12 M2).
+      if (filter?.assets?.length && !filter.assets.includes('native')) return [];
       const txs: EsploraTx[] = [];
       const seen = new Set<string>();
       for (let start = 0; start < meta.txCount; start += PAGE) {
@@ -298,8 +309,6 @@ export function blockSource(ctx: UtxoContext): BlockSource {
       // Checked after the pages, so a reorg while paging is caught.
       if ((await esplora.blockHashAt(block.height, MONITOR)) !== block.hash)
         throw inconsistent();
-      // `filter.assets` is a hint: a list without the native asset wants tokens only.
-      if (filter?.assets?.length && !filter.assets.includes('native')) return [];
       const wanted = scriptsOf(filter?.addresses);
       const touches = (tx: EsploraTx) =>
         wanted === undefined ||
