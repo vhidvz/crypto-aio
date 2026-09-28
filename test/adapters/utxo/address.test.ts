@@ -92,18 +92,49 @@ describe('decodeAddress (strict, lesson 4)', () => {
   });
 
   it('refuses input over 90 characters before decoding it (lesson 20)', () => {
-    // The 100,000-character input comes last, so a missing cap fails fast on the others.
+    // Base58 decoding is quadratic: 100,000 characters would block for over a minute. The
+    // cap is pinned by structure, not by time (final review M2): with every decoder counted,
+    // none is reached for an over-long input. The 100,000-character input comes last, so a
+    // missing cap fails fast on the others.
+    type Coder = { decode: (...args: unknown[]) => unknown };
+    let decodes = 0;
+    const counted = <T extends Coder>(coder: T): T => ({
+      ...coder,
+      decode: (...args: unknown[]) => {
+        decodes++;
+        return coder.decode(...args);
+      },
+    });
+    let decode: typeof decodeAddress = decodeAddress;
+    jest.isolateModules(() => {
+      jest.doMock('@scure/base', () => {
+        const actual = jest.requireActual<typeof import('@scure/base')>('@scure/base');
+        return {
+          ...actual,
+          bech32: counted(actual.bech32 as unknown as Coder),
+          bech32m: counted(actual.bech32m as unknown as Coder),
+          createBase58check: (hash: Parameters<typeof actual.createBase58check>[0]) =>
+            counted(actual.createBase58check(hash) as unknown as Coder),
+        };
+      });
+      decode = jest.requireActual<typeof import('../../../src/adapters/utxo/address')>(
+        '../../../src/adapters/utxo/address',
+      ).decodeAddress;
+    });
+    jest.dontMock('@scure/base');
     for (const address of ['1'.repeat(91), `bc1${'q'.repeat(88)}`, 'z'.repeat(100_000)]) {
-      const started = performance.now();
-      expect(() => decodeAddress(address, MAIN)).toThrow(
+      expect(() => decode(address, MAIN)).toThrow(
         expect.objectContaining({
           code: 'INVALID_ADDRESS',
           message: 'invalid Bitcoin address: too long',
         }),
       );
-      // Base58 decoding is quadratic: 100,000 characters would block for over a minute.
-      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(decodes).toBe(0);
     }
+    // The counters are wired: both kinds of address that fit reach a decoder.
+    decode('1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH', MAIN);
+    decode(BIP173_P2WPKH, MAIN);
+    expect(decodes).toBe(2);
   });
 
   it('refuses a flipped checksum character and trailing garbage (M7)', () => {

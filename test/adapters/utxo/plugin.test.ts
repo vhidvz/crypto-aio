@@ -117,6 +117,22 @@ describe('the built-in UTXO plugin', () => {
     );
   });
 
+  it('refuses a handle with a provider but no indexer where no public preset serves one (F3-R16 M1)', async () => {
+    // regtest has no public preset: the manifest's `requiresIndexer` refuses the handle
+    // before any driver is made, instead of the "no provider" refusal above.
+    const { aio } = container();
+    expect(() =>
+      aio.blockchain({ chain: 'bitcoin', network: 'regtest', provider: 'local' }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_INVALID',
+        message:
+          "library 'bitcoinjs-lib' requires an indexer provider for bitcoin:regtest",
+      }),
+    );
+    await aio.close();
+  });
+
   it('is SDK-free data plus a lazy manifest', () => {
     const plugin = utxoPlugin();
     expect(

@@ -215,11 +215,16 @@ describe('the inputs ordering (handoff §3)', () => {
 
 describe('replace and cancel (BIP125 RBF)', () => {
   it('replaces a transfer with a higher fee over the same inputs, and the replacement wins', async () => {
-    const env = await createUtxoEnv();
+    // Two outputs of 30,000 for 50,000: the original spends both, so "the replacement keeps
+    // every input" says more than "it conflicts" (F3-R18).
+    const env = await createUtxoEnv({ fund: [30_000n, 30_000n] });
     const sub = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 50_000n, fee: 'slow' }),
     );
     const original = sub.attempt?.id ?? '';
+    // Read while the node still has it: an evicted transaction has no inputs to show.
+    const originalInputs = outpointsOf(env, original);
+    expect(originalInputs).toHaveLength(2);
     await expect(
       env.run(env.bc.replace(sub.operationId, { fee: { satPerVByte: '2' } })),
     ).rejects.toMatchObject({ code: 'FEE_TOO_LOW' });
@@ -228,9 +233,7 @@ describe('replace and cancel (BIP125 RBF)', () => {
     expect(replacement).not.toBe(original);
     expect(env.node.inMempool(original)).toBe(false);
     expect(env.node.inMempool(replacement)).toBe(true);
-    expect(outpointsOf(env, replacement)).toEqual(
-      expect.arrayContaining(outpointsOf(env, original)),
-    );
+    expect(outpointsOf(env, replacement)).toEqual(expect.arrayContaining(originalInputs));
     const done = await finalOf(env, sub.operationId);
     expect(done.status.state).toBe('final');
     const op = await env.run(env.bc.getOperation(sub.operationId));
@@ -238,12 +241,17 @@ describe('replace and cancel (BIP125 RBF)', () => {
   });
 
   it('cancels a transfer by spending its inputs back to the wallet', async () => {
-    const env = await createUtxoEnv();
+    const env = await createUtxoEnv({ fund: [30_000n, 30_000n] });
     const to = env.stranger();
     const sub = await env.run(env.bc.transfer({ to, amount: 50_000n, fee: 'slow' }));
+    const originalInputs = outpointsOf(env, sub.attempt?.id ?? '');
+    expect(originalInputs).toHaveLength(2);
     const cancelled = await env.run(env.bc.cancel(sub.operationId));
     const cancel = env.node.transaction(cancelled.attempt?.id ?? '');
     expect(cancel?.outs).toHaveLength(1);
+    expect(outpointsOf(env, cancelled.attempt?.id ?? '')).toEqual(
+      expect.arrayContaining(originalInputs),
+    );
     await finalOf(env, sub.operationId);
     const op = await env.run(env.bc.getOperation(sub.operationId));
     expect(op).toMatchObject({ state: 'final', outcome: 'cancelled' });
@@ -317,15 +325,36 @@ describe('replace and cancel (BIP125 RBF)', () => {
 describe('crash safety on the inputs ordering (handoff R20: killPrevious)', () => {
   async function crashEnv() {
     const { signer, calls } = countingSigner();
-    const faulty = new FaultyOperationStore(new MemoryOperationStore());
-    const env = await createUtxoEnv({ signer, stores: { operations: faulty } });
-    return { env, faulty, calls, intent: { to: env.stranger(), amount: 50_000n } };
+    let faulty: FaultyOperationStore | undefined;
+    // The stores run on the env's FakeClock, never the wall clock (F3-R18).
+    const env = await createUtxoEnv({
+      signer,
+      stores: (clock) => ({
+        operations: (faulty = new FaultyOperationStore(new MemoryOperationStore(clock))),
+      }),
+    });
+    const intent = { to: env.stranger(), amount: 50_000n };
+    /** Drives the Operation to `final`: executed once, the payee paid exactly once. */
+    const paidOnce = async (live: UtxoEnv, key: string, signed: number) => {
+      const op = await env.stores.operations.getByKey('default', key);
+      const done = await finalOf(live, op?.id ?? '');
+      expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+      expect((await live.run(live.bc.getBalance(intent.to))).amount.base).toBe(
+        intent.amount,
+      );
+      expect(calls()).toBe(signed);
+      // Every timestamp is the FakeClock's.
+      const record = await env.stores.operations.get('default', op?.id ?? '');
+      expect(record?.createdAt).toBeLessThanOrEqual(env.clock.now());
+      expect(record?.updatedAt).toBeLessThanOrEqual(env.clock.now());
+    };
+    return { env, faulty: faulty as FaultyOperationStore, calls, intent, paidOnce };
   }
   const patchState = (state: string) => (args: readonly unknown[]) =>
     (args[2] as OperationPatch | undefined)?.state === state;
 
   it('rebroadcasts a signed-but-never-sent transfer without signing again', async () => {
-    const { env, faulty, calls, intent } = await crashEnv();
+    const { env, faulty, calls, intent, paidOnce } = await crashEnv();
     faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
@@ -348,10 +377,11 @@ describe('crash safety on the inputs ordering (handoff R20: killPrevious)', () =
     });
     await env.clock.advance(5_000);
     expect(settled).toBe(false);
+    await paidOnce(restarted, 'k', 1);
   });
 
   it('treats its own already-mined transaction as sent after a crash', async () => {
-    const { env, faulty, calls, intent } = await crashEnv();
+    const { env, faulty, calls, intent, paidOnce } = await crashEnv();
     faulty.crashOn({ method: 'update', timing: 'before', when: patchState('submitted') });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
@@ -369,10 +399,11 @@ describe('crash safety on the inputs ordering (handoff R20: killPrevious)', () =
     expect(['submitted', 'included']).toContain(sub.state);
     expect(env.node.sendCount(ref)).toBe(2);
     expect(calls()).toBe(1);
+    await paidOnce(restarted, 'k', 1);
   });
 
   it('keeps the inputs of a crashed prepared Operation reserved, then signs its stored PSBT', async () => {
-    const { env, faulty, calls, intent } = await crashEnv();
+    const { env, faulty, calls, intent, paidOnce } = await crashEnv();
     faulty.crashOn({ method: 'update', timing: 'after', when: patchState('prepared') });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
@@ -395,10 +426,11 @@ describe('crash safety on the inputs ordering (handoff R20: killPrevious)', () =
     );
     expect(outpointsOf(env, sub.attempt?.id ?? '').sort()).toEqual([...held].sort());
     expect(calls()).toBe(2);
+    await paidOnce(restarted, 'k', 2);
   });
 
   it('recovery rebroadcasts a signed transfer and never signs', async () => {
-    const { env, faulty, calls, intent } = await crashEnv();
+    const { env, faulty, calls, intent, paidOnce } = await crashEnv();
     faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
     await expect(
       env.run(env.bc.transfer(intent, { idempotencyKey: 'k' })),
@@ -410,23 +442,25 @@ describe('crash safety on the inputs ordering (handoff R20: killPrevious)', () =
       (await env.stores.operations.getByKey('default', 'k'))?.attempts[0]?.ref.id ?? '';
     expect(env.node.inMempool(ref)).toBe(true);
     expect(calls()).toBe(1);
+    await paidOnce(restarted, 'k', 1);
   });
 });
 
 describe('crash during replace (M12)', () => {
   it('resends the stored replacement after a crash, never re-signs it, and keeps its inputs', async () => {
     const { signer, calls } = countingSigner();
-    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    let faulty: FaultyOperationStore | undefined;
     const env = await createUtxoEnv({
       signer,
-      stores: { operations: faulty },
+      stores: (clock) => ({
+        operations: (faulty = new FaultyOperationStore(new MemoryOperationStore(clock))),
+      }),
       fund: [60_000n, 30_000n],
     });
-    const sub = await env.run(
-      env.bc.transfer({ to: env.stranger(), amount: 50_000n, fee: 'slow' }),
-    );
+    const to = env.stranger();
+    const sub = await env.run(env.bc.transfer({ to, amount: 50_000n, fee: 'slow' }));
     // 100 sat/vB cannot come out of the change alone: the replacement adds the 30,000 output.
-    faulty.crashOn({
+    faulty!.crashOn({
       method: 'appendAttempt',
       timing: 'after',
       when: (args) => (args[2] as AttemptRecord).purpose === 'replacement',
@@ -460,6 +494,16 @@ describe('crash during replace (M12)', () => {
       restarted.bc.waitForConfirmation(sub.operationId, { finality: 'final' }),
     );
     expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    // F3-R18: the stored replacement won, nothing was signed again, and the payee was paid
+    // exactly once.
+    expect(calls()).toBe(2);
+    expect(await restarted.run(restarted.bc.getOperation(sub.operationId))).toMatchObject(
+      {
+        activeAttempt: { id: replacement?.ref.id },
+      },
+    );
+    expect(env.node.confirmations(replacement?.ref.id ?? '')).toBeGreaterThan(0);
+    expect((await restarted.run(restarted.bc.getBalance(to))).amount.base).toBe(50_000n);
   });
 });
 

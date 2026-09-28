@@ -17,6 +17,7 @@ import { callbackSigner } from '../../../../src/core/signing/callback';
 import type { Signer } from '../../../../src/core/signing/types';
 import { createMemoryStores } from '../../../../src/core/store/memory';
 import type { Stores } from '../../../../src/core/store/types';
+import type { Clock } from '../../../../src/core/util/clock';
 import { FakeClock, drive } from '../../../../src/testing/fake-clock';
 import { fenceGeneration, type Generation } from '../../../../src/testing/generation';
 import { ScriptedEsploraNode, type ScriptedEsploraNodeOptions } from './node';
@@ -35,7 +36,11 @@ export interface UtxoEnvOptions {
   /** `chains.bitcoin.options` (the driver options). */
   readonly options?: Readonly<Record<string, unknown>>;
   readonly wallet?: Partial<WalletConfig>;
-  readonly stores?: Partial<Stores>;
+  /**
+   * Stores to use instead of the memory ones; a factory gets the env's FakeClock, so a
+   * store's timestamps never come from the wall clock (F3-R18, lesson 1).
+   */
+  readonly stores?: Partial<Stores> | ((clock: Clock) => Partial<Stores>);
   readonly signer?: Signer;
 }
 
@@ -71,7 +76,9 @@ export async function createUtxoEnv(options: UtxoEnvOptions = {}): Promise<UtxoE
   const urls = (options.endpoints ?? ['a']).map((entry) =>
     typeof entry === 'string' ? node.endpoint(entry) : node.endpoint(entry.name, entry),
   );
-  const stores: Stores = { ...createMemoryStores(clock), ...options.stores };
+  const own =
+    typeof options.stores === 'function' ? options.stores(clock) : options.stores;
+  const stores: Stores = { ...createMemoryStores(clock), ...own };
   const signer = options.signer ?? testSigner();
   const env = await assemble(
     { clock, node, urls, stores, signer, options },
