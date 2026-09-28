@@ -12,6 +12,7 @@ import {
   TransactionMessage,
 } from '@solana/web3.js';
 import { PLACEHOLDER_ORIGIN, type Transport } from '../../core/transport/types';
+import { solanaDriverFactory } from './driver';
 import { ASSOCIATED_TOKEN_PROGRAM, TOKEN_PROGRAM } from './programs';
 import { BROADCAST, READ } from './rpc';
 import type { SolanaCodec } from './types';
@@ -95,3 +96,6 @@ export function createWeb3Codec(transport: Transport): SolanaCodec {
     },
   };
 }
+
+/** The `@solana/web3.js` adapter's driver factory; the manifest's `load()` returns it. */
+export const web3DriverFactory = solanaDriverFactory(createWeb3Codec);

@@ -82,6 +82,23 @@ export type SolanaCallTags = Pick<
 
 export type Commitment = 'confirmed' | 'finalized';
 
+/**
+ * The expiry ordering a Solana build records (F5-R9): the recent blockhash's
+ * `lastValidBlockHeight`, the blockhash itself and the slot of its block, all from one
+ * `getLatestBlockhash` answer. Proofs use the height only once the quorum attests that the
+ * finalized block at `blockhashSlot` has hash `blockhash` and sits exactly 150 heights
+ * below `lastValidHeight` (agave's `MAX_PROCESSING_AGE`), so no endpoint proposes the
+ * height a verdict rests on (lesson 17).
+ */
+export interface SolanaExpiryOrdering {
+  readonly kind: 'expiry';
+  readonly lastValidHeight: bigint;
+  /** The message's recent blockhash (base58). */
+  readonly blockhash: string;
+  /** The slot of the block whose hash `blockhash` is. */
+  readonly blockhashSlot: bigint;
+}
+
 /** One instruction of a transaction we build: program, accounts and data. */
 export interface SolanaInstruction {
   readonly programId: string;

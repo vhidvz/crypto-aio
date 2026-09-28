@@ -389,9 +389,12 @@ describe('building and assembling', () => {
       memo: 'order-7',
     });
     const { fee, unsigned, signed } = await signedFor(h, request);
+    // F5-R9: the height comes with the blockhash and the slot of its block.
     expect(unsigned.ordering).toEqual({
       kind: 'expiry',
       lastValidHeight: h.node.head.height + 150n,
+      blockhash: h.node.head.hash,
+      blockhashSlot: h.node.head.slot,
     });
     expect(unsigned.signingRequests).toEqual([
       {

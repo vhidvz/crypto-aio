@@ -2,8 +2,10 @@
  * Solana transfers (spec §15): SystemProgram and SPL `transferChecked`, with
  * `createAssociatedTokenAccountIdempotent` when the recipient's token account is missing,
  * an optional Memo, and compute-budget instructions. Expiry ordering: the recent blockhash's
- * `lastValidBlockHeight` is the Attempt's ordering. One `ed25519` signing request per
- * required signer, over the message; the Attempt ref is the first signature (canonical).
+ * `lastValidBlockHeight` is the Attempt's ordering, recorded with the blockhash and the slot
+ * of its block (`SolanaExpiryOrdering`, F5-R9) so proofs can attest the height before a
+ * verdict rests on it. One `ed25519` signing request per required signer, over the
+ * message; the Attempt ref is the first signature (canonical).
  *
  * Nothing is signed before the compiled bytes are read back, SDK-free (`wire.ts`): one legacy
  * message whose only signer is the sender, on our blockhash, with exactly our instructions,
@@ -63,12 +65,18 @@ import {
   contextValue,
   malformed,
   notYet,
+  record,
   rpcCode,
   rpcMessage,
   u64,
   withSignal,
 } from './rpc';
-import type { SolanaCallTags, SolanaFeeDetails, SolanaInstruction } from './types';
+import type {
+  SolanaCallTags,
+  SolanaExpiryOrdering,
+  SolanaFeeDetails,
+  SolanaInstruction,
+} from './types';
 import { parseMessage, signedTransaction, type MessageParts } from './wire';
 
 const invalid = (reason: string) => new ValidationError('INVALID_INTENT', reason);
@@ -309,20 +317,37 @@ const withBudget = (limit: bigint, price: bigint, list: readonly SolanaInstructi
   ...list,
 ];
 
+/**
+ * The newest blockhash at `confirmed`, its last valid height, and the slot of its block:
+ * agave answers from one bank (`rpc.rs` `get_latest_blockhash`: the bank's last blockhash,
+ * that blockhash's last valid height, and `new_response`'s context slot, the bank's own).
+ * One endpoint's word: proofs attest the three together before using the height (F5-R9).
+ */
 async function latestBlockhash(
   ctx: SolanaContext,
   tags: SolanaCallTags,
-): Promise<{ readonly blockhash: string; readonly lastValidBlockHeight: bigint }> {
-  const value = contextValue(
-    await call(ctx.transport, 'getLatestBlockhash', [{ commitment: 'confirmed' }], tags),
+): Promise<{
+  readonly blockhash: string;
+  readonly lastValidBlockHeight: bigint;
+  readonly slot: bigint;
+}> {
+  const result = await call(
+    ctx.transport,
     'getLatestBlockhash',
-  ) as { blockhash?: unknown; lastValidBlockHeight?: unknown } | null;
+    [{ commitment: 'confirmed' }],
+    tags,
+  );
+  const value = contextValue(result, 'getLatestBlockhash') as {
+    blockhash?: unknown;
+    lastValidBlockHeight?: unknown;
+  } | null;
   if (!value || decodeBase58(value.blockhash, 32) === null) {
     throw malformed('getLatestBlockhash');
   }
   return {
     blockhash: value.blockhash as string,
     lastValidBlockHeight: u64(value.lastValidBlockHeight, 'lastValidBlockHeight'),
+    slot: u64(record(record(result)?.context)?.slot, 'getLatestBlockhash context slot'),
   };
 }
 
@@ -657,13 +682,20 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
         details.computeUnitPrice,
         transferInstructions(plan),
       );
-      const { blockhash, lastValidBlockHeight } = await latestBlockhash(ctx, tags);
+      const { blockhash, lastValidBlockHeight, slot } = await latestBlockhash(ctx, tags);
       // The payload, the signing request and the ordering all come from this one message,
       // read back before it is offered for signing.
       const message = ctx.codec.compileMessage(plan.from, blockhash, list);
       const parts = readBack(message, plan.from);
       checkRecipient(ctx, parts, output, mint);
       checkInstructions(parts, blockhash, list);
+      // F5-R9: the height, with the blockhash and slot that let a proof attest it.
+      const ordering: SolanaExpiryOrdering = {
+        kind: 'expiry',
+        lastValidHeight: lastValidBlockHeight,
+        blockhash,
+        blockhashSlot: slot,
+      };
       const unsigned: UnsignedTx = {
         payload: { encoding: 'base64', data: base64(message) },
         signingRequests: [
@@ -676,7 +708,7 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
             ...(key.keyRef ? { keyRef: key.keyRef } : {}),
           },
         ],
-        ordering: { kind: 'expiry', lastValidHeight: lastValidBlockHeight },
+        ordering,
         fee,
         summary: {
           asset: assetId(ctx.chain.id, ctx.network.id, intent.asset),
