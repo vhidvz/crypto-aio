@@ -1,7 +1,8 @@
 /**
  * The Solana wire format the driver reads and writes itself, SDK-free: compact-u16 lengths,
- * a legacy message's header and signer keys, and a signed transaction (signatures followed
- * by the message). Message compilation stays with the SDK (`web3.ts`).
+ * a legacy message's parts (header, keys, blockhash and instructions, which the builder
+ * reads back before anything is signed), and a signed transaction (signatures followed by
+ * the message). Message compilation stays with the SDK (`web3.ts`).
  *
  * Read bytes are untrusted (a stored message, a node's answer): every length prefix is
  * checked against the bytes that remain before anything is sliced or allocated, and a
@@ -58,13 +59,36 @@ export function decodeLength(
   return null;
 }
 
+/** One instruction of a legacy message: its program's key index, account indexes and data. */
+export interface MessageInstruction {
+  readonly program: number;
+  /** Indexes into the message's keys. */
+  readonly accounts: Uint8Array;
+  readonly data: Uint8Array;
+}
+
 /**
- * A legacy message's signer addresses, in order, or `null` unless `message` is exactly one
- * well-formed legacy message (the runtime's sanitize rules): at least one signer, a
- * writable fee payer, signer and read-only non-signer ranges within the keys, every program
- * and account index within the keys, no program at index 0, and no trailing bytes.
+ * The parts of one well-formed legacy message. Keys, the blockhash, account indexes and data
+ * are views into the message bytes, not copies.
  */
-export function messageSigners(message: Uint8Array): readonly string[] | null {
+export interface MessageParts {
+  /** Signers: the first `required` keys; the fee payer first. */
+  readonly required: number;
+  readonly readonlySigned: number;
+  readonly readonlyUnsigned: number;
+  readonly keys: readonly Uint8Array[];
+  readonly blockhash: Uint8Array;
+  readonly instructions: readonly MessageInstruction[];
+}
+
+/**
+ * The parts of `message`, or `null` unless it is exactly one well-formed legacy message (the
+ * runtime's sanitize rules): at least one signer, a writable fee payer, signer and read-only
+ * non-signer ranges within the keys, every program and account index within the keys, no
+ * program at index 0, and no trailing bytes. Each count is checked against the bytes that
+ * remain before anything is read, so the work and the views it makes are linear in the input.
+ */
+export function parseMessage(message: Uint8Array): MessageParts | null {
   const required = message[0];
   const readonlySigned = message[1];
   const readonlyUnsigned = message[2];
@@ -89,6 +113,7 @@ export function messageSigners(message: Uint8Array): readonly string[] | null {
     return null;
   }
   at = instructions.next;
+  const list: MessageInstruction[] = [];
   for (let i = 0; i < instructions.value; i++) {
     const program = message[at];
     if (program === undefined || program === 0 || program >= keys.value) return null;
@@ -99,15 +124,34 @@ export function messageSigners(message: Uint8Array): readonly string[] | null {
     }
     const data = decodeLength(message, accounts.next + accounts.value);
     if (!data || data.value > message.length - data.next) return null;
+    list.push({
+      program,
+      accounts: message.subarray(accounts.next, accounts.next + accounts.value),
+      data: message.subarray(data.next, data.next + data.value),
+    });
     at = data.next + data.value;
   }
   if (at !== message.length) return null;
-  const signers: string[] = [];
-  for (let i = 0; i < required; i++) {
-    const start = keys.next + KEY_BYTES * i;
-    signers.push(encodeBase58(message.subarray(start, start + KEY_BYTES)));
-  }
-  return signers;
+  const start = keys.next + KEY_BYTES * keys.value;
+  return {
+    required,
+    readonlySigned,
+    readonlyUnsigned,
+    keys: Array.from({ length: keys.value }, (_, i) =>
+      message.subarray(keys.next + KEY_BYTES * i, keys.next + KEY_BYTES * (i + 1)),
+    ),
+    blockhash: message.subarray(start, start + BLOCKHASH_BYTES),
+    instructions: list,
+  };
+}
+
+/**
+ * A legacy message's signer addresses, in order, or `null` unless `message` is exactly one
+ * well-formed legacy message (`parseMessage`).
+ */
+export function messageSigners(message: Uint8Array): readonly string[] | null {
+  const parts = parseMessage(message);
+  return parts ? parts.keys.slice(0, parts.required).map(encodeBase58) : null;
 }
 
 /** A signed transaction: the signatures (64 bytes each), in signer order, then the message. */
