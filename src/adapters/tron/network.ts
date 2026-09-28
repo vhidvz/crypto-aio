@@ -52,6 +52,53 @@ export interface TronNetworkConfig {
  */
 const OPTION_KEYS: ReadonlySet<string> = new Set(['expirationMs', 'energyMarginPercent']);
 
+/**
+ * A name from the configuration (an option key, a capability) as an error may show it: a
+ * short plain identifier only, so a pasted value never reaches a message or a log.
+ */
+function named(key: unknown): string {
+  return typeof key === 'string' && /^[A-Za-z0-9_.:-]{1,40}$/.test(key)
+    ? `'${key}'`
+    : '(name not shown)';
+}
+
+/**
+ * F4-R2 M3: a network's capability overrides, checked against what the Tron driver serves,
+ * as `evmNetworkConfig` checks the EVM ones. The handle advertises the manifest's
+ * capabilities plus `add`, minus `remove` (the core's order), so that set must stay within
+ * the driver's own: no `replace-fee` or `cancel` (no replacement), no `fee-market-1559` (the
+ * `tron` fee model), no `finality-tag` (solidified finality), no `batch-transfer`.
+ * `address-history` comes with an indexer, never from the network, and `expiry` is how every
+ * Tron transaction is ordered. A removal must name a Tron capability, so a typo fails instead
+ * of leaving the capability advertised (lesson 10).
+ */
+function checkCapabilities(network: NetworkInfo, fail: (reason: string) => never): void {
+  const add: unknown = network.capabilities?.add ?? [];
+  const remove: unknown = network.capabilities?.remove ?? [];
+  if (!Array.isArray(add) || !Array.isArray(remove)) {
+    return fail('capabilities.add and capabilities.remove must be lists');
+  }
+  const own = (list: readonly Capability[], c: unknown) => list.includes(c as Capability);
+  const advertised = new Set<unknown>([...TRON_CAPABILITIES, ...add]);
+  for (const c of remove) {
+    if (!own(TRON_CAPABILITIES, c) && !own(TRON_INDEXER_CAPABILITIES, c)) {
+      fail(`capabilities.remove: the Tron driver does not have ${named(c)}`);
+    }
+    advertised.delete(c);
+  }
+  for (const c of advertised) {
+    if (own(TRON_INDEXER_CAPABILITIES, c)) {
+      fail(`capabilities.add: ${named(c)} comes with an indexer, never from the network`);
+    }
+    if (!own(TRON_CAPABILITIES, c)) {
+      fail(`capabilities.add: the Tron driver does not have ${named(c)}`);
+    }
+  }
+  if (!advertised.has('expiry')) {
+    fail(`capabilities.remove: every Tron transaction expires, so 'expiry' stays`);
+  }
+}
+
 function integerIn(
   value: unknown,
   min: number,
@@ -88,9 +135,10 @@ export function tronNetworkConfig(
   }
   if (network.feeModel !== 'tron') fail(`its fee model must be 'tron'`);
   if (network.finality.kind !== 'solidified') fail(`its finality must be 'solidified'`);
+  checkCapabilities(network, fail);
   // The error names the key only, never its value.
   for (const key of Object.keys(options)) {
-    if (!OPTION_KEYS.has(key)) fail(`unknown option '${key}'`);
+    if (!OPTION_KEYS.has(key)) fail(`unknown option ${named(key)}`);
   }
   return {
     identity: network.identity as string,

@@ -15,13 +15,15 @@
     "./evm": { "types": "./dist/adapters/evm/index.d.ts", "default": "./dist/adapters/evm/index.js" },
     "./native": { "types": "./dist/native.d.ts", "default": "./dist/native.js" },
     "./testing": { "types": "./dist/testing/index.d.ts", "default": "./dist/testing/index.js" },
+    "./tron": { "types": "./dist/adapters/tron/index.d.ts", "default": "./dist/adapters/tron/index.js" },
     "./package.json": "./package.json"
   },
   "typesVersions": {
     "*": {
       "evm": ["dist/adapters/evm/index.d.ts"],
       "native": ["dist/native.d.ts"],
-      "testing": ["dist/testing/index.d.ts"]
+      "testing": ["dist/testing/index.d.ts"],
+      "tron": ["dist/adapters/tron/index.d.ts"]
     }
   },
   "files": ["dist"],

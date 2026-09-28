@@ -44,6 +44,7 @@ const OPTIONS: ts.CompilerOptions = {
     'crypto-aio/testing': [join(ROOT, 'src', 'testing', 'index.ts')],
     'crypto-aio/evm': [join(ROOT, 'src', 'adapters', 'evm', 'index.ts')],
     'crypto-aio/native': [join(ROOT, 'src', 'native.ts')],
+    'crypto-aio/tron': [join(ROOT, 'src', 'adapters', 'tron', 'index.ts')],
   },
 };
 
@@ -189,6 +190,12 @@ export const eth = aio.blockchain({ chain: 'ethereum', network: 'sepolia' });
 export const ext: EvmExt = eth.ext;
 export const fee: EvmFeeOverride = { gasPrice: 1n };
 export type Details = EvmFeeDetails;
+import type { TronExt, TronFeeDetails, TronFeeOverride, TronResources } from 'crypto-aio';
+export const tron = aio.blockchain({ chain: 'tron', network: 'nile' });
+export const tronExt: TronExt = tron.ext;
+export const tronFee: TronFeeOverride = { feeLimit: 1n };
+export type TronDetails = TronFeeDetails;
+export type Resources = TronResources;
 `;
 
 /** Where the in-memory declaration files live: the `dist` of the tests. */
@@ -216,6 +223,7 @@ function declarations(): ReadonlyMap<string, string> {
   const entries = [
     join(ROOT, 'src', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'evm', 'index.ts'),
+    join(ROOT, 'src', 'adapters', 'tron', 'index.ts'),
   ];
   const { diagnostics } = ts.createProgram(entries, options, host).emit();
   expect(diagnostics.map(message)).toEqual([]);
@@ -223,10 +231,10 @@ function declarations(): ReadonlyMap<string, string> {
 }
 
 /**
- * A user with neither SDK installed who type-checks every library file, against the
- * declarations `dist` ships. Mapping `ethers` and `web3` to a missing path in `paths` is not
- * enough (resolution then falls back to node_modules), so the host hides both packages; the
- * control below proves they do not resolve.
+ * A user with no SDK installed who type-checks every library file, against the declarations
+ * `dist` ships. Mapping `ethers`, `web3` and `tronweb` to a missing path in `paths` is not
+ * enough (resolution then falls back to node_modules), so the host hides the packages; the
+ * controls below prove they do not resolve.
  */
 const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
   options: {
@@ -235,9 +243,12 @@ const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
     paths: {
       'crypto-aio': [join(DTS, 'index.d.ts')],
       'crypto-aio/evm': [join(DTS, 'adapters', 'evm', 'index.d.ts')],
+      'crypto-aio/tron': [join(DTS, 'adapters', 'tron', 'index.d.ts')],
     },
   },
-  hidden: /[\\/]node_modules[\\/](ethers|web3)[\\/]/,
+  // tronweb with the packages its types pull in (axios, bignumber.js, eventemitter3, ethers).
+  hidden:
+    /[\\/]node_modules[\\/](ethers|web3|tronweb|axios|bignumber\.js|eventemitter3)[\\/]/,
   files: dts,
 });
 
@@ -247,7 +258,7 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     dts = declarations();
   }, 120_000);
 
-  it('type-checks `crypto-aio` with neither ethers nor web3 resolvable, under skipLibCheck: false', () => {
+  it('type-checks `crypto-aio` with no SDK resolvable (ethers, web3, tronweb), under skipLibCheck: false', () => {
     const { errors, everywhere } = compile(
       { 'main.ts': USE_MAIN },
       undefined,
@@ -255,6 +266,19 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     );
     expect(errors).toEqual([]);
     expect(everywhere()).toEqual([]);
+  }, 120_000);
+
+  it("control: `crypto-aio/tron` does need tronweb's types, so tronweb really is unresolvable", () => {
+    const { everywhere } = compile(
+      { 'main.ts': `${USE_MAIN}import 'crypto-aio/tron';\n` },
+      undefined,
+      withoutSdks(dts),
+    );
+    expect(everywhere()).toEqual([
+      expect.stringMatching(
+        /__dts__\/adapters\/tron\/index\.d\.ts: Cannot find module 'tronweb'/,
+      ),
+    ]);
   }, 120_000);
 
   it('control: `crypto-aio/evm` does need the SDK types (R81), so the SDKs really are unresolvable', () => {
@@ -270,6 +294,52 @@ describe('the main entry names no SDK (spec §5.6)', () => {
       expect.stringMatching(
         /__dts__\/adapters\/evm\/index\.d\.ts: Cannot find module 'web3'/,
       ),
+    ]);
+  }, 120_000);
+});
+
+/** The Tron family is typed from the entry; its SDK client from `crypto-aio/tron`. */
+const USE_TRON = `
+import { CryptoAio, type TronFeeOverride } from 'crypto-aio';
+import { native } from 'crypto-aio/native';
+import 'crypto-aio/tron';
+const aio = new CryptoAio({ env: false });
+export const tron = aio.blockchain({ chain: 'tron', network: 'shasta', library: 'tronweb' });
+export const fee: TronFeeOverride = { feeLimit: 30_000_000n };
+export async function head(): Promise<unknown> {
+  const client = await native(aio.blockchain({ chain: 'tron' }), 'tronweb');
+  return client.trx.getCurrentBlock();
+}
+export async function energy(): Promise<bigint> {
+  const bc = aio.blockchain({ chain: 'tron', network: 'nile' });
+  return (await bc.ext.tron.getResources('T')).energy;
+}
+`;
+
+describe('Tron registry augmentation (R37)', () => {
+  it('types the Tron chain, networks, library, ext and native client, in both file orders', () => {
+    const first = compile({
+      'augment.ts': AUGMENT,
+      'tron.ts': USE_TRON,
+      'acme.ts': USE_ACME,
+    });
+    expect(first.errors).toEqual([]);
+    const second = compile(
+      { 'acme.ts': USE_ACME, 'tron.ts': USE_TRON, 'augment.ts': AUGMENT },
+      first.program,
+    );
+    expect(second.errors).toEqual([]);
+  }, 120_000);
+
+  it('rejects a network or library the Tron family does not have', () => {
+    const wrong = USE_TRON.replace("network: 'shasta'", "network: 'goerli'").replace(
+      "library: 'tronweb'",
+      "library: 'web3'",
+    );
+    const { errors } = compile({ 'tron.ts': wrong });
+    expect(errors).toEqual([
+      expect.stringContaining(`'"goerli"' is not assignable`),
+      expect.stringContaining(`'"web3"' is not assignable`),
     ]);
   }, 120_000);
 });

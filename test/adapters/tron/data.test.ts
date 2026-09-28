@@ -185,4 +185,74 @@ describe('Tron chain data (verified, Appendix A)', () => {
       expect(message).not.toContain(String(value));
     }
   });
+
+  it('refuses a capability override the Tron driver cannot serve (F4-R2 M3)', () => {
+    const nile = TRON_CHAIN.networks.nile as NetworkInfo;
+    const withCapabilities = (capabilities: unknown): NetworkInfo => ({
+      ...nile,
+      capabilities: capabilities as NetworkInfo['capabilities'],
+    });
+    /** The CONFIG_INVALID message `tronNetworkConfig` throws. */
+    const refusal = (network: NetworkInfo, options?: Record<string, unknown>): string => {
+      let caught: unknown;
+      try {
+        tronNetworkConfig(TRON_CHAIN, network, options);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: 'CONFIG_INVALID' });
+      return (caught as Error).message;
+    };
+    // A network may drop what the driver has, or list it again.
+    for (const capabilities of [
+      { remove: ['tokens', 'memo', 'block-scan', 'hd-public-derivation'] },
+      { remove: ['address-history'] },
+      { add: ['tokens', 'expiry'] },
+      { add: ['address-history'], remove: ['address-history'] },
+    ]) {
+      expect(() =>
+        tronNetworkConfig(TRON_CHAIN, withCapabilities(capabilities)),
+      ).not.toThrow();
+    }
+    // Never advertise what the driver lacks: its fee model, finality and features say no.
+    for (const capability of [
+      'replace-fee',
+      'cancel',
+      'fee-market-1559',
+      'finality-tag',
+      'batch-transfer',
+      'contract-read',
+      'acme:custom',
+    ]) {
+      expect(refusal(withCapabilities({ add: [capability] }))).toBe(
+        `Tron network tron:nile: capabilities.add: the Tron driver does not have '${capability}'`,
+      );
+    }
+    expect(refusal(withCapabilities({ add: ['address-history'] }))).toBe(
+      "Tron network tron:nile: capabilities.add: 'address-history' comes with an indexer, never from the network",
+    );
+    expect(refusal(withCapabilities({ remove: ['expiry'] }))).toBe(
+      "Tron network tron:nile: capabilities.remove: every Tron transaction expires, so 'expiry' stays",
+    );
+    // A removal names a Tron capability, so a typo fails instead of leaving it advertised.
+    expect(refusal(withCapabilities({ remove: ['memos'] }))).toBe(
+      "Tron network tron:nile: capabilities.remove: the Tron driver does not have 'memos'",
+    );
+    expect(refusal(withCapabilities({ add: 'memo' }))).toBe(
+      'Tron network tron:nile: capabilities.add and capabilities.remove must be lists',
+    );
+    // A name is shown only when short and plain, so a pasted value never reaches a message.
+    const long = 'x'.repeat(100_000);
+    for (const [network, options] of [
+      [withCapabilities({ add: [long] }), undefined],
+      [withCapabilities({ remove: [long] }), undefined],
+      [withCapabilities({ add: ['memo\nsecret-value'] }), undefined],
+      [nile, { [long]: 1 }],
+    ] as const) {
+      const message = refusal(network, options);
+      expect(message).toContain('(name not shown)');
+      expect(message.length).toBeLessThan(200);
+      expect(message).not.toContain('secret-value');
+    }
+  });
 });
