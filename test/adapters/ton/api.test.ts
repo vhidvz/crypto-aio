@@ -430,6 +430,42 @@ describe('the toncenter API layer', () => {
     expect(await t.run(t.api.transactionsByMessage(hashNorm, READ))).toEqual([]);
   });
 
+  it('counts only a finalized transaction as chain evidence (v3 finality)', async () => {
+    const t = tonNode();
+    const { hashNorm } = await withTransfer(t);
+    const [tx] = await t.run(t.api.transactionsByMessage(hashNorm, READ));
+    const byMessage = await indexerBody(t, `/transactionsByMessage?msg_hash=${hashNorm}`);
+    const traces = await indexerBody(t, `/traces?tx_hash=${tx!.hash}`);
+    const [trace] = traces.traces as Json[];
+    const members = trace!.transactions as Record<string, Json>;
+    const delivery = (trace!.transactions_order as string[]).at(-1)!;
+    let finality: unknown;
+    const marked = (json: Json): Json => {
+      const { finality: _live, ...rest } = json;
+      return finality === undefined ? rest : { ...rest, finality };
+    };
+    t.node.intercept = (_endpoint, route) => {
+      if (route === '/transactionsByMessage') {
+        const listed = (byMessage.transactions as Json[]).map(marked);
+        return { json: { ...byMessage, transactions: listed } };
+      }
+      if (route !== '/traces') return undefined;
+      // Only the delivery: the trace still holds the transaction asked for.
+      const transactions = { ...members, [delivery]: marked(members[delivery]!) };
+      return { json: { ...traces, traces: [{ ...trace, transactions }] } };
+    };
+    // Live answers name the state; the swagger declares 0 pending, 1 confirmed, 2 finalized.
+    for (finality of ['pending', 'confirmed', 0, 1, 'final']) {
+      expect(await t.run(t.api.transactionsByMessage(hashNorm, READ))).toEqual([]);
+      expect(await t.run(t.api.trace(tx!.hash, READ))).toMatchObject({ complete: false });
+    }
+    // An indexer that writes no `finality` still needs each transaction's masterchain block.
+    for (finality of ['finalized', 2, undefined]) {
+      expect(await t.run(t.api.transactionsByMessage(hashNorm, READ))).toHaveLength(1);
+      expect(await t.run(t.api.trace(tx!.hash, READ))).toMatchObject({ complete: true });
+    }
+  });
+
   it('reads u64 values that toncenter writes as JSON numbers exactly (A12)', async () => {
     const t = tonNode();
     const huge = '18446744073709551615';

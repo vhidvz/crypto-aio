@@ -455,11 +455,27 @@ export function transactionOf(value: unknown, route: string): V3Transaction {
   };
 }
 
-/** Emulated (pending) transactions are toncenter's guesses, never chain evidence. */
-const committed = (value: unknown): boolean =>
-  !(isRecord(value) && value.emulated === true);
+/**
+ * Whether a v3 `finality` is the masterchain's: live answers name the state (`finalized`),
+ * the swagger declares an int enum (0 pending, 1 confirmed, 2 finalized). An indexer that
+ * writes none is read as before: every transaction still needs its masterchain block.
+ */
+function finalized(f: unknown): boolean {
+  return f === undefined || f === null || f === 'finalized' || f === 2;
+}
 
-/** A v3 transaction list, emulated ones dropped; more than `limit` items is malformed (M3). */
+/**
+ * Only chain evidence counts: an emulated (pending) transaction is toncenter's guess, and
+ * one not yet `finalized` (a shard block the masterchain has not committed) is not final;
+ * either reads as "not yet" (lesson 16), and a trace holding one is incomplete.
+ */
+const committed = (value: unknown): boolean =>
+  !(isRecord(value) && (value.emulated === true || !finalized(value.finality)));
+
+/**
+ * A v3 transaction list, emulated or not yet finalized ones dropped; more than `limit`
+ * items is malformed (M3).
+ */
 function transactionsOf(body: unknown, route: string, limit: number): V3Transaction[] {
   if (
     !isRecord(body) ||
@@ -525,8 +541,8 @@ export function runResultOf(body: unknown): RunResult {
 
 /**
  * A trace, parsed: its transactions in trace order, each listed once under its own hash
- * (a transaction counted twice would count its transfer twice). An emulated one is left
- * out and leaves the trace incomplete.
+ * (a transaction counted twice would count its transfer twice). An emulated or not yet
+ * finalized one is left out and leaves the trace incomplete.
  */
 function traceOf(value: unknown, route: string): V3Trace {
   const t = need(record(value), route);
