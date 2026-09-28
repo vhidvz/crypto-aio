@@ -106,7 +106,7 @@ describe('the built-in Tron plugin', () => {
     expect(trongrid?.supports('ethereum', 'mainnet')).toBe(false);
   });
 
-  it('is data only: registering it loads no SDK', () => {
+  it('declares one tronweb adapter for the tron chain, its peer dependency and deep-frozen chain data (lazy.test proves the lazy load)', () => {
     const plugin = tronPlugin();
     expect(
       plugin.adapters?.map((m) => [m.family, m.library, m.chains, m.peerDependencies]),
