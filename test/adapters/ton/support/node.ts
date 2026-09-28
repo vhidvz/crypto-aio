@@ -10,6 +10,9 @@
  *   (else the fee comes out of it), +2 skips a message the balance cannot pay; without +2
  *   the action phase fails (37, `no_funds`), rolling back the seqno and every message
  *   while the gas stays charged and nothing bounces; other flags are refused (34);
+ * - fee emulation as tonlib's `estimate_fees` runs it: on the endpoint's view, gas bought
+ *   with the balance, the wallet's own checks before its accept, a forward fee only for a
+ *   run that succeeded (F6-R17);
  * - external messages the chain cannot accept are refused at send time (HTTP 500, with the
  *   liteserver's own texts), checked against the endpoint's own view, and, when state
  *   changed meanwhile, silently never included; one whose balance pays the accept but not
@@ -1261,10 +1264,15 @@ export class ScriptedTonNode {
         );
       }
       case '/estimateFee': {
-        const body = request.json<{ address: string; body: string; init_code: string }>();
-        const deploy = body.init_code !== '';
+        const body = request.json<{
+          address: string;
+          body: string;
+          init_code: string;
+          init_data?: string;
+        }>();
+        const address = normalizeParam(body.address);
         // The endpoint emulates on its own view of the chain (M6).
-        const account = this.#blockAt(name, null).state.get(normalizeParam(body.address));
+        const account = this.#blockAt(name, null).state.get(address);
         const deployed = account?.status === 'active' ? account.wallet : undefined;
         const fees = (gas: bigint, fwd: bigint) =>
           ok({
@@ -1278,26 +1286,47 @@ export class ScriptedTonNode {
             },
             destination_fees: [],
           });
-        // No wallet in this view and no `StateInit`: no code runs, so nothing is sent, and
-        // toncenter reports the flat gas price (live, F6-R7).
-        if (!deploy && !deployed) return fees(NODE_FEES.flatGas, 0n);
-        const version = deployed
-          ? deployed.version
-          : Cell.fromBoc(Buffer.from(body.init_code, 'base64'))[0]
-                ?.hash()
-                .equals(WALLET_CODE.v4r2.hash())
-            ? 'v4r2'
-            : 'v5r1';
-        // The real action list's forward fees, as a liteserver's emulation reports them.
+        const cellOf = (boc: string | undefined) =>
+          boc ? (Cell.fromBoc(Buffer.from(boc, 'base64'))[0] ?? null) : null;
+        // An active account runs its own code (a `StateInit` is ignored); otherwise only a
+        // `StateInit` whose hash is the address deploys it.
+        const wallet =
+          deployed ??
+          this.#walletFromInit(address, {
+            code: cellOf(body.init_code),
+            data: cellOf(body.init_data),
+          });
+        // No wallet in this view and no usable `StateInit`: no code runs, so nothing is
+        // sent, and toncenter reports the flat gas price (live, F6-R7).
+        if (!wallet) return fees(NODE_FEES.flatGas, 0n);
+        // tonlib `Query::estimate_fees` buys the run's gas with the balance
+        // (`compute_gas_limits`), and reports `gas_fee` only for an accepted run and
+        // `fwd_fee` only for a successful one (F6-R17). No balance buys no gas.
+        const balance = account?.balance ?? 0n;
+        if (balance < NODE_FEES.flatGas) return fees(0n, 0n);
+        // The wallet code's own checks run before its accept (`ignore_chksig` skips only the
+        // signature): another seqno, wallet id or an expired request runs nothing.
         const request_ = parseRequest(
-          version,
+          wallet.version,
           Cell.fromBoc(Buffer.from(body.body, 'base64'))[0] as Cell,
         );
-        const fwd = (request_?.messages ?? []).reduce(
-          (sum, m) => sum + forwardFee(m.message, normalizeParam(body.address)),
+        if (
+          !request_ ||
+          request_.seqno !== wallet.seqno ||
+          request_.walletId !== wallet.walletId ||
+          request_.validUntil <= this.#now(address)
+        ) {
+          return fees(0n, 0n);
+        }
+        // Accepted, but the balance cannot pay the whole run: out of gas, nothing sent.
+        const gas = this.#walletGas(wallet.version, !deployed);
+        if (balance < gas) return fees(balance, 0n);
+        // The real action list's forward fees, as a liteserver's emulation reports them.
+        const fwd = request_.messages.reduce(
+          (sum, m) => sum + forwardFee(m.message, address),
           0n,
         );
-        return fees(this.#walletGas(version, deploy), fwd);
+        return fees(gas, fwd);
       }
       case '/sendBocReturnHash': {
         const { boc } = request.json<{ boc: string }>();

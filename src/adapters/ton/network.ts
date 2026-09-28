@@ -38,7 +38,33 @@ const OPTIONS: ReadonlySet<string> = new Set([
   'jettonAttached',
   'jettonForwardAmount',
   'finalitySkewBlocks',
+  'maxNetworkFee',
 ]);
+
+/** The ceiling of each workchain's `network` charge, in nanograms. */
+export interface TonFeeCeiling {
+  readonly basechain: bigint;
+  readonly masterchain: bigint;
+}
+
+/**
+ * The default economic ceiling on the `network` charge an endpoint's emulation suggests
+ * (board: "economic ceilings on fees taken from a node"; F6-R16, F6-R17), which a network
+ * replaces with `params.maxNetworkFee`. TON signs no fee: the chain charges gas and forward
+ * fees by its config, so an inflated estimate cannot make a transfer pay more, but it would
+ * fail the funds check for good (`INSUFFICIENT_FUNDS`) or mislead whoever approves the fee.
+ * A basechain wallet's transfer costs about 0.001-0.01 TON, and a whole gas limit (1M gas at
+ * 400 nanograms) 0.4 TON; a masterchain wallet pays about 25 times the gas and far more
+ * storage (about 6 TON a year for a v4r2 wallet at mainnet's config param 18), so 100 TON
+ * refuses only a wallet idle for more than about 13 years. Above the ceiling an estimate is
+ * a retryable `PROVIDER_INCONSISTENT`.
+ */
+export const DEFAULT_MAX_NETWORK_FEE: TonFeeCeiling = Object.freeze({
+  basechain: 1_000_000_000n,
+  masterchain: 100_000_000_000n,
+});
+
+const WORKCHAINS: ReadonlySet<string> = new Set(['basechain', 'masterchain']);
 
 /** A caller's name in an error: at most 64 characters (lesson 20). */
 const named = (value: unknown): string => `'${String(value).slice(0, 64)}'`;
@@ -55,6 +81,8 @@ export interface TonNetworkConfig {
   readonly jettonForwardAmount: bigint;
   /** Masterchain blocks the attested head first trails the freshest endpoint by (M1). */
   readonly finalitySkewBlocks: number;
+  /** The most an estimate's `network` charge may be, per workchain of the sender. */
+  readonly maxNetworkFee: TonFeeCeiling;
   readonly capabilities: ReadonlySet<Capability>;
 }
 
@@ -111,6 +139,7 @@ export function tonNetworkConfig(
   if (!isIntegerIn(skew, 1, 1_000)) {
     fail('params.finalitySkewBlocks must be an integer in [1, 1000]');
   }
+  const maxNetworkFee = feeCeiling(param('maxNetworkFee', {}), fail);
   const capabilities = new Set<Capability>([
     ...TON_CAPABILITIES,
     ...TON_INDEXER_CAPABILITIES,
@@ -126,6 +155,36 @@ export function tonNetworkConfig(
     jettonAttached: attached as bigint,
     jettonForwardAmount: forward as bigint,
     finalitySkewBlocks: skew as number,
+    maxNetworkFee,
     capabilities,
   };
+}
+
+/**
+ * `params.maxNetworkFee`: `{ basechain?, masterchain? }`, each a positive bigint within Coins
+ * (the charge is compared with nanogram amounts); a workchain left out keeps its default.
+ * Any other key, or value, is `CONFIG_INVALID` with a bounded name (M2).
+ */
+function feeCeiling(value: unknown, fail: (reason: string) => never): TonFeeCeiling {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return fail('params.maxNetworkFee must be { basechain?, masterchain? } (nanograms)');
+  }
+  const record = value as Readonly<Record<string, unknown>>;
+  for (const key of Object.keys(record)) {
+    if (!WORKCHAINS.has(key)) {
+      fail(`params.maxNetworkFee key ${named(key)} is not 'basechain' or 'masterchain'`);
+    }
+  }
+  const bound = (key: keyof TonFeeCeiling): bigint => {
+    const own = Object.hasOwn(record, key) ? record[key] : undefined;
+    const ceiling = own === undefined ? DEFAULT_MAX_NETWORK_FEE[key] : own;
+    if (typeof ceiling !== 'bigint' || ceiling <= 0n || ceiling > MAX_COINS) {
+      fail(`params.maxNetworkFee.${key} must be a bigint in [1, 2^120 - 1] (nanograms)`);
+    }
+    return ceiling as bigint;
+  };
+  return Object.freeze({
+    basechain: bound('basechain'),
+    masterchain: bound('masterchain'),
+  });
 }

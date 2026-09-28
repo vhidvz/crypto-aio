@@ -34,6 +34,7 @@ import {
 } from '../../../src/adapters/ton/messages';
 import {
   MAX_MESSAGES,
+  SEND_MODE,
   normalizedHash,
   requestIsOwn,
   resolveIdentity,
@@ -302,6 +303,8 @@ describe('TON signing requests', () => {
         seqno: 7,
         validUntil: 1_790_000_000,
         messages: [expect.anything()],
+        // F6-R17 M1: each message's send mode, as the wallet reads it.
+        modes: [SEND_MODE],
       });
     }
   });
@@ -569,6 +572,8 @@ describe('TON message bodies', () => {
         queryId: 7n,
         amount: 1_000_000n,
         destination: USDT_MASTER.raw,
+        responseDestination: wallet,
+        customPayload: false,
         forwardAmount: 1n,
         ...(memo !== undefined ? { comment: memo } : {}),
       });
@@ -714,8 +719,30 @@ describe('TON message bodies', () => {
         .endCell();
     expect(decodeJettonTransfer(transfer(owner))).toMatchObject({
       destination: TEST_WALLETS.v4r2.basechain,
+      responseDestination: TEST_WALLETS.v4r2.basechain,
+      customPayload: false,
     });
     expect(decodeJettonTransfer(transfer(foreign))).toBeNull();
+    // F6-R17 M2: the response destination (none for addr_none or a foreign workchain) and
+    // whether a custom payload rides along, read by the one decoder.
+    const withPayload = (response: Address | null) =>
+      beginCell()
+        .storeUint(OP.jettonTransfer, 32)
+        .storeUint(7, 64)
+        .storeCoins(5n)
+        .storeAddress(owner)
+        .storeAddress(response)
+        .storeMaybeRef(beginCell().storeUint(1, 8).endCell())
+        .storeCoins(1n)
+        .storeBit(false)
+        .endCell();
+    for (const response of [null, foreign]) {
+      expect(decodeJettonTransfer(withPayload(response))).toMatchObject({
+        destination: TEST_WALLETS.v4r2.basechain,
+        responseDestination: null,
+        customPayload: true,
+      });
+    }
     // An optional sender that is no TON account is not named; the amount still counts.
     const arrival = beginCell()
       .storeUint(OP.jettonInternalTransfer, 32)

@@ -1,8 +1,15 @@
 import { ed25519 } from '@noble/curves/ed25519';
-import { Cell, beginCell, internal, loadMessage, storeMessageRelaxed } from '@ton/core';
+import {
+  Cell,
+  Dictionary,
+  beginCell,
+  internal,
+  loadMessage,
+  storeMessageRelaxed,
+} from '@ton/core';
+import { WalletContractV4, WalletContractV5R1 } from '@ton/ton';
 import {
   CHAIN_TIME_TOLERANCE,
-  MAX_NETWORK_FEE,
   REQUEST_ID,
   createTonBroadcaster,
   createTonBuilder,
@@ -15,11 +22,16 @@ import {
   decodeWalletRequest,
   messageFacts,
 } from '../../../src/adapters/ton/messages';
-import { TON_CAPABILITIES } from '../../../src/adapters/ton/network';
+import {
+  DEFAULT_MAX_NETWORK_FEE,
+  TON_CAPABILITIES,
+} from '../../../src/adapters/ton/network';
+import { SEND_MODE } from '../../../src/adapters/ton/wallets';
 import type { BuildContext } from '../../../src/core/driver/types';
 import type { LogFields } from '../../../src/core/events/logger';
 import { noopLogger } from '../../../src/core/events/logger';
 import type { DriverIntent, DriverOutput } from '../../../src/core/model/intent';
+import type { UnsignedTx } from '../../../src/core/model/transaction';
 import { hang, type FakeReply } from '../../../src/testing/fake-fetch';
 import { tonHarness } from './support/context';
 import { testWallet } from './support/harness';
@@ -57,19 +69,21 @@ function setup(version: 'v4r2' | 'v5r1' = 'v4r2', endpoints?: readonly string[])
     fee: 'normal',
     ...patch,
   });
+  /** Signs the one request with the test key and assembles the message. */
+  const sign = (unsigned: UnsignedTx) => {
+    const request = unsigned.signingRequests[0]!;
+    const signature = ed25519.sign(request.payload, Buffer.from(KEY, 'hex'));
+    return builder.assemble(unsigned, [{ requestId: request.id, bytes: signature }]);
+  };
   /** estimate → check → build → sign → assemble, as the engine does. */
   const prepare = async (i: DriverIntent, b = build()) => {
     const fee = await h.run(builder.estimateFee(i, b));
     const funds = await h.run(builder.checkFunds(i, fee, b));
     const unsigned = await h.run(builder.build(i, fee, b));
-    const request = unsigned.signingRequests[0]!;
-    const signature = ed25519.sign(request.payload, Buffer.from(KEY, 'hex'));
-    const signed = await builder.assemble(unsigned, [
-      { requestId: request.id, bytes: signature },
-    ]);
+    const signed = await sign(unsigned);
     return { fee, funds, unsigned, signed };
   };
-  return { h, from, builder, broadcaster, build, intent, prepare };
+  return { h, from, builder, broadcaster, build, intent, sign, prepare };
 }
 
 /** The external message in a payload, its wallet request and the one message it sends. */
@@ -425,6 +439,7 @@ describe('the TON builder: the signed message is exactly the intent', () => {
         validUntil: unsigned.ordering.kind === 'seqno' && unsigned.ordering.validUntil,
       });
       expect(request.messages).toHaveLength(1);
+      expect(request.modes).toEqual([SEND_MODE]);
       expect(messageFacts(message)).toMatchObject({ to: FRESH, value: 7n });
       expect(info.bounce).toBe(bounce);
       expect(decodeComment(message.body)).toBe('order 1');
@@ -461,6 +476,8 @@ describe('the TON builder: the signed message is exactly the intent', () => {
       queryId: 2n,
       amount: 400n,
       destination: FRESH,
+      responseDestination: s.from,
+      customPayload: false,
       forwardAmount: 1n,
       comment: 'order 9',
     });
@@ -525,10 +542,103 @@ describe('the TON builder: the signed message is exactly the intent', () => {
           message: expect.stringContaining('does not match the intent'),
         });
       }
+      // M1: a custom payload the jetton wallet would hand to its own code.
+      spy.mockImplementation((args) => {
+        const message = original(args);
+        const rest = message.body.beginParse();
+        const head = beginCell()
+          .storeUint(rest.loadUint(32), 32)
+          .storeUint(rest.loadUintBig(64), 64)
+          .storeCoins(rest.loadCoins())
+          .storeAddress(rest.loadAddress())
+          .storeAddress(rest.loadMaybeAddress());
+        rest.loadMaybeRef();
+        const body = head
+          .storeMaybeRef(beginCell().storeUint(7, 8).endCell())
+          .storeSlice(rest)
+          .endCell();
+        return { ...message, body };
+      });
+      await expect(s.h.run(s.builder.build(i, fee, s.build()))).rejects.toMatchObject({
+        code: 'INVALID_INTENT',
+        message: expect.stringContaining('does not match the intent'),
+      });
     } finally {
       spy.mockRestore();
     }
     await expect(s.h.run(s.builder.build(i, fee, s.build()))).resolves.toBeDefined();
+  });
+
+  it.each(['v4r2', 'v5r1'] as const)(
+    'binds the %s send mode exactly: a request that could spend more is never handed out (M1)',
+    async (version) => {
+      const s = setup(version);
+      s.h.node.fund(s.from, 5n * GRAM);
+      const i = s.intent();
+      const fee = await s.h.run(s.builder.estimateFee(i, s.build()));
+      const prototype = (
+        version === 'v4r2' ? WalletContractV4.prototype : WalletContractV5R1.prototype
+      ) as { createTransfer(args: { sendMode: number }): unknown };
+      const original = prototype.createTransfer;
+      // 128 would send the whole balance; +32 would destroy an emptied wallet; 0 would pay
+      // the forward fee from the value and fail the action phase instead of skipping.
+      for (const mode of [128, SEND_MODE + 32, 0]) {
+        const spy = jest.spyOn(prototype, 'createTransfer').mockImplementation(function (
+          this: unknown,
+          args,
+        ) {
+          return original.call(this, { ...args, sendMode: mode });
+        });
+        try {
+          await expect(s.h.run(s.builder.build(i, fee, s.build()))).rejects.toMatchObject(
+            {
+              code: 'INVALID_INTENT',
+              message: expect.stringContaining('does not match the intent'),
+            },
+          );
+        } finally {
+          spy.mockRestore();
+        }
+      }
+      await expect(s.h.run(s.builder.build(i, fee, s.build()))).resolves.toBeDefined();
+    },
+  );
+
+  it('binds no extra currencies and no StateInit on the internal message (M1)', async () => {
+    const s = setup();
+    s.h.node.fund(s.from, 5n * GRAM);
+    const i = s.intent();
+    const fee = await s.h.run(s.builder.estimateFee(i, s.build()));
+    const original = messages.nativeMessage;
+    const other = Dictionary.empty(
+      Dictionary.Keys.Uint(32),
+      Dictionary.Values.BigVarUint(5),
+    ).set(1, 5n);
+    type Encode = (args: Parameters<typeof original>[0]) => ReturnType<typeof original>;
+    const tampers: readonly Encode[] = [
+      (args) => {
+        const message = original(args);
+        if (message.info.type !== 'internal') throw new Error('not internal');
+        const value = { coins: message.info.value.coins, other };
+        return { ...message, info: { ...message.info, value } };
+      },
+      (args) => ({
+        ...original(args),
+        init: { code: beginCell().endCell(), data: beginCell().endCell() },
+      }),
+    ];
+    const spy = jest.spyOn(messages, 'nativeMessage');
+    try {
+      for (const tamper of tampers) {
+        spy.mockImplementation(tamper);
+        await expect(s.h.run(s.builder.build(i, fee, s.build()))).rejects.toMatchObject({
+          code: 'INVALID_INTENT',
+          message: expect.stringContaining('does not match the intent'),
+        });
+      }
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('refuses a fee estimate made for another transfer', async () => {
@@ -593,7 +703,11 @@ describe('the TON broadcaster', () => {
       publicKey: PK,
       walletId: WALLET_IDS.v4r2.basechain,
     });
-    const { signed } = await s.prepare(s.intent(), s.build(5n));
+    // The emulation runs the wallet's own checks (F6-R17): estimate at its seqno.
+    const fee = await s.h.run(s.builder.estimateFee(s.intent(), s.build()));
+    const signed = await s.sign(
+      await s.h.run(s.builder.build(s.intent(), fee, s.build(5n))),
+    );
     await expect(s.h.run(s.broadcaster.broadcast(signed))).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
       ambiguous: true,
@@ -892,6 +1006,95 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     });
   });
 
+  it('answers a sender that cannot pay through the funds path, never a provider fault (I1)', async () => {
+    /** tonlib buys the emulated gas with the balance: an unfunded run emulates to nothing. */
+    const shortfall = async (
+      s: ReturnType<typeof setup>,
+      i: DriverIntent,
+      b: BuildContext,
+    ) => {
+      let thrown: unknown;
+      try {
+        await s.h.run(s.builder.estimateFee(i, b));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toMatchObject({ code: 'INSUFFICIENT_FUNDS', retryable: false });
+      return (thrown as { details: { required: string; available: string } }).details;
+    };
+    // A fresh wallet: no account at all.
+    const fresh = setup();
+    const none = await shortfall(fresh, fresh.intent(), fresh.build());
+    expect(none.available).toBe('0');
+    expect(BigInt(none.required)).toBeGreaterThan(GRAM);
+    // A drained wallet: deployed, then spent down to dust.
+    const drained = setup('v5r1');
+    drained.h.node.fund(drained.from, 2n * GRAM);
+    const first = await drained.prepare(drained.intent());
+    await drained.h.run(drained.broadcaster.broadcast(first.signed));
+    drained.h.node.mine(2);
+    drained.h.node.debit(drained.from, drained.h.node.balance(drained.from) - 1_000n);
+    expect(await shortfall(drained, drained.intent(), drained.build(1n))).toMatchObject({
+      available: '1000',
+    });
+    // A sender holding jettons and no TON: the attached value is out of reach.
+    const usdt = setup();
+    usdt.h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    usdt.h.node.mintJetton(MASTER, usdt.from, 1_000n);
+    const jetton = usdt.intent({
+      asset: { standard: 'jetton', contract: MASTER },
+      outputs: [{ to: FRESH, amount: 400n }],
+    });
+    const needs = await shortfall(usdt, jetton, usdt.build());
+    expect(needs.available).toBe('0');
+    expect(BigInt(needs.required)).toBeGreaterThan(50_000_000n);
+  });
+
+  it('keeps a zero emulation a provider fault while the balance pays the known minimum (I1)', async () => {
+    const cases = [
+      ['native', 1_000n],
+      ['jetton', 50_000_000n],
+    ] as const;
+    for (const [kind, value] of cases) {
+      const s = setup();
+      s.h.node.fund(s.from, 3n * GRAM);
+      s.h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+      const i =
+        kind === 'native'
+          ? s.intent({ outputs: [{ to: FRESH, amount: value }] })
+          : s.intent({
+              asset: { standard: 'jetton', contract: MASTER },
+              outputs: [{ to: FRESH, amount: 400n }],
+            });
+      const normal = await s.h.run(s.builder.estimateFee(i, s.build()));
+      // The config's forward fee equals the node's emulated one here.
+      const minimum = value + (normal.details as { forwardFee: bigint }).forwardFee;
+      s.h.node.debit(s.from, 3n * GRAM - minimum);
+      s.h.node.intercept = (_e, route) =>
+        route === '/estimateFee' ? feesAnswer({ gas: 0n, fwd: 0n }) : undefined;
+      await expect(s.h.run(s.builder.estimateFee(i, s.build()))).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+      s.h.node.debit(s.from, 1n);
+      await expect(s.h.run(s.builder.estimateFee(i, s.build()))).rejects.toMatchObject({
+        code: 'INSUFFICIENT_FUNDS',
+        details: { required: String(minimum), available: String(minimum - 1n) },
+      });
+    }
+    // A funded wallet whose own checks refuse the request (another seqno) runs nothing.
+    const s = setup();
+    s.h.node.fund(s.from, 3n * GRAM);
+    s.h.node.deployWallet(s.from, {
+      version: 'v4r2',
+      publicKey: PK,
+      walletId: WALLET_IDS.v4r2.basechain,
+    });
+    await expect(
+      s.h.run(s.builder.estimateFee(s.intent(), s.build(3n))),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+  });
+
   it('bounds the network fee an endpoint suggests by the policy maximum (economic ceiling)', async () => {
     const s = setup();
     s.h.node.fund(s.from, 3n * GRAM);
@@ -900,20 +1103,66 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     const gasAt = (network: bigint) => network - NODE_FEES.importFee - fwd;
     s.h.node.intercept = (_e, route) =>
       route === '/estimateFee'
-        ? feesAnswer({ gas: gasAt(MAX_NETWORK_FEE.basechain), fwd })
+        ? feesAnswer({ gas: gasAt(DEFAULT_MAX_NETWORK_FEE.basechain), fwd })
         : undefined;
     expect(
       (await s.h.run(s.builder.estimateFee(s.intent(), s.build()))).charges[0]?.amount,
-    ).toBe(MAX_NETWORK_FEE.basechain);
+    ).toBe(DEFAULT_MAX_NETWORK_FEE.basechain);
     s.h.node.intercept = (_e, route) =>
       route === '/estimateFee'
-        ? feesAnswer({ gas: gasAt(MAX_NETWORK_FEE.basechain + 1n), fwd })
+        ? feesAnswer({ gas: gasAt(DEFAULT_MAX_NETWORK_FEE.basechain + 1n), fwd })
         : undefined;
     await expect(
       s.h.run(s.builder.estimateFee(s.intent(), s.build())),
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
-    // A masterchain wallet pays more for gas and storage: its own, higher ceiling.
-    expect(MAX_NETWORK_FEE.masterchain).toBeGreaterThan(MAX_NETWORK_FEE.basechain);
+  });
+
+  it("bounds a masterchain wallet by its own ceiling, and takes the network's override (M3)", async () => {
+    const s = setup();
+    const mc = TEST_WALLETS.v4r2.masterchain;
+    s.h.node.fund(mc, 3n * GRAM);
+    const i = { ...s.intent(), from: mc };
+    const b = { ...s.build(0n, { ton: { version: 'v4r2', workchain: -1 } }), from: mc };
+    const normal = await s.h.run(s.builder.estimateFee(i, b));
+    const fwd = (normal.details as { forwardFee: bigint }).forwardFee;
+    const answer = (network: bigint) => {
+      s.h.node.intercept = (_e, route) =>
+        route === '/estimateFee'
+          ? feesAnswer({ gas: network - NODE_FEES.importFee - fwd, fwd })
+          : undefined;
+    };
+    const { basechain, masterchain } = DEFAULT_MAX_NETWORK_FEE;
+    // Masterchain gas and storage cost far more: above the basechain's ceiling is honest.
+    for (const network of [2n * basechain, masterchain]) {
+      answer(network);
+      expect((await s.h.run(s.builder.estimateFee(i, b))).charges[0]?.amount).toBe(
+        network,
+      );
+    }
+    answer(masterchain + 1n);
+    await expect(s.h.run(s.builder.estimateFee(i, b))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+    // A network's `maxNetworkFee` replaces the defaults, for each workchain.
+    const tight = createTonBuilder({
+      ...s.h.ctx,
+      config: {
+        ...s.h.ctx.config,
+        maxNetworkFee: { basechain: 1n, masterchain: 3n * GRAM },
+      },
+    });
+    answer(3n * GRAM);
+    expect((await s.h.run(tight.estimateFee(i, b))).charges[0]?.amount).toBe(3n * GRAM);
+    answer(3n * GRAM + 1n);
+    await expect(s.h.run(tight.estimateFee(i, b))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+    });
+    s.h.node.intercept = undefined;
+    s.h.node.fund(s.from, 3n * GRAM);
+    await expect(s.h.run(tight.estimateFee(s.intent(), s.build()))).rejects.toMatchObject(
+      { code: 'PROVIDER_INCONSISTENT' },
+    );
   });
 
   it('refuses a chain time far from the local clock (M3)', async () => {

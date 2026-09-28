@@ -8,6 +8,7 @@ import {
   tonFeeDraft,
 } from '../../../src/adapters/ton/fees';
 import {
+  DEFAULT_MAX_NETWORK_FEE,
   TON_CAPABILITIES,
   TON_INDEXER_CAPABILITIES,
   tonNetworkConfig,
@@ -28,6 +29,7 @@ describe('TON network config', () => {
       jettonAttached: 50_000_000n,
       jettonForwardAmount: 1n,
       finalitySkewBlocks: 10,
+      maxNetworkFee: { basechain: 1_000_000_000n, masterchain: 100_000_000_000n },
       capabilities: new Set([...TON_CAPABILITIES, 'address-history']),
     });
     expect(tonNetworkConfig(chain, chain.networks.testnet as NetworkInfo).globalId).toBe(
@@ -122,6 +124,59 @@ describe('TON network config', () => {
       tonNetworkConfig(chain, { ...mainnet, params: { validForSeconds: undefined } })
         .validForSeconds,
     ).toBe(60);
+  });
+
+  it('takes a per-workchain fee ceiling, validated as Coins (F6-R17)', () => {
+    const ceiling = (maxNetworkFee: unknown) =>
+      tonNetworkConfig(chain, { ...mainnet, params: { maxNetworkFee } }).maxNetworkFee;
+    expect(DEFAULT_MAX_NETWORK_FEE).toEqual({
+      basechain: 1_000_000_000n,
+      masterchain: 100_000_000_000n,
+    });
+    expect(Object.isFrozen(DEFAULT_MAX_NETWORK_FEE)).toBe(true);
+    expect(ceiling(undefined)).toEqual(DEFAULT_MAX_NETWORK_FEE);
+    expect(ceiling({ basechain: 5n, masterchain: MAX_COINS })).toEqual({
+      basechain: 5n,
+      masterchain: MAX_COINS,
+    });
+    // Each workchain's own default where the override leaves it out.
+    expect(ceiling({ basechain: 2n * 10n ** 9n })).toEqual({
+      basechain: 2n * 10n ** 9n,
+      masterchain: 100_000_000_000n,
+    });
+    expect(ceiling({ masterchain: 1n, basechain: undefined })).toEqual({
+      basechain: 1_000_000_000n,
+      masterchain: 1n,
+    });
+    expect(Object.isFrozen(ceiling({ basechain: 5n }))).toBe(true);
+    const long = 'w'.repeat(100_000);
+    const bad: readonly (readonly [unknown, string])[] = [
+      [0n, 'maxNetworkFee'],
+      [null, 'maxNetworkFee'],
+      [[1n, 1n], 'maxNetworkFee'],
+      ['1000', 'maxNetworkFee'],
+      [{ basechain: 0n }, 'maxNetworkFee.basechain'],
+      [{ basechain: -1n }, 'maxNetworkFee.basechain'],
+      [{ basechain: 1_000 }, 'maxNetworkFee.basechain'],
+      [{ basechain: '1000' }, 'maxNetworkFee.basechain'],
+      [{ masterchain: MAX_COINS + 1n }, 'maxNetworkFee.masterchain'],
+      [{ masterchain: null }, 'maxNetworkFee.masterchain'],
+      [{ shardchain: 1n }, "'shardchain'"],
+      [{ [long]: 1n }, `'${'w'.repeat(64)}'`],
+    ];
+    for (const [value, name] of bad) {
+      let thrown: unknown;
+      try {
+        ceiling(value);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toMatchObject({ code: 'CONFIG_INVALID' });
+      const message = (thrown as Error).message;
+      expect(message).toContain(name);
+      expect(message).not.toContain('w'.repeat(65));
+      expect(message.length).toBeLessThan(200);
+    }
   });
 
   it('allows only its own options and capabilities, naming a refused one briefly (M2)', () => {

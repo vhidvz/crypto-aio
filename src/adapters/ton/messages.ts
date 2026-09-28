@@ -209,6 +209,10 @@ export interface JettonTransferBody {
   readonly queryId: bigint;
   readonly amount: bigint;
   readonly destination: string;
+  /** Where the excess goes; null for `addr_none` or a workchain other than 0 or -1. */
+  readonly responseDestination: string | null;
+  /** Whether a `custom_payload` rides along (for the jetton wallet's own code). */
+  readonly customPayload: boolean;
   readonly forwardAmount: bigint;
   readonly comment?: string;
 }
@@ -221,8 +225,8 @@ export function decodeJettonTransfer(body: Cell): JettonTransferBody | null {
     const queryId = slice.loadUintBig(64);
     const amount = slice.loadCoins();
     const destination = slice.loadAddress();
-    slice.loadMaybeAddress();
-    slice.loadMaybeRef();
+    const response = slice.loadMaybeAddress();
+    const customPayload = slice.loadMaybeRef() !== null;
     const forwardAmount = slice.loadCoins();
     const memo = forwardComment(slice);
     const recipient = toRaw(destination);
@@ -231,6 +235,8 @@ export function decodeJettonTransfer(body: Cell): JettonTransferBody | null {
       queryId,
       amount,
       destination: recipient,
+      responseDestination: response ? toRaw(response) : null,
+      customPayload,
       forwardAmount,
       ...(memo !== undefined ? { comment: memo } : {}),
     };
@@ -310,6 +316,8 @@ export interface WalletRequest {
   readonly seqno: number;
   readonly validUntil: number;
   readonly messages: readonly MessageRelaxed[];
+  /** Each message's send mode, as the wallet reads it (`modes[i]` for `messages[i]`). */
+  readonly modes: readonly number[];
 }
 
 /**
@@ -333,12 +341,14 @@ export function decodeWalletRequest(body: Cell): WalletRequest | null {
       if (s.remainingBits !== 512 || s.remainingRefs !== 0) return null;
       const actions = list ? loadOutList(list.beginParse()) : [];
       const messages: MessageRelaxed[] = [];
+      const modes: number[] = [];
       for (const action of actions) {
         if (action.type !== 'sendMsg') return null;
         messages.push(action.outMsg);
+        modes.push(action.mode);
       }
       const auth = op === OP.w5SignedExternal ? 'external' : 'internal';
-      return { auth, walletId, seqno, validUntil, messages };
+      return { auth, walletId, seqno, validUntil, messages, modes };
     }
     const s = body.beginParse();
     s.skip(512);
@@ -347,12 +357,13 @@ export function decodeWalletRequest(body: Cell): WalletRequest | null {
     const seqno = s.loadUint(32);
     if (s.loadUint(8) !== 0) return null; // v4 op 0: simple send
     const messages: MessageRelaxed[] = [];
+    const modes: number[] = [];
     while (s.remainingRefs > 0) {
-      s.loadUint(8);
+      modes.push(s.loadUint(8));
       messages.push(loadMessageRelaxed(s.loadRef().beginParse()));
     }
     if (s.remainingBits !== 0) return null;
-    return { auth: 'external', walletId, seqno, validUntil, messages };
+    return { auth: 'external', walletId, seqno, validUntil, messages, modes };
   } catch {
     return null;
   }

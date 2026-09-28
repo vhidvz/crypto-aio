@@ -14,9 +14,11 @@
  *   seqno and lifetime; the wallet (`assertBuilt`).
  * - An emulation that ran nothing is no estimate: every request this builder makes runs the
  *   wallet code (deployed, or deployed by its `StateInit`) and sends one message, so a gas
- *   fee or a forward fee of 0 is a retryable `PROVIDER_INCONSISTENT`, never an `expected`
- *   draft that `checkFunds` would trust.
- * - A node-suggested fee is bounded by `MAX_NETWORK_FEE` (the economic ceiling).
+ *   fee or a forward fee of 0 is never an `expected` draft that `checkFunds` would trust.
+ *   tonlib buys the emulated gas with the balance, so a sender whose balance is below what
+ *   the transfer must at least send is answered `INSUFFICIENT_FUNDS`; any other such
+ *   emulation is a retryable `PROVIDER_INCONSISTENT` (F6-R17).
+ * - A node-suggested fee is bounded by the network's `maxNetworkFee` (the economic ceiling).
  * - A frozen wallet, or an undeployed one at an allocated seqno past 0, is refused from its
  *   state before anything is built.
  */
@@ -72,16 +74,9 @@ import {
   sdkAddress,
 } from './messages';
 import {
-  jettonBalance,
-  jettonMaster,
-  jettonWalletAddress,
-  walletSeqno,
-  type TonContext,
-} from './reader';
-import type { TonFeeDetails } from './types';
-import {
   normalizedHash,
   resolveIdentity,
+  SEND_MODE,
   signedRequest,
   unsignedRequest,
   walletAddress,
@@ -89,6 +84,14 @@ import {
   walletStateInit,
   type TonIdentity,
 } from './wallets';
+import {
+  jettonBalance,
+  jettonMaster,
+  jettonWalletAddress,
+  walletSeqno,
+  type TonContext,
+} from './reader';
+import type { TonFeeDetails } from './types';
 
 /** The id of the one signing request (spec §15: 1 × ed25519 over the signing cell hash). */
 export const REQUEST_ID = 'wallet';
@@ -96,26 +99,19 @@ export const REQUEST_ID = 'wallet';
 /** How far an endpoint's `sync_utime` may be from the local clock (M3), in seconds. */
 export const CHAIN_TIME_TOLERANCE = 300;
 
-/**
- * The economic ceiling on the `network` charge an endpoint's emulation suggests, in
- * nanograms (board: "economic ceilings on fees taken from a node"). TON signs no fee: the
- * chain charges gas and forward fees by its config, so an inflated estimate cannot make a
- * transfer pay more, but it would fail `checkFunds` for good (`INSUFFICIENT_FUNDS`) or
- * mislead whoever approves the fee. A basechain wallet's transfer costs about 0.003-0.01
- * TON, and a whole gas limit (1M gas at 400 nanograms) 0.4 TON; a masterchain wallet pays
- * about 25 times the gas and far more storage (about 6 TON a year for a v4r2 wallet at
- * mainnet's config param 18). Above the ceiling the answer is a retryable
- * `PROVIDER_INCONSISTENT`. A configurable cross-family fee policy is a Plan 7 item.
- */
-export const MAX_NETWORK_FEE = Object.freeze({
-  basechain: 1_000_000_000n,
-  masterchain: 100_000_000_000n,
-});
-
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex');
 
 const inconsistent = (reason: string) =>
   new ProviderError('PROVIDER_INCONSISTENT', reason, { retryable: true });
+
+/**
+ * The funds path's answer when the balance is below what the transfer must at least send
+ * (`required`: a lower bound, before gas), as the engine reports a failed funds check.
+ */
+const insufficient = (required: bigint, available: bigint) =>
+  new ChainError('INSUFFICIENT_FUNDS', 'insufficient funds for this transfer', {
+    details: { required: required.toString(), available: available.toString() },
+  });
 
 /** The one output, with the bounce flag its address variant gives it. */
 interface Output {
@@ -343,27 +339,16 @@ async function configForwardFee(
 const bodyOf = (external: Cell): string =>
   loadMessage(external.beginParse()).body.toBoc().toString('base64');
 
-/** The response destination a TEP-74 `transfer` body names; null when it names none. */
-function responseOf(body: Cell): string | null {
-  try {
-    const slice = body.beginParse();
-    slice.skip(32 + 64);
-    slice.loadCoins();
-    slice.loadAddress();
-    return slice.loadMaybeAddress()?.toRawString() ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * The recipient binding: the unsigned external message, decoded again, says exactly what
  * the intent says. It goes to `from`, deploys exactly when asked, carries our wallet's
- * request at `seqno` until `validUntil`, and sends one message: native coin to the recipient
- * with its value, bounce flag and memo; or a jetton `transfer` to the attested jetton wallet
- * with the attached value, bounceable, naming the recipient, the amount, `from` for the
- * excess, the network's forward amount, the memo and the seqno as query id. Anything else
- * is never handed out for signing (`INVALID_INTENT`, fixed text).
+ * request at `seqno` until `validUntil`, and sends one message with `SEND_MODE` exactly
+ * (never +128, which sends the whole balance, nor +32), no extra currencies and no
+ * `StateInit`: native coin to the recipient with its value, bounce flag and memo; or a
+ * jetton `transfer` to the attested jetton wallet with the attached value, bounceable, naming
+ * the recipient, the amount, `from` for the excess, no custom payload, the network's forward
+ * amount, the memo and the seqno as query id. Anything else is never handed out for signing
+ * (`INVALID_INTENT`, fixed text).
  */
 function assertBuilt(
   ctx: TonContext,
@@ -403,13 +388,22 @@ function assertBuilt(
     request.seqno !== expected.seqno ||
     request.validUntil !== expected.validUntil ||
     request.walletId !== walletIdOf(plan.identity, plan.key.publicKey) ||
-    request.messages.length !== 1
+    request.messages.length !== 1 ||
+    request.modes.length !== 1 ||
+    request.modes[0] !== SEND_MODE
   ) {
     return refuse();
   }
   const message = request.messages[0] as MessageRelaxed;
   const facts = messageFacts(message);
-  if (!facts || message.info.type !== 'internal') return refuse();
+  if (
+    !facts ||
+    message.info.type !== 'internal' ||
+    (message.info.value.other?.size ?? 0) > 0 ||
+    message.init
+  ) {
+    return refuse();
+  }
   const { output } = plan;
   if (!plan.jetton) {
     const memo =
@@ -434,9 +428,10 @@ function assertBuilt(
     transfer?.destination !== output.to ||
     transfer.amount !== output.amount ||
     transfer.queryId !== BigInt(expected.seqno) ||
+    transfer.responseDestination !== expected.from ||
+    transfer.customPayload ||
     transfer.forwardAmount !== ctx.config.jettonForwardAmount ||
-    transfer.comment !== intent.memo ||
-    responseOf(facts.body) !== expected.from
+    transfer.comment !== intent.memo
   ) {
     refuse();
   }
@@ -483,15 +478,21 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
         },
         READ,
       );
-      // Task 6 review: the wallet runs (deployed, or by its `StateInit`) and sends one
-      // message, so an emulation without gas or without a forward fee ran nothing (a lagging
-      // endpoint's view, a skipped compute phase, a refused request): no estimate.
-      if (emulated.gasFee === 0n || emulated.forwardFee === 0n) {
-        throw inconsistent("the endpoint's emulation did not run the transfer");
-      }
       // I3: the forward fee counts once. The emulation's follows the real action list; the
       // config's formula is its floor, so an endpoint that reports less cannot shrink it.
       const computed = await configForwardFee(ctx, build.from, message);
+      // Task 6 review: the wallet runs (deployed, or by its `StateInit`) and sends one
+      // message, so an emulation without gas or without a forward fee ran nothing.
+      if (emulated.gasFee === 0n || emulated.forwardFee === 0n) {
+        // F6-R17: tonlib buys the emulated gas with the balance (`compute_gas_limits`), so
+        // a sender that cannot pay emulates to nothing too. Below what the transfer must at
+        // least send (the amount, or the jetton attached value, plus the config's forward
+        // fee) that is the answer; otherwise the endpoint's view lags, or it refused the
+        // request (another seqno), and a later read decides.
+        const minimum = (plan.attached ?? plan.output.amount) + computed;
+        if (state.balance < minimum) throw insufficient(minimum, state.balance);
+        throw inconsistent("the endpoint's emulation did not run the transfer");
+      }
       const details: TonFeeDetails = {
         importFee: emulated.importFee,
         gasFee: emulated.gasFee,
@@ -505,8 +506,8 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
           : {}),
       };
       const ceiling = build.from.startsWith('-1:')
-        ? MAX_NETWORK_FEE.masterchain
-        : MAX_NETWORK_FEE.basechain;
+        ? config.maxNetworkFee.masterchain
+        : config.maxNetworkFee.basechain;
       if (networkFee(details) > ceiling) {
         throw inconsistent('the endpoint suggests a fee above the policy maximum');
       }

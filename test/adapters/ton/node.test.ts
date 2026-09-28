@@ -399,6 +399,8 @@ describe('the scripted toncenter node: indexer and history', () => {
 describe('the scripted toncenter node: fidelity (lesson 8)', () => {
   it('emulates fees with the real forward fee of every requested message (I3)', async () => {
     const s = setup('v4r2');
+    // tonlib buys the emulated run's gas with the balance (F6-R17): a funded wallet.
+    s.node.fund(s.wallet, GRAM);
     const { boc } = await signedBoc('v4r2', TESTNET, {
       seqno: 0,
       validUntil: s.now() + 60,
@@ -424,6 +426,59 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     expect(source.fwd_fee).toBeGreaterThan(0);
     expect(source.in_fwd_fee).toBe(Number(NODE_FEES.importFee));
   });
+
+  it.each(['v4r2', 'v5r1'] as const)(
+    'emulates a %s run only as its balance and its own checks allow, as tonlib does (F6-R17)',
+    async (version) => {
+      const s = setup(version);
+      // tonlib `Query::estimate_fees`: gas is bought with the balance (`compute_gas_limits`),
+      // `gas_fee` counts only an accepted run and `fwd_fee` only a successful one.
+      const request = async (seqno: number, validUntil = s.now() + 60) => {
+        const { boc } = await signedBoc(version, TESTNET, {
+          seqno,
+          validUntil,
+          deploy: true,
+          messages: [nativeMessage({ to: RECIPIENT, value: 1n, bounce: false })],
+        });
+        const { body, init } = loadMessage(
+          Cell.fromBoc(Buffer.from(boc, 'base64'))[0]!.beginParse(),
+        );
+        return {
+          address: s.wallet,
+          body: body.toBoc().toString('base64'),
+          init_code: init!.code!.toBoc().toString('base64'),
+          init_data: init!.data!.toBoc().toString('base64'),
+        };
+      };
+      const fees = async (body: Record<string, string>) =>
+        (
+          (await post(`${s.v2}/estimateFee`, body, s.fetchFn)).json.result as {
+            source_fees: Record<string, number>;
+          }
+        ).source_fees;
+      const gas =
+        (version === 'v4r2' ? NODE_FEES.gasV4 : NODE_FEES.gasV5) + NODE_FEES.deployGas;
+      // No balance, or one below the flat gas price, buys no gas: nothing runs.
+      expect(await fees(await request(0))).toMatchObject({ gas_fee: 0, fwd_fee: 0 });
+      s.node.fund(s.wallet, NODE_FEES.flatGas - 1n);
+      expect(await fees(await request(0))).toMatchObject({ gas_fee: 0, fwd_fee: 0 });
+      // A balance below the run's cost runs out of gas after the accept: nothing is sent.
+      s.node.fund(s.wallet, gas - NODE_FEES.flatGas);
+      expect(await fees(await request(0))).toMatchObject({
+        gas_fee: Number(gas - 1n),
+        fwd_fee: 0,
+      });
+      s.node.fund(s.wallet, 1n);
+      expect(await fees(await request(0))).toMatchObject({ gas_fee: Number(gas) });
+      expect((await fees(await request(0))).fwd_fee).toBeGreaterThan(0);
+      // The wallet code refuses another seqno, or an expired request, before its accept.
+      expect(await fees(await request(1))).toMatchObject({ gas_fee: 0, fwd_fee: 0 });
+      expect(await fees(await request(0, s.now()))).toMatchObject({
+        gas_fee: 0,
+        fwd_fee: 0,
+      });
+    },
+  );
 
   it('commits a W5 seqno, then throws 137, for a request without send mode +2 (transaction.cpp)', async () => {
     const s = setup('v5r1');
