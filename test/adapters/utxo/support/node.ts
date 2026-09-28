@@ -13,13 +13,13 @@
  *   28-30 in their order (6, 5, 2, 3 and 4); then every input's script, policy flags first
  *   and consensus flags to tell `mempool-` from `block-script-verify-flag-failed`; then
  *   `maxfeerate` (-25). Every other refusal is -26.
- * - Scripts are interpreted for the standard templates (p2pkh, p2sh-p2wpkh, p2wpkh, p2wsh,
- *   p2tr key path, bare `OP_TRUE`), with bitcoinjs' signature hashes and `@noble/curves`.
- *   An opcode or spend path outside them throws: this node never guesses.
+ * - Scripts (`script.ts`) are interpreted for the standard templates (p2pkh, p2sh-p2wpkh,
+ *   p2wpkh, p2wsh, p2tr key path, bare `OP_TRUE`), with bitcoinjs' signature hashes and
+ *   `@noble/curves`. An opcode or spend path outside them throws: this node never guesses.
  * - Blocks: a test mines them (`mine`, whose `extra` transactions are held to consensus
  *   rules only, as a miner's block is), disconnects them (`reorg`, which re-adds their
  *   transactions with the fee limits bypassed, as bitcoind does) and evicts from the mempool.
- * - Esplora: the routes and answer shapes of electrs, per endpoint. An endpoint may lag
+ * - Esplora (`esplora.ts`): the routes and answer shapes of electrs, per endpoint. An endpoint may lag
  *   (I1: it hides blocks above its view but still holds in its mempool what it saw relayed)
  *   and its index may trail its node's mempool (`mempoolDelayMs`). electrs keeps the
  *   transactions and txids of a disconnected block (its txstore is append-only).
@@ -32,7 +32,6 @@
  * It decodes and verifies with bitcoinjs-lib and `@noble/curves`, independently of the
  * driver's address and fee code, so it is not shipped in `crypto-aio/testing`.
  */
-import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { utf8ToBytes } from '@noble/hashes/utils';
 import {
@@ -41,25 +40,38 @@ import {
   type Network,
   type Transaction,
 } from '../../../../src/adapters/utxo/sdk';
-import { concatBytes, equalBytes, fromHex, toHex } from '../../../../src/core/util/bytes';
+import { concatBytes, fromHex, toHex } from '../../../../src/core/util/bytes';
 import type { FakeClock } from '../../../../src/testing/fake-clock';
 import {
   FakeFetch,
   type FakeReply,
   type FakeRequest,
 } from '../../../../src/testing/fake-fetch';
+import { EsploraApi } from './esplora';
+import {
+  ScriptFailure,
+  compactSizeLength,
+  hasValidOps,
+  isP2sh,
+  isPayToAnchor,
+  isPushOnly,
+  isUnspendable,
+  pushData,
+  pushNumber,
+  pushStack,
+  solve,
+  verifyScript,
+  witnessProgram,
+  type Checker,
+} from './script';
 
 const COIN = 100_000_000n;
 const MAX_MONEY = 21_000_000n * COIN;
 const ZERO_TXID = '0'.repeat(64);
-/** electrs' page size for block transactions and address history. */
-const PAGE = 25;
 const MAX_BLOCK_WEIGHT = 4_000_000;
 const MAX_STANDARD_TX_WEIGHT = 400_000;
 const MIN_STANDARD_TX_NONWITNESS_SIZE = 65;
 const MAX_STANDARD_SCRIPTSIG_SIZE = 1_650;
-const MAX_SCRIPT_SIZE = 10_000;
-const MAX_SCRIPT_ELEMENT_SIZE = 520;
 const MAX_STANDARD_P2WSH_SCRIPT_SIZE = 3_600;
 const MAX_STANDARD_P2WSH_STACK_ITEMS = 100;
 const MAX_STANDARD_P2WSH_STACK_ITEM_SIZE = 80;
@@ -84,41 +96,6 @@ const LOCKTIME_THRESHOLD = 500_000_000;
 const OP_TRUE = Uint8Array.of(0x51);
 /** Block rewards pay an anyone-can-spend p2wsh (witness script `OP_TRUE`). */
 const MINER_SCRIPT = Uint8Array.of(0x00, 0x20, ...sha256(OP_TRUE));
-const TRUE = Uint8Array.of(1);
-const FALSE = new Uint8Array(0);
-
-/** bitcoind's `ScriptErrorString` texts. */
-const ERR = {
-  EVAL_FALSE:
-    'Script evaluated without error but finished with a false/empty top stack element',
-  OP_RETURN: 'OP_RETURN was encountered',
-  SCRIPT_SIZE: 'Script is too large',
-  PUSH_SIZE: 'Push value size limit exceeded',
-  BAD_OPCODE: 'Opcode missing or not understood',
-  INVALID_STACK_OPERATION: 'Operation not valid with the current stack size',
-  EQUALVERIFY: 'Script failed an OP_EQUALVERIFY operation',
-  SIG_HASHTYPE: 'Signature hash type missing or not understood',
-  SIG_DER: 'Non-canonical DER signature',
-  MINIMALDATA: 'Data push larger than necessary',
-  SIG_PUSHONLY: 'Only push operators allowed in signatures',
-  SIG_HIGH_S: 'Non-canonical signature: S value is unnecessarily high',
-  PUBKEYTYPE: 'Public key is neither compressed or uncompressed',
-  CLEANSTACK: 'Stack size must be exactly one after execution',
-  SIG_NULLFAIL: 'Signature must be zero for failed CHECK(MULTI)SIG operation',
-  DISCOURAGE_UPGRADABLE_NOPS: 'NOPx reserved for soft-fork upgrades',
-  DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM:
-    'Witness version reserved for soft-fork upgrades',
-  WITNESS_PROGRAM_WRONG_LENGTH: 'Witness program has incorrect length',
-  WITNESS_PROGRAM_WITNESS_EMPTY: 'Witness program was passed an empty witness',
-  WITNESS_PROGRAM_MISMATCH: 'Witness program hash mismatch',
-  WITNESS_MALLEATED: 'Witness requires empty scriptSig',
-  WITNESS_MALLEATED_P2SH: 'Witness requires only-redeemscript scriptSig',
-  WITNESS_UNEXPECTED: 'Witness provided for non-witness script',
-  WITNESS_PUBKEYTYPE: 'Using non-compressed keys in segwit',
-  SCHNORR_SIG_SIZE: 'Invalid Schnorr signature size',
-  SCHNORR_SIG_HASHTYPE: 'Invalid Schnorr signature hash type',
-  SCHNORR_SIG: 'Invalid Schnorr signature',
-} as const;
 
 export type ErrorFormat = 'blockstream' | 'mempool';
 
@@ -150,6 +127,13 @@ export interface EndpointOptions {
   readonly lightMode?: boolean;
 }
 
+/** An endpoint's settings (mutable: `setLag`, `setMempoolDelay`). */
+interface EndpointConfig {
+  lag: number;
+  mempoolDelayMs: number;
+  lightMode: boolean;
+}
+
 /**
  * Answers an endpoint's request instead of the node while it returns a reply (a 429, a 5xx,
  * a lie, or `hang(signal)` for a timeout). `honest()` is what the node itself answers; for a
@@ -172,12 +156,12 @@ export class NodeError extends Error {
   }
 }
 
-interface Output {
+export interface Output {
   readonly script: Uint8Array;
   readonly value: bigint;
 }
 
-interface Input {
+export interface Input {
   readonly txid: string;
   readonly vout: number;
   readonly sequence: number;
@@ -186,7 +170,7 @@ interface Input {
 }
 
 /** A decoded transaction. Never handed out: `transaction()` decodes a copy. */
-interface Parsed {
+export interface Parsed {
   readonly txid: string;
   readonly hex: string;
   readonly version: number;
@@ -204,16 +188,16 @@ interface Parsed {
  * `coinbase`: a block reward. `funding`: a test's payment from outside (`fund`), shaped like
  * a coinbase (a null prevout, so Esplora shows it as one) but spendable at once.
  */
-type Kind = 'coinbase' | 'funding' | 'tx';
+export type Kind = 'coinbase' | 'funding' | 'tx';
 
-interface Entry extends Parsed {
+export interface Entry extends Parsed {
   readonly kind: Kind;
   /** The outputs a `tx` spends, in input order (none for the other kinds). */
   readonly prevouts: readonly Output[];
   readonly fee: bigint;
 }
 
-interface Block {
+export interface Block {
   readonly hash: string;
   readonly height: number;
   readonly parentHash: string;
@@ -227,13 +211,13 @@ interface Block {
   readonly evicted: readonly Entry[];
 }
 
-interface Pooled {
+export interface Pooled {
   readonly entry: Entry;
   /** Clock time of acceptance. */
   readonly time: number;
 }
 
-interface State {
+export interface State {
   readonly chain: Block[];
   /** Transactions of the active chain: txid → height. */
   readonly confirmed: Map<string, number>;
@@ -254,29 +238,6 @@ interface Coin {
   readonly mempool: boolean;
 }
 
-/** What one endpoint shows: blocks up to `height` and the mempool it holds. */
-interface View {
-  readonly height: number;
-  readonly lightMode: boolean;
-  readonly pooled: ReadonlyMap<string, Entry>;
-  readonly spentBy: ReadonlyMap<string, string>;
-}
-
-interface Checker {
-  readonly tx: Transaction;
-  readonly index: number;
-  readonly prevScripts: Uint8Array[];
-  readonly prevValues: bigint[];
-  /** Bitcoin Core's standard flags; `false`: the consensus (mandatory) flags only. */
-  readonly policy: boolean;
-}
-
-type SigVersion = 'base' | 'v0';
-
-class ScriptFailure extends Error {}
-const fail = (reason: string): never => {
-  throw new ScriptFailure(reason);
-};
 const rejected = (reason: string) => new NodeError(-26, reason);
 const invalidBlock = (reason: string) => new Error(`invalid block: ${reason}`);
 
@@ -296,11 +257,6 @@ const isNull = (input: Input): boolean =>
 const isCoinbaseTx = (tx: Parsed): boolean => tx.ins.length === 1 && isNull(tx.ins[0]!);
 const moneyRange = (value: bigint): boolean => value >= 0n && value <= MAX_MONEY;
 const sum = (values: readonly bigint[]): bigint => values.reduce((a, b) => a + b, 0n);
-const compactSizeLength = (n: number): number =>
-  n < 0xfd ? 1 : n <= 0xffff ? 3 : n <= 0xffffffff ? 5 : 9;
-const bigOf = (bytes: Uint8Array): bigint =>
-  bytes.length === 0 ? 0n : BigInt(`0x${toHex(bytes)}`);
-const bytes32 = (n: bigint): Uint8Array => fromHex(n.toString(16).padStart(64, '0'));
 
 /** `CFeeRate::GetFee`: a sat/kvB rate over `vsize`, rounded up. */
 const feeAt = (rate: bigint, vsize: number): bigint =>
@@ -327,427 +283,6 @@ const median = (values: number[]): number =>
 /** `GetMedianTimePast` of the block at `height`: the median of it and its 10 ancestors. */
 const mtpAt = (chain: readonly Block[], height: number): number =>
   median(chain.slice(Math.max(0, height - 10), height + 1).map((b) => b.timestamp));
-
-// ---- scripts -------------------------------------------------------------------------------
-
-interface Op {
-  readonly code: number;
-  readonly data?: Uint8Array;
-}
-
-/** `GetOp` over a whole script; `undefined` when a push runs past its end. */
-function parseScript(script: Uint8Array): Op[] | undefined {
-  const ops: Op[] = [];
-  let i = 0;
-  while (i < script.length) {
-    const code = script[i++]!;
-    let size = -1;
-    if (code <= 0x4b) size = code;
-    else if (code === 0x4c || code === 0x4d || code === 0x4e) {
-      const width = code === 0x4c ? 1 : code === 0x4d ? 2 : 4;
-      if (i + width > script.length) return undefined;
-      size = 0;
-      for (let k = width - 1; k >= 0; k--) size = size * 256 + script[i + k]!;
-      i += width;
-    }
-    if (size < 0) {
-      ops.push({ code });
-      continue;
-    }
-    if (i + size > script.length) return undefined;
-    ops.push({ code, data: script.subarray(i, i + size) });
-    i += size;
-  }
-  return ops;
-}
-
-/** `IsPushOnly`: every opcode is a push or `OP_1NEGATE`..`OP_16`. */
-function isPushOnly(script: Uint8Array): boolean {
-  const ops = parseScript(script);
-  return ops !== undefined && ops.every((op) => op.code <= 0x60);
-}
-
-/** `HasValidOps`. */
-function hasValidOps(script: Uint8Array): boolean {
-  const ops = parseScript(script);
-  return (
-    ops !== undefined &&
-    ops.every(
-      (op) => op.code <= 0xb9 && (op.data?.length ?? 0) <= MAX_SCRIPT_ELEMENT_SIZE,
-    )
-  );
-}
-
-/** `CheckMinimalPush`. */
-function minimalPush(op: Op): boolean {
-  const data = op.data as Uint8Array;
-  if (data.length === 0) return op.code === 0x00;
-  if (data.length === 1 && data[0]! >= 1 && data[0]! <= 16) return false;
-  if (data.length === 1 && data[0] === 0x81) return false;
-  if (data.length <= 75) return op.code === data.length;
-  if (data.length <= 255) return op.code === 0x4c;
-  if (data.length <= 65_535) return op.code === 0x4d;
-  return true;
-}
-
-/** `CScript() << data`. */
-function pushData(data: Uint8Array): Uint8Array {
-  if (data.length < 0x4c) return concatBytes(Uint8Array.of(data.length), data);
-  if (data.length <= 0xff) return concatBytes(Uint8Array.of(0x4c, data.length), data);
-  return concatBytes(Uint8Array.of(0x4d, data.length & 0xff, data.length >> 8), data);
-}
-
-/** `CScript() << n` (BIP34 heights). */
-function pushNumber(n: number): Uint8Array {
-  if (n === 0) return Uint8Array.of(0x00);
-  if (n >= 1 && n <= 16) return Uint8Array.of(0x50 + n);
-  const bytes: number[] = [];
-  for (let v = n; v > 0; v = Math.floor(v / 256)) bytes.push(v % 256);
-  if (bytes[bytes.length - 1]! & 0x80) bytes.push(0);
-  return pushData(Uint8Array.from(bytes));
-}
-
-/** A push-only script's stack (`EvalScript` with no flags), or `undefined` on failure. */
-function pushStack(script: Uint8Array): Uint8Array[] | undefined {
-  const ops = parseScript(script);
-  if (!ops) return undefined;
-  const stack: Uint8Array[] = [];
-  for (const op of ops) {
-    if (op.data !== undefined) {
-      if (op.data.length > MAX_SCRIPT_ELEMENT_SIZE) return undefined;
-      stack.push(op.data);
-    } else if (op.code === 0x4f) stack.push(Uint8Array.of(0x81));
-    else if (op.code >= 0x51 && op.code <= 0x60)
-      stack.push(Uint8Array.of(op.code - 0x50));
-    else return undefined;
-  }
-  return stack;
-}
-
-function witnessProgram(
-  script: Uint8Array,
-): { readonly version: number; readonly program: Uint8Array } | undefined {
-  if (script.length < 4 || script.length > 42) return undefined;
-  const op = script[0]!;
-  if (op !== 0x00 && (op < 0x51 || op > 0x60)) return undefined;
-  if (script[1]! + 2 !== script.length) return undefined;
-  return { version: op === 0 ? 0 : op - 0x50, program: script.subarray(2) };
-}
-
-const isP2sh = (s: Uint8Array): boolean =>
-  s.length === 23 && s[0] === 0xa9 && s[1] === 0x14 && s[22] === 0x87;
-const isP2pkh = (s: Uint8Array): boolean =>
-  s.length === 25 &&
-  s[0] === 0x76 &&
-  s[1] === 0xa9 &&
-  s[2] === 0x14 &&
-  s[23] === 0x88 &&
-  s[24] === 0xac;
-const isPayToAnchor = (s: Uint8Array): boolean =>
-  s.length === 4 && s[0] === 0x51 && s[1] === 0x02 && s[2] === 0x4e && s[3] === 0x73;
-/** `CScript::IsUnspendable`: never enters the UTXO set. */
-const isUnspendable = (s: Uint8Array): boolean =>
-  (s.length > 0 && s[0] === 0x6a) || s.length > MAX_SCRIPT_SIZE;
-
-type ScriptType =
-  | 'p2pkh'
-  | 'p2sh'
-  | 'p2wpkh'
-  | 'p2wsh'
-  | 'p2tr'
-  | 'anchor'
-  | 'witness_unknown'
-  | 'nulldata'
-  | 'pubkey'
-  | 'nonstandard';
-
-/** bitcoind's `Solver`, without bare multisig (treated as non-standard: stricter). */
-function solve(s: Uint8Array): ScriptType {
-  if (isP2sh(s)) return 'p2sh';
-  const wp = witnessProgram(s);
-  if (wp) {
-    if (wp.version === 0 && wp.program.length === 20) return 'p2wpkh';
-    if (wp.version === 0 && wp.program.length === 32) return 'p2wsh';
-    if (wp.version === 1 && wp.program.length === 32) return 'p2tr';
-    if (isPayToAnchor(s)) return 'anchor';
-    return wp.version === 0 ? 'nonstandard' : 'witness_unknown';
-  }
-  if (s.length >= 1 && s[0] === 0x6a && isPushOnly(s.subarray(1))) return 'nulldata';
-  if (
-    s[s.length - 1] === 0xac &&
-    ((s.length === 35 && s[0] === 33 && (s[1] === 2 || s[1] === 3)) ||
-      (s.length === 67 && s[0] === 65 && s[1] === 4))
-  )
-    return 'pubkey';
-  if (isP2pkh(s)) return 'p2pkh';
-  return 'nonstandard';
-}
-
-function castToBool(value: Uint8Array): boolean {
-  for (let i = 0; i < value.length; i++) {
-    if (value[i] !== 0) return !(i === value.length - 1 && value[i] === 0x80);
-  }
-  return false;
-}
-
-/** BIP66 `IsValidSignatureEncoding` (DER plus the sighash byte). */
-function isValidSignatureEncoding(sig: Uint8Array): boolean {
-  if (sig.length < 9 || sig.length > 73) return false;
-  if (sig[0] !== 0x30 || sig[1] !== sig.length - 3) return false;
-  const lenR = sig[3]!;
-  if (5 + lenR >= sig.length) return false;
-  const lenS = sig[5 + lenR]!;
-  if (lenR + lenS + 7 !== sig.length) return false;
-  if (sig[2] !== 0x02 || lenR === 0 || sig[4]! & 0x80) return false;
-  if (lenR > 1 && sig[4] === 0x00 && !(sig[5]! & 0x80)) return false;
-  if (sig[lenR + 4] !== 0x02 || lenS === 0 || sig[lenR + 6]! & 0x80) return false;
-  if (lenS > 1 && sig[lenR + 6] === 0x00 && !(sig[lenR + 7]! & 0x80)) return false;
-  return true;
-}
-
-/** `r` and `s` of a signature that passed `isValidSignatureEncoding`. */
-function derValues(sig: Uint8Array): { r: bigint; s: bigint } {
-  const lenR = sig[3]!;
-  const lenS = sig[5 + lenR]!;
-  return {
-    r: bigOf(sig.subarray(4, 4 + lenR)),
-    s: bigOf(sig.subarray(6 + lenR, 6 + lenR + lenS)),
-  };
-}
-
-/** A public key as libsecp256k1 parses it (hybrid keys included), or `undefined`. */
-function parsePubkey(key: Uint8Array): Uint8Array | undefined {
-  const header = key[0];
-  if ((header === 2 || header === 3) && key.length === 33) return key;
-  if (header === 4 && key.length === 65) return key;
-  if ((header === 6 || header === 7) && key.length === 65) {
-    if ((key[64]! & 1) !== (header & 1)) return undefined;
-    return concatBytes(Uint8Array.of(4), key.subarray(1));
-  }
-  return undefined;
-}
-
-/** `EvalChecksigPreTapscript` and `CheckECDSASignature`. */
-function checksig(
-  sig: Uint8Array,
-  pubkey: Uint8Array,
-  scriptCode: Uint8Array,
-  sigversion: SigVersion,
-  checker: Checker,
-): boolean {
-  const n = secp256k1.CURVE.n;
-  if (sig.length > 0) {
-    // DERSIG is a consensus rule (BIP66); LOW_S and STRICTENC are policy.
-    if (!isValidSignatureEncoding(sig)) fail(ERR.SIG_DER);
-    if (checker.policy) {
-      const { r, s } = derValues(sig);
-      if (r < n && s < n && s > n >> 1n) fail(ERR.SIG_HIGH_S);
-      const type = sig[sig.length - 1]! & ~0x80;
-      if (type < 1 || type > 3) fail(ERR.SIG_HASHTYPE);
-    }
-  }
-  if (checker.policy) {
-    const header = pubkey[0];
-    const known =
-      (pubkey.length === 33 && (header === 2 || header === 3)) ||
-      (pubkey.length === 65 && header === 4);
-    if (!known) fail(ERR.PUBKEYTYPE);
-    if (sigversion === 'v0' && pubkey.length !== 33) fail(ERR.WITNESS_PUBKEYTYPE);
-  }
-  let ok = false;
-  const key = parsePubkey(pubkey);
-  if (key && sig.length > 0) {
-    const hashType = sig[sig.length - 1]!;
-    const { r, s } = derValues(sig);
-    if (r > 0n && s > 0n && r < n && s < n) {
-      const digest =
-        sigversion === 'base'
-          ? checker.tx.hashForSignature(checker.index, scriptCode, hashType)
-          : checker.tx.hashForWitnessV0(
-              checker.index,
-              scriptCode,
-              checker.prevValues[checker.index]!,
-              hashType,
-            );
-      const low = s > n >> 1n ? n - s : s;
-      ok = secp256k1.verify(concatBytes(bytes32(r), bytes32(low)), digest, key, {
-        prehash: false,
-        lowS: true,
-        format: 'compact',
-      });
-    }
-  }
-  if (!ok && checker.policy && sig.length > 0) fail(ERR.SIG_NULLFAIL);
-  return ok;
-}
-
-/** `EvalScript` for the opcodes of the standard templates; anything else throws. */
-function evalScript(
-  stack: Uint8Array[],
-  script: Uint8Array,
-  sigversion: SigVersion,
-  checker: Checker,
-): void {
-  if (script.length > MAX_SCRIPT_SIZE) fail(ERR.SCRIPT_SIZE);
-  const ops = parseScript(script) ?? fail(ERR.BAD_OPCODE);
-  const need = (count: number) => {
-    if (stack.length < count) fail(ERR.INVALID_STACK_OPERATION);
-  };
-  for (const op of ops) {
-    if (op.data !== undefined) {
-      if (op.data.length > MAX_SCRIPT_ELEMENT_SIZE) fail(ERR.PUSH_SIZE);
-      if (checker.policy && !minimalPush(op)) fail(ERR.MINIMALDATA);
-      stack.push(op.data);
-      continue;
-    }
-    const code = op.code;
-    if (code === 0x4f) stack.push(Uint8Array.of(0x81));
-    else if (code >= 0x51 && code <= 0x60) stack.push(Uint8Array.of(code - 0x50));
-    else if (code === 0x61)
-      continue; // OP_NOP
-    else if (code === 0xb0 || (code >= 0xb3 && code <= 0xb9)) {
-      if (checker.policy) fail(ERR.DISCOURAGE_UPGRADABLE_NOPS);
-    } else if (code === 0x50) fail(ERR.BAD_OPCODE);
-    else if (code === 0x6a) fail(ERR.OP_RETURN);
-    else if (code === 0x76) {
-      need(1);
-      stack.push(stack[stack.length - 1]!);
-    } else if (code === 0xa9) {
-      need(1);
-      stack.push(bitcoin.crypto.hash160(stack.pop()!));
-    } else if (code === 0x87 || code === 0x88) {
-      need(2);
-      const equal = equalBytes(stack.pop()!, stack.pop()!);
-      if (code === 0x88) {
-        if (!equal) fail(ERR.EQUALVERIFY);
-      } else stack.push(equal ? TRUE : FALSE);
-    } else if (code === 0xac) {
-      need(2);
-      const pubkey = stack.pop()!;
-      const sig = stack.pop()!;
-      stack.push(checksig(sig, pubkey, script, sigversion, checker) ? TRUE : FALSE);
-    } else {
-      throw new Error(
-        `the scripted node does not model opcode 0x${code.toString(16)}: extend it or use a standard script`,
-      );
-    }
-  }
-}
-
-/** `ExecuteWitnessScript`: a witness script leaves exactly one true element. */
-function executeWitnessScript(
-  stack: Uint8Array[],
-  script: Uint8Array,
-  checker: Checker,
-): void {
-  if (stack.some((item) => item.length > MAX_SCRIPT_ELEMENT_SIZE)) fail(ERR.PUSH_SIZE);
-  evalScript(stack, script, 'v0', checker);
-  if (stack.length !== 1) fail(ERR.CLEANSTACK);
-  if (!castToBool(stack[0]!)) fail(ERR.EVAL_FALSE);
-}
-
-/** BIP341 key-path spending: `CheckSchnorrSignature`. */
-function checkTaprootKey(
-  sig: Uint8Array,
-  program: Uint8Array,
-  checker: Checker,
-  annex: Uint8Array | undefined,
-): void {
-  if (sig.length !== 64 && sig.length !== 65) fail(ERR.SCHNORR_SIG_SIZE);
-  const hashType = sig.length === 65 ? sig[64]! : 0x00;
-  if (sig.length === 65 && hashType === 0x00) fail(ERR.SCHNORR_SIG_HASHTYPE);
-  const defined = hashType <= 0x03 || (hashType >= 0x81 && hashType <= 0x83);
-  const single = (hashType & 0x03) === 0x03;
-  if (!defined || (single && checker.index >= checker.tx.outs.length)) {
-    fail(ERR.SCHNORR_SIG_HASHTYPE);
-  }
-  const digest = checker.tx.hashForWitnessV1(
-    checker.index,
-    checker.prevScripts,
-    checker.prevValues,
-    hashType,
-    undefined,
-    annex,
-  );
-  if (!schnorr.verify(sig.subarray(0, 64), digest, program)) fail(ERR.SCHNORR_SIG);
-}
-
-/** `VerifyWitnessProgram`. */
-function verifyWitnessProgram(
-  witness: readonly Uint8Array[],
-  version: number,
-  program: Uint8Array,
-  checker: Checker,
-  p2sh: boolean,
-): void {
-  if (version === 0) {
-    if (program.length === 32) {
-      if (witness.length === 0) fail(ERR.WITNESS_PROGRAM_WITNESS_EMPTY);
-      const script = witness[witness.length - 1]!;
-      if (!equalBytes(sha256(script), program)) fail(ERR.WITNESS_PROGRAM_MISMATCH);
-      return executeWitnessScript(witness.slice(0, -1), script, checker);
-    }
-    if (program.length === 20) {
-      if (witness.length !== 2) fail(ERR.WITNESS_PROGRAM_MISMATCH);
-      const script = concatBytes(
-        Uint8Array.of(0x76, 0xa9, 0x14),
-        program,
-        Uint8Array.of(0x88, 0xac),
-      );
-      return executeWitnessScript([...witness], script, checker);
-    }
-    return fail(ERR.WITNESS_PROGRAM_WRONG_LENGTH);
-  }
-  if (version === 1 && program.length === 32 && !p2sh) {
-    if (witness.length === 0) fail(ERR.WITNESS_PROGRAM_WITNESS_EMPTY);
-    const stack = [...witness];
-    const last = stack[stack.length - 1]!;
-    const annex = stack.length >= 2 && last[0] === 0x50 ? stack.pop() : undefined;
-    if (stack.length === 1) return checkTaprootKey(stack[0]!, program, checker, annex);
-    throw new Error('the scripted node does not model taproot script-path spending');
-  }
-  const anchor = version === 1 && program.length === 2 && program[0] === 0x4e;
-  if (!p2sh && anchor && program[1] === 0x73) return; // pay-to-anchor
-  if (checker.policy) fail(ERR.DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM);
-}
-
-/** `VerifyScript` (P2SH, WITNESS and TAPROOT always on; CLEANSTACK with the policy flags). */
-function verifyScript(
-  scriptSig: Uint8Array,
-  scriptPubKey: Uint8Array,
-  witness: readonly Uint8Array[],
-  checker: Checker,
-): void {
-  let stack: Uint8Array[] = [];
-  evalScript(stack, scriptSig, 'base', checker);
-  const copy = [...stack];
-  evalScript(stack, scriptPubKey, 'base', checker);
-  if (stack.length === 0 || !castToBool(stack[stack.length - 1]!)) fail(ERR.EVAL_FALSE);
-  let hadWitness = false;
-  const wp = witnessProgram(scriptPubKey);
-  if (wp) {
-    hadWitness = true;
-    if (scriptSig.length !== 0) fail(ERR.WITNESS_MALLEATED);
-    verifyWitnessProgram(witness, wp.version, wp.program, checker, false);
-    stack = stack.slice(0, 1);
-  }
-  if (isP2sh(scriptPubKey)) {
-    if (!isPushOnly(scriptSig)) fail(ERR.SIG_PUSHONLY);
-    stack = copy;
-    const redeem = stack.pop()!;
-    evalScript(stack, redeem, 'base', checker);
-    if (stack.length === 0 || !castToBool(stack[stack.length - 1]!)) fail(ERR.EVAL_FALSE);
-    const inner = witnessProgram(redeem);
-    if (inner) {
-      hadWitness = true;
-      if (!equalBytes(scriptSig, pushData(redeem))) fail(ERR.WITNESS_MALLEATED_P2SH);
-      verifyWitnessProgram(witness, inner.version, inner.program, checker, true);
-      stack = stack.slice(0, 1);
-    }
-  }
-  if (checker.policy && stack.length !== 1) fail(ERR.CLEANSTACK);
-  if (!hadWitness && witness.length > 0) fail(ERR.WITNESS_UNEXPECTED);
-}
 
 // ---- transactions --------------------------------------------------------------------------
 
@@ -866,10 +401,9 @@ export class ScriptedEsploraNode {
   /** Raw bodies POSTed to `/tx` that reached the node, in order (accepted or not). */
   readonly broadcasts: string[] = [];
   readonly #clock: FakeClock;
-  readonly #endpoints = new Map<string, Required<EndpointOptions>>();
+  readonly #endpoints = new Map<string, EndpointConfig>();
   readonly #intercepts = new Map<string, EsploraIntercept>();
-  /** Views are derived from an immutable state: cached per state object. */
-  readonly #views = new WeakMap<State, Map<string, View>>();
+  readonly #api: EsploraApi;
   #estimates: Readonly<Record<string, number>> = { '2': 20, '6': 10, '144': 2 };
   /** The dynamic mempool minimum (sat/kvB) a full mempool raises; 0 when not full. */
   #mempoolMinFee = 0n;
@@ -892,6 +426,7 @@ export class ScriptedEsploraNode {
       legacyScriptErrors: options.legacyScriptErrors ?? false,
       errorFormat: options.errorFormat ?? 'blockstream',
     });
+    this.#api = new EsploraApi(this.network, this.options.errorFormat);
     const coinbase = this.#coinbase(0, 0n);
     const time = Math.floor(this.#clock.now() / 1000);
     const genesis: Block = Object.freeze({
@@ -1124,7 +659,7 @@ export class ScriptedEsploraNode {
     return value;
   }
 
-  #endpointOf(name: string): { lag: number; mempoolDelayMs: number; lightMode: boolean } {
+  #endpointOf(name: string): EndpointConfig {
     const endpoint = this.#endpoints.get(name);
     if (!endpoint) throw new Error(`no endpoint ${name}: call endpoint('${name}') first`);
     return endpoint;
@@ -1812,7 +1347,7 @@ export class ScriptedEsploraNode {
     }
   }
 
-  // ---- the Esplora REST API ---------------------------------------------------------------
+  // ---- the Esplora REST API (routes and views: esplora.ts) --------------------------------
 
   async #handle(
     name: string,
@@ -1827,357 +1362,6 @@ export class ScriptedEsploraNode {
       if (reply !== undefined) return reply;
     }
     return honest();
-  }
-
-  /**
-   * What endpoint `name` shows: blocks up to its view, and a mempool of the transactions it
-   * saw relayed (the node's, after `mempoolDelayMs`, plus those of blocks above its view
-   * that were in a mempool first, or that such a block conflicted out), minus any whose
-   * parents it does not know.
-   */
-  #view(name: string): View {
-    const state = this.#state;
-    const { lag, mempoolDelayMs, lightMode } = this.#endpointOf(name);
-    const tip = state.chain.length - 1;
-    const height = Math.max(0, tip - lag);
-    const now = this.#clock.now();
-    const key = `${height}:${mempoolDelayMs > 0 ? now - mempoolDelayMs : '-'}:${lightMode}`;
-    const cache = this.#views.get(state) ?? new Map<string, View>();
-    this.#views.set(state, cache);
-    const cached = cache.get(key);
-    if (cached) return cached;
-    const candidates: Entry[] = [];
-    for (let h = height + 1; h <= tip; h++) {
-      const block = state.chain[h] as Block;
-      candidates.push(...block.evicted);
-      candidates.push(...block.entries.filter((entry) => block.relayed.has(entry.txid)));
-    }
-    for (const { entry, time } of state.mempool.values()) {
-      if (time + mempoolDelayMs <= now) candidates.push(entry);
-    }
-    const known = new Set<string>();
-    const inView = (txid: string) => {
-      const confirmed = state.confirmed.get(txid);
-      return (confirmed !== undefined && confirmed <= height) || known.has(txid);
-    };
-    for (let changed = true; changed;) {
-      changed = false;
-      for (const entry of candidates) {
-        if (known.has(entry.txid)) continue;
-        if (entry.kind !== 'tx' || entry.ins.every((input) => inView(input.txid))) {
-          known.add(entry.txid);
-          changed = true;
-        }
-      }
-    }
-    const pooled = new Map<string, Entry>();
-    for (const entry of candidates)
-      if (known.has(entry.txid)) pooled.set(entry.txid, entry);
-    const spentBy = new Map<string, string>();
-    const spend = (entry: Entry) => {
-      if (entry.kind !== 'tx') return;
-      for (const input of entry.ins) {
-        const key = outpointOf(input.txid, input.vout);
-        if (!spentBy.has(key)) spentBy.set(key, entry.txid);
-      }
-    };
-    for (let h = 0; h <= height; h++) (state.chain[h] as Block).entries.forEach(spend);
-    pooled.forEach(spend);
-    const view: View = { height, lightMode, pooled, spentBy };
-    cache.set(key, view);
-    return view;
-  }
-
-  #confirmedIn(state: State, view: View, txid: string): number | undefined {
-    const height = state.confirmed.get(txid);
-    return height !== undefined && height <= view.height ? height : undefined;
-  }
-
-  /** A transaction as the endpoint serves it: confirmed, in its mempool, or in its txstore. */
-  #lookup(state: State, view: View, txid: string): Entry | undefined {
-    if (this.#confirmedIn(state, view, txid) !== undefined)
-      return state.archive.get(txid);
-    const pooled = view.pooled.get(txid);
-    if (pooled) return pooled;
-    if (view.lightMode) return undefined;
-    for (const block of state.stale.values()) {
-      if (block.height > view.height) continue;
-      const entry = block.entries.find((e) => e.txid === txid);
-      if (entry) return state.archive.get(txid) ?? entry;
-    }
-    return undefined;
-  }
-
-  #status(state: State, view: View, txid: string): Record<string, unknown> {
-    const height = this.#confirmedIn(state, view, txid);
-    if (height === undefined) return { confirmed: false };
-    const block = state.chain[height] as Block;
-    return {
-      confirmed: true,
-      block_height: height,
-      block_hash: block.hash,
-      block_time: block.timestamp,
-    };
-  }
-
-  #outputJson(output: Output): Record<string, unknown> {
-    let address: string | undefined;
-    try {
-      address = bitcoin.address.fromOutputScript(output.script, this.network);
-    } catch {
-      address = undefined;
-    }
-    const s = output.script;
-    const types: Partial<Record<ScriptType, string>> = {
-      pubkey: 'p2pk',
-      p2pkh: 'p2pkh',
-      p2sh: 'p2sh',
-      p2wpkh: 'v0_p2wpkh',
-      p2wsh: 'v0_p2wsh',
-      p2tr: 'v1_p2tr',
-    };
-    const type =
-      s.length === 0
-        ? 'empty'
-        : s[0] === 0x6a
-          ? 'op_return'
-          : (types[solve(s)] ?? 'unknown');
-    return {
-      scriptpubkey: toHex(s),
-      scriptpubkey_asm: '',
-      scriptpubkey_type: type,
-      ...(address !== undefined ? { scriptpubkey_address: address } : {}),
-      value: Number(output.value),
-    };
-  }
-
-  #txJson(state: State, view: View, entry: Entry): Record<string, unknown> {
-    return {
-      txid: entry.txid,
-      version: entry.version,
-      locktime: entry.locktime,
-      vin: entry.ins.map((input, index) => ({
-        txid: input.txid,
-        vout: input.vout,
-        prevout: entry.kind === 'tx' ? this.#outputJson(entry.prevouts[index]!) : null,
-        scriptsig: toHex(input.script),
-        scriptsig_asm: '',
-        ...(input.witness.length > 0
-          ? { witness: input.witness.map((w) => toHex(w)) }
-          : {}),
-        is_coinbase: entry.kind !== 'tx',
-        sequence: input.sequence,
-      })),
-      vout: entry.outs.map((output) => this.#outputJson(output)),
-      size: entry.size,
-      weight: entry.weight,
-      fee: Number(entry.fee),
-      status: this.#status(state, view, entry.txid),
-    };
-  }
-
-  #blockJson(block: Block): Record<string, unknown> {
-    const txids = block.entries.map((entry) => entry.txid);
-    let level = txids.map((txid) => fromHex(txid).reverse());
-    while (level.length > 1) {
-      const next: Uint8Array[] = [];
-      for (let i = 0; i < level.length; i += 2) {
-        const left = level[i]!;
-        next.push(sha256(sha256(concatBytes(left, level[i + 1] ?? left))));
-      }
-      level = next;
-    }
-    const header = 80 + compactSizeLength(block.entries.length);
-    return {
-      id: block.hash,
-      height: block.height,
-      version: 0x20000000,
-      timestamp: block.timestamp,
-      tx_count: block.entries.length,
-      size: header + block.entries.reduce((a, e) => a + e.size, 0),
-      weight: header * 4 + block.entries.reduce((a, e) => a + e.weight, 0),
-      merkle_root: reversedHex(level[0]!),
-      previousblockhash: block.height === 0 ? null : block.parentHash,
-      mediantime: block.mediantime,
-      nonce: 0,
-      bits: 0x207fffff,
-      difficulty: 1,
-    };
-  }
-
-  /** An address's output script, or electrs' refusal text. */
-  #addressScript(address: string): Uint8Array | string {
-    if (address.length <= 100) {
-      try {
-        return bitcoin.address.toOutputScript(address, this.network);
-      } catch {
-        const { bitcoin: main, testnet, regtest } = bitcoin.networks;
-        for (const network of [main, testnet, regtest]) {
-          try {
-            bitcoin.address.toOutputScript(address, network);
-            return 'Address on invalid network';
-          } catch {
-            // Not this network either.
-          }
-        }
-      }
-    }
-    return 'Invalid Bitcoin address';
-  }
-
-  #addressStats(entries: Iterable<Entry>, script: Uint8Array): Record<string, number> {
-    let fundedCount = 0;
-    let funded = 0n;
-    let spentCount = 0;
-    let spent = 0n;
-    let txCount = 0;
-    for (const entry of entries) {
-      let touched = false;
-      for (const output of entry.outs) {
-        if (!equalBytes(output.script, script)) continue;
-        fundedCount++;
-        funded += output.value;
-        touched = true;
-      }
-      for (const prevout of entry.prevouts) {
-        if (!equalBytes(prevout.script, script)) continue;
-        spentCount++;
-        spent += prevout.value;
-        touched = true;
-      }
-      if (touched) txCount++;
-    }
-    return {
-      funded_txo_count: fundedCount,
-      funded_txo_sum: Number(funded),
-      spent_txo_count: spentCount,
-      spent_txo_sum: Number(spent),
-      tx_count: txCount,
-    };
-  }
-
-  #addressRoute(
-    state: State,
-    view: View,
-    parts: readonly string[],
-  ): FakeReply | undefined {
-    const [, address, sub, chain, lastSeen] = parts;
-    const n = parts.length;
-    const shape =
-      n === 2 ||
-      (n === 3 && sub === 'utxo') ||
-      ((n === 4 || n === 5) && sub === 'txs' && chain === 'chain');
-    if (!shape) return undefined;
-    const script = this.#addressScript(address as string);
-    if (typeof script === 'string') return { status: 400, text: script };
-    const confirmed = state.chain.slice(0, view.height + 1).flatMap((b) => b.entries);
-    if (n === 2) {
-      return {
-        json: {
-          address,
-          chain_stats: this.#addressStats(confirmed, script),
-          mempool_stats: this.#addressStats(view.pooled.values(), script),
-        },
-      };
-    }
-    if (sub === 'utxo') {
-      const utxos: Record<string, unknown>[] = [];
-      for (const entry of [...confirmed, ...view.pooled.values()]) {
-        entry.outs.forEach((output, vout) => {
-          if (!equalBytes(output.script, script)) return;
-          if (view.spentBy.has(outpointOf(entry.txid, vout))) return;
-          utxos.push({
-            txid: entry.txid,
-            vout,
-            status: this.#status(state, view, entry.txid),
-            value: Number(output.value),
-          });
-        });
-      }
-      return { json: utxos };
-    }
-    const touches = (entry: Entry) =>
-      entry.outs.some((o) => equalBytes(o.script, script)) ||
-      entry.prevouts.some((p) => equalBytes(p.script, script));
-    const history = [...confirmed].reverse().filter(touches);
-    // electrs ignores a cursor that is not a txid, and answers nothing after an unknown one.
-    const cursor = lastSeen !== undefined ? parseHash(lastSeen) : undefined;
-    let from = 0;
-    if (cursor !== undefined) {
-      from = history.findIndex((entry) => entry.txid === cursor) + 1;
-      if (from === 0) return { json: [] };
-    }
-    return {
-      json: history
-        .slice(from, from + PAGE)
-        .map((entry) => this.#txJson(state, view, entry)),
-    };
-  }
-
-  #blockRoute(state: State, view: View, parts: readonly string[]): FakeReply | undefined {
-    const [, id, sub, start] = parts;
-    const n = parts.length;
-    const shape =
-      n === 2 || (n === 3 && sub === 'txids') || ((n === 3 || n === 4) && sub === 'txs');
-    if (!shape) return undefined;
-    const hash = parseHash(id as string);
-    if (hash === undefined) return { status: 400, text: 'Invalid hex string' };
-    const active = state.chain.find((b) => b.hash === hash && b.height <= view.height);
-    if (n === 2) {
-      return active
-        ? { json: this.#blockJson(active) }
-        : { status: 404, text: 'Block not found' };
-    }
-    // electrs keeps a disconnected block's txids and transactions.
-    const stale = state.stale.get(hash);
-    const block = active ?? (stale && stale.height <= view.height ? stale : undefined);
-    if (!block) return { status: 404, text: 'Block not found' };
-    if (sub === 'txids') return { json: block.entries.map((entry) => entry.txid) };
-    const first = start === undefined ? 0 : (parseNumber(start, 0xffffffff) ?? 0);
-    if (first >= block.entries.length) {
-      return { status: 404, text: 'start index out of range' };
-    }
-    if (first % PAGE !== 0) {
-      return { status: 400, text: `start index must be a multipication of ${PAGE}` };
-    }
-    return {
-      json: block.entries
-        .slice(first, first + PAGE)
-        .map((entry) => this.#txJson(state, view, entry)),
-    };
-  }
-
-  #txRoute(state: State, view: View, parts: readonly string[]): FakeReply | undefined {
-    const [, id, sub, index] = parts;
-    const n = parts.length;
-    const shape =
-      n === 2 ||
-      (n === 3 && (sub === 'hex' || sub === 'status')) ||
-      (n === 4 && sub === 'outspend');
-    if (!shape) return undefined;
-    const txid = parseHash(id as string);
-    if (txid === undefined) return { status: 400, text: 'Invalid hex string' };
-    if (sub === 'status') return { json: this.#status(state, view, txid) };
-    if (sub === 'outspend') {
-      const vout = parseNumber(index as string, 0xffffffff);
-      if (vout === undefined) return { status: 400, text: 'Invalid number' };
-      const spender = view.spentBy.get(outpointOf(txid, vout));
-      if (spender === undefined) return { json: { spent: false } };
-      const entry = this.#lookup(state, view, spender) as Entry;
-      return {
-        json: {
-          spent: true,
-          txid: spender,
-          vin: entry.ins.findIndex((i) => i.txid === txid && i.vout === vout),
-          status: this.#status(state, view, spender),
-        },
-      };
-    }
-    const entry = this.#lookup(state, view, txid);
-    if (!entry) return { status: 404, text: 'Transaction not found' };
-    return sub === 'hex'
-      ? { text: entry.hex }
-      : { json: this.#txJson(state, view, entry) };
   }
 
   #broadcast(body: string): FakeReply {
@@ -2211,47 +1395,10 @@ export class ScriptedEsploraNode {
         : unknown;
     }
     if (request.method !== 'GET') return unknown;
-    const state = this.#state;
-    const view = this.#view(name);
-    const [head, a, b] = parts;
-    const n = parts.length;
-    switch (head) {
-      case 'blocks':
-        if (n === 3 && a === 'tip' && b === 'height')
-          return { text: String(view.height) };
-        if (n === 3 && a === 'tip' && b === 'hash') {
-          return { text: (state.chain[view.height] as Block).hash };
-        }
-        return unknown;
-      case 'block-height': {
-        if (n !== 2) return unknown;
-        const height = parseNumber(a as string, Number.MAX_SAFE_INTEGER);
-        if (height === undefined) return { status: 400, text: 'Invalid number' };
-        const block = height <= view.height ? state.chain[height] : undefined;
-        return block ? { text: block.hash } : { status: 404, text: 'Block not found' };
-      }
-      case 'block':
-        return this.#blockRoute(state, view, parts) ?? unknown;
-      case 'tx':
-        return this.#txRoute(state, view, parts) ?? unknown;
-      case 'address':
-        return this.#addressRoute(state, view, parts) ?? unknown;
-      case 'fee-estimates':
-        return n === 1 ? { json: this.#estimates } : unknown;
-      default:
-        return unknown;
-    }
+    const endpoint = this.#endpointOf(name);
+    return (
+      this.#api.get(this.#state, endpoint, this.#clock.now(), parts, this.#estimates) ??
+      unknown
+    );
   }
-}
-
-/** A txid or block hash as electrs parses one (either case), lowercased. */
-function parseHash(value: string): string | undefined {
-  return /^[0-9a-fA-F]{64}$/.test(value) ? value.toLowerCase() : undefined;
-}
-
-/** An unsigned integer up to `max`, as Rust's `parse` reads one. */
-function parseNumber(value: string, max: number): number | undefined {
-  if (!/^\+?\d{1,20}$/.test(value)) return undefined;
-  const number = Number(value.replace('+', ''));
-  return number <= max ? number : undefined;
 }
