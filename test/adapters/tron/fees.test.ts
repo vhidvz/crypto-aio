@@ -253,21 +253,33 @@ describe('tronFee', () => {
   });
 
   it('refuses a TRC-20 estimate without positive energy, and any without positive bandwidth (F4-R9)', () => {
+    // M4 (F4-R10): the energy is the node's simulation, so a non-positive one is a malformed
+    // answer (retryable), never the caller's intent.
     for (const energy of [0n, -1n]) {
       for (const fee of ['normal', { feeLimit: 1_000_000n }] as const) {
         expect(() => tronFee(input({ energy, fee }))).toThrow(
-          invalidIntent(
-            /^cannot estimate a Tron fee: the simulated energy must be positive$/,
-          ),
+          expect.objectContaining({
+            code: 'PROVIDER_UNAVAILABLE',
+            retryable: true,
+            message: 'malformed energy used in a Tron answer',
+          }),
         );
       }
     }
+    // The bandwidth is the driver's own measure of the bytes it built: a non-positive one is a
+    // driver bug, never the caller's intent nor a node's answer.
     for (const bandwidth of [0n, -1n]) {
       for (const energy of [undefined, 30_000n]) {
-        expect(() =>
-          tronFee(input({ bandwidth, ...(energy ? { energy } : {}) })),
-        ).toThrow(
-          invalidIntent(/^cannot estimate a Tron fee: the bandwidth must be positive$/),
+        let caught: unknown;
+        try {
+          tronFee(input({ bandwidth, ...(energy ? { energy } : {}) }));
+        } catch (error) {
+          caught = error;
+        }
+        expect(caught).toBeInstanceOf(RangeError);
+        expect(caught).not.toHaveProperty('code');
+        expect((caught as Error).message).toBe(
+          'cannot estimate a Tron fee: the bandwidth must be positive',
         );
       }
     }

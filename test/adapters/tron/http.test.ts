@@ -760,13 +760,22 @@ describe('TronApi', () => {
       path: '/wallet/getcontract',
       tags: { purpose: 'read', retry: 'safe', exactIntegers: true },
     });
-    h.node.intercept('main', '/wallet/getcontract', () => ({
-      json: { contract_address: RECIPIENT_HEX, bytecode: '00' },
-    }));
-    await expect(h.run(h.api.contractExists(USDT_HEX, READ))).rejects.toMatchObject({
-      code: 'PROVIDER_UNAVAILABLE',
-      retryable: true,
-    });
+    // Another contract's answer, or one that names none (M3), is malformed.
+    let answer: Record<string, unknown> = {};
+    h.node.intercept('main', '/wallet/getcontract', () => ({ json: answer }));
+    for (const shape of [
+      { contract_address: RECIPIENT_HEX, bytecode: '00' },
+      { bytecode: '00', name: 'x' },
+      { contract_address: 7, bytecode: '00' },
+    ]) {
+      answer = shape;
+      await expect(h.run(h.api.contractExists(USDT_HEX, READ))).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+    answer = { contract_address: USDT_HEX.toUpperCase() };
+    expect(await h.run(h.api.contractExists(USDT_HEX, READ))).toBe(true);
     // Under a quorum: absent, present, an error and a notice are four different answers.
     const key = quorumKeyFor('/wallet/getcontract');
     const present = { contract_address: USDT_HEX, bytecode: '60', name: 'a' };

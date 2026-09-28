@@ -32,6 +32,17 @@ export function malformed(field: string): ProviderError {
   return new ProviderError('PROVIDER_UNAVAILABLE', `malformed ${field} in a Tron answer`);
 }
 
+/**
+ * The node indexed a transaction it cannot serve whole yet (its receipt, the transaction or
+ * its block): neither "not seen" nor a verdict. Retryable; the core keeps its current view.
+ */
+export function notServable(): ProviderError {
+  return new ProviderError(
+    'PROVIDER_UNAVAILABLE',
+    'the node indexed a transaction it cannot serve yet',
+  );
+}
+
 /** A broadcast answer that cannot be read: the node may hold the transaction. */
 function unreadableAfterSend(field: string): ProviderError {
   return new ProviderError(
@@ -701,12 +712,14 @@ export class TronApi {
       'contract',
     );
     if (Object.keys(answer).length === 0) return false;
+    // M3 (F4-R10): java-tron's `SmartContract` always names its address; an answer that
+    // names none, or another, is malformed.
     const address = answer.contract_address;
     if (
-      address !== undefined &&
-      (typeof address !== 'string' || address.toLowerCase() !== addressHex.toLowerCase())
+      typeof address !== 'string' ||
+      address.toLowerCase() !== addressHex.toLowerCase()
     ) {
-      throw malformed('contract address');
+      throw malformed('contract');
     }
     return true;
   }

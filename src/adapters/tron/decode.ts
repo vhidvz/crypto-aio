@@ -20,11 +20,10 @@ import type {
   DriverTransfer,
   DriverTxObservation,
 } from '../../core/driver/types';
-import { ProviderError } from '../../core/errors/error';
 import { fromHex } from '../../core/util/bytes';
 import { TRANSFER_TOPIC, decodeTransferCall, decodeTransferLog } from './abi';
 import { toBase58Address } from './address';
-import { malformed, type TronTxInfo, type TronTxJson } from './http';
+import { malformed, notServable, type TronTxInfo, type TronTxJson } from './http';
 import type { TronCodec, TronContract, TronRawData } from './types';
 
 export interface TxVerdict {
@@ -91,13 +90,14 @@ type Evidence = 'landed' | 'absent' | 'unreadable';
  * controller's final wording). `landed`: a `Transfer` from the sender to that recipient of
  * any positive amount, from the called contract. `unreadable`: nothing landed, and the
  * contract logged a `Transfer` event that does not read as one (its value indexed, say).
+ * A call with a value, or with data that is not a canonical `transfer`, is `absent`.
  */
 function transferEvidence(raw: TronRawData, info: TronTxInfo): Evidence {
   const { contract } = raw;
   if (contract.type !== 'TriggerSmartContract') return 'landed';
   if (carriesValue(contract)) return 'absent';
   const call = decodeTransferCall(contract.data);
-  if (call === null) return 'landed';
+  if (call === null) return 'absent';
   const emitter = contract.contract.slice(2);
   let unreadable = false;
   for (const log of info.logs) {
@@ -121,8 +121,8 @@ function transferEvidence(raw: TronRawData, info: TronTxInfo): Evidence {
  * contract logged a `Transfer` from the sender to that recipient. Any positive amount counts:
  * a fee-on-transfer token (Tron USDT has a dormant fee switch) logs less than the call's
  * amount, and requiring the exact amount would prove a transfer that moved `failed`. A call
- * that also sends TRX or a TRC-10 token is never a plain TRC-20 transfer. Decoding reports
- * the amounts that actually moved.
+ * that also sends TRX or a TRC-10 token, or whose data is not a canonical `transfer`, is never
+ * a plain TRC-20 transfer. Decoding reports the amounts that actually moved.
  */
 export function transferLanded(raw: TronRawData, info: TronTxInfo): boolean {
   return transferEvidence(raw, info) === 'landed';
@@ -139,15 +139,33 @@ export function chainVerdict(
 
 /**
  * The verdict of our own included transaction (observe with an ordering, `includedFinal`).
- * The driver built it, so its bytes read, its call sends no value, and a node's answer for
- * it carries `contractRet`; anything else contradicts the signed transaction and decides
- * nothing (lesson 18, widened), as does a token `Transfer` event that does not read.
+ * The driver built it, so its bytes read, its call is a canonical `transfer` that sends no
+ * value, a node's answer for it carries `contractRet`, and a TRX transfer in a block executed;
+ * anything else contradicts the signed transaction or the chain's rules and decides nothing
+ * (lesson 18, widened), as does a token `Transfer` event that does not read.
  */
 export function verdictOf(codec: TronCodec, tx: TronTxJson, info: TronTxInfo): TxVerdict {
   const raw = codec.readRaw(tx.rawHex);
   if (raw === null) throw malformed('raw_data_hex');
   if (tx.contractRet === undefined) throw malformed('contractRet');
   if (carriesValue(raw.contract)) throw malformed('call value');
+  // M1 (F4-R10): an included TransferContract executed (java-tron never includes one that
+  // failed), so any other answer on our own is impossible: a false `failed` on a proof path
+  // would invite a second payment. The chain's view reports what the node says (lesson 15).
+  if (
+    raw.contract.type === 'TransferContract' &&
+    (tx.contractRet !== 'SUCCESS' || info.failed)
+  ) {
+    throw malformed('contractRet');
+  }
+  // M2 (F4-R10): our own TRC-20 call is a canonical `transfer(to, amount)` (the builder
+  // writes nothing else), so other call data contradicts the signed transaction.
+  if (
+    raw.contract.type === 'TriggerSmartContract' &&
+    decodeTransferCall(raw.contract.data) === null
+  ) {
+    throw malformed('call data');
+  }
   const chain = executed(raw, tx, info);
   if (!chain.success) return chain;
   const evidence = transferEvidence(raw, info);
@@ -193,12 +211,7 @@ export function decodeTransaction(
   blockHash: string | undefined,
   pending = false,
 ): DriverTransaction {
-  if (info !== null && blockHash === undefined) {
-    throw new ProviderError(
-      'PROVIDER_UNAVAILABLE',
-      'the node indexed a transaction it cannot serve yet',
-    );
-  }
+  if (info !== null && blockHash === undefined) throw notServable();
   const raw = codec.readRaw(tx.rawHex);
   const chain = info ? executed(raw, tx, info) : undefined;
   const observation: DriverTxObservation =

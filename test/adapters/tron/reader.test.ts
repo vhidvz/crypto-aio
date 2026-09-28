@@ -490,13 +490,50 @@ describe('Tron reader: verdicts and lenient decoding', () => {
         infoOf(tx, { receiptResult: 'SUCCESS', logs: [foreign] }),
       ),
     ).toEqual({ success: false, reason: 'token transfer not evidenced' });
-    // A TRX transfer: our own needs contractRet SUCCESS; FAILED is the chain's failure.
+    // M1: our own TRX transfer, once included, executed (java-tron never includes a failed
+    // TransferContract): any other answer is impossible and decides nothing, where a false
+    // `failed` would invite a second payment. The chain's view reports what the node says.
     const payment = txOf(PAYMENT, {}, 'SUCCESS');
     expect(verdictOf(tronwebCodec, payment, infoOf(payment))).toEqual({ success: true });
-    expect(verdictOf(tronwebCodec, payment, infoOf(payment, { failed: true }))).toEqual({
-      success: false,
-      reason: 'execution failed',
-    });
+    const impossible: [TronTxJson, TronTxInfo][] = [
+      [payment, infoOf(payment, { failed: true })],
+      [{ ...payment, contractRet: 'REVERT' }, infoOf(payment)],
+      [{ ...payment, contractRet: 'DEFAULT' }, infoOf(payment)],
+    ];
+    for (const [t, i] of impossible) {
+      expect(() => verdictOf(tronwebCodec, t, i)).toThrow(undecided);
+      expect(chainVerdict(tronwebCodec, t, i)).toEqual({
+        success: false,
+        reason: 'execution failed',
+      });
+    }
+    // M2: our own TRC-20 call is a canonical `transfer`; any other call data decides nothing.
+    const word = (hex: string) => hex.padStart(64, '0');
+    for (const data of [
+      `095ea7b3${word(RECIPIENT_HEX.slice(2))}${word('05')}`, // approve(…)
+      `a9059cbb${'ff'.repeat(12)}${RECIPIENT_HEX.slice(2)}${word('05')}`, // dirty address word
+      `a9059cbb${word(RECIPIENT_HEX.slice(2))}`, // no amount
+    ]) {
+      const other = txOf(
+        {
+          ...CALL,
+          contract: {
+            type: 'TriggerSmartContract',
+            owner: KEY_HEX,
+            contract: USDT_HEX,
+            data,
+          },
+        },
+        {},
+        'SUCCESS',
+      );
+      const ran = infoOf(other, { receiptResult: 'SUCCESS', logs });
+      expect(() => verdictOf(tronwebCodec, other, ran)).toThrow(undecided);
+      expect(chainVerdict(tronwebCodec, other, ran)).toEqual({ success: true });
+      expect(transferLanded(tronwebCodec.readRaw(other.rawHex) as TronRawData, ran)).toBe(
+        false,
+      );
+    }
     // Someone else's transfer to the recipient is not ours.
     expect(
       verdictOf(
@@ -523,6 +560,63 @@ describe('Tron reader: verdicts and lenient decoding', () => {
     ).toEqual({ success: false, reason: 'out of energy' });
     // A receipt comes with its block.
     expect(() => decodeTransaction(tronwebCodec, tx, good, undefined)).toThrow(undecided);
+  });
+
+  it('reads duplicate Transfer logs one by one, by their index in the receipt (M6)', () => {
+    const tx = txOf(CALL, {}, 'SUCCESS');
+    const landing = transferLog(KEY_ADDRESS, RECIPIENT, 5n);
+    const approval: TronLog = {
+      ...landing,
+      topics: ['8c'.repeat(32), ...landing.topics.slice(1)],
+    };
+    const info = infoOf(tx, {
+      receiptResult: 'SUCCESS',
+      logs: [landing, approval, landing, transferLog(KEY_ADDRESS, KEY_ADDRESS, 0n)],
+    });
+    // The same transfer logged twice still lands once; decoding reports each log it read.
+    expect(verdictOf(tronwebCodec, tx, info)).toEqual({ success: true });
+    expect(decodeTransaction(tronwebCodec, tx, info, BLOCK)).toMatchObject({
+      transfers: [
+        { locator: 'log:0', from: [KEY_ADDRESS], to: RECIPIENT, amount: 5n },
+        { locator: 'log:2', from: [KEY_ADDRESS], to: RECIPIENT, amount: 5n },
+        { locator: 'log:3', from: [KEY_ADDRESS], to: KEY_ADDRESS, amount: 0n },
+      ],
+      decoding: 'partial',
+    });
+    // Duplicates of a transfer that moved nothing, or went elsewhere, never land.
+    const nothing = transferLog(KEY_ADDRESS, RECIPIENT, 0n);
+    const elsewhere = transferLog(KEY_ADDRESS, KEY_ADDRESS, 5n);
+    expect(
+      verdictOf(
+        tronwebCodec,
+        tx,
+        infoOf(tx, { receiptResult: 'SUCCESS', logs: [nothing, elsewhere, nothing] }),
+      ),
+    ).toEqual({ success: false, reason: 'token transfer not evidenced' });
+  });
+
+  it('observes our own TRC-20 transfer that ran out of energy as failed, end to end (M6)', async () => {
+    const h = setup();
+    // A fee limit of 1,000 sun buys 10 energy at 100 sun: the call is included and fails.
+    const id = await submit(h, 'trc20', { feeLimit: 1_000 });
+    h.node.mine();
+    const failed = {
+      seen: 'block',
+      txHash: id,
+      blockHeight: 1n,
+      blockHash: h.node.block(1)?.id,
+      success: false,
+      reason: 'out of energy',
+    };
+    expect(await h.run(h.reader.observe(ref(id), OURS, KEY_ADDRESS))).toEqual(failed);
+    expect(await h.run(h.reader.observe(ref(id), undefined, undefined))).toEqual(failed);
+    expect(await h.run(h.reader.getTransaction(id))).toMatchObject({
+      observation: failed,
+      transfers: [],
+      decoding: 'complete',
+      details: { result: 'OUT_OF_ENERGY', receipt: 'OUT_OF_ENERGY' },
+    });
+    expect(h.node.tokenBalance(USDT, RECIPIENT)).toBe(0n);
   });
 
   it('reads 2018 history, contract types it does not model and odd memos leniently', () => {

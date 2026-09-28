@@ -22,7 +22,7 @@ import type { Clock } from '../../core/util/clock';
 import { SELECTORS, decodeString, decodeUint256, encodeBalanceOf } from './abi';
 import { isTronAddress, toBase58Address, toHexAddress } from './address';
 import { chainVerdict, decodeTransaction, verdictOf } from './decode';
-import { MONITOR, READ, type TronApi, type TronTxJson } from './http';
+import { MONITOR, READ, notServable, type TronApi, type TronTxJson } from './http';
 import type { TronNetworkConfig } from './network';
 import type { TronCallTags, TronCodec, TronExt, TronResources } from './types';
 
@@ -57,13 +57,6 @@ const METADATA: TronCallTags = { ...READ, quorum: 'proof' };
 
 function tokenProblem(reason: string): ValidationError {
   return new ValidationError('ASSET_RESOLUTION', `TRC-20 token unusable: ${reason}`);
-}
-
-function notServable(): ProviderError {
-  return new ProviderError(
-    'PROVIDER_UNAVAILABLE',
-    'the node indexed a transaction it cannot serve yet',
-  );
 }
 
 /**

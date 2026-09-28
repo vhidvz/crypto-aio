@@ -22,7 +22,7 @@ import {
   type FeeOverride,
   type FeeSpeed,
 } from '../../core/model/fee';
-import type { ChainParameters } from './http';
+import { malformed, type ChainParameters } from './http';
 import type { TronFeeDetails, TronFeeOverride, TronResources } from './types';
 
 export interface TronFeeInput {
@@ -86,12 +86,13 @@ export function tronFee(input: TronFeeInput): FeeEstimateDraft {
   }
   // F4-R9: every transaction consumes bandwidth, and a TRC-20 call energy; a zero or negative
   // one would give a fee limit of 0, which fails on chain (out of energy) and still pays.
+  // F4-R10 M4: neither is the caller's intent. The bandwidth is the driver's own measure of
+  // the bytes it built, so a non-positive one is a driver bug; the energy is the node's
+  // simulation, so a non-positive one is a malformed answer (retryable).
   if (bandwidth <= 0n) {
-    throw invalid('cannot estimate a Tron fee: the bandwidth must be positive');
+    throw new RangeError('cannot estimate a Tron fee: the bandwidth must be positive');
   }
-  if (input.energy !== undefined && input.energy <= 0n) {
-    throw invalid('cannot estimate a Tron fee: the simulated energy must be positive');
-  }
+  if (input.energy !== undefined && input.energy <= 0n) throw malformed('energy used');
   const override = feeOverrideOf(input.fee);
   const charges: FeeChargeDraft[] = [];
   const charge = (label: string, amount: bigint) =>
