@@ -125,7 +125,7 @@ private key in a `Secret`. Redaction happens in these places:
 | --- | --- |
 | Provider URLs | A `Secret` URL shows as `https://host/[REDACTED]`. In a plain URL, user info, query values and key-like path segments (16 or more characters) are redacted |
 | Headers | `Secret` values, and headers named like `authorization`, `api-key`, `token`, `secret` or `cookie` |
-| Errors | Transport errors name the endpoint (`<provider/endpoint>`), never its URL. Signer failures carry a sanitized cause |
+| Errors | Transport errors name the endpoint (`<provider/endpoint>`), never its URL. A REST error's text may carry the request path, such as an address or a txid, but never the host or a credential. Signer failures carry a sanitized cause |
 | `bc.config` | A frozen, redacted snapshot of the resolved configuration |
 | Events | Operational data only: no URLs, addresses, amounts, raw transactions or signatures |
 | Logs | `createLogger` redacts URLs in messages, and fields named like `key`, `secret`, `token`, `password`, `passphrase`, `mnemonic`, `private`, `seed`, `authorization` or `cookie` |
@@ -204,11 +204,12 @@ for what it reports. The driver's guards:
   that check for a change address of another key, such as a cold wallet's. With it, a
   mistyped but valid address loses every change output, so set it only for an address you
   have verified. A cancel always pays back to the sending address.
-- **Input values.** Keep `options.nonWitnessUtxo` on (the default). Each `p2pkh` and segwit
-  v0 input then carries its previous transaction, whose bytes must hash to the input's
-  txid, so the indexer cannot misstate what you spend, and a hardware signer can check the
-  fee. A `p2tr` signature commits to every input's amount, so a misstated value makes the
-  transaction invalid, never costlier.
+- **Input values.** Every input's value and script are checked against its previous
+  transaction, whose bytes must hash to the input's txid, before anything is signed, so the
+  indexer cannot misstate what you spend. Keep `options.nonWitnessUtxo` on (the default)
+  for hardware signers: each `p2pkh` and segwit v0 input then carries that transaction in
+  the PSBT, so the signer can check the fee itself. A `p2tr` input never carries it; its
+  signature commits to every input's amount.
 - **Endpoints.** With a single Esplora endpoint as the `provider`, its operator alone decides
   finality and whether a transfer was replaced. Use two independent endpoints, ideally
   three. A node's claim that your transaction is invalid ends a transfer only when the
@@ -238,8 +239,10 @@ transfer resolves.
 - [ ] `aio.operations.recover()` at startup, then `aio.monitor.start()` workers. Alerts on
       `operation.stalled`, `nonce.gap`, `recovery.skipped` and `provider.misconfigured`.
 - [ ] Credit and complete only on `final` with `proven` evidence. Dedupe deposits on the
-      transfer id.
+      transfer id. On Bitcoin, skip a transfer whose `to` is among its `from` addresses
+      (change, a cancel's refund), and never use a scanned deposit address as a change
+      address.
 - [ ] `await aio.close()` on shutdown.
 - [ ] Bitcoin: your own Esplora, with two or three independent endpoints as the `provider`;
-      `lifecycle.broadcastFanout` of 2 or more; `nonWitnessUtxo` left on; and
-      `allowExternalChangeAddress` only for a verified address.
+      `lifecycle.broadcastFanout` of 2 or more; `nonWitnessUtxo` left on for hardware
+      signers; and `allowExternalChangeAddress` only for a verified address.

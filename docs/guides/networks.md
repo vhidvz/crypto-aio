@@ -80,7 +80,7 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
 | `maxFeeRate` | `1_000_000n` (1,000 sat/vB) | The highest fee rate a transaction may pay |
 | `maxFee` | `10_000_000n` sat (0.1 BTC) | The highest fee a transaction may pay |
 | `maxEstimatedFeeRate` | `200_000n` (200 sat/vB) | The highest rate a fee estimate may set |
-| `nonWitnessUtxo` | `true` | Each segwit v0 input carries its previous transaction |
+| `nonWitnessUtxo` | `true` | Each segwit v0 input carries its previous transaction in the PSBT |
 | `minInputConfirmations` | `1` | The confirmations an output needs before it is spent |
 | `coinSelection` | `'accumulative'` | `'accumulative'` or `'all'` |
 | `rbf` | `true` | Every input signals BIP125 replaceability |
@@ -125,8 +125,8 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   faulty endpoint: it decides nothing, and the call fails with a retryable
   `PROVIDER_UNAVAILABLE`. During a fee spike, `fast` and `normal` can exceed it; raise the
   option, use a slower speed, or pass an explicit `{ satPerVByte }`. testnet3's estimates
-  can be far above it (264 sat/vB for up to 6 blocks in September 2026): use `slow` or
-  `satPerVByte` there.
+  can be far above it (264 sat/vB for up to 6 blocks in September 2026), even for `slow`:
+  pass `{ satPerVByte }` there, or raise `maxEstimatedFeeRate` on that handle.
 - **Coins.** `accumulative` (the default) spends the largest outputs first; `all` spends
   every eligible output (a sweep). Only outputs with `minInputConfirmations` confirmations
   are spent. `0` also spends unconfirmed ones, but a transfer that spends an output of a
@@ -147,19 +147,23 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   [transactions](./transactions.md)). `unsigned.expectedRef` is the txid, except on `p2pkh`,
   whose txid depends on its signatures. The PSBT carries no key origins (BIP32 derivation
   paths), so a hardware wallet that needs them to find its key needs a coordinator that adds
-  them. The signed PSBT may add signatures, final scripts, key origins and the fields a
-  coordinator adds for its change outputs; anything that could change the spend, and any
-  other field, fails with `INVALID_INTENT`. A signer whose PSBT is refused can still return
-  signature bundles, one per request.
-- **Input values.** Each `p2pkh` input, and each segwit v0 input while `nonWitnessUtxo` is on,
-  carries its previous transaction, which must hash to the input's txid. So the indexer's
-  value for that input is checked (a mismatch is a retryable `PROVIDER_INCONSISTENT`), and a
-  hardware wallet can check the fee. Keep it on. Turning it off saves one read per input,
-  but segwit v0 values are then the indexer's word, which is what the BIP143 fee attack on
-  hardware signers relies on. A `p2tr` input never carries it: a taproot signature commits
-  to every input's amount, so a wrong value from the indexer makes the transaction invalid,
-  never costlier. Such a transaction, like a segwit v0 one built on a wrong value with the
-  option off, is refused, and the transfer stalls (below).
+  them. The signed PSBT may add signatures, final scripts, key origins, the fields a
+  coordinator adds for its change outputs, and proprietary keys, and it may be written as
+  PSBT version 0. A coordinator may also add the previous transaction of a non-`p2tr` input
+  that lacks one; it must hash to the input's txid and pay the output spent. Anything that
+  could change the spend, and any unknown field, fails with `INVALID_INTENT`. A signer
+  whose PSBT is refused can still return signature bundles, one per request.
+- **Input values.** Before anything is signed, the driver reads each input's previous
+  transaction, whose bytes must hash to the input's txid, and checks the indexer's value
+  and script against it, for every address type and whatever `nonWitnessUtxo` says. A
+  mismatch, or an output that transaction does not have, fails with a retryable
+  `PROVIDER_INCONSISTENT`, so the indexer can neither misstate what you spend nor make you
+  sign a transaction no node will take. Previous transactions are read four at a time and
+  kept per txid. Each `p2pkh` input, and each segwit v0 input while `nonWitnessUtxo` is on,
+  also carries its previous transaction in the PSBT, so a hardware wallet can check the fee
+  itself; keep it on for hardware signers, which the BIP143 fee attack targets. Turning it
+  off makes PSBTs smaller. A `p2tr` input never carries it: a taproot signature commits to
+  every input's amount.
 - **Broadcasts.** A node's claim that a transaction is invalid ends a transfer
   (`TX_REJECTED`) only when the driver confirms it for the bytes it sent: bytes that do not
   decode, or a consensus rule that the bytes alone break. Every other claim, and every
@@ -171,15 +175,15 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
 - **Stalled transfers.** A signed transfer that a node refused is `stalled` (`FEE_TOO_LOW`,
   or `TX_REFUSED`, for example when an input is missing or already spent). `abandon`
   refuses it (`INVALID_TRANSITION`): its signed bytes may already be relayed and can still
-  be mined, so its inputs stay held and no other transfer can spend them twice. Workers
-  keep observing it, and it moves on by itself once a node holds it or a block includes it.
+  be mined, so its inputs stay held for it. Never retry the payment as a new transfer (a new
+  idempotency key): the new Operation spends other coins, and both can confirm. Repeat the
+  call with the same key, or use `rebroadcast`, `replace` or `cancel`. Workers keep
+  observing it, and it moves on by itself once a node holds it or a block includes it.
   Otherwise, `rebroadcast` it after fixing the cause, or `replace` or `cancel` it: each
   replacement or cancel spends all of the original's inputs, so at most one of them lands.
   If another transaction spends one of its inputs at finality (the key spent those coins
   outside the library, for example), it fails with `TX_REPLACED` and its inputs are
-  released. When its bytes are invalid for good (built on a wrong input value, above), a
-  replacement or cancel reuses those values and is refused too, so only such a spend ends
-  it.
+  released.
 - **Replace and cancel** use BIP125 RBF. A replacement or cancel spends every input of the
   transaction it replaces (a replacement may add confirmed outputs of the wallet), and it
   must pay the old fee plus 1 sat/vB of its own size, at a higher rate. Below that it fails
@@ -188,7 +192,9 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   the sending address, never to a `changeAddress`, at the least valid fee unless you pass
   one. If the recipient already spent an output with a child transaction (CPFP), the node
   also counts the child's fee: the replacement fails with `FEE_TOO_LOW`, the original stays
-  live, and a higher explicit fee, one that also covers the child, resolves it.
+  live, and a higher explicit fee, one that also covers the child, resolves it. Once the
+  original is mined, a replacement or cancel fails with `TX_REFUSED` until the workers see
+  that block, then with `INVALID_TRANSITION`; nothing new is sent.
 - **Finality** is 6 confirmations on every network, attested by the proof quorum;
   `waitForConfirmation` waits for 1 confirmation by default. Proofs read the `provider`
   endpoints. With one endpoint, a proof quorum of 1, that one operator decides finality and

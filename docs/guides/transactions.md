@@ -47,11 +47,13 @@ bigints or decimal strings, never numbers (`INVALID_INTENT`). The fake chain tak
 `fee: { fee: 5n }`. EVM networks take `{ maxFeePerGas, maxPriorityFeePerGas, gasLimit? }`
 (`evm-1559`) or `{ gasPrice, gasLimit? }` (`evm-legacy`) in wei (`EvmFeeOverride`), as
 bigints only: a decimal string gives `INVALID_INTENT` there. Tron TRC-20 transfers take
-`{ feeLimit }` in sun (`TronFeeOverride`), also as a bigint only. Bitcoin takes
-`{ satPerVByte }` as a `bigint` or a decimal string with up to three decimals, in satoshis
-per virtual byte (`UtxoFeeOverride`), such as `{ satPerVByte: '2.5' }`. The fee is part of
-the `intentHash`, and an override is hashed as written: `{ fee: 1n }` and `{ fee: '1' }` are
+`{ feeLimit }` in sun (`TronFeeOverride`), also as a bigint only. The fee is part of the
+`intentHash`, and an override is hashed as written: `{ fee: 1n }` and `{ fee: '1' }` are
 different intents. Retry in the same form, or you get `IDEMPOTENCY_CONFLICT`.
+
+On Bitcoin, the override is `{ satPerVByte }`, as a `bigint` or a decimal string with up to
+three decimals, in satoshis per virtual byte (`UtxoFeeOverride`), such as
+`{ satPerVByte: '2.5' }`.
 
 ```ts
 const estimate = await bc.estimateFee({ to, amount: '0.25', fee: 'fast' });
@@ -169,8 +171,13 @@ mempool, so it supports neither (`UNSUPPORTED_CAPABILITY`).
 On Bitcoin, a replacement or cancel (BIP125) spends every input of the transaction it
 replaces, and must pay the old fee plus 1 sat/vB of its own size, at a higher rate, or it
 throws `FEE_TOO_LOW`. A cancel pays everything, minus its fee, back to the sending address.
-A signed transfer that a node refused stays `stalled` with its inputs held, and `abandon`
-refuses it, because its bytes may already be relayed; see
+When the original is already mined, a replacement or cancel throws `TX_REFUSED` (its inputs
+are spent) until the workers see that block, and `INVALID_TRANSITION` once the Operation is
+`included`; either way nothing new is sent, and the outcome stays `executed`. A signed
+transfer that a node refused stays `stalled` with its inputs held, and `abandon` refuses it,
+because its bytes may already be relayed. Never retry it as a new transfer (a new
+idempotency key): the new Operation spends other coins, and both can confirm. Repeat the
+call with the same key, or `rebroadcast`, `replace` or `cancel` it; see
 [Bitcoin networks](./networks.md#bitcoin-networks) for how it resolves.
 
 On expiry- and seqno-based chains (Tron today; planned Solana and TON; `fakeexpiry` and
@@ -312,6 +319,8 @@ for await (const event of scanner) {
     for (const tx of event.transactions)
       for (const transfer of tx.transfers) {
         if (!mine.has(transfer.to.canonical)) continue; // the filter is a superset
+        // Bitcoin: change, and a cancel's refund, go back to the sending address.
+        if (transfer.from.some((a) => a.canonical === transfer.to.canonical)) continue;
         if (transfer.unresolved) await flagForReview(transfer.id, transfer.unresolved);
         else await creditOnce(transfer.id, transfer.asset, transfer.amount);
       }
@@ -325,6 +334,13 @@ for await (const event of scanner) {
 - **Credit only your own deposits.** `filter.addresses` returns every transaction with a
   transfer from **or** to one of those addresses, and it may carry other transfers too.
   Credit only transfers whose `to` is a deposit address, or your own sweeps look like deposits.
+- **On Bitcoin, skip transfers back to the sender.** A transaction that spends from an
+  address pays its change, and a cancel its refund, back to that address by default, so a
+  sweep from a deposit address shows a transfer `to` it. Credit a Bitcoin transfer only when
+  its `to` is not among its `from` addresses, as the loop above does. Never set a deposit
+  address you scan as `wallet.utxo.changeAddress`: its change would look like a deposit.
+  Do not skip every transfer with one of your addresses in `from`, though: a withdrawal from
+  your hot wallet to another customer's deposit address is a real deposit.
 - **At least once.** A block may be delivered again after a crash, so dedupe on
   `transfer.id` (`<txId>:<locator>`).
 - **Rollback.** In `head` mode, a reorg within `reorgWindow` blocks produces a `rollback`
@@ -356,8 +372,8 @@ for await (const event of scanner) {
   scan reads every receipt of the block before it trusts the empty answer. So for deposit
   scanning, prefer endpoints that serve `eth_getBlockReceipts`.
 - **Bitcoin.** Each output with an address is a transfer (`<txid>:vout:<n>`) from the
-  addresses of the transaction's inputs; an output without one that carries value makes
-  the transaction `decoding: 'partial'`. `filter.addresses` matches outputs to those
+  addresses of the transaction's inputs, change included; an output without one that
+  carries value makes the transaction `decoding: 'partial'`. `filter.addresses` matches outputs to those
   addresses and inputs that spend from them. Blocks are read 25 transactions per request,
   filtered or not, so a full mainnet block takes over 100 requests: scan through your own
   Esplora rather than a public one.
@@ -377,6 +393,8 @@ once (on Tron, a call to a contract account that moves its own tokens comes in b
 the listing, [Tron networks](./networks.md#tron-networks)), so dedupe on `transfer.id`, as
 for scans.
 On Bitcoin it reads the Esplora indexer and lists confirmed transactions only, newest first.
+Credit from it as from the scanner: skip a transfer whose `to` is among its `from`
+addresses, which is the sender's change or a cancel's refund.
 
 ## Error handling
 

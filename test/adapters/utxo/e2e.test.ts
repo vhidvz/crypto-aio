@@ -250,6 +250,43 @@ describe('replace and cancel (BIP125 RBF)', () => {
     expect((await env.run(env.bc.getBalance(to))).amount.base).toBe(0n);
   });
 
+  it('refuses a replacement or cancel once the original is mined, and the payment stands (F3-R22)', async () => {
+    const env = await createUtxoEnv();
+    const to = env.stranger();
+    const sub = await env.run(env.bc.transfer({ to, amount: 50_000n, fee: 'slow' }));
+    env.node.mine(1);
+    // Before the monitor has seen the block, the node refuses them: their inputs are spent.
+    for (const attempt of [
+      () => env.bc.replace(sub.operationId, { fee: 'fast' }),
+      () => env.bc.cancel(sub.operationId),
+    ]) {
+      await expect(env.run(attempt())).rejects.toMatchObject({
+        code: 'TX_REFUSED',
+        message: expect.stringContaining('inputs missing or already spent'),
+      });
+      expect(await env.run(env.bc.getOperation(sub.operationId))).toMatchObject({
+        state: 'submitted',
+        activeAttempt: { id: sub.attempt?.id },
+      });
+    }
+    // Once it has, the Operation is `included`, and neither can be made.
+    await env.run(env.aio.monitor.runOnce({ workerId: 'w' }));
+    expect(await env.run(env.bc.getOperation(sub.operationId))).toMatchObject({
+      state: 'included',
+    });
+    for (const attempt of [
+      () => env.bc.replace(sub.operationId, { fee: 'fast' }),
+      () => env.bc.cancel(sub.operationId),
+    ]) {
+      await expect(env.run(attempt())).rejects.toMatchObject({
+        code: 'INVALID_TRANSITION',
+      });
+    }
+    const done = await finalOf(env, sub.operationId);
+    expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    expect((await env.run(env.bc.getBalance(to))).amount.base).toBe(50_000n);
+  });
+
   it('fails a transfer whose input a third party spent at final depth (TX_REPLACED)', async () => {
     const env = await createUtxoEnv({ fund: [100_000n] });
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 50_000n }));
