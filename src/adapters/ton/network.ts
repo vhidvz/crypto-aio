@@ -8,11 +8,15 @@ import type { Capability } from '../../core/model/capability';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
 import { MAX_COINS } from './fees';
 
-/** The TON manifest's capabilities (spec §15); `address-history` comes with the indexer. */
+/**
+ * The TON manifest's capabilities (spec §15); `address-history` comes with the indexer. No
+ * `batch-transfer` (Task 9): the verdict answers `failed` for a partly delivered batch, and
+ * a failed Operation sent again whole would pay twice the outputs that moved, so a TON
+ * transfer carries exactly one output.
+ */
 export const TON_CAPABILITIES: readonly Capability[] = Object.freeze([
   'tokens',
   'memo',
-  'batch-transfer',
   'expiry',
 ]);
 export const TON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
@@ -20,7 +24,8 @@ export const TON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
 ]);
 /**
  * The only capabilities a TON network may add or remove (M2). Never on TON: `block-scan`
- * (sharded, no block source), `replace-fee` and `cancel` (spec §15), nor any other.
+ * (sharded, no block source), `replace-fee` and `cancel` (spec §15), `batch-transfer` (one
+ * output per transfer, Task 9), nor any other.
  */
 const OWN_CAPABILITIES: ReadonlySet<Capability> = new Set([
   ...TON_CAPABILITIES,

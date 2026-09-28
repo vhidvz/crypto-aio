@@ -71,9 +71,15 @@ export const MSG_PRICES_BOC =
 /** Config param 24 (masterchain message prices), as on mainnet. */
 export const MC_MSG_PRICES_BOC =
   'te6cckEBAQEAIwAAQuoAAAAAAJiWgAAAAAAnEAAAAAAAD0JAAAAAAYAAVVVVVX2jQy8=';
-const PRICES = configParseMsgPrices(
-  (Cell.fromBoc(Buffer.from(MSG_PRICES_BOC, 'base64'))[0] as Cell).beginParse(),
-);
+const pricesOf = (boc: string) =>
+  configParseMsgPrices(
+    (Cell.fromBoc(Buffer.from(boc, 'base64'))[0] as Cell).beginParse(),
+  );
+/** Message prices: the masterchain's when the source or the destination is on it. */
+const PRICES = {
+  basechain: pricesOf(MSG_PRICES_BOC),
+  masterchain: pricesOf(MC_MSG_PRICES_BOC),
+};
 
 /** Fixed fees of the simulated chain, nanograms. */
 export const NODE_FEES = Object.freeze({
@@ -708,7 +714,7 @@ export class ScriptedTonNode {
       if (message.info.type !== 'internal' || (mode & ~3) !== 0) {
         return { ok: false, resultCode: 34, skipped };
       }
-      const fwd = forwardFee(message);
+      const fwd = forwardFee(message, from);
       const value = message.info.value.coins;
       const separately = (mode & 1) !== 0;
       const cost = separately ? value + fwd : value;
@@ -1288,7 +1294,7 @@ export class ScriptedTonNode {
           Cell.fromBoc(Buffer.from(body.body, 'base64'))[0] as Cell,
         );
         const fwd = (request_?.messages ?? []).reduce(
-          (sum, m) => sum + forwardFee(m.message),
+          (sum, m) => sum + forwardFee(m.message, normalizeParam(body.address)),
           0n,
         );
         return fees(this.#walletGas(version, deploy), fwd);
@@ -1621,9 +1627,17 @@ export function normalizedHash(externalCell: Cell): string {
     .toString('hex');
 }
 
-function forwardFee(message: MessageRelaxed): bigint {
+/**
+ * A message's full forward fee, priced as transaction.cpp `try_action_send_message` does:
+ * by config param 24 when the source or the destination is on the masterchain, else 25.
+ */
+function forwardFee(message: MessageRelaxed, source: string): bigint {
   const cell = beginCell().store(storeMessageRelaxed(message)).endCell();
-  const { fees, remaining } = computeMessageForwardFees(PRICES, cell);
+  const masterchain =
+    source.startsWith('-1:') ||
+    (message.info.type === 'internal' && message.info.dest.workChain === -1);
+  const prices = masterchain ? PRICES.masterchain : PRICES.basechain;
+  const { fees, remaining } = computeMessageForwardFees(prices, cell);
   return fees + remaining;
 }
 

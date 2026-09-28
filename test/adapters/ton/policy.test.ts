@@ -130,6 +130,8 @@ describe('TON network config', () => {
       [{ params: { jettonAttachd: 1n } }, "'jettonAttachd'"],
       [{ params: { [long]: 1 } }, `'${'k'.repeat(64)}'`],
       [{ capabilities: { add: ['fee-market-1559'] } }, "'fee-market-1559'"],
+      // One output per transfer (Task 9): no network can offer TON batches.
+      [{ capabilities: { add: ['batch-transfer'] } }, "'batch-transfer'"],
       [{ capabilities: { remove: [long] } }, `'${'k'.repeat(64)}'`],
     ];
     for (const [patch, name] of cases) {
@@ -151,7 +153,7 @@ describe('TON network config', () => {
         ...mainnet,
         capabilities: {
           add: [...TON_CAPABILITIES, ...TON_INDEXER_CAPABILITIES],
-          remove: ['address-history', 'batch-transfer'],
+          remove: ['address-history'],
         },
       }).capabilities,
     ).toEqual(new Set(['tokens', 'memo', 'expiry']));
