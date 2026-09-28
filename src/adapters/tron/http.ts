@@ -273,9 +273,11 @@ const guarded =
  * transport reports both as `PROVIDER_MISCONFIGURED` with no structured status, and TronGrid
  * answers a rate-limit suspension with 403 ("Rate-limited requests usually return 429 or 403
  * and should be retried with backoff", developers.tron.network/reference/rate-limits, read
- * 2026-09-27), so a proof cannot tell a bad key from a pause; a bad key still surfaces as
- * `PROVIDER_MISCONFIGURED` on every read. A caller's abort is never converted. Other
- * purposes see the transport's error unchanged (lesson 13).
+ * 2026-09-27), so a proof cannot tell a bad key from a pause. A bad key still surfaces as
+ * `PROVIDER_MISCONFIGURED` through the plain reads (monitor, read), which pass it unchanged:
+ * on every endpoint when every key is bad; with one bad endpoint among several, a proof retries
+ * until its breaker opens, and then the core reports the quorum unreachable (F4-R7). A caller's
+ * abort is never converted. Other purposes see the transport's error unchanged (lesson 13).
  */
 async function call(
   transport: Transport,
@@ -842,16 +844,27 @@ const BASE58_ACCOUNT = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
  */
 const FINGERPRINT = /^[0-9A-Za-z+/=_-]{1,1024}$/;
 
+/** A 32-byte id as TronGrid writes it: 64 hex digits (lesson 20: one class, bounded). */
+const ID_HEX = /^[0-9a-fA-F]{64}$/;
+
+/** TronGrid's documented internal-transaction entry: its own id and its parent's. */
+const isInternalEntry = (entry: Json): boolean =>
+  typeof entry.internal_tx_id === 'string' &&
+  ID_HEX.test(entry.internal_tx_id) &&
+  typeof entry.tx_id === 'string' &&
+  ID_HEX.test(entry.tx_id);
+
 /**
  * TronGrid `/v1` account history pages (indexer transport), confirmed entries only. Each
  * transaction id is listed once per page: the TRC-20 stream lists a transaction once per
  * transfer it made.
  *
  * I2: internal transactions are not listed. `search_internal=false` asks TronGrid for none,
- * and any entry carrying `internal_tx_id` is skipped: TronGrid documents that entry shape
+ * and an internal entry it mixes in anyway is skipped: TronGrid documents that entry shape
  * (`internal_tx_id`, `tx_id`, `from_address`, `to_address`, `data`, `block_timestamp`; its
  * OpenAPI schema at developers.tron.network/reference/get-transaction-info-by-account-address)
- * and it has no `txID`, so one would make the whole page malformed. Read on 2026-09-27,
+ * and it has no `txID`, so one would make the whole page malformed. Only an entry without
+ * an id of its own that carries both documented ids is skipped (F4-R7). Read on 2026-09-27,
  * `GET api.trongrid.io/v1/accounts/TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR/transactions?limit=20`
  * (WTRX) gave only whole transactions (`txID`, `raw_data_hex`, …), each with the internal
  * transfers nested in `internal_transactions[]` (`internal_tx_id`, `data`, `from_address`,
@@ -893,7 +906,13 @@ export async function historyPage(
     ),
     'history page',
   );
-  if (answer.success !== true || !Array.isArray(answer.data)) {
+  // Final review M2: each listed id costs several node reads, so a page longer than asked
+  // for is malformed rather than read.
+  if (
+    answer.success !== true ||
+    !Array.isArray(answer.data) ||
+    answer.data.length > options.limit
+  ) {
     throw malformed('history page');
   }
   const meta = answer.meta === undefined ? {} : object(answer.meta, 'history meta');
@@ -908,8 +927,13 @@ export async function historyPage(
   const ids: string[] = [];
   for (const item of answer.data) {
     const entry = object(item, 'history item');
-    if (entry.internal_tx_id !== undefined) continue;
-    ids.push(hex(kind === 'trc20' ? entry.transaction_id : entry.txID, 'history id', 32));
+    const id = kind === 'trc20' ? entry.transaction_id : entry.txID;
+    // F4-R7: skipped only when its own fields prove it TronGrid's internal entry: no id of its
+    // own, and the documented internal and parent ids. Any entry that carries its id is read
+    // whatever else it carries, and anything else is malformed (the page is read again), so a
+    // schema change never drops a deposit silently.
+    if (id === undefined && isInternalEntry(entry)) continue;
+    ids.push(hex(id, 'history id', 32));
   }
   return {
     ids: [...new Set(ids)],

@@ -716,6 +716,74 @@ describe('TronApi', () => {
     expect(h.calls).toHaveLength(before);
   });
 
+  it('skips only an entry its own fields prove internal, and keeps any that carries its id (F4-R7)', async () => {
+    const h = nodeTransport({ solidDepth: 0 });
+    const id = 'ab'.repeat(32);
+    const parent = 'ef'.repeat(32);
+    let answer: unknown;
+    for (const suffix of ['', '/trc20']) {
+      h.node.intercept(
+        'main',
+        `/v1/accounts/${KEY_ADDRESS}/transactions${suffix}`,
+        () => ({
+          json: answer,
+        }),
+      );
+    }
+    const page = (kind: 'transactions' | 'trc20') =>
+      h.run(historyPage(h.transport, KEY_ADDRESS, kind, { limit: 5 }, READ));
+    const internal = {
+      internal_tx_id: 'cd'.repeat(32),
+      tx_id: parent,
+      block_timestamp: 1,
+    };
+    // An entry with its own id is read, whatever else it carries: a schema change that adds
+    // `internal_tx_id` (even null) to whole transactions must never drop deposits.
+    for (const [kind, own] of [
+      ['transactions', 'txID'],
+      ['trc20', 'transaction_id'],
+    ] as const) {
+      for (const extra of [{ internal_tx_id: null }, internal, { internal_tx_id: '' }]) {
+        answer = { success: true, data: [{ ...extra, [own]: id }] };
+        expect(await page(kind)).toEqual({ ids: [id] });
+      }
+      // TronGrid's documented internal entry (no id of its own) is skipped.
+      answer = { success: true, data: [internal] };
+      expect(await page(kind)).toEqual({ ids: [] });
+    }
+    // Anything else without an id is malformed, never skipped: the page is read again.
+    for (const entry of [
+      { internal_tx_id: null },
+      { internal_tx_id: 'cd'.repeat(32) },
+      { internal_tx_id: 7, tx_id: parent },
+      { internal_tx_id: 'zz', tx_id: parent },
+      { ...internal, tx_id: null },
+      {},
+    ]) {
+      answer = { success: true, data: [entry] };
+      await expect(page('transactions')).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        message: 'malformed history id in a Tron answer',
+      });
+    }
+  });
+
+  it('refuses a history page longer than the limit it asked for (final review M2)', async () => {
+    const h = nodeTransport({ solidDepth: 0 });
+    const ids = ['01', '02', '03'].map((b) => b.repeat(32));
+    h.node.intercept('main', `/v1/accounts/${KEY_ADDRESS}/transactions/trc20`, () => ({
+      json: { success: true, data: ids.map((id) => ({ transaction_id: id })) },
+    }));
+    const page = (limit: number) =>
+      h.run(historyPage(h.transport, KEY_ADDRESS, 'trc20', { limit }, READ));
+    expect(await page(3)).toEqual({ ids });
+    // Each id costs several node reads: an oversized page would multiply them.
+    await expect(page(2)).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'malformed history page in a Tron answer',
+    });
+  });
+
   it('never waits on a real timer on a request path (R46)', async () => {
     const h = nodeTransport();
     const spy = jest.spyOn(globalThis, 'setTimeout');

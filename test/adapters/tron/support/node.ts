@@ -1761,6 +1761,9 @@ export class ScriptedTronNode {
   /**
    * TronGrid `/v1/accounts/:address/transactions[/trc20]`: entries in blocks up to the
    * head (reorgable), or solidified only with `only_confirmed=true`; at most 200 a page.
+   * As read on Nile (2026-09-28, read-only): `/transactions` lists the account's own
+   * transactions, TRX sent to it and, for a contract, other accounts' calls to it, but not a
+   * TRC-20 transfer it only received; `/trc20` lists TRC-20 transfers from or to it.
    */
   #history(request: FakeRequest, view: { head: number; solid: number }): FakeReply {
     const [, , , address, , kind] = request.url.pathname.split('/');
@@ -1776,8 +1779,13 @@ export class ScriptedTronNode {
     const trc20 = kind === 'trc20';
     const related = txs.filter((t) => {
       const c = t.raw.contract;
-      if (!trc20)
-        return c.owner === hex || (c.type === 'TransferContract' && c.to === hex);
+      if (!trc20) {
+        return (
+          c.owner === hex ||
+          (c.type === 'TransferContract' && c.to === hex) ||
+          (c.type === 'TriggerSmartContract' && c.contract === hex)
+        );
+      }
       return (t.receipt?.logs ?? []).some(
         (l) => l.topics[1]?.endsWith(hex.slice(2)) || l.topics[2]?.endsWith(hex.slice(2)),
       );

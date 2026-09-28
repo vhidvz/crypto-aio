@@ -43,16 +43,21 @@
  *   heights, from one TaPoS window below that 24 h mark up to the top, are the only possible
  *   references. None carries the signed hash: no block can hold the transaction. One does:
  *   the blocks in its TaPoS window (and not before the 24 h mark) are scanned.
+ * - Either way, a block whose parent is more than 24 h before the expiration cannot hold the
+ *   transaction, so no scan goes below the first block at or past that mark (F4-R19).
  * - A missing or malformed stored hash decides nothing.
  * Each scanned block is read by hash under the quorum, its parent hash names the next, and the
  * walk must end on the attested block below the window. A scanned block that holds the
  * transaction while the index says nothing decides nothing.
  *
  * Read cost, each read a quorum read: the reference check is one; a scan is one per block in
- * the window (about 20 for a 60 s expiration). The search, only when the stored height is not
- * the reference, adds a gallop and binary search for the block 24 h before the expiration
- * (a few reads, logarithmic in missed slots) and one read per candidate height (two or three);
- * a matched reference older than a day widens the scan to at most a day of blocks (28,800).
+ * the window (about 20 for a 60 s expiration). A reference older than a day (a build head that
+ * named an old block), or the search below, adds a gallop and binary search for the block 24 h
+ * before the expiration (a few reads, logarithmic in missed slots). The search, only when the
+ * stored height is not the reference, adds one read per candidate height (two or three). A
+ * scan never covers more than the blocks from that 24 h mark to the first block at or past the
+ * expiration: at most a day of blocks (28,800 at one per 3-second slot, fewer when slots are
+ * missed), and never more than one TaPoS window (65,536).
  */
 import type {
   AddressHistorySource,
@@ -281,19 +286,25 @@ export function createTronProofs(ctx: TronContext): ProofSource {
    */
   async function absent(id: string, bounds: Bounds, top: TronBlockHeader): Promise<void> {
     const { reference, refBlockHash } = bounds;
+    /** The 24 h mark: only a block whose parent is at or after it can hold `id`. */
+    const dayMark = bounds.expiration - MAX_LIFETIME_MS;
     // The stored height is the build-time head's claim: it bounds the scan only when the
     // attested block there carries the signed hash bytes.
     if (reference < top.number) {
       const named = await solidHeader(reference);
       if (hashBytes(named) === refBlockHash) {
-        await absentAbove(id, named, top, reference + TAPOS_WINDOW);
+        // F4-R19: a reference older than a day (a build head that named an old block) is
+        // scanned only from the 24 h mark, as the search below does, never its whole window.
+        const floor =
+          named.timestamp < dayMark ? await firstAtOrAfter(dayMark, top) : named;
+        await absentAbove(id, floor, top, reference + TAPOS_WINDOW);
         return;
       }
     }
     // Otherwise, the heights TaPoS can match: the signed low 16 bits, below the top, from one
     // TaPoS window below the first block within 24 h of the expiration (a block's parent is at
     // or after it). Every block up to the top checks the reference against one of them.
-    const earliest = await firstAtOrAfter(bounds.expiration - MAX_LIFETIME_MS, top);
+    const earliest = await firstAtOrAfter(dayMark, top);
     const low16 = reference % TAPOS_WINDOW;
     const from =
       earliest.number + 1n > TAPOS_WINDOW ? earliest.number + 1n - TAPOS_WINDOW : 0n;
@@ -430,9 +441,14 @@ const CURSOR = /^([tx]):(.*)$/;
 const MAX_PAGE = 200;
 
 /**
- * TronGrid history (spec §15): the account's own transactions (`/transactions`), then the
- * TRC-20 transfers it only received (`/transactions/trc20`), each re-read from the full node
- * and decoded like any transaction. Confirmed (solidified) entries only (`historyPage`).
+ * TronGrid history (spec §15), each entry re-read from the full node and decoded like any
+ * transaction; confirmed (solidified) entries only (`historyPage`). Phase `t` is
+ * `/transactions`: the account's own transactions, TRX sent to it and, for a contract
+ * account, other accounts' calls to it. Phase `x` is `/transactions/trc20`: every TRC-20
+ * transfer from or to it (a spender's `transferFrom` out of it included), less the account's
+ * own calls, which phase `t` listed. A TRC-20 transfer a wallet only received is in phase `x`
+ * alone (TronGrid, read-only on Nile, 2026-09-28), but a call to a contract account that moves
+ * its own tokens comes in both phases, so callers dedupe on `transfer.id` (final review M4).
  * Paging follows the raw page's fingerprint, never how many items survive the filter, and
  * an entry the node cannot serve yet decides nothing: dropping it would skip it for good.
  */

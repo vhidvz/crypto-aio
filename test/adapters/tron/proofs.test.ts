@@ -299,6 +299,11 @@ describe('Tron proofs', () => {
 
   it('never answers "not included" while the solidity index lags behind an included transaction', async () => {
     const h = setup();
+    // Genesis serves timestamp 0, as on java-tron, where it is 0 for real: no block can hold
+    // a present-day expiration that references it (MAXIMUM_TIME_UNTIL_EXPIRATION), and the
+    // proof rightly scans none (F4-R19). The scripted node keeps genesis's slot time for its
+    // rules, so reference a block with a real timestamp.
+    await h.mine(1);
     const id = await submit(h, 'trx');
     const ordering = h.ordering(id);
     await h.mine(30);
@@ -313,6 +318,7 @@ describe('Tron proofs', () => {
 
   it('lets no lying endpoint end the negative scan early (F4)', async () => {
     const h = setup();
+    await h.mine(1); // a reference with a real timestamp, as above
     const id = await submit(h, 'trx');
     const ordering = h.ordering(id);
     await h.mine(30);
@@ -551,6 +557,43 @@ describe('Tron proofs: the scan window', () => {
     expect(chain.reads).toEqual([65_546, 65_545]);
   });
 
+  it('stops the scan at the 24 h mark when the attested reference block is older than a day (F4-R19)', async () => {
+    const h = setup();
+    // A build head that named a real block from long before (its true id, a fresh timestamp):
+    // the reference is block 10, and the expiration is block 69,990's time. Only a block whose
+    // parent is within 24 h of the expiration (java-tron's MAXIMUM_TIME_UNTIL_EXPIRATION),
+    // above block 41,190, can hold the transaction.
+    const chain = stubChain(70_000);
+    const proofs = createTronProofs({ ...h.ctx, api: chain.api });
+    const ordering = chain.referencing(10, chain.header(69_990).timestamp);
+    expect(
+      await proofs.includedFinal(ref('ef'.repeat(32)), ordering, KEY_ADDRESS),
+    ).toEqual({ included: false });
+    // 24,356 blocks, not the reference's whole TaPoS window of 65,536.
+    expect(chain.reads).toHaveLength(65_546 - 41_190);
+    expect(chain.reads[0]).toBe(65_546);
+    expect(chain.reads.at(-1)).toBe(41_191);
+    // A transaction in that window is still found (the index lags: nothing decided).
+    const held = stubChain(70_000, { holds: [41_191, 'ef'.repeat(32)] });
+    await expect(
+      createTronProofs({ ...h.ctx, api: held.api }).includedFinal(
+        ref('ef'.repeat(32)),
+        held.referencing(10, held.header(69_990).timestamp),
+        KEY_ADDRESS,
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    // A reference whose whole window is before the mark: no block can hold it, no scan.
+    const old = stubChain(100_000);
+    expect(
+      await createTronProofs({ ...h.ctx, api: old.api }).includedFinal(
+        ref('ef'.repeat(32)),
+        old.referencing(10, old.header(99_990).timestamp),
+        KEY_ADDRESS,
+      ),
+    ).toEqual({ included: false });
+    expect(old.reads).toEqual([]);
+  });
+
   it('decides nothing when the scanned blocks do not chain down to the attested reference block', async () => {
     const h = setup();
     const chain = stubChain(40, { parentOf: [11, 'ee'.repeat(32)] });
@@ -738,6 +781,47 @@ describe('Tron block source and history', () => {
     ).rejects.toMatchObject({
       code: 'CONFIG_INVALID',
     });
+  });
+
+  it('lists a transaction in both phases only when a contract account is called by others (final review M4)', async () => {
+    const h = setup(['a']);
+    h.node.fund(RECIPIENT, 50_000_000n);
+    const reader = createTronReader(h.ctx);
+    const history = createTronHistory(h.ctx, h.transport, (id) =>
+      reader.getTransaction(id),
+    );
+    const list = (address: string, cursor?: string) =>
+      h.run(history.list(address, { limit: 10, ...(cursor ? { cursor } : {}) }));
+    const ids = (page: { readonly items: readonly { readonly id: string }[] }) =>
+      page.items.map((t) => t.id);
+    await h.mine(1);
+    const sent = await submit(h, 'trc20');
+    await h.mine(5);
+    // A wallet that only received tokens: phase t lists nothing (TronGrid's /transactions has
+    // no TRC-20 transfer it only received), phase x lists the transfer once.
+    expect(await list(RECIPIENT)).toEqual({ items: [], next: 'x:' });
+    expect(ids(await list(RECIPIENT, 'x:'))).toEqual([sent]);
+    // A contract account: /transactions also lists other accounts' calls to it, so a call
+    // that moves the contract's own tokens comes in both phases. Dedupe on `transfer.id`.
+    const call = {
+      type: 'TriggerSmartContract',
+      owner: toHexAddress(KEY_ADDRESS),
+      contract: toHexAddress(USDT),
+      data: encodeTransfer(USDT, 5n),
+    } as const;
+    const toContract = await submit(h, 'trc20', { contract: call });
+    await h.mine(5);
+    const t = await list(USDT);
+    const x = await list(USDT, 'x:');
+    expect(ids(t)).toEqual([toContract, sent]);
+    expect(ids(x)).toEqual([toContract]);
+    // The core's transfer id is `<txId>:<locator>`: the same in both phases.
+    const transferIds = (page: typeof t) =>
+      page.items
+        .filter((i) => i.id === toContract)
+        .flatMap((i) => i.transfers.map((tr) => `${i.id}:${tr.locator}`));
+    expect(transferIds(x)).toEqual(transferIds(t));
+    expect(transferIds(t)).toHaveLength(1);
   });
 
   it('pages on the raw page and its fingerprint, never on what is left after filtering', async () => {
