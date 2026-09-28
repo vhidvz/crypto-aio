@@ -14,7 +14,12 @@ import {
   viewPsbt,
   type PlannedInput,
 } from '../../../src/adapters/utxo/codec';
-import { bitcoin, useNobleEcc, type Psbt } from '../../../src/adapters/utxo/sdk';
+import {
+  bitcoin,
+  useNobleEcc,
+  type Psbt,
+  type Transaction,
+} from '../../../src/adapters/utxo/sdk';
 import type { UtxoAddressType } from '../../../src/adapters/utxo/types';
 import { secp256k1Ecdsa, secp256k1Schnorr } from '../../../src/core/registry/schemes';
 import { tweakPrivateKey } from '../../../src/core/signing/local';
@@ -427,16 +432,16 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
     );
 
   it('refuses an oversized PSBT before decoding it (lesson 20)', () => {
-    const { built, requests, psbt } = signedCopy('p2wpkh');
-    psbt.updateInput(0, {
-      bip32Derivation: [
-        {
-          masterFingerprint: new Uint8Array(4),
-          pubkey: TEST_PUBKEY,
-          path: `m${'/0'.repeat(25_000)}`,
-        },
-      ],
-    });
+    // p2tr: no room for a previous transaction a coordinator may add (F3-R5).
+    const { built, requests, psbt, wallet } = signedCopy('p2tr');
+    input(psbt).tapBip32Derivation = [
+      {
+        masterFingerprint: new Uint8Array(4),
+        pubkey: wallet.publicKey,
+        path: `m${'/0'.repeat(25_000)}`,
+        leafHashes: [],
+      },
+    ];
     const storedLength = bitcoin.Psbt.fromBase64(built.psbt).toBuffer().length;
     const fromBuffer = jest.spyOn(bitcoin.Psbt, 'fromBuffer');
     try {
@@ -502,7 +507,8 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
   });
 
   it('refuses unknown fields at every level, and fields a signer does not add', () => {
-    const unknown = { key: Uint8Array.of(0xfc, 0x00), value: Uint8Array.of(0x01) };
+    // 0xef is a key type no BIP defines (0xfc, proprietary, is allowed: M1).
+    const unknown = { key: Uint8Array.of(0xef, 0x00), value: Uint8Array.of(0x01) };
     const tamper: ((psbt: Psbt) => void)[] = [
       (psbt) => psbt.addUnknownKeyValToGlobal(unknown),
       (psbt) => psbt.addUnknownKeyValToInput(0, unknown),
@@ -514,7 +520,13 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
         input(psbt).porCommitment = 'reserves';
       },
       (psbt) => {
-        psbt.data.outputs[0]!.redeemScript = Uint8Array.of(0x51);
+        input(psbt).tapLeafScript = [
+          {
+            leafVersion: 0xc0,
+            script: Uint8Array.of(0x51),
+            controlBlock: concatBytes(Uint8Array.of(0xc0), TEST_PUBKEY.slice(1)),
+          },
+        ];
       },
     ];
     for (const change of tamper) {
@@ -791,6 +803,333 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
   });
 });
 
+describe('Core-coordinated signing (F3-R5)', () => {
+  const origin = {
+    masterFingerprint: Uint8Array.of(1, 2, 3, 4),
+    path: "m/84'/1'/0'/1/0",
+  };
+  const reparse = (psbt: Psbt) =>
+    bitcoin.Psbt.fromBase64(psbt.toBase64(), { network: NETWORK });
+  const signerOf = (type: UtxoAddressType, wallet: ReturnType<typeof setup>['wallet']) =>
+    type === 'p2tr'
+      ? nativeTaprootSigner(TEST_KEY, wallet.tweak as Uint8Array)
+      : nativeSigner(TEST_KEY);
+  /** A funding transaction whose input carries a witness (every other fixture has none). */
+  const witnessFunding = (
+    script: Uint8Array,
+    value: bigint,
+    salt: number,
+  ): Transaction => {
+    const tx = fundingTx(script, value, salt);
+    tx.setWitness(0, [Uint8Array.of(0x01, 0x02, 0x03)]);
+    return tx;
+  };
+  /** Bitcoin Core's `non_witness_utxo`: the transaction without its witness (TX_NO_WITNESS). */
+  const stripped = (tx: Transaction): Uint8Array => {
+    const copy = tx.clone();
+    copy.ins.forEach((_, index) => copy.setWitness(index, []));
+    return copy.toBuffer();
+  };
+  /** `setup(type)`'s transaction, built with previous transactions that carry a witness. */
+  const withPrevious = (type: UtxoAddressType) => {
+    const base = setup(type);
+    const funding = [
+      witnessFunding(base.wallet.script, 50_000n, 1),
+      witnessFunding(base.wallet.script, 70_000n, 2),
+    ];
+    const inputs = base.inputs.map((i, index) => ({
+      ...i,
+      prevTxHex: funding[index]!.toHex(),
+    }));
+    const built = buildTx(NETWORK, base.wallet, inputs, base.outputs, SEQUENCE_RBF);
+    expect(built.digests).toEqual(base.built.digests);
+    return { ...base, funding, built };
+  };
+  /** What Core's UpdatePSBTOutput adds to our change output (index 1). */
+  const coreChangeFields = (
+    psbt: Psbt,
+    type: UtxoAddressType,
+    wallet: ReturnType<typeof setup>['wallet'],
+  ) => {
+    const change = psbt.data.outputs[1]!;
+    if (type === 'p2tr') {
+      change.tapInternalKey = wallet.publicKey;
+      change.tapBip32Derivation = [
+        { ...origin, pubkey: wallet.publicKey, leafHashes: [] },
+      ];
+      return;
+    }
+    if (wallet.redeemScript) change.redeemScript = wallet.redeemScript;
+    change.bip32Derivation = [{ ...origin, pubkey: TEST_PUBKEY }];
+  };
+  const ecdsaRequests = (digests: readonly Uint8Array[]): SigningRequest[] =>
+    digests.map((payload, index) => ({
+      id: `in:${index}`,
+      scheme: 'secp256k1-ecdsa',
+      payload,
+      payloadKind: 'digest',
+      publicKey: TEST_PUBKEY,
+    }));
+  const refusedAs = (
+    stored: string,
+    signed: Psbt,
+    requests: readonly SigningRequest[],
+    reason: string,
+  ) =>
+    expect(() =>
+      signaturesFromPsbt(stored, signed.toBase64(), NETWORK, requests),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'INVALID_INTENT',
+        message: `the signed PSBT ${reason}`,
+      }),
+    );
+
+  it('stores a previous transaction without its witness, as Core writes it (I1a)', () => {
+    for (const type of ['p2wpkh', 'p2sh-p2wpkh', 'p2pkh'] as const) {
+      const { built, funding } = withPrevious(type);
+      const psbt = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+      psbt.data.inputs.forEach((i, index) => {
+        expect(toHex(i.nonWitnessUtxo!)).toBe(toHex(stripped(funding[index]!)));
+      });
+    }
+  });
+
+  it.each(['p2wpkh', 'p2sh-p2wpkh', 'p2pkh', 'p2tr'] as const)(
+    '%s: accepts a Core round trip (previous transactions with or without the witness, change-output fields), partial or final (I1a, I1b)',
+    (type) => {
+      const { built, requests, wallet, funding } = withPrevious(type);
+      for (const previous of [stripped, (tx: Transaction) => tx.toBuffer()]) {
+        for (const finalize of [false, true]) {
+          const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+          signed.signAllInputs(signerOf(type, wallet));
+          if (finalize) signed.finalizeAllInputs();
+          const core = reparse(signed);
+          if (type !== 'p2tr') {
+            core.data.inputs.forEach((i, index) => {
+              i.nonWitnessUtxo = previous(funding[index]!);
+            });
+          }
+          coreChangeFields(core, type, wallet);
+          expect(
+            signaturesFromPsbt(built.psbt, core.toBase64(), NETWORK, requests).map(
+              (b) => b.requestId,
+            ),
+          ).toEqual(['in:0', 'in:1']);
+        }
+      }
+    },
+  );
+
+  it('accepts and ignores every script field Core may add to an output (I1b)', () => {
+    const { built, requests, wallet } = setup('p2wpkh');
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(nativeSigner(TEST_KEY));
+    const tr = walletAddress(TEST_PUBKEY, 'p2tr', PARAMS);
+    const fields: ((psbt: Psbt) => void)[] = [
+      (psbt) => {
+        psbt.data.outputs[0]!.redeemScript = outputScript(
+          'p2wpkh',
+          hash160(OTHER_PUBKEY),
+        );
+      },
+      (psbt) => {
+        psbt.data.outputs[0]!.witnessScript = Uint8Array.of(0x51);
+      },
+      (psbt) => {
+        psbt.data.outputs[1]!.tapInternalKey = tr.publicKey;
+      },
+      (psbt) => {
+        psbt.data.outputs[1]!.tapTree = {
+          leaves: [{ depth: 0, leafVersion: 0xc0, script: Uint8Array.of(0x51) }],
+        };
+      },
+      (psbt) => {
+        psbt.data.outputs[1]!.tapBip32Derivation = [
+          { ...origin, pubkey: tr.publicKey, leafHashes: [] },
+        ];
+      },
+    ];
+    expect(wallet.type).toBe('p2wpkh');
+    for (const add of fields) {
+      const copy = reparse(signed);
+      add(copy);
+      expect(
+        signaturesFromPsbt(built.psbt, copy.toBase64(), NETWORK, requests),
+      ).toHaveLength(2);
+    }
+  });
+
+  it('accepts a previous transaction a coordinator adds to a segwit v0 input, by its txid (I1c)', () => {
+    for (const type of ['p2wpkh', 'p2sh-p2wpkh'] as const) {
+      const { built, requests, wallet } = setup(type);
+      const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+      signed.signAllInputs(nativeSigner(TEST_KEY));
+      const added = reparse(signed);
+      added.data.inputs[0]!.nonWitnessUtxo = witnessFunding(
+        wallet.script,
+        50_000n,
+        1,
+      ).toBuffer();
+      added.data.inputs[1]!.nonWitnessUtxo = stripped(
+        fundingTx(wallet.script, 70_000n, 2),
+      );
+      expect(
+        signaturesFromPsbt(built.psbt, added.toBase64(), NETWORK, requests),
+      ).toHaveLength(2);
+      const other = reparse(signed);
+      other.data.inputs[0]!.nonWitnessUtxo = fundingTx(
+        wallet.script,
+        50_000n,
+        3,
+      ).toBuffer();
+      refusedAs(built.psbt, other, requests, 'changes the prepared transaction');
+      for (const junk of [
+        Uint8Array.of(1, 2, 3),
+        concatBytes(fundingTx(wallet.script, 50_000n, 1).toBuffer(), Uint8Array.of(0)),
+      ]) {
+        const bad = reparse(signed);
+        bad.data.inputs[0]!.nonWitnessUtxo = junk;
+        refusedAs(built.psbt, bad, requests, 'does not decode');
+      }
+    }
+    // Taproot commits to every amount: a previous transaction is never added there.
+    const { built, requests, wallet } = setup('p2tr');
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(nativeTaprootSigner(TEST_KEY, wallet.tweak as Uint8Array));
+    const added = reparse(signed);
+    added.data.inputs[0]!.nonWitnessUtxo = fundingTx(
+      wallet.script,
+      50_000n,
+      1,
+    ).toBuffer();
+    refusedAs(built.psbt, added, requests, 'changes the prepared transaction');
+  });
+
+  it('refuses an added previous transaction whose output is not the one our PSBT spends (I1c)', () => {
+    const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
+    // An indexer said 50,000; the authentic previous transaction pays 60,000.
+    const funding = fundingTx(wallet.script, 60_000n, 7);
+    const built = buildTx(
+      NETWORK,
+      wallet,
+      [
+        {
+          outpoint: `${funding.getId()}:0`,
+          txid: funding.getId(),
+          vout: 0,
+          value: 50_000n,
+        },
+      ],
+      [{ script: PAYEE.script, value: 40_000n }],
+      SEQUENCE_RBF,
+    );
+    const requests = ecdsaRequests(built.digests);
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(nativeSigner(TEST_KEY));
+    const added = reparse(signed);
+    added.data.inputs[0]!.nonWitnessUtxo = funding.toBuffer();
+    refusedAs(built.psbt, added, requests, 'changes the prepared transaction');
+  });
+
+  it('has room for a large previous transaction a coordinator adds (I1c)', () => {
+    const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
+    // A batch payout: our output first, then 1,000 others (about 31 KB).
+    const funding = fundingTx(wallet.script, 50_000n, 8);
+    for (let i = 0; i < 1_000; i++) funding.addOutput(PAYEE.script, 1_000n);
+    const built = buildTx(
+      NETWORK,
+      wallet,
+      [
+        {
+          outpoint: `${funding.getId()}:0`,
+          txid: funding.getId(),
+          vout: 0,
+          value: 50_000n,
+        },
+      ],
+      [{ script: PAYEE.script, value: 40_000n }],
+      SEQUENCE_RBF,
+    );
+    const requests = ecdsaRequests(built.digests);
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(nativeSigner(TEST_KEY));
+    const added = reparse(signed);
+    added.data.inputs[0]!.nonWitnessUtxo = funding.toBuffer();
+    expect(funding.toBuffer().length).toBeGreaterThan(30_000);
+    expect(
+      signaturesFromPsbt(built.psbt, added.toBase64(), NETWORK, requests),
+    ).toHaveLength(1);
+  });
+
+  it('accepts PSBT version 0 and proprietary keys at every level, and refuses another version (M1)', () => {
+    const { built, requests } = setup('p2wpkh');
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(nativeSigner(TEST_KEY));
+    const proprietary = {
+      key: Uint8Array.of(0xfc, 0x05, 0x63, 0x6f, 0x72, 0x65, 0x21, 0x00),
+      value: Uint8Array.of(0x01),
+    };
+    const accepted = reparse(signed)
+      .addUnknownKeyValToGlobal({ key: Uint8Array.of(0xfb), value: new Uint8Array(4) })
+      .addUnknownKeyValToGlobal(proprietary)
+      .addUnknownKeyValToInput(0, proprietary)
+      .addUnknownKeyValToOutput(1, proprietary);
+    expect(
+      signaturesFromPsbt(built.psbt, accepted.toBase64(), NETWORK, requests),
+    ).toHaveLength(2);
+    for (const version of [
+      { key: Uint8Array.of(0xfb), value: Uint8Array.of(2, 0, 0, 0) },
+      { key: Uint8Array.of(0xfb), value: Uint8Array.of(0, 0, 0, 0, 0) },
+      { key: Uint8Array.of(0xfb, 0x00), value: new Uint8Array(4) },
+    ]) {
+      refusedAs(
+        built.psbt,
+        reparse(signed).addUnknownKeyValToGlobal(version),
+        requests,
+        'carries a field a signer does not add',
+      );
+    }
+  });
+
+  it('trims ASCII whitespace around the base64, and only there (M2)', () => {
+    const { built, requests } = setup('p2wpkh');
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(nativeSigner(TEST_KEY));
+    const good = signed.toBase64();
+    for (const text of [`${good}\n`, `\r\n\t ${good} \n`, `${good}\v\f`]) {
+      expect(signaturesFromPsbt(built.psbt, text, NETWORK, requests)).toHaveLength(2);
+    }
+    for (const text of [
+      `${good.slice(0, 8)} ${good.slice(8)}`,
+      `${String.fromCharCode(0xa0)}${good}`,
+    ]) {
+      expect(() => signaturesFromPsbt(built.psbt, text, NETWORK, requests)).toThrow(
+        expect.objectContaining({ message: 'the signed PSBT does not decode' }),
+      );
+    }
+  });
+
+  it('p2tr: takes the key-path signatures from a finalized PSBT (M4)', () => {
+    const { built, requests, wallet } = setup('p2tr');
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(nativeTaprootSigner(TEST_KEY, wallet.tweak as Uint8Array));
+    signed.finalizeAllInputs();
+    const bundles = signaturesFromPsbt(built.psbt, signed.toBase64(), NETWORK, requests);
+    expect(bundles.map((b) => b.requestId)).toEqual(['in:0', 'in:1']);
+    for (const bundle of bundles) {
+      const request = requests.find((r) => r.id === bundle.requestId)!;
+      expect(
+        secp256k1Schnorr.verify({
+          publicKey: request.publicKey,
+          payload: request.payload,
+          signature: bundle.bytes,
+        }),
+      ).toBe(true);
+    }
+  });
+});
+
 describe('buildTx range checks (lesson 19)', () => {
   const MAX_MONEY = 2_100_000_000_000_000n;
   const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
@@ -799,6 +1138,17 @@ describe('buildTx range checks (lesson 19)', () => {
   const output = { script: PAYEE.script, value: 40_000n };
   const build = (i: PlannedInput, o = output, sequence = SEQUENCE_RBF) =>
     buildTx(NETWORK, wallet, [i], [o], sequence);
+
+  it('refuses an outpoint listed twice with a fixed text (M3)', () => {
+    expect(() =>
+      buildTx(NETWORK, wallet, [input, { ...input }], [output], SEQUENCE_RBF),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'INVALID_INTENT',
+        message: 'an input outpoint is listed twice',
+      }),
+    );
+  });
 
   it('accepts every field at its maximum', () => {
     expect(
