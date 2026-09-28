@@ -3,6 +3,7 @@ import { UTXO_CAPABILITIES, utxoNetworkConfig } from '../../../src/adapters/utxo
 import { UTXO_PRESETS } from '../../../src/adapters/utxo/presets';
 import type { NetworkInfo } from '../../../src/core/model/chain';
 import { PresetCatalog } from '../../../src/core/registry/providers';
+import { thrown } from '../../helpers';
 
 /** Plan 3 Appendix A: genesis hashes and address prefixes (Bitcoin Core chainparams.cpp). */
 const EXPECTED: Record<string, [string, string, number, number]> = {
@@ -210,6 +211,29 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     expect(() => utxoNetworkConfig(BITCOIN_CHAIN, mainnet, options)).toThrow(
       expect.objectContaining({ code: 'CONFIG_INVALID' }),
     );
+  });
+
+  it('names an unknown option key only when it is short and plain, never a pasted value', () => {
+    const message = (key: string) =>
+      (thrown(() => utxoNetworkConfig(BITCOIN_CHAIN, mainnet, { [key]: 1 })) as Error)
+        .message;
+    expect(message('maxFeeRates')).toBe(
+      "UTXO network bitcoin:mainnet: unknown option 'maxFeeRates'",
+    );
+    expect(message(`a.b:c-d_${'e'.repeat(32)}`)).toContain(`'a.b:c-d_${'e'.repeat(32)}'`);
+    for (const key of [
+      'e'.repeat(41),
+      `xprv${'K'.repeat(107)}`,
+      'apiKey=hunter2',
+      'key with spaces',
+      "it's",
+      '',
+      'x'.repeat(100_000),
+    ]) {
+      expect(message(key)).toBe(
+        'UTXO network bitcoin:mainnet: unknown option (name not shown)',
+      );
+    }
   });
 });
 

@@ -68,6 +68,14 @@ const OPTION_KEYS = new Set([
   'rbf',
 ]);
 
+/**
+ * A name from the configuration (an option key) as an error may show it: a short plain
+ * identifier only, so a pasted value never reaches a message or a log.
+ */
+function named(key: string): string {
+  return /^[A-Za-z0-9_.:-]{1,40}$/.test(key) ? `'${key}'` : '(name not shown)';
+}
+
 export function utxoNetworkConfig(
   chain: ChainInfo,
   network: NetworkInfo,
@@ -125,7 +133,7 @@ export function utxoNetworkConfig(
     params.feeFallback === undefined ? undefined : rate(params, 'feeFallback', 'params');
 
   for (const key of Object.keys(options)) {
-    if (!OPTION_KEYS.has(key)) fail(`unknown option '${key}'`);
+    if (!OPTION_KEYS.has(key)) fail(`unknown option ${named(key)}`);
   }
   const merged = { ...OPTION_DEFAULTS, ...options };
   const maxFeeRate = rate(merged, 'maxFeeRate', 'options');

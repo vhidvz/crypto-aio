@@ -45,6 +45,7 @@ const OPTIONS: ts.CompilerOptions = {
     'crypto-aio/evm': [join(ROOT, 'src', 'adapters', 'evm', 'index.ts')],
     'crypto-aio/native': [join(ROOT, 'src', 'native.ts')],
     'crypto-aio/tron': [join(ROOT, 'src', 'adapters', 'tron', 'index.ts')],
+    'crypto-aio/utxo': [join(ROOT, 'src', 'adapters', 'utxo', 'index.ts')],
   },
 };
 
@@ -182,14 +183,64 @@ describe('EVM registry augmentation (R37)', () => {
   }, 120_000);
 });
 
+/** The UTXO family's chain is typed from the entry; its native client from `crypto-aio/utxo`. */
+const USE_UTXO = `
+import { CryptoAio, type UtxoFeeOverride } from 'crypto-aio';
+import { native } from 'crypto-aio/native';
+import 'crypto-aio/utxo';
+const aio = new CryptoAio({ env: false });
+export const btc = aio.blockchain({ chain: 'bitcoin', network: 'testnet4', library: 'bitcoinjs-lib' });
+export const fee: UtxoFeeOverride = { satPerVByte: '1.5' };
+export async function tip(): Promise<string> {
+  const client = await native(btc, 'bitcoinjs-lib');
+  return client.esplora<string>('/blocks/tip/height', 'text');
+}
+export async function unspent(): Promise<bigint | undefined> {
+  return (await btc.ext.utxo.listUnspent('tb1q0')).at(0)?.value;
+}
+`;
+
+describe('UTXO registry augmentation (R37)', () => {
+  it('types the bitcoin chain, networks, library, ext and native client, in both file orders', () => {
+    const first = compile({
+      'augment.ts': AUGMENT,
+      'utxo.ts': USE_UTXO,
+      'acme.ts': USE_ACME,
+    });
+    expect(first.errors).toEqual([]);
+    const second = compile(
+      { 'acme.ts': USE_ACME, 'utxo.ts': USE_UTXO, 'augment.ts': AUGMENT },
+      first.program,
+    );
+    expect(second.errors).toEqual([]);
+  }, 120_000);
+
+  it('rejects a network or library the UTXO family does not have', () => {
+    const wrong = USE_UTXO.replace("network: 'testnet4'", "network: 'testnet3'").replace(
+      "library: 'bitcoinjs-lib'",
+      "library: 'ethers'",
+    );
+    const { errors } = compile({ 'utxo.ts': wrong });
+    expect(errors).toEqual([
+      expect.stringContaining(`'"testnet3"' is not assignable`),
+      expect.stringContaining(`'"ethers"' is not assignable`),
+    ]);
+  }, 120_000);
+});
+
 /** A consumer of the main entry only; a user with no SDK installed at all. */
 const USE_MAIN = `
 import { CryptoAio, type EvmExt, type EvmFeeDetails, type EvmFeeOverride } from 'crypto-aio';
+import type { UtxoExt, UtxoFeeDetails, UtxoFeeOverride } from 'crypto-aio';
 const aio = new CryptoAio({ env: false });
 export const eth = aio.blockchain({ chain: 'ethereum', network: 'sepolia' });
 export const ext: EvmExt = eth.ext;
 export const fee: EvmFeeOverride = { gasPrice: 1n };
 export type Details = EvmFeeDetails;
+export const btc = aio.blockchain({ chain: 'bitcoin', network: 'signet' });
+export const utxo: UtxoExt = btc.ext;
+export const satFee: UtxoFeeOverride = { satPerVByte: 2n };
+export type SatDetails = UtxoFeeDetails;
 import type { TronExt, TronFeeDetails, TronFeeOverride, TronResources } from 'crypto-aio';
 export const tron = aio.blockchain({ chain: 'tron', network: 'nile' });
 export const tronExt: TronExt = tron.ext;
@@ -232,6 +283,7 @@ function declarations(): ReadonlyMap<string, string> {
     join(ROOT, 'src', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'evm', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'tron', 'index.ts'),
+    join(ROOT, 'src', 'adapters', 'utxo', 'index.ts'),
   ];
   const { diagnostics } = ts.createProgram(entries, options, host).emit();
   expect(diagnostics.map(message)).toEqual([]);
@@ -240,9 +292,9 @@ function declarations(): ReadonlyMap<string, string> {
 
 /**
  * A user with no SDK installed who type-checks every library file, against the declarations
- * `dist` ships. Mapping `ethers`, `web3` and `tronweb` to a missing path in `paths` is not
- * enough (resolution then falls back to node_modules), so the host hides the packages; the
- * controls below prove they do not resolve.
+ * `dist` ships. Mapping `ethers`, `web3`, `bitcoinjs-lib` and `tronweb` to a missing path in
+ * `paths` is not enough (resolution then falls back to node_modules), so the host hides the
+ * packages; the controls below prove they do not resolve.
  */
 const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
   options: {
@@ -252,11 +304,14 @@ const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
       'crypto-aio': [join(DTS, 'index.d.ts')],
       'crypto-aio/evm': [join(DTS, 'adapters', 'evm', 'index.d.ts')],
       'crypto-aio/tron': [join(DTS, 'adapters', 'tron', 'index.d.ts')],
+      'crypto-aio/utxo': [join(DTS, 'adapters', 'utxo', 'index.d.ts')],
     },
   },
+  // Both SDK scopes: bitcoinjs-lib with its whole dependency scope (its types pull in bip174,
+  // valibot and varuint-bitcoin; @noble/hashes is a dependency of this library anyway), and
   // tronweb with the packages its types pull in (axios, bignumber.js, eventemitter3, ethers).
   hidden:
-    /[\\/]node_modules[\\/](ethers|web3|tronweb|axios|bignumber\.js|eventemitter3)[\\/]/,
+    /[\\/]node_modules[\\/](ethers|web3|bitcoinjs-lib|bip174|valibot|varuint-bitcoin|uint8array-tools|bech32|bs58check|bs58|base-x|tronweb|axios|bignumber\.js|eventemitter3)[\\/]/,
   files: dts,
 });
 
@@ -266,7 +321,7 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     dts = declarations();
   }, 120_000);
 
-  it('type-checks `crypto-aio` with no SDK resolvable (ethers, web3, tronweb), under skipLibCheck: false', () => {
+  it('type-checks `crypto-aio` with no SDK resolvable (ethers, web3, bitcoinjs-lib, tronweb), under skipLibCheck: false', () => {
     const { errors, everywhere } = compile(
       { 'main.ts': USE_MAIN },
       undefined,
@@ -301,6 +356,19 @@ describe('the main entry names no SDK (spec §5.6)', () => {
       ),
       expect.stringMatching(
         /__dts__\/adapters\/evm\/index\.d\.ts: Cannot find module 'web3'/,
+      ),
+    ]);
+  }, 120_000);
+
+  it('control: `crypto-aio/utxo` does need the bitcoinjs-lib types, so it is unresolvable too', () => {
+    const { everywhere } = compile(
+      { 'main.ts': `${USE_MAIN}import 'crypto-aio/utxo';\n` },
+      undefined,
+      withoutSdks(dts),
+    );
+    expect(everywhere()).toEqual([
+      expect.stringMatching(
+        /__dts__\/adapters\/utxo\/sdk\.d\.ts: Cannot find module 'bitcoinjs-lib'/,
       ),
     ]);
   }, 120_000);

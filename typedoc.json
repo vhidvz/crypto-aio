@@ -1,5 +1,5 @@
 {
-  "entryPoints": ["src/index.ts", "src/native.ts", "src/testing/index.ts", "src/adapters/evm/index.ts", "src/adapters/tron/index.ts"],
+  "entryPoints": ["src/index.ts", "src/native.ts", "src/testing/index.ts", "src/adapters/evm/index.ts", "src/adapters/tron/index.ts", "src/adapters/utxo/index.ts"],
   "out": "docs/api",
   "excludeInternal": true,
   "excludePrivate": true,
