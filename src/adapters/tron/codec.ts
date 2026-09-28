@@ -12,6 +12,7 @@ import { ValidationError } from '../../core/errors/error';
 import { fromHex } from '../../core/util/bytes';
 import type { HttpRequest, Transport } from '../../core/transport/types';
 import { PLACEHOLDER_ORIGIN } from '../../core/transport/types';
+import { tronDriverFactory } from './driver';
 import type { TronCodec, TronContract, TronRawData } from './types';
 
 const TYPE_URL = 'type.googleapis.com/protocol.';
@@ -413,3 +414,6 @@ export const tronwebCodec: TronCodec = {
     return { client };
   },
 };
+
+/** The tronweb driver factory, which the manifest's `load()` requires. */
+export const tronwebDriverFactory = tronDriverFactory(tronwebCodec);

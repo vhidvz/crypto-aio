@@ -10,6 +10,7 @@ import type { TronCodec, TronRawData } from '../../../src/adapters/tron/types';
 import { ProviderError } from '../../../src/core/errors/error';
 import type { FeeEstimateDraft } from '../../../src/core/model/fee';
 import type { DriverIntent } from '../../../src/core/model/intent';
+import type { OrderingData } from '../../../src/core/model/ordering';
 import type { UnsignedTx } from '../../../src/core/model/transaction';
 import * as bytes from '../../../src/core/util/bytes';
 import { fromHex, toHex } from '../../../src/core/util/bytes';
@@ -337,7 +338,12 @@ describe('Tron builder: build and assemble', () => {
     });
     expect(raw.expiration).toBeLessThanOrEqual(head.timestamp + 60_000);
     expect(raw.expiration).toBeGreaterThan(head.timestamp + 59_000);
-    expect(unsigned.ordering).toEqual({ kind: 'expiry', expiresAtMs: raw.expiration });
+    // F4-R12: the TaPoS bound of the reference block, whose height its id carries.
+    expect(unsigned.ordering).toEqual({
+      kind: 'expiry',
+      expiresAtMs: raw.expiration,
+      lastValidHeight: BigInt(h.node.head) + 65_536n,
+    });
     expect(unsigned.summary).toEqual({
       asset: 'tron:nile/native',
       outputs: [{ to: RECIPIENT, amount: '1000000' }],
@@ -664,6 +670,34 @@ describe('Tron builder: build and assemble', () => {
     }
   });
 
+  it('references the head by the height its id carries, and refuses a head whose id disagrees (F4-R12)', async () => {
+    const h = setup();
+    const intent = trx(TRX);
+    const fee = await h.run(h.builder.estimateFee(intent, h.build));
+    const head = h.head();
+    h.node.intercept('main', '/wallet/getblock', (request) =>
+      request.json().id_or_num === undefined
+        ? {
+            json: {
+              blockID: head.id,
+              block_header: {
+                raw_data: {
+                  number: h.node.head + 1,
+                  parentHash: h.node.block(h.node.head - 1)?.id,
+                  timestamp: head.timestamp,
+                },
+              },
+            },
+          }
+        : undefined,
+    );
+    await expect(h.run(h.builder.build(intent, fee, h.build))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: expect.stringMatching(/head block id/),
+    });
+  });
+
   it('binds the signed bytes to the stored summary, expiry and fee limit before broadcast', async () => {
     const h = setup();
     const plain = await h.prepared(trx(TRX, { memo: 'hi' }));
@@ -687,8 +721,24 @@ describe('Tron builder: build and assemble', () => {
       {
         ...plain,
         ordering: {
-          kind: 'expiry',
+          ...(plain.ordering as Extract<OrderingData, { kind: 'expiry' }>),
           expiresAtMs: (plain.ordering as { expiresAtMs: number }).expiresAtMs + 1,
+        },
+      },
+      // F4-R12: no reference bound, or another reference's.
+      {
+        ...plain,
+        ordering: {
+          kind: 'expiry',
+          expiresAtMs: (plain.ordering as { expiresAtMs: number }).expiresAtMs,
+        },
+      },
+      {
+        ...plain,
+        ordering: {
+          ...(plain.ordering as Extract<OrderingData, { kind: 'expiry' }>),
+          lastValidHeight:
+            (plain.ordering as { lastValidHeight: bigint }).lastValidHeight + 1n,
         },
       },
       { ...call, summary: { ...call.summary, asset: 'tron:nile/native' } },

@@ -22,11 +22,18 @@ export const TRON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
 export const DEFAULT_EXPIRATION_MS = 60_000;
 export const MIN_EXPIRATION_MS = 10_000;
 /**
- * The longest expiration window this driver builds (D3). The negative inclusion proof scans
- * every block that could hold a transaction built with any window up to this one, so it may
- * only ever grow; shrinking it would let a proof miss an inclusion.
+ * The longest expiration window this driver builds (D3). The negative inclusion proof does
+ * not depend on it: it scans from the reference block to the signed expiration (F4-R12).
  */
 export const MAX_EXPIRATION_MS = 300_000;
+/**
+ * TaPoS (java-tron GreatVoyage-v4.8.2.2 `d5c3d1d1`, `Manager.validateTapos` and
+ * `updateRecentBlock`): a transaction's reference block must be the one the recent-block
+ * store holds under its number's bytes 6..8, and each block overwrites the entry of the block
+ * 65,536 below it. So only the 65,536 blocks after the reference block can hold the
+ * transaction, and an Attempt's `lastValidHeight` is its reference height plus this window.
+ */
+export const TAPOS_WINDOW = 65_536n;
 export const DEFAULT_ENERGY_MARGIN_PERCENT = 20;
 /** Memo bytes (UTF-8) accepted in `raw_data.data` (D9). */
 export const MAX_MEMO_BYTES = 256;

@@ -7,10 +7,12 @@
  * transaction expires `expirationMs` after the earlier of the head's time and the local
  * clock, as tronweb does from the head. A head older than half the window is refused
  * (retryable) instead of producing a transaction that is born nearly expired; a head dated
- * in the future cannot push the expiration beyond the window from now, so the negative
- * inclusion proof, which scans `MAX_EXPIRATION_MS` back from the expiration, covers every
- * block that could hold the transaction. The expiration stays inside java-tron's own window
- * (at least the next slot, at most 24 h past its head).
+ * in the future cannot push the expiration beyond the window from now. The ordering records
+ * the signed expiration and the reference block's TaPoS bound (`lastValidHeight`: its height,
+ * read from its id, plus `TAPOS_WINDOW`), so the negative inclusion proof scans from the
+ * attested reference block up to the expiration, whatever the head or the clock claimed
+ * (F4-R12). The expiration stays inside java-tron's own window (at least the next slot, at
+ * most 24 h past its head).
  *
  * Uniqueness (D5): Tron has no nonce, so two identical transfers built on the same head in
  * the same millisecond would share one txID and one on-chain effect. The core refuses an
@@ -64,8 +66,13 @@ import { decodeTransferCall, encodeTransfer } from './abi';
 import { addressFromPublicKey, toHexAddress } from './address';
 import { classifyBroadcast } from './errors';
 import { feeSun, tronFee } from './fees';
-import { BROADCAST, READ, withSignal, type TronBlockHeader } from './http';
-import { MAX_EXPIRATION_MS, MAX_MEMO_BYTES, MIN_EXPIRATION_MS } from './network';
+import { BROADCAST, READ, malformed, withSignal, type TronBlockHeader } from './http';
+import {
+  MAX_EXPIRATION_MS,
+  MAX_MEMO_BYTES,
+  MIN_EXPIRATION_MS,
+  TAPOS_WINDOW,
+} from './network';
 import { trc20Balance, trc20Contract, type TronContext } from './reader';
 import type { TronContract, TronFeeDetails, TronRawData } from './types';
 
@@ -295,6 +302,17 @@ function jitter(): number {
 const expiresAt = (ordering: OrderingData): number | undefined =>
   ordering.kind === 'expiry' ? ordering.expiresAtMs : undefined;
 
+/**
+ * Whether an ordering's `lastValidHeight` is the TaPoS bound of the signed reference: a
+ * reference height (`lastValidHeight − TAPOS_WINDOW`) whose bytes 6..8 are `refBlockBytes`.
+ * The proofs scan down to that height (F4-R12).
+ */
+function boundToReference(ordering: OrderingData, refBlockBytes: string): boolean {
+  const last = ordering.kind === 'expiry' ? ordering.lastValidHeight : undefined;
+  if (typeof last !== 'bigint' || last < TAPOS_WINDOW) return false;
+  return ((last - TAPOS_WINDOW) & 0xffffn) === BigInt(`0x${refBlockBytes}`);
+}
+
 export function createTronBuilder(ctx: TronContext): {
   readonly builder: TxBuilder;
   readonly broadcaster: Broadcaster;
@@ -411,10 +429,15 @@ export function createTronBuilder(ctx: TronContext): {
           'the head block is too old to reference; try again',
         );
       }
+      // F4-R12: the reference block's height, from its id (java-tron's block id is the
+      // height's 8 bytes followed by 24 bytes of the header hash, `generateBlockId`): the
+      // same bytes TaPoS reads. A head whose id and number disagree is not a block.
+      const reference = BigInt(`0x${block.id.slice(0, 16)}`);
+      if (reference !== block.number) throw malformed('head block id');
       const anchor = Math.min(block.timestamp, now);
       const expiration = anchor + config.expirationMs - jitter();
-      // D3: the negative proof scans MAX_EXPIRATION_MS back from the expiration; java-tron
-      // wants at least the next slot. The network config bounds the window; this holds it.
+      // D3: the window stays within MAX_EXPIRATION_MS, and java-tron wants at least the next
+      // slot. The network config bounds the window; this holds it.
       if (expiration - anchor > MAX_EXPIRATION_MS) {
         throw new ConfigError(
           'CONFIG_INVALID',
@@ -470,7 +493,12 @@ export function createTronBuilder(ctx: TronContext): {
             ...(key.keyRef ? { keyRef: key.keyRef } : {}),
           },
         ],
-        ordering: { kind: 'expiry', expiresAtMs: expiration },
+        // The negative proof scans from the reference block to the signed expiration.
+        ordering: {
+          kind: 'expiry',
+          expiresAtMs: expiration,
+          lastValidHeight: reference + TAPOS_WINDOW,
+        },
         fee,
         summary: {
           asset: assetId(ctx.chain.id, ctx.network.id, intent.asset),
@@ -523,14 +551,16 @@ export function createTronBuilder(ctx: TronContext): {
       if (decoded.contract.owner !== signer) {
         throw fail("the payload's owner is not the signing key's account");
       }
-      // The bytes carry the authorized summary; the proofs read the expiration from the
-      // ordering; only the named fee field is read (the core may add others).
+      // The bytes carry the authorized summary; the proofs read the expiration and the
+      // reference height from the ordering; only the named fee field is read (the core may
+      // add others).
       const expected = summaryTransfer(ctx, unsigned.summary, signer);
       const feeLimit = (unsigned.fee.details as Partial<TronFeeDetails>).feeLimit;
       if (
         !expected ||
         !carries(decoded, expected) ||
         expiresAt(unsigned.ordering) !== decoded.expiration ||
+        !boundToReference(unsigned.ordering, decoded.refBlockBytes) ||
         unsigned.fee.kind !== 'tron' ||
         (expected.token === undefined
           ? decoded.feeLimit !== undefined
