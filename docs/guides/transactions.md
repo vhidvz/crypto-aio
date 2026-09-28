@@ -71,11 +71,11 @@ to a contract that refuses it, is then signed, broadcast, and burns its gas. The
 check still runs.
 
 On Tron, `slow`, `normal` and `fast` give the same estimate, since Tron has no fee market.
-The `tron` fee has `bandwidth`, `energy`, `activation` and `memo` charges, all in TRX and
-each possibly 0, as an `upper` bound. A TRC-20 transfer's `feeLimit` covers its simulated
-energy plus a margin, up to the network's maximum fee limit and the handle's `maxFeeLimit`
-option (100 TRX by default); `{ feeLimit }` may raise it to the lower of the two but never
-set it below the estimate.
+The `tron` fee has `bandwidth`, `energy`, `activation` and `memo` charges, all in TRX, as an
+`upper` bound; `bandwidth` and `energy` may be 0 when staked or free resources cover them. A
+TRC-20 transfer's `feeLimit` covers its simulated energy plus a margin, up to the network's
+maximum fee limit and the handle's `maxFeeLimit` option (100 TRX by default); `{ feeLimit }`
+may raise it to the lower of the two but never set it below the estimate.
 [Tron networks](./networks.md#tron-networks) explains the charges and the ceiling.
 
 ### Cold, offline and asynchronous signing
@@ -215,8 +215,11 @@ const now = await bc.getTransactionStatus(operationId); // one read
   energy`), and its fee is burned.
 - **Tron proofs.** A Tron transaction that never landed is proven `expired` only once a
   solidified block passes its signed expiration, the reference block it names is attested,
-  and every block between them is read by hash under the proof quorum without it. An index
-  that lags, or an endpoint that cannot serve those blocks, decides nothing. With one
+  and every block between them (none more than a day before the expiration) is read by hash
+  under the proof quorum without it. When the height stored for that block does not hold it,
+  the proof reads every height whose block TaPoS could have matched; if none carries the
+  signed reference, no block can hold the transaction, and absence is proven with no scan.
+  An index that lags, or an endpoint that cannot serve those blocks, decides nothing. With one
   provider the proof quorum is 1, so configure two or more
   ([Tron networks](./networks.md#tron-networks)).
 - **Run the monitor.** A node answers "not found" for every transaction outside its index
@@ -338,7 +341,10 @@ for await (const event of scanner) {
 `bc.history(address, { cursor?, limit? })` returns `{ items: Transaction[], next? }` from an
 indexer. It needs an indexer provider. The fake chain has none, and the EVM family does not
 support one yet, so both throw `UNSUPPORTED_CAPABILITY`. Tron serves it from TronGrid: name
-the `trongrid` or `public` preset as the handle's `indexer`.
+the `trongrid` or `public` preset as the handle's `indexer`. A transaction can come more than
+once (on Tron, a call to a contract account that moves its own tokens comes in both parts of
+the listing, [Tron networks](./networks.md#tron-networks)), so dedupe on `transfer.id`, as
+for scans.
 
 ## Error handling
 
@@ -356,7 +362,7 @@ land.**
 | `NONCE_CONFLICT` | A cancel or replacement lost: the original is already mined | Wait for the original |
 | `NONCE_CONFLICT` with `details.heldBy` | The signed transaction is identical to another Operation's, so it would pay once for both; nothing was sent. From `transfer` or `submitSignatures` the Operation is `failed`, or, if it is still `prepared` or `awaiting-signature` (a renew or version conflict), repeat with the **same** key (for `submitSignatures`, resubmit the signatures) so it is refused and failed. From `replace`, `cancel` or `rebuild` it is unchanged | `failed`: retry with a **new** key. `replace` or `cancel`: use another fee spec. `rebuild`: rebuild later. A later build (a new block, or the driver's build variant) gives different bytes |
 | `SEQUENCE_BUSY`: "another operation is recording the same transaction; retry" | Another process is recording an identical transaction right now; nothing was recorded | Repeat the call (the **same** key, fee spec or signatures). For `submitSignatures`, resubmit the signatures |
-| `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure. For `TX_REPLACED`, another transaction is final in the slot | Reconcile; a new transfer with a new key is safe, except for an EVM token `TX_REVERTED` whose receipt succeeded: value may have moved, so check the chain first ([EVM token verdicts](#waiting-and-watching)) |
+| `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` with state `failed` or `expired` | Proven terminal failure. For `TX_REPLACED`, another transaction is final in the slot | Reconcile; a new transfer with a new key is safe, except for an EVM or Tron token `TX_REVERTED` whose receipt succeeded: value may have moved, so check the chain first ([token verdicts](#waiting-and-watching)) |
 | `TX_REJECTED` | Nodes rejected every Attempt as never valid; nonce released | Fix the cause; retry with a **new** key |
 | Tron: `TX_REFUSED`, `TX_EXPIRED` or `INSUFFICIENT_FUNDS` with state `stalled` | A node refused the signed bytes, or claimed they are invalid; they may still land. A liar and a genuine refusal look the same | Never pay again: repeat only with the **same** key. `rebroadcast` after the fix; `rebuild` only once the Operation is `expired` (see "Lifecycle and `stalled`" above) |
 | Tron: `TX_REVERTED` with reason `token transfer not evidenced` | The token call succeeded on chain but logged no `Transfer` to the recipient; value may have moved | Check the chain before you pay again ([Tron token verdicts](#waiting-and-watching)) |

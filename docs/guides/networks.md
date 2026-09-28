@@ -68,9 +68,13 @@ optional memo. [Sending and receiving](./transactions.md) covers what else diffe
 - **Addresses.** Base58check `T…` is canonical; `address.format({ hex: true })` gives the
   `41…` hex form, and both are accepted as input. Derive keys at `m/44'/195'/0'/0/<i>`
   (SLIP-44 coin type 195) through the wallet's `keyRef.path`. A TRX transfer to its own
-  sender is refused (`INVALID_INTENT`); a TRC-20 one is valid on chain and allowed.
-- **Fees (`tron`).** Every charge is in TRX and may be 0 when staked or free resources cover
-  it: `bandwidth` (the signed transaction's size plus 64 bytes, at the chain's price per
+  sender is refused (`INVALID_INTENT`); a TRC-20 one is valid on chain and allowed. A TRX
+  transfer to a contract is refused before signing only on a network whose
+  `getForbidTransferToContract` parameter is 1, as java-tron would refuse it there; it is 0 on
+  mainnet, Shasta and Nile today, where such a transfer is valid.
+- **Fees (`tron`).** Every charge is in TRX, and `bandwidth` and `energy` may be 0 when staked
+  or free resources cover them (`activation` and `memo` are chain fees that no resource
+  covers): `bandwidth` (the signed transaction's size plus 64 bytes, at the chain's price per
   byte), `energy` (TRC-20 only), `activation` (a TRX transfer to an address that was never
   activated: 1 TRX today, and its bandwidth is then a flat 0.1 TRX unless staked bandwidth
   covers it, since free bandwidth never applies) and `memo` (1 TRX today). Prices come from
@@ -104,12 +108,16 @@ optional memo. [Sending and receiving](./transactions.md) covers what else diffe
 - **Expiry, not replacement.** A transaction expires about `expirationMs` after its
   reference block, the head it was built on (or after the local clock, if that is earlier):
   60 s by default, from 10 s to 5 minutes (`chains.tron.options.expirationMs`). A build
-  refuses a head older than half that window (a retryable `PROVIDER_UNAVAILABLE`). Tron has
-  no replace and no cancel (`UNSUPPORTED_CAPABILITY`). A transaction that never lands is
-  proven `expired` once a solidified block passes its expiration and a scan of every block
-  that could hold it shows it absent, about a minute after the expiration; then
+  refuses a head more than half that window older than the local clock, and one dated more
+  than half the window ahead of it (a retryable `PROVIDER_UNAVAILABLE`), so keep the server
+  clock in sync (NTP): a clock running ahead of the chain sees every head as too old, and
+  one running behind would build transactions that expire at birth, so both refuse builds.
+  Tron has no replace and no cancel (`UNSUPPORTED_CAPABILITY`). A transaction that never
+  lands is proven `expired` once a solidified block passes its expiration and a scan of
+  every block that could hold it shows it absent, about a minute after the expiration; then
   `bc.rebuild(id)` re-issues it. With `prepareTransfer` or a `pending` signer, submit the
-  signatures within the window. `rebuild` signs on the spot, so it needs a synchronous signer.
+  signatures within the window. `rebuild` signs on the spot, so it needs a synchronous
+  signer.
 - **Finality.** `final` is the solidified block, about 19 blocks (a minute) below the head.
   `waitForConfirmation` waits for inclusion by default; credit deposits on `final`.
 - **Tokens.** TRC-20. USDT is registered by alias on mainnet; any other token resolves by
@@ -123,9 +131,14 @@ optional memo. [Sending and receiving](./transactions.md) covers what else diffe
 - **Scanning and history.** Blocks carry TRX transfers and TRC-20 `Transfer` events; any
   contract call is `decoding: 'partial'`. Address history comes from TronGrid's `/v1` API:
   name the `trongrid` or `public` preset as the handle's `indexer` (without one, `history()`
-  throws `UNSUPPORTED_CAPABILITY`). It lists solidified entries only, the account's own
-  transactions first, then the TRC-20 transfers it only received, at most 200 per page, and
-  reads each one back through the handle's `provider`.
+  throws `UNSUPPORTED_CAPABILITY`). It lists solidified entries only, at most 200 per page,
+  and reads each one back through the handle's `provider`. It pages through TronGrid's
+  `/transactions` first: the account's own transactions, TRX sent to it and, for a contract
+  account, other accounts' calls to it. Then `/transactions/trc20`: every TRC-20 transfer
+  from or to the account (a spender's `transferFrom` out of it included), less the account's
+  own calls, listed already. A wallet's incoming TRC-20 transfer comes once, in the second
+  part (TronGrid, checked on Nile in September 2026), but a call to a contract account that
+  moves its own tokens comes in both parts, so dedupe on `transfer.id`, as for scans.
 - **Presets and endpoints.** `trongrid` requires a key and sends it in the
   `TRON-PRO-API-KEY` header, as a `Secret`. `public` is TronGrid without a key, for trying
   things out on Shasta and Nile, not for production; a `tron` handle with no provider falls
@@ -138,21 +151,25 @@ optional memo. [Sending and receiving](./transactions.md) covers what else diffe
   three. A bare java-tron node serves them on separate ports, so put a reverse proxy in front
   of it. A custom `indexer` endpoint must serve TronGrid's `/v1` API, and also answer
   `/wallet/getblockbynum` and `/wallet/getblock` (its health checks).
-- **Proven verdicts need two providers.** `trongrid` and `public` are one endpoint each, on
-  the same TronGrid backend, so either alone gives a proof quorum of 1: a lagging backend
-  decides nothing, but a wrong one is trusted, for verdicts, for a token's decimals, and for
-  "not included", which would let `rebuild` pay twice. For proven verdicts on mainnet,
-  configure two or more independent providers, for example `provider: ['tron', 'own-node']`;
-  with exactly two, both must answer, so a third keeps proofs going while one is down. If you
-  set a `rateLimit` on an endpoint that serves proofs, give it `burst: 2` or more (the
-  default is the rate rounded up): with a burst of 1, an endpoint that recovers from an
+- **Proven verdicts need independent providers.** `trongrid` and `public` are one endpoint
+  each, on the same TronGrid backend, so either alone gives a proof quorum of 1: a lagging
+  backend decides nothing, but a wrong one is trusted, for verdicts, for a token's decimals,
+  and for "not included", which would let `rebuild` pay twice. For proven verdicts on
+  mainnet, configure independent providers, for example `provider: ['tron', 'own-node']`.
+  With exactly two, both must answer while both are up, but once one has been down for about
+  three health intervals (45 s by default) it leaves the proof count and the other decides
+  alone. So use three for production proofs: two tolerate an outage, not a liar during one.
+  If you set a `rateLimit` on an endpoint that serves proofs, give it `burst: 2` or more
+  (the default is the rate rounded up): with a burst of 1, an endpoint that recovers from an
   outage may never rejoin the proof quorum.
 - **A refusal is not a failure.** A node's refusal leaves the Operation `stalled` with
   `TX_REFUSED`, `TX_EXPIRED` or `INSUFFICIENT_FUNDS`, and the transaction may still land:
   never pay again with a new key ([what to do](./transactions.md#error-handling)). A
   node that caches transaction ids answers "duplicate" to bytes it refused before, which the
   library reads as sent. So after a top-up, `rebroadcast` may not reach that node's pool;
-  the Operation then ends at its proven expiry, and `rebuild` sends the transfer again.
+  the Operation then ends at its proven expiry, and `rebuild` sends the transfer again. Set
+  `lifecycle.broadcastFanout` to 2 or more to send each broadcast to that many endpoints, so
+  one refusing or id-caching node does not keep a transfer out of the others' pools.
 - **Identical payouts.** Tron has no nonce. Each build gets a unique timestamp and
   expiration, so two identical transfers built in the same millisecond still differ.
 - **Very large transfers.** Balances and deposits of any size are read exactly. A single TRX
@@ -186,7 +203,7 @@ configure({
   chains: {
     tron: {
       network: 'mainnet',
-      provider: ['tron', 'own-node'], // proofs cross-check both
+      provider: ['tron', 'own-node'], // proofs cross-check both while both answer; use three
       indexer: 'tron', // address history (TronGrid /v1)
       wallet: 'tron-hot',
       // expirationMs: default 60_000, from 10_000 to 300_000; maxFeeLimit: sun, default 100 TRX
@@ -196,7 +213,9 @@ configure({
 });
 const tron = Blockchain.create({ chain: 'tron' });
 await tron.ready(); // loads tronweb; every endpoint must serve mainnet's block 0
-const fee = await tron.estimateFee({ asset: 'USDT', to, amount: '25' }); // TronFeeDetails
+const fee = await tron.estimateFee({ asset: 'USDT', to, amount: '25' });
+// `fee.details` holds the `TronFeeDetails` fields but is typed as a plain record: cast each
+const feeLimit = fee.details.feeLimit as bigint | undefined;
 const sub = await tron.transfer(
   { asset: 'USDT', to, amount: '25', memo: 'order 7' },
   { idempotencyKey: 'withdrawal-42' },
@@ -477,14 +496,16 @@ weakens it.
 
 Every Attempt's `ordering` must also read back whole and unchanged, whatever its kind, with
 every property the driver put in it; the suites check only nonce orderings today. A Tron
-Attempt's ordering is a `TronExpiryOrdering`: the core `expiry` ordering (`expiresAtMs`)
-plus `lastValidHeight`, a bigint, and `refBlockHash`, the reference block bytes the
+Attempt's ordering is a `TronExpiryOrdering`: the core `expiry` ordering, with
+`expiresAtMs` and its optional `lastValidHeight` (a bigint), which Tron always sets to the
+reference block's height plus 65,536, plus `refBlockHash`, the reference block bytes the
 transaction signs. The expiry proof reads them from the store, not from the signed bytes, to
 find every block that could hold the transaction, so keeping them exact is a safety
-precondition, not only a liveness one. A lost `refBlockHash` only stalls the proof, but a
-changed one, or an `expiresAtMs` rounded down (to whole seconds, say), can prove a
-transaction `expired` although a block holds it, and `rebuild` then pays twice. A prepared
-transfer whose stored ordering changed cannot be signed (`SIGNING_FAILED`).
+precondition, not only a liveness one. A lost `refBlockHash` or `lastValidHeight` only stalls
+the proof, but a changed one of either (a `lastValidHeight` with other low 16 bits makes the
+proof search the wrong heights), or an `expiresAtMs` rounded down (to whole seconds, say),
+can prove a transaction `expired` although a block holds it, and `rebuild` then pays twice.
+A prepared transfer whose stored ordering changed cannot be signed (`SIGNING_FAILED`).
 
 Never store a key set to `undefined` as a value, such as `NULL`, whether it is in an
 `OperationStore` patch or in an observation:
