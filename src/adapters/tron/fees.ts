@@ -144,11 +144,13 @@ export function tronFee(input: TronFeeInput): FeeEstimateDraft {
   }
   // F4-R9: every transaction consumes bandwidth, and a TRC-20 call energy; a zero or negative
   // one would give a fee limit of 0, which fails on chain (out of energy) and still pays.
-  // F4-R10 M4: neither is the caller's intent. The bandwidth is the driver's own measure of
-  // the bytes it built, so a non-positive one is a driver bug; the energy is the node's
-  // simulation, so a non-positive one is a malformed answer (retryable).
+  // F4-R10 M4: the bandwidth is the driver's own measure of the bytes it built (at least 133
+  // bytes, `bandwidthOf`), so a non-positive one is a driver bug: an internal, non-retryable
+  // CryptoAioError that fails the transfer before signing, never a foreign error (lesson 6).
+  // The energy is the node's simulation, so a non-positive one is a malformed answer
+  // (retryable).
   if (bandwidth <= 0n) {
-    throw new RangeError('cannot estimate a Tron fee: the bandwidth must be positive');
+    throw invalid('cannot estimate a Tron fee: the measured bandwidth is not positive');
   }
   if (input.energy !== undefined && input.energy <= 0n) throw malformed('energy used');
   const override = feeOverrideOf(input.fee);

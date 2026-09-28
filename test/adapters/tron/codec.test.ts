@@ -181,6 +181,21 @@ describe('TRC-20 ABI (SDK-free)', () => {
       ),
     ).toBe('USDT');
     expect(() => decodeString('00'.repeat(64))).toThrow(TypeError);
+    // Final review M1 (lesson 20 addendum): a linear check, so an 8M-character answer reads
+    // or is refused with the function's own TypeError, never a stack overflow.
+    const word = (n: number) => n.toString(16).padStart(64, '0');
+    const bytes = 4_194_304;
+    const long = `${word(32)}${word(bytes)}${'61'.repeat(bytes)}`;
+    expect(decodeString(long)).toHaveLength(bytes);
+    for (const bad of [
+      `${long.slice(0, -1)}g`, // not hex at the very end
+      `${long}00`, // not a whole number of words
+      `${word(32)}${word(0)}`.slice(0, 126), // under two words
+      '',
+    ]) {
+      expect(() => decodeString(bad)).toThrow(TypeError);
+    }
+    expect(decodeString(`${word(32)}${word(2)}${'4F4B'.padEnd(64, '0')}`)).toBe('OK');
     const log = {
       topics: [
         TRANSFER_TOPIC,

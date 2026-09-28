@@ -16,13 +16,16 @@ import type { FeeEstimateDraft } from '../../../src/core/model/fee';
 import type { DriverIntent } from '../../../src/core/model/intent';
 import type { OrderingData } from '../../../src/core/model/ordering';
 import type { UnsignedTx } from '../../../src/core/model/transaction';
+import type { SignatureBundle } from '../../../src/core/signing/types';
 import * as bytes from '../../../src/core/util/bytes';
 import { fromHex, toHex } from '../../../src/core/util/bytes';
+import { drive } from '../../../src/testing/fake-clock';
 import { hang, type FakeReply } from '../../../src/testing/fake-fetch';
 import { tronHarness } from './support/context';
 import { decodeRawData, decodeTransaction, encodeTransaction } from './support/protobuf';
 import { signWithKey, signedTransaction } from './support/signing';
 import {
+  KEY,
   KEY_ADDRESS,
   KEY_HEX,
   RECIPIENT,
@@ -354,6 +357,49 @@ describe('Tron builder: fees and funds', () => {
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
   });
 
+  it('refuses TRX to a contract before signing only where the chain forbids it, on the quorum-confirmed getcontract (F4-R11)', async () => {
+    const toContract = trx(TRX, { outputs: [{ to: USDT, amount: TRX }] });
+    // `getForbidTransferToContract` 1: java-tron refuses "Cannot transfer TRX to a
+    // smartContract.", so the transfer is refused here, never signed to stall and expire.
+    const forbids = setup({ endpoints: ['a', 'b'] });
+    await expect(
+      forbids.run(forbids.builder.estimateFee(toContract, forbids.build)),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      message:
+        'this network refuses TRX sent to a contract (getForbidTransferToContract)',
+    });
+    const reads = forbids.calls.filter((c) => c.path === '/wallet/getcontract');
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.every((c) => c.tags.quorum === 'proof')).toBe(true);
+    // To an account without a contract, it builds as before.
+    await forbids.run(forbids.builder.estimateFee(trx(TRX), forbids.build));
+    // One endpoint's word decides nothing: a disagreement is retryable.
+    const split = setup({ endpoints: ['a', 'b'] });
+    split.node.intercept('b', '/wallet/getcontract', () => ({ json: {} }));
+    await expect(
+      split.run(split.builder.estimateFee(toContract, split.build)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    // 0, as on mainnet, Nile and Shasta today (read 2026-09-29): TRX to a contract is valid
+    // on chain, so nothing is refused and no contract is read.
+    const allows = setup({ node: { params: { getForbidTransferToContract: 0n } } });
+    const unsigned = await allows.prepared(toContract);
+    expect(allows.calls.some((c) => c.path === '/wallet/getcontract')).toBe(false);
+    const signed = await allows.run(
+      allows.builder.assemble(unsigned, await signWithKey(unsigned)),
+    );
+    expect(await allows.run(allows.broadcaster.broadcast(signed))).toEqual({
+      kind: 'accepted',
+    });
+    // A TRC-20 transfer to a contract is valid on chain either way.
+    await forbids.run(
+      forbids.builder.estimateFee(
+        token(10n, { outputs: [{ to: USDT, amount: 10n }] }),
+        forbids.build,
+      ),
+    );
+  });
+
   it('validates the intent', async () => {
     const h = setup();
     for (const [intent, code] of [
@@ -497,10 +543,11 @@ describe('Tron builder: build and assemble', () => {
     });
   });
 
-  it('anchors the expiration at the local clock when the head is dated in the future (D3)', async () => {
+  it('anchors the expiration at the local clock when the head is dated in the future (D3), and refuses a head more than half the window ahead (F4-R12 M2)', async () => {
     const h = setup();
     h.node.fund(RECIPIENT, 1n);
     const real = h.head();
+    let ahead = 25_000;
     h.node.intercept('main', '/wallet/getblock', (request) =>
       request.json<{ id_or_num?: string }>().id_or_num === undefined
         ? {
@@ -510,7 +557,7 @@ describe('Tron builder: build and assemble', () => {
                 raw_data: {
                   number: h.node.head,
                   parentHash: '00'.repeat(32),
-                  timestamp: real.timestamp + 3_600_000,
+                  timestamp: real.timestamp + ahead,
                 },
               },
             },
@@ -526,6 +573,25 @@ describe('Tron builder: build and assemble', () => {
     expect(expiration).toBeGreaterThan(now + 59_000);
     const signed = await h.run(h.builder.assemble(unsigned, await signWithKey(unsigned)));
     expect(await h.run(h.broadcaster.broadcast(signed))).toEqual({ kind: 'accepted' });
+    // A head more than half the window ahead of the local clock: either the clock runs behind
+    // the chain, and every build would be born expired (a signature per rebuild), or the
+    // endpoint lies. Refused before signing, retryably, as an old head is.
+    const fee = await h.run(h.builder.estimateFee(trx(2n * TRX), h.build));
+    const aheadOfClock = (ms: number) => h.clock.now() - real.timestamp + ms;
+    for (const future of [aheadOfClock(31_000), 3_600_000]) {
+      ahead = future;
+      await expect(
+        h.run(h.builder.build(trx(2n * TRX), fee, h.build)),
+      ).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+        message:
+          'the head block is dated ahead of the local clock; check the clock or try again',
+      });
+    }
+    // Less than half the window ahead still builds.
+    ahead = aheadOfClock(29_000);
+    await h.run(h.builder.build(trx(2n * TRX), fee, h.build));
   });
 
   it('refuses an expiration window outside the driver bounds (D3, java-tron’s window)', async () => {
@@ -777,6 +843,45 @@ describe('Tron builder: build and assemble', () => {
     }
   });
 
+  it('attaches only a signature that verifies against the signing key over the txID (F4-R12 M3)', async () => {
+    const h = setup();
+    const unsigned = await h.prepared(trx(TRX));
+    const [good] = (await signWithKey(unsigned)) as [SignatureBundle];
+    const digest = unsigned.signingRequests[0]?.payload as Uint8Array;
+    const flipped = Uint8Array.from(good.bytes);
+    flipped[10] = (flipped[10] as number) ^ 1;
+    const otherKey = secp256k1.sign(digest, '11'.repeat(32));
+    const highS = secp256k1.Signature.fromCompact(good.bytes);
+    for (const bad of [
+      // A corrupted signature, another key's, the wrong recovery bit, another digest's.
+      { ...good, bytes: flipped },
+      { ...good, bytes: otherKey.toCompactRawBytes(), recovery: otherKey.recovery },
+      { ...good, recovery: good.recovery === 0 ? 1 : 0 },
+      {
+        ...good,
+        bytes: secp256k1.sign(sha256(digest), fromHex(KEY)).toCompactRawBytes(),
+      },
+      // The same signature with a high s: java-tron recovers the same key from either, but
+      // the core never produces or accepts one.
+      {
+        ...good,
+        bytes: new secp256k1.Signature(
+          highS.r,
+          secp256k1.CURVE.n - highS.s,
+        ).toCompactRawBytes(),
+        recovery: good.recovery === 0 ? 1 : 0,
+      },
+    ] as SignatureBundle[]) {
+      await expect(h.run(h.builder.assemble(unsigned, [bad]))).rejects.toMatchObject({
+        code: 'SIGNING_FAILED',
+        message: 'the signature does not verify against the signing key',
+      });
+    }
+    await expect(h.run(h.builder.assemble(unsigned, [good]))).resolves.toMatchObject({
+      ref: unsigned.expectedRef,
+    });
+  });
+
   it('references the head by the height its id carries, and refuses a head whose id disagrees (F4-R12)', async () => {
     const h = setup();
     const intent = trx(TRX);
@@ -934,9 +1039,11 @@ describe('Tron broadcaster', () => {
     h.node.fetch.route('https://b.tron.test/wallet/broadcasthex', (_request, signal) =>
       hang(signal),
     );
-    await expect(h.run(h.broadcaster.broadcast(next))).rejects.toMatchObject({
-      ambiguous: true,
-    });
+    // Final review M3: the hang runs through the transport's timeouts and retries, so drive
+    // it in 1 s fake steps, not thousands of 10 ms ones (a real-time budget under load).
+    await expect(
+      drive(h.clock, h.broadcaster.broadcast(next), 1_000),
+    ).rejects.toMatchObject({ ambiguous: true });
   });
 
   it('leaves the transaction possibly sent on node-local codes, unknown codes, 5xx and unreadable replies', async () => {

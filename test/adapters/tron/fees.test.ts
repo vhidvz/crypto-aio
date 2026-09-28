@@ -16,6 +16,7 @@ import {
   type ChainParameters,
 } from '../../../src/adapters/tron/http';
 import type { TronRawData } from '../../../src/adapters/tron/types';
+import { isCryptoAioError } from '../../../src/core/errors/error';
 import { toHex, utf8ToBytes } from '../../../src/core/util/bytes';
 import { nodeTransport } from './support/harness';
 import { encodeWireRaw, encodeWireTransaction } from './support/node';
@@ -38,6 +39,7 @@ const PARAMS: ChainParameters = {
   createNewAccountBandwidthRate: 1n,
   memoFee: 1_000_000n,
   maxFeeLimit: 15_000_000_000n,
+  forbidTransferToContract: true,
 };
 const NONE = { activated: true, freeBandwidth: 0n, stakedBandwidth: 0n, energy: 0n };
 /** The largest handle bound (2^53 − 1 sun): only the network's maximum binds by default here. */
@@ -361,7 +363,8 @@ describe('tronFee', () => {
       }
     }
     // The bandwidth is the driver's own measure of the bytes it built: a non-positive one is a
-    // driver bug, never the caller's intent nor a node's answer.
+    // driver bug, never a node's answer. F4-R10: an internal CryptoAioError, never a foreign
+    // RangeError (lesson 6), and not retryable, so the Operation fails before signing.
     for (const bandwidth of [0n, -1n]) {
       for (const energy of [undefined, 30_000n]) {
         let caught: unknown;
@@ -370,11 +373,12 @@ describe('tronFee', () => {
         } catch (error) {
           caught = error;
         }
-        expect(caught).toBeInstanceOf(RangeError);
-        expect(caught).not.toHaveProperty('code');
-        expect((caught as Error).message).toBe(
-          'cannot estimate a Tron fee: the bandwidth must be positive',
-        );
+        expect(isCryptoAioError(caught)).toBe(true);
+        expect(caught).toMatchObject({
+          code: 'INVALID_INTENT',
+          retryable: false,
+          message: 'cannot estimate a Tron fee: the measured bandwidth is not positive',
+        });
       }
     }
     // The smallest real values still estimate.

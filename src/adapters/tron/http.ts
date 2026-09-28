@@ -347,6 +347,7 @@ export interface TronTxJson {
   readonly contractRet?: string;
 }
 
+/** The chain parameters the driver reads: its fees, and one TransferContract rule. */
 const FEE_PARAMETERS = new Set([
   'getTransactionFee',
   'getEnergyFee',
@@ -355,6 +356,7 @@ const FEE_PARAMETERS = new Set([
   'getCreateNewAccountBandwidthRate',
   'getMemoFee',
   'getMaxFeeLimit',
+  'getForbidTransferToContract',
 ]);
 
 export interface ChainParameters {
@@ -365,6 +367,11 @@ export interface ChainParameters {
   readonly createNewAccountBandwidthRate: bigint;
   readonly memoFee: bigint;
   readonly maxFeeLimit: bigint;
+  /**
+   * `getForbidTransferToContract` is 1: `TransferActuator` refuses TRX sent to a contract
+   * account. 0 (proto3 JSON omits it) on mainnet, Nile and Shasta, read 2026-09-29.
+   */
+  readonly forbidTransferToContract: boolean;
 }
 
 export type ConstantCall =
@@ -620,6 +627,7 @@ export class TronApi {
       createNewAccountBandwidthRate: values.get('getCreateNewAccountBandwidthRate') ?? 1n,
       memoFee: values.get('getMemoFee') ?? 0n,
       maxFeeLimit: required('getMaxFeeLimit'),
+      forbidTransferToContract: values.get('getForbidTransferToContract') === 1n,
     };
   }
 

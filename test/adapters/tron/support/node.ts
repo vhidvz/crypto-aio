@@ -58,7 +58,10 @@ export const PARAMS = {
   getFreeNetLimit: 600n,
   /** `CommonParameter.maxCreateAccountTxSize`: a new account's transaction, without signatures. */
   getMaxCreateAccountTxSize: 1_000n,
-  /** TRX never goes into a contract by a TransferContract (mainnet proposal). */
+  /**
+   * TRX never goes into a contract by a TransferContract. A chain parameter, 0 on mainnet,
+   * Nile and Shasta (read 2026-09-29); 1 here, so the rule is exercised.
+   */
   getForbidTransferToContract: 1n,
 };
 

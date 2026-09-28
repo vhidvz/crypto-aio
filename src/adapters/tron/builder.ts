@@ -6,13 +6,14 @@
  * Reference block and expiration (D3, D4): the reference is the head block (TaPoS), and the
  * transaction expires `expirationMs` after the earlier of the head's time and the local
  * clock, as tronweb does from the head. A head older than half the window is refused
- * (retryable) instead of producing a transaction that is born nearly expired; a head dated
- * in the future cannot push the expiration beyond the window from now. The ordering records
- * the signed expiration and the reference block's TaPoS bound (`lastValidHeight`: its height,
- * read from its id, plus `TAPOS_WINDOW`), so the negative inclusion proof scans from the
- * attested reference block up to the expiration, whatever the head or the clock claimed
- * (F4-R12). The expiration stays inside java-tron's own window (at least the next slot, at
- * most 24 h past its head).
+ * (retryable) instead of producing a transaction that is born nearly expired, and so is a
+ * head dated more than half the window ahead of the local clock (a clock behind the chain
+ * would build transactions born expired); a head dated less far in the future cannot push
+ * the expiration beyond the window from now. The ordering records the signed expiration and
+ * the reference block's TaPoS bound (`lastValidHeight`: its height, read from its id, plus
+ * `TAPOS_WINDOW`), so the negative inclusion proof scans from the attested reference block
+ * up to the expiration, whatever the head or the clock claimed (F4-R12). The expiration
+ * stays inside java-tron's own window (at least the next slot, at most 24 h past its head).
  *
  * Uniqueness (D5): Tron has no nonce, so two identical transfers built on the same head in
  * the same millisecond would share one txID and one on-chain effect. The core refuses an
@@ -55,6 +56,7 @@ import type { FeeEstimateDraft } from '../../core/model/fee';
 import type { DriverIntent, IntentSummary } from '../../core/model/intent';
 import type { OrderingData } from '../../core/model/ordering';
 import type { UnsignedTx } from '../../core/model/transaction';
+import { secp256k1Ecdsa } from '../../core/registry/schemes';
 import {
   bytesToUtf8,
   concatBytes,
@@ -76,6 +78,7 @@ import {
 } from './network';
 import { trc20Balance, trc20Contract, type TronContext } from './reader';
 import type {
+  TronCallTags,
   TronContract,
   TronExpiryOrdering,
   TronFeeDetails,
@@ -109,6 +112,12 @@ interface Prepared extends Transfer {
 function invalid(message: string): ValidationError {
   return new ValidationError('INVALID_INTENT', message);
 }
+
+/**
+ * Whether an address holds a contract, read under the proof quorum (F4-R11): a node's word
+ * alone must not refuse a valid transfer, and endpoints that disagree decide nothing.
+ */
+const CONFIRMED: TronCallTags = { ...READ, quorum: 'proof' };
 
 /** The memo's UTF-8 bytes as hex, or undefined; refused when over `MAX_MEMO_BYTES`. */
 function memoHex(memo: string | undefined): string | undefined {
@@ -393,6 +402,17 @@ export function createTronBuilder(ctx: TronContext): {
         p.token === undefined ? api.account(p.recipient, tags) : undefined,
         p.token === undefined ? undefined : tokenEnergy(p, build.signal),
       ]);
+      // F4-R11: where the chain forbids TRX to a contract, such a transfer is refused before
+      // signing (it would only be refused, stall and expire). Elsewhere it is valid on chain.
+      if (
+        p.token === undefined &&
+        params.forbidTransferToContract &&
+        (await api.contractExists(p.recipient, withSignal(CONFIRMED, build.signal)))
+      ) {
+        throw invalid(
+          'this network refuses TRX sent to a contract (getForbidTransferToContract)',
+        );
+      }
       // An upper bound of the built size: no expiration jitter, a later timestamp, and the
       // largest fee limit a build can carry (the ceiling `tronFee` applies, F4-R12 M4).
       const now = ctx.clock.now();
@@ -445,6 +465,15 @@ export function createTronBuilder(ctx: TronContext): {
         throw new ProviderError(
           'PROVIDER_UNAVAILABLE',
           'the head block is too old to reference; try again',
+        );
+      }
+      // F4-R12 M2: a head dated more than half the window ahead means a local clock behind
+      // the chain, whose every build would be born expired (and cost a signature per
+      // rebuild), or a lying endpoint. Either way nothing is built on it.
+      if (block.timestamp - now > config.expirationMs / 2) {
+        throw new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          'the head block is dated ahead of the local clock; check the clock or try again',
         );
       }
       // F4-R12: the reference block's height, from its id (java-tron's block id is the
@@ -571,6 +600,19 @@ export function createTronBuilder(ctx: TronContext): {
       }
       if (decoded.contract.owner !== signer) {
         throw fail("the payload's owner is not the signing key's account");
+      }
+      // F4-R12 M3: only a signature the node will take for the owner's goes out, low s and
+      // recovery bit included, as the core's scheme checks it; a signer fault is a signing
+      // failure here, never a refusal on chain.
+      if (
+        !secp256k1Ecdsa.verify({
+          publicKey: request.publicKey,
+          payload: fromHex(txId),
+          signature: signature.bytes,
+          recovery: signature.recovery,
+        })
+      ) {
+        throw fail('the signature does not verify against the signing key');
       }
       // The bytes carry the authorized summary; the proofs read the expiration and the
       // reference height from the ordering; only the named fee field is read (the core may

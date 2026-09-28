@@ -62,9 +62,23 @@ export function decodeUint256(data: string): bigint {
   return BigInt(`0x${data}`);
 }
 
-/** Throws on data that is not an ABI `string` (offset 32, length, padded UTF-8). */
+/** One character class, no repeated group: linear on any input (lesson 20). */
+const HEX_DIGITS = /^[0-9a-fA-F]+$/;
+
+/**
+ * Throws on data that is not an ABI `string` (offset 32, length, padded UTF-8). The shape is
+ * checked by length and one character class (final review M1): a repeated-group regex
+ * overflows V8's stack on a few million characters (lesson 20, Plan 5 Task 6 addendum).
+ */
 export function decodeString(data: string): string {
-  if (!/^(?:[0-9a-fA-F]{64}){2,}$/.test(data)) throw new TypeError('not an ABI string');
+  if (
+    typeof data !== 'string' ||
+    data.length < 128 ||
+    data.length % 64 !== 0 ||
+    !HEX_DIGITS.test(data)
+  ) {
+    throw new TypeError('not an ABI string');
+  }
   if (BigInt(`0x${data.slice(0, 64)}`) !== 32n) throw new TypeError('bad string offset');
   const length = BigInt(`0x${data.slice(64, 128)}`);
   const available = BigInt((data.length - 128) / 2);
