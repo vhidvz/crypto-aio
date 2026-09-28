@@ -5,13 +5,19 @@
  * @module crypto-aio
  */
 import { evmPlugin } from './adapters/evm/plugin';
+import { solanaPlugin } from './adapters/solana/plugin';
 import { tronPlugin } from './adapters/tron/plugin';
 import { utxoPlugin } from './adapters/utxo/plugin';
 import { setBuiltinPlugins } from './core/container/builtins';
 import type { Plugin } from './core/registry/plugin';
 
 /** Built-in chain family plugins. Each family plugin module is SDK-free; drivers load lazily. */
-const BUILTIN_PLUGINS: readonly Plugin[] = [evmPlugin(), utxoPlugin(), tronPlugin()];
+const BUILTIN_PLUGINS: readonly Plugin[] = [
+  evmPlugin(),
+  utxoPlugin(),
+  tronPlugin(),
+  solanaPlugin(),
+];
 setBuiltinPlugins(BUILTIN_PLUGINS);
 
 // Entry points
@@ -284,7 +290,7 @@ export type { LogFields, LogLevel, LogWriter, Logger } from './core/events/logge
 export type { Clock } from './core/util/clock';
 
 // Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/evm`,
-// `crypto-aio/tron` and `crypto-aio/utxo`.
+// `crypto-aio/solana`, `crypto-aio/tron` and `crypto-aio/utxo`.
 export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './adapters/evm/types';
 export type {
   TronExpiryOrdering,
@@ -305,6 +311,7 @@ export type {
   UtxoWalletOptions,
 } from './adapters/utxo/types';
 export type {
+  SolanaExpiryOrdering,
   SolanaExt,
   SolanaFeeDetails,
   SolanaFeeOverride,

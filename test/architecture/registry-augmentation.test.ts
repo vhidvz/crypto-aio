@@ -46,6 +46,7 @@ const OPTIONS: ts.CompilerOptions = {
     'crypto-aio/native': [join(ROOT, 'src', 'native.ts')],
     'crypto-aio/tron': [join(ROOT, 'src', 'adapters', 'tron', 'index.ts')],
     'crypto-aio/utxo': [join(ROOT, 'src', 'adapters', 'utxo', 'index.ts')],
+    'crypto-aio/solana': [join(ROOT, 'src', 'adapters', 'solana', 'index.ts')],
   },
 };
 
@@ -228,6 +229,51 @@ describe('UTXO registry augmentation (R37)', () => {
   }, 120_000);
 });
 
+/** The Solana family is typed from the entry; its SDK client from `crypto-aio/solana`. */
+const USE_SOLANA = `
+import { CryptoAio, type SolanaFeeOverride } from 'crypto-aio';
+import { native } from 'crypto-aio/native';
+import 'crypto-aio/solana';
+const aio = new CryptoAio({ env: false });
+export const sol = aio.blockchain({ chain: 'solana', network: 'devnet', library: '@solana/web3.js' });
+export const fee: SolanaFeeOverride = { computeUnitPrice: 5n, computeUnitLimit: 20_000n };
+export async function height(): Promise<number> {
+  const connection = await native(aio.blockchain({ chain: 'solana' }), '@solana/web3.js');
+  return connection.getBlockHeight('confirmed');
+}
+export async function accounts(): Promise<readonly { readonly amount: bigint }[]> {
+  return aio.blockchain({ chain: 'solana', network: 'testnet' }).ext.solana.getTokenAccounts('x');
+}
+`;
+
+describe('Solana registry augmentation (R37)', () => {
+  it('types the Solana chain, networks, library, ext and native client, in both file orders', () => {
+    const first = compile({
+      'augment.ts': AUGMENT,
+      'solana.ts': USE_SOLANA,
+      'acme.ts': USE_ACME,
+    });
+    expect(first.errors).toEqual([]);
+    const second = compile(
+      { 'acme.ts': USE_ACME, 'solana.ts': USE_SOLANA, 'augment.ts': AUGMENT },
+      first.program,
+    );
+    expect(second.errors).toEqual([]);
+  }, 120_000);
+
+  it('rejects a network or library the Solana family does not have', () => {
+    const wrong = USE_SOLANA.replace("network: 'devnet'", "network: 'localnet'").replace(
+      "library: '@solana/web3.js'",
+      "library: 'ethers'",
+    );
+    const { errors } = compile({ 'solana.ts': wrong });
+    expect(errors).toEqual([
+      expect.stringContaining(`'"localnet"' is not assignable`),
+      expect.stringContaining(`'"ethers"' is not assignable`),
+    ]);
+  }, 120_000);
+});
+
 /** A consumer of the main entry only; a user with no SDK installed at all. */
 const USE_MAIN = `
 import { CryptoAio, type EvmExt, type EvmFeeDetails, type EvmFeeOverride } from 'crypto-aio';
@@ -255,6 +301,19 @@ export const tronOrdering: TronExpiryOrdering = {
   refBlockHash: '00'.repeat(8),
 };
 export const coreOrdering: OrderingData = tronOrdering;
+import type {
+  SolanaExpiryOrdering,
+  SolanaExt,
+  SolanaFeeDetails,
+  SolanaFeeOverride,
+  SolanaTokenAccount,
+} from 'crypto-aio';
+export const sol = aio.blockchain({ chain: 'solana', network: 'devnet' });
+export const solanaExt: SolanaExt = sol.ext;
+export const solanaFee: SolanaFeeOverride = { computeUnitPrice: 1n };
+export type SolanaDetails = SolanaFeeDetails;
+export type Account = SolanaTokenAccount;
+export type Ordering = SolanaExpiryOrdering;
 `;
 
 /** Where the in-memory declaration files live: the `dist` of the tests. */
@@ -284,6 +343,7 @@ function declarations(): ReadonlyMap<string, string> {
     join(ROOT, 'src', 'adapters', 'evm', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'tron', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'utxo', 'index.ts'),
+    join(ROOT, 'src', 'adapters', 'solana', 'index.ts'),
   ];
   const { diagnostics } = ts.createProgram(entries, options, host).emit();
   expect(diagnostics.map(message)).toEqual([]);
@@ -292,9 +352,9 @@ function declarations(): ReadonlyMap<string, string> {
 
 /**
  * A user with no SDK installed who type-checks every library file, against the declarations
- * `dist` ships. Mapping `ethers`, `web3`, `bitcoinjs-lib` and `tronweb` to a missing path in
- * `paths` is not enough (resolution then falls back to node_modules), so the host hides the
- * packages; the controls below prove they do not resolve.
+ * `dist` ships. Mapping `ethers`, `web3`, `bitcoinjs-lib`, `tronweb` and `@solana/web3.js` to
+ * a missing path in `paths` is not enough (resolution then falls back to node_modules), so
+ * the host hides the packages; the controls below prove they do not resolve.
  */
 const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
   options: {
@@ -305,13 +365,15 @@ const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
       'crypto-aio/evm': [join(DTS, 'adapters', 'evm', 'index.d.ts')],
       'crypto-aio/tron': [join(DTS, 'adapters', 'tron', 'index.d.ts')],
       'crypto-aio/utxo': [join(DTS, 'adapters', 'utxo', 'index.d.ts')],
+      'crypto-aio/solana': [join(DTS, 'adapters', 'solana', 'index.d.ts')],
     },
   },
-  // Both SDK scopes: bitcoinjs-lib with its whole dependency scope (its types pull in bip174,
-  // valibot and varuint-bitcoin; @noble/hashes is a dependency of this library anyway), and
-  // tronweb with the packages its types pull in (axios, bignumber.js, eventemitter3, ethers).
+  // Every SDK scope: bitcoinjs-lib with its whole dependency scope (its types pull in bip174,
+  // valibot and varuint-bitcoin; @noble/hashes is a dependency of this library anyway),
+  // tronweb with the packages its types pull in (axios, bignumber.js, eventemitter3, ethers),
+  // and every `@solana/*` package, not only the SDK: the main entry needs none of them.
   hidden:
-    /[\\/]node_modules[\\/](ethers|web3|bitcoinjs-lib|bip174|valibot|varuint-bitcoin|uint8array-tools|bech32|bs58check|bs58|base-x|tronweb|axios|bignumber\.js|eventemitter3)[\\/]/,
+    /[\\/]node_modules[\\/](ethers|web3|bitcoinjs-lib|bip174|valibot|varuint-bitcoin|uint8array-tools|bech32|bs58check|bs58|base-x|tronweb|axios|bignumber\.js|eventemitter3|@solana)[\\/]/,
   files: dts,
 });
 
@@ -321,7 +383,7 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     dts = declarations();
   }, 120_000);
 
-  it('type-checks `crypto-aio` with no SDK resolvable (ethers, web3, bitcoinjs-lib, tronweb), under skipLibCheck: false', () => {
+  it('type-checks `crypto-aio` with no SDK resolvable (ethers, web3, bitcoinjs-lib, tronweb, @solana/*), under skipLibCheck: false', () => {
     const { errors, everywhere } = compile(
       { 'main.ts': USE_MAIN },
       undefined,
@@ -369,6 +431,19 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     expect(everywhere()).toEqual([
       expect.stringMatching(
         /__dts__\/adapters\/utxo\/sdk\.d\.ts: Cannot find module 'bitcoinjs-lib'/,
+      ),
+    ]);
+  }, 120_000);
+
+  it('control: `crypto-aio/solana` does need the SDK types, so @solana/web3.js really is unresolvable', () => {
+    const { everywhere } = compile(
+      { 'main.ts': `${USE_MAIN}import 'crypto-aio/solana';\n` },
+      undefined,
+      withoutSdks(dts),
+    );
+    expect(everywhere()).toEqual([
+      expect.stringMatching(
+        /__dts__\/adapters\/solana\/index\.d\.ts: Cannot find module '@solana\/web3\.js'/,
       ),
     ]);
   }, 120_000);

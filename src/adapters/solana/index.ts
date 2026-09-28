@@ -1,0 +1,25 @@
+/**
+ * `crypto-aio/solana`: the SDK-free Solana types, and the `crypto-aio/native` client type:
+ * importing this entry types `native(bc, '@solana/web3.js')` as a `Connection` wired to the
+ * handle's transport (HTTP JSON-RPC only; subscriptions have no transport bridge).
+ *
+ * @module crypto-aio/solana
+ */
+import type { Connection } from '@solana/web3.js';
+
+// R37: through the package entry. SDK types appear only here (spec §5.6).
+declare module '../../index' {
+  interface NativeClientMap {
+    '@solana/web3.js': Connection;
+  }
+}
+
+export { SOLANA_PEER_DEPENDENCIES } from './plugin';
+export { SOLANA_CAPABILITIES } from './network';
+export type {
+  SolanaExpiryOrdering,
+  SolanaExt,
+  SolanaFeeDetails,
+  SolanaFeeOverride,
+  SolanaTokenAccount,
+} from './types';

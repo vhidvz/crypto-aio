@@ -14,6 +14,7 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./evm": { "types": "./dist/adapters/evm/index.d.ts", "default": "./dist/adapters/evm/index.js" },
     "./native": { "types": "./dist/native.d.ts", "default": "./dist/native.js" },
+    "./solana": { "types": "./dist/adapters/solana/index.d.ts", "default": "./dist/adapters/solana/index.js" },
     "./testing": { "types": "./dist/testing/index.d.ts", "default": "./dist/testing/index.js" },
     "./tron": { "types": "./dist/adapters/tron/index.d.ts", "default": "./dist/adapters/tron/index.js" },
     "./utxo": { "types": "./dist/adapters/utxo/index.d.ts", "default": "./dist/adapters/utxo/index.js" },
@@ -23,6 +24,7 @@
     "*": {
       "evm": ["dist/adapters/evm/index.d.ts"],
       "native": ["dist/native.d.ts"],
+      "solana": ["dist/adapters/solana/index.d.ts"],
       "testing": ["dist/testing/index.d.ts"],
       "tron": ["dist/adapters/tron/index.d.ts"],
       "utxo": ["dist/adapters/utxo/index.d.ts"]
