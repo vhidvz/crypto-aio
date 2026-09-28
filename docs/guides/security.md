@@ -165,7 +165,7 @@ own is operational, and the `nonce.allocated` and `nonce.gap` events carry it.
 ```ts
 import { native } from 'crypto-aio/native';
 
-const client = await native(env.bc, 'fake-sdk'); // on EVM: native(eth, 'ethers')
+const client = await native(env.bc, 'fake-sdk'); // native(eth, 'ethers'), native(tron, 'tronweb')
 ```
 
 - Each handle gets **its own** SDK client, built on the first call. Later calls on the same
@@ -179,6 +179,10 @@ const client = await native(env.bc, 'fake-sdk'); // on EVM: native(eth, 'ethers'
   see the real URL. Import `crypto-aio/evm` once to type them. Its declarations name both
   SDKs' types, so with only one SDK installed, keep `skipLibCheck: true` (the `tsc --init`
   default) or install the other SDK too.
+- On Tron, `native(bc, 'tronweb')` returns a `TronWeb` instance whose full node, solidity
+  node and event server all send through the handle's transport, so it never sees the real
+  URL or the TronGrid key. Import `crypto-aio/tron` once to type it; with
+  `skipLibCheck: false`, that needs tronweb installed.
 - The root container's `close()` closes every native client handed out, once, then the
   driver pool. A client that fails to close is logged by error code only. After that,
   `native()` and the handle's methods throw `INVALID_TRANSITION`.
@@ -197,6 +201,9 @@ const client = await native(env.bc, 'fake-sdk'); // on EVM: native(eth, 'ethers'
 - [ ] An idempotent, short `beforeSign` hook in front of your own policy engine.
 - [ ] At least two independent providers per network, so proofs are cross-checked. No
       `public` preset in production.
+- [ ] Tron: memos are public forever and cost a fee; never put personal data in one. Use the
+      `trongrid` preset with a key on mainnet (keyless TronGrid fails there), next to a
+      second, independent provider.
 - [ ] `await bc.ready()` at startup, to fail fast on a missing SDK or a misconfigured provider.
 - [ ] `aio.operations.recover()` at startup, then `aio.monitor.start()` workers. Alerts on
       `operation.stalled`, `nonce.gap`, `recovery.skipped` and `provider.misconfigured`.

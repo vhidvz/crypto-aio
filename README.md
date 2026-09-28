@@ -17,8 +17,8 @@ including the security advisory about credentials that were committed to this re
 
 Plan 1 is complete: the SDK-free core and the testing kit (`crypto-aio/testing`). Plan 2,
 the EVM family (Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism and
-Base, through ethers or web3), is complete on `main` and ships in the next release. Bitcoin,
-Tron, Solana and TON arrive in Plans 3–6.
+Base, through ethers or web3), and Plan 4, the Tron family (tronweb), are complete on `main`
+and ship in the next release. Bitcoin, Solana and TON arrive in Plans 3, 5 and 6.
 
 ## Documentation
 

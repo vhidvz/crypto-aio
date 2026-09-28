@@ -6,8 +6,8 @@ summary: Withdrawals, cold signing, confirmations, background workers, deposit s
 
 This guide shows how to build withdrawals and deposits into a service. The examples run on
 the fake chain (`bc = env.bc`; wrap awaited calls in `env.run(...)`, as in the
-[tutorial](./tutorial.md)). They work the same way on the EVM chains, apart from the EVM
-notes below. Terms are defined in [Core concepts](./concepts.md).
+[tutorial](./tutorial.md)). They work the same way on the EVM chains and on Tron, apart from
+the EVM and Tron notes below. Terms are defined in [Core concepts](./concepts.md).
 
 ## Sending
 
@@ -29,12 +29,13 @@ stores the signed Attempt, and broadcasts. It returns a `Submission`: the Operat
 signs twice.
 
 - `outputs: [{ to, amount }, …]` sends several outputs; it needs the `batch-transfer`
-  capability. An EVM transfer has exactly one output.
+  capability. An EVM or Tron transfer has exactly one output.
 - `asset` defaults to `'native'`. It also accepts a token ref, an asset id, or an alias
   registered for the handle's chain and network, such as `'USDC'` on `ethereum` mainnet.
-  Tokens need the `tokens` capability: the EVM chains have it (ERC-20); the fake chain does
-  not.
-- `memo` needs the `memo` capability, which EVM networks lack.
+  Tokens need the `tokens` capability: the EVM chains (ERC-20) and Tron (TRC-20) have it;
+  the fake chain does not.
+- `memo` needs the `memo` capability, which Tron has and EVM networks lack. A Tron memo is
+  public forever and costs a fee ([Tron networks](./networks.md#tron-networks)).
 - `options.signal` aborts the call. An abort after a possible broadcast is reported as
   ambiguous.
 
@@ -45,7 +46,8 @@ override object, whose fields each family's adapter defines. Override amounts mu
 bigints or decimal strings, never numbers (`INVALID_INTENT`). The fake chain takes
 `fee: { fee: 5n }`. EVM networks take `{ maxFeePerGas, maxPriorityFeePerGas, gasLimit? }`
 (`evm-1559`) or `{ gasPrice, gasLimit? }` (`evm-legacy`) in wei (`EvmFeeOverride`), as
-bigints only: a decimal string gives `INVALID_INTENT` there. The fee is part of the
+bigints only: a decimal string gives `INVALID_INTENT` there. Tron TRC-20 transfers take
+`{ feeLimit }` in sun (`TronFeeOverride`), also as a bigint only. The fee is part of the
 `intentHash`, and an override is hashed as written: `{ fee: 1n }` and `{ fee: '1' }` are
 different intents. Retry in the same form, or you get `IDEMPOTENCY_CONFLICT`.
 
@@ -67,6 +69,13 @@ An override's `gasLimit` skips `eth_estimateGas`, the check that refuses a call 
 fail: any call that would revert or run out of gas, such as a token transfer or a payment
 to a contract that refuses it, is then signed, broadcast, and burns its gas. The balance
 check still runs.
+
+On Tron, `slow`, `normal` and `fast` give the same estimate, since Tron has no fee market.
+The `tron` fee has `bandwidth`, `energy`, `activation` and `memo` charges, all in TRX and
+each possibly 0, as an `upper` bound. A TRC-20 transfer's `feeLimit` covers its simulated
+energy plus a margin, up to the network's maximum fee limit; `{ feeLimit }` may raise it to
+that maximum but never set it below the estimate.
+[Tron networks](./networks.md#tron-networks) explains the charges and the ceiling.
 
 ### Cold, offline and asynchronous signing
 
@@ -138,12 +147,24 @@ an explicit override that raises each price by at least 10%. A cancel is a zero-
 transfer to yourself, at the smallest valid bump unless you pass `fee`. Arbitrum has no
 mempool, so it supports neither (`UNSUPPORTED_CAPABILITY`).
 
-On expiry- and seqno-based chains (planned Tron, Solana and TON; `fakeexpiry` and
-`fakeseqno` today), `bc.rebuild(id)` re-issues an Operation after its expiry is **proven**
-(`expired`, error `TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the Operation. Other
-chains throw `UNSUPPORTED_CAPABILITY`. Replace, cancel and rebuild sign a new Attempt on the
-spot, so they need a synchronous signer: a signer that answers `pending` fails them with
-`SIGNING_FAILED`.
+On expiry- and seqno-based chains (Tron today; planned Solana and TON; `fakeexpiry` and
+`fakeseqno` in the testing kit), `bc.rebuild(id)` re-issues an Operation after its expiry is
+**proven** (`expired`, error `TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the
+Operation. Other chains throw `UNSUPPORTED_CAPABILITY`. Replace, cancel and rebuild sign a
+new Attempt on the spot, so they need a synchronous signer: a signer that answers `pending`
+fails them with `SIGNING_FAILED`.
+
+**On Tron, a refusal means: do not pay again; the Operation is still live.** Tron has no
+replace and no cancel (`UNSUPPORTED_CAPABILITY`). A Tron Operation is `stalled` with
+`TX_REFUSED`, `TX_EXPIRED` or `INSUFFICIENT_FUNDS` when a node refused its signed bytes, and
+those bytes may still land. `TX_REFUSED` also covers a node that claims the bytes can never
+be valid when the library cannot confirm that claim from the bytes it sent: a lying or buggy
+endpoint may have relayed them anyway, or may keep them to relay later. A liar and a genuine
+refusal look the same, so repeat a call only with the **same** idempotency key, never a new
+one. A `TX_EXPIRED` refusal is likewise one node's view at its own head, not proof. Fix the
+cause and `bc.rebroadcast(id)` within the expiration window, or let the workers watch it:
+the Operation ends `final` if the transaction lands, or `expired` once its expiry is proven,
+and only then does `bc.rebuild(id)` sign a new Attempt.
 
 ## Waiting and watching
 
@@ -182,6 +203,21 @@ const now = await bc.getTransactionStatus(operationId); // one read
   the proof decide nothing (a retryable `PROVIDER_UNAVAILABLE`) until endpoints that serve it
   answer; so does any other JSON-RPC error on a proof read, since only a definitive answer
   proves "no". With one endpoint the proof quorum is 1, so configure two or more providers.
+- **Tron token verdicts.** As on EVM, an Operation's TRC-20 `transfer` counts as executed
+  only if its receipt succeeded and the token contract logged a `Transfer` from the sender
+  to the recipient, of any positive amount (a fee-on-transfer token that delivers less still
+  counts). A token whose receipt succeeded but logged no such `Transfer` is reported failed
+  (`TX_REVERTED`, `status.reason` `token transfer not evidenced`) **although value may have
+  moved**: check the chain (`bc.getTransaction(attempt.ref.id)`, or the recipient's token
+  balance) before you pay again. A `Transfer` event from the token that does not decode
+  leaves the Attempt undecided. A transfer that ran out of energy is failed (`out of
+  energy`), and its fee is burned.
+- **Tron proofs.** A Tron transaction that never landed is proven `expired` only once a
+  solidified block passes its signed expiration, the reference block it names is attested,
+  and every block between them is read by hash under the proof quorum without it. An index
+  that lags, or an endpoint that cannot serve those blocks, decides nothing. With one
+  provider the proof quorum is 1, so configure two or more
+  ([Tron networks](./networks.md#tron-networks)).
 - **Run the monitor.** A node answers "not found" for every transaction outside its index
   window (geth keeps the last 2,350,000 blocks: weeks on fast chains, under a year on
   Ethereum), so a missing receipt proves nothing. A transaction older than your endpoints'
@@ -290,12 +326,18 @@ for await (const event of scanner) {
   `eth_getLogs`. When that answers nothing but the block's bloom may hold a `Transfer`, the
   scan reads every receipt of the block before it trusts the empty answer. So for deposit
   scanning, prefer endpoints that serve `eth_getBlockReceipts`.
+- **Tron.** Blocks carry TRX transfers and TRC-20 `Transfer` events from any contract, so
+  check `transfer.asset`: a copycat token has its own contract. A contract call is
+  `decoding: 'partial'`, since TRX can move inside it without an event, and a TRC-10
+  transfer is not decoded (`decoding: 'none'`). A memo arrives on each transfer as
+  `transfer.memo` when it is UTF-8 text. Credit in `final` mode, on solidified blocks.
 
 ### Address history (`address-history`)
 
 `bc.history(address, { cursor?, limit? })` returns `{ items: Transaction[], next? }` from an
 indexer. It needs an indexer provider. The fake chain has none, and the EVM family does not
-support one yet, so both throw `UNSUPPORTED_CAPABILITY`.
+support one yet, so both throw `UNSUPPORTED_CAPABILITY`. Tron serves it from TronGrid: name
+the `trongrid` or `public` preset as the handle's `indexer`.
 
 ## Error handling
 
@@ -315,6 +357,8 @@ land.**
 | `SEQUENCE_BUSY`: "another operation is recording the same transaction; retry" | Another process is recording an identical transaction right now; nothing was recorded | Repeat the call (the **same** key, fee spec or signatures). For `submitSignatures`, resubmit the signatures |
 | `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` | Proven terminal failure. For `TX_REPLACED`, another transaction is final in the slot | Reconcile; a new transfer with a new key is safe, except for an EVM token `TX_REVERTED` whose receipt succeeded: value may have moved, so check the chain first ([EVM token verdicts](#waiting-and-watching)) |
 | `TX_REJECTED` | Nodes rejected every Attempt as never valid; nonce released | Fix the cause; retry with a **new** key |
+| Tron: `TX_REFUSED`, `TX_EXPIRED` or `INSUFFICIENT_FUNDS` with state `stalled` | A node refused the signed bytes, or claimed they are invalid; they may still land. A liar and a genuine refusal look the same | Never pay again: repeat only with the **same** key. `rebroadcast` after the fix; `rebuild` only once the Operation is `expired` (see "Lifecycle and `stalled`" above) |
+| Tron: `TX_REVERTED` with reason `token transfer not evidenced` | The token call succeeded on chain but logged no `Transfer` to the recipient; value may have moved | Check the chain before you pay again ([Tron token verdicts](#waiting-and-watching)) |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |
 | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_INCONSISTENT` (not ambiguous) | A read failed | Retry later |

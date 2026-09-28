@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bc.ext.evm.getNonce(address, 'latest' | 'pending')`.
 - Typed `ChainRegistry` entries for the seven EVM chains and their networks, and the root
   type exports `EvmExt`, `EvmFeeDetails` and `EvmFeeOverride`.
+- The Tron family, built in: `tron` on mainnet, Shasta and Nile, with tronweb 6 as an optional
+  peer dependency; TRX and TRC-20 transfers with memos; the `tron` fee kind (`bandwidth`,
+  `energy`, `activation` and `memo` charges, any of which may be 0) with a `{ feeLimit }`
+  override for TRC-20 transfers; `expiry` ordering with proven expiry and `rebuild`; finality
+  at the solidified block; block scanning; TronGrid address history through an indexer
+  provider; the `trongrid` and `public` presets; and USDT by alias.
+- The `crypto-aio/tron` entry: `TRON_CAPABILITIES`, `TRON_INDEXER_CAPABILITIES`,
+  `TRON_PEER_DEPENDENCIES`, the expiration, energy-margin and memo limits, and the SDK type
+  for `native(bc, 'tronweb')`; also `bc.ext.tron.getResources(address)`, a typed
+  `ChainRegistry` entry for `tron`, and the root type exports `TronExt`, `TronFeeDetails`,
+  `TronFeeOverride`, `TronResources` and `TronExpiryOrdering`.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers

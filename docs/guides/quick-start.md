@@ -20,15 +20,16 @@ cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<ve
 npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM family is on `main` and
-in the next release. Install only the SDK you use next to the package: `npm install ethers`,
-or `npm install web3` and `library: 'web3'` on the handle, since ethers is the default. A
-missing SDK fails with `DEPENDENCY_MISSING` and the exact install command. The package has
-four entry points:
+Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM and Tron families are on
+`main` and in the next release. Install only the SDK you use next to the package: for EVM
+chains `npm install ethers`, or `npm install web3` and `library: 'web3'` on the handle, since
+ethers is the default; for Tron `npm install tronweb`. A missing SDK fails with
+`DEPENDENCY_MISSING` and the exact install command. The package has five entry points:
 
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
 import { evmChainPlugin } from 'crypto-aio/evm'; // EVM extras and SDK client types
+import { MAX_MEMO_BYTES } from 'crypto-aio/tron'; // Tron constants and the SDK client type
 import { createFakeEnv } from 'crypto-aio/testing'; // test kit and the fake chain
 import { native } from 'crypto-aio/native'; // escape hatch to the SDK client
 ```
@@ -162,11 +163,15 @@ await fuji.getBlockHeight();
 From there, `transfer`, `waitForConfirmation` and `scanner` work as on the fake chain.
 `amount: '0.01'` means 0.01 ETH on `ethereum`, and `asset: 'USDC'` sends USDC on mainnet.
 
+Tron works the same way with `npm install tronweb` and `chain: 'tron'`.
+[Tron networks](./networks.md#tron-networks) shows a configuration and what differs: TronGrid
+keys, fees and fee limits, expiry instead of replacement, and why mainnet needs a key.
+
 ## Next steps
 
 - [Core concepts](./concepts.md): the vocabulary behind this example.
 - [Tutorial](./tutorial.md): ten short, hands-on steps that exercise the main concepts.
 - [Sending and receiving](./transactions.md): withdrawals, deposits, and error handling.
 - [Keys, signers and secrets](./security.md): signers, policy hooks, and a production checklist.
-- [Using any blockchain network](./networks.md): the EVM networks, adding your own, and what
-  is planned.
+- [Using any blockchain network](./networks.md): the EVM and Tron networks, adding your own,
+  and what is planned.
