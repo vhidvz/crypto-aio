@@ -20,8 +20,8 @@ import * as bytes from '../../../src/core/util/bytes';
 import { fromHex, toHex } from '../../../src/core/util/bytes';
 import { hang, type FakeReply } from '../../../src/testing/fake-fetch';
 import { tronHarness } from './support/context';
-import { decodeRawData, decodeTransaction } from './support/protobuf';
-import { signWithKey } from './support/signing';
+import { decodeRawData, decodeTransaction, encodeTransaction } from './support/protobuf';
+import { signWithKey, signedTransaction } from './support/signing';
 import {
   KEY_ADDRESS,
   KEY_HEX,
@@ -32,6 +32,24 @@ import {
 } from './support/vectors';
 
 const TRX = 1_000_000n;
+/** Every java-tron answer the classifier reads as a definitive `rejected` (Task 5). */
+const CLAIMS = [
+  ['SIGERROR', 'Validate signature error: Signature size is 64'],
+  ['CONTRACT_VALIDATE_ERROR', 'Contract validate error : No contract!'],
+  [
+    'CONTRACT_VALIDATE_ERROR',
+    'Contract validate error : Cannot transfer TRX to yourself.',
+  ],
+  ['CONTRACT_VALIDATE_ERROR', 'Contract validate error : Amount must be greater than 0.'],
+  [
+    'TOO_BIG_TRANSACTION_ERROR',
+    `Too big transaction, TxId ${'ab'.repeat(32)}, the size is 600000 bytes, maxTxSize 512000`,
+  ],
+  [
+    'TOO_BIG_TRANSACTION_ERROR',
+    `Too big transaction with result, TxId ${'ab'.repeat(32)}, the size is 600000 bytes, maxTxSize 512000`,
+  ],
+] as const;
 const TOKEN = { standard: 'trc20', contract: USDT } as const;
 const OTHER_HEX = `41${'77'.repeat(20)}`;
 const OTHER = toBase58Address(OTHER_HEX);
@@ -885,6 +903,106 @@ describe('Tron broadcaster', () => {
     }
     expect(callsTo(h, '/wallet/broadcasthex')).toBe(before);
   });
+
+  it('rejects hand-built bytes that java-tron refuses for a reason they carry (lesson 21)', async () => {
+    const h = setup();
+    h.node.fund(RECIPIENT, 1n); // an existing recipient: no account creation
+    const head = h.head();
+    const raw = (extra: Partial<TronRawData> = {}): TronRawData => ({
+      refBlockBytes: head.id.slice(12, 16),
+      refBlockHash: head.id.slice(16, 32),
+      expiration: head.timestamp + 60_000,
+      timestamp: head.timestamp,
+      contract: {
+        type: 'TransferContract',
+        owner: KEY_HEX,
+        to: RECIPIENT_HEX,
+        amount: 1n,
+      },
+      ...extra,
+    });
+    const send = (hex: string) =>
+      h.run(
+        h.broadcaster.broadcast({
+          raw: { encoding: 'hex', data: hex },
+          ref: {
+            id: toHex(sha256(fromHex(decodeTransaction(hex).rawHex))),
+            idKind: 'tx-hash',
+            canonical: true,
+          },
+        }),
+      );
+    const valid = signedTransaction(raw());
+    const [signature] = decodeTransaction(valid.hex).signatures as [string];
+    // `Transaction.raw` with its reference fields and no contract.
+    const noContract = `0a02${head.id.slice(12, 16)}2208${head.id.slice(16, 32)}`;
+    for (const [hex, reason] of [
+      [
+        signedTransaction(
+          raw({
+            contract: {
+              type: 'TransferContract',
+              owner: KEY_HEX,
+              to: RECIPIENT_HEX,
+              amount: 0n,
+            },
+          }),
+        ).hex,
+        'non-positive amount',
+      ],
+      [
+        signedTransaction(
+          raw({
+            contract: {
+              type: 'TransferContract',
+              owner: KEY_HEX,
+              to: KEY_HEX,
+              amount: 1n,
+            },
+          }),
+        ).hex,
+        'transfer to self',
+      ],
+      [
+        encodeTransaction(decodeTransaction(valid.hex).rawHex, [signature.slice(0, 128)]),
+        'malformed signature',
+      ],
+      [encodeTransaction(noContract, [signature]), 'no contract'],
+      [
+        signedTransaction(raw({ data: '61'.repeat(520_000) })).hex,
+        'transaction too large',
+      ],
+    ] as const) {
+      expect(await send(hex)).toEqual({ kind: 'rejected', reason });
+    }
+    expect(await send(valid.hex)).toEqual({ kind: 'accepted' });
+  });
+
+  it.each(CLAIMS)(
+    'refuses, never rejects, a relaying node claiming %s of our valid bytes (lesson 21)',
+    async (code, message) => {
+      const h = setup();
+      const signed = await h.signed(trx(TRX));
+      const relay = h.node.endpoint('relay');
+      h.node.intercept('main', '/wallet/broadcasthex', async (request) => {
+        await h.node.fetch.fetch(`${relay}/wallet/broadcasthex`, {
+          method: 'POST',
+          body: request.body ?? '',
+        });
+        return { json: { result: false, code, message } };
+      });
+      expect(await h.run(h.broadcaster.broadcast(signed))).toEqual({
+        kind: 'refused',
+        code: 'TX_REFUSED',
+        reason: 'the node claimed the transaction is invalid',
+      });
+      // The node pooled them, and they land.
+      expect(h.node.inPool(signed.ref.id)).toBe(true);
+      await h.clock.advance(3_000);
+      h.node.mine();
+      expect(h.node.transaction(signed.ref.id)?.blockNumber).toBe(h.node.head);
+    },
+  );
 
   it('rethrows every broadcast failure as the same object, unclassified', async () => {
     const h = setup();

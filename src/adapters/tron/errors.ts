@@ -20,9 +20,19 @@
  * Nothing here decides from text alone (P25-R21): the code gates every result. Reasons are
  * fixed literals: no address, amount, transaction id or node text. Every pattern is
  * anchored and linear (lesson 20), whatever the message's length.
+ *
+ * Lesson 21 (F4-R20): a node's rejection is a claim. `classifyBroadcast` takes the node at
+ * its word; `classifyOwnBroadcast`, which the broadcaster uses, keeps a `rejected` only when
+ * the claimed reason holds for the bytes that were sent (`txBytesOf`, read here without an
+ * SDK), and makes every other one `refused`, which is not terminal. A terminal `rejected`
+ * lets a caller pay again, so a lying endpoint that relayed the bytes, or keeps them to relay
+ * later, would make that a second payment. Our builder refuses every byte-only defect before
+ * signing, so a true rejection of our own bytes should not happen; a refusal costs liveness
+ * only, and the expiry proof still ends the Operation.
  */
 import type { BroadcastResult } from '../../core/driver/types';
 import { ProviderError } from '../../core/errors/error';
+import { fromHex, toHex, utf8ToBytes } from '../../core/util/bytes';
 import type { BroadcastAnswer } from './http';
 
 type RefusalCode = Extract<BroadcastResult, { kind: 'refused' }>['code'];
@@ -43,13 +53,40 @@ const MAX_TX_BYTES = 512_000;
 /** `Constant.MAX_RESULT_SIZE_IN_TX` × 2, which the "with result" size check adds. */
 const RESULT_BYTES = 128;
 
+/**
+ * Our signed transaction as java-tron's byte-only checks read it (lesson 21), from the hex
+ * that was sent.
+ */
+export interface TronTxBytes {
+  /** The serialized `Transaction` without `ret`, which java-tron clears before measuring it. */
+  readonly size: number;
+  /** Each signature's length, in bytes. */
+  readonly signatures: readonly number[];
+  /** How many contracts `raw_data` holds (field 11). */
+  readonly contracts: number;
+  /**
+   * The one contract when it is a TransferContract: its addresses as hex and its amount as
+   * java-tron reads the `int64` (negative above 2^63 − 1; 0 when absent).
+   */
+  readonly transfer?: {
+    readonly owner: string;
+    readonly to: string;
+    readonly amount: bigint;
+  };
+}
+
 interface Permanent {
   readonly code: string;
   readonly text: RegExp;
   /** For a text with a number: whether the number shows the defect (else it decides nothing). */
   readonly shows?: (value: number) => boolean;
+  /** Lesson 21: whether the claimed reason holds for the bytes that were sent. */
+  readonly holds: (tx: TronTxBytes) => boolean;
   readonly result: BroadcastResult;
 }
+
+/** The size rules: java-tron measures the transaction without `ret` (lesson 21). */
+const oversize = (tx: TronTxBytes): boolean => tx.size > MAX_TX_BYTES;
 
 const PERMANENT: readonly Permanent[] = [
   {
@@ -59,6 +96,7 @@ const PERMANENT: readonly Permanent[] = [
     code: 'SIGERROR',
     text: /^Validate signature error: Signature size is (0|[1-9]\d{0,9})$/,
     shows: (size) => size < MIN_SIGNATURE_BYTES,
+    holds: (tx) => tx.signatures.some((size) => size < MIN_SIGNATURE_BYTES),
     result: rejected('malformed signature'),
   },
   {
@@ -66,16 +104,19 @@ const PERMANENT: readonly Permanent[] = [
     // text needs a missing parameter, which a parsed transaction never has).
     code: 'CONTRACT_VALIDATE_ERROR',
     text: /^Contract validate error : No contract!$/,
+    holds: (tx) => tx.contracts === 0,
     result: rejected('no contract'),
   },
   {
     code: 'CONTRACT_VALIDATE_ERROR',
     text: /^Contract validate error : Cannot transfer TRX to yourself\.$/,
+    holds: (tx) => tx.transfer !== undefined && tx.transfer.owner === tx.transfer.to,
     result: rejected('transfer to self'),
   },
   {
     code: 'CONTRACT_VALIDATE_ERROR',
     text: /^Contract validate error : Amount must be greater than 0\.$/,
+    holds: (tx) => tx.transfer !== undefined && tx.transfer.amount <= 0n,
     result: rejected('non-positive amount'),
   },
   {
@@ -83,6 +124,7 @@ const PERMANENT: readonly Permanent[] = [
     code: 'TOO_BIG_TRANSACTION_ERROR',
     text: /^Too big transaction, TxId [0-9a-f]{64}, the size is (0|[1-9]\d{0,18}) bytes, maxTxSize 512000$/,
     shows: (size) => size > MAX_TX_BYTES,
+    holds: oversize,
     result: rejected('transaction too large'),
   },
   {
@@ -91,6 +133,7 @@ const PERMANENT: readonly Permanent[] = [
     code: 'TOO_BIG_TRANSACTION_ERROR',
     text: /^Too big transaction with result, TxId [0-9a-f]{64}, the size is (0|[1-9]\d{0,18}) bytes, maxTxSize 512000$/,
     shows: (size) => size - RESULT_BYTES > MAX_TX_BYTES,
+    holds: oversize,
     result: rejected('transaction too large'),
   },
 ];
@@ -135,21 +178,25 @@ const NODE_LOCAL: ReadonlySet<string> = new Set([
   'BLOCK_UNSOLIDIFIED',
 ]);
 
-function permanent(code: string, message: string): BroadcastResult | undefined {
+function permanent(code: string, message: string): Permanent | undefined {
   for (const rule of PERMANENT) {
     if (rule.code !== code) continue;
     const match = rule.text.exec(message);
     if (match === null) continue;
     if (rule.shows && !rule.shows(Number(match[1]))) return undefined;
-    return rule.result;
+    return rule;
   }
   return undefined;
 }
 
-export function classifyBroadcast(answer: BroadcastAnswer): BroadcastResult {
-  if (answer.accepted) return ACCEPTED;
+/** The node's answer at its word, with the rule when it claims a definitive rejection. */
+function classified(answer: BroadcastAnswer): {
+  readonly result: BroadcastResult;
+  readonly rule?: Permanent;
+} {
+  if (answer.accepted) return { result: ACCEPTED };
   const { code = '', message = '' } = answer;
-  if (code === 'DUP_TRANSACTION_ERROR') return ALREADY_KNOWN;
+  if (code === 'DUP_TRANSACTION_ERROR') return { result: ALREADY_KNOWN };
   const refusal = REFUSED.get(code);
   if (refusal === undefined) {
     throw new ProviderError(
@@ -161,12 +208,182 @@ export function classifyBroadcast(answer: BroadcastAnswer): BroadcastResult {
       { ambiguous: true },
     );
   }
-  const definitive = permanent(code, message);
-  if (definitive) return definitive;
+  const rule = permanent(code, message);
+  if (rule) return { result: rule.result, rule };
   if (code === 'CONTRACT_VALIDATE_ERROR') {
     for (const [text, result] of CONTRACT_REFUSALS) {
-      if (text.test(message)) return result;
+      if (text.test(message)) return { result };
     }
   }
-  return refusal;
+  return { result: refusal };
+}
+
+/** The node's answer at its word (see `classifyOwnBroadcast` for our own broadcasts). */
+export function classifyBroadcast(answer: BroadcastAnswer): BroadcastResult {
+  return classified(answer).result;
+}
+
+/** A rejection this driver cannot confirm for the bytes it sent: observed, never terminal. */
+const UNCONFIRMED: BroadcastResult = refused(
+  'TX_REFUSED',
+  'the node claimed the transaction is invalid',
+);
+
+/**
+ * Lesson 21: the node's answer to bytes this driver sent, `sent` being those bytes read by
+ * `txBytesOf` (`undefined` when they do not read). A `rejected` stands only when its claimed
+ * reason holds for `sent`; otherwise the answer is `refused`. Every other answer is the
+ * node's, as `classifyBroadcast` reads it: acceptance, duplicates, state-dependent refusals
+ * (balance, a missing account, bandwidth, TaPoS, expiry, the fee limit) and possibly sent.
+ */
+export function classifyOwnBroadcast(
+  answer: BroadcastAnswer,
+  sent: TronTxBytes | undefined,
+): BroadcastResult {
+  const { result, rule } = classified(answer);
+  if (rule === undefined) return result;
+  return sent !== undefined && rule.holds(sent) ? result : UNCONFIRMED;
+}
+
+/** Lesson 20: bytes are read only up to twice java-tron's transaction limit. */
+const MAX_READ_BYTES = 2 * MAX_TX_BYTES;
+const INT64_MAX = (1n << 63n) - 1n;
+const INT64_SPAN = 1n << 64n;
+const TRANSFER_URL = 'type.googleapis.com/protocol.TransferContract';
+/** `ContractType.TransferContract`. */
+const TRANSFER_TYPE = 1n;
+
+interface WireField {
+  readonly field: number;
+  readonly value: bigint | Uint8Array;
+  /** The field's encoded length, tag included. */
+  readonly length: number;
+}
+
+/**
+ * One protobuf message's fields, in order: varints as bigints, length-delimited fields as
+ * bytes; `null` for anything else (a fixed-width or group field, a truncated field, a varint
+ * over 64 bits, field number 0). Linear in the input.
+ */
+function wireFields(bytes: Uint8Array): WireField[] | null {
+  const out: WireField[] = [];
+  let i = 0;
+  const varint = (): bigint | null => {
+    let result = 0n;
+    for (let shift = 0n; shift < 64n; shift += 7n) {
+      const byte = bytes[i++];
+      // The tenth byte carries the 64th bit only.
+      if (byte === undefined || (shift === 63n && byte > 1)) return null;
+      result |= BigInt(byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return result;
+    }
+    return null;
+  };
+  while (i < bytes.length) {
+    const start = i;
+    const key = varint();
+    if (key === null || key >> 3n === 0n) return null;
+    let value: bigint | Uint8Array;
+    if ((key & 7n) === 0n) {
+      const read = varint();
+      if (read === null) return null;
+      value = read;
+    } else if ((key & 7n) === 2n) {
+      const length = varint();
+      if (length === null || length > BigInt(bytes.length - i)) return null;
+      value = bytes.subarray(i, i + Number(length));
+      i += Number(length);
+    } else return null;
+    out.push({ field: Number(key >> 3n), value, length: i - start });
+  }
+  return out;
+}
+
+type Kinds = Readonly<Record<number, 'varint' | 'bytes'>>;
+
+/**
+ * A message's fields by number, each known, of its wire type and at most once; `null`
+ * otherwise, so a value is never guessed between protobuf's merge and last-wins rules.
+ */
+function singular(
+  bytes: Uint8Array,
+  kinds: Kinds,
+): Map<number, bigint | Uint8Array> | null {
+  const fields = wireFields(bytes);
+  if (!fields) return null;
+  const out = new Map<number, bigint | Uint8Array>();
+  for (const { field, value } of fields) {
+    const kind = Object.hasOwn(kinds, field) ? kinds[field] : undefined;
+    if (kind === undefined || out.has(field)) return null;
+    if ((kind === 'varint') !== (typeof value === 'bigint')) return null;
+    out.set(field, value);
+  }
+  return out;
+}
+
+const bytesField = (value: bigint | Uint8Array | undefined): Uint8Array =>
+  value instanceof Uint8Array ? value : new Uint8Array();
+
+/**
+ * The bytes a broadcast sent, as the lesson 21 checks read them, SDK-free: `Transaction`
+ * (`raw_data` once, signatures, `ret` entries left out of the size), the contracts in
+ * `raw_data`, and a single TransferContract's fields. `undefined` for hex that does not read
+ * strictly, or is longer than `MAX_READ_BYTES` (lesson 20); no claim holds for it.
+ */
+export function txBytesOf(hex: string): TronTxBytes | undefined {
+  if (typeof hex !== 'string' || hex.length > 2 * MAX_READ_BYTES) return undefined;
+  let bytes: Uint8Array;
+  try {
+    bytes = fromHex(hex);
+  } catch {
+    return undefined;
+  }
+  const outer = wireFields(bytes);
+  if (!outer) return undefined;
+  let raw: Uint8Array | undefined;
+  let size = 0;
+  const signatures: number[] = [];
+  for (const { field, value, length } of outer) {
+    if (!(value instanceof Uint8Array)) return undefined;
+    if (field === 1 && raw === undefined) raw = value;
+    else if (field === 2) signatures.push(value.length);
+    else if (field !== 5) return undefined;
+    // `ret` (field 5): java-tron clears it before it measures the transaction.
+    if (field !== 5) size += length;
+  }
+  const fields = raw ? wireFields(raw) : null;
+  if (!fields) return undefined;
+  const contracts = fields.filter((f) => f.field === 11);
+  const read = { size, signatures, contracts: contracts.length };
+  const only = contracts.length === 1 ? contracts[0]?.value : undefined;
+  if (only === undefined) return read;
+  if (!(only instanceof Uint8Array)) return undefined;
+  const contract = singular(only, {
+    1: 'varint',
+    2: 'bytes',
+    3: 'bytes',
+    4: 'bytes',
+    5: 'varint',
+  });
+  if (!contract) return undefined;
+  if (contract.get(1) !== TRANSFER_TYPE) return read;
+  const any = singular(bytesField(contract.get(2)), { 1: 'bytes', 2: 'bytes' });
+  if (!any) return undefined;
+  // java-tron unpacks the parameter as the named type; any other type fails otherwise.
+  if (toHex(bytesField(any.get(1))) !== toHex(utf8ToBytes(TRANSFER_URL))) return read;
+  const transfer = singular(bytesField(any.get(2)), {
+    1: 'bytes',
+    2: 'bytes',
+    3: 'varint',
+  });
+  if (!transfer) return undefined;
+  const amount = (transfer.get(3) as bigint | undefined) ?? 0n;
+  return {
+    ...read,
+    transfer: {
+      owner: toHex(bytesField(transfer.get(1))),
+      to: toHex(bytesField(transfer.get(2))),
+      amount: amount > INT64_MAX ? amount - INT64_SPAN : amount,
+    },
+  };
 }

@@ -17,6 +17,25 @@ const JUNK = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
 
 type TronEnv = ReturnType<typeof createTronEnv>;
 
+/** Every java-tron answer the classifier reads as a definitive `rejected` (Task 5). */
+const CLAIMS = [
+  ['SIGERROR', 'Validate signature error: Signature size is 64'],
+  ['CONTRACT_VALIDATE_ERROR', 'Contract validate error : No contract!'],
+  [
+    'CONTRACT_VALIDATE_ERROR',
+    'Contract validate error : Cannot transfer TRX to yourself.',
+  ],
+  ['CONTRACT_VALIDATE_ERROR', 'Contract validate error : Amount must be greater than 0.'],
+  [
+    'TOO_BIG_TRANSACTION_ERROR',
+    `Too big transaction, TxId ${'ab'.repeat(32)}, the size is 600000 bytes, maxTxSize 512000`,
+  ],
+  [
+    'TOO_BIG_TRANSACTION_ERROR',
+    `Too big transaction with result, TxId ${'ab'.repeat(32)}, the size is 600000 bytes, maxTxSize 512000`,
+  ],
+] as const;
+
 // `update(namespace, id, patch, …)`: the patch is the third argument.
 const patchState = (state: string) => (args: readonly unknown[]) =>
   (args[2] as OperationPatch | undefined)?.state === state;
@@ -484,6 +503,80 @@ describe('Tron end to end', () => {
       expect(env.node.balance(RECIPIENT)).toBe(12n);
       expect(calls()).toBe(1);
     });
+
+    it.each(CLAIMS)(
+      "never ends the Operation on a lone endpoint's unverified claim %s: %s (lesson 21)",
+      async (code, message) => {
+        const { signer, calls } = countingSigner();
+        const env = createTronEnv({ signer });
+        const relay = env.node.endpoint('relay');
+        // The only endpoint keeps our bytes, relays nothing and claims them invalid.
+        let held: string | undefined;
+        env.node.intercept('main', '/wallet/broadcasthex', (request) => {
+          if (held !== undefined) return undefined;
+          held = request.body ?? '';
+          return { json: { result: false, code, message } };
+        });
+        await expect(
+          env.run(
+            env.bc.transfer({ to: RECIPIENT, amount: 12n }, { idempotencyKey: 'lie' }),
+          ),
+        ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+        const op = await env.stores.operations.getByKey('default', 'lie');
+        expect(op?.state).toBe('stalled');
+        expect(
+          await env.stores.operations.getObservation(op?.attempts[0]?.id ?? ''),
+        ).toMatchObject({ state: 'refused', evidence: 'observed' });
+        // Later it relays the bytes it kept: they land, and the Operation confirms them.
+        await env.node.fetch.fetch(`${relay}/wallet/broadcasthex`, {
+          method: 'POST',
+          body: held ?? '',
+        });
+        const done = await env.mineWhile(
+          env.bc.waitForConfirmation(op?.id ?? '', { finality: 'final' }),
+        );
+        expect(done.status).toMatchObject({ state: 'final', evidence: 'proven' });
+        expect(done.operation?.state).toBe('final');
+        expect(env.node.balance(RECIPIENT)).toBe(12n);
+        expect(calls()).toBe(1);
+      },
+    );
+
+    it.each(CLAIMS)(
+      'confirms our transfer when a lone endpoint relays it yet claims %s: %s (lesson 21)',
+      async (code, message) => {
+        const { signer, calls } = countingSigner();
+        const env = createTronEnv({ signer });
+        const relay = env.node.endpoint('relay');
+        // Its pool view lags, so the engine's own-ref lookup finds nothing yet.
+        let lagging = true;
+        env.node.intercept('main', '/wallet/gettransactionfrompending', () =>
+          lagging ? { json: {} } : undefined,
+        );
+        env.node.intercept('main', '/wallet/broadcasthex', async (request) => {
+          await env.node.fetch.fetch(`${relay}/wallet/broadcasthex`, {
+            method: 'POST',
+            body: request.body ?? '',
+          });
+          return { json: { result: false, code, message } };
+        });
+        await expect(
+          env.run(
+            env.bc.transfer({ to: RECIPIENT, amount: 15n }, { idempotencyKey: 'relay' }),
+          ),
+        ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+        const op = await env.stores.operations.getByKey('default', 'relay');
+        expect(op?.state).toBe('stalled');
+        expect(env.node.inPool(op?.attempts[0]?.ref.id ?? '')).toBe(true);
+        lagging = false;
+        const done = await env.mineWhile(
+          env.bc.waitForConfirmation(op?.id ?? '', { finality: 'final' }),
+        );
+        expect(done.status).toMatchObject({ state: 'final', evidence: 'proven' });
+        expect(env.node.balance(RECIPIENT)).toBe(15n);
+        expect(calls()).toBe(1);
+      },
+    );
 
     it('retries a history entry the node serves only from its pool, never skipping it (F4-R14)', async () => {
       const env = createTronEnv({ indexer: true });

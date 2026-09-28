@@ -27,9 +27,10 @@
  * stored summary, ordering and fee limit, so the signature goes out only with the transfer
  * that was authorized.
  *
- * Broadcasts are classified here (`classifyBroadcast`), never under a quorum: a transport
+ * Broadcasts are classified here (`classifyOwnBroadcast`), never under a quorum: a transport
  * failure, an unreadable reply or a node answer that may follow pooling is thrown ambiguous
- * (possibly sent). A `TX_EXPIRED` refusal is the node's view at its own head, a hint and
+ * (possibly sent). A node's rejection is a claim (lesson 21): it stands only when its reason
+ * holds for the bytes that were sent, read back from them; otherwise it is a refusal. A `TX_EXPIRED` refusal is the node's view at its own head, a hint and
  * not proof: Tron has no nonce, so a second Attempt could land beside the first. The
  * broadcaster never re-sends or rebuilds on it; only an attested expiry (the proofs) lets
  * the core build again.
@@ -64,7 +65,7 @@ import {
 } from '../../core/util/bytes';
 import { decodeTransferCall, encodeTransfer } from './abi';
 import { addressFromPublicKey, toHexAddress } from './address';
-import { classifyBroadcast } from './errors';
+import { classifyOwnBroadcast, txBytesOf } from './errors';
 import { feeSun, tronFee } from './fees';
 import { BROADCAST, READ, malformed, withSignal, type TronBlockHeader } from './http';
 import {
@@ -607,13 +608,15 @@ export function createTronBuilder(ctx: TronContext): {
         );
       }
       // The broadcast tags carry no quorum: one node's answer is classified, never compared.
-      const answer = await api.broadcastHex(raw.data.toLowerCase(), {
+      const hex = raw.data.toLowerCase();
+      const answer = await api.broadcastHex(hex, {
         ...BROADCAST,
         ...(options.fanout !== undefined ? { fanout: options.fanout } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
       });
       // Inside the broadcaster, so a possibly-sent throw reaches the engine's recordAmbiguous.
-      return classifyBroadcast(answer);
+      // Lesson 21: a rejection stands only when its reason holds for these bytes.
+      return classifyOwnBroadcast(answer, txBytesOf(hex));
     },
   };
 
