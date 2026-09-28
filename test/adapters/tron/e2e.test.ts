@@ -164,6 +164,10 @@ describe('Tron end to end', () => {
     await expect(env.mineWhile(sub.wait({ finality: 'final' }))).rejects.toMatchObject({
       code: 'TX_REVERTED',
     });
+    // Included, and failed for the energy: not any other failure.
+    expect(env.node.transaction(sub.attempt?.id ?? '')?.receipt?.contractRet).toBe(
+      'OUT_OF_ENERGY',
+    );
     const op = await env.run(env.bc.getOperation(sub.operationId));
     expect(op?.state).toBe('failed');
     expect(env.node.tokenBalance(USDT, RECIPIENT)).toBe(0n);
@@ -203,7 +207,8 @@ describe('Tron end to end', () => {
   });
 
   it('treats a base58 and a hex recipient as one intent under one idempotency key (F11)', async () => {
-    const env = createTronEnv();
+    const { signer, calls } = countingSigner();
+    const env = createTronEnv({ signer });
     const first = await env.run(
       env.bc.transfer({ to: RECIPIENT, amount: 5n }, { idempotencyKey: 'same' }),
     );
@@ -214,6 +219,8 @@ describe('Tron end to end', () => {
       ),
     );
     expect(again.operationId).toBe(first.operationId);
+    expect(again.attempt?.id).toBe(first.attempt?.id);
+    expect(calls()).toBe(1);
   });
 
   it('fails before signing when the sender was never activated', async () => {
@@ -269,7 +276,8 @@ describe('Tron end to end', () => {
   });
 
   it('follows a reorg of an unsolidified block and still reaches finality', async () => {
-    const env = createTronEnv();
+    const { signer, calls } = countingSigner();
+    const env = createTronEnv({ signer });
     const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: 9n }));
     env.node.mine();
     await env.run(sub.wait({ confirmations: 1 }));
@@ -279,6 +287,8 @@ describe('Tron end to end', () => {
     await env.mineWhile(sub.wait({ finality: 'final' }));
     expect(env.node.balance(RECIPIENT)).toBe(9n);
     expect(reorged.length).toBeGreaterThanOrEqual(1);
+    // The reorged transfer went back to the pool and landed again: never signed again.
+    expect(calls()).toBe(1);
   });
 
   describe('crash and recovery', () => {
@@ -308,6 +318,11 @@ describe('Tron end to end', () => {
       expect([sub.state, sub.attempt?.id, calls()]).toEqual(['submitted', ref, 1]);
       await env.mineWhile(sub.wait({ finality: 'final' }));
       expect(env.node.balance(RECIPIENT)).toBe(3n);
+      // Monitoring re-sent the stored bytes only: one signature and one Attempt, at the end.
+      expect(calls()).toBe(1);
+      expect(
+        (await env.stores.operations.getByKey('default', 'k'))?.attempts,
+      ).toHaveLength(1);
     });
 
     it('recovers a broadcast that was never recorded: the node answers "duplicate"', async () => {
@@ -334,6 +349,10 @@ describe('Tron end to end', () => {
       expect([sub.state, calls()]).toEqual(['submitted', 1]);
       await env.mineWhile(sub.wait({ finality: 'final' }));
       expect(env.node.balance(RECIPIENT)).toBe(4n);
+      expect(calls()).toBe(1);
+      expect(
+        (await env.stores.operations.getByKey('default', 'k'))?.attempts,
+      ).toHaveLength(1);
     });
   });
 
@@ -584,13 +603,10 @@ describe('Tron end to end', () => {
       const id = sub.attempt?.id ?? '';
       // The node's own pool copy of the transfer, as it serves it while pending.
       const pooled = await (
-        await env.node.fetch.fetch(
-          'https://main.tron.test/wallet/gettransactionfrompending',
-          {
-            method: 'POST',
-            body: JSON.stringify({ value: id }),
-          },
-        )
+        await env.node.fetch.fetch(`${env.urls.main}/wallet/gettransactionfrompending`, {
+          method: 'POST',
+          body: JSON.stringify({ value: id }),
+        })
       ).text();
       await env.mineWhile(sub.wait({ finality: 'final' }));
       // TronGrid lists the confirmed transfer, but the full node is behind: it serves only
@@ -654,7 +670,7 @@ describe('Tron end to end', () => {
       },
     });
     await env.run(
-      env.node.fetch.fetch('https://main.tron.test/wallet/broadcasthex', {
+      env.node.fetch.fetch(`${env.urls.main}/wallet/broadcasthex`, {
         method: 'POST',
         body: JSON.stringify({ transaction: junk.hex }),
       }),
@@ -676,6 +692,10 @@ describe('Tron end to end', () => {
     ) {
       const next = await env.mineWhile(scanner.next());
       if (next.done) break;
+      // `final` mode: every block the scan emits is solidified when it arrives.
+      if (next.value.type === 'block') {
+        expect(next.value.block.height).toBeLessThanOrEqual(BigInt(env.node.solid));
+      }
       await env.run(next.value.ack());
       seen.push(next.value);
     }

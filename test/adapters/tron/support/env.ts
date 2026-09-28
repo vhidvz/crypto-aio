@@ -9,6 +9,11 @@
  *
  * The node's genesis serves no timestamp (proto3, as java-tron), and the builder refuses a
  * head too old to reference, so the env mines block 1 before any build.
+ *
+ * Determinism needs the caller's help: `CryptoAio` builds its transports itself, with no
+ * `id` or `random` option, so their backoff jitter falls back to `Math.random`. A suite that
+ * uses this env pins it (`jest.spyOn(Math, 'random').mockReturnValue(0.5)` in `beforeAll`,
+ * restored in `afterAll`), as `e2e.test.ts` does (lesson 1, R46).
  */
 import {
   CryptoAio,
@@ -63,6 +68,10 @@ export function createTronEnv(options: TronEnvOptions = {}) {
     name,
     url: node.endpoint(name),
   }));
+  /** Each endpoint's URL by name, for requests a test sends to the node itself. */
+  const urls: Readonly<Record<string, string>> = Object.fromEntries(
+    endpoints.map((e) => [e.name, e.url]),
+  );
   const signer = options.signer ?? countingSigner().signer;
   const stores: Stores = { ...createMemoryStores(clock), ...options.stores };
   // `fund: 0n` leaves the test key's account never activated (no account on chain).
@@ -149,6 +158,7 @@ export function createTronEnv(options: TronEnvOptions = {}) {
       return current.bc;
     },
     node,
+    urls,
     clock,
     stores,
     address: KEY_ADDRESS,
