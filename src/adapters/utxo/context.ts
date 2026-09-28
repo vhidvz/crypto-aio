@@ -88,10 +88,12 @@ export function parseWalletOptions(
     throw new ConfigError('CONFIG_INVALID', 'wallet.utxo must be an object');
   }
   const options = raw as Readonly<Record<string, unknown>>;
-  for (const key of Object.keys(options)) {
-    if (!WALLET_OPTION_KEYS.includes(key)) {
-      throw new ConfigError('CONFIG_INVALID', `unknown wallet.utxo option '${key}'`);
-    }
+  // Final review M1: the accepted names, never the caller's key (it may be a pasted secret).
+  if (Object.keys(options).some((key) => !WALLET_OPTION_KEYS.includes(key))) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `wallet.utxo has an unknown option; the options are ${WALLET_OPTION_KEYS.join(', ')}`,
+    );
   }
   const type = options.addressType ?? 'p2wpkh';
   if (!ADDRESS_TYPES.includes(type as UtxoAddressType)) {

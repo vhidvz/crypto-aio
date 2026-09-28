@@ -48,9 +48,17 @@ describe('the address codec', () => {
     expect(() =>
       codec.fromPublicKey(TEST_PUBKEY, { utxo: { addressType: 'p2wsh' } }),
     ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
-    expect(() =>
-      codec.fromPublicKey(TEST_PUBKEY, { utxo: { changeAdress: 'x' } }),
-    ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
+    // Final review M1: an unknown option names the accepted ones, never the caller's key,
+    // which may be a pasted secret.
+    for (const key of ['changeAdress', `xprv${'K'.repeat(107)}`, 'apiKey=hunter2']) {
+      expect(() => codec.fromPublicKey(TEST_PUBKEY, { utxo: { [key]: 'x' } })).toThrow(
+        expect.objectContaining({
+          code: 'CONFIG_INVALID',
+          message:
+            'wallet.utxo has an unknown option; the options are addressType, changeAddress, allowExternalChangeAddress',
+        }),
+      );
+    }
   });
 });
 
