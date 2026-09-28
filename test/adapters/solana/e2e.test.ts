@@ -11,14 +11,21 @@ import {
 import { TOKEN, associatedAddress } from './support/node';
 import { signedTx } from './support/tx';
 import { countingSigner, createSolanaEnv } from './support/env';
-import { MINT, RECIPIENT } from './support/vectors';
+import { JUNK_MINT, MINT, RECIPIENT } from './support/vectors';
 
 const SOL = 1_000_000_000n;
-const JUNK = 'So11111111111111111111111111111111111111112';
+const JUNK = JUNK_MINT;
 /** agave's MAX_PROCESSING_AGE: a blockhash's last valid height is its block's plus this. */
 const VALIDITY = 150n;
+/** A step budget for a wait that ends only past a whole blockhash window. */
+const VALIDITY_STEPS = 200;
 
 type Env = Awaited<ReturnType<typeof createSolanaEnv>>;
+
+// The 150-block scenarios pass in about 2 s alone, but a loaded parallel run can stretch
+// them past Jest's default 5 s. Each produce loop has a step budget sized to its scenario,
+// so a stuck scenario fails by name (`did not settle`, `not reached`) well inside this.
+jest.setTimeout(30_000);
 
 /** The expiry ordering the build recorded on an Operation's first Attempt. */
 async function orderingOf(env: Env, operationId: string): Promise<SolanaExpiryOrdering> {
@@ -27,7 +34,7 @@ async function orderingOf(env: Env, operationId: string): Promise<SolanaExpiryOr
 }
 
 /** Produces one block per fake 400 ms (the monitor polling meanwhile) until `done()`. */
-async function produceUntil(env: Env, done: () => boolean, maxBlocks = 1_000) {
+async function produceUntil(env: Env, done: () => boolean, maxBlocks = 200) {
   for (let i = 0; i < maxBlocks && !done(); i++) {
     env.node.produce();
     await env.clock.advance(400);
@@ -64,6 +71,17 @@ function finalizedBlockReads(env: Env, details: 'none' | 'signatures') {
       options?.commitment === 'finalized' &&
       options.transactionDetails === details
     );
+  });
+}
+
+/**
+ * `rebuild` refused by its state gate (only an `expired` Operation is rebuilt), before any
+ * proof is read: this claims nothing about the proofs.
+ */
+async function refusedByStateGate(env: Env, operationId: string): Promise<void> {
+  await expect(env.run(env.bc.rebuild(operationId))).rejects.toMatchObject({
+    code: 'INVALID_TRANSITION',
+    message: expect.stringContaining('only expired operations can be rebuilt'),
   });
 }
 
@@ -232,9 +250,7 @@ describe('Solana end to end', () => {
     const expired = onExpired(env);
     // Every node loses it and never accepts it again.
     holdBack(env, id);
-    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
-      code: 'INVALID_TRANSITION',
-    });
+    await refusedByStateGate(env, sub.operationId);
     const waiting = sub.wait({ finality: 'final' }).catch((e: unknown) => e);
     // Block L is final everywhere and the monitor polled there: it can still land at L + 1.
     await produceUntil(env, () => env.node.finalized.height >= last);
@@ -242,9 +258,7 @@ describe('Solana end to end', () => {
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).toBe(
       'submitted',
     );
-    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
-      code: 'INVALID_TRANSITION',
-    });
+    await refusedByStateGate(env, sub.operationId);
     env.node.served.length = 0;
     const outcome = await env.produceWhile(waiting);
     expect(outcome).toMatchObject({ code: 'TX_EXPIRED' });
@@ -267,6 +281,20 @@ describe('Solana end to end', () => {
         .map((s) => Number(s.params[0]));
       expect([...new Set(read)].sort((x, y) => x - y)).toEqual(window);
     }
+    // Rebuild re-proves the Attempt dead from finalized state (spec §8.6), never from the
+    // stored `expired`: while every endpoint's finalized view is back at L, the proof path
+    // (not the state gate) refuses it.
+    const held = env.node.intercept;
+    env.node.intercept = (endpoint, method, params) =>
+      method === 'getBlockHeight' &&
+      (params[0] as { commitment?: unknown } | undefined)?.commitment === 'finalized'
+        ? { result: Number(last) }
+        : held?.(endpoint, method, params);
+    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+      message: expect.stringContaining('not provably dead'),
+    });
+    expect(calls()).toBe(1);
     env.node.intercept = undefined;
     const rebuilt = await env.run(env.bc.rebuild(sub.operationId));
     expect(rebuilt.attempts.map((a) => a.purpose)).toEqual(['original', 'rebuild']);
@@ -289,9 +317,7 @@ describe('Solana end to end', () => {
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).not.toBe(
       'expired',
     );
-    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
-      code: 'INVALID_TRANSITION',
-    });
+    await refusedByStateGate(env, sub.operationId);
     // Once b's finalized block passes lastValidBlockHeight + 1 too, the quorum proves it.
     env.node.produce(4);
     await env.clock.advance(2_000);
@@ -326,9 +352,7 @@ describe('Solana end to end', () => {
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).toBe(
       'submitted',
     );
-    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
-      code: 'INVALID_TRANSITION',
-    });
+    await refusedByStateGate(env, sub.operationId);
     // The leaders take it again: the monitor's resend lands it past the lied height.
     env.node.intercept = undefined;
     const final = await env.produceWhile(waiting);
@@ -364,6 +388,7 @@ describe('Solana end to end', () => {
     holdBack(env, id);
     const outcome = await env.produceWhile(
       sub.wait({ finality: 'final' }).catch((e: unknown) => e),
+      VALIDITY_STEPS,
     );
     expect(outcome).toMatchObject({ code: 'TX_EXPIRED' });
     expect(expired.height).toBeGreaterThanOrEqual(ordering.lastValidHeight + 1n);
@@ -400,9 +425,7 @@ describe('Solana end to end', () => {
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).toBe(
       'submitted',
     );
-    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
-      code: 'INVALID_TRANSITION',
-    });
+    await refusedByStateGate(env, sub.operationId);
     expect(env.node.balance(RECIPIENT)).toBe(0n);
   });
 
@@ -553,9 +576,7 @@ describe('Solana end to end', () => {
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).toBe(
       'submitted',
     );
-    await expect(env.run(env.bc.rebuild(sub.operationId))).rejects.toMatchObject({
-      code: 'INVALID_TRANSITION',
-    });
+    await refusedByStateGate(env, sub.operationId);
     const found = finalizedBlockReads(env, 'signatures').filter(
       (s) => Number(s.params[0]) === Number(holder?.slot),
     );
@@ -579,6 +600,19 @@ describe('Solana end to end', () => {
       env.node.served
         .filter((s) => s.method === 'sendTransaction')
         .map((s) => s.params[0]);
+    /** After finality: the Operation's Attempts by signature, its state, and its winner's. */
+    async function settled(env: Env) {
+      const op = await env.stores.operations.getByKey('default', 'k');
+      const winner = await env.stores.operations.getObservation(
+        op?.activeAttemptId ?? '',
+      );
+      return {
+        state: op?.state,
+        attempts: op?.attempts.map((a) => a.ref.id),
+        winner: winner && { state: winner.state, evidence: winner.evidence },
+      };
+    }
+    const FINAL = { state: 'final', evidence: 'proven' };
 
     it('rebroadcasts a signed-but-never-sent transfer without signing again', async () => {
       const { env, faulty, calls } = await crashEnv();
@@ -606,6 +640,13 @@ describe('Solana end to end', () => {
       await env.produceWhile(sub.wait({ finality: 'final' }));
       expect(env.node.balance(RECIPIENT)).toBe(SOL);
       expect(deadSettled).toBe(false);
+      // Still signed once after finality, and the stored Attempt is the one that won.
+      expect(calls()).toBe(1);
+      expect(await settled(env)).toEqual({
+        state: 'final',
+        attempts: [ref],
+        winner: FINAL,
+      });
     });
 
     it('recovers a broadcast that was never recorded: the node answers "already processed"', async () => {
@@ -635,6 +676,14 @@ describe('Solana end to end', () => {
       expect([sub.state, calls()]).toEqual(['included', 1]);
       await env.produceWhile(sub.wait({ finality: 'final' }));
       expect(env.node.balance(RECIPIENT)).toBe(SOL);
+      // The Attempt broadcast before the crash is the one that won; nothing else was signed.
+      expect(calls()).toBe(1);
+      expect(await settled(env)).toEqual({
+        state: 'final',
+        attempts: [ref],
+        winner: FINAL,
+      });
+      expect(env.node.landed(ref)?.err).toBeNull();
     });
 
     it('resumes a prepared transfer by signing its stored message once', async () => {
@@ -643,9 +692,8 @@ describe('Solana end to end', () => {
       await expect(
         env.run(env.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'k' })),
       ).rejects.toBeInstanceOf(CrashError);
-      expect((await env.stores.operations.getByKey('default', 'k'))?.state).toBe(
-        'prepared',
-      );
+      const prepared = await env.stores.operations.getByKey('default', 'k');
+      expect([prepared?.state, calls()]).toEqual(['prepared', 0]);
       const restarted = env.restart({ killPrevious: true });
       const sub = await env.run(
         restarted.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'k' }),
@@ -654,6 +702,20 @@ describe('Solana end to end', () => {
       await env.produceWhile(sub.wait({ finality: 'final' }));
       expect(env.node.balance(RECIPIENT)).toBe(SOL);
       expect(env.clock.pending).toBe(0);
+      // Signed once, and what was signed is the message stored before the crash: the
+      // landed bytes are one signature (1 + 64 bytes) followed by that message.
+      const ref = sub.attempt?.id ?? '';
+      expect(calls()).toBe(1);
+      expect(await settled(env)).toEqual({
+        state: 'final',
+        attempts: [ref],
+        winner: FINAL,
+      });
+      const stored = await env.stores.operations.getByKey('default', 'k');
+      const raw = Buffer.from(stored?.attempts[0]?.raw.data ?? '', 'base64');
+      expect(raw.subarray(1 + 64).toString('base64')).toBe(
+        prepared?.unsigned?.payload.data,
+      );
     });
   });
 
@@ -696,9 +758,7 @@ describe('Solana end to end', () => {
       const ref = op?.attempts[0]?.ref.id ?? '';
       // Not terminal: a caller has no reason to pay again, and no rebuild is allowed.
       expect(op?.state).toBe('stalled');
-      await expect(env.run(env.bc.rebuild(op?.id ?? ''))).rejects.toMatchObject({
-        code: 'INVALID_TRANSITION',
-      });
+      await refusedByStateGate(env, op?.id ?? '');
       const waiting = env.bc.waitForConfirmation(op?.id ?? '', { finality: 'final' });
       waiting.catch(() => undefined);
       await produceUntil(env, () => env.node.head.height >= 12n);
@@ -757,6 +817,7 @@ describe('Solana end to end', () => {
         env.bc
           .waitForConfirmation(op?.id ?? '', { finality: 'final' })
           .catch((e: unknown) => e),
+        VALIDITY_STEPS,
       );
       expect(outcome).toMatchObject({ code: 'TX_EXPIRED' });
       expect(env.node.finalized.height).toBeGreaterThan(last);
@@ -812,7 +873,7 @@ describe('Solana end to end', () => {
     const seen: ScanEvent[] = [];
     for (
       let i = 0;
-      i < 200 &&
+      i < 20 &&
       seen.flatMap((e) => (e.type === 'block' ? e.transactions : [])).length < 3;
       i++
     ) {

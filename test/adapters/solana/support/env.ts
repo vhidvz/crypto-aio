@@ -95,8 +95,12 @@ export async function createSolanaEnv(options: SolanaEnvOptions = {}) {
   let current = assemble(generation);
   const run = <T>(promise: Promise<T>, stepMs = 100): Promise<T> =>
     drive(clock, promise, stepMs);
-  /** Produces one block per fake 400 ms until `promise` settles; throws after `maxSteps`. */
-  const produceWhile = async <T>(promise: Promise<T>, maxSteps = 2_000): Promise<T> => {
+  /**
+   * Produces one block per fake 400 ms until `promise` settles; throws after `maxSteps`. The
+   * default fits a transfer's way to finality with room to spare (it takes a few blocks), so
+   * a stuck wait fails by name, not by Jest's timeout; a longer scenario passes its own.
+   */
+  const produceWhile = async <T>(promise: Promise<T>, maxSteps = 40): Promise<T> => {
     let done = false;
     const tracked = promise.finally(() => {
       done = true;

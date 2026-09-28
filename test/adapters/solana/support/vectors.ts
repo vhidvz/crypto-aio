@@ -16,6 +16,11 @@ export const RECIPIENT_KEY =
 export const RECIPIENT = '6zYdUwXJR5fhQJazDByGv4PsNrdaNhoruAR5kekA7rGs';
 /** sha256("crypto-aio solana mint"): a mint address for the scripted node. */
 export const MINT = '3DqxN72sPTL4ahhvF18v1cTwc3ViRHXB8SSZ9P2wt21E';
+/**
+ * sha256("crypto-aio solana junk mint"): a mint the tests break on purpose. A fresh address,
+ * so no library or node special case (the native mint, a registered token) can reach it.
+ */
+export const JUNK_MINT = '7XJyV2SN2WSz8HxN5ELAnf9S1Mk5Z4SbVG67E7pjV1Dk';
 
 export const sign = (message: Uint8Array, key = KEY): Uint8Array =>
   ed25519.sign(message, key);
