@@ -216,7 +216,8 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   `replacedBy` on sibling Attempts names the original id. Segwit and taproot txids cannot be
   malleated.
 - **Known limits.** No tokens and no OP_RETURN memo (a `memo` fails with
-  `UNSUPPORTED_CAPABILITY`). `getBalance` and `history()` count confirmed transactions only.
+  `UNSUPPORTED_CAPABILITY`, and a network whose `capabilities.add` names a capability the
+  driver lacks, such as `memo` or `tokens`, fails with `CONFIG_INVALID`). `getBalance` and `history()` count confirmed transactions only.
   Newly mined coins (coinbase outputs) are not told apart: a wallet that receives block
   rewards cannot spend them for 100 confirmations, and a transfer that selects one earlier
   is refused by the node; `rebroadcast` it once the output has matured.

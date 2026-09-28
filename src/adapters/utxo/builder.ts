@@ -27,6 +27,7 @@ import {
   ChainError,
   ProviderError,
   SigningError,
+  UnsupportedCapabilityError,
   ValidationError,
   isCryptoAioError,
 } from '../../core/errors/error';
@@ -315,6 +316,13 @@ export function utxoBuilder(ctx: UtxoContext, network: Network): UtxoBuilder {
 
   const plan = async (intent: DriverIntent, rate: bigint, build: BuildContext) => {
     assertNative(intent.asset);
+    // F3-R15: defence in depth behind the network check; nothing here writes a memo.
+    if (intent.memo !== undefined) {
+      throw new UnsupportedCapabilityError(
+        'UNSUPPORTED_CAPABILITY',
+        'Bitcoin transfers carry no memo (OP_RETURN is not supported)',
+      );
+    }
     const sender = senderOf(ctx, intent.from);
     const outputs = plannedOutputs(ctx, intent.outputs);
     const changeScript = changeOf(scope, build, sender).script;

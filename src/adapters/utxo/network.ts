@@ -4,7 +4,7 @@
  * `CONFIG_INVALID` instead of misbehaving (lessons 10 and 14: every number is checked).
  */
 import { ConfigError } from '../../core/errors/error';
-import type { Capability } from '../../core/model/capability';
+import { KNOWN_CAPABILITIES, type Capability } from '../../core/model/capability';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
 import type { AddressParams } from './types';
 
@@ -74,6 +74,35 @@ const OPTION_KEYS = new Set([
  */
 function named(key: string): string {
   return /^[A-Za-z0-9_.:-]{1,40}$/.test(key) ? `'${key}'` : '(name not shown)';
+}
+
+/**
+ * F3-R15 (as Tron's F4-R2 M3): a network's capability overrides, checked against what the
+ * UTXO driver serves. The handle advertises the manifest's capabilities plus `add`, minus
+ * `remove`, and the core accepts what it advertises: `add: ['memo']` would make it take a
+ * memo the builder cannot write (no OP_RETURN). So each name, added or removed, must be one
+ * the driver serves, and a removal of anything else fails as the typo it likely is. The error
+ * names a library capability, never a caller's unknown text, and lists the accepted names.
+ */
+function checkCapabilities(network: NetworkInfo, fail: (reason: string) => never): void {
+  const add: unknown = network.capabilities?.add ?? [];
+  const remove: unknown = network.capabilities?.remove ?? [];
+  if (!Array.isArray(add) || !Array.isArray(remove)) {
+    fail('capabilities.add and capabilities.remove must be lists');
+  }
+  const serves = `the UTXO driver serves ${UTXO_CAPABILITIES.join(', ')}`;
+  for (const [side, names] of [
+    ['add', add],
+    ['remove', remove],
+  ] as const) {
+    for (const name of names as readonly unknown[]) {
+      if (UTXO_CAPABILITIES.includes(name as Capability)) continue;
+      const known = (KNOWN_CAPABILITIES as readonly unknown[]).includes(name);
+      fail(
+        `capabilities.${side}: ${known ? `'${String(name)}' is not one` : 'an unknown name'}; ${serves}`,
+      );
+    }
+  }
 }
 
 export function utxoNetworkConfig(
@@ -155,6 +184,7 @@ export function utxoNetworkConfig(
   }
   if (typeof merged.rbf !== 'boolean') fail('options.rbf must be a boolean');
 
+  checkCapabilities(network, fail);
   const capabilities = new Set<Capability>(UTXO_CAPABILITIES);
   for (const c of network.capabilities?.add ?? []) capabilities.add(c);
   for (const c of network.capabilities?.remove ?? []) capabilities.delete(c);

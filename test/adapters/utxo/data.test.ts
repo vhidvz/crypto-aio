@@ -134,18 +134,51 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     expect(utxoNetworkConfig(BITCOIN_CHAIN, network).address.bech32).toBe('a'.repeat(30));
   });
 
-  it('adds and removes the network capabilities', () => {
-    const network = withNetwork({
-      capabilities: { add: ['memo'], remove: ['cancel', 'replace-fee'] },
-    });
-    expect(utxoNetworkConfig(BITCOIN_CHAIN, network).capabilities).toEqual(
+  it('removes network capabilities, and adds only those the driver serves (F3-R15)', () => {
+    const capabilitiesOf = (capabilities: unknown) =>
+      utxoNetworkConfig(
+        BITCOIN_CHAIN,
+        withNetwork({ capabilities: capabilities as NetworkInfo['capabilities'] }),
+      ).capabilities;
+    expect(capabilitiesOf({ remove: ['cancel', 'replace-fee'] })).toEqual(
       new Set([
         'batch-transfer',
         'block-scan',
         'address-history',
         'hd-public-derivation',
-        'memo',
       ]),
+    );
+    expect(capabilitiesOf({ add: ['cancel'] })).toEqual(new Set(UTXO_CAPABILITIES));
+    const refusal = (capabilities: unknown) =>
+      thrown(() => capabilitiesOf(capabilities)) as Error & { code: string };
+    const serves =
+      'the UTXO driver serves batch-transfer, replace-fee, cancel, block-scan, address-history, hd-public-derivation';
+    // The core would accept a memo, and the builder cannot write one (no OP_RETURN).
+    for (const capability of [
+      'memo',
+      'tokens',
+      'finality-tag',
+      'contract-read',
+      'fee-market-1559',
+      'expiry',
+    ]) {
+      for (const side of ['add', 'remove'] as const) {
+        expect(refusal({ [side]: [capability] })).toMatchObject({
+          code: 'CONFIG_INVALID',
+          message: `UTXO network bitcoin:mainnet: capabilities.${side}: '${capability}' is not one; ${serves}`,
+        });
+      }
+    }
+    // An unknown name (a typo, or a pasted value) is never echoed.
+    for (const capability of ['memos', `xprv${'K'.repeat(107)}`, 42, null]) {
+      for (const side of ['add', 'remove'] as const) {
+        expect(refusal({ [side]: [capability] }).message).toBe(
+          `UTXO network bitcoin:mainnet: capabilities.${side}: an unknown name; ${serves}`,
+        );
+      }
+    }
+    expect(refusal({ add: 'memo' }).message).toBe(
+      'UTXO network bitcoin:mainnet: capabilities.add and capabilities.remove must be lists',
     );
   });
 
