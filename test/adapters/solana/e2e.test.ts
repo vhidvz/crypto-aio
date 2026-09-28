@@ -740,6 +740,34 @@ describe('Solana end to end', () => {
       expect([env.node.balance(RECIPIENT), calls()]).toEqual([SOL, 1]);
       expect(states).not.toContain('failed');
     });
+
+    it('lets the expiry proof end an Operation whose bytes the claiming endpoint never relays', async () => {
+      const { signer, calls } = countingSigner();
+      const env = await createSolanaEnv({ signer });
+      const states = statesOf(env);
+      env.node.intercept = (_endpoint, method) =>
+        method === 'sendTransaction' ? VERIFICATION_CLAIM : undefined;
+      await expect(
+        env.run(env.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'k' })),
+      ).rejects.toMatchObject({ code: 'TX_REFUSED' });
+      const op = await env.stores.operations.getByKey('default', 'k');
+      const last = (op?.attempts[0]?.ordering as SolanaExpiryOrdering).lastValidHeight;
+      // Stalled, not failed, until the window is proven: only then may it be rebuilt.
+      const outcome = await env.produceWhile(
+        env.bc
+          .waitForConfirmation(op?.id ?? '', { finality: 'final' })
+          .catch((e: unknown) => e),
+      );
+      expect(outcome).toMatchObject({ code: 'TX_EXPIRED' });
+      expect(env.node.finalized.height).toBeGreaterThan(last);
+      expect(states).toEqual(expect.arrayContaining(['stalled', 'expired']));
+      expect(states).not.toContain('failed');
+      env.node.intercept = undefined;
+      const rebuilt = await env.run(env.bc.rebuild(op?.id ?? ''));
+      const done = await env.produceWhile(rebuilt.wait({ finality: 'final' }));
+      expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+      expect([env.node.balance(RECIPIENT), calls()]).toEqual([SOL, 2]);
+    });
   });
 
   it('scans final blocks for deposits: native, SPL, and an unresolved token (R35)', async () => {
