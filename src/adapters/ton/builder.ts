@@ -481,6 +481,17 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
       // I3: the forward fee counts once. The emulation's follows the real action list; the
       // config's formula is its floor, so an endpoint that reports less cannot shrink it.
       const computed = await configForwardFee(ctx, build.from, message);
+      // The economic ceiling by the sender's workchain. F6-R20: the config's forward fee
+      // comes from one endpoint too, so it is held to the ceiling before anything trusts it:
+      // an inflated param 25 must never turn an empty emulation into a definitive shortfall.
+      const ceiling = build.from.startsWith('-1:')
+        ? config.maxNetworkFee.masterchain
+        : config.maxNetworkFee.basechain;
+      if (computed > ceiling) {
+        throw inconsistent(
+          "the endpoint's config prices a forward fee above the policy maximum",
+        );
+      }
       // Task 6 review: the wallet runs (deployed, or by its `StateInit`) and sends one
       // message, so an emulation without gas or without a forward fee ran nothing.
       if (emulated.gasFee === 0n || emulated.forwardFee === 0n) {
@@ -505,9 +516,6 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
           ? { attached: plan.attached, forwardAmount: config.jettonForwardAmount }
           : {}),
       };
-      const ceiling = build.from.startsWith('-1:')
-        ? config.maxNetworkFee.masterchain
-        : config.maxNetworkFee.basechain;
       if (networkFee(details) > ceiling) {
         throw inconsistent('the endpoint suggests a fee above the policy maximum');
       }

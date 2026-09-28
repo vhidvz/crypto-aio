@@ -1095,6 +1095,66 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
+  it("never takes one endpoint's config forward fee above the ceiling for a shortfall (F6-R20)", async () => {
+    /** Config param 25 whose lump price is the whole forward fee of a message without body. */
+    const prices = (lump: bigint) =>
+      beginCell()
+        .storeUint(0xea, 8)
+        .storeUint(lump, 64)
+        .storeUint(0, 64)
+        .storeUint(0, 64)
+        .storeUint(0, 32)
+        .storeUint(21_845, 16)
+        .storeUint(21_845, 16)
+        .endCell()
+        .toBoc()
+        .toString('base64');
+    const answer = (s: ReturnType<typeof setup>, lump: bigint, empty: boolean) => {
+      s.h.node.intercept = (_e, route) =>
+        route === '/getConfigParam'
+          ? { json: { ok: true, result: { config: { bytes: prices(lump) } } } }
+          : route === '/estimateFee' && empty
+            ? feesAnswer({ gas: 0n, fwd: 0n })
+            : undefined;
+    };
+    const ceiling = DEFAULT_MAX_NETWORK_FEE.basechain;
+    // A funded wallet, an inflated param 25, and an emulation that ran nothing (a lagging
+    // endpoint gives one honestly): the endpoint's fault, never a definitive shortfall.
+    const rich = setup();
+    rich.h.node.fund(rich.from, 100n * GRAM);
+    for (const lump of [10n ** 18n, ceiling + 1n]) {
+      for (const empty of [true, false]) {
+        answer(rich, lump, empty);
+        await expect(
+          rich.h.run(rich.builder.estimateFee(rich.intent(), rich.build())),
+        ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+      }
+    }
+    // At exactly the ceiling the config's fee counts: a wallet below the amount plus it is
+    // short of funds, one above it is not.
+    const poor = setup();
+    poor.h.node.fund(poor.from, GRAM + ceiling - 1n);
+    answer(poor, ceiling, true);
+    await expect(
+      poor.h.run(poor.builder.estimateFee(poor.intent(), poor.build())),
+    ).rejects.toMatchObject({
+      code: 'INSUFFICIENT_FUNDS',
+      details: {
+        required: String(GRAM + ceiling),
+        available: String(GRAM + ceiling - 1n),
+      },
+    });
+    answer(poor, ceiling + 1n, true);
+    await expect(
+      poor.h.run(poor.builder.estimateFee(poor.intent(), poor.build())),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    poor.h.node.fund(poor.from, 1n);
+    answer(poor, ceiling, true);
+    await expect(
+      poor.h.run(poor.builder.estimateFee(poor.intent(), poor.build())),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+  });
+
   it('bounds the network fee an endpoint suggests by the policy maximum (economic ceiling)', async () => {
     const s = setup();
     s.h.node.fund(s.from, 3n * GRAM);
