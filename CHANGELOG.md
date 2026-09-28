@@ -82,6 +82,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raise a transfer's priority fee above 0.014 SOL by default. Speeds are clamped below it,
   an override above it is refused before signing, and any other option key is
   `CONFIG_INVALID`.
+- The TON family, built in: `ton` on mainnet and testnet, with `@ton/ton` 16, `@ton/core`
+  0.63 and `@ton/crypto` 3 as optional peer dependencies, over toncenter's API v2 (the
+  `provider`) and its API v3 (the `indexer`, which TON requires); the `toncenter` (keyed)
+  and `public` (keyless) presets. The native coin is Gram (`GRAM`, formerly Toncoin), and
+  `TON` is an alias for it; USDT by alias on mainnet.
+- v4r2 and v5r1 wallets set by `wallets.<name>.ton`; Gram and jetton transfers with text
+  memos, one output per transfer (TON batches are not supported yet: a partly delivered
+  batch has no safe single verdict); bounce decided by the recipient address's form; the
+  `ton` fee kind with an `{ attached }` override for jettons and a ceiling on a node's
+  estimate; seqno ordering with a 60-second message lifetime, proven expiry and `rebuild`;
+  Attempts identified by their message hash and resolved to transaction hashes; finality on
+  masterchain inclusion plus a completed message trace; address history through the
+  indexer (no block scan: TON is sharded); `bc.ext.ton.getSeqno` and
+  `bc.ext.ton.jettonWallet`.
+- The `crypto-aio/ton` entry: `TON_CAPABILITIES`, `TON_INDEXER_CAPABILITIES`,
+  `TON_PEER_DEPENDENCIES`, and the SDK type for `native(bc, '@ton/ton')` (a `TonClient`);
+  also a typed `ChainRegistry` entry for `ton`, and the root type exports `TonExt`,
+  `TonFeeDetails`, `TonFeeOverride`, `TonWalletIdentity` and `TonWalletVersion`.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers

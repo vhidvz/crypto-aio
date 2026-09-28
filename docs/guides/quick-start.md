@@ -21,13 +21,13 @@ cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<ve
 npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM, UTXO, Tron and Solana
-families are on `main` and in the next release. Install only the SDK you use next to the
+Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM, UTXO, Tron, Solana and
+TON families are on `main` and in the next release. Install only the SDK you use next to the
 package: for EVM chains `npm install ethers`, or `npm install web3` and `library: 'web3'` on
 the handle, since ethers is the default; for Bitcoin `npm install bitcoinjs-lib`; for Tron
-`npm install tronweb`; for Solana `npm install @solana/web3.js` (Node.js 22.12 or later). A
-missing SDK fails with `DEPENDENCY_MISSING` and the exact install command. The package has
-seven entry points:
+`npm install tronweb`; for Solana `npm install @solana/web3.js` (Node.js 22.12 or later); for
+TON `npm install @ton/ton @ton/core @ton/crypto`. A missing SDK fails with
+`DEPENDENCY_MISSING` and the exact install command. The package has eight entry points:
 
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
@@ -35,6 +35,7 @@ import { evmChainPlugin } from 'crypto-aio/evm'; // EVM extras and SDK client ty
 import 'crypto-aio/utxo'; // Bitcoin SDK client types (native(bc, 'bitcoinjs-lib'))
 import { MAX_MEMO_BYTES } from 'crypto-aio/tron'; // Tron constants and the SDK client type
 import { SOLANA_CAPABILITIES } from 'crypto-aio/solana'; // Solana extras and SDK client type
+import 'crypto-aio/ton'; // TON constants and the SDK client type (native(bc, '@ton/ton'))
 import { createFakeEnv } from 'crypto-aio/testing'; // test kit and the fake chain
 import { native } from 'crypto-aio/native'; // escape hatch to the SDK client
 ```
@@ -271,11 +272,50 @@ production use two or three independent providers.
 [Solana networks](./networks.md#solana-networks) covers the fees, the checks before signing,
 expiry, refusals, scanning and history.
 
+## Configuring a real network (TON)
+
+Install the SDKs next to the package: `npm install @ton/ton @ton/core @ton/crypto`. TON reads
+from two services, both named on the handle: the `provider` is toncenter's API v2 (account
+state, fee emulation, sending) and the `indexer` is its API v3 (which transaction a message
+became, message traces, history). The indexer is required. The `toncenter` preset serves
+both with an API key; `public` is keyless, limited to one request per second across both
+APIs, and only for trying things out.
+
+```ts
+import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
+
+configure({
+  providers: { toncenter: { preset: 'toncenter', apiKey: secret(process.env.TONCENTER_KEY ?? '') } },
+  signers: { 'ton-hot': localSigner({ id: 'ton-hot', ed25519: secret(process.env.TON_SEED_HEX ?? '') }) },
+  wallets: { payouts: { signer: 'ton-hot', ton: { version: 'v5r1' } } },
+  chains: { ton: { network: 'testnet', provider: 'toncenter', indexer: 'toncenter', wallet: 'payouts' } },
+  lifecycle: { requireIdempotencyKey: true },
+});
+
+const ton = Blockchain.create({ chain: 'ton' });
+const me = await ton.walletAddress(); // me.display: 0Q… on testnet; fund it before sending
+const sub = await ton.transfer(
+  { to: '0Q…', amount: '1.5', memo: 'invoice 42' }, // 1.5 GRAM, to a non-bounceable address
+  { idempotencyKey: 'payout-42' },
+);
+await sub.wait({ finality: 'final' }); // masterchain inclusion and a completed message trace
+```
+
+The wallet's `ton` settings decide its address: `version` (`v4r2` or `v5r1`), and
+optionally `workchain`, `subwalletId` (v4r2) or `subwalletNumber` (v5r1). A v5r1 wallet has
+a different address on mainnet and testnet, and a wallet deploys itself with its first
+transfer. The key is the wallet's 32-byte ed25519 seed, not its mnemonic
+([Keys, signers and secrets](./security.md#local-signers)). The coin is Gram (ticker `GRAM`,
+formerly Toncoin), and `TON` is an alias for it; `asset: 'USDT'` sends Tether's jetton on
+mainnet. The address form decides bounce, a transfer has one output, and a wallet sends one
+transfer at a time. With toncenter alone, the proof quorum is 1: in production, use two or
+three independent providers. [TON networks](./networks.md#ton-networks) covers all of this.
+
 ## Next steps
 
 - [Core concepts](./concepts.md): the vocabulary behind this example.
 - [Tutorial](./tutorial.md): ten short, hands-on steps that exercise the main concepts.
 - [Sending and receiving](./transactions.md): withdrawals, deposits, and error handling.
 - [Keys, signers and secrets](./security.md): signers, policy hooks, and a production checklist.
-- [Using any blockchain network](./networks.md): the EVM, Bitcoin, Tron and Solana
-  networks, adding your own, and what is planned.
+- [Using any blockchain network](./networks.md): the EVM, Bitcoin, Tron, Solana and TON
+  networks, and adding your own.

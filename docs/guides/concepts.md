@@ -38,7 +38,7 @@ never imports a blockchain SDK. Only drivers do, and they are loaded on first us
 A **chain** is a blockchain id from the registry. A **network** is one of its deployments.
 A **library** is the SDK the driver uses. A handle is bound to one of each. The built-in
 chains are the EVM chains, such as `ethereum` with `mainnet` and `ethers`, plus `bitcoin`,
-`tron` and `solana`; the fake chains come from `crypto-aio/testing`.
+`tron`, `solana` and `ton`; the fake chains come from `crypto-aio/testing`.
 
 ```ts
 [bc.chain, bc.network, bc.library]; // ['fakechain', 'local', 'fake-sdk']
@@ -246,6 +246,13 @@ withdrawals only on `final` with `proven` evidence.
 const { status } = await bc.waitForConfirmation(operationId, { finality: 'final' });
 // status: { state: 'final', evidence: 'proven', finality: 'final', … }
 ```
+
+On TON, `final` needs masterchain inclusion **and** a completed message trace: the
+transfer's message was delivered and, for a jetton, the jettons reached the recipient's
+jetton wallet. A bounce, or a message the wallet skipped, is proven `failed` instead. A
+masterchain block is final once it exists, so on TON `getFinalizedHeight()` is the
+masterchain head, while the block a proof attests trails it by 10 blocks, a few seconds: the
+two differ by design ([TON networks](./networks.md#ton-networks)).
 
 ## Ambiguous errors
 

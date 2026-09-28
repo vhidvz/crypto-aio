@@ -28,6 +28,22 @@ const hd = localSigner.fromMnemonic(secret(process.env.MNEMONIC ?? ''), { id: 'h
 const wallets = { treasury: { signer: 'hd', keyRef: { path: "m/44'/60'/0'/0/0" } } };
 ```
 
+**TON keys.** TON wallet apps such as Tonkeeper use TON's own 24-word mnemonics, which are
+not BIP39: `localSigner.fromMnemonic` derives a different key from them. Import the 32-byte
+ed25519 seed instead, `localSigner({ id: 'ton-hot', ed25519: secret(seedHex) })`: it is the
+first 32 bytes of the 64-byte `secretKey` that `mnemonicToPrivateKey` from `@ton/crypto`
+returns. A wrong key shows up as a wallet address that differs from the one your wallet
+app shows, so compare them before you fund or send.
+
+**Give each TON wallet to crypto-aio alone.** Never share its key with other software: a
+wallet app, a script, another service, or another crypto-aio namespace. Anything else that
+holds the key can use the wallet's seqnos, so your transfers end `replaced`, and it can
+empty and delete the wallet, which anyone can then deploy again with its seqno back at 0.
+A reset during a transfer's lifetime leaves the library unable to prove that the transfer
+did not land, so it stays undecided rather than risk a second payment. Prefer a key
+generated for the service (`localSigner.generate({ curves: ['ed25519'] })`) to one imported
+from a wallet app, and if you import one, stop sending from that wallet in the app.
+
 Keys can leave a signer in only one way: `exportKey`, on a signer created with
 `exportable: true` (`generate`, `localSigner` and `fromMnemonic` all accept it). It returns a
 `Secret<Uint8Array>`. On any other signer it throws `SigningError` with
@@ -183,6 +199,11 @@ const client = await native(env.bc, 'fake-sdk'); // native(eth, 'ethers'), nativ
   node and event server all send through the handle's transport, so it never sees the real
   URL or the TronGrid key. Import `crypto-aio/tron` once to type it; with
   `skipLibCheck: false`, that needs tronweb installed.
+- On TON, `native(bc, '@ton/ton')` returns a `TonClient` for toncenter's API v2 whose
+  requests go through the handle's transport, so it never sees the real URL or the key.
+  Import `crypto-aio/ton` once to type it. Its `send*` methods are broadcasts: a send that
+  fails may still have been delivered, so treat it as sent until the chain shows otherwise.
+  Errors that `@ton/ton` raises itself may carry the node's whole answer.
 - The root container's `close()` closes every native client handed out, once, then the
   driver pool. A client that fails to close is logged by error code only. After that,
   `native()` and the handle's methods throw `INVALID_TRANSITION`.
@@ -288,3 +309,7 @@ transfer resolves, and which addresses a scan filter matches.
       set to your fee policy; a store that keeps each Attempt's `ordering` whole; after a
       refusal, retry only with `rebroadcast` or the same idempotency key; credit SPL
       deposits by the owner wallet (`transfer.to`).
+- [ ] TON: two or three independent toncenter-compatible pairs (`provider` and `indexer`),
+      archival where they serve proofs, with a key on toncenter, never the `public` preset;
+      wallets whose keys nothing else holds; and a store that keeps each Attempt's
+      `ordering` exactly.

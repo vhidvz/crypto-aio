@@ -6,9 +6,8 @@ summary: Withdrawals, cold signing, confirmations, background workers, deposit s
 
 This guide shows how to build withdrawals and deposits into a service. The examples run on
 the fake chain (`bc = env.bc`; wrap awaited calls in `env.run(...)`, as in the
-[tutorial](./tutorial.md)). They work the same way on the EVM chains, Bitcoin, Tron and
-Solana, apart from the family notes below. Terms are defined in
-[Core concepts](./concepts.md).
+[tutorial](./tutorial.md)). They work the same way on every built-in family, apart from
+the family notes below. Terms are defined in [Core concepts](./concepts.md).
 
 ## Sending
 
@@ -39,6 +38,10 @@ signs twice.
   public forever and costs a fee ([Tron networks](./networks.md#tron-networks)).
 - `options.signal` aborts the call. An abort after a possible broadcast is reported as
   ambiguous.
+- On TON a transfer has exactly one output: batches are not supported yet, because a TON
+  batch lands output by output, and a partly delivered one has no safe single verdict.
+  Tokens are jettons, and `memo` is a text comment of at most 1,024 UTF-8 bytes
+  ([TON networks](./networks.md#ton-networks)).
 
 ### Fees
 
@@ -100,6 +103,15 @@ compute unit and compute units, as bigints only; a price above `maxComputeUnitPr
 refused before signing. [Solana networks](./networks.md#solana-networks) explains the
 charges, the limit, the bound and how each build varies it.
 
+On TON, `slow`, `normal` and `fast` give the same estimate: the network config sets every
+price. A Gram transfer's `ton` fee is one `network` charge with an `expected` bound; a
+jetton transfer adds an `attached` charge, the Gram sent along to its jetton wallet (0.05
+GRAM by default, the unspent part refunded), and its bound is `upper`. The only override is
+`{ attached }` in nanograms, as a bigint (`TonFeeOverride`), on jetton transfers. On TON
+`estimateFee` needs the handle's wallet, and it can throw `INSUFFICIENT_FUNDS` when the
+wallet cannot pay; its `details.required` is then a lower bound, before gas.
+[TON networks](./networks.md#ton-networks) covers the charges and the fee ceiling.
+
 ### Cold, offline and asynchronous signing
 
 A wallet without a signer, such as `{ publicKey: '<hex>' }`, is watch-only. `transfer` then
@@ -148,6 +160,11 @@ bytes (`payloadKind: 'message'`), and `submitSignatures` takes bundles only. The
 names a recent blockhash, valid for about a minute: sign within that time. Signatures that
 come later give a transaction that nodes refuse (`blockhash not found`); it ends `expired`
 once that is proven, and `rebuild` then needs a synchronous signer.
+
+On TON, the one signing request is an `ed25519` signature over the 32-byte hash of the
+wallet request (`payloadKind: 'message'`), and a watch-only wallet needs its `ton` settings
+next to its `publicKey`. The request lives 60 seconds of chain time from its build: sign it
+within that minute, or it ends `expired`, and `rebuild` then needs a synchronous signer.
 
 ## Lifecycle and `stalled`
 
@@ -199,7 +216,7 @@ idempotency key): the new Operation spends other coins, and both can confirm. Re
 call with the same key, or `rebroadcast`, `replace` or `cancel` it; see
 [Bitcoin networks](./networks.md#bitcoin-networks) for how it resolves.
 
-On expiry- and seqno-based chains (Tron and Solana today; planned TON; `fakeexpiry` and
+On expiry- and seqno-based chains (Tron, Solana and TON today; `fakeexpiry` and
 `fakeseqno` in the testing kit), `bc.rebuild(id)` re-issues an Operation after its expiry is
 **proven** (`expired`, error `TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the
 Operation. Other chains throw `UNSUPPORTED_CAPABILITY`. Replace, cancel and rebuild sign a
@@ -232,6 +249,15 @@ one. The workers keep watching it: the Operation ends `final` if the transaction
 `expired` once its expiry is proven, and only then does `bc.rebuild(id)` sign a new
 Attempt. Proving the expiry reads every block of the window, which the `public` preset
 does only slowly, over many passes ([Solana networks](./networks.md#solana-networks)).
+
+**On TON, a refused or unanswered send means: do not pay again.** TON has no replace and no
+cancel (`UNSUPPORTED_CAPABILITY`), and a wallet sends one transfer at a time: another one
+fails with `SEQUENCE_BUSY` until the first is `included` or has ended. toncenter answers
+every refused message with HTTP 500, which the library reads as "maybe sent", so the
+transfer surfaces as ambiguous; another endpoint's definitive refusal leaves it `stalled`.
+Either way the message may still land within its 60-second lifetime. The workers watch it
+until it is proven `final` or `failed`, or `expired` once its lifetime has passed, and only
+then does `bc.rebuild(id)` sign it again, at the wallet's next seqno.
 
 ## Waiting and watching
 
@@ -310,6 +336,35 @@ const now = await bc.getTransactionStatus(operationId); // one read
   proves nothing, and an endpoint that lags, or no longer holds those blocks, decides
   nothing. With one provider the proof quorum is 1, so configure two or more, ideally three
   ([Solana networks](./networks.md#solana-networks)).
+- **TON verdicts.** A TON Attempt's id is its external message's normalized hash, not a
+  transaction hash (`canonical: false`); the status's `txHash` carries the transaction hash
+  once the indexer has it. An Attempt is never decided from indexer lag: until the indexer
+  has the transaction and its whole message trace, the Operation stays `submitted` or
+  `included`. It is `final` only on masterchain inclusion and a completed trace in which the
+  value moved: for a jetton, the recipient's jetton wallet, the one the master names for
+  the recipient, received a positive amount from yours. Otherwise it is `failed`
+  (`TX_REVERTED`) with a `status.reason`: `transfer bounced` (the value came back, less
+  fees), `jetton transfer bounced` (the jettons did not arrive), `the wallet skipped a
+  message` (the wallet could not send it when it ran, usually for lack of funds) or `the
+  wallet transaction failed`; in these cases nothing was delivered. The one exception is
+  `the jetton wallets are not the master’s`: the jettons may have left your wallet, so check
+  the chain before you pay again.
+- **TON proofs.** A TON transfer that never landed is proven absent (`expired`, or
+  `replaced` when another request used its seqno) only once its lifetime has passed at a
+  masterchain block the proof quorum attests, and only from authenticated chain data: the
+  wallet's state at that block, and the wallet's own transactions, each checked against the
+  hash that links it to the next, back through the whole time the message could have run.
+  The indexer's records never prove a transfer absent; they only help find one that landed.
+  A request that used the seqno counts only when the wallet ran it and it carries the
+  wallet's own signature, relayed (gasless) v5r1 requests included, so a forged request that
+  anyone can post never marks your transfer as replaced. A wallet can be reset: emptied and
+  deleted, then deployed again by anyone with its seqno back at 0. So when those
+  transactions show the wallet deleted or deployed again, when an earlier life of the
+  wallet cannot be ruled out, or when the walk cannot reach back far enough within its
+  limit, the Attempt stays undecided (a retryable `PROVIDER_UNAVAILABLE`, logged) instead of
+  risking a second payment. The library never deletes a wallet, so only something else that
+  holds the key can reset it: never share the key. Proof endpoints should be archival
+  ([TON networks](./networks.md#ton-networks)).
 
 ## Background workers and startup recovery
 
@@ -440,6 +495,10 @@ for await (const event of scanner) {
   leave no gap. The scan reads two `getBlock` calls per block, its header and then its
   transactions, and in `head` mode a few more lookups per block that is not final yet, so
   over the `public` preset it falls behind; scan through a keyed provider or your own node.
+- **TON** has no block scan, since the chain is sharded: `bc.scanner()` throws
+  `UNSUPPORTED_CAPABILITY`. Read deposits with `bc.history(address)` from the indexer
+  instead; [TON networks](./networks.md#ton-networks) shows how deposits appear there and
+  why to check a large one on a second indexer.
 
 ### Address history (`address-history`)
 
@@ -482,6 +541,9 @@ land.**
 | Tron: `TX_REFUSED`, `TX_EXPIRED` or `INSUFFICIENT_FUNDS` with state `stalled` | A node refused the signed bytes, or claimed they are invalid; they may still land. A liar and a genuine refusal look the same | Never pay again: repeat only with the **same** key. `rebroadcast` after the fix; `rebuild` only once the Operation is `expired` (see "Lifecycle and `stalled`" above) |
 | Tron: `TX_REVERTED` with reason `token transfer not evidenced` | The token call succeeded on chain but logged no `Transfer` to the recipient; value may have moved | Check the chain before you pay again ([Tron token verdicts](#waiting-and-watching)) |
 | Solana: `TX_REFUSED` or `INSUFFICIENT_FUNDS` with state `stalled` | A node refused the signed bytes (often `blockhash not found`), or claimed a signature the library found valid is invalid; they may still land until their window has passed | Never pay again: `rebroadcast` while the blockhash is valid, or repeat only with the **same** key; the workers never resend it. `rebuild` only once the Operation is `expired` |
+| TON: ambiguous, or `stalled` after a refusal | toncenter answers every refusal with HTTP 500 ("maybe sent"); the message may land until it expires | Never a new key. Wait for `final`, `failed` or `expired`; `rebuild` only once it is `expired` |
+| TON: `TX_REVERTED` with reason `the jetton wallets are not the master’s` | The jetton wallets involved are not the ones the master names; the jettons may have left your wallet | Check the chain before you pay again ([TON verdicts](#waiting-and-watching)) |
+| TON: `TX_REPLACED` | A request signed with the wallet's key, not this transfer, used its seqno | Find what else holds the key and stop it; then a new key is safe |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |
 | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_INCONSISTENT` (not ambiguous) | A read failed | Retry later |
