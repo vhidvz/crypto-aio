@@ -1,4 +1,5 @@
 import {
+  accountInfo,
   createSolanaAddressCodec,
   createSolanaExt,
   createSolanaReader,
@@ -14,6 +15,7 @@ import { TOKEN, TOKEN_2022, associatedAddress } from './support/node';
 import { solanaHarness, type Endpoint } from './support/harness';
 import { signedTx } from './support/tx';
 import { KEY_ADDRESS, KEY_PUBLIC, MINT, RECIPIENT } from './support/vectors';
+import { READ } from '../../../src/adapters/solana/rpc';
 
 const ref = (id: string) => ({ id, idKind: 'signature' as const, canonical: true });
 const ORDERING = { kind: 'expiry' as const, lastValidHeight: 1_000n };
@@ -380,9 +382,12 @@ describe('the Solana reader', () => {
       code: 'PROVIDER_INCONSISTENT',
       retryable: true,
     });
-    // A missing field is malformed, never a default.
+    // A malformed answer on one endpoint never agrees with another's verdict.
     scripted(() => ({ context: { slot: 1 } }));
-    await expect(meta()).rejects.toMatchObject({ retryable: true });
+    await expect(meta()).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
   });
 
   it('reads a malformed mint answer as retryable, never as a verdict the core caches', async () => {
@@ -418,8 +423,38 @@ describe('the Solana reader', () => {
       code: 'PROVIDER_UNAVAILABLE',
       retryable: true,
     });
+    // Non-canonical pad bits: `AB==` decodes to the byte `AA==` holds.
+    account((value) => ({ ...value, data: ['AB==', 'base64'] }));
+    await expect(meta()).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'malformed getAccountInfo answer',
+    });
+    // A missing field is malformed, never a default (one endpoint: no quorum involved).
+    h.node.intercept = (_endpoint, method) =>
+      method === 'getAccountInfo' ? { result: { context: { slot: 1 } } } : undefined;
+    await expect(meta()).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: 'malformed getAccountInfo answer',
+    });
     h.node.intercept = undefined;
     expect(await meta()).toEqual({ symbol: MINT.slice(0, 8), decimals: 6 });
+  });
+
+  it('reads accounts of any size the chain allows, up to 10 MiB (lesson 6)', async () => {
+    const h = setup();
+    for (const size of [4 * 1024 * 1024, 10 * 1024 * 1024]) {
+      const data = new Uint8Array(size).fill(7);
+      data[size - 1] = 9;
+      h.node.setAccount(RECIPIENT, { owner: KEY_ADDRESS, data });
+      const info = await h.run(accountInfo(h.ctx, RECIPIENT, READ));
+      expect(info?.owner).toBe(KEY_ADDRESS);
+      expect(info?.data.length).toBe(size);
+      expect([info?.data[0], info?.data[size - 1]]).toEqual([7, 9]);
+    }
+    // An empty account's data is the empty text.
+    h.node.setAccount(RECIPIENT, { owner: KEY_ADDRESS, data: new Uint8Array() });
+    expect((await h.run(accountInfo(h.ctx, RECIPIENT, READ)))?.data.length).toBe(0);
   });
 
   it('makes a node error retryable and keeps PROVIDER_MISCONFIGURED final', async () => {

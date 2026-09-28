@@ -74,20 +74,25 @@ export interface AccountInfo {
   readonly data: Uint8Array;
 }
 
-/** Canonical base64 (agave's `base64` account encoding), refused when it is anything else. */
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-
+/**
+ * Account data in agave's `base64` encoding, refused unless it is canonical: Node decodes
+ * leniently (a stray character is skipped, `AB==` reads as `AA==`), so the bytes must
+ * encode back to the same text. The check is linear, which matters: accounts hold up to
+ * 10 MiB, and a repeated-group regex overflows the stack on a few MiB (lesson 20).
+ */
 function base64Data(value: unknown, what: string): Uint8Array {
   if (
     !Array.isArray(value) ||
     value.length !== 2 ||
     value[1] !== 'base64' ||
     typeof value[0] !== 'string' ||
-    !BASE64.test(value[0])
+    value[0].length % 4 !== 0
   ) {
     throw malformed(what);
   }
-  return new Uint8Array(Buffer.from(value[0], 'base64'));
+  const bytes = Buffer.from(value[0], 'base64');
+  if (bytes.toString('base64') !== value[0]) throw malformed(what);
+  return new Uint8Array(bytes);
 }
 
 /** A `getAccountInfo` answer (base64): the account, or `null` when it does not exist. */
@@ -119,34 +124,6 @@ export async function accountInfo(
       tags,
     ),
   );
-}
-
-/** A classic SPL token account's balance and state; `null` when it does not exist. */
-export async function tokenAccount(
-  ctx: SolanaContext,
-  address: string,
-  tags: SolanaCallTags,
-): Promise<{
-  readonly amount: bigint;
-  readonly frozen: boolean;
-  readonly mint: string;
-  readonly owner: string;
-} | null> {
-  const info = await accountInfo(ctx, address, tags);
-  if (!info) return null;
-  const decoded = info.owner === TOKEN_PROGRAM ? decodeTokenAccount(info.data) : null;
-  if (!decoded) {
-    throw new ValidationError(
-      'INVALID_INTENT',
-      'the account is not a classic SPL token account',
-    );
-  }
-  return {
-    amount: decoded.amount,
-    frozen: decoded.frozen,
-    mint: encodeBase58(decoded.mint),
-    owner: encodeBase58(decoded.owner),
-  };
 }
 
 const assetError = (reason: string) => new ValidationError('ASSET_RESOLUTION', reason);

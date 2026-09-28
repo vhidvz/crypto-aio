@@ -1,5 +1,7 @@
 import { HeightIndex } from '../../../src/adapters/solana/heights';
 import { MONITOR } from '../../../src/adapters/solana/rpc';
+import { ProviderError, withContext } from '../../../src/core/errors/error';
+import type { Transport } from '../../../src/core/transport/types';
 import { nodeTransport, recording } from './support/harness';
 
 function setup() {
@@ -152,6 +154,43 @@ describe('dense heights over slots (Review Focus 5)', () => {
       message: 'the endpoint no longer holds the block at height 10',
     });
     expect(calls.filter((c) => c.method === 'getBlocks')).toHaveLength(2);
+  });
+
+  it('starts a page again only after a definitive RPC error', async () => {
+    const t = nodeTransport({}, [{ name: 'bt', bigtableFailsBelow: 40n }]);
+    t.node.produce(200);
+    const failing = (error: unknown): Transport =>
+      new Proxy(t.transport, {
+        get(target, prop) {
+          if (prop === 'rpc') {
+            return (method: string, params: unknown, options: unknown) =>
+              method === 'getBlocks'
+                ? Promise.reject(error)
+                : target.rpc(method, params, options as never);
+          }
+          const value = Reflect.get(target, prop) as unknown;
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    const definitive = new ProviderError('RPC_ERROR', 'getBlocks failed: x', {
+      details: { rpcCode: -32602, rpcMessage: 'x' },
+    });
+    for (const error of [
+      // An ambiguous one, or one without a JSON-RPC code, is no endpoint's answer.
+      withContext(definitive, {}, { ambiguous: true }),
+      new ProviderError('RPC_ERROR', 'getBlocks failed: x'),
+    ]) {
+      const { transport, calls } = recording(failing(error));
+      await expect(
+        t.run(new HeightIndex(transport).slotAt(45n, 'finalized', MONITOR)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      expect(calls.map((c) => c.method)).not.toContain('getFirstAvailableBlock');
+    }
+    const { transport, calls } = recording(failing(definitive));
+    await expect(
+      t.run(new HeightIndex(transport).slotAt(45n, 'finalized', MONITOR)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(calls.map((c) => c.method)).toContain('getFirstAvailableBlock');
   });
 
   it('turns any other RPC error into a retryable one that decides nothing (lesson 18, widened)', async () => {

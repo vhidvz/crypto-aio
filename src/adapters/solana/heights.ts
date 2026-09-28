@@ -17,7 +17,6 @@
  * endpoint's first available block (liveness), so a height inside its ledger still
  * resolves.
  */
-import { isCryptoAioError } from '../../core/errors/error';
 import type { Transport } from '../../core/transport/types';
 import {
   blockHeader,
@@ -30,6 +29,7 @@ import {
   isSkipped,
   malformed,
   notYet,
+  rpcCode,
   u64,
   undecided,
   type BlockHeader,
@@ -170,11 +170,11 @@ export class HeightIndex {
 
   /**
    * One verified-shape page of produced slots from `from` to `to`, and where it starts.
-   * When the endpoint cannot list from `from` (a definitive RPC error: agave answers
-   * `-32602 "BigTable query failed"` below its local ledger when long-term storage fails),
-   * the page starts once more at the endpoint's first available block, when that lies
-   * inside the range (X-note, liveness only). Every other error, and a second failure,
-   * decides nothing (lesson 18, widened).
+   * When the endpoint cannot list from `from` (a definitive RPC error with a JSON-RPC
+   * code: agave answers `-32602 "BigTable query failed"` below its local ledger when
+   * long-term storage fails), the page starts once more at the endpoint's first available
+   * block, when that lies inside the range (X-note, liveness only). Every other error, and
+   * a second failure, decides nothing (lesson 18, widened).
    */
   async #page(
     from: bigint,
@@ -185,8 +185,10 @@ export class HeightIndex {
     try {
       return { from, slots: await this.#blocks(from, to, commitment, tags) };
     } catch (error) {
-      if (!isCryptoAioError(error, 'RPC_ERROR')) throw error;
-      const first = await this.#firstAvailable(tags);
+      // Only an endpoint's own definitive answer: an ambiguous error, or one without a
+      // JSON-RPC code, says nothing about what this endpoint can list.
+      const first =
+        rpcCode(error) === undefined ? null : await this.#firstAvailable(tags);
       if (first === null || first <= from || first > to) {
         throw undecided(error, `the blocks from slot ${from}`);
       }
