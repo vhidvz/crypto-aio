@@ -18,8 +18,25 @@ export const TON_CAPABILITIES: readonly Capability[] = Object.freeze([
 export const TON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
   'address-history',
 ]);
-/** Never on TON: sharded (no block source), and no replace or cancel (spec §15). */
-const FORBIDDEN: readonly Capability[] = ['block-scan', 'replace-fee', 'cancel'];
+/**
+ * The only capabilities a TON network may add or remove (M2). Never on TON: `block-scan`
+ * (sharded, no block source), `replace-fee` and `cancel` (spec §15), nor any other.
+ */
+const OWN_CAPABILITIES: ReadonlySet<Capability> = new Set([
+  ...TON_CAPABILITIES,
+  ...TON_INDEXER_CAPABILITIES,
+]);
+
+/** The TON network options (`NetworkInfo.params`); any other key is a typo (M2). */
+const OPTIONS: ReadonlySet<string> = new Set([
+  'validForSeconds',
+  'jettonAttached',
+  'jettonForwardAmount',
+  'finalitySkewBlocks',
+]);
+
+/** A caller's name in an error: at most 64 characters (lesson 20). */
+const named = (value: unknown): string => `'${String(value).slice(0, 64)}'`;
 
 export interface TonNetworkConfig {
   /** Config param 19; the network identity. */
@@ -57,11 +74,16 @@ export function tonNetworkConfig(
   if (!isIntegerIn(globalId, -(2 ** 31), 2 ** 31 - 1)) {
     fail('the global id must be an int32');
   }
-  if (network.feeModel !== 'ton') fail(`fee model '${network.feeModel}' is not 'ton'`);
+  if (network.feeModel !== 'ton') {
+    fail(`fee model ${named(network.feeModel)} is not 'ton'`);
+  }
   if (network.finality.kind !== 'masterchain') {
-    fail(`finality '${network.finality.kind}' is not 'masterchain'`);
+    fail(`finality ${named(network.finality.kind)} is not 'masterchain'`);
   }
   const params = network.params ?? {};
+  for (const key of Object.keys(params)) {
+    if (!OPTIONS.has(key)) fail(`params key ${named(key)} is not a TON network option`);
+  }
   // Own keys only; an explicit `undefined` is absent, so the library default applies.
   const param = (key: string, fallback: unknown): unknown => {
     const value = Object.hasOwn(params, key) ? params[key] : undefined;
@@ -88,11 +110,10 @@ export function tonNetworkConfig(
     ...TON_CAPABILITIES,
     ...TON_INDEXER_CAPABILITIES,
   ]);
-  for (const c of network.capabilities?.add ?? []) capabilities.add(c);
-  for (const c of network.capabilities?.remove ?? []) capabilities.delete(c);
-  for (const c of FORBIDDEN) {
-    if (capabilities.has(c)) fail(`'${c}' is not available on TON`);
-  }
+  const own = (c: Capability): Capability =>
+    OWN_CAPABILITIES.has(c) ? c : fail(`${named(c)} is not available on TON`);
+  for (const c of network.capabilities?.add ?? []) capabilities.add(own(c));
+  for (const c of network.capabilities?.remove ?? []) capabilities.delete(own(c));
   return {
     globalId,
     testnet: network.testnet,

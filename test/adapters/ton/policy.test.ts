@@ -67,6 +67,12 @@ describe('TON network config', () => {
       { capabilities: { add: ['block-scan'] } },
       { capabilities: { add: ['replace-fee'] } },
       { capabilities: { add: ['cancel'] } },
+      // M2: only its own options and capabilities.
+      { params: { jettonAttachd: 1n } },
+      { params: { ...mainnet.params, validForSecond: 60 } },
+      { capabilities: { add: ['fee-market-1559'] } },
+      { capabilities: { remove: ['contract-read'] } },
+      { capabilities: { add: ['toString'] } },
     ];
     for (const patch of bad) {
       expect(() => tonNetworkConfig(chain, { ...mainnet, ...patch })).toThrow(
@@ -116,6 +122,39 @@ describe('TON network config', () => {
       tonNetworkConfig(chain, { ...mainnet, params: { validForSeconds: undefined } })
         .validForSeconds,
     ).toBe(60);
+  });
+
+  it('allows only its own options and capabilities, naming a refused one briefly (M2)', () => {
+    const long = 'k'.repeat(100_000);
+    const cases: readonly (readonly [Partial<NetworkInfo>, string])[] = [
+      [{ params: { jettonAttachd: 1n } }, "'jettonAttachd'"],
+      [{ params: { [long]: 1 } }, `'${'k'.repeat(64)}'`],
+      [{ capabilities: { add: ['fee-market-1559'] } }, "'fee-market-1559'"],
+      [{ capabilities: { remove: [long] } }, `'${'k'.repeat(64)}'`],
+    ];
+    for (const [patch, name] of cases) {
+      let thrown: unknown;
+      try {
+        tonNetworkConfig(chain, { ...mainnet, ...patch });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toMatchObject({ code: 'CONFIG_INVALID' });
+      const message = (thrown as Error).message;
+      expect(message).toContain(name);
+      expect(message).not.toContain('k'.repeat(65));
+      expect(message.length).toBeLessThan(200);
+    }
+    // Its own capabilities may each be added back or removed.
+    expect(
+      tonNetworkConfig(chain, {
+        ...mainnet,
+        capabilities: {
+          add: [...TON_CAPABILITIES, ...TON_INDEXER_CAPABILITIES],
+          remove: ['address-history', 'batch-transfer'],
+        },
+      }).capabilities,
+    ).toEqual(new Set(['tokens', 'memo', 'expiry']));
   });
 });
 
@@ -331,7 +370,6 @@ describe('TON broadcast classification (D16)', () => {
     [`${DUPLICATE}\n${byTransaction(33)}`, seqno],
     [`${DUPLICATE} and more`, byNode],
     [`not ${DUPLICATE}`, byNode],
-    [`LITE_SERVER_NOTREADY: ${DUPLICATE}`, byNode],
     // Malformed bytes are a refusal, never `rejected`: one endpoint's text decides no verdict.
     ['Failed to unpack Message', malformed],
     [
@@ -398,6 +436,53 @@ describe('TON broadcast classification (D16)', () => {
     expect(classifyBroadcastError(envelope(DUPLICATE))).toEqual(byNode);
   });
 
+  it('rethrows a transient node answer as retryable and ambiguous, never a stalling refusal (M4)', () => {
+    // ext-message-pool.cpp: "not ready" and "too many pending external message checks"
+    // (ErrorCode::notready, so tonlib names them LITE_SERVER_NOTREADY), and "too many
+    // external messages to address <wc>:<HEX>" (the per-address limit).
+    const PENDING = 'cannot apply external message to current state : ';
+    const transient = [
+      `LITE_SERVER_NOTREADY: ${PENDING}not ready`,
+      `LITE_SERVER_NOTREADY: ${PENDING}too many pending external message checks`,
+      `${LITE}too many external messages to address 0:${HEX}`,
+      `${LITE}too many external messages to address -1:${HEX}`,
+      'not ready',
+      'too many pending external message checks',
+      `too many external messages to address 0:${HEX}\n`,
+      `LITE_SERVER_NOTREADY: ${DUPLICATE}`,
+      `LITE_SERVER_NOTREADY: ${PENDING}no shard in masterchain state for account 0:8000000000000000`,
+      `LITE_SERVER_NOTREADY: ${'x'.repeat(100_000)}`,
+    ];
+    for (const text of transient) {
+      let thrown: unknown;
+      try {
+        classifyBroadcastError(text);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+        ambiguous: true,
+      });
+      // R24: the node's text (an address) never reaches the error.
+      expect((thrown as Error).message).not.toMatch(/0:|[0-9A-F]{64}/i);
+      expect((thrown as Error).cause).toBeUndefined();
+    }
+    // Anchored whole texts: anything else is the node's plain refusal.
+    for (const text of [
+      'not ready yet',
+      `${LITE}not ready, try later`,
+      'LITE_SERVER_UNKNOWN: too many pending external message checks and more',
+      `too many external messages to address 0:${HEX.slice(1)}`,
+      ' LITE_SERVER_NOTREADY: not ready',
+      'LITE_SERVER_NOTREADY not ready',
+      `not ready${' '.repeat(1_100)}`,
+    ]) {
+      expect(classifyBroadcastError(text)).toEqual(byNode);
+    }
+  });
+
   it('reads only a bounded prefix of a long text (lesson 20)', () => {
     expect(classifyBroadcastError('x'.repeat(100_000))).toEqual(byNode);
     expect(classifyBroadcastError('x'.repeat(100_000) + byTransaction(33))).toEqual(
@@ -410,5 +495,19 @@ describe('TON broadcast classification (D16)', () => {
       ),
     ).toEqual(byNode);
     expect(classifyBroadcastError(`${'\\n'.repeat(50_000)}${DUPLICATE}`)).toEqual(byNode);
+    // M1: the classifier's own cut never completes a whole-text answer, success above all.
+    const padded = (text: string, length: number): string =>
+      text + ' '.repeat(length - text.length);
+    expect(classifyBroadcastError(`${DUPLICATE}${' '.repeat(1_000)}x`)).toEqual(byNode);
+    expect(classifyBroadcastError(padded(DUPLICATE, 1_024))).toEqual({
+      kind: 'already-known',
+    });
+    expect(classifyBroadcastError(`${padded(DUPLICATE, 1_024)}x`)).toEqual(byNode);
+    expect(
+      classifyBroadcastError(`Failed to unpack account state${' '.repeat(1_000)}x`),
+    ).toEqual(byNode);
+    expect(
+      classifyBroadcastError(`Failed to unpack Message${' '.repeat(1_000)}x`),
+    ).toEqual(byNode);
   });
 });

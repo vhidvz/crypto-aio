@@ -14,16 +14,21 @@
  *   smart-contract execution" when the balance cannot pay the import fee;
  * - ext-message-checker.cpp writes "Failed to unpack account state";
  * - liteserver-cache.hpp answers a repeated `sendMessage` "duplicate message", behind
- *   "cannot send external message : " (liteserver.cpp).
+ *   "cannot send external message : " (liteserver.cpp);
+ * - ext-message-pool.cpp answers "not ready", "too many pending external message checks"
+ *   and "too many external messages to address <wc>:<HEX>" when it cannot check a message
+ *   now: those are thrown as transient failures, never classified.
  *
  * Every text-based answer is a refusal or a success, never `rejected`: one endpoint's text
  * decides no verdict (lessons 3 and 16; Plan 2.5 refusal equivalence), and a refused TON
  * message still ends, proven, when it expires. Bytes that are no external message are
  * `rejected` by the broadcaster itself, before anything is sent. Reasons are fixed texts
  * (R24): a node's text carries addresses. Each pattern is linear and reads a bounded
- * prefix (lesson 20). SDK-free.
+ * prefix (lesson 20); a text anchored at both ends is matched only when that prefix is the
+ * whole text, so the cut never completes one (M1). SDK-free.
  */
 import type { BroadcastResult } from '../../core/driver/types';
+import { ProviderError } from '../../core/errors/error';
 
 type RefusalCode = Extract<BroadcastResult, { kind: 'refused' }>['code'];
 
@@ -62,7 +67,8 @@ const BY_TRANSACTION =
  * gas, or is frozen (a skipped compute phase reads `exitcode=0, steps=0`).
  */
 const INACTIVE = refused('TX_REFUSED', 'wallet not active or not funded');
-const NO_ACCOUNT = /(?:^|: )Failed to unpack account state\s*$/;
+const NO_ACCOUNT =
+  /^(?:LITE_SERVER_UNKNOWN: )?(?:cannot apply external message to current state : )?Failed to unpack account state\s*$/;
 
 /**
  * The balance cannot pay the import fee (transaction.cpp `unpack_input_msg`). The same text
@@ -73,7 +79,8 @@ const BY_ACCOUNT =
 const NO_FUNDS = refused('INSUFFICIENT_FUNDS', 'insufficient funds');
 
 /** tonlib's answers to bytes that are no message; exact, anchored texts. */
-const MALFORMED = /^(?:Failed to unpack Message\s*$|INVALID_BAG_OF_CELLS: )/;
+const NO_MESSAGE = /^Failed to unpack Message\s*$/;
+const BAD_BOC = /^INVALID_BAG_OF_CELLS: /;
 const MALFORMED_RESULT = refused('TX_REFUSED', 'malformed message');
 
 /**
@@ -87,17 +94,40 @@ const ALREADY_KNOWN_RESULT: BroadcastResult = Object.freeze({ kind: 'already-kno
 
 const REFUSED_BY_NODE = refused('TX_REFUSED', 'refused by the node');
 
+/**
+ * The node cannot check the message now (ext-message-pool.cpp): it is not ready or has too
+ * many checks pending (`ErrorCode::notready`, which tonlib names `LITE_SERVER_NOTREADY`),
+ * or it holds too many messages to this address. That says nothing about the message, and
+ * another node may take it: a transient failure, never a stalling refusal (M4).
+ */
+const NOT_READY = /^LITE_SERVER_NOTREADY: /;
+const BUSY =
+  /^(?:LITE_SERVER_UNKNOWN: )?(?:cannot apply external message to current state : )?(?:not ready|too many pending external message checks|too many external messages to address -?\d{1,10}:[0-9A-Fa-f]{64})\s*$/;
+
+/**
+ * @throws a retryable, ambiguous `ProviderError('PROVIDER_UNAVAILABLE')` for a transient
+ * answer (the message may still reach the network), as a transport failure is thrown.
+ */
 export function classifyBroadcastError(message: string): BroadcastResult {
+  // Texts anchored at both ends are read only when nothing was cut (M1).
+  const whole = message.length <= MAX_TEXT;
   // A v2 body the transport cut (300 characters) stays JSON-escaped: `\n` is two characters.
   const text = message.slice(0, MAX_TEXT).replace(/\\n/g, '\n');
+  if (NOT_READY.test(text) || (whole && BUSY.test(text))) {
+    throw new ProviderError(
+      'PROVIDER_UNAVAILABLE',
+      'the node cannot take the message now; it may still reach the network',
+      { retryable: true, ambiguous: true },
+    );
+  }
   const compute = BY_TRANSACTION.exec(text);
   if (compute) {
     if (compute[1] === '0' && compute[2] === '0') return INACTIVE;
     return BY_EXIT_CODE.get(compute[1] as string) ?? REFUSED_BY_NODE;
   }
-  if (NO_ACCOUNT.test(text)) return INACTIVE;
+  if (whole && NO_ACCOUNT.test(text)) return INACTIVE;
   if (BY_ACCOUNT.test(text)) return NO_FUNDS;
-  if (MALFORMED.test(text)) return MALFORMED_RESULT;
-  if (ALREADY_KNOWN.test(text)) return ALREADY_KNOWN_RESULT;
+  if (BAD_BOC.test(text) || (whole && NO_MESSAGE.test(text))) return MALFORMED_RESULT;
+  if (whole && ALREADY_KNOWN.test(text)) return ALREADY_KNOWN_RESULT;
   return REFUSED_BY_NODE;
 }
