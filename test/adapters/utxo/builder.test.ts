@@ -11,6 +11,7 @@ import {
 } from '../../../src/adapters/utxo/builder';
 import { classifyBroadcast, parseNodeError } from '../../../src/adapters/utxo/errors';
 import { chainReader, listUnspent } from '../../../src/adapters/utxo/reader';
+import { XPUB_CHANGE_SEARCH } from '../../../src/adapters/utxo/spend';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
 import type { BuildContext } from '../../../src/core/driver/types';
 import { ProviderError } from '../../../src/core/errors/error';
@@ -627,6 +628,52 @@ describe('build and assemble', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: 'CONFIG_INVALID' });
+    // Heavy by design (a dozen builds, each searching up to 40 keys): an explicit budget, so
+    // a loaded machine does not fail it (final review I2).
+  }, 30_000);
+
+  it('parses the xpub once per search, derives each chain node once, then answers from a cache (final review I2)', async () => {
+    const h = await funded([100_000n, 100_000n]);
+    const tpub = { private: 0x04358394, public: 0x043587cf };
+    const root = HDKey.fromMasterSeed(sha256(utf8ToBytes('crypto-aio/utxo I2')), tpub);
+    const [last, beyond, fixedKey] = ['m/1/19', 'm/1/20', 'm/5/3'].map(
+      (path) => walletAddress(root.derive(path).publicKey!, 'p2wpkh', REGTEST).address,
+    ) as [string, string, string];
+    const hd = { xpub: root.publicExtendedKey };
+    const parse = jest.spyOn(HDKey, 'fromExtendedKey');
+    const derive = jest.spyOn(HDKey.prototype, 'deriveChild');
+    try {
+      // The last key of the change chain: the whole search, in the estimate and the build.
+      const wallet = { utxo: { changeAddress: last }, hd };
+      await h.make(intent(10_000n), build({ wallet }));
+      expect(parse.mock.calls.length).toBeLessThanOrEqual(2);
+      // Two chains of 20 keys, each chain node once, and the core's own check of the key.
+      expect(derive.mock.calls.length).toBeLessThanOrEqual(
+        2 * (1 + XPUB_CHANGE_SEARCH) + 2,
+      );
+      parse.mockClear();
+      derive.mockClear();
+      await h.make(intent(10_000n), build({ wallet }));
+      // A refused address is answered from the cache too.
+      await expect(
+        h.make(
+          intent(10_000n),
+          build({ wallet: { utxo: { changeAddress: beyond }, hd } }),
+        ),
+      ).rejects.toMatchObject({ code: 'CONFIG_INVALID' });
+      expect(parse).not.toHaveBeenCalled();
+      expect(derive).not.toHaveBeenCalled();
+      // A template without `{index}` names one key, derived once.
+      const fixed = { ...hd, xpubPath: '5/3' };
+      await h.make(
+        intent(10_000n),
+        build({ wallet: { utxo: { changeAddress: fixedKey }, hd: fixed } }),
+      );
+      expect(derive.mock.calls.length).toBeLessThanOrEqual(2 + 2);
+    } finally {
+      parse.mockRestore();
+      derive.mockRestore();
+    }
   });
 
   it('refuses what it must not build, before anything is signed', async () => {
