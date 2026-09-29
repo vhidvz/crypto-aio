@@ -414,6 +414,100 @@ describe('build and assemble', () => {
     });
   });
 
+  it('waits until every proof endpoint holds a new parent as deep as minInputConfirmations asks (F3-R24 F1)', async () => {
+    const h = await utxoHarness({
+      endpoints: ['a', 'b'],
+      options: { minInputConfirmations: 2 },
+    });
+    h.node.fund(OWN.address, 100_000n);
+    h.node.mine(1); // two confirmations on the funding block
+    const builder = utxoBuilder(h.ctx, h.network);
+    const make = async () =>
+      h.run(
+        builder.build(
+          intent(50_000n),
+          await h.run(builder.estimateFee(intent(50_000n), build())),
+          build(),
+        ),
+      );
+    // `b` has not seen the top block: the parent is only one deep there.
+    h.node.setLag('b', 1);
+    await expect(make()).rejects.toMatchObject({ retryable: true });
+    h.node.setLag('b', 0);
+    expect((await make()).ordering.kind).toBe('inputs');
+  });
+
+  it('decides nothing when the proof endpoints put a parent in a block that is not the one at its height (F3-R24 F1)', async () => {
+    type Json = Record<string, unknown>;
+    const h = await utxoHarness({ endpoints: ['a', 'b'] });
+    const [txid] = h.node.fund(OWN.address, 100_000n).split(':') as [string];
+    const builder = utxoBuilder(h.ctx, h.network);
+    const make = async () =>
+      h.run(
+        builder.build(
+          intent(50_000n),
+          await h.run(builder.estimateFee(intent(50_000n), build())),
+          build(),
+        ),
+      );
+    // Both agree the parent is in another block at its height (a stale index).
+    for (const name of ['a', 'b']) {
+      h.node.intercept(name, (request, _signal, honest) => {
+        if (!request.url.pathname.endsWith(`/tx/${txid}`)) return undefined;
+        const view = (honest() as { json: Json }).json;
+        return {
+          json: {
+            ...view,
+            status: { ...(view.status as Json), block_hash: 'ee'.repeat(32) },
+          },
+        };
+      });
+    }
+    await expect(make()).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+  });
+
+  it('attests the parent of an input a replacement adds (F3-R24 F1)', async () => {
+    type Utxo = Record<string, unknown>;
+    const wallet = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST);
+    const h = await utxoHarness();
+    h.node.fund(wallet.address, 60_000n);
+    const builder = utxoBuilder(h.ctx, h.network);
+    const ctx = build({ from: wallet.address });
+    const i = intent(50_000n, { from: wallet.address, fee: 'slow' });
+    const original = await h.run(
+      builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx),
+    );
+    // The only coin a 150 sat/vB bump could add is an invented one.
+    const invented = fundingTx(wallet.script, 80_000n, 78);
+    const id = invented.getId();
+    h.node.intercept('a', (request, _signal, honest) => {
+      const path = request.url.pathname;
+      if (path.endsWith('/utxo')) {
+        const listed = (honest() as { json: Utxo[] }).json;
+        return {
+          json: [
+            ...listed,
+            { txid: id, vout: 0, value: 80_000, status: listed[0]?.status },
+          ],
+        };
+      }
+      if (path.endsWith(`/tx/${id}/hex`)) return { text: invented.toHex() };
+      return undefined;
+    });
+    await expect(
+      h.run(
+        utxoReplacement(h.ctx, h.network).buildReplacement!(
+          original,
+          { satPerVByte: 150n },
+          ctx,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+  });
+
   it('asks the proof quorum about each new parent once it is final, never again (F3-R24 F1)', async () => {
     const h = await funded([100_000n, 200_000n]);
     h.node.mine(6);

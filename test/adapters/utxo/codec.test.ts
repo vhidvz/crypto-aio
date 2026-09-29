@@ -1157,8 +1157,8 @@ describe('Core-coordinated signing (F3-R5)', () => {
       const added = reparse(signed);
       added.data.inputs[0]!.nonWitnessUtxo = manyOutputs(10_000).bytes;
       refusedAs(built.psbt, added, requests, 'changes the prepared transaction');
-      // A PSBT whose unsigned transaction is 3.5 MB of outputs, not ours.
-      const hostile = manyOutputs(390_000).bytes;
+      // A PSBT whose unsigned transaction is 20,000 outputs, not ours (bitcoinjs: seconds).
+      const hostile = manyOutputs(20_000).bytes;
       const psbt = concatBytes(
         Uint8Array.of(0x70, 0x73, 0x62, 0x74, 0xff, 0x01, 0x00),
         compactSize(hostile.length),
