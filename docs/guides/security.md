@@ -222,6 +222,42 @@ for what it reports. The driver's guards:
 See [Bitcoin networks](./networks.md#bitcoin-networks) for the defaults and how a refused
 transfer resolves.
 
+## Solana safeguards
+
+On Solana, one endpoint's answers set a transfer's price and compute limit, and a proof
+decides whether a transfer can be sent again. The driver's guards:
+
+- **Priority fee.** The compute-unit price is at most `chains.solana.options.maxComputeUnitPrice`
+  (10,000,000 micro-lamports per compute unit by default, `DEFAULT_MAX_COMPUTE_UNIT_PRICE`),
+  which no endpoint can raise. A speed is clamped below it, an override above it fails with
+  `INVALID_INTENT` before signing (naming the option, with `details.required` and
+  `details.maxComputeUnitPrice`), and the build checks it again. With the limit at its
+  1,400,000-unit maximum, the default bound caps a transfer's priority fee at 0.014 SOL, so
+  one lying endpoint cannot spend the wallet. Any other key in `chains.solana.options` fails
+  with `CONFIG_INVALID`. For a tighter policy per transfer, compare `ctx.fee` in
+  `beforeSign`.
+- **Proof providers.** A proof that a transfer never landed is what lets `rebuild` sign a new
+  one, so a wrong one pays twice. Each proof is a quorum over your endpoints: use two or
+  three independent keyed or self-hosted providers. The `public` preset's rate limits let it
+  prove absence only slowly, over many passes, so a transfer that never landed stays
+  unresolved for minutes there.
+- **A refusal is not a failure.** A `stalled` transfer (`TX_REFUSED`, `INSUFFICIENT_FUNDS`)
+  may still land until its blockhash's window has passed. Retry only with
+  `bc.rebroadcast(id)` or by repeating the call with the same idempotency key, never as a
+  new transfer. A node's claim that the signature is invalid ends a transfer only when the
+  driver confirms it for the bytes it sent.
+- **Stores.** A custom `OperationStore` must keep each Attempt's `ordering` whole and
+  unmodified, `blockhash` included: a changed blockhash misplaces the expiry proof's window
+  ([why](./networks.md#testing-an-adapter-or-a-store)).
+- **The native client.** `native(bc, '@solana/web3.js')` returns a `Connection` wired to the
+  handle's transport, so it never sees the real URL or key. It speaks HTTP JSON-RPC only
+  (no subscriptions), and it parses numbers itself, so values above 2^53 are rounded there;
+  the driver's own reads keep u64 amounts exact. Import `crypto-aio/solana` once to type it;
+  with `skipLibCheck: false`, that needs `@solana/web3.js` installed.
+
+See [Solana networks](./networks.md#solana-networks) for the defaults, how a refused
+transfer resolves, and which addresses a scan filter matches.
+
 ## Production checklist
 
 - [ ] One `new CryptoAio({ namespace })` per tenant. Scopes are not tenant boundaries.
@@ -248,3 +284,7 @@ transfer resolves.
 - [ ] Bitcoin: your own Esplora, with two or three independent endpoints as the `provider`;
       `lifecycle.broadcastFanout` of 2 or more; `nonWitnessUtxo` left on for hardware
       signers; and `allowExternalChangeAddress` only for a verified address.
+- [ ] Solana: two or three independent keyed or self-hosted providers; `maxComputeUnitPrice`
+      set to your fee policy; a store that keeps each Attempt's `ordering` whole; after a
+      refusal, retry only with `rebroadcast` or the same idempotency key; credit SPL deposits
+      by the owner wallet (`transfer.to`).

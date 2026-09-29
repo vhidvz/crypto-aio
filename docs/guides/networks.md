@@ -520,8 +520,8 @@ crypto-aio needs Node 22.
   the option for a costlier transfer. The build checks the same bound, and that the priority
   fee matches the price and limit, wherever the estimate came from. Any other key in
   `chains.solana.options` is `CONFIG_INVALID`. For a tighter policy per transfer, compare
-  `ctx.fee` in your `beforeSign` hook ([Keys, signers and secrets](./security.md)) with
-  your own limit.
+  `ctx.fee` in your `beforeSign` hook ([Solana safeguards](./security.md#solana-safeguards))
+  with your own limit.
 - **Identical transfers.** ed25519 signatures are deterministic, so two identical transfers
   on the same blockhash would be one transaction, and one payment would be lost. Each build
   adds 0 to 1,023 units to the compute-unit limit, an explicit limit included, and a speed
