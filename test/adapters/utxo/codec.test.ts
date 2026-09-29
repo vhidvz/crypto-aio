@@ -31,6 +31,7 @@ import { concatBytes, toHex } from '../../../src/core/util/bytes';
 import { fundingTx, malleate, nativeSigner, nativeTaprootSigner } from './support/tx';
 import { OTHER_KEY, OTHER_PUBKEY, TEST_KEY, TEST_PUBKEY } from './support/vectors';
 import { thrown } from '../../helpers';
+import { base64 as scureBase64 } from '@scure/base';
 
 /** A previous transaction, as the Esplora client decodes it (F3-R14). */
 const previousOf = (tx: Transaction): PreviousTx =>
@@ -507,9 +508,15 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
     expect(toHex(bytes)).toContain(pair);
     expect([...bytes.slice(0, 7)]).toEqual([0x70, 0x73, 0x62, 0x74, 0xff, 0x01, 0x00]);
     expect(bytes[7]).toBeLessThan(0xfd);
+    // Node's Buffer decoder skips what it cannot read; the round trip refuses it all (F3-R7).
+    const unpadded = good.endsWith('=') ? [good.replace(/=+$/, '')] : [];
     for (const signed of [
       `${good.slice(0, 20)}\n${good.slice(20)}`,
       good.replace(/\+/g, '-').replace(/\//g, '_'),
+      `${good.slice(0, 8)}*${good.slice(8)}`,
+      `${good.slice(0, 8)}====${good.slice(8)}`,
+      `${good}AAAA`.slice(0, good.length + 3),
+      ...unpadded,
       base64(concatBytes(bytes, Uint8Array.of(0x00))),
       base64(concatBytes(bytes, Uint8Array.of(0x01, 0x02, 0x03))),
       base64(bytes.slice(0, -1)),
@@ -1047,6 +1054,67 @@ describe('Core-coordinated signing (F3-R5)', () => {
     const added = reparse(signed);
     added.data.inputs[0]!.nonWitnessUtxo = funding.toBuffer();
     refusedAs(built.psbt, added, requests, 'changes the prepared transaction');
+  });
+
+  it('takes our own previous transactions byte for byte, without decoding them again (F3-R7)', () => {
+    const { built, requests, wallet, funding } = withPrevious('p2wpkh');
+    const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+    signed.signAllInputs(signerOf('p2wpkh', wallet));
+    const ours = funding.map((tx) => stripped(tx).length);
+    const fromBuffer = jest.spyOn(bitcoin.Transaction, 'fromBuffer');
+    const scure = jest.spyOn(scureBase64, 'decode');
+    try {
+      expect(
+        signaturesFromPsbt(built.psbt, signed.toBase64(), NETWORK, requests),
+      ).toHaveLength(2);
+      expect(
+        fromBuffer.mock.calls.filter(([bytes]) => ours.includes(bytes.length)),
+      ).toEqual([]);
+      // A coordinator's other copy (with the witness) is not ours: it is decoded, by txid.
+      const core = reparse(signed);
+      core.data.inputs[0]!.nonWitnessUtxo = funding[0]!.toBuffer();
+      fromBuffer.mockClear();
+      expect(
+        signaturesFromPsbt(built.psbt, core.toBase64(), NETWORK, requests),
+      ).toHaveLength(2);
+      expect(
+        fromBuffer.mock.calls.filter(
+          ([bytes]) => bytes.length === funding[0]!.byteLength(),
+        ),
+      ).toHaveLength(1);
+      // Node's Buffer decodes the base64 (checked by a round trip), not the pure-JS decoder.
+      expect(scure).not.toHaveBeenCalled();
+    } finally {
+      fromBuffer.mockRestore();
+      scure.mockRestore();
+    }
+  });
+
+  it('bounds what coordinators may add, in all, to one block (F3-R7)', () => {
+    // 50 segwit inputs without their previous transactions (M15 off): 100,000 bytes of room
+    // each would be 5 MB; in all it is one block (4,000,000 bytes).
+    const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
+    const inputs = Array.from({ length: 50 }, (_, index) => {
+      const funding = fundingTx(wallet.script, 10_000n, 100 + index);
+      return {
+        outpoint: `${funding.getId()}:0`,
+        txid: funding.getId(),
+        vout: 0,
+        value: 10_000n,
+      };
+    });
+    const built = buildTx(
+      NETWORK,
+      wallet,
+      inputs,
+      [{ script: PAYEE.script, value: 400_000n }],
+      SEQUENCE_RBF,
+    );
+    const requests = ecdsaRequests(built.digests);
+    const maps = 1 + 50 + 1;
+    const room = maps * 4_096 + 4_000_000;
+    const text = 'A'.repeat(built.psbt.length + Math.ceil(room / 3) * 4 + 4);
+    refusedAs(built.psbt, { toBase64: () => text } as Psbt, requests, 'is too large');
   });
 
   it('has room for a large previous transaction a coordinator adds (I1c)', () => {

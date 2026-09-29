@@ -9,7 +9,6 @@
  * stored requests (R9). Every refusal is `ValidationError('INVALID_INTENT')` with a fixed
  * text. Synchronous and I/O-free.
  */
-import { base64 } from '@scure/base';
 import { ValidationError } from '../../core/errors/error';
 import { equalBytes, toHex } from '../../core/util/bytes';
 import { bitcoin, type Network, type Psbt, type Transaction } from './sdk';
@@ -47,6 +46,11 @@ const SIGNED_GROWTH_PER_MAP = 4_096;
  * (`MAX_STANDARD_TX_WEIGHT` / 4).
  */
 const ADDED_PREVIOUS_TX = 100_000;
+/**
+ * F3-R7: what coordinators may add in all, whatever the number of inputs: one block
+ * (Bitcoin Core's `MAX_BLOCK_SERIALIZED_SIZE`), so the decoding it costs stays bounded.
+ */
+const ADDED_PREVIOUS_TXS = 4_000_000;
 
 /** BIP174 key types a signed copy may carry but we never read. */
 const PROPRIETARY = 0xfc;
@@ -141,6 +145,19 @@ function endsAfterMaps(bytes: Uint8Array, maps: number): boolean {
 }
 
 /**
+ * Canonical base64 (the standard alphabet, padded), or `undefined`. F3-R7: Node's decoder is
+ * linear and far faster than a pure-JS one (a few milliseconds for 4 million characters,
+ * against about 300), but it skips what it cannot read, so the bytes count only when they
+ * encode back to exactly `text`.
+ */
+function canonicalBase64(text: string): Uint8Array | undefined {
+  if (text.length % 4 !== 0) return undefined;
+  const bytes = Buffer.from(text, 'base64');
+  if (bytes.toString('base64') !== text) return undefined;
+  return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.length);
+}
+
+/**
  * A PSBT signed elsewhere, parsed strictly: capped before decoding (lesson 20), ASCII
  * whitespace trimmed at the ends, canonical base64 (the SDK's decoder skips junk), and no
  * bytes after its maps.
@@ -156,14 +173,16 @@ export function parseSigned(
   const added = stored.data.inputs.filter(
     (input) => input.nonWitnessUtxo === undefined && !isTaproot(input),
   ).length;
-  const room = maps * SIGNED_GROWTH_PER_MAP + added * ADDED_PREVIOUS_TX;
+  const room =
+    maps * SIGNED_GROWTH_PER_MAP +
+    Math.min(added * ADDED_PREVIOUS_TX, ADDED_PREVIOUS_TXS);
   if (text.length > storedBase64.length + Math.ceil(room / 3) * 4) {
     throw signedPsbtError('is too large');
   }
-  let bytes: Uint8Array;
+  const bytes = canonicalBase64(trimAsciiSpace(text));
+  if (!bytes) throw signedPsbtError('does not decode');
   let signed: Psbt;
   try {
-    bytes = base64.decode(trimAsciiSpace(text));
     signed = bitcoin.Psbt.fromBuffer(bytes, { network });
   } catch {
     throw signedPsbtError('does not decode');
@@ -207,6 +226,10 @@ function assertPreviousTx(
   outpoint: { readonly txid: string; readonly vout: number },
 ): void {
   if (isTaproot(stored)) throw changedError();
+  // F3-R7: our own previous transaction, byte for byte, which `buildTx` checked: no decode.
+  if (stored.nonWitnessUtxo !== undefined && equalBytes(bytes, stored.nonWitnessUtxo)) {
+    return;
+  }
   let prev: Transaction;
   try {
     prev = bitcoin.Transaction.fromBuffer(bytes);

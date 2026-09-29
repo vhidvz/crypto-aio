@@ -150,7 +150,8 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   them. The signed PSBT may add signatures, final scripts, key origins, the fields a
   coordinator adds for its change outputs, and proprietary keys, and it may be written as
   PSBT version 0. A coordinator may also add the previous transaction of a non-`p2tr` input
-  that lacks one; it must hash to the input's txid and pay the output spent. Anything that
+  that lacks one (up to 4 MB of them in all); it must hash to the input's txid and pay the
+  output spent. Anything that
   could change the spend, and any unknown field, fails with `INVALID_INTENT`. A signer
   whose PSBT is refused can still return signature bundles, one per request.
 - **Input values.** Before anything is signed, the driver reads each input's previous
