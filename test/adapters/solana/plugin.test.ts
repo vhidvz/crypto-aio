@@ -119,7 +119,8 @@ describe('the built-in Solana plugin', () => {
     }
   });
 
-  it('publishes crypto-aio/solana for both resolvers, typesVersions keys in order', () => {
+  // The key order of every family's entries is test/architecture/packaging.test.ts's rule.
+  it('publishes crypto-aio/solana for both resolvers', () => {
     const pkg = JSON.parse(
       readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'),
     ) as {
@@ -131,8 +132,6 @@ describe('the built-in Solana plugin', () => {
       default: './dist/adapters/solana/index.js',
     });
     expect(pkg.typesVersions['*'].solana).toEqual(['dist/adapters/solana/index.d.ts']);
-    const keys = Object.keys(pkg.typesVersions['*']);
-    expect(keys).toEqual([...keys].sort());
   });
 });
 

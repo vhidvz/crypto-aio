@@ -1,12 +1,26 @@
 // Lazy loading (spec §4): only a manifest's `load()` may require an SDK. Each check runs in
-// a fresh module registry where requiring `@solana/web3.js` is recorded, then served as usual.
+// a fresh module registry where requiring any SDK the package declares is recorded, then
+// served as usual.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { solanaPlugin } from '../../../src/adapters/solana/plugin';
 
 type Entry = typeof import('../../../src');
 type SolanaEntry = typeof import('../../../src/adapters/solana');
 type SolanaPlugin = typeof import('../../../src/adapters/solana/plugin');
 
-const SDKS = ['@solana/web3.js'] as const;
+/**
+ * Every SDK the package declares, other families' too (the Plan 3 merge convention), so a
+ * Solana module that required another family's SDK would show: `load()` requires only its
+ * own.
+ */
+const SDKS = Object.keys(
+  (
+    JSON.parse(
+      readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'),
+    ) as { peerDependencies: Record<string, string> }
+  ).peerDependencies,
+);
 
 /** The SDKs `run` requires, in order, in a module registry of its own. */
 function requiredSdks(run: () => void): string[] {
@@ -24,7 +38,9 @@ function requiredSdks(run: () => void): string[] {
 }
 
 describe('lazy loading of the Solana SDK', () => {
-  it('imports crypto-aio and crypto-aio/solana without loading @solana/web3.js', () => {
+  it('imports crypto-aio and crypto-aio/solana without loading any SDK', () => {
+    expect(SDKS).toContain('@solana/web3.js');
+    expect(SDKS.length).toBeGreaterThan(1);
     const loaded = requiredSdks(() => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const entry = require('../../../src') as Entry;
