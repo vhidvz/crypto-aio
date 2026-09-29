@@ -173,7 +173,7 @@ replaces, and must pay the old fee plus 1 sat/vB of its own size, at a higher ra
 throws `FEE_TOO_LOW`. A cancel pays everything, minus its fee, back to the sending address.
 When the original is already mined, a replacement or cancel throws `TX_REFUSED` (its inputs
 are spent) until the workers see that block, and `INVALID_TRANSITION` once the Operation is
-`included`; either way nothing new is sent, and the outcome stays `executed`. A signed
+`included`; either way nothing new can land, and the outcome stays `executed`. A signed
 transfer that a node refused stays `stalled` with its inputs held, and `abandon` refuses it,
 because its bytes may already be relayed. Never retry it as a new transfer (a new
 idempotency key): the new Operation spends other coins, and both can confirm. Repeat the

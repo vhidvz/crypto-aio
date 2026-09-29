@@ -204,9 +204,11 @@ for what it reports. The driver's guards:
   that check for a change address of another key, such as a cold wallet's. With it, a
   mistyped but valid address loses every change output, so set it only for an address you
   have verified. A cancel always pays back to the sending address.
-- **Input values.** Every input's value and script are checked against its previous
-  transaction, whose bytes must hash to the input's txid, before anything is signed, so the
-  indexer cannot misstate what you spend. Keep `options.nonWitnessUtxo` on (the default)
+- **Input values.** Before anything is signed, each new input's previous transaction must
+  be in a block the proof endpoints attest (except the wallet's own sent transactions under
+  `minInputConfirmations: 0`), and every input's value and script are checked against that
+  transaction, whose bytes must hash to the input's txid. So the indexer can neither
+  misstate what you spend nor invent a coin for you to spend. Keep `options.nonWitnessUtxo` on (the default)
   for hardware signers: each `p2pkh` and segwit v0 input then carries that transaction in
   the PSBT, so the signer can check the fee itself. A `p2tr` input never carries it; its
   signature commits to every input's amount.

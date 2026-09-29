@@ -81,7 +81,7 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
 | `maxFee` | `10_000_000n` sat (0.1 BTC) | The highest fee a transaction may pay |
 | `maxEstimatedFeeRate` | `200_000n` (200 sat/vB) | The highest rate a fee estimate may set |
 | `nonWitnessUtxo` | `true` | Each segwit v0 input carries its previous transaction in the PSBT |
-| `minInputConfirmations` | `1` | The confirmations an output needs before it is spent |
+| `minInputConfirmations` | `1` | The confirmations an output needs before it is spent (`0`: also unconfirmed outputs of your own sent transactions) |
 | `coinSelection` | `'accumulative'` | `'accumulative'` or `'all'` |
 | `rbf` | `true` | Every input signals BIP125 replaceability |
 
@@ -129,10 +129,14 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   pass `{ satPerVByte }` there, or raise `maxEstimatedFeeRate` on that handle.
 - **Coins.** `accumulative` (the default) spends the largest outputs first; `all` spends
   every eligible output (a sweep). Only outputs with `minInputConfirmations` confirmations
-  are spent. `0` also spends unconfirmed ones, but a transfer that spends an output of a
-  transaction that is then replaced, or dropped for good, can never confirm, and the library
-  cannot prove it failed, so its Operation stays open with its inputs held. Outputs held by another
-  live Operation are never selected, and change below the dust threshold goes to the fee.
+  are spent, and each new input's transaction must be in a block the proof endpoints
+  attest. `0` also spends unconfirmed outputs of your own transactions that this handle's
+  driver sent (it keeps their bytes; after a restart they wait for a block); an unconfirmed
+  output of anyone else's transaction fails with a retryable `PROVIDER_UNAVAILABLE` until a
+  block holds it. A transfer that spends an output of a transaction that is then replaced,
+  or dropped for good, can never confirm, and the library cannot prove it failed, so its
+  Operation stays open with its inputs held. Outputs held by another live Operation are
+  never selected, and change below the dust threshold goes to the fee.
   `bc.ext.utxo.listUnspent(address)` lists an address's unspent outputs, and
   `bc.ext.utxo.coinSelection({ from, outputs, fee?, exclude? })`, with amounts in
   satoshis, previews a selection without signing.
@@ -154,13 +158,17 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   output spent. Anything that
   could change the spend, and any unknown field, fails with `INVALID_INTENT`. A signer
   whose PSBT is refused can still return signature bundles, one per request.
-- **Input values.** Before anything is signed, the driver reads each input's previous
-  transaction, whose bytes must hash to the input's txid, and checks the indexer's value
-  and script against it, for every address type and whatever `nonWitnessUtxo` says. A
-  mismatch, or an output that transaction does not have, fails with a retryable
-  `PROVIDER_INCONSISTENT`, so the indexer can neither misstate what you spend nor make you
-  sign a transaction no node will take. Previous transactions are read four at a time and
-  kept per txid. Each `p2pkh` input, and each segwit v0 input while `nonWitnessUtxo` is on,
+- **Input values.** Before anything is signed, the driver asks the proof endpoints whether
+  each new input's previous transaction is in a block, attested at that block's height
+  (the wallet's own unconfirmed transactions aside, above); until they all agree, the call
+  fails with a retryable `PROVIDER_UNAVAILABLE`. It then reads that transaction, whose
+  bytes must hash to the input's txid, and checks the indexer's value and script against
+  it, for every address type and whatever `nonWitnessUtxo` says. A mismatch, or an output
+  that transaction does not have, fails with a retryable `PROVIDER_INCONSISTENT`. So the
+  indexer can neither misstate what you spend nor make you sign over a coin no chain holds.
+  An output it wrongly lists as unspent makes the node refuse the transfer, which then ends
+  once the spend that took that output is final (`TX_REPLACED`). Previous transactions are
+  read four at a time, in one linear pass, and kept per txid. Each `p2pkh` input, and each segwit v0 input while `nonWitnessUtxo` is on,
   also carries its previous transaction in the PSBT, so a hardware wallet can check the fee
   itself; keep it on for hardware signers, which the BIP143 fee attack targets. Turning it
   off makes PSBTs smaller. A `p2tr` input never carries it: a taproot signature commits to
@@ -195,7 +203,7 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   also counts the child's fee: the replacement fails with `FEE_TOO_LOW`, the original stays
   live, and a higher explicit fee, one that also covers the child, resolves it. Once the
   original is mined, a replacement or cancel fails with `TX_REFUSED` until the workers see
-  that block, then with `INVALID_TRANSITION`; nothing new is sent.
+  that block, then with `INVALID_TRANSITION`; nothing new can land.
 - **Finality** is 6 confirmations on every network, attested by the proof quorum;
   `waitForConfirmation` waits for 1 confirmation by default. Proofs read the `provider`
   endpoints. With one endpoint, a proof quorum of 1, that one operator decides finality and
