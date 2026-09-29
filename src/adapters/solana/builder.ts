@@ -59,7 +59,13 @@ import {
   systemTransfer,
   transferChecked,
 } from './programs';
-import { accountInfo, mintDecimals, mintOf, type SolanaContext } from './reader';
+import {
+  METADATA,
+  accountInfo,
+  mintDecimals,
+  mintOf,
+  type SolanaContext,
+} from './reader';
 import {
   BROADCAST,
   READ,
@@ -257,7 +263,8 @@ async function planTransfer(
     return { ...base, createsRecipientAccount: false };
   }
   const mint = mintOf(intent.asset);
-  const decimals = await mintDecimals(ctx, mint, tags);
+  // Token metadata under the proof quorum (the board's rule), with the caller's signal.
+  const decimals = await mintDecimals(ctx, mint, withSignal(METADATA, tags.signal));
   // M4: nobody can sign for a program's associated token account.
   if (recipient?.executable) {
     throw invalid('the recipient is a program; send to a wallet or a PDA owner');
@@ -685,7 +692,7 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
                 intent.from,
                 output.to,
                 mint,
-                await mintDecimals(ctx, mint, tags),
+                await mintDecimals(ctx, mint, withSignal(METADATA, build.signal)),
               ),
             }),
       };
@@ -741,6 +748,19 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
       // A `null` is a refusal, never "no signers needed": one request per required signer.
       const parts = parseMessage(message);
       if (!parts || parts.required !== unsigned.signingRequests.length) throw mismatch();
+      // Final review M1 (the Tron handoff's "bind it in assemble"): the core stores this
+      // `ordering` as the Attempt's, and the expiry proof reads its blockhash as the
+      // message's. A changed one between build and signing would misplace the window.
+      const ordering = unsigned.ordering as Partial<SolanaExpiryOrdering>;
+      if (
+        ordering.kind !== 'expiry' ||
+        typeof ordering.blockhash !== 'string' ||
+        !isKey(parts.blockhash, ordering.blockhash) ||
+        typeof ordering.lastValidHeight !== 'bigint' ||
+        typeof ordering.blockhashSlot !== 'bigint'
+      ) {
+        throw failed("the Attempt's ordering does not match the signed message");
+      }
       const bytes = unsigned.signingRequests.map((request, i) => {
         if (
           request.scheme !== 'ed25519' ||

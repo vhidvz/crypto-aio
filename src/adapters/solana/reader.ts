@@ -280,9 +280,11 @@ export async function readTransaction(
  * Token metadata is read under the proof quorum (the board's rule, EVM M4), stricter than
  * the contract table's minimum: the core caches a token's decimals and "no such token" for
  * the container's life, so one lagging or wrong endpoint must not mis-scale every amount
- * until a restart. `mintDecimals` compares the mint's verdict only.
+ * until a restart. `mintDecimals` compares the mint's verdict only. The builder reads the
+ * decimals it signs into `transferChecked` the same way (final review M3), so a lagging
+ * endpoint without the mint decides nothing instead of refusing the transfer.
  */
-const METADATA: SolanaCallTags = Object.freeze({ ...READ, quorum: 'proof' });
+export const METADATA: SolanaCallTags = Object.freeze({ ...READ, quorum: 'proof' });
 
 export function createSolanaReader(ctx: SolanaContext): ChainReader {
   const height = async (commitment: 'confirmed' | 'finalized') =>

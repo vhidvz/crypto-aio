@@ -13,6 +13,7 @@ import {
 } from '../../../src/adapters/solana/programs';
 import type { SolanaContext } from '../../../src/adapters/solana/reader';
 import type {
+  SolanaExpiryOrdering,
   SolanaFeeDetails,
   SolanaInstruction,
 } from '../../../src/adapters/solana/types';
@@ -335,6 +336,44 @@ describe('the price ceiling: maxComputeUnitPrice (F5-R9 (b))', () => {
     }
     // Refused before any request, so before anything is signed.
     expect(h.calls).toEqual([]);
+  });
+});
+
+describe('mint decimals under the proof quorum (board rule; final review M3)', () => {
+  it('reads the mint under the proof quorum in the estimate and the build, so one lagging endpoint decides nothing', async () => {
+    const h = solanaHarness({ endpoints: ['a', 'b'], node: { prioritizationFees: [0] } });
+    h.node.fund(KEY_ADDRESS, 10_000_000_000n);
+    h.node.createMint(MINT, 6);
+    h.node.mintTo(MINT, KEY_ADDRESS, 5_000_000n);
+    h.node.produce(2);
+    const builder = createSolanaBuilder(h.ctx);
+    const build: BuildContext = { from: KEY_ADDRESS, keys: h.keys, wallet: {} };
+    const request = intent({ asset: SPL, outputs: [{ to: RECIPIENT, amount: 1n }] });
+    h.calls.length = 0;
+    const fee = await h.run(builder.estimateFee(request, build));
+    await h.run(builder.build(request, fee, build));
+    const mintReads = h.calls.filter(
+      (c) => c.method === 'getAccountInfo' && (c.params as unknown[])[0] === MINT,
+    );
+    expect(mintReads).toHaveLength(2);
+    expect(mintReads.map((c) => c.tags)).toEqual([
+      { purpose: 'read', retry: 'safe', quorum: 'proof' },
+      { purpose: 'read', retry: 'safe', quorum: 'proof' },
+    ]);
+    // Endpoint a has not seen the mint yet: "not yet", never a missing token.
+    h.node.intercept = (endpoint, method, params) =>
+      endpoint === 'a' && method === 'getAccountInfo' && params[0] === MINT
+        ? { result: { context: { slot: 1 }, value: null } }
+        : undefined;
+    for (const attempt of [
+      (): Promise<unknown> => builder.estimateFee(request, build),
+      (): Promise<unknown> => builder.build(request, fee, build),
+    ]) {
+      await expect(h.run(attempt())).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+    }
   });
 });
 
@@ -1075,6 +1114,41 @@ describe('assembling exactly what the header requires', () => {
       }),
     ).rejects.toMatchObject(FAILED);
     await expect(assemble(unsigned)).resolves.toMatchObject({
+      ref: { id: base58.encode(own.bytes) },
+    });
+  });
+
+  it("binds the Attempt's ordering to the signed message's blockhash (final review M1)", async () => {
+    const h = setup();
+    const fee = await h.run(h.builder.estimateFee(intent(), h.build));
+    const unsigned = await h.run(h.builder.build(intent(), fee, h.build));
+    const own = { requestId: 's0', bytes: sign(unsigned.signingRequests[0]!.payload) };
+    const ordering = unsigned.ordering as SolanaExpiryOrdering;
+    const assembleWith = (changed: Record<string, unknown>) =>
+      h.run(
+        h.builder.assemble(
+          { ...unsigned, ordering: changed as unknown as UnsignedTx['ordering'] },
+          [own],
+        ),
+      );
+    const FAILED = {
+      code: 'SIGNING_FAILED',
+      message: "the Attempt's ordering does not match the signed message",
+    };
+    h.node.produce(1);
+    for (const changed of [
+      { ...ordering, blockhash: h.node.head.hash },
+      { ...ordering, blockhash: `${ordering.blockhash}1` },
+      { ...ordering, blockhash: undefined },
+      { ...ordering, lastValidHeight: Number(ordering.lastValidHeight) },
+      { ...ordering, lastValidHeight: undefined },
+      { ...ordering, blockhashSlot: Number(ordering.blockhashSlot) },
+      { ...ordering, blockhashSlot: undefined },
+      { ...ordering, kind: 'nonce', nonce: 0n },
+    ]) {
+      await expect(assembleWith(changed)).rejects.toMatchObject(FAILED);
+    }
+    await expect(assembleWith({ ...ordering })).resolves.toMatchObject({
       ref: { id: base58.encode(own.bytes) },
     });
   });
