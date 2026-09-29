@@ -191,6 +191,9 @@ describe('TRC-20 ABI (SDK-free)', () => {
       `${long.slice(0, -1)}g`, // not hex at the very end
       `${long}00`, // not a whole number of words
       `${word(32)}${word(0)}`.slice(0, 126), // under two words
+      word(32), // one word
+      `${word(32)}${'g'.repeat(64)}`, // a length that is not hex
+      `${word(32)}${word(2)}${'4f4b'.padEnd(62, '0')}zz`, // not hex past the string's bytes
       '',
     ]) {
       expect(() => decodeString(bad)).toThrow(TypeError);

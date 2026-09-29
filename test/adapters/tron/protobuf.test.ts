@@ -70,6 +70,7 @@ describe('the shared protobuf reader (F4-R22)', () => {
     expect(singular(fromHex('0801' + '1200'), kinds)?.get(1)).toBe(1n);
     for (const hex of [
       '1801', // a field the kinds do not name
+      '1a00', // one of another wire type
       '0a00', // field 1 as bytes
       '1001', // field 2 as a varint
       '0801' + '0801', // repeated
