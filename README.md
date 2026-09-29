@@ -1,6 +1,6 @@
 # Crypto-AIO
 
-All-In-One Crypto-Currency for Backend
+All-In-One Crypto-Currency
 
 [![Build, Test and Publish](https://github.com/vhidvz/crypto-aio/actions/workflows/npm-ci.yml/badge.svg)](https://github.com/vhidvz/crypto-aio/actions/workflows/npm-ci.yml)
 [![npm](https://img.shields.io/npm/v/crypto-aio)](https://www.npmjs.com/package/crypto-aio)
