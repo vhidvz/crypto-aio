@@ -27,9 +27,10 @@ The library ships in roadmap milestones called plans. Plan 1, the core, and Plan
 **EVM family**, are complete: Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain,
 Arbitrum, Optimism and Base, through ethers (the default) or web3. The fake family from
 `crypto-aio/testing` is a deterministic, in-memory chain for learning and testing. Plan 3,
-the **UTXO family**, and Plan 4, the **Tron family**, are complete too: Bitcoin (mainnet,
-testnet, testnet4, signet, regtest) through bitcoinjs-lib and an Esplora indexer, and Tron
-through tronweb. The other real chain families are planned.
+the **UTXO family**, Plan 4, the **Tron family**, and Plan 5, the **Solana family**, are
+complete too: Bitcoin (mainnet, testnet, testnet4, signet, regtest) through bitcoinjs-lib
+and an Esplora indexer, Tron through tronweb, and Solana (mainnet, devnet and testnet)
+through `@solana/web3.js`. TON is planned.
 
 **Only in-memory stores ship.** They work in one process and lose everything on restart.
 In production you supply your own `OperationStore`, `LockManager`, `SequenceStore` and
@@ -45,7 +46,7 @@ in `crypto-aio/testing`; see [Testing an adapter or a store](./networks.md#testi
 | EVM: Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base (ethers, web3) | Works today; no address history yet (it needs an indexer) |
 | UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Works today; no tokens, no OP_RETURN memo |
 | Tron (tronweb) | Works today; address history needs an indexer provider (`trongrid` or `public`) |
-| Solana (@solana/web3.js) | Planned, Plan 5 |
+| Solana (@solana/web3.js) | Works today: SOL, classic SPL tokens, memos, scanning and history without an indexer; needs Node.js 22.12 or later |
 | TON (@ton/ton) | Planned, Plan 6 |
 
 `Blockchain.create({ chain: 'ethereum', provider: … })` works once the SDK is installed:
@@ -56,10 +57,13 @@ is the default; see
 [Configuring a real network (Bitcoin)](./quick-start.md#configuring-a-real-network-bitcoin).
 `Blockchain.create({ chain: 'tron', provider: … })` works once tronweb is installed
 (`npm install tronweb`); mainnet needs a TronGrid key or another provider, see
-[Tron networks](./networks.md#tron-networks). A chain of a planned family, such as
-`solana`, still fails with `ConfigError` (`CONFIG_INVALID`, "unknown chain"). In these
-guides, an example for a planned family is marked **"shape of the API once the adapter ships
-(planned)"**.
+[Tron networks](./networks.md#tron-networks).
+`Blockchain.create({ chain: 'solana', provider: … })` works once `@solana/web3.js` is
+installed (`npm install @solana/web3.js`), on Node.js 22.12 or later; see
+[Configuring a real network (Solana)](./quick-start.md#configuring-a-real-network-solana).
+A chain of a planned family, such as `ton`, still fails with `ConfigError`
+(`CONFIG_INVALID`, "unknown chain"). In these guides, an example for a planned family is
+marked **"shape of the API once the adapter ships (planned)"**.
 
 ## Map of the guides
 
@@ -70,7 +74,7 @@ guides, an example for a planned family is marked **"shape of the API once the a
 | [Tutorial](./tutorial.md) | Check your understanding with 10 hands-on steps on the fake chain, about 20 minutes |
 | [Sending and receiving](./transactions.md) | Build withdrawals and deposit scanning, and handle errors |
 | [Keys, signers and secrets](./security.md) | Choose a signer, add a policy hook, protect secrets, go to production |
-| [Using any blockchain network](./networks.md) | See what each EVM, Bitcoin and Tron network supports, add your own, or write a chain family plugin |
+| [Using any blockchain network](./networks.md) | See what each EVM, Bitcoin, Tron and Solana network supports, add your own, or write a chain family plugin |
 
 ## API reference
 
@@ -80,6 +84,6 @@ The API reference is generated from the source with TypeDoc:
 pnpm doc
 ```
 
-Then open `docs/api/index.html` in a browser. The reference covers the six entry points:
-`crypto-aio`, `crypto-aio/evm`, `crypto-aio/utxo`, `crypto-aio/tron`, `crypto-aio/testing`
-and `crypto-aio/native`. It also includes these guides.
+Then open `docs/api/index.html` in a browser. The reference covers the seven entry points:
+`crypto-aio`, `crypto-aio/evm`, `crypto-aio/utxo`, `crypto-aio/tron`, `crypto-aio/solana`,
+`crypto-aio/testing` and `crypto-aio/native`. It also includes these guides.

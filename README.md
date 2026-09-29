@@ -18,14 +18,15 @@ including the security advisory about credentials that were committed to this re
 Plan 1 is complete: the SDK-free core and the testing kit (`crypto-aio/testing`). Plan 2,
 the EVM family (Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism and
 Base, through ethers or web3), Plan 3, the UTXO family (Bitcoin, through bitcoinjs-lib with
-an Esplora indexer), and Plan 4, the Tron family (tronweb), are complete on `main` and ship
-in the next release. Solana and TON arrive in Plans 5 and 6.
+an Esplora indexer), Plan 4, the Tron family (tronweb), and Plan 5, the Solana family
+(`@solana/web3.js`, on Node.js 22.12 or later), are complete on `main` and ship in the next
+release. TON arrives in Plan 6.
 
 ## Documentation
 
 - [Guides](docs/guides/index.md): what works today, the core concepts and how to use them.
 - [Quick start](docs/guides/quick-start.md): a first transfer on the fake chain in 5
-  minutes, then a real EVM or Bitcoin network. The [tutorial](docs/guides/tutorial.md)
-  reviews the main concepts in 10 hands-on steps.
+  minutes, then a real EVM, Bitcoin or Solana network. The
+  [tutorial](docs/guides/tutorial.md) reviews the main concepts in 10 hands-on steps.
 - API reference: run `pnpm doc`, then open `docs/api/index.html`. The generated site
   includes the guides.

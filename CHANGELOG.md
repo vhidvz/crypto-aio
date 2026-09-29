@@ -55,6 +55,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its margin, the network's maximum, `maxFeeLimit`), and a transfer whose simulated energy
   needs more is refused with `INVALID_INTENT` before signing. The node reports its maximum,
   the energy price and the simulated energy, so this is the one bound no endpoint can raise.
+- The Solana family, built in: `solana` on mainnet, devnet and testnet, with
+  `@solana/web3.js` 1.99 as an optional peer dependency. It needs Node.js 22.12 or later: on
+  Node 22.0 to 22.11, loading the SDK fails with Node's own `ERR_REQUIRE_ESM`.
+- SOL and classic SPL token transfers (`transferChecked`) with memos, one output per
+  transfer. A missing associated token account of the recipient is created, with its rent as
+  a separate `rent` charge. Transfers that could strand funds (to a program, a program-owned
+  account or a token account), frozen token accounts, and accounts left below the
+  rent-exempt minimum are refused before signing. Token-2022 mints throw
+  `UNSUPPORTED_CAPABILITY`.
+- The `solana` fee kind: the signature fee plus a priority fee priced from recent
+  prioritization fees, with a `{ computeUnitPrice, computeUnitLimit? }` override. `expiry`
+  ordering on the blockhash's last valid block height, with expiry proven from the
+  blockhash's own block and every block of its window, and `rebuild`; finality at the
+  `finalized` commitment, with quorum proofs.
+- Block scanning over dense block heights, address history from `getSignaturesForAddress`
+  without an indexer, the `public`, `alchemy`, `infura` and `ankr` presets, USDC and USDT by
+  alias, and `bc.ext.solana.getTokenAccounts(owner, mint?)`.
+- The `crypto-aio/solana` entry: `SOLANA_CAPABILITIES`, `SOLANA_PEER_DEPENDENCIES` and the
+  SDK type for `native(bc, '@solana/web3.js')` (a `Connection`); also a typed
+  `ChainRegistry` entry for `solana`, and the root type exports `SolanaExpiryOrdering`,
+  `SolanaExt`, `SolanaFeeDetails`, `SolanaFeeOverride` and `SolanaTokenAccount`.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers

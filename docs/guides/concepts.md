@@ -37,8 +37,8 @@ never imports a blockchain SDK. Only drivers do, and they are loaded on first us
 
 A **chain** is a blockchain id from the registry. A **network** is one of its deployments.
 A **library** is the SDK the driver uses. A handle is bound to one of each. The built-in
-chains are the EVM chains, such as `ethereum` with `mainnet` and `ethers`; the fake chains
-come from `crypto-aio/testing`.
+chains are the EVM chains, such as `ethereum` with `mainnet` and `ethers`, plus `bitcoin`,
+`tron` and `solana`; the fake chains come from `crypto-aio/testing`.
 
 ```ts
 [bc.chain, bc.network, bc.library]; // ['fakechain', 'local', 'fake-sdk']

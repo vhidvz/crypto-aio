@@ -6,8 +6,9 @@ summary: Withdrawals, cold signing, confirmations, background workers, deposit s
 
 This guide shows how to build withdrawals and deposits into a service. The examples run on
 the fake chain (`bc = env.bc`; wrap awaited calls in `env.run(...)`, as in the
-[tutorial](./tutorial.md)). They work the same way on the EVM chains and on Tron, apart from
-the EVM and Tron notes below. Terms are defined in [Core concepts](./concepts.md).
+[tutorial](./tutorial.md)). They work the same way on the EVM chains, Bitcoin, Tron and
+Solana, apart from the family notes below. Terms are defined in
+[Core concepts](./concepts.md).
 
 ## Sending
 
@@ -87,6 +88,16 @@ maximum fee limit and the handle's `maxFeeLimit` option (100 TRX by default); `{
 may raise it to the lower of the two but never set it below the estimate.
 [Tron networks](./networks.md#tron-networks) explains the charges and the ceiling.
 
+On Solana, the `solana` fee has a `network` charge (the signature fee), a `priority` charge
+(the compute-unit price times the compute-unit limit) and, when the transfer creates the
+recipient's token account, a `rent` charge; the bound is `exact`, or `upper` with `rent`.
+`slow`, `normal` and `fast` take the 25th, 50th or 75th percentile of the node's recent
+prioritization fees, with no ceiling of the library's own, and the limit is a simulation
+plus 20% and 1,000 units. The override is `{ computeUnitPrice, computeUnitLimit? }`
+(`SolanaFeeOverride`), in micro-lamports per compute unit and compute units, as bigints
+only. [Solana networks](./networks.md#solana-networks) explains the charges, the limit and
+how each build varies it.
+
 ### Cold, offline and asynchronous signing
 
 A wallet without a signer, such as `{ publicKey: '<hex>' }`, is watch-only. `transfer` then
@@ -129,6 +140,12 @@ const prepared = await btc.prepareTransfer({ to, amount: '0.01' }, { idempotency
 const psbt = prepared.unsigned?.payload.data; // base64: sign it on the hardware wallet
 await btc.submitSignatures(prepared.operation.id, { encoding: 'base64', data: signedPsbt });
 ```
+
+On Solana, the one signing request is an `ed25519` signature over the transaction's message
+bytes (`payloadKind: 'message'`), and `submitSignatures` takes bundles only. The message
+names a recent blockhash, valid for about a minute: sign within that time. Signatures that
+come later give a transaction that nodes refuse (`blockhash not found`); it ends `expired`
+once that is proven, and `rebuild` then needs a synchronous signer.
 
 ## Lifecycle and `stalled`
 
@@ -180,7 +197,7 @@ idempotency key): the new Operation spends other coins, and both can confirm. Re
 call with the same key, or `rebroadcast`, `replace` or `cancel` it; see
 [Bitcoin networks](./networks.md#bitcoin-networks) for how it resolves.
 
-On expiry- and seqno-based chains (Tron today; planned Solana and TON; `fakeexpiry` and
+On expiry- and seqno-based chains (Tron and Solana today; planned TON; `fakeexpiry` and
 `fakeseqno` in the testing kit), `bc.rebuild(id)` re-issues an Operation after its expiry is
 **proven** (`expired`, error `TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the
 Operation. Other chains throw `UNSUPPORTED_CAPABILITY`. Replace, cancel and rebuild sign a
@@ -198,6 +215,21 @@ one. A `TX_EXPIRED` refusal is likewise one node's view at its own head, not pro
 cause and `bc.rebroadcast(id)` within the expiration window, or let the workers watch it:
 the Operation ends `final` if the transaction lands, or `expired` once its expiry is proven,
 and only then does `bc.rebuild(id)` sign a new Attempt.
+
+**On Solana, a refusal means: do not pay again; the Operation is still live.** Solana has
+no replace and no cancel (`UNSUPPORTED_CAPABILITY`). A Solana Operation is `stalled` with
+`TX_REFUSED` or `INSUFFICIENT_FUNDS` when a node refused its signed bytes, and those bytes
+may still land until the window of their blockhash has passed. The usual case is
+`blockhash not found` on the first broadcast, from an endpoint that lags behind the one
+that served the blockhash. `TX_REFUSED` also covers a node that claims the signature is
+invalid when the library's own check of the bytes it sent finds every signature valid: a
+lying endpoint may have relayed them anyway. The workers never resend a `stalled` transfer,
+so after any refusal, even a false one, retry only with `bc.rebroadcast(id)` while the
+blockhash is valid, or by repeating the call with the **same** idempotency key, never a new
+one. The workers keep watching it: the Operation ends `final` if the transaction lands, or
+`expired` once its expiry is proven, and only then does `bc.rebuild(id)` sign a new
+Attempt. Proving the expiry needs providers that can serve every block of the window,
+which the `public` preset cannot ([Solana networks](./networks.md#solana-networks)).
 
 ## Waiting and watching
 
@@ -266,6 +298,16 @@ const now = await bc.getTransactionStatus(operationId); // one read
   replacement that the monitor first notices later than that stays undecided until an
   archive endpoint answers. A nonce consumed by an EIP-7702 authorization, rather than by a
   transaction from your address, also stays undecided and is never failed.
+- **Solana verdicts and proofs.** A Solana verdict reads the finalized transaction under
+  the proof quorum. A transaction that failed on chain is proven `failed` (`TX_REVERTED`,
+  reason `transaction failed`), and its fee is paid. An SPL transfer counts as executed only
+  when the token balances show tokens leaving the sender's account and reaching the
+  recipient's. A transaction that never landed is proven `expired` only once the proof
+  quorum attests the block of its blockhash, has finalized the block after its last valid
+  height, and serves every block of its window without it. An index that shows nothing
+  proves nothing, and an endpoint that lags, or no longer holds those blocks, decides
+  nothing. With one provider the proof quorum is 1, so configure two or more, ideally three
+  ([Solana networks](./networks.md#solana-networks)).
 
 ## Background workers and startup recovery
 
@@ -382,19 +424,34 @@ for await (const event of scanner) {
   `decoding: 'partial'`, since TRX can move inside it without an event, and a TRC-10
   transfer is not decoded (`decoding: 'none'`). A memo arrives on each transfer as
   `transfer.memo` when it is UTF-8 text. Credit in `final` mode, on solidified blocks.
+- **Solana.** Blocks carry SOL transfers, including those a program makes
+  (`source: 'internal'`), and classic SPL transfers, reported with the token accounts'
+  owners when the node gives them. A filtered scan returns a superset: every transaction
+  that may move funds for a watched address, and one it cannot fully attribute arrives as
+  `decoding: 'partial'` rather than being dropped. A token transfer that creates the
+  recipient's token account also shows its rent deposit as an internal SOL transfer to that
+  account. Heights are block heights, so skipped slots leave no gap. The scan reads one
+  `getBlock` per block, so over the `public` preset it falls behind; scan through a keyed
+  provider or your own node.
 
 ### Address history (`address-history`)
 
-`bc.history(address, { cursor?, limit? })` returns `{ items: Transaction[], next? }` from an
-indexer. It needs an indexer provider. The fake chain has none, and the EVM family does not
-support one yet, so both throw `UNSUPPORTED_CAPABILITY`. Tron serves it from TronGrid: name
-the `trongrid` or `public` preset as the handle's `indexer`. A transaction can come more than
-once (on Tron, a call to a contract account that moves its own tokens comes in both parts of
-the listing, [Tron networks](./networks.md#tron-networks)), so dedupe on `transfer.id`, as
-for scans.
+`bc.history(address, { cursor?, limit? })` returns `{ items: Transaction[], next? }`. Most
+families read it from an indexer provider; Solana reads its RPC. The fake chain has none,
+and the EVM family does not support one yet, so both throw `UNSUPPORTED_CAPABILITY`. Tron
+serves it from TronGrid: name the `trongrid` or `public` preset as the handle's `indexer`. A
+transaction can come more than once (on Tron, a call to a contract account that moves its
+own tokens comes in both parts of the listing, [Tron networks](./networks.md#tron-networks)),
+so dedupe on `transfer.id`, as for scans.
 On Bitcoin it reads the Esplora indexer and lists confirmed transactions only, newest first.
 Credit from it as from the scanner: skip a transfer whose `to` is among its `from`
 addresses, which is the sender's change or a cancel's refund.
+
+Solana needs no indexer: its RPC serves history (`getSignaturesForAddress`), newest first,
+at most 1,000 per page, and each item is read back with its own request. An SPL deposit into
+an existing token account appears in that token account's history, not the owner's;
+`bc.ext.solana.getTokenAccounts(owner)` lists an owner's token accounts. History ends at
+the provider's retention ([Solana networks](./networks.md#solana-networks)).
 
 ## Error handling
 
@@ -416,6 +473,7 @@ land.**
 | `TX_REJECTED` | Nodes rejected every Attempt as never valid; nonce released | Fix the cause; retry with a **new** key |
 | Tron: `TX_REFUSED`, `TX_EXPIRED` or `INSUFFICIENT_FUNDS` with state `stalled` | A node refused the signed bytes, or claimed they are invalid; they may still land. A liar and a genuine refusal look the same | Never pay again: repeat only with the **same** key. `rebroadcast` after the fix; `rebuild` only once the Operation is `expired` (see "Lifecycle and `stalled`" above) |
 | Tron: `TX_REVERTED` with reason `token transfer not evidenced` | The token call succeeded on chain but logged no `Transfer` to the recipient; value may have moved | Check the chain before you pay again ([Tron token verdicts](#waiting-and-watching)) |
+| Solana: `TX_REFUSED` or `INSUFFICIENT_FUNDS` with state `stalled` | A node refused the signed bytes (often `blockhash not found`), or claimed a signature the library found valid is invalid; they may still land until their window has passed | Never pay again: `rebroadcast` while the blockhash is valid, or repeat only with the **same** key; the workers never resend it. `rebuild` only once the Operation is `expired` |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |
 | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_INCONSISTENT` (not ambiguous) | A read failed | Retry later |

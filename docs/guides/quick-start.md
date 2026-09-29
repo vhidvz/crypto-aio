@@ -9,8 +9,9 @@ on the fake chain, and configure a real EVM network.
 
 ## Install
 
-crypto-aio needs Node.js 22 or later. The API in these guides is version 0.1, which is **not
-on npm yet**. The 0.0.x releases on npm are an older, unrelated API. Until 0.1.0 is
+crypto-aio needs Node.js 22 or later, and Solana needs Node.js 22.12 or later
+([why](./networks.md#solana-networks)). The API in these guides is version 0.1, which is
+**not on npm yet**. The 0.0.x releases on npm are an older, unrelated API. Until 0.1.0 is
 published, you can build a package from source, but only once the 0.1 work is merged to the
 repository's `main` branch:
 
@@ -20,18 +21,20 @@ cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<ve
 npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM, UTXO and Tron
+Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM, UTXO, Tron and Solana
 families are on `main` and in the next release. Install only the SDK you use next to the
 package: for EVM chains `npm install ethers`, or `npm install web3` and `library: 'web3'` on
 the handle, since ethers is the default; for Bitcoin `npm install bitcoinjs-lib`; for Tron
-`npm install tronweb`. A missing SDK fails with `DEPENDENCY_MISSING` and the exact install
-command. The package has six entry points:
+`npm install tronweb`; for Solana `npm install @solana/web3.js` (Node.js 22.12 or later). A
+missing SDK fails with `DEPENDENCY_MISSING` and the exact install command. The package has
+seven entry points:
 
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
 import { evmChainPlugin } from 'crypto-aio/evm'; // EVM extras and SDK client types
 import 'crypto-aio/utxo'; // Bitcoin SDK client types (native(bc, 'bitcoinjs-lib'))
 import { MAX_MEMO_BYTES } from 'crypto-aio/tron'; // Tron constants and the SDK client type
+import { SOLANA_CAPABILITIES } from 'crypto-aio/solana'; // Solana extras and SDK client type
 import { createFakeEnv } from 'crypto-aio/testing'; // test kit and the fake chain
 import { native } from 'crypto-aio/native'; // escape hatch to the SDK client
 ```
@@ -212,11 +215,57 @@ proofs cross-check: with one Esplora endpoint, its operator alone decides finali
 replace and cancel, and the limits, such as the public services' 500-output limit per
 address.
 
+## Configuring a real network (Solana)
+
+Install the SDK next to the package, `npm install @solana/web3.js`, and run on Node.js 22.12
+or later: on 22.0 to 22.11, loading the SDK fails with Node's `ERR_REQUIRE_ESM`. The
+`alchemy`, `infura` and `ankr` presets serve mainnet and devnet with an `apiKey`. `public`,
+the cluster's own endpoint, also serves testnet, but it is only for trying things out: it
+cannot prove that a transfer never landed, so such a transfer never becomes `expired` and
+cannot be rebuilt.
+
+```ts
+import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
+
+configure({
+  providers: {
+    alchemy: { preset: 'alchemy', apiKey: secret(process.env.ALCHEMY_KEY ?? '') },
+    ankr: { preset: 'ankr', apiKey: secret(process.env.ANKR_KEY ?? '') },
+  },
+  signers: {
+    'sol-hot': localSigner({ id: 'sol-hot', ed25519: secret(process.env.SOL_SEED_HEX ?? '') }),
+  },
+  wallets: { payouts: { signer: 'sol-hot' } },
+  chains: { solana: { network: 'devnet', provider: ['alchemy', 'ankr'], wallet: 'payouts' } },
+  lifecycle: { requireIdempotencyKey: true },
+});
+
+const sol = Blockchain.create({ chain: 'solana' });
+await sol.ready(); // loads @solana/web3.js; each endpoint must report devnet's genesis hash
+const me = await sol.walletAddress(); // me.canonical is base58; fund it before sending
+const sub = await sol.transfer(
+  { asset: 'USDC', to: '<wallet address>', amount: '25', memo: 'invoice 42' },
+  { idempotencyKey: 'payout-42' },
+);
+await sub.wait({ finality: 'final' }); // the finalized commitment
+```
+
+The key is the wallet's 32-byte ed25519 seed, as hex, not the 64-byte keypair of a Solana
+CLI key file (its first 32 bytes are the seed). A decimal string is in the asset's units, so
+`amount: '25'` is 25 USDC here, and a `bigint` is in base units (lamports for SOL). `to` is
+the recipient's wallet, never its token account: the transfer pays into the wallet's
+associated token account and creates it when it is missing, at the sender's cost (a `rent`
+charge in the estimate). Solana has no replace or cancel: a transaction that never lands is
+proven `expired` once its blockhash's window has passed, and `bc.rebuild(id)` then signs it
+again. With one provider the proof quorum is 1, so in production use two or three
+independent providers. [Solana networks](./networks.md#solana-networks) covers the fees, the
+checks before signing, expiry, refusals, scanning and history.
+
 ## Next steps
 
 - [Core concepts](./concepts.md): the vocabulary behind this example.
 - [Tutorial](./tutorial.md): ten short, hands-on steps that exercise the main concepts.
 - [Sending and receiving](./transactions.md): withdrawals, deposits, and error handling.
 - [Keys, signers and secrets](./security.md): signers, policy hooks, and a production checklist.
-- [Using any blockchain network](./networks.md): the EVM, Bitcoin and Tron networks, adding
-  your own, and what is planned.
+- [Using any blockchain network](./networks.md): the EVM, Bitcoin, Tron and Solana
+  networks, adding your own, and what is planned.
