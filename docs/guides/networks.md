@@ -498,7 +498,10 @@ crypto-aio needs Node 22.
   in micro-lamports, times the compute-unit limit, rounded up to whole lamports; it is
   charged on the limit, not on what the transaction uses) and, when the recipient's token
   account is created, `rent`. The bound is `exact`, or `upper` with a `rent` charge;
-  `fee.details` is `SolanaFeeDetails`. `slow`, `normal` and `fast` take the 25th, 50th and
+  `fee.details` is `SolanaFeeDetails`. The `network` charge, and so the `exact` bound, is
+  one endpoint's `getFeeForMessage` quote: it is never signed, and the chain charges its own
+  signature fee, so a wrong quote changes only the estimate and the balance check (a short
+  balance is then refused by the node and stalls, rather than paying more). `slow`, `normal` and `fast` take the 25th, 50th and
   75th percentile of the node's `getRecentPrioritizationFees` for the accounts the transfer
   writes (0 when it reports none), and the limit is a simulation plus 20% and 1,000 units
   (the runtime's default of 200,000 units per instruction when the simulation fails). One
