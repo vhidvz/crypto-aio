@@ -102,6 +102,15 @@ describe('the linear transaction reader (F3-R24 F2)', () => {
       bytes.subarray(bytes.length - 4 - 9),
     );
     expect(readTx(negative)?.outputs[0]?.value).toBe(-1n);
+    // A witness record under any flags but exactly 1 is unknown optional data to bitcoind,
+    // even when the witness itself is well formed.
+    const witnessed = manyOutputs(2, 10).bytes;
+    expect(readTx(witnessed)?.hasWitness).toBe(true);
+    for (const flags of [0x02, 0x03, 0x81]) {
+      const other = Uint8Array.from(witnessed);
+      other[5] = flags;
+      expect(readTx(other)).toBeUndefined();
+    }
     for (const hex of [
       `${good}00`, // a byte after the lock time
       good.slice(0, -2), // truncated
