@@ -1,5 +1,6 @@
 import { SOLANA_CHAIN } from '../../../src/adapters/solana/chains';
 import {
+  DEFAULT_MAX_COMPUTE_UNIT_PRICE,
   SOLANA_CAPABILITIES,
   solanaNetworkConfig,
 } from '../../../src/adapters/solana/network';
@@ -206,6 +207,69 @@ describe('solanaNetworkConfig', () => {
     ];
     for (const run of cases) {
       expect(run).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
+    }
+  });
+});
+
+describe('the handle option maxComputeUnitPrice (F5-R9 (b), F4-R28 shape)', () => {
+  const devnet = SOLANA_CHAIN.networks.devnet as NetworkInfo;
+  const withParams = (params: Record<string, unknown>): NetworkInfo => ({
+    ...devnet,
+    params,
+  });
+  const bound = (network: NetworkInfo, options?: Record<string, unknown>) =>
+    solanaNetworkConfig(SOLANA_CHAIN, network, options).maxComputeUnitPrice;
+
+  it('takes the option, else the network entry, else 10,000,000 micro-lamports', () => {
+    expect(DEFAULT_MAX_COMPUTE_UNIT_PRICE).toBe(10_000_000n);
+    expect(bound(devnet)).toBe(DEFAULT_MAX_COMPUTE_UNIT_PRICE);
+    expect(bound(devnet, {})).toBe(DEFAULT_MAX_COMPUTE_UNIT_PRICE);
+    expect(bound(withParams({ maxComputeUnitPrice: 50_000n }))).toBe(50_000n);
+    expect(
+      bound(withParams({ maxComputeUnitPrice: 50_000n }), {
+        maxComputeUnitPrice: 2_000_000n,
+      }),
+    ).toBe(2_000_000n);
+    expect(bound(devnet, { maxComputeUnitPrice: 999n })).toBe(999n);
+    expect(bound(devnet, { maxComputeUnitPrice: 2n ** 64n - 1n })).toBe(2n ** 64n - 1n);
+  });
+
+  it('refuses a bound that is not a bigint from 999 to 2^64 − 1, from either place', () => {
+    for (const value of [998n, 0n, -1n, 2n ** 64n, 10_000_000, '10000000', null]) {
+      for (const run of [
+        () => bound(devnet, { maxComputeUnitPrice: value }),
+        () => bound(withParams({ maxComputeUnitPrice: value })),
+        // A bad network value fails loudly even where the option overrides it.
+        () =>
+          bound(withParams({ maxComputeUnitPrice: value }), {
+            maxComputeUnitPrice: 5_000n,
+          }),
+      ]) {
+        expect(run).toThrow(
+          expect.objectContaining({
+            code: 'CONFIG_INVALID',
+            message: expect.stringContaining('maxComputeUnitPrice must be a bigint'),
+          }),
+        );
+      }
+    }
+  });
+
+  it('refuses any other option, listing the accepted name and never echoing the key', () => {
+    for (const key of ['maxPriorityFeeMicroLamports', 'maxFeeLimit', 'sk_live_abc123']) {
+      let caught: unknown;
+      try {
+        bound(devnet, { [key]: 1n });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message:
+          "Solana network solana:devnet: unknown option; the Solana driver's only option is 'maxComputeUnitPrice'",
+      });
+      expect(JSON.stringify(caught)).not.toContain(key);
+      expect(String((caught as Error).stack)).not.toContain(key);
     }
   });
 });

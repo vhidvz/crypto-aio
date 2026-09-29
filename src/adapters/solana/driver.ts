@@ -50,7 +50,7 @@ export function solanaDriverFactory(
 ): DriverFactory {
   return {
     async create(ctx): Promise<ChainDriver> {
-      const config = solanaNetworkConfig(ctx.chain, ctx.network);
+      const config = solanaNetworkConfig(ctx.chain, ctx.network, ctx.options);
       // M12: probes go on every transport this driver receives, before any traffic.
       ctx.transport.setProbes(probes(config.genesisHash));
       ctx.indexer?.setProbes(probes(config.genesisHash));

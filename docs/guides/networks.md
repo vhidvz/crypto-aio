@@ -499,13 +499,24 @@ crypto-aio needs Node 22.
   `fee.details` is `SolanaFeeDetails`. `slow`, `normal` and `fast` take the 25th, 50th and
   75th percentile of the node's `getRecentPrioritizationFees` for the accounts the transfer
   writes (0 when it reports none), and the limit is a simulation plus 20% and 1,000 units
-  (the runtime's default of 200,000 units per instruction when the simulation fails). The
-  library puts no ceiling of its own on that price: it is what the endpoint reports. To cap
-  what a transfer may pay, compare `ctx.fee` in your `beforeSign` hook
-  ([Keys, signers and secrets](./security.md)) with your own limit, or pass an override. The
-  override is `{ computeUnitPrice, computeUnitLimit? }` (`SolanaFeeOverride`), as bigints
-  only: the price in micro-lamports per compute unit, kept exactly, and optionally a limit
-  from 1 to 1,400,000 instead of the simulation.
+  (the runtime's default of 200,000 units per instruction when the simulation fails). One
+  endpoint reports that price and runs that simulation, so the price is also bounded by your
+  own `chains.solana.options.maxComputeUnitPrice`, which no endpoint can raise:
+  micro-lamports per compute unit as a bigint, from 999 to 2^64 − 1, and 10,000,000 by
+  default (`DEFAULT_MAX_COMPUTE_UNIT_PRICE`). A speed's percentile is clamped to the bound
+  less 999 before the build's variant is added, so a speed never signs more than the bound.
+  At the 1,400,000-unit maximum limit, the default bound caps a transfer's priority fee at
+  14,000,000 lamports (0.014 SOL), whatever an endpoint answers. The override is
+  `{ computeUnitPrice, computeUnitLimit? }` (`SolanaFeeOverride`), as bigints only: the
+  price in micro-lamports per compute unit, kept exactly, and optionally a limit from 1 to
+  1,400,000 instead of the simulation. An override price above the bound is refused with
+  `INVALID_INTENT` before anything is signed: the message names `maxComputeUnitPrice`, and
+  `error.details` carries `required` and `maxComputeUnitPrice` (decimal strings), so raise
+  the option for a costlier transfer. The build checks the same bound, and that the priority
+  fee matches the price and limit, wherever the estimate came from. Any other key in
+  `chains.solana.options` is `CONFIG_INVALID`. For a tighter policy per transfer, compare
+  `ctx.fee` in your `beforeSign` hook ([Keys, signers and secrets](./security.md)) with
+  your own limit.
 - **Identical transfers.** ed25519 signatures are deterministic, so two identical transfers
   on the same blockhash would be one transaction, and one payment would be lost. Each build
   adds 0 to 1,023 units to the compute-unit limit, an explicit limit included, and a speed

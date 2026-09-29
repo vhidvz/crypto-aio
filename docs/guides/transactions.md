@@ -92,11 +92,13 @@ On Solana, the `solana` fee has a `network` charge (the signature fee), a `prior
 (the compute-unit price times the compute-unit limit) and, when the transfer creates the
 recipient's token account, a `rent` charge; the bound is `exact`, or `upper` with `rent`.
 `slow`, `normal` and `fast` take the 25th, 50th or 75th percentile of the node's recent
-prioritization fees, with no ceiling of the library's own, and the limit is a simulation
-plus 20% and 1,000 units. The override is `{ computeUnitPrice, computeUnitLimit? }`
-(`SolanaFeeOverride`), in micro-lamports per compute unit and compute units, as bigints
-only. [Solana networks](./networks.md#solana-networks) explains the charges, the limit and
-how each build varies it.
+prioritization fees, at most the handle's `maxComputeUnitPrice` option (10,000,000
+micro-lamports per compute unit by default, so at most 0.014 SOL of priority fee per
+transfer), and the limit is a simulation plus 20% and 1,000 units. The override is
+`{ computeUnitPrice, computeUnitLimit? }` (`SolanaFeeOverride`), in micro-lamports per
+compute unit and compute units, as bigints only; a price above `maxComputeUnitPrice` is
+refused before signing. [Solana networks](./networks.md#solana-networks) explains the
+charges, the limit, the bound and how each build varies it.
 
 ### Cold, offline and asynchronous signing
 

@@ -5,6 +5,7 @@ import {
 import { MEMO_PROGRAM, systemTransfer } from '../../../src/adapters/solana/programs';
 import { signedTransaction } from '../../../src/adapters/solana/wire';
 import {
+  MAX_PRICE_VARIANT,
   VARIANTS,
   computeUnitLimitFor,
   detailsOf,
@@ -14,6 +15,8 @@ import {
   parseOverride,
   priceForSpeed,
   priorityFee,
+  signedFee,
+  speedPrice,
   variantCounter,
   variantOffsets,
 } from '../../../src/adapters/solana/fees';
@@ -501,6 +504,82 @@ describe('the fee policy', () => {
     expect(() => detailsOf({ ...draft, kind: 'evm-1559' })).toThrow(
       expect.objectContaining({ code: 'INVALID_INTENT' }),
     );
+  });
+});
+
+describe('the price ceiling (F5-R9 (b))', () => {
+  const MAX = 10_000_000n;
+
+  it('clamps a speed below the bound less the largest variant, then adds the variant', () => {
+    expect(MAX_PRICE_VARIANT).toBe(variantOffsets(VARIANTS - 1).price);
+    expect(speedPrice(20n, 7n, MAX)).toBe(27n);
+    expect(speedPrice(MAX - MAX_PRICE_VARIANT, 0n, MAX)).toBe(MAX - 999n);
+    expect(speedPrice(MAX - MAX_PRICE_VARIANT + 1n, 0n, MAX)).toBe(MAX - 999n);
+    // A lying node's u64-sized price: at most the bound, and the variant survives there.
+    expect(speedPrice(2n ** 64n - 1_000n, 0n, MAX)).toBe(MAX - 999n);
+    expect(speedPrice(2n ** 64n - 1_000n, 999n, MAX)).toBe(MAX);
+    expect(speedPrice(2n ** 64n - 1_000n, 998n, MAX)).toBe(MAX - 1n);
+    // The lowest bound leaves only the variant.
+    expect(speedPrice(5n, 999n, 999n)).toBe(999n);
+    expect(speedPrice(5n, 0n, 999n)).toBe(0n);
+  });
+
+  const details = {
+    signatures: 1,
+    baseFee: 5_000n,
+    computeUnitLimit: 1_400_000n,
+    computeUnitPrice: MAX,
+    priorityFee: 14_000_000n,
+    rent: 0n,
+    createsRecipientAccount: false,
+  };
+
+  it('signs a fee only within the bound, the limit and its own priority fee', () => {
+    expect(signedFee(feeDraft('fast', details), MAX)).toEqual(details);
+    expect(
+      signedFee(
+        feeDraft('custom', {
+          ...details,
+          computeUnitLimit: 1n,
+          computeUnitPrice: 0n,
+          priorityFee: 0n,
+        }),
+        MAX,
+      ),
+    ).toMatchObject({ computeUnitLimit: 1n, computeUnitPrice: 0n });
+    let caught: unknown;
+    try {
+      signedFee(
+        feeDraft('fast', {
+          ...details,
+          computeUnitPrice: MAX + 1n,
+          priorityFee: priorityFee(MAX + 1n, 1_400_000n),
+        }),
+        MAX,
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      code: 'INVALID_INTENT',
+      retryable: false,
+      message: expect.stringContaining('maxComputeUnitPrice'),
+      details: { required: '10000001', maxComputeUnitPrice: '10000000' },
+    });
+    for (const tampered of [
+      { computeUnitLimit: 0n, priorityFee: 0n },
+      { computeUnitLimit: 1_400_001n, priorityFee: priorityFee(MAX, 1_400_001n) },
+      { computeUnitPrice: -1n, priorityFee: 0n },
+      { priorityFee: 13_999_999n },
+      { priorityFee: 14_000_001n },
+    ]) {
+      expect(() => signedFee(feeDraft('fast', { ...details, ...tampered }), MAX)).toThrow(
+        expect.objectContaining({
+          code: 'INVALID_INTENT',
+          message: 'the fee estimate is not consistent with its own compute budget',
+        }),
+      );
+    }
   });
 });
 

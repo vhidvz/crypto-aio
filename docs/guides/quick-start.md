@@ -236,7 +236,15 @@ configure({
     'sol-hot': localSigner({ id: 'sol-hot', ed25519: secret(process.env.SOL_SEED_HEX ?? '') }),
   },
   wallets: { payouts: { signer: 'sol-hot' } },
-  chains: { solana: { network: 'devnet', provider: ['alchemy', 'ankr'], wallet: 'payouts' } },
+  chains: {
+    solana: {
+      network: 'devnet',
+      provider: ['alchemy', 'ankr'],
+      wallet: 'payouts',
+      // The highest compute-unit price a transfer signs, in micro-lamports (default 10_000_000)
+      options: { maxComputeUnitPrice: 2_000_000n },
+    },
+  },
   lifecycle: { requireIdempotencyKey: true },
 });
 

@@ -157,6 +157,52 @@ describe('Solana end to end', () => {
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
   });
 
+  it("pays at most the handle's maxComputeUnitPrice however the endpoint prices it (F5-R9 (b))", async () => {
+    const env = await createSolanaEnv({
+      node: { prioritizationFees: [2n ** 63n] },
+      chainOptions: { maxComputeUnitPrice: 50_000n },
+    });
+    const before = env.node.balance(env.address);
+    const fee = await env.run(
+      env.bc.estimateFee({ to: RECIPIENT, amount: SOL, fee: 'fast' }),
+    );
+    const { computeUnitPrice, computeUnitLimit } = fee.details as {
+      computeUnitPrice: bigint;
+      computeUnitLimit: bigint;
+    };
+    expect(computeUnitPrice).toBeLessThanOrEqual(50_000n);
+    expect(computeUnitPrice).toBeGreaterThanOrEqual(50_000n - 999n);
+    const sub = await env.run(
+      env.bc.transfer(
+        { to: RECIPIENT, amount: SOL, fee: 'fast' },
+        { idempotencyKey: 'c1' },
+      ),
+    );
+    await env.produceWhile(sub.wait({ finality: 'final' }));
+    const paid = before - env.node.balance(env.address) - SOL;
+    expect(paid).toBeLessThanOrEqual(
+      5_000n + (50_000n * computeUnitLimit) / 1_000_000n + 2n,
+    );
+    // An explicit price above the bound is refused before anything is signed.
+    await expect(
+      env.run(
+        env.bc.transfer(
+          { to: RECIPIENT, amount: SOL, fee: { computeUnitPrice: 50_001n } },
+          { idempotencyKey: 'c2' },
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      details: { required: '50001', maxComputeUnitPrice: '50000' },
+    });
+    // Any other option fails the handle, naming only the accepted one.
+    const typo = await createSolanaEnv({ chainOptions: { maxComputePrice: 1n } });
+    await expect(typo.run(typo.bc.ready())).rejects.toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: expect.stringContaining("only option is 'maxComputeUnitPrice'"),
+    });
+  });
+
   it('lands five concurrent transfers from one address (expiry ordering needs no lease)', async () => {
     const env = await createSolanaEnv();
     const acquire = jest.spyOn(env.stores.locks, 'acquire');

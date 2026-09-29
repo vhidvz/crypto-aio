@@ -30,14 +30,16 @@ import type { RawTx, SignedTx, UnsignedTx } from '../../core/model/transaction';
 import { equalBytes } from '../../core/util/bytes';
 import { classifyOwnBroadcast } from './errors';
 import {
+  aboveMaxPrice,
   computeUnitLimitFor,
-  detailsOf,
   fallbackComputeUnitLimit,
   feeDraft,
   lamportsCharged,
   parseOverride,
   priceForSpeed,
   priorityFee,
+  signedFee,
+  speedPrice,
   variantOffsets,
 } from './fees';
 import { addressFromPublicKey, decodeBase58, encodeBase58 } from './keys';
@@ -525,9 +527,15 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
   return {
     async estimateFee(intent, build) {
       const tags = withSignal(READ, build.signal);
+      // F5-R9 (b): the handle's bound, which no endpoint can raise. An explicit price above
+      // it is refused before any request; a speed's is clamped below it.
+      const bound = ctx.config.maxComputeUnitPrice;
+      const override = isFeeSpeed(intent.fee) ? undefined : parseOverride(intent.fee);
+      if (override && override.computeUnitPrice > bound) {
+        throw aboveMaxPrice(override.computeUnitPrice, bound);
+      }
       const plan = await planTransfer(ctx, intent, tags);
       const list = transferInstructions(plan);
-      const override = isFeeSpeed(intent.fee) ? undefined : parseOverride(intent.fee);
       const variant = variantOffsets(ctx.nextVariant());
       let price: bigint;
       if (override) {
@@ -542,7 +550,11 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
           [writable],
           tags,
         );
-        price = priceForSpeed(recent, intent.fee as FeeSpeed) + variant.price;
+        price = speedPrice(
+          priceForSpeed(recent, intent.fee as FeeSpeed),
+          variant.price,
+          bound,
+        );
       }
       const { blockhash } = await latestBlockhash(ctx, tags);
       let base = override?.computeUnitLimit;
@@ -654,7 +666,7 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
 
     async build(intent, fee, build) {
       const output = onlyOutput(intent);
-      const details = detailsOf(fee);
+      const details = signedFee(fee, ctx.config.maxComputeUnitPrice);
       const key = keyOf(intent.from, build.keys);
       const text = memoOf(intent.memo);
       const tags = withSignal(READ, build.signal);

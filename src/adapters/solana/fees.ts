@@ -52,6 +52,44 @@ export function variantOffsets(variant: number): {
   };
 }
 
+/** The largest price variant a speed adds, in micro-lamports per compute unit. */
+export const MAX_PRICE_VARIANT = 999n;
+
+/**
+ * A speed's signed price within the handle's `maxComputeUnitPrice` (F5-R9 (b)): the node's
+ * percentile, at most the bound less the largest variant, plus this build's variant. The
+ * signed price never exceeds the bound, and identical transfers still differ at it (D10).
+ * The bound is at least `MAX_PRICE_VARIANT` (`solanaNetworkConfig`).
+ */
+export function speedPrice(
+  percentile: bigint,
+  variant: bigint,
+  maxComputeUnitPrice: bigint,
+): bigint {
+  const ceiling = maxComputeUnitPrice - MAX_PRICE_VARIANT;
+  return (percentile < ceiling ? percentile : ceiling) + variant;
+}
+
+/**
+ * An explicit price above the handle's bound, refused before anything is signed. The details
+ * carry the price and the bound (decimal strings), so the caller sees what to allow.
+ */
+export function aboveMaxPrice(
+  price: bigint,
+  maxComputeUnitPrice: bigint,
+): ValidationError {
+  return new ValidationError(
+    'INVALID_INTENT',
+    'computeUnitPrice is above maxComputeUnitPrice, the Solana handle option that bounds it (micro-lamports per compute unit)',
+    {
+      details: {
+        required: price.toString(),
+        maxComputeUnitPrice: maxComputeUnitPrice.toString(),
+      },
+    },
+  );
+}
+
 /**
  * The highest recent price a speed pays: the u64 range less the largest price variant
  * (999), so the varied price still fits its u64 field (lesson 19, F5-R3).
@@ -173,6 +211,32 @@ export function detailsOf(fee: FeeEstimateDraft): SolanaFeeDetails {
     rent: d.rent,
     createsRecipientAccount: d.createsRecipientAccount,
   };
+}
+
+/**
+ * The compute budget `build` signs (F5-R9 (b) and (c) M2), checked wherever the estimate
+ * came from (the store, `prepareTransfer`, a caller): the price within the handle's bound,
+ * the limit within the protocol's, and the priority fee exactly the one that budget costs.
+ */
+export function signedFee(
+  fee: FeeEstimateDraft,
+  maxComputeUnitPrice: bigint,
+): SolanaFeeDetails {
+  const details = detailsOf(fee);
+  const { computeUnitPrice: price, computeUnitLimit: limit } = details;
+  if (price > maxComputeUnitPrice) throw aboveMaxPrice(price, maxComputeUnitPrice);
+  if (
+    price < 0n ||
+    limit < 1n ||
+    limit > MAX_COMPUTE_UNIT_LIMIT ||
+    details.priorityFee !== priorityFee(price, limit)
+  ) {
+    throw new ValidationError(
+      'INVALID_INTENT',
+      'the fee estimate is not consistent with its own compute budget',
+    );
+  }
+  return details;
 }
 
 /** The lamports every fee charge of `fee` adds up to. */

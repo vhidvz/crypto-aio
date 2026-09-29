@@ -4,7 +4,7 @@ import {
   createSolanaBroadcaster,
   createSolanaBuilder,
 } from '../../../src/adapters/solana/builder';
-import { variantCounter } from '../../../src/adapters/solana/fees';
+import { priorityFee, variantCounter } from '../../../src/adapters/solana/fees';
 import {
   memo,
   setComputeUnitLimit,
@@ -44,7 +44,7 @@ const intent = (overrides: Partial<DriverIntent> = {}): DriverIntent => ({
   ...overrides,
 });
 
-function setup(options: { fees?: number[]; fund?: bigint } = {}) {
+function setup(options: { fees?: readonly (number | bigint)[]; fund?: bigint } = {}) {
   const h = solanaHarness({
     node: { prioritizationFees: options.fees ?? [0, 10, 20, 30] },
   });
@@ -180,6 +180,161 @@ describe('Solana fee estimates', () => {
     ).rejects.toMatchObject({
       code: 'INVALID_INTENT',
     });
+  });
+});
+
+describe('the price ceiling: maxComputeUnitPrice (F5-R9 (b))', () => {
+  const MAX = 10_000_000n;
+  const LIMIT = 1_400_000n;
+  /** One READ endpoint lies about both inputs: a u64-sized price and a huge simulation. */
+  function lying(h: Setup): void {
+    h.node.intercept = (endpoint, method, params) => {
+      if (method !== 'simulateTransaction') return undefined;
+      const answer = h.node.answer(endpoint, method, params) as {
+        value: Record<string, unknown>;
+      };
+      return {
+        result: { ...answer, value: { ...answer.value, unitsConsumed: 2n ** 63n } },
+      };
+    };
+  }
+  const priceOf = (unsigned: UnsignedTx) =>
+    instructionsOf(unsigned).find(
+      (ix) =>
+        ix.program === 'ComputeBudget111111111111111111111111111111' &&
+        ix.data.startsWith('03'),
+    )?.data;
+  const withBound = (h: Setup, maxComputeUnitPrice: bigint) =>
+    createSolanaBuilder({ ...h.ctx, config: { ...h.ctx.config, maxComputeUnitPrice } });
+
+  it('signs at most the bound however a READ endpoint lies about the price and the limit', async () => {
+    const h = setup({ fees: [2n ** 64n - 1_000n] });
+    lying(h);
+    for (const request of [
+      intent({ fee: 'fast' }),
+      intent({ asset: SPL, outputs: [{ to: RECIPIENT, amount: 1n }], fee: 'slow' }),
+    ]) {
+      const { fee, unsigned } = await signedFor(h, request);
+      // The default bound less the largest variant (0 here), at the protocol's largest limit.
+      expect(fee.details).toMatchObject({
+        computeUnitPrice: MAX - 999n,
+        computeUnitLimit: LIMIT,
+        priorityFee: 13_998_602n,
+      });
+      expect(priceOf(unsigned)).toBe(
+        Buffer.from(setComputeUnitPrice(MAX - 999n).data).toString('hex'),
+      );
+      // The worst a lie costs per transfer: the bound times 1.4 M units, 0.014 SOL.
+      expect(fee.charges[1]).toEqual({
+        asset: 'native',
+        amount: 13_998_602n,
+        label: 'priority',
+      });
+      expect(fee.charges[1]!.amount).toBeLessThanOrEqual((MAX * LIMIT) / 1_000_000n);
+    }
+  });
+
+  it('keeps the build variant at the bound, so identical transfers still differ (D10)', async () => {
+    const h = setup({ fees: [2n ** 64n - 1_000n] });
+    const varied: SolanaContext = { ...h.ctx, nextVariant: variantCounter(1_024 * 999) };
+    const fee = await h.run(createSolanaBuilder(varied).estimateFee(intent(), h.build));
+    expect(fee.details).toMatchObject({ computeUnitPrice: MAX });
+    const next = await h.run(createSolanaBuilder(varied).estimateFee(intent(), h.build));
+    expect(next.details).toMatchObject({ computeUnitPrice: MAX });
+    expect(next.details.computeUnitLimit).not.toBe(fee.details.computeUnitLimit);
+  });
+
+  it("takes the handle's own bound, and leaves an honest price under it alone", async () => {
+    const h = setup({ fees: [0, 10, 30_000, 30_000] });
+    const fast = await h.run(
+      withBound(h, 5_000n).estimateFee(intent({ fee: 'fast' }), h.build),
+    );
+    expect(fast.details).toMatchObject({ computeUnitPrice: 4_001n });
+    const normal = await h.run(
+      withBound(h, 5_000n).estimateFee(intent({ fee: 'normal' }), h.build),
+    );
+    expect(normal.details).toMatchObject({ computeUnitPrice: 10n });
+  });
+
+  it('refuses an explicit price above the bound before any request, naming the option', async () => {
+    const h = setup();
+    h.calls.length = 0;
+    let caught: unknown;
+    try {
+      await h.run(
+        h.builder.estimateFee(intent({ fee: { computeUnitPrice: MAX + 1n } }), h.build),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      code: 'INVALID_INTENT',
+      retryable: false,
+      message:
+        'computeUnitPrice is above maxComputeUnitPrice, the Solana handle option that bounds it (micro-lamports per compute unit)',
+      details: { required: '10000001', maxComputeUnitPrice: '10000000' },
+    });
+    expect(h.calls).toEqual([]);
+    // At the bound, the explicit price is kept exactly.
+    const atBound = await h.run(
+      h.builder.estimateFee(intent({ fee: { computeUnitPrice: MAX } }), h.build),
+    );
+    expect(atBound.details).toMatchObject({ computeUnitPrice: MAX });
+    await expect(
+      h.run(
+        withBound(h, 5_000n).estimateFee(
+          intent({ fee: { computeUnitPrice: 5_001n } }),
+          h.build,
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      details: { required: '5001', maxComputeUnitPrice: '5000' },
+    });
+  });
+
+  it('refuses at build a fee outside the bound, the limit or its own priority fee (M2)', async () => {
+    const h = setup();
+    const fee = await h.run(h.builder.estimateFee(intent(), h.build));
+    const d = fee.details as unknown as SolanaFeeDetails;
+    const tamper = (change: Partial<SolanaFeeDetails>) => ({
+      ...fee,
+      details: { ...d, ...change },
+    });
+    h.calls.length = 0;
+    await expect(
+      h.run(
+        withBound(h, 5_000n).build(
+          intent(),
+          tamper({
+            computeUnitPrice: 5_001n,
+            priorityFee: priorityFee(5_001n, d.computeUnitLimit),
+          }),
+          h.build,
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: 'INVALID_INTENT',
+      details: { required: '5001', maxComputeUnitPrice: '5000' },
+    });
+    for (const change of [
+      {
+        computeUnitLimit: 1_400_001n,
+        priorityFee: priorityFee(d.computeUnitPrice, 1_400_001n),
+      },
+      { computeUnitLimit: 0n, priorityFee: 0n },
+      { priorityFee: d.priorityFee + 1n },
+      { computeUnitPrice: 20_000n },
+    ]) {
+      await expect(
+        h.run(h.builder.build(intent(), tamper(change), h.build)),
+      ).rejects.toMatchObject({
+        code: 'INVALID_INTENT',
+        message: 'the fee estimate is not consistent with its own compute budget',
+      });
+    }
+    // Refused before any request, so before anything is signed.
+    expect(h.calls).toEqual([]);
   });
 });
 
@@ -1112,9 +1267,14 @@ describe('fees that have no u64 value', () => {
   it('refuses an explicit price whose fee does not fit, and quotes one that does', async () => {
     const h = setup();
     const max = 2n ** 64n - 1n;
+    // The handle's highest bound (F5-R9 (b)), so every u64 price reaches these checks.
+    const unbounded = createSolanaBuilder({
+      ...h.ctx,
+      config: { ...h.ctx.config, maxComputeUnitPrice: max },
+    });
     const priced = (computeUnitPrice: bigint, computeUnitLimit: bigint) =>
       h.run(
-        h.builder.estimateFee(
+        unbounded.estimateFee(
           intent({ fee: { computeUnitPrice, computeUnitLimit } }),
           h.build,
         ),

@@ -15,7 +15,7 @@ declare module '../../index' {
 }
 
 export { SOLANA_PEER_DEPENDENCIES } from './plugin';
-export { SOLANA_CAPABILITIES } from './network';
+export { DEFAULT_MAX_COMPUTE_UNIT_PRICE, SOLANA_CAPABILITIES } from './network';
 export type {
   SolanaExpiryOrdering,
   SolanaExt,

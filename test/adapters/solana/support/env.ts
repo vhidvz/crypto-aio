@@ -31,6 +31,8 @@ export interface SolanaEnvOptions {
   readonly stores?: Partial<Stores>;
   readonly signer?: Signer;
   readonly lifecycle?: LifecycleOptions;
+  /** The handle's driver options (`chains.solana.options`). */
+  readonly chainOptions?: Readonly<Record<string, unknown>>;
 }
 
 /** A local signer holding the test key that counts its `sign` calls. */
@@ -76,7 +78,14 @@ export async function createSolanaEnv(options: SolanaEnvOptions = {}) {
       providers: { node: { endpoints } },
       signers: fenced.signers,
       wallets: { main: { signer: 'hot' } },
-      chains: { solana: { network: 'devnet', provider: 'node', wallet: 'main' } },
+      chains: {
+        solana: {
+          network: 'devnet',
+          provider: 'node',
+          wallet: 'main',
+          ...(options.chainOptions ? { options: options.chainOptions } : {}),
+        },
+      },
       lifecycle: {
         pollIntervalMs: 1_000,
         droppedGracePeriodMs: 10_000,

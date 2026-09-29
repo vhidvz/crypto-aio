@@ -171,6 +171,60 @@ describe('the Solana driver factory', () => {
     expect([main.node.served, idx.node.served]).toEqual([[], []]);
   });
 
+  it('bounds the price by its handle option, and refuses any other option (F5-R9 (b), M2)', async () => {
+    const create = (options: Record<string, unknown>) => {
+      const t = nodeTransport({ prioritizationFees: [2n ** 63n] }, ['main']);
+      t.node.fund(KEY_ADDRESS, 10_000_000_000n);
+      t.node.produce(2);
+      return {
+        t,
+        driver: web3DriverFactory.create({
+          chain: SOLANA_CHAIN,
+          network: SOLANA_CHAIN.networks.devnet as NetworkInfo,
+          library: '@solana/web3.js',
+          transport: t.transport,
+          clock: t.clock,
+          log: noopLogger,
+          options,
+        }),
+      };
+    };
+    const estimate = async (options: Record<string, unknown>) => {
+      const { t, driver } = create(options);
+      const d = await driver;
+      const fee = await t.run(
+        d.builder.estimateFee(
+          {
+            asset: 'native',
+            outputs: [{ to: RECIPIENT, amount: SOL }],
+            from: KEY_ADDRESS,
+            fee: 'fast',
+          },
+          {
+            from: KEY_ADDRESS,
+            keys: [{ scheme: 'ed25519', publicKey: KEY_PUBLIC }],
+            wallet: {},
+          },
+        ),
+      );
+      return (fee.details as { computeUnitPrice: bigint }).computeUnitPrice;
+    };
+    // The handle's option is the bound; without it, the default.
+    expect(await estimate({ maxComputeUnitPrice: 5_000n })).toBeLessThanOrEqual(5_000n);
+    expect(await estimate({})).toBeLessThanOrEqual(10_000_000n);
+    expect(await estimate({})).toBeGreaterThan(5_000n);
+    for (const options of [
+      { maxComputeUnitPrice: 10_000_000 },
+      { maxComputeUnitPrice: 998n },
+      { maxPriorityFeeMicroLamports: 10_000_000n },
+      { maxFeeLimit: 100_000_000n },
+    ]) {
+      await expect(create(options).driver).rejects.toMatchObject({
+        code: 'CONFIG_INVALID',
+      });
+    }
+  });
+
   it('offers expiry ordering, one output, ext.solana and a fresh native client per call', async () => {
     const h = await driverFor(['main']);
     expect(h.driver.ordering).toBe('expiry');
