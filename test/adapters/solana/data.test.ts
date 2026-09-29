@@ -14,8 +14,8 @@ const KEYED = ['alchemy', 'infura', 'ankr'] as const;
 
 /**
  * Every supported (preset, cluster) pair and its endpoint for the key `k` (Appendix A). The
- * public RPC allows 100 requests per 10 s and 40 per 10 s for one method, per IP (A28): 4 rps
- * keeps a `getBlock` scan under the per-method cap, since the bucket is per endpoint.
+ * public RPC publishes 100 requests per 10 s and 40 per 10 s for one method, per IP (A28), so
+ * 4 rps; the observed `getBlock` limit is lower (about 6 per 10 s), which A28 leaves out.
  */
 const PUBLIC_LIMIT = { rps: 4 };
 const ENDPOINTS = [

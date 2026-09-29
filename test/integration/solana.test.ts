@@ -2,8 +2,11 @@
  * Opt-in, read-only checks against a live Solana cluster (spec §17), skipped unless
  * CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only, never keys:
  * - CRYPTO_AIO_IT_SOLANA_NETWORK: `mainnet`, `devnet` (default) or `testnet`;
- * - CRYPTO_AIO_IT_SOLANA_RPC_URL: an endpoint URL (default: the `public` preset). If the URL
- *   embeds a key it stays redacted (a `Secret`), but prefer a keyless endpoint.
+ * - CRYPTO_AIO_IT_SOLANA_RPC_URL: an endpoint URL (default: the `public` preset), paced at
+ *   4 requests per second as the preset is. A keyless endpoint serves the first two tests; a
+ *   URL that embeds a key stays redacted (a `Secret`);
+ * - CRYPTO_AIO_IT_SOLANA_WINDOW=1: also run the whole-window absence proof (below), which
+ *   needs a keyed or self-hosted endpoint in CRYPTO_AIO_IT_SOLANA_RPC_URL.
  *
  * Nothing is signed or broadcast, and no key or funded account is needed. The `public`
  * preset paces its requests, and the health probes wait for that limit too (A17), so the
@@ -17,11 +20,14 @@
  * proven expired only once the quorum attests the blockhash's block, and a record taken from
  * `getLatestBlockhash` as a build takes it is not. The negative inclusion proof (lessons 16
  * and 17) then shows a signature that was never sent absent from every block of that closed
- * window. It reads the whole window, 151 blocks and more, so it runs only against
- * CRYPTO_AIO_IT_SOLANA_RPC_URL: the public endpoints answer about six `getBlock` calls per
- * 10 s (HTTP 429 with `Retry-After: 10` on devnet and testnet, September 2026), and a window
- * does not fit in a test's time at that pace. A proof that decides nothing is tried again a
- * few times, on a retryable error only.
+ * window. It reads the whole window, about 160 `getBlock` calls with signatures, so it runs
+ * only with CRYPTO_AIO_IT_SOLANA_WINDOW=1, against a keyed or self-hosted endpoint that
+ * serves them inside the test's timeout (about 40 s at 4 requests per second). The public
+ * endpoints cannot: they answer about six `getBlock` calls per 10 s (HTTP 429 with
+ * `Retry-After: 10` on devnet and testnet, September 2026), so the proof completes there
+ * only over many passes, minutes apart. A proof that decides nothing is tried again a few
+ * times, on a retryable error only, 11 s apart (past a `Retry-After: 10`, since a proof read
+ * fails at once while one is pending); a retried pass resumes where the last one stopped.
  */
 import { randomBytes } from 'node:crypto';
 import { base58 } from '@scure/base';
@@ -38,7 +44,9 @@ const enabled = process.env.CRYPTO_AIO_INTEGRATION === '1';
 const network = (process.env.CRYPTO_AIO_IT_SOLANA_NETWORK ?? 'devnet') as
   'mainnet' | 'devnet' | 'testnet';
 const url = process.env.CRYPTO_AIO_IT_SOLANA_RPC_URL;
-const provider: ProviderRef = url ? { endpoints: [{ url: secret(url) }] } : 'public';
+const provider: ProviderRef = url
+  ? { endpoints: [{ url: secret(url), rateLimit: { rps: 4 } }] }
+  : 'public';
 /** The System Program's address: always present, never a signer. */
 const SYSTEM = '11111111111111111111111111111111';
 /**
@@ -55,12 +63,20 @@ const RECIPIENT = '6zYdUwXJR5fhQJazDByGv4PsNrdaNhoruAR5kekA7rGs';
 const REFERENCE_DEPTH = 400;
 /** The blockhash is the first block's in this many slots: a slot may hold none. */
 const REFERENCE_SLOTS = 50;
-/** Tries of a proof: an undecided answer is retried, `RETRY_MS` apart. */
+/**
+ * Tries of a proof: an undecided answer is retried, `RETRY_MS` apart, which outlasts the
+ * public endpoints' `Retry-After: 10`.
+ */
 const PROOF_TRIES = 3;
-const RETRY_MS = 5_000;
+const RETRY_MS = 11_000;
+/**
+ * How far below the finalized height the block reads go: a backend behind a load-balanced
+ * URL may trail the one that answered the height by a few dozen blocks.
+ */
+const BLOCK_DEPTH = 100n;
 const suite = enabled ? describe : describe.skip;
-/** The whole-window proof needs an endpoint that serves 151 blocks in time (see above). */
-const withEndpoint = url ? it : it.skip;
+/** The whole-window proof needs an endpoint that serves the window in time (see above). */
+const withWindow = process.env.CRYPTO_AIO_IT_SOLANA_WINDOW === '1' ? it : it.skip;
 
 const open = (aio: CryptoAio) => aio.blockchain({ chain: 'solana', network, provider });
 
@@ -137,11 +153,12 @@ suite(`Solana integration on ${network}`, () => {
       const gap = status.height - status.finalizedHeight;
       expect(gap < 1_000n && gap > -1_000n).toBe(true);
       // Heights are dense on a ledger with skipped slots: the next height is the child.
-      const block = await bc.getBlock(status.finalizedHeight - 10n);
-      expect(block?.height).toBe(status.finalizedHeight - 10n);
+      const height = status.finalizedHeight - BLOCK_DEPTH;
+      const block = await bc.getBlock(height);
+      expect(block?.height).toBe(height);
       expect(block?.hash).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
-      const next = await bc.getBlock(status.finalizedHeight - 9n);
-      expect(next?.height).toBe(status.finalizedHeight - 9n);
+      const next = await bc.getBlock(height + 1n);
+      expect(next?.height).toBe(height + 1n);
       expect(next?.parentHash).toBe(block?.hash);
       expect((await bc.getBalance(SYSTEM)).amount.asset.id).toBe(
         `solana:${network}/native`,
@@ -177,7 +194,7 @@ suite(`Solana integration on ${network}`, () => {
     }
   }, 120_000);
 
-  withEndpoint(
+  withWindow(
     'proves a signature that was never sent absent from its closed window',
     async () => {
       const aio = new CryptoAio({ env: false });

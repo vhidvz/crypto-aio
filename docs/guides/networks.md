@@ -601,8 +601,9 @@ crypto-aio needs Node 22.
   with `skipLibCheck: false` needs `@solana/web3.js` installed to import it.
 - **Integration tests.** The opt-in suite (`CRYPTO_AIO_INTEGRATION=1`) reads devnet through
   `public` by default. `CRYPTO_AIO_IT_SOLANA_NETWORK` picks the cluster, and
-  `CRYPTO_AIO_IT_SOLANA_RPC_URL` an endpoint; the test that proves a transaction absent from
-  a whole window runs only with that URL.
+  `CRYPTO_AIO_IT_SOLANA_RPC_URL` an endpoint (paced at 4 requests per second); the test that
+  proves a transaction absent from a whole window runs only with
+  `CRYPTO_AIO_IT_SOLANA_WINDOW=1`, and needs a keyed or self-hosted endpoint in that URL.
 - **Not in this release:** durable nonces, Token-2022, building versioned transactions with
   address lookup tables (received ones are decoded), a whole signed transaction in
   `submitSignatures` (submit signature bundles), a Solana network of your own (a local test

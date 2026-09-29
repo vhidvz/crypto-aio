@@ -20,8 +20,12 @@ const PUBLIC: Table = {
 
 /**
  * The public RPC's published per-IP limits (A28): 100 requests per 10 s, 40 per 10 s for a
- * single method, 40 concurrent connections. The transport's bucket is per endpoint, not per
- * method, so 4 rps keeps a scan that repeats `getBlock` under the per-method cap.
+ * single method, 40 concurrent connections, so 4 rps. The transport's bucket is per
+ * endpoint, not per method, and the published per-method figure does not hold for
+ * `getBlock`: devnet and testnet answered HTTP 429 (`Retry-After: 10`) after about 6
+ * `getBlock` calls per 10 s in September 2026 (F5-R19, F5-R20). This rate does not keep a
+ * block scan or a window proof under that; a scan waits out each 429 and falls behind, and
+ * a window proof completes over many passes. A28 keeps the published rate here.
  */
 const PUBLIC_RPS = 4;
 
