@@ -135,8 +135,11 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   output of anyone else's transaction fails with a retryable `PROVIDER_UNAVAILABLE` until a
   block holds it. A transfer that spends an output of a transaction that is then replaced,
   or dropped for good, can never confirm, and the library cannot prove it failed, so its
-  Operation stays open with its inputs held. Outputs held by another live Operation are
-  never selected, and change below the dust threshold goes to the fee.
+  Operation stays open with its inputs held. This is not only a risk of `0`: a reorg after
+  the build that double-spends a parent shallower than finality freezes a transfer the same
+  way, at any `minInputConfirmations` below 6, the finality depth. `minInputConfirmations: 6`
+  spends only final outputs and removes that risk. Outputs held by another live Operation
+  are never selected, and change below the dust threshold goes to the fee.
   `bc.ext.utxo.listUnspent(address)` lists an address's unspent outputs, and
   `bc.ext.utxo.coinSelection({ from, outputs, fee?, exclude? })`, with amounts in
   satoshis, previews a selection without signing.
