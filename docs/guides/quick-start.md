@@ -220,9 +220,10 @@ address.
 Install the SDK next to the package, `npm install @solana/web3.js`, and run on Node.js 22.12
 or later: on 22.0 to 22.11, loading the SDK fails with Node's `ERR_REQUIRE_ESM`. The
 `alchemy`, `infura` and `ankr` presets serve mainnet and devnet with an `apiKey`. `public`,
-the cluster's own endpoint, also serves testnet, but it is only for trying things out: it
-cannot prove that a transfer never landed, so such a transfer never becomes `expired` and
-cannot be rebuilt.
+the cluster's own endpoint, also serves testnet, but it is only for trying things out: its
+rate limits let it prove that a transfer never landed only slowly, over many passes, so
+such a transfer becomes `expired`, and can be rebuilt, minutes later than on a keyed
+provider.
 
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';

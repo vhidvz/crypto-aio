@@ -230,8 +230,8 @@ so after any refusal, even a false one, retry only with `bc.rebroadcast(id)` whi
 blockhash is valid, or by repeating the call with the **same** idempotency key, never a new
 one. The workers keep watching it: the Operation ends `final` if the transaction lands, or
 `expired` once its expiry is proven, and only then does `bc.rebuild(id)` sign a new
-Attempt. Proving the expiry needs providers that can serve every block of the window,
-which the `public` preset cannot ([Solana networks](./networks.md#solana-networks)).
+Attempt. Proving the expiry reads every block of the window, which the `public` preset
+does only slowly, over many passes ([Solana networks](./networks.md#solana-networks)).
 
 ## Waiting and watching
 

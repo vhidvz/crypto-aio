@@ -15,7 +15,7 @@ import type { DriverIntent } from '../../../src/core/model/intent';
 import type { OrderingData } from '../../../src/core/model/ordering';
 import type { Transport } from '../../../src/core/transport/types';
 import { nodeTransport, recording, type Endpoint } from './support/harness';
-import { associatedAddress } from './support/node';
+import { associatedAddress, faults } from './support/node';
 import { signedTx } from './support/tx';
 import { KEY_ADDRESS, KEY_PUBLIC, MINT, RECIPIENT, sign } from './support/vectors';
 
@@ -1356,6 +1356,86 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     expect(
       await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
     ).toEqual({ included: false });
+  });
+
+  it('completes the window proof across passes under a public-like getBlock limit (F5-R20 C1)', async () => {
+    const h = await driverFor(['a', 'b']);
+    h.node.produce(2);
+    const { ordering, id } = await built(h);
+    const last = (ordering as SolanaExpiryOrdering).lastValidHeight;
+    produceTo(h, last + 3n);
+    // Each endpoint serves 6 getBlock calls per rolling 10 s, then HTTP 429 (Retry-After:
+    // 10), as the public devnet and testnet endpoints did in September 2026.
+    const served = new Map<string, number[]>();
+    h.node.intercept = (endpoint, method) => {
+      if (method !== 'getBlock') return undefined;
+      const now = h.clock.now();
+      const recent = (served.get(endpoint) ?? []).filter((t) => t > now - 10_000);
+      if (recent.length >= 6) {
+        served.set(endpoint, recent);
+        return faults.rateLimited(10);
+      }
+      served.set(endpoint, [...recent, now]);
+      return undefined;
+    };
+    h.calls.length = 0;
+    let verdict: unknown;
+    let passes = 0;
+    while (verdict === undefined && passes < 100) {
+      passes += 1;
+      try {
+        verdict = await h.run(
+          h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS),
+        );
+      } catch (error) {
+        expect(error).toMatchObject({ retryable: true });
+        await h.clock.advance(10_000);
+      }
+    }
+    expect(verdict).toEqual({ included: false });
+    // Limited for real: many passes, each resuming where the last one stopped. Every block
+    // of the window is read whole about once, never again from the start of the window.
+    expect(passes).toBeGreaterThan(10);
+    const windowReads = scanned(h).length;
+    expect(windowReads).toBeGreaterThanOrEqual(151);
+    expect(windowReads).toBeLessThanOrEqual(151 + passes);
+    // Proven: the next verdict reads only the index.
+    h.calls.length = 0;
+    expect(
+      await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+    ).toEqual({ included: false });
+    expect(h.calls.map((c) => c.method)).toEqual(['getTransaction']);
+  });
+
+  it('starts the window over after a chain that does not hold, never resuming on it (F5-R20 C1)', async () => {
+    const h = await driverFor(['a', 'b']);
+    h.node.produce(2);
+    const { ordering, id } = await built(h);
+    const last = (ordering as SolanaExpiryOrdering).lastValidHeight;
+    produceTo(h, last + 3n);
+    // Every endpoint serves the window's 6th block with another parent: nothing is kept.
+    const sixth = Number(h.node.block(last - 149n + 5n)?.slot);
+    h.node.intercept = (endpoint, method, params) => {
+      if (method !== 'getBlock' || params[0] !== sixth) return undefined;
+      const block = h.node.answer(endpoint, method, params) as Record<string, unknown>;
+      return { result: { ...block, previousBlockhash: h.node.block(1n)?.hash } };
+    };
+    await expect(
+      h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      message: 'the window is not one chain of blocks',
+    });
+    h.node.intercept = undefined;
+    h.calls.length = 0;
+    expect(
+      await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+    ).toEqual({ included: false });
+    // The frame is read again and every block from the first: 151 reads, not 146.
+    expect(
+      h.calls.filter((c) => c.method === 'getBlocks' && c.tags.quorum === 'proof'),
+    ).toHaveLength(1);
+    expect(scanned(h)).toHaveLength(151);
   });
 
   it('still proves an honest build expired and absent', async () => {

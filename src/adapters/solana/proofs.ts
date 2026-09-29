@@ -90,6 +90,11 @@ export function windowOf(lastValidHeight: bigint): {
 
 /** Signatures proven absent from their finalized windows, kept per driver (spec §7). */
 const ABSENT_MEMO = 1_024;
+/**
+ * Window proofs in progress (F5-R20 C1), kept per driver with the same bound: each window's
+ * attested frame, and how far each signature's read of it got.
+ */
+const WINDOW_MEMO = 1_024;
 /** Attested last valid heights by blockhash (immutable chain data), kept per driver. */
 const ANCHOR_MEMO = 1_024;
 
@@ -285,19 +290,46 @@ interface Anchor {
 }
 
 /**
- * Whether `signature` is in none of the finalized blocks of its window (C1, lesson 16).
- * The window's first and last blocks are attested by height; `getBlocks` must list exactly
- * one slot per height between them; every block is read whole (its signatures) under the
- * proof quorum and must sit at the next height with the previous block as its parent, the
- * first one on the attested blockhash's own block. A gap, a pruned block or a lagging
- * backend answers "not available" and decides nothing. `false` means a block holds the
- * transaction.
+ * A window's frame, attested under the proof quorum: the finalized slot of each of its
+ * heights, and the hash of its last block. Finalized blocks never change, so it is kept.
  */
-async function absentFromWindow(
+interface WindowFrame {
+  readonly slots: readonly bigint[];
+  readonly lastHash: string;
+}
+
+/**
+ * How far one signature's read of a window got: the blocks before `next` are finalized,
+ * attested, chained from the blockhash's own block to `parent`, and without the signature.
+ * Immutable chain facts too; the signature lists themselves are never kept (a mainnet block
+ * holds thousands).
+ */
+interface WindowCursor {
+  readonly next: number;
+  readonly parent: string;
+}
+
+/**
+ * F5-R20 C1: what a window proof keeps between passes, so a pass that fails part way (a
+ * rate limit, an endpoint that is behind) resumes where it stopped instead of starting over.
+ * Over the `public` preset a pass gets only a few `getBlock` reads, so without this the
+ * proof never completed. Keyed by window (`<last valid height>:<blockhash>`) and by
+ * `<signature>:<window>`, each bounded like the absence memo.
+ */
+interface WindowMemo {
+  readonly frames: Map<string, WindowFrame>;
+  readonly cursors: Map<string, WindowCursor>;
+}
+
+/** The frame of `anchor`'s window, attested once and then kept. */
+async function windowFrame(
   ctx: SolanaContext,
-  signature: string,
   anchor: Anchor,
-): Promise<boolean> {
+  memo: WindowMemo,
+  key: string,
+): Promise<WindowFrame> {
+  const kept = memo.frames.get(key);
+  if (kept) return kept;
   const { first, end } = windowOf(anchor.lastValidHeight);
   const top = await attestedBlock(ctx, end, 'finalized');
   const bottom = await attestedBlock(ctx, first, 'finalized');
@@ -325,6 +357,36 @@ async function absentFromWindow(
   if (!Array.isArray(listed) || BigInt(listed.length) !== end - first + 1n) {
     throw notYet('every block of the window');
   }
+  const frame: WindowFrame = {
+    slots: listed.map((value) => u64(value, 'getBlocks slot')),
+    lastHash: top.header.blockhash,
+  };
+  memo.frames.set(key, frame);
+  trim(memo.frames, WINDOW_MEMO);
+  return frame;
+}
+
+/**
+ * Whether `signature` is in none of the finalized blocks of its window (C1, lesson 16).
+ * The window's first and last blocks are attested by height; `getBlocks` must list exactly
+ * one slot per height between them; every block is read whole (its signatures) under the
+ * proof quorum and must sit at the next height with the previous block as its parent, the
+ * first one on the attested blockhash's own block. A gap, a pruned block or a lagging
+ * backend answers "not available" and decides nothing. `false` means a block holds the
+ * transaction. Progress is kept between passes (`WindowMemo`): a resumed pass reads on from
+ * the last verified block, chained to its hash; a chain that does not hold drops what was
+ * kept for the window, so the next pass starts over.
+ */
+async function absentFromWindow(
+  ctx: SolanaContext,
+  signature: string,
+  anchor: Anchor,
+  memo: WindowMemo,
+): Promise<boolean> {
+  const { first } = windowOf(anchor.lastValidHeight);
+  const window = `${anchor.lastValidHeight}:${anchor.blockhash}`;
+  const frame = await windowFrame(ctx, anchor, memo, window);
+  const key = `${signature}:${window}`;
   const holds = (result: unknown): boolean | null => {
     const list = (result as { signatures?: unknown } | null)?.signatures;
     return Array.isArray(list) ? list.includes(signature) : null;
@@ -333,16 +395,21 @@ async function absentFromWindow(
     ...(pick(result, BLOCK_FIELDS) as object),
     holds: holds(result),
   });
+  const brokenChain = (reason: string) => {
+    memo.frames.delete(window);
+    memo.cursors.delete(key);
+    return inconsistent(reason);
+  };
   // The window hangs off the blockhash's own block, which the anchor attested.
-  let parent = anchor.blockhash;
-  for (const [i, value] of listed.entries()) {
+  let { next, parent } = memo.cursors.get(key) ?? { next: 0, parent: anchor.blockhash };
+  for (; next < frame.slots.length; next++) {
     let block: unknown;
     try {
       block = await call(
         ctx.transport,
         'getBlock',
         [
-          Number(u64(value, 'getBlocks slot')),
+          Number(frame.slots[next]),
           { ...headerOptions('finalized'), transactionDetails: 'signatures' },
         ],
         { ...PROOF, quorumKey: blockKey },
@@ -354,15 +421,24 @@ async function absentFromWindow(
     const found = holds(block);
     if (found === null) throw notYet('a block of the window');
     const header = blockHeader(block);
-    if (header.blockHeight !== first + BigInt(i) || header.previousBlockhash !== parent) {
-      throw inconsistent('the window is not one chain of blocks');
+    if (
+      header.blockHeight !== first + BigInt(next) ||
+      header.previousBlockhash !== parent
+    ) {
+      throw brokenChain('the window is not one chain of blocks');
     }
-    if (found) return false;
+    if (found) {
+      memo.cursors.delete(key);
+      return false;
+    }
     parent = header.blockhash;
+    memo.cursors.set(key, { next: next + 1, parent });
+    trim(memo.cursors, WINDOW_MEMO);
   }
-  if (parent !== top.header.blockhash) {
-    throw inconsistent('the window does not end at its attested block');
+  if (parent !== frame.lastHash) {
+    throw brokenChain('the window does not end at its attested block');
   }
+  memo.cursors.delete(key);
   return true;
 }
 
@@ -396,6 +472,7 @@ function guarded<A extends unknown[], R>(
 
 export function createSolanaProofs(ctx: SolanaContext): ProofSource {
   const absent = new Set<string>();
+  const windows: WindowMemo = { frames: new Map(), cursors: new Map() };
   /** Attested last valid heights by blockhash: a blockhash names one block, for good. */
   const anchors = new Map<string, bigint>();
   const known = (ordering: OrderingData): bigint | undefined => {
@@ -523,7 +600,7 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
       }
       const key = `${ref.id}:${last}`;
       if (!absent.has(key)) {
-        if (!(await absentFromWindow(ctx, ref.id, anchor))) {
+        if (!(await absentFromWindow(ctx, ref.id, anchor, windows))) {
           throw inconsistent(
             'a block of the window holds a transaction its index does not show',
           );

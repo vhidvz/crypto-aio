@@ -443,17 +443,19 @@ crypto-aio needs Node 22.
   handle with no provider falls back to it, with a logged warning. An endpoint of your own
   is `{ endpoints: [{ url }] }`. A node that reports itself unhealthy or behind (JSON-RPC
   `-32005`) shows as `RATE_LIMITED`, and is retried like one.
-- **The `public` preset cannot prove that a transfer never landed.** Solana publishes 100
-  requests per 10 s per IP, and 40 per 10 s for one method, and the `public` preset paces
-  each endpoint at 4 requests per second. But in September 2026 devnet and testnet answered
-  HTTP 429 (`Retry-After: 10`) after about 6 or 7 `getBlock` calls per 10 s. Proving a
-  transaction absent reads every block of its window in one pass, over 150 `getBlock`
-  calls, and a proof read that meets a 429 fails at once and starts over later. So over
-  `public` that proof never completes: a transfer that never landed is never proven
-  `expired`, and `rebuild` stays refused. No funds are at risk, but the transfer stays
-  unresolved. A block scan also reads one `getBlock` per block, but it waits out each 429,
-  so it falls behind without stopping. Senders need keyed or self-hosted providers for
-  their proofs.
+- **The `public` preset proves that a transfer never landed only slowly.** Solana publishes
+  100 requests per 10 s per IP, and 40 per 10 s for one method, and the `public` preset
+  paces each endpoint at 4 requests per second. But in September 2026 devnet and testnet
+  answered HTTP 429 (`Retry-After: 10`) after about 6 or 7 `getBlock` calls per 10 s.
+  Proving a transaction absent reads every block of its window, over 150 `getBlock` calls,
+  and a proof read that meets a 429 fails at once. Each pass keeps what it has verified in
+  memory (the window's frame, and how far the read got), and the next pass resumes there,
+  so over `public` the proof completes only after many monitor passes: about 26 at 6 calls
+  per 10 s, several minutes or more. Until then a transfer that never landed is not
+  `expired`, and `rebuild` stays refused; a restart of the process starts the read over.
+  No funds are at risk. A block scan also reads one `getBlock` per block, but it waits out
+  each 429, so it falls behind without stopping. Senders should use keyed or self-hosted
+  providers for their proofs.
 - **Proven verdicts need independent providers.** Each proof is a quorum over your
   endpoints, and an endpoint is a URL: a single URL, load-balanced or not, is trusted for
   everything it answers. A backend that lags, was pruned or lacks blocks never decides
