@@ -20,7 +20,7 @@ import type { SignedTx, UnsignedTx } from '../../../src/core/model/transaction';
 import type { SigningContext } from '../../../src/core/signing/types';
 import { fromHex } from '../../../src/core/util/bytes';
 import { utxoHarness, type HarnessOptions } from './support/harness';
-import { nativeSigner, nativeTaprootSigner, signedSpend } from './support/tx';
+import { fundingTx, nativeSigner, nativeTaprootSigner, signedSpend } from './support/tx';
 import {
   OTHER_PUBKEY,
   REGTEST,
@@ -234,11 +234,14 @@ describe('build and assemble', () => {
       code: 'INSUFFICIENT_FUNDS',
     });
     const eager = { ...h.ctx, config: { ...h.ctx.config, minInputConfirmations: 0 } };
-    const spent = await make(utxoBuilder(eager, h.network), intent(150_000n));
-    expect(spent.ordering).toEqual({
-      kind: 'inputs',
-      inputs: [unconfirmed],
-    });
+    // Coin selection takes it under minInputConfirmations 0, but it is someone else's
+    // unconfirmed payment: it decides nothing until a block holds it (F3-R24 F1).
+    await expect(
+      make(utxoBuilder(eager, h.network), intent(150_000n)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(
+      h.calls.some((c) => c.request.path === `/tx/${unconfirmed.split(':')[0]}/hex`),
+    ).toBe(false);
     // BIP125 rule 2: the bump needs another input, and only an unconfirmed one is left.
     const original = await make(strict, intent(95_000n));
     expect(original.ordering).toEqual({ kind: 'inputs', inputs: [confirmed] });
@@ -348,6 +351,81 @@ describe('build and assemble', () => {
       expect(psbt.data.inputs[0]?.nonWitnessUtxo).toBeUndefined();
       expect(psbt.data.inputs[0]?.witnessUtxo?.value).toBe(100_000n);
     }
+  });
+
+  it('never builds on a previous transaction no chain holds, and signs nothing (F3-R24 F1)', async () => {
+    type Utxo = Record<string, unknown>;
+    for (const type of ['p2tr', 'p2wpkh'] as const) {
+      const h = await utxoHarness();
+      const wallet = walletAddress(TEST_PUBKEY, type, REGTEST);
+      h.node.fund(wallet.address, 100_000n);
+      // An invented transaction paying the wallet: its bytes hash to its txid, so they
+      // authenticate themselves, but no block holds it.
+      const invented = fundingTx(wallet.script, 900_000n, 77);
+      const id = invented.getId();
+      h.node.intercept('a', (request, _signal, honest) => {
+        const path = request.url.pathname;
+        if (path.endsWith('/utxo')) {
+          const listed = (honest() as { json: Utxo[] }).json;
+          const status = listed[0]?.status;
+          return { json: [...listed, { txid: id, vout: 0, value: 900_000, status }] };
+        }
+        if (path.endsWith(`/tx/${id}/hex`)) return { text: invented.toHex() };
+        return undefined;
+      });
+      const builder = utxoBuilder(h.ctx, h.network);
+      const ctx = build({ from: wallet.address });
+      const i = intent(500_000n, { from: wallet.address });
+      await expect(
+        h.run(builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+      // Its confirmation was asked of the proof quorum, at its own height, before its bytes.
+      const routes = h.calls.map((c) => [c.request.path, c.options.quorum]);
+      const view = routes.findIndex(([path]) => path === `/tx/${id}`);
+      expect(routes[view]).toEqual([`/tx/${id}`, 'proof']);
+      expect(routes.findIndex(([path]) => path === `/tx/${id}/hex`)).toBe(-1);
+    }
+  });
+
+  it("spends an unconfirmed output only of the wallet's own sent transaction (minInputConfirmations 0, F3-R24 F1)", async () => {
+    const h = await funded([100_000n], { options: { minInputConfirmations: 0 } });
+    // Ours: sent through this client, which keeps its bytes; its change is unconfirmed.
+    const first = await h.send(await h.make(intent(30_000n)));
+    expect(first.result).toEqual({ kind: 'accepted' });
+    const child = await h.make(intent(40_000n));
+    expect(child.ordering).toEqual({
+      kind: 'inputs',
+      inputs: [`${first.signed.ref.id}:1`],
+    });
+    expect(
+      h.calls.filter((c) => c.request.path === `/tx/${first.signed.ref.id}/hex`),
+    ).toEqual([]);
+    expect((await h.send(child)).result).toEqual({ kind: 'accepted' });
+    // Someone else's unconfirmed payment waits until a block holds it.
+    const other = await funded([], { options: { minInputConfirmations: 0 } });
+    other.node.fund(OWN.address, 100_000n, { mempool: true });
+    await expect(other.make(intent(40_000n))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    other.node.mine(1);
+    expect((await other.send(await other.make(intent(40_000n)))).result).toEqual({
+      kind: 'accepted',
+    });
+  });
+
+  it('asks the proof quorum about each new parent once it is final, never again (F3-R24 F1)', async () => {
+    const h = await funded([100_000n, 200_000n]);
+    h.node.mine(6);
+    const views = () =>
+      h.calls.filter(
+        (c) => c.request.route === '/tx/:txid' && c.options.quorum === 'proof',
+      );
+    await h.make(intent(250_000n));
+    expect(views()).toHaveLength(2);
+    h.calls.length = 0;
+    await h.make(intent(250_000n));
+    expect(views()).toHaveLength(0);
   });
 
   it('never builds on an outpoint its previous transaction does not have (F3-R14 (a))', async () => {
@@ -802,14 +880,30 @@ describe('build and assemble', () => {
     );
   });
 
-  it('tags every call (R41): building reads, sending broadcasts', async () => {
+  it('tags every call (R41): building reads, its parents under the proof quorum, sending broadcasts', async () => {
     const h = await funded([100_000n]);
     h.calls.length = 0;
     const unsigned = await h.make(intent(50_000n));
     expect(h.calls.length).toBeGreaterThan(0);
-    for (const call of h.calls) {
+    // F3-R24 F1 (the adapter's choice): a new input's parent is attested under the proof
+    // quorum, at its own height.
+    const proof = h.calls.filter((c) => c.options.purpose === 'proof');
+    // The parent's view, its depth, its block at its height, and whether it is final yet.
+    expect(proof.map((c) => c.request.route).sort()).toEqual([
+      '/block-height/:height',
+      '/blocks/tip/height',
+      '/blocks/tip/height',
+      '/tx/:txid',
+    ]);
+    for (const call of proof) {
+      expect(call.options).toMatchObject({ retry: 'safe', quorum: 'proof' });
+      expect(call.options.quorumKey).toBeDefined();
+    }
+    for (const call of h.calls.filter((c) => c.options.purpose !== 'proof')) {
       expect(call.options).toMatchObject({ purpose: 'read', retry: 'safe' });
       expect(call.options.quorum).toBeUndefined();
+    }
+    for (const call of h.calls) {
       const route = call.request.route ?? '';
       expect(call.transport).toBe(route.startsWith('/address/') ? 'indexer' : 'rpc');
       expect(route).toMatch(/^\/[a-z:/-]+$/);

@@ -7,7 +7,13 @@ import { toHex } from '../../../src/core/util/bytes';
 import { CrashError, FaultyOperationStore } from '../../../src/testing/faulty-store';
 import type { FakeRequest } from '../../../src/testing/fake-fetch';
 import { countingSigner, createUtxoEnv, mineWhile, type UtxoEnv } from './support/env';
-import { malleate, nativeSigner, nativeTaprootSigner, signedSpend } from './support/tx';
+import {
+  fundingTx,
+  malleate,
+  nativeSigner,
+  nativeTaprootSigner,
+  signedSpend,
+} from './support/tx';
 import {
   OTHER_KEY,
   OTHER_PUBKEY,
@@ -201,15 +207,27 @@ describe('the inputs ordering (handoff §3)', () => {
     await expect(
       env.run(env.bc.transfer({ to: env.stranger(), amount: 10_000n })),
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    // minInputConfirmations 0 spends unconfirmed outputs of the wallet's own transactions
+    // only; someone else's unconfirmed payment waits for a block (F3-R24 F1).
     const eager = await createUtxoEnv({
       fund: [],
       options: { minInputConfirmations: 0 },
     });
     eager.node.fund(eager.address, 100_000n, { mempool: true });
-    const sub = await eager.run(
-      eager.bc.transfer({ to: eager.stranger(), amount: 10_000n }),
-    );
+    const intent = { to: eager.stranger(), amount: 10_000n };
+    await expect(
+      eager.run(eager.bc.transfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    eager.node.mine(1);
+    const sub = await eager.run(eager.bc.transfer(intent, { idempotencyKey: 'k' }));
     expect(sub.state).toBe('submitted');
+    // Its change is unconfirmed, and ours: a second transfer spends it at once.
+    const next = await eager.run(
+      eager.bc.transfer({ to: eager.stranger(), amount: 50_000n }),
+    );
+    expect(next.state).toBe('submitted');
+    expect(outpointsOf(eager, next.attempt?.id ?? '')).toEqual([`${sub.attempt?.id}:1`]);
+    await finalOf(eager, next.operationId);
   });
 });
 
@@ -1012,5 +1030,81 @@ describe('replacements over descendants, and stalled Operations (M4, F3-R14)', (
     );
     expect((await env.run(env.bc.getBalance(to))).amount.base).toBe(0n);
     expect(env.node.confirmations(original)).toBe(0);
+  });
+});
+
+describe('a previous transaction no chain holds (F3-R24 F1)', () => {
+  it('refuses to build on it, retryably, and never signs, when one endpoint of three lies once', async () => {
+    type Json = Record<string, unknown>;
+    const { signer, calls } = countingSigner();
+    const env = await createUtxoEnv({ signer, endpoints: ['a', 'b', 'c'] });
+    const own = walletAddress(TEST_PUBKEY, 'p2wpkh', REGTEST);
+    // An invented transaction paying the wallet 0.01 BTC: its bytes hash to its txid, so they
+    // authenticate themselves, but no block holds it.
+    const invented = fundingTx(own.script, 1_000_000n, 91);
+    const id = invented.getId();
+    const height = env.node.height;
+    const tip = await (
+      await env.node.fetch.fetch(`https://esplora-a.test/api/block-height/${height}`)
+    ).text();
+    const status = { confirmed: true, block_height: height, block_hash: tip };
+    const view: Json = {
+      txid: id,
+      version: 2,
+      locktime: 0,
+      weight: 400,
+      fee: 0,
+      vin: [
+        {
+          txid: '00'.repeat(32),
+          vout: 0xffffffff,
+          is_coinbase: true,
+          sequence: 0xffffffff,
+        },
+      ],
+      vout: [
+        {
+          scriptpubkey: toHex(own.script),
+          scriptpubkey_type: 'v0_p2wpkh',
+          value: 1_000_000,
+        },
+      ],
+      status,
+    };
+    // Endpoint `a` lists it as confirmed in the tip block, serves its bytes and a view of it,
+    // during this one build only.
+    let listed = 0;
+    env.node.intercept('a', (request, _signal, honest) => {
+      const path = request.url.pathname;
+      if (path.endsWith('/utxo')) {
+        listed++;
+        const real = (honest() as { json: Json[] }).json;
+        return { json: [...real, { txid: id, vout: 0, value: 1_000_000, status }] };
+      }
+      if (path.endsWith(`/tx/${id}/hex`)) return { text: invented.toHex() };
+      if (path.endsWith(`/tx/${id}`)) return { json: view };
+      return undefined;
+    });
+    const to = env.stranger();
+    // Largest first: without the proof quorum's word, the invented coin would be spent.
+    await expect(
+      env.run(env.bc.transfer({ to, amount: 50_000n }, { idempotencyKey: 'k' })),
+    ).rejects.toMatchObject({ retryable: true });
+    expect(listed).toBeGreaterThan(0);
+    expect(calls()).toBe(0);
+    const failed = await env.stores.operations.getByKey('default', 'k');
+    expect(failed?.attempts ?? []).toHaveLength(0);
+    expect(env.node.broadcasts).toHaveLength(0);
+    // The lie stops: the same key sends from real coins, and the payee is paid once.
+    env.node.clearIntercept('a');
+    const sub = await env.run(
+      env.bc.transfer({ to, amount: 50_000n }, { idempotencyKey: 'k' }),
+    );
+    expect(sub.state).toBe('submitted');
+    expect(outpointsOf(env, sub.attempt?.id ?? '')).not.toContain(`${id}:0`);
+    const done = await finalOf(env, sub.operationId);
+    expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    expect((await env.run(env.bc.getBalance(to))).amount.base).toBe(50_000n);
+    expect(calls()).toBe(1);
   });
 });

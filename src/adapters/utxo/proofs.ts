@@ -37,11 +37,20 @@ import type { OrderingData } from '../../core/model/ordering';
 import type { AttemptRef } from '../../core/model/transaction';
 import { toHex } from '../../core/util/bytes';
 import { decodeAddress } from './address';
-import { MONITOR, PROOF, parseOutpoint, proofRead, type UtxoContext } from './context';
+import {
+  MONITOR,
+  PROOF,
+  forEachBounded,
+  parseOutpoint,
+  proofRead,
+  withSignal,
+  type UtxoContext,
+} from './context';
 import { decodeTransaction } from './decode';
 import {
   isHash,
   isNotFound,
+  type EsploraClient,
   malformed,
   parseHash,
   parseHeight,
@@ -79,23 +88,107 @@ const stale = (): ProviderError =>
  */
 const HASH_PROOF = { ...PROOF, quorumKey: parseHash };
 
-export function proofSource(ctx: UtxoContext): ProofSource {
-  const { esplora, config } = ctx;
-  const depth = BigInt(config.confirmations) - 1n;
+/** A transaction view as the proof quorum compares it: its txid, and its block and height. */
+const txViewKey = (answer: unknown): string => {
+  const t = parseTx(answer);
+  return t.status.confirmed
+    ? `${t.txid}@${t.status.blockHash}:${t.status.blockHeight}`
+    : `${t.txid}:unconfirmed`;
+};
 
-  /** The proof quorum attests "I hold a block at `height`" (monotone in the head). */
+/**
+ * The reads a proof attests under the proof quorum, each fact at its own height (lesson 17,
+ * final form, R75). The proof source and the builder share them (F3-R24 F1): the builder's
+ * proof-tagged reads are this module's, never a copy.
+ */
+export function attestedReads(ctx: UtxoContext, signal?: AbortSignal) {
+  const { esplora } = ctx;
+  /** "I hold a block at `height`" (monotone in the head, so endpoints further ahead agree). */
   const holds = async (height: bigint): Promise<boolean> => {
     const head = await esplora.tipHeight({
-      ...PROOF,
+      ...withSignal(PROOF, signal),
       quorumKey: (answer) => parseHeight(answer) >= height,
     });
     return head >= height;
   };
-
+  /** The hash of the block at `height` on the proof endpoints' chain. */
+  const hashAt = (height: bigint): Promise<string | null> =>
+    esplora.blockHashAt(height, withSignal(HASH_PROOF, signal));
   /** The quorum's hash at `height` must be `hash`; otherwise the answer was stale. */
   const assertCanonical = async (height: bigint, hash: string): Promise<void> => {
-    if ((await esplora.blockHashAt(height, HASH_PROOF)) !== hash) throw stale();
+    if ((await hashAt(height)) !== hash) throw stale();
   };
+  /** A transaction and the block it is in, as the proof endpoints agree on it. */
+  const txView = (txid: string): Promise<EsploraTx | null> =>
+    esplora.tx(txid, { ...withSignal(PROOF, signal), quorumKey: txViewKey });
+  return { holds, hashAt, assertCanonical, txView };
+}
+
+/** F3-R24 F1: how many parents `assertConfirmed` reads at once, and keeps once final. */
+const PARENT_READS = 4;
+const FINAL_PARENTS = 10_000;
+const finalParents = new WeakMap<EsploraClient, Map<string, true>>();
+
+const notConfirmed = (): ProviderError =>
+  new ProviderError(
+    'PROVIDER_UNAVAILABLE',
+    "an input's previous transaction is not in a block the proof endpoints hold yet",
+  );
+
+/**
+ * F3-R24 F1: each of `txids` (the previous transactions of the inputs a build adds) is in a
+ * block, attested under the proof quorum at its own height: the proof endpoints agree on the
+ * transaction and its block, all hold a block `confirmations − 1` above it, and have that
+ * block at that height. Its bytes authenticate themselves (F3-R14), but only this proves a
+ * chain holds it: an indexer's invented transaction, or one a reorg took out, would stall an
+ * Attempt for good, since nothing would ever spend its outpoint. Anything short of that is a
+ * retryable `PROVIDER_UNAVAILABLE` (a stale view `PROVIDER_INCONSISTENT`), and every read
+ * decides nothing on failure (lesson 18). A parent found final is not read again.
+ */
+export async function assertConfirmed(
+  ctx: UtxoContext,
+  txids: readonly string[],
+  confirmations: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  let final = finalParents.get(ctx.esplora);
+  if (!final) {
+    final = new Map();
+    finalParents.set(ctx.esplora, final);
+  }
+  const known = final;
+  const pending = [...new Set(txids)].filter((txid) => !known.has(txid));
+  if (pending.length === 0) return;
+  await proofRead(async () => {
+    const reads = attestedReads(ctx, signal);
+    const blocks = new Map<string, bigint>();
+    let top = 0n;
+    await forEachBounded(pending, PARENT_READS, async (txid) => {
+      const tx = await reads.txView(txid);
+      if (!tx?.status.confirmed) throw notConfirmed();
+      const height = tx.status.blockHeight as bigint;
+      blocks.set(tx.status.blockHash as string, height);
+      if (height > top) top = height;
+    });
+    // Monotone: the proof endpoints hold `top + confirmations − 1` only if they hold every
+    // lower height, so one read attests every parent's depth.
+    if (!(await reads.holds(top + BigInt(Math.max(1, confirmations)) - 1n))) {
+      throw notConfirmed();
+    }
+    for (const [hash, height] of blocks) await reads.assertCanonical(height, hash);
+    if (await reads.holds(top + BigInt(ctx.config.confirmations) - 1n)) {
+      for (const txid of pending) {
+        known.set(txid, true);
+        if (known.size > FINAL_PARENTS) known.delete(known.keys().next().value as string);
+      }
+    }
+  });
+}
+
+export function proofSource(ctx: UtxoContext): ProofSource {
+  const { esplora, config } = ctx;
+  const depth = BigInt(config.confirmations) - 1n;
+  const { holds, hashAt, assertCanonical, txView } = attestedReads(ctx);
 
   /** The transaction that spent `input` in a final, canonical block (quorum-attested). */
   const finalSpender = async (input: {
@@ -131,7 +224,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
       }
       const final = anchor - depth;
       const height = final < 0n ? 0n : final;
-      const hash = await esplora.blockHashAt(height, HASH_PROOF);
+      const hash = await hashAt(height);
       if (hash === null)
         throw undecided('the final block is not visible to the proof endpoints');
       return { height, hash };
@@ -139,15 +232,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
 
     async includedFinal(ref: AttemptRef, ordering: OrderingData, from: string) {
       if (!isHash(ref.id)) throw undecided('malformed transaction id');
-      const tx = await esplora.tx(ref.id, {
-        ...PROOF,
-        quorumKey: (answer) => {
-          const t = parseTx(answer);
-          return t.status.confirmed
-            ? `${t.txid}@${t.status.blockHash}:${t.status.blockHeight}`
-            : `${t.txid}:unconfirmed`;
-        },
-      });
+      const tx = await txView(ref.id);
       if (tx?.status.confirmed) {
         const height = tx.status.blockHeight as bigint;
         const hash = tx.status.blockHash as string;
@@ -213,7 +298,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
     async blockHash(height, level) {
       if (outOfRange(height)) return null;
       if (level === 'finalized' && !(await holds(height + depth))) return null;
-      return esplora.blockHashAt(height, HASH_PROOF);
+      return hashAt(height);
     },
   };
 

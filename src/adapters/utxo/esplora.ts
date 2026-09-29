@@ -264,10 +264,52 @@ function txidOf(hex: string): { readonly txid: string } | undefined {
   }
 }
 
+/** Transactions kept per txid, oldest out first, by count and by bytes without witness. */
+class TxCache {
+  readonly #txs = new Map<string, PreviousTx>();
+  #bytes = 0;
+
+  constructor(
+    private readonly bounds: { readonly entries: number; readonly bytes: number },
+  ) {}
+
+  has(txid: string): boolean {
+    return this.#txs.has(txid);
+  }
+
+  /** The transaction, now the most recently used, or `undefined`. */
+  get(txid: string): PreviousTx | undefined {
+    const tx = this.#txs.get(txid);
+    if (tx) {
+      this.#txs.delete(txid);
+      this.#txs.set(txid, tx);
+    }
+    return tx;
+  }
+
+  set(tx: PreviousTx): void {
+    if (tx.bytes.length > this.bounds.bytes) return;
+    const old = this.#txs.get(tx.txid);
+    if (old) {
+      this.#txs.delete(tx.txid);
+      this.#bytes -= old.bytes.length;
+    }
+    this.#txs.set(tx.txid, tx);
+    this.#bytes += tx.bytes.length;
+    // The oldest go first (a Map iterates in insertion order).
+    for (const [id, entry] of this.#txs) {
+      if (this.#txs.size <= this.bounds.entries && this.#bytes <= this.bounds.bytes)
+        break;
+      this.#txs.delete(id);
+      this.#bytes -= entry.bytes.length;
+    }
+  }
+}
+
 /** One Esplora endpoint family (the `rpc` transport) and its address index (`indexer`). */
 export class EsploraClient {
-  readonly #previous = new Map<string, PreviousTx>();
-  #previousBytes = 0;
+  readonly #previous: TxCache;
+  readonly #own: TxCache;
 
   constructor(
     private readonly chain: Transport,
@@ -276,7 +318,10 @@ export class EsploraClient {
       readonly entries: number;
       readonly bytes: number;
     } = PREVIOUS_TX_CACHE,
-  ) {}
+  ) {
+    this.#previous = new TxCache(cache);
+    this.#own = new TxCache(cache);
+  }
 
   #get<T>(
     transport: Transport,
@@ -441,39 +486,26 @@ export class EsploraClient {
    * served it, in a bounded cache: a replacement's inputs are read once per client.
    */
   async previousTx(txid: string, tags: UtxoCallTags): Promise<PreviousTx | null> {
-    const cached = this.#previous.get(txid);
-    if (cached) {
-      this.#previous.delete(txid);
-      this.#previous.set(txid, cached);
-      return cached;
-    }
+    const known = this.#own.get(txid) ?? this.#previous.get(txid);
+    if (known) return known;
     const found = await this.#orNull(
       async () => (await this.#rawTx(txid, tags, previousTxOf)).tx,
     );
-    if (found) this.#remember(found);
+    if (found) this.#previous.set(found);
     return found;
   }
 
-  #remember(tx: PreviousTx): void {
-    if (tx.bytes.length > this.cache.bytes) return;
-    const old = this.#previous.get(tx.txid);
-    if (old) {
-      this.#previous.delete(tx.txid);
-      this.#previousBytes -= old.bytes.length;
-    }
-    this.#previous.set(tx.txid, tx);
-    this.#previousBytes += tx.bytes.length;
-    // The oldest go first (a Map iterates in insertion order).
-    for (const [id, entry] of this.#previous) {
-      if (
-        this.#previous.size <= this.cache.entries &&
-        this.#previousBytes <= this.cache.bytes
-      ) {
-        break;
-      }
-      this.#previous.delete(id);
-      this.#previousBytes -= entry.bytes.length;
-    }
+  /**
+   * F3-R24 F1: a transaction this client sent for an Attempt and a node took. Its bytes are
+   * known here, so its outputs are not an indexer's word even before a block holds it, and
+   * under `minInputConfirmations: 0` they may be spent unconfirmed. Kept like the cache.
+   */
+  rememberOwn(tx: PreviousTx): void {
+    this.#own.set(tx);
+  }
+
+  isOwn(txid: string): boolean {
+    return this.#own.has(txid);
   }
 
   async outspend(

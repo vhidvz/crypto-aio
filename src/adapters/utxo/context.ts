@@ -33,6 +33,31 @@ export const withSignal = (tags: UtxoCallTags, signal?: AbortSignal): UtxoCallTa
   signal ? { ...tags, signal } : tags;
 
 /**
+ * Runs `work` on each item, at most `limit` at a time (final review M3). After a failure the
+ * other runners stop at their next step, and the first failure is thrown.
+ */
+export async function forEachBounded<T>(
+  items: readonly T[],
+  limit: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  let failed = false;
+  const runner = async (): Promise<void> => {
+    while (!failed && next < items.length) {
+      const item = items[next++] as T;
+      try {
+        await work(item);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runner));
+}
+
+/**
  * Lesson 18, widened (R85): on a proof path only a definitive negative proof may answer "no"
  * (for Bitcoin: a quorum-attested final spend by another transaction, C1). Every other RPC or
  * HTTP error decides nothing: a non-retryable provider error, such as a CDN or proxy 400,

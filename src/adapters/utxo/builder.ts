@@ -42,6 +42,7 @@ import {
   assertPrevious,
   buildTx,
   isPreviousTxRefusal,
+  previousTxOf,
   signaturesFromPsbt,
   viewPsbt,
   SEQUENCE_FINAL_LOCKTIME,
@@ -58,8 +59,9 @@ import {
   type Selection,
   type Spendable,
 } from './coinselect';
-import { READ, withSignal, type UtxoContext } from './context';
+import { READ, forEachBounded, withSignal, type UtxoContext } from './context';
 import { classifyOwnBroadcast, parseNodeError } from './errors';
+import { assertConfirmed } from './proofs';
 import { MAX_TX_BYTES, readTxHex } from './rawtx';
 import { assertSaneFee, feeAt, replacementFloor } from './fees';
 import type { Network } from './sdk';
@@ -169,37 +171,37 @@ async function previousTxs(
   signal?: AbortSignal,
 ): Promise<ReadonlyMap<string, PreviousTx>> {
   const found = new Map<string, PreviousTx>();
-  let next = 0;
-  let failed = false;
-  const reader = async (): Promise<void> => {
-    while (!failed && next < txids.length) {
-      const txid = txids[next++] as string;
-      try {
-        const prev = await scope.ctx.esplora.previousTx(txid, withSignal(READ, signal));
-        if (prev === null) {
-          throw new ProviderError(
-            'PROVIDER_UNAVAILABLE',
-            'the previous transaction of an input is not available',
-          );
-        }
-        found.set(txid, prev);
-      } catch (error) {
-        failed = true; // the other readers stop at their next step
-        throw error;
-      }
+  await forEachBounded(txids, PREVIOUS_TX_READS, async (txid) => {
+    const prev = await scope.ctx.esplora.previousTx(txid, withSignal(READ, signal));
+    if (prev === null) {
+      throw new ProviderError(
+        'PROVIDER_UNAVAILABLE',
+        'the previous transaction of an input is not available',
+      );
     }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(PREVIOUS_TX_READS, txids.length) }, reader),
-  );
+    found.set(txid, prev);
+  });
   return found;
+}
+
+/** Which inputs of a build are new, and how their parents must be confirmed (F3-R24 F1). */
+interface NewInputs {
+  /** The outpoints a replacement or cancel keeps: attested when their Attempt was built. */
+  readonly kept: ReadonlySet<string>;
+  /**
+   * `minInputConfirmations: 0` on a transfer: an output of the wallet's own sent transaction
+   * (its bytes known to this client) may be spent before a block holds it.
+   */
+  readonly ownUnconfirmed: boolean;
 }
 
 /**
  * F3-R14: every input's value and script, authenticated against its previous transaction
  * (all wallet types, whatever `nonWitnessUtxo` says), so the node never judges bytes built
  * on an indexer's wrong value, and an outpoint its transaction does not have (a phantom that
- * nothing would ever spend, so never proven dead) is never built on. p2pkh inputs carry it
+ * nothing would ever spend, so never proven dead) is never built on. F3-R24 F1: a new
+ * input's previous transaction must also be in a block the proof quorum attests, unless it
+ * is the wallet's own sent transaction and `minInputConfirmations` is 0. p2pkh inputs carry it
  * (D12), and segwit v0 ones while `nonWitnessUtxo` is on (M15); taproot never does: BIP341
  * commits to every amount, and `signed-psbt.ts` refuses one on a taproot input.
  */
@@ -207,8 +209,18 @@ async function authenticated(
   scope: Scope,
   wallet: WalletAddress,
   inputs: readonly Spendable[],
+  fresh: NewInputs,
   signal?: AbortSignal,
 ): Promise<PlannedInput[]> {
+  const { esplora, config } = scope.ctx;
+  // F3-R24 F1: first, each new input's parent must be in a block the proof quorum attests,
+  // at its own height; only then are its bytes read. Self-authenticating bytes prove what a
+  // transaction is, never that a chain holds it.
+  const parents = inputs
+    .filter((input) => !fresh.kept.has(input.outpoint))
+    .map((input) => input.txid)
+    .filter((txid) => !(fresh.ownUnconfirmed && esplora.isOwn(txid)));
+  await assertConfirmed(scope.ctx, parents, config.minInputConfirmations, signal);
   const embed =
     wallet.type === 'p2pkh' ||
     (wallet.type !== 'p2tr' && scope.ctx.config.nonWitnessUtxo);
@@ -243,6 +255,7 @@ async function unsignedFor(
   rate: bigint,
   speed: FeeSpeed | 'custom',
   summary: IntentSummary,
+  fresh: NewInputs,
 ): Promise<UnsignedTx> {
   const { wallet, key } = walletOf(scope.ctx, sender, build.keys);
   assertSaneFee(selection.fee, selection.vsize, scope.ctx.config);
@@ -250,7 +263,13 @@ async function unsignedFor(
     selection.change > 0n
       ? [...outputs, { script: changeScript, value: selection.change }]
       : [...outputs];
-  const inputs = await authenticated(scope, wallet, selection.inputs, build.signal);
+  const inputs = await authenticated(
+    scope,
+    wallet,
+    selection.inputs,
+    fresh,
+    build.signal,
+  );
   const built = builtFor(scope, wallet, inputs, all);
   const signingRequests: SigningRequest[] = built.digests.map((digest, index) => ({
     id: `in:${index}`,
@@ -406,6 +425,7 @@ export function utxoBuilder(ctx: UtxoContext, network: Network): UtxoBuilder {
           asset: native,
           outputs: intent.outputs.map((o) => ({ to: o.to, amount: o.amount.toString() })),
         },
+        { kept: new Set(), ownUnconfirmed: config.minInputConfirmations === 0 },
       );
     },
 
@@ -453,6 +473,16 @@ export function utxoBuilder(ctx: UtxoContext, network: Network): UtxoBuilder {
 const MAX_TX_HEX = 8_000_000;
 const HEX = /^[0-9a-fA-F]+$/;
 
+/**
+ * F3-R24 F1: an Attempt's bytes a node took (accepted, or already holds) are this wallet's
+ * own sent transaction: its client keeps them. A bare broadcast (no ref) is not an Attempt.
+ */
+function rememberOwn(ctx: UtxoContext, signed: SignedTx, hex: string): void {
+  if (signed.ref.id === '') return;
+  const tx = previousTxOf(hex);
+  if (tx?.txid === signed.ref.id) ctx.esplora.rememberOwn(tx);
+}
+
 export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
   return {
     async broadcast(signed: SignedTx, options = {}): Promise<BroadcastResult> {
@@ -488,6 +518,7 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
             },
           );
         }
+        rememberOwn(ctx, signed, hex);
         return { kind: 'accepted' };
       } catch (error) {
         // A definitive 400 is bitcoind's answer; anything else is rethrown (R16/R17). Lesson
@@ -497,10 +528,12 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
           !error.ambiguous &&
           error.details?.status === 400
         ) {
-          return classifyOwnBroadcast(
+          const result = classifyOwnBroadcast(
             parseNodeError(String(error.details.body ?? '')),
             hex,
           );
+          if (result.kind === 'already-known') rememberOwn(ctx, signed, hex);
+          return result;
         }
         throw error;
       }
@@ -563,6 +596,7 @@ export function utxoReplacement(ctx: UtxoContext, network: Network): Replacement
         rate,
         speedOf(fee),
         previous.summary,
+        { kept: new Set(prev.inputs.map((i) => i.outpoint)), ownUnconfirmed: false },
       );
     },
 
@@ -606,6 +640,7 @@ export function utxoReplacement(ctx: UtxoContext, network: Network): Replacement
           asset: previous.summary.asset,
           outputs: [{ to: own.canonical, amount: value.toString() }],
         },
+        { kept: new Set(prev.inputs.map((i) => i.outpoint)), ownUnconfirmed: false },
       );
     },
   };
