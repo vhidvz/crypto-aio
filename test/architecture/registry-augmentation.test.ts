@@ -237,6 +237,9 @@ import 'crypto-aio/solana';
 const aio = new CryptoAio({ env: false });
 export const sol = aio.blockchain({ chain: 'solana', network: 'devnet', library: '@solana/web3.js' });
 export const fee: SolanaFeeOverride = { computeUnitPrice: 5n, computeUnitLimit: 20_000n };
+// The named override type is a transfer's \`fee\` (Task 12 review M5).
+export const paid = () => sol.transfer({ to: 'x', amount: 1n, fee });
+export const priced = () => sol.estimateFee({ to: 'x', amount: 1n, fee });
 export async function height(): Promise<number> {
   const connection = await native(aio.blockchain({ chain: 'solana' }), '@solana/web3.js');
   return connection.getBlockHeight('confirmed');

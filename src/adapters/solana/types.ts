@@ -62,13 +62,14 @@ export interface SolanaFeeDetails {
 
 /**
  * An explicit Solana fee (`TransferIntent.fee`): the compute-unit price in micro-lamports
- * and, optionally, the compute-unit limit (1 to 1,400,000), which otherwise comes from a
- * simulation of the transaction.
+ * (at most the handle's `maxComputeUnitPrice`) and, optionally, the compute-unit limit (1 to
+ * 1,400,000), which otherwise comes from a simulation of the transaction. A type alias, not
+ * an interface, so a value of this type is assignable to the core's `FeeOverride` record.
  */
-export interface SolanaFeeOverride {
+export type SolanaFeeOverride = {
   readonly computeUnitPrice: bigint;
   readonly computeUnitLimit?: bigint;
-}
+};
 
 /**
  * The transport tags every Solana I/O call carries: purpose, retry, quorum, fanout, signal,
