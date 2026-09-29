@@ -700,6 +700,8 @@ describe('the scripted Solana node: runtime and program rules (lesson 8)', () =>
 describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
   const TYPE = 'solana_transaction::versioned::VersionedTransaction';
 
+  // CPU-bound: under 3 s alone but 6.6–8.9 s under load, so it has its own budget rather
+  // than Jest's 5 s default (final-wave re-review N2).
   it('refuses oversized transactions before anything else, with or without preflight (M1)', async () => {
     const { node, rpc } = setup();
     node.produce(1);
@@ -733,7 +735,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
       code: -32602,
       message: `base58 encoded ${TYPE} too large: 1684 bytes (max: encoded/raw 1683/1232)`,
     });
-  });
+  }, 30_000);
 
   it("checks a blockhash's age in a simulation six blocks short, as agave forwards (M2)", async () => {
     const { node, rpc, tx, send } = setup();

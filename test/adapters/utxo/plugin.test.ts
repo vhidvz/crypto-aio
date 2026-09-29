@@ -192,7 +192,8 @@ describe('the built-in UTXO plugin', () => {
     expect(served).toBeGreaterThan(0);
   });
 
-  it('publishes crypto-aio/utxo: CJS and types, typesVersions (keys alphabetical) and the API docs', () => {
+  // The key order of every family's entries is test/architecture/packaging.test.ts's rule.
+  it('publishes crypto-aio/utxo: CJS and types, typesVersions and the API docs', () => {
     const read = (file: string): unknown =>
       JSON.parse(readFileSync(join(__dirname, '..', '..', '..', file), 'utf8'));
     const pkg = read('package.json') as {
@@ -204,12 +205,6 @@ describe('the built-in UTXO plugin', () => {
       default: './dist/adapters/utxo/index.js',
     });
     expect(pkg.typesVersions['*']?.utxo).toEqual(['dist/adapters/utxo/index.d.ts']);
-    // `.` first and `./package.json` last; every subpath between them sorted.
-    const subpaths = Object.keys(pkg.exports);
-    expect([subpaths.at(0), subpaths.at(-1)]).toEqual(['.', './package.json']);
-    expect(subpaths.slice(1, -1)).toEqual([...subpaths.slice(1, -1)].sort());
-    const aliases = Object.keys(pkg.typesVersions['*'] ?? {});
-    expect(aliases).toEqual([...aliases].sort());
     const { entryPoints } = read('typedoc.json') as { entryPoints: string[] };
     expect(entryPoints).toContain('src/adapters/utxo/index.ts');
   });

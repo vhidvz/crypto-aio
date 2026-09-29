@@ -6,7 +6,8 @@
  *   4 requests per second as the preset is. A keyless endpoint serves the first two tests; a
  *   URL that embeds a key stays redacted (a `Secret`);
  * - CRYPTO_AIO_IT_SOLANA_WINDOW=1: also run the whole-window absence proof (below), which
- *   needs a keyed or self-hosted endpoint in CRYPTO_AIO_IT_SOLANA_RPC_URL.
+ *   needs a keyed or self-hosted endpoint in CRYPTO_AIO_IT_SOLANA_RPC_URL; without that
+ *   URL it is skipped.
  *
  * Nothing is signed or broadcast, and no key or funded account is needed. The `public`
  * preset paces its requests, and the health probes wait for that limit too (A17), so the
@@ -75,8 +76,11 @@ const RETRY_MS = 11_000;
  */
 const BLOCK_DEPTH = 100n;
 const suite = enabled ? describe : describe.skip;
-/** The whole-window proof needs an endpoint that serves the window in time (see above). */
-const withWindow = process.env.CRYPTO_AIO_IT_SOLANA_WINDOW === '1' ? it : it.skip;
+/**
+ * The whole-window proof needs an endpoint that serves the window in time (see above): the
+ * flag alone would run it over the `public` preset, where it times out.
+ */
+const withWindow = process.env.CRYPTO_AIO_IT_SOLANA_WINDOW === '1' && url ? it : it.skip;
 
 const open = (aio: CryptoAio) => aio.blockchain({ chain: 'solana', network, provider });
 
