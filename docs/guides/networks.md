@@ -565,11 +565,16 @@ crypto-aio needs Node 22.
   (`source: 'internal'`), and classic SPL transfers, whose `from` and `to` are the token
   accounts' owners when the node reports them. Transfers are checked against the
   transaction's balance changes: whatever they do not explain, such as a Token-2022
-  transfer, makes it `decoding: 'partial'`. Vote transactions are skipped. A filtered scan
-  returns every transaction that may move funds for a watched address: one it cannot fully
-  attribute is returned as `partial` rather than dropped. A token transfer that creates the
-  recipient's token account also shows the rent deposit as an internal SOL transfer to that
-  account.
+  transfer, makes it `decoding: 'partial'`. Vote transactions are skipped. `filter.addresses`
+  may hold wallets, token accounts (associated or not) or both. A filtered scan returns
+  every transaction that may move funds for a watched address, an SPL transfer into or out
+  of a watched token account included; one it cannot fully attribute is returned as
+  `partial` rather than dropped. An SPL transfer's `to` is the owner wallet whenever the
+  node reports the owner, never the token account (only a `partial` transaction whose owner
+  was not reported names the token account), so credit token deposits by owner: a service
+  that watches token accounts matches `transfer.to` against their owners too. A token
+  transfer that creates the recipient's token account also shows the rent deposit as an
+  internal SOL transfer to that account.
 - **History** comes from the RPC (`getSignaturesForAddress`), newest first, without an
   indexer: `bc.history(address)` lists transactions from `confirmed` on, at most 1,000 per
   page, and reads each one back, so a page costs a request per item. An SPL deposit into an

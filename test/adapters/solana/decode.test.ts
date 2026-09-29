@@ -90,9 +90,15 @@ describe('Solana transaction decoding', () => {
     expect(
       touches(decoded, parsed, new Set(['75AjMdh7Gn1TLigfze541AVJGJ4TyqBEaRZk3pozfBza'])),
     ).toBe(true);
-    expect(
-      touches(decoded, parsed, new Set(['DeJGcDqExnXDaMc2TX4bG9A5hRQ5SPxszsb37Zq4kNj3'])),
-    ).toBe(false);
+    // I1: a watched token account matches the transfers into and out of it, although the
+    // decoded transfer names the owners.
+    for (const tokenAccount of [
+      'DeJGcDqExnXDaMc2TX4bG9A5hRQ5SPxszsb37Zq4kNj3',
+      '8CvwyW7amb4MB547dqWh633vsKPTiQrmDsKxn3p2Jcn3',
+    ]) {
+      expect(touches(decoded, parsed, new Set([tokenAccount]))).toBe(true);
+    }
+    expect(touches(decoded, parsed, new Set(['Z']))).toBe(false);
   });
 
   it('reports a failed transaction as the chain does: fee only, nothing moved (lesson 15)', () => {
@@ -322,6 +328,65 @@ describe('the scan filter is a superset (I4)', () => {
     // With the balances reported, an unrelated watcher still sees nothing.
     const full = parseTransaction(DEVNET_TRANSFER_CHECKED);
     expect(touches(decodeTransaction(full, PLACE), full, new Set(['Z']))).toBe(false);
+  });
+});
+
+describe('the scan filter matches watched token accounts (final review I1)', () => {
+  const DESTINATION = 'DeJGcDqExnXDaMc2TX4bG9A5hRQ5SPxszsb37Zq4kNj3';
+  const SOURCE = '8CvwyW7amb4MB547dqWh633vsKPTiQrmDsKxn3p2Jcn3';
+  type Fixture = {
+    meta: {
+      err: unknown;
+      status: unknown;
+      postTokenBalances: Json[];
+      preTokenBalances: Json[];
+    };
+    transaction: { message: { instructions: Json[] } };
+  };
+  const variant = (edit: (tx: Fixture) => void) => {
+    const tx = clone(DEVNET_TRANSFER_CHECKED) as unknown as Fixture;
+    edit(tx);
+    const parsed = parseTransaction(tx);
+    return { parsed, decoded: decodeTransaction(parsed, PLACE) };
+  };
+
+  it('keeps a transfer into a watched token account that moved no balance', () => {
+    // A zero-amount transferChecked: complete, and no balance changed anywhere.
+    const { parsed, decoded } = variant((tx) => {
+      const ix = tx.transaction.message.instructions[2] as {
+        parsed: { info: { tokenAmount: Json } };
+      };
+      ix.parsed.info.tokenAmount = { ...ix.parsed.info.tokenAmount, amount: '0' };
+      tx.meta.postTokenBalances = clone(tx.meta.preTokenBalances);
+    });
+    expect(decoded.decoding).toBe('complete');
+    expect(touches(decoded, parsed, new Set([DESTINATION]))).toBe(true);
+    expect(touches(decoded, parsed, new Set([SOURCE]))).toBe(true);
+    expect(touches(decoded, parsed, new Set(['Z']))).toBe(false);
+  });
+
+  it('keeps a watched token account whose balance moved without a parsed transfer', () => {
+    // The node parsed no token instruction: the move is unexplained, so the decoding is
+    // partial and the keyed token account matches.
+    const { parsed, decoded } = variant((tx) => {
+      tx.transaction.message.instructions[2] = {
+        programId: 'Prog',
+        accounts: [],
+        data: '1',
+      };
+    });
+    expect(decoded.decoding).toBe('partial');
+    expect(touches(decoded, parsed, new Set([DESTINATION]))).toBe(true);
+  });
+
+  it('drops a failed transfer into a watched token account: it moved nothing', () => {
+    const { parsed, decoded } = variant((tx) => {
+      tx.meta.err = { InstructionError: [2, { Custom: 1 }] };
+      tx.meta.status = { Err: tx.meta.err };
+      tx.meta.postTokenBalances = clone(tx.meta.preTokenBalances);
+    });
+    expect(decoded.transfers).toEqual([]);
+    expect(touches(decoded, parsed, new Set([DESTINATION]))).toBe(false);
   });
 });
 

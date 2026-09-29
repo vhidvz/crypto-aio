@@ -428,9 +428,13 @@ for await (const event of scanner) {
   `transfer.memo` when it is UTF-8 text. Credit in `final` mode, on solidified blocks.
 - **Solana.** Blocks carry SOL transfers, including those a program makes
   (`source: 'internal'`), and classic SPL transfers, reported with the token accounts'
-  owners when the node gives them. A filtered scan returns a superset: every transaction
-  that may move funds for a watched address, and one it cannot fully attribute arrives as
-  `decoding: 'partial'` rather than being dropped. A token transfer that creates the
+  owners when the node gives them. `filter.addresses` may hold wallets and token accounts. A
+  filtered scan returns a superset: every transaction that may move funds for a watched
+  address, an SPL transfer into or out of a watched token account included, and one it
+  cannot fully attribute arrives as `decoding: 'partial'` rather than being dropped. An SPL
+  transfer's `to` is the owner wallet whenever the node reports it, not the token account,
+  so with token accounts in the filter, put their owner wallets in `mine` in the example
+  above too (and the token accounts, for the `partial` case where no owner was reported). A token transfer that creates the
   recipient's token account also shows its rent deposit as an internal SOL transfer to that
   account. Heights are block heights, so skipped slots leave no gap. The scan reads one
   `getBlock` per block, so over the `public` preset it falls behind; scan through a keyed

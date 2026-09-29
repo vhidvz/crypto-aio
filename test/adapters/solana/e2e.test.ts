@@ -949,6 +949,55 @@ describe('Solana end to end', () => {
     });
   });
 
+  it('scans and lists an SPL deposit into a watched token account, crediting its owner (I1)', async () => {
+    const env = await createSolanaEnv();
+    env.node.createMint(MINT, 6);
+    env.node.mintTo(MINT, env.address, 10_000_000n);
+    const asset = { standard: 'spl', contract: MINT };
+    const account = associatedAddress(RECIPIENT, MINT);
+    // The first deposit creates the recipient's token account; the second pays into it.
+    for (const key of ['t1', 't2']) {
+      const sub = await env.run(
+        env.bc.transfer({ to: RECIPIENT, amount: 3n, asset }, { idempotencyKey: key }),
+      );
+      await env.produceWhile(sub.wait({ finality: 'final' }));
+    }
+    const scanner = env.bc
+      .scanner({
+        cursorKey: 'token-account',
+        from: 1n,
+        mode: 'final',
+        filter: { addresses: [account] },
+      })
+      [Symbol.asyncIterator]();
+    const seen: ScanEvent[] = [];
+    for (
+      let i = 0;
+      i < 20 &&
+      seen.flatMap((e) => (e.type === 'block' ? e.transactions : [])).length < 2;
+      i++
+    ) {
+      const next = await env.produceWhile(scanner.next());
+      if (next.done) break;
+      await env.run(next.value.ack());
+      seen.push(next.value);
+    }
+    const scanned = seen.flatMap((e) => (e.type === 'block' ? e.transactions : []));
+    // Both deposits, the one into the existing account included; `to` is the owner wallet.
+    const tokenTransfers = (txs: readonly { transfers: readonly unknown[] }[]) =>
+      txs.flatMap((t) =>
+        (t.transfers as { asset: { ref: unknown }; to: { canonical: string } }[])
+          .filter((tr) => tr.asset.ref !== 'native')
+          .map((tr) => tr.to.canonical),
+      );
+    expect(scanned).toHaveLength(2);
+    expect(tokenTransfers(scanned)).toEqual([RECIPIENT, RECIPIENT]);
+    // The token account's history holds both deposits too.
+    const page = await env.run(env.bc.history(account));
+    expect(page.items).toHaveLength(2);
+    expect(tokenTransfers(page.items)).toEqual([RECIPIENT, RECIPIENT]);
+  });
+
   it('hands the handle its own native Connection', async () => {
     const env = await createSolanaEnv();
     const client = await env.run(native(env.bc, '@solana/web3.js'));

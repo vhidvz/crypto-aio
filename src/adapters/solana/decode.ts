@@ -576,12 +576,16 @@ export function decodeTransaction(
 
 /**
  * The scan filter (handoff §3: "at least every transaction with a transfer from or to"
- * the addresses), a conservative superset (I4): a decoded transfer names a watched
- * address; the decoding is partial and a watched address is among the account keys; a
+ * the addresses), a conservative superset (I4) over wallets and token accounts alike: a
+ * decoded transfer names a watched address; a successful token transfer moves tokens into
+ * or out of a watched token account (its decoded transfer names the owners instead, final
+ * review I1); the decoding is partial and a watched address is among the account keys; a
  * watched account's lamports changed; the node reported no token balances and a token
  * program ran or was keyed (a deposit into an existing token account names no owner then,
  * R4); or a token holding changed (per account and mint) whose owner is watched or was not
- * reported (it cannot be attributed).
+ * reported (it cannot be attributed). A watched token account's holding cannot change
+ * unnoticed: a change no parsed transfer explains makes the decoding partial, and the
+ * account is a key.
  */
 export function touches(
   decoded: DriverTransaction,
@@ -593,6 +597,16 @@ export function touches(
       addresses.has(transfer.to) || transfer.from.some((f) => addresses.has(f)),
   );
   if (named) return true;
+  // `decodeTransaction` already read these instructions: none of them throws here.
+  const account =
+    tx.err === null &&
+    tx.instructions.some((ix) => {
+      const move = tokenMove(ix);
+      return (
+        move !== null && (addresses.has(move.source) || addresses.has(move.destination))
+      );
+    });
+  if (account) return true;
   const keyed = tx.keys.some((key) => addresses.has(key));
   if (keyed && decoded.decoding === 'partial') return true;
   const lamportsMoved = tx.keys.some(
