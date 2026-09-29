@@ -1396,6 +1396,10 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     // Limited for real: many passes, each resuming where the last one stopped. Every block
     // of the window is read whole about once, never again from the start of the window.
     expect(passes).toBeGreaterThan(10);
+    // The frame is attested once: its block list is never read again.
+    expect(
+      h.calls.filter((c) => c.method === 'getBlocks' && c.tags.quorum === 'proof'),
+    ).toHaveLength(1);
     const windowReads = scanned(h).length;
     expect(windowReads).toBeGreaterThanOrEqual(151);
     expect(windowReads).toBeLessThanOrEqual(151 + passes);
