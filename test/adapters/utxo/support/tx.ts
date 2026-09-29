@@ -3,7 +3,8 @@ import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/abstract/utils';
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { bitcoin, type Transaction } from '../../../../src/adapters/utxo/sdk';
 import { tweakPrivateKey } from '../../../../src/core/signing/local';
-import { concatBytes, fromHex } from '../../../../src/core/util/bytes';
+import { sha256 } from '@noble/hashes/sha256';
+import { concatBytes, fromHex, toHex } from '../../../../src/core/util/bytes';
 
 /** A transaction with one made-up input that pays `value` to `script` (output 0). */
 export function fundingTx(script: Uint8Array, value: bigint, salt = 0): Transaction {
@@ -118,4 +119,57 @@ export function signedLegacySpend(
   for (const [out, value] of outputs) psbt.addOutput({ script: out, value });
   psbt.signAllInputs(nativeSigner(key)).finalizeAllInputs();
   return psbt.extractTransaction(true).toHex();
+}
+
+// ---- hand-serialized transactions (F3-R24 F2: bitcoinjs' decoder is quadratic) ----------
+
+export const u32 = (n: number): Uint8Array => {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, n >>> 0, true);
+  return out;
+};
+export const compactSize = (n: number): Uint8Array =>
+  n < 0xfd
+    ? Uint8Array.of(n)
+    : n <= 0xffff
+      ? Uint8Array.of(0xfd, n & 0xff, n >> 8)
+      : concatBytes(Uint8Array.of(0xfe), u32(n));
+export const txidOfStripped = (stripped: Uint8Array): string =>
+  toHex(sha256(sha256(stripped)).reverse());
+
+/** A transaction serialized by hand: one input, `outputs` empty-script outputs of 1 sat. */
+export function manyOutputs(outputs: number, witness = 0) {
+  const input = concatBytes(
+    new Uint8Array(32).fill(7),
+    u32(0),
+    compactSize(0),
+    u32(0xffffffff),
+  );
+  const one = concatBytes(Uint8Array.of(1, 0, 0, 0, 0, 0, 0, 0), compactSize(0));
+  const body = new Uint8Array(outputs * one.length);
+  for (let i = 0; i < outputs; i++) body.set(one, i * one.length);
+  const version = u32(2);
+  const locktime = u32(0);
+  const stripped = concatBytes(
+    version,
+    compactSize(1),
+    input,
+    compactSize(outputs),
+    body,
+    locktime,
+  );
+  if (witness === 0) return { bytes: stripped, stripped };
+  const bytes = concatBytes(
+    version,
+    Uint8Array.of(0, 1),
+    compactSize(1),
+    input,
+    compactSize(outputs),
+    body,
+    compactSize(1),
+    compactSize(witness),
+    new Uint8Array(witness),
+    locktime,
+  );
+  return { bytes, stripped };
 }

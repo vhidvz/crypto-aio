@@ -28,7 +28,15 @@ import { secp256k1Ecdsa, secp256k1Schnorr } from '../../../src/core/registry/sch
 import { tweakPrivateKey } from '../../../src/core/signing/local';
 import type { SignatureBundle, SigningRequest } from '../../../src/core/signing/types';
 import { concatBytes, toHex } from '../../../src/core/util/bytes';
-import { fundingTx, malleate, nativeSigner, nativeTaprootSigner } from './support/tx';
+import {
+  compactSize,
+  fundingTx,
+  malleate,
+  manyOutputs,
+  nativeSigner,
+  nativeTaprootSigner,
+  txidOfStripped,
+} from './support/tx';
 import { OTHER_KEY, OTHER_PUBKEY, TEST_KEY, TEST_PUBKEY } from './support/vectors';
 import { thrown } from '../../helpers';
 import { base64 as scureBase64 } from '@scure/base';
@@ -1070,7 +1078,8 @@ describe('Core-coordinated signing (F3-R5)', () => {
       expect(
         fromBuffer.mock.calls.filter(([bytes]) => ours.includes(bytes.length)),
       ).toEqual([]);
-      // A coordinator's other copy (with the witness) is not ours: it is decoded, by txid.
+      // A coordinator's other copy (with the witness) is not ours: it is read, and bound to
+      // the outpoint's txid, by the linear reader (F3-R24 F2), never by bitcoinjs.
       const core = reparse(signed);
       core.data.inputs[0]!.nonWitnessUtxo = funding[0]!.toBuffer();
       fromBuffer.mockClear();
@@ -1081,7 +1090,9 @@ describe('Core-coordinated signing (F3-R5)', () => {
         fromBuffer.mock.calls.filter(
           ([bytes]) => bytes.length === funding[0]!.byteLength(),
         ),
-      ).toHaveLength(1);
+      ).toHaveLength(0);
+      core.data.inputs[0]!.nonWitnessUtxo = funding[1]!.toBuffer();
+      refusedAs(built.psbt, core, requests, 'changes the prepared transaction');
       // Node's Buffer decodes the base64 (checked by a round trip), not the pure-JS decoder.
       expect(scure).not.toHaveBeenCalled();
     } finally {
@@ -1115,6 +1126,57 @@ describe('Core-coordinated signing (F3-R5)', () => {
     const room = maps * 4_096 + 4_000_000;
     const text = 'A'.repeat(built.psbt.length + Math.ceil(room / 3) * 4 + 4);
     refusedAs(built.psbt, { toBase64: () => text } as Psbt, requests, 'is too large');
+  });
+
+  it('reads what a coordinator adds, and the unsigned transaction it carries, without bitcoinjs (F3-R24 F2)', () => {
+    // 40 segwit inputs without their previous transactions: 4 MB of room in all.
+    const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
+    const inputs = Array.from({ length: 40 }, (_, index) => {
+      const funding = fundingTx(wallet.script, 10_000n, 200 + index);
+      return {
+        outpoint: `${funding.getId()}:0`,
+        txid: funding.getId(),
+        vout: 0,
+        value: 10_000n,
+      };
+    });
+    const built = buildTx(
+      NETWORK,
+      wallet,
+      inputs,
+      [{ script: PAYEE.script, value: 300_000n }],
+      SEQUENCE_RBF,
+    );
+    const requests = ecdsaRequests(built.digests);
+    const fromBuffer = jest.spyOn(bitcoin.Transaction, 'fromBuffer');
+    const large = (bytes: Uint8Array) => bytes.length > 50_000;
+    try {
+      // An added previous transaction of 10,000 outputs that is not the outpoint's.
+      const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
+      signed.signAllInputs(nativeSigner(TEST_KEY));
+      const added = reparse(signed);
+      added.data.inputs[0]!.nonWitnessUtxo = manyOutputs(10_000).bytes;
+      refusedAs(built.psbt, added, requests, 'changes the prepared transaction');
+      // A PSBT whose unsigned transaction is 3.5 MB of outputs, not ours.
+      const hostile = manyOutputs(390_000).bytes;
+      const psbt = concatBytes(
+        Uint8Array.of(0x70, 0x73, 0x62, 0x74, 0xff, 0x01, 0x00),
+        compactSize(hostile.length),
+        hostile,
+        new Uint8Array(1 + 40 + 1),
+      );
+      const started = performance.now();
+      refusedAs(
+        built.psbt,
+        { toBase64: () => Buffer.from(psbt).toString('base64') } as Psbt,
+        requests,
+        'is not the prepared transaction',
+      );
+      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(fromBuffer.mock.calls.filter(([bytes]) => large(bytes))).toEqual([]);
+    } finally {
+      fromBuffer.mockRestore();
+    }
   });
 
   it('has room for a large previous transaction a coordinator adds (I1c)', () => {
@@ -1351,6 +1413,38 @@ describe('untrusted transaction hex (lesson 20)', () => {
       expect(previousTxOf(`${funding.toHex()}zz`)).toBeUndefined();
       expect(previousTxOf(`${funding.toHex()}00`)).toBeUndefined();
       expect(previousTxOf(funding.toHex())?.txid).toBe(funding.getId());
+    } finally {
+      fromBuffer.mockRestore();
+    }
+  });
+
+  it('reads untrusted transaction bytes in one linear pass, never through bitcoinjs (F3-R24 F2)', () => {
+    // bitcoinjs' decoder is quadratic in the inputs and outputs: 53 s for 92,500 outputs.
+    const decodable = manyOutputs(110_000, 2_900_000); // 3.9 MB, a chain's million bytes
+    const tooLarge = manyOutputs(433_000); // 3.9 MB without witness: no chain holds it
+    const fromBuffer = jest.spyOn(bitcoin.Transaction, 'fromBuffer');
+    try {
+      for (const { bytes } of [decodable, tooLarge]) {
+        const hex = toHex(bytes);
+        const started = performance.now();
+        previousTxOf(hex);
+        try {
+          txidOfHex(hex);
+        } catch {
+          // refused: over the million bytes a chain allows
+        }
+        canonicalTwinTxid(hex, keyHash);
+        expect(performance.now() - started).toBeLessThan(1_000);
+      }
+      expect(previousTxOf(toHex(decodable.bytes))?.txid).toBe(
+        txidOfStripped(decodable.stripped),
+      );
+      expect(toHex(previousTxOf(toHex(decodable.bytes))!.bytes)).toBe(
+        toHex(decodable.stripped),
+      );
+      expect(previousTxOf(toHex(tooLarge.bytes))).toBeUndefined();
+      expect(() => txidOfHex(toHex(tooLarge.bytes))).toThrow(undecodable);
+      expect(fromBuffer).not.toHaveBeenCalled();
     } finally {
       fromBuffer.mockRestore();
     }

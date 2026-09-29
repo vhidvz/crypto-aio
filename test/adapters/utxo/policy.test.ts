@@ -12,8 +12,9 @@ import {
   classifyOwnBroadcast,
   nodeClaim,
   parseNodeError,
-  type TxBytes,
 } from '../../../src/adapters/utxo/errors';
+import { writeSize, writeU32 } from '../../../src/adapters/utxo/rawtx';
+import { concatBytes, fromHex, toHex } from '../../../src/core/util/bytes';
 import type { BroadcastResult } from '../../../src/core/driver/types';
 import {
   assertSaneFee,
@@ -519,25 +520,69 @@ describe("a node's rejection is a claim (lesson 21)", () => {
   const A = { txid: 'aa'.repeat(32), vout: 0 };
   const B = { txid: 'bb'.repeat(32), vout: 1 };
   const NULL = { txid: '00'.repeat(32), vout: 0xffffffff };
-  const tx = (extra: Partial<TxBytes> = {}): TxBytes => ({
-    inputs: [A],
-    values: [1_000n],
-    strippedSize: 110,
-    ...extra,
-  });
+  type Outpoint = { readonly txid: string; readonly vout: number };
+  /**
+   * N2: the hex that was sent, serialized by hand (no witness): these inputs with empty
+   * scripts, outputs of these values with empty scripts, and the first input's script padded
+   * to `strippedSize` when it is given. No inputs means no outputs either: bitcoind reads an
+   * empty input list's next byte as flags.
+   */
+  const tx = (
+    extra: {
+      inputs?: readonly Outpoint[];
+      values?: readonly bigint[];
+      strippedSize?: number;
+    } = {},
+  ): string => {
+    const inputs = extra.inputs ?? [A];
+    const values = extra.values ?? [1_000n];
+    if (inputs.length === 0) {
+      if (values.length > 0) throw new Error('no outputs without inputs');
+      return toHex(concatBytes(writeU32(2), Uint8Array.of(0, 0), writeU32(0)));
+    }
+    const build = (pad: number) =>
+      concatBytes(
+        writeU32(2),
+        writeSize(inputs.length),
+        ...inputs.flatMap((input, index) => [
+          fromHex(input.txid).reverse(),
+          writeU32(input.vout),
+          writeSize(index === 0 ? pad : 0),
+          new Uint8Array(index === 0 ? pad : 0),
+          writeU32(0xffffffff),
+        ]),
+        writeSize(values.length),
+        ...values.flatMap((value) => {
+          const field = new Uint8Array(8);
+          new DataView(field.buffer).setBigInt64(0, value, true);
+          return [field, Uint8Array.of(0)];
+        }),
+        writeU32(0),
+      );
+    let pad = 0;
+    if (extra.strippedSize !== undefined) {
+      while (build(pad).length < extra.strippedSize)
+        pad += extra.strippedSize - build(pad).length;
+      while (build(pad).length > extra.strippedSize) pad -= 1;
+      expect(build(pad).length).toBe(extra.strippedSize);
+    }
+    return toHex(build(pad));
+  };
+  /** Hex bitcoind cannot decode. */
+  const UNDECODABLE = 'zz';
   const CLAIMED = {
     kind: 'refused',
     code: 'TX_REFUSED',
     reason: 'the node claimed the transaction is invalid',
   };
   const CONSENSUS = { kind: 'rejected', reason: 'invalid by consensus rules' };
-  const claim = (message: string, bytes: TxBytes | undefined, code = -26) =>
-    classifyOwnBroadcast({ code, message }, bytes);
+  const claim = (message: string, hex: string, code = -26) =>
+    classifyOwnBroadcast({ code, message }, hex);
 
   it('keeps a byte-only rejection exactly when its reason holds for the bytes', () => {
     // [reason, bytes it holds for, bytes it does not hold for]
-    const cases: [string, TxBytes, TxBytes][] = [
-      ['bad-txns-vin-empty', tx({ inputs: [] }), tx()],
+    const cases: [string, string, string][] = [
+      ['bad-txns-vin-empty', tx({ inputs: [], values: [] }), tx()],
       ['bad-txns-vout-empty', tx({ values: [] }), tx()],
       [
         'bad-txns-oversize',
@@ -563,7 +608,7 @@ describe("a node's rejection is a claim (lesson 21)", () => {
       expect(claim(`${reason}, detail`, holds)).toEqual(CONSENSUS);
       expect(claim(reason, fails)).toEqual(CLAIMED);
       // Bytes that do not decode prove no `CheckTransaction` reason.
-      expect(claim(reason, undefined)).toEqual(CLAIMED);
+      expect(claim(reason, UNDECODABLE)).toEqual(CLAIMED);
     }
     // bitcoind checks the outputs in order and stops at the first failure: an out-of-range
     // value (`vout-negative`, `vout-toolarge`) before the total passes MAX_MONEY names that
@@ -593,11 +638,22 @@ describe("a node's rejection is a claim (lesson 21)", () => {
 
   it('keeps a decode failure only for bytes that do not decode', () => {
     const message = 'TX decode failed. Make sure the tx has at least one input.';
-    expect(claim(message, undefined, -22)).toEqual({
+    expect(claim(message, UNDECODABLE, -22)).toEqual({
       kind: 'rejected',
       reason: 'the transaction does not decode',
     });
     expect(claim(message, tx(), -22)).toEqual(CLAIMED);
+    // N2: whether the bytes decode is the classifier's own finding, from the hex that was
+    // sent: truncated or trailing bytes do not decode; bytes too large for any block still
+    // decode (bitcoind decodes them, then refuses them as oversize).
+    const good = tx();
+    for (const hex of [good.slice(0, -2), `${good}00`, '']) {
+      expect(claim(message, hex, -22)).toMatchObject({ kind: 'rejected' });
+    }
+    expect(claim(message, tx({ strippedSize: 1_000_001 }), -22)).toEqual(CLAIMED);
+    // The type takes the sent hex, never a caller's "no bytes" (never run: a type pin).
+    // @ts-expect-error `undefined` is not the hex that was sent
+    void (() => classifyOwnBroadcast({ code: -22, message }, undefined));
   });
 
   it('never keeps a reason that depends on the spent outputs', () => {
@@ -612,7 +668,7 @@ describe("a node's rejection is a claim (lesson 21)", () => {
       expect(nodeClaim({ code: -26, message: reason }).kind).toBe('invalid');
       expect(claim(reason, tx())).toEqual(CLAIMED);
       expect(claim(reason, bad)).toEqual(CLAIMED);
-      expect(claim(reason, undefined)).toEqual(CLAIMED);
+      expect(claim(reason, UNDECODABLE)).toEqual(CLAIMED);
     }
   });
 
@@ -625,7 +681,9 @@ describe("a node's rejection is a claim (lesson 21)", () => {
       [-25, 'bad-txns-vin-empty'],
     ] as const) {
       const error = { code, message };
-      expect(classifyOwnBroadcast(error, tx({ inputs: [] }))).toEqual(nodeClaim(error));
+      expect(classifyOwnBroadcast(error, tx({ inputs: [], values: [] }))).toEqual(
+        nodeClaim(error),
+      );
     }
   });
 

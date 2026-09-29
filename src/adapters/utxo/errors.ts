@@ -19,6 +19,7 @@
  * (non-terminal). No export takes the node at its word (final review M4).
  */
 import type { BroadcastResult } from '../../core/driver/types';
+import { MAX_TX_BYTES, readTxHex } from './rawtx';
 
 export interface NodeError {
   readonly code?: number;
@@ -172,7 +173,7 @@ export function nodeClaim(error: NodeError): NodeClaim {
  * from the hex that was sent: its outpoints, its output values as signed 64-bit integers, and
  * its size without witness data.
  */
-export interface TxBytes {
+interface TxBytes {
   readonly inputs: readonly { readonly txid: string; readonly vout: number }[];
   readonly values: readonly bigint[];
   readonly strippedSize: number;
@@ -228,19 +229,33 @@ const UNCONFIRMED: BroadcastResult = {
 };
 
 /**
- * Lesson 21: the node's answer to bytes this driver sent, `bytes` being those bytes decoded
- * strictly (`undefined` when they do not decode). A terminal `rejected` frees the Attempt's
- * inputs for a caller's retry, and if a lying or buggy endpoint relayed the bytes before it
- * claimed them invalid, the retry and the original can both confirm: a double payment. So a
- * rejection stands only when its claimed reason holds for `bytes`: an undecodable hex for
- * `TX decode failed`, a byte rule for a `CheckTransaction` reason. Anything else is `refused`.
+ * The hex that was sent, decoded as `sendrawtransaction` decodes it (`rawtx.ts` follows
+ * bitcoind's format, with no cap below the broadcaster's own), or `undefined` when bitcoind
+ * cannot decode it either.
  */
-export function classifyOwnBroadcast(
-  error: NodeError,
-  bytes: TxBytes | undefined,
-): BroadcastResult {
+function bytesOf(sentHex: string): TxBytes | undefined {
+  const tx = readTxHex(sentHex, { maxStripped: MAX_TX_BYTES });
+  if (!tx) return undefined;
+  return {
+    inputs: tx.inputs.map((input) => ({ txid: input.txid, vout: input.vout })),
+    values: tx.outputs.map((output) => output.value),
+    strippedSize: tx.strippedSize,
+  };
+}
+
+/**
+ * Lesson 21: the node's answer to the hex this driver sent. A terminal `rejected` frees the
+ * Attempt's inputs for a caller's retry, and if a lying or buggy endpoint relayed the bytes
+ * before it claimed them invalid, the retry and the original can both confirm: a double
+ * payment. So a rejection stands only when its claimed reason holds for those bytes, decoded
+ * here (F3-R24 N2: whether they decode is always this module's own finding): an undecodable
+ * hex for `TX decode failed`, a byte rule for a `CheckTransaction` reason. Anything else is
+ * `refused`.
+ */
+export function classifyOwnBroadcast(error: NodeError, sentHex: string): BroadcastResult {
   const claim = nodeClaim(error);
   if (claim.kind !== 'invalid') return claim;
+  const bytes = bytesOf(sentHex);
   const rejected: BroadcastResult = { kind: 'rejected', reason: claim.reason };
   const name = claimedReason(error, error.message.trim())?.[1];
   if (name === DECODE_FAILED) return bytes === undefined ? rejected : UNCONFIRMED;

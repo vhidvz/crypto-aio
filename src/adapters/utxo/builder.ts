@@ -43,7 +43,6 @@ import {
   buildTx,
   isPreviousTxRefusal,
   signaturesFromPsbt,
-  txBytesOf,
   viewPsbt,
   SEQUENCE_FINAL_LOCKTIME,
   SEQUENCE_RBF,
@@ -61,6 +60,7 @@ import {
 } from './coinselect';
 import { READ, withSignal, type UtxoContext } from './context';
 import { classifyOwnBroadcast, parseNodeError } from './errors';
+import { MAX_TX_BYTES, readTxHex } from './rawtx';
 import { assertSaneFee, feeAt, replacementFloor } from './fees';
 import type { Network } from './sdk';
 import {
@@ -474,7 +474,10 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
           ...(options.signal ? { signal: options.signal } : {}),
         });
         // M7: a bare broadcast (no ref) is checked against the bytes' own txid.
-        const expected = signed.ref.id !== '' ? signed.ref.id : txBytesOf(hex)?.txid;
+        const expected =
+          signed.ref.id !== ''
+            ? signed.ref.id
+            : readTxHex(hex, { maxStripped: MAX_TX_BYTES })?.txid;
         if (txid !== expected) {
           // The node accepted something under another id: the outcome is unknown.
           throw new ProviderError(
@@ -496,7 +499,7 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
         ) {
           return classifyOwnBroadcast(
             parseNodeError(String(error.details.body ?? '')),
-            txBytesOf(hex),
+            hex,
           );
         }
         throw error;

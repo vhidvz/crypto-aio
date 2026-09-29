@@ -11,7 +11,8 @@
  */
 import { ValidationError } from '../../core/errors/error';
 import { equalBytes, toHex } from '../../core/util/bytes';
-import { bitcoin, type Network, type Psbt, type Transaction } from './sdk';
+import { readTx } from './rawtx';
+import { bitcoin, type Network, type Psbt } from './sdk';
 
 export const SIGHASH_ALL = 0x01;
 export const SIGHASH_DEFAULT = 0x00;
@@ -145,6 +146,39 @@ function endsAfterMaps(bytes: Uint8Array, maps: number): boolean {
 }
 
 /**
+ * The value of the global map's `PSBT_GLOBAL_UNSIGNED_TX` (key `0x00`) of PSBT bytes, read
+ * without decoding it; `undefined` when the magic or the global map is malformed, or it has
+ * no such key.
+ */
+function globalUnsignedTx(bytes: Uint8Array): Uint8Array | undefined {
+  const magic = [0x70, 0x73, 0x62, 0x74, 0xff];
+  if (!magic.every((byte, index) => bytes[index] === byte)) return undefined;
+  let offset = 5;
+  const length = (): number | undefined => {
+    const first = bytes[offset];
+    if (first === undefined) return undefined;
+    const width = first < 0xfd ? 0 : first === 0xfd ? 2 : first === 0xfe ? 4 : 8;
+    if (offset + 1 + width > bytes.length) return undefined;
+    let value = width === 0 ? first : 0;
+    for (let i = width; i >= 1; i--) value = value * 256 + (bytes[offset + i] as number);
+    offset += 1 + width;
+    return value;
+  };
+  for (;;) {
+    const keyLength = length();
+    if (keyLength === undefined || offset + keyLength > bytes.length) return undefined;
+    if (keyLength === 0) return undefined; // the end of the global map: no unsigned tx
+    const unsignedKey = keyLength === 1 && bytes[offset] === 0x00;
+    offset += keyLength;
+    const valueLength = length();
+    if (valueLength === undefined || offset + valueLength > bytes.length)
+      return undefined;
+    if (unsignedKey) return bytes.subarray(offset, offset + valueLength);
+    offset += valueLength;
+  }
+}
+
+/**
  * Canonical base64 (the standard alphabet, padded), or `undefined`. F3-R7: Node's decoder is
  * linear and far faster than a pure-JS one (a few milliseconds for 4 million characters,
  * against about 300), but it skips what it cannot read, so the bytes count only when they
@@ -181,6 +215,13 @@ export function parseSigned(
   }
   const bytes = canonicalBase64(trimAsciiSpace(text));
   if (!bytes) throw signedPsbtError('does not decode');
+  // F3-R24 F2: the unsigned transaction it carries must be ours byte for byte before bitcoinjs
+  // decodes it (its decoder is quadratic in the inputs and outputs).
+  const unsigned = globalUnsignedTx(bytes);
+  if (!unsigned) throw signedPsbtError('does not decode');
+  if (!equalBytes(unsigned, stored.data.globalMap.unsignedTx.toBuffer())) {
+    throw signedPsbtError('is not the prepared transaction');
+  }
   let signed: Psbt;
   try {
     signed = bitcoin.Psbt.fromBuffer(bytes, { network });
@@ -230,16 +271,14 @@ function assertPreviousTx(
   if (stored.nonWitnessUtxo !== undefined && equalBytes(bytes, stored.nonWitnessUtxo)) {
     return;
   }
-  let prev: Transaction;
-  try {
-    prev = bitcoin.Transaction.fromBuffer(bytes);
-  } catch {
-    throw signedPsbtError('does not decode');
-  }
-  const output = prev.outs[outpoint.vout];
+  // F3-R24 F2: read in one linear pass, its txid hashed from the bytes (bitcoinjs' decoder is
+  // quadratic), and capped at the million bytes without witness a chain can hold.
+  const prev = readTx(bytes);
+  if (!prev) throw signedPsbtError('does not decode');
+  const output = prev.outputs[outpoint.vout];
   const ours = stored.witnessUtxo;
   if (
-    prev.getId() !== outpoint.txid ||
+    prev.txid !== outpoint.txid ||
     !output ||
     (ours !== undefined &&
       (output.value !== ours.value || !equalBytes(output.script, ours.script)))

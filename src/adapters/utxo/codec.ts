@@ -11,8 +11,8 @@ import type { SignatureBundle, SigningRequest } from '../../core/signing/types';
 import { concatBytes, equalBytes, fromHex, toHex } from '../../core/util/bytes';
 import { hash160, outputScript, type WalletAddress } from './address';
 import type { PlannedOutput, Spendable } from './coinselect';
-import type { TxBytes } from './errors';
-import { bitcoin, useNobleEcc, type Network, type Psbt, type Transaction } from './sdk';
+import { readTx, readTxHex, txidOfParts, writeSize, writeU32 } from './rawtx';
+import { bitcoin, useNobleEcc, type Network, type Psbt } from './sdk';
 import {
   SIGHASH_ALL,
   SIGHASH_DEFAULT,
@@ -63,9 +63,6 @@ export interface BuiltTx {
 
 /** Bitcoin Core's `MAX_MONEY` (21 million bitcoin): no amount is larger (lesson 19). */
 const MAX_MONEY = 2_100_000_000_000_000n;
-/** Bitcoin Core's `MAX_BLOCK_SERIALIZED_SIZE`: no transaction is larger (lesson 20). */
-const MAX_TX_BYTES = 4_000_000;
-const HEX = /^[0-9a-fA-F]*$/;
 const TXID = /^[0-9a-f]{64}$/;
 
 const isU32 = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= 0xffffffff;
@@ -76,49 +73,22 @@ const isMoney = (value: bigint): boolean =>
 const txidBytes = (txid: string): Uint8Array => fromHex(txid).reverse();
 
 /**
- * Untrusted transaction hex (a node's answer), decoded strictly: capped at the largest
- * possible transaction before decoding (lesson 20), plain hex only, and no bytes after the
- * transaction (bitcoinjs' own `fromHex` stops quietly at the first non-hex character).
- */
-function decodeTxHex(hex: string): Transaction | undefined {
-  return decodeTxBytes(hex)?.tx;
-}
-
-function decodeTxBytes(
-  hex: string,
-): { readonly tx: Transaction; readonly raw: Uint8Array } | undefined {
-  if (typeof hex !== 'string' || hex.length > 2 * MAX_TX_BYTES) return undefined;
-  if (hex.length % 2 !== 0 || !HEX.test(hex)) return undefined;
-  try {
-    const raw = fromHex(hex);
-    return { tx: bitcoin.Transaction.fromBuffer(raw), raw };
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Untrusted transaction hex (a node's answer) as a previous transaction, decoded strictly
- * once (lesson 20: capped before decoding); `undefined` when it does not decode.
+ * Untrusted transaction hex (a node's answer) as a previous transaction, read in one linear
+ * pass by `rawtx.ts` (F3-R24 F2: bitcoinjs' decoder is quadratic), capped before decoding
+ * (lesson 20) and at the million bytes without witness a chain can hold; `undefined` when it
+ * does not decode.
  */
 export function previousTxOf(hex: string): PreviousTx | undefined {
-  const decoded = decodeTxBytes(hex);
-  if (!decoded) return undefined;
-  const { tx, raw } = decoded;
-  let bytes = raw;
-  if (tx.hasWitnesses()) {
-    const bare = tx.clone();
-    bare.ins.forEach((_, index) => bare.setWitness(index, []));
-    bytes = bare.toBuffer();
-  }
+  const tx = readTxHex(hex);
+  if (!tx) return undefined;
   return {
-    txid: tx.getId(),
+    txid: tx.txid,
     // Copies: a cached previous transaction keeps no view of the bytes with the witness.
-    outputs: tx.outs.map((output) => ({
+    outputs: tx.outputs.map((output) => ({
       value: output.value,
       script: Uint8Array.from(output.script),
     })),
-    bytes,
+    bytes: tx.hasWitness ? tx.stripped() : Uint8Array.from(tx.stripped()),
   };
 }
 
@@ -311,13 +281,9 @@ export function viewPsbt(base64: string, network: Network): PsbtTxView {
     let value: bigint;
     if (data?.witnessUtxo) value = data.witnessUtxo.value;
     else if (data?.nonWitnessUtxo) {
-      let prev: Transaction | undefined;
-      try {
-        prev = bitcoin.Transaction.fromBuffer(data.nonWitnessUtxo);
-      } catch {
-        prev = undefined;
-      }
-      const output = prev?.getId() === txid ? prev.outs[input.index] : undefined;
+      // Read linearly (F3-R24 F2), though `buildTx` checked it: a real one can be large.
+      const prev = readTx(data.nonWitnessUtxo);
+      const output = prev?.txid === txid ? prev.outputs[input.index] : undefined;
       if (!output) {
         throw new ValidationError(
           'INVALID_INTENT',
@@ -469,36 +435,15 @@ export function networkOf(params: {
 }
 
 /**
- * The txid of raw transaction hex, decoded strictly (lesson 20); `INVALID_INTENT` when it
- * does not decode.
+ * The txid of untrusted transaction hex, read linearly (`rawtx.ts`, F3-R24 F2; lesson 20);
+ * `INVALID_INTENT` when it does not decode or holds more than a chain can.
  */
 export function txidOfHex(hex: string): string {
-  const tx = decodeTxHex(hex);
+  const tx = readTxHex(hex);
   if (!tx) {
     throw new ValidationError('INVALID_INTENT', 'a transaction does not decode');
   }
-  return tx.getId();
-}
-
-/**
- * Lesson 21: raw transaction hex, decoded strictly, as the broadcaster checks a node's claims
- * against it: its txid, outpoints, output values (signed 64-bit, as bitcoind reads them) and
- * size without witness data. `undefined` when it does not decode.
- */
-export function txBytesOf(
-  hex: string,
-): (TxBytes & { readonly txid: string }) | undefined {
-  const tx = decodeTxHex(hex);
-  if (!tx) return undefined;
-  return {
-    txid: tx.getId(),
-    inputs: tx.ins.map((input) => ({
-      txid: toHex(Uint8Array.from(input.hash).reverse()),
-      vout: input.index,
-    })),
-    values: tx.outs.map((output) => output.value),
-    strippedSize: tx.byteLength(false),
-  };
+  return tx.txid;
 }
 
 /**
@@ -514,13 +459,14 @@ export function canonicalTwinTxid(
   hex: string,
   pubkeyHash: Uint8Array,
 ): string | undefined {
-  const tx = decodeTxHex(hex);
-  if (!tx || tx.hasWitnesses()) return undefined;
+  // Read linearly (F3-R24 F2); only each input's short script goes through bitcoinjs.
+  const tx = readTxHex(hex);
+  if (!tx || tx.hasWitness) return undefined;
+  if (tx.inputs.length === 0) return tx.txid;
   const half = secp256k1.CURVE.n >> 1n;
-  for (let index = 0; index < tx.ins.length; index++) {
-    const chunks = bitcoin.script.decompile(
-      (tx.ins[index] as { script: Uint8Array }).script,
-    );
+  const scripts: Uint8Array[] = [];
+  for (const input of tx.inputs) {
+    const chunks = bitcoin.script.decompile(input.script);
     if (!chunks) return undefined;
     let signature: Uint8Array | undefined;
     let key: Uint8Array | undefined;
@@ -539,10 +485,22 @@ export function canonicalTwinTxid(
     let s = bytesToNumberBE(signature.slice(32));
     if (s > half) s = secp256k1.CURVE.n - s;
     const low = concatBytes(r, numberToBytesBE(s, 32));
-    tx.setInputScript(
-      index,
+    scripts.push(
       bitcoin.script.compile([bitcoin.script.signature.encode(low, SIGHASH_ALL), key]),
     );
   }
-  return tx.getId();
+  // The serialization without witness data, with the canonical scripts in place.
+  const parts: Uint8Array[] = [writeU32(tx.version), writeSize(tx.inputs.length)];
+  tx.inputs.forEach((input, index) => {
+    const script = scripts[index] as Uint8Array;
+    parts.push(
+      input.hash,
+      writeU32(input.vout),
+      writeSize(script.length),
+      script,
+      writeU32(input.sequence),
+    );
+  });
+  parts.push(tx.outputBytes, writeU32(tx.locktime));
+  return txidOfParts(parts);
 }

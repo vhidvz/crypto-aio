@@ -2,6 +2,8 @@ import { walletAddress } from '../../../src/adapters/utxo/address';
 import { txidOfHex } from '../../../src/adapters/utxo/codec';
 import { PROOF, READ } from '../../../src/adapters/utxo/context';
 import { EsploraClient } from '../../../src/adapters/utxo/esplora';
+import * as rawtx from '../../../src/adapters/utxo/rawtx';
+import { toHex } from '../../../src/core/util/bytes';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
 import {
   addressCodec,
@@ -10,7 +12,13 @@ import {
   listUnspent,
 } from '../../../src/adapters/utxo/reader';
 import { utxoHarness } from './support/harness';
-import { malleate, signedLegacySpend, signedSpend } from './support/tx';
+import {
+  malleate,
+  manyOutputs,
+  signedLegacySpend,
+  signedSpend,
+  txidOfStripped,
+} from './support/tx';
 import { OTHER_PUBKEY, REGTEST, TEST_KEY, TEST_PUBKEY } from './support/vectors';
 
 const OWN = walletAddress(TEST_PUBKEY, 'p2wpkh', REGTEST);
@@ -529,6 +537,8 @@ describe('raw transactions bound to the id asked for', () => {
         request.url.pathname.endsWith(`/tx/${spent}/hex`) ? { text } : undefined,
       );
     serve('a', full.toHex());
+    // Decodes are counted at the linear reader (F3-R24 F2); bitcoinjs never decodes answers.
+    const reads = jest.spyOn(rawtx, 'readTxHex');
     const fromBuffer = jest.spyOn(bitcoin.Transaction, 'fromBuffer');
     try {
       for (const [text, decodes] of [
@@ -536,9 +546,10 @@ describe('raw transactions bound to the id asked for', () => {
         [bare.toHex(), 2], // other bytes, the same txid: both decoded, once each
       ] as const) {
         serve('b', text);
-        fromBuffer.mockClear();
+        reads.mockClear();
         const hex = await h.run(h.ctx.esplora.txHex(spent, PROOF));
-        expect(fromBuffer).toHaveBeenCalledTimes(decodes);
+        expect(reads).toHaveBeenCalledTimes(decodes);
+        expect(fromBuffer).not.toHaveBeenCalled();
         expect(txidOfHex(hex as string)).toBe(spent);
       }
       // Another transaction's bytes never agree with ours.
@@ -547,6 +558,7 @@ describe('raw transactions bound to the id asked for', () => {
         retryable: true,
       });
     } finally {
+      reads.mockRestore();
       fromBuffer.mockRestore();
     }
   });
@@ -594,20 +606,24 @@ describe('raw transactions bound to the id asked for', () => {
     expect(await h.run(two.previousTx('ab'.repeat(32), READ))).toBeNull();
   });
 
-  it('reads a transaction as large as a block allows (a lenient reader)', async () => {
-    const big = new bitcoin.Transaction();
-    big.version = 2;
-    big.addInput(new Uint8Array(32).fill(7), 0, 0xffffffff);
-    const script = new Uint8Array(3_990_000);
-    script[0] = 0x6a;
-    big.addOutput(script, 0n);
-    const hex = big.toHex();
-    const id = big.getId();
+  it('reads a transaction as large as a block allows, and nothing a block cannot hold (a lenient reader)', async () => {
+    // 3.99 MB, almost all witness: a block holds it (weight = 3 × stripped + total).
+    const big = manyOutputs(2, 3_990_000);
+    const hex = toHex(big.bytes);
+    const id = txidOfStripped(big.stripped);
+    // 3.99 MB without witness: weight 15.96 M, more than a block (F3-R24 F2).
+    const tooBig = manyOutputs(443_000);
     const h = await utxoHarness();
-    h.node.intercept('a', (request) =>
-      request.url.pathname.endsWith(`/tx/${id}/hex`) ? { text: hex } : undefined,
-    );
+    h.node.intercept('a', (request) => {
+      if (request.url.pathname.endsWith(`/tx/${id}/hex`)) return { text: hex };
+      if (request.url.pathname.endsWith(`/tx/${'ee'.repeat(32)}/hex`))
+        return { text: toHex(tooBig.bytes) };
+      return undefined;
+    });
     expect(await h.run(h.ctx.esplora.txHex(id, READ))).toBe(hex);
+    await expect(h.run(h.ctx.esplora.txHex('ee'.repeat(32), READ))).rejects.toMatchObject(
+      { code: 'PROVIDER_UNAVAILABLE', retryable: true },
+    );
   });
 });
 
