@@ -305,18 +305,21 @@ describe('Solana end to end', () => {
       'submitted',
     );
     await refusedByStateGate(env, sub.operationId);
+    // The anchor: both endpoints' finalized block at the recorded slot, which carries the
+    // blockhash (so the height is the quorum's, not the build's). The monitor may attest it
+    // while the window is still open (F5-R14), so its reads count from the start.
+    const anchorReads = () =>
+      finalizedBlockReads(env, 'none')
+        .filter((s) => Number(s.params[0]) === Number(ordering.blockhashSlot))
+        .map((s) => s.endpoint);
+    const anchors = anchorReads();
     env.node.served.length = 0;
     const outcome = await env.produceWhile(waiting);
     expect(outcome).toMatchObject({ code: 'TX_EXPIRED' });
     expect(expired.height).toBeGreaterThanOrEqual(last + 1n);
     const op = await env.run(env.bc.getOperation(sub.operationId));
     expect(op?.state).toBe('expired');
-    // The anchor: both endpoints' finalized block at the recorded slot, which carries the
-    // blockhash (so the height is the quorum's, not the build's).
-    const anchors = finalizedBlockReads(env, 'none').filter(
-      (s) => Number(s.params[0]) === Number(ordering.blockhashSlot),
-    );
-    expect(new Set(anchors.map((s) => s.endpoint))).toEqual(new Set(['a', 'b']));
+    expect(new Set([...anchors, ...anchorReads()])).toEqual(new Set(['a', 'b']));
     // The window: every block from L − 149 through L + 1 (151), read whole on both endpoints.
     const window = Array.from({ length: 151 }, (_, i) =>
       Number(env.node.block(last - 149n + BigInt(i))?.slot),
@@ -410,6 +413,44 @@ describe('Solana end to end', () => {
       calls(),
       final.operation?.attempts.length,
     ]).toEqual([SOL, 1, 1]);
+  });
+
+  it('proves expiry at the attested height when the recorded one was raised far past the window (F5-R14)', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createSolanaEnv({ endpoints: ['a', 'b'], signer });
+    const builtAt = env.node.head;
+    // The endpoint the build asks claims a last valid height a million blocks too high.
+    lieAtBuild(env, (answer) => ({
+      ...answer,
+      value: {
+        ...answer.value,
+        lastValidBlockHeight: answer.value.lastValidBlockHeight + 1_000_000,
+      },
+    }));
+    const sub = await env.run(
+      env.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'high' }),
+    );
+    const id = sub.attempt?.id ?? '';
+    const real = builtAt.height + VALIDITY;
+    expect((await orderingOf(env, sub.operationId)).lastValidHeight).toBe(
+      real + 1_000_000n,
+    );
+    const expired = onExpired(env);
+    holdBack(env, id);
+    const outcome = await env.produceWhile(
+      sub.wait({ finality: 'final' }).catch((e: unknown) => e),
+      VALIDITY_STEPS,
+    );
+    // Expired once the true window's last block is final, not at the raised height.
+    expect(outcome).toMatchObject({ code: 'TX_EXPIRED' });
+    expect(expired.height).toBeGreaterThanOrEqual(real + 1n);
+    expect(expired.height).toBeLessThan(real + 50n);
+    env.node.intercept = undefined;
+    const rebuilt = await env.run(env.bc.rebuild(sub.operationId));
+    const done = await env.produceWhile(rebuilt.wait({ finality: 'final' }));
+    expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    expect(env.node.landed(id)).toBeUndefined();
+    expect([env.node.balance(RECIPIENT), calls()]).toEqual([SOL, 2]);
   });
 
   it('proves expiry at the recorded height when the recorded slot does not hold the blockhash (F5-R11 fallback)', async () => {

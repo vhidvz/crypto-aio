@@ -414,6 +414,33 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
     return { lastValidHeight: last, blockhash: record.blockhash };
   };
   /**
+   * F5-R14: while the recorded height has not passed, the last valid height the recorded
+   * slot alone attests (no height fallback), remembered as `attested` remembers it. A build
+   * that raised the recorded height would otherwise wait for that height, possibly for
+   * ever, although the real window has passed. `undefined` (not yet) when no slot was
+   * recorded, the slot does not hold the blockhash, or it cannot be read.
+   */
+  const attestedAtSlot = async (
+    ordering: OrderingData,
+    recorded: bigint,
+  ): Promise<bigint | undefined> => {
+    let record: Recorded;
+    let at: bigint | null;
+    try {
+      record = recordedOf(ordering, recorded);
+      if (record.slot === undefined) return undefined;
+      at = await heightAtSlot(ctx, record.blockhash, record.slot);
+    } catch {
+      return undefined;
+    }
+    if (at === null) return undefined;
+    const last = at + BLOCKHASH_VALIDITY;
+    if (last !== recorded) ctx.log.warn(LIE);
+    anchors.set(record.blockhash, last);
+    trim(anchors, ANCHOR_MEMO);
+    return last;
+  };
+  /**
    * A finalized `getTransaction` answer, read under that method's quorum key, is the only
    * verdict input (never a block's entry): the transaction asked for, in the finalized
    * block at its slot, with the landing guard applied (lesson 7).
@@ -482,10 +509,12 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
         return { included: false };
       }
       // The window's last block (lastValidBlockHeight + 1, I1) is final everywhere, at the
-      // attested height (F5-R10). An early "no" at the recorded one only delays.
+      // attested height (F5-R10). An early "no" at the recorded one only delays, unless the
+      // recorded slot attests another height (F5-R14): its predicate is asked below.
       const pastWindow = () => notYet('finality past the transaction window');
       if (remembered === undefined && !(await finalizedPast(ctx, recorded))) {
-        throw pastWindow();
+        const bySlot = await attestedAtSlot(ordering, recorded);
+        if (bySlot === undefined || bySlot === recorded) throw pastWindow();
       }
       const anchor = await attested(ordering, recorded);
       const last = anchor.lastValidHeight;
@@ -514,8 +543,12 @@ export function createSolanaProofs(ctx: SolanaContext): ProofSource {
       if (recorded === undefined) return false;
       const remembered = known(ordering);
       if (remembered !== undefined) return finalizedPast(ctx, remembered);
-      // An early "no" at the recorded height only delays.
-      if (!(await finalizedPast(ctx, recorded))) return false;
+      // An early "no" at the recorded height only delays, unless the recorded slot attests
+      // another height (F5-R14): then that height's own predicate answers.
+      if (!(await finalizedPast(ctx, recorded))) {
+        const bySlot = await attestedAtSlot(ordering, recorded);
+        return bySlot !== undefined && bySlot !== recorded && finalizedPast(ctx, bySlot);
+      }
       // F5-R10: "expired" rests on the attested height, and its own predicate read.
       const { lastValidHeight } = await attested(ordering, recorded);
       return lastValidHeight === recorded || finalizedPast(ctx, lastValidHeight);

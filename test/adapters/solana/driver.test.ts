@@ -1106,10 +1106,8 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
   const LIE =
     'the recorded expiry height disagrees with its blockhash; using the attested one';
 
-  const heightLies: readonly [string, bigint][] = [
-    ['lower', -100n],
-    ['higher', 100n],
-  ];
+  // A higher recorded height is adopted through the recorded slot alone (F5-R14, below).
+  const heightLies: readonly [string, bigint][] = [['lower', -100n]];
   it.each(heightLies)(
     'adopts the attested height over a %s recorded one, then proves expiry at it (F5-R10)',
     async (_what, shift) => {
@@ -1170,6 +1168,96 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
       expect(warnings).toEqual([LIE]);
     },
   );
+
+  const raised: readonly [string, bigint, 'expired' | 'includedFinal'][] = [
+    ['100 blocks, verdict asked first', 100n, 'includedFinal'],
+    ['100 blocks, expiry asked first', 100n, 'expired'],
+    ['a million blocks, verdict asked first', 1_000_000n, 'includedFinal'],
+    ['a million blocks, expiry asked first', 1_000_000n, 'expired'],
+  ];
+  it.each(raised)(
+    'passes a recorded height raised by %s through the recorded slot alone (F5-R14)',
+    async (_what, shift, first) => {
+      const warnings: string[] = [];
+      const h = await driverFor(['a', 'b'], undefined, warningsOf(warnings));
+      h.node.produce(105);
+      const real = h.node.head.height + 150n;
+      lying(h, (answer) => {
+        answer.value.lastValidBlockHeight += Number(shift);
+      });
+      const { ordering, id } = await built(h);
+      h.node.intercept = undefined;
+      expect(ordering).toMatchObject({ lastValidHeight: real + shift });
+      const ask = () =>
+        first === 'expired'
+          ? h.run(h.driver.proofs.expired(ordering))
+          : verdicts(h, id, ordering, 1);
+      // Before the true window has passed: the recorded height has not passed, the slot
+      // alone attests the true one, and its predicate says "not yet".
+      produceTo(h, real + 1n);
+      h.calls.length = 0;
+      expect(await ask()).toEqual(first === 'expired' ? false : ['decides nothing']);
+      expect(h.calls.map((c) => [c.method, c.tags.quorum])).toEqual([
+        ...(first === 'expired' ? [] : [['getTransaction', 'proof']]),
+        ['getBlockHeight', 'proof'],
+        ['getBlock', 'proof'],
+        ['getBlockHeight', 'proof'],
+      ]);
+      expect(scanned(h)).toEqual([]);
+      // The true window's last block final everywhere: expired and absent at the true
+      // height, long before the raised one.
+      produceTo(h, real + 3n);
+      expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
+      h.calls.length = 0;
+      expect(
+        await h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+      ).toEqual({ included: false });
+      const slots = scanned(h).map((c) => (c.params as [number])[0]);
+      expect(slots).toHaveLength(151);
+      expect([slots[0], slots[150]]).toEqual([
+        Number(h.node.block(real - 149n)?.slot),
+        Number(h.node.block(real + 1n)?.slot),
+      ]);
+      expect(warnings).toEqual([LIE]);
+    },
+  );
+
+  it('never falls back from the slot when the recorded height has not passed (F5-R14)', async () => {
+    const h = await driverFor(['a', 'b']);
+    h.node.produce(105);
+    const real = h.node.head.height + 150n;
+    // A raised height and the slot of another block: the slot path fails, so "not yet",
+    // and the height fallback (the block 150 below the recorded height) is never read.
+    lying(h, (answer) => {
+      answer.value.lastValidBlockHeight += 100;
+      answer.context.slot -= 1;
+    });
+    const { ordering, id } = await built(h);
+    h.node.intercept = undefined;
+    produceTo(h, real + 50n);
+    h.calls.length = 0;
+    expect(await h.run(h.driver.proofs.expired(ordering))).toBe(false);
+    expect(await verdicts(h, id, ordering, 1)).toEqual(['decides nothing']);
+    expect(h.calls.map((c) => c.method)).toEqual([
+      'getBlockHeight',
+      'getBlock',
+      'getTransaction',
+      'getBlockHeight',
+      'getBlock',
+    ]);
+    expect(scanned(h)).toEqual([]);
+    // A slot that cannot be read (the endpoints fail it) is "not yet" too.
+    const slot = Number((ordering as SolanaExpiryOrdering).blockhashSlot);
+    const honest = {
+      ...(ordering as SolanaExpiryOrdering),
+      blockhashSlot: BigInt(slot + 1),
+    };
+    h.node.intercept = (_endpoint, method, params) =>
+      method === 'getBlock' && params[0] === slot + 1
+        ? { error: { code: -32603, message: 'Internal error' } }
+        : undefined;
+    expect(await h.run(h.driver.proofs.expired(honest))).toBe(false);
+  });
 
   it('asks the predicate again at the attested height when expiry is asked first (F5-R10)', async () => {
     const h = await driverFor();
