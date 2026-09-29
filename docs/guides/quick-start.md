@@ -242,7 +242,7 @@ configure({
       network: 'devnet',
       provider: ['alchemy', 'ankr'],
       wallet: 'payouts',
-      // The highest compute-unit price a transfer signs, in micro-lamports (default 10_000_000)
+      // The highest compute-unit price signed, in micro-lamports (default 10_000_000)
       options: { maxComputeUnitPrice: 2_000_000n },
     },
   },
@@ -265,10 +265,11 @@ CLI key file (its first 32 bytes are the seed). A decimal string is in the asset
 the recipient's wallet, never its token account: the transfer pays into the wallet's
 associated token account and creates it when it is missing, at the sender's cost (a `rent`
 charge in the estimate). Solana has no replace or cancel: a transaction that never lands is
-proven `expired` once its blockhash's window has passed, and `bc.rebuild(id)` then signs it
-again. With one provider the proof quorum is 1, so in production use two or three
-independent providers. [Solana networks](./networks.md#solana-networks) covers the fees, the
-checks before signing, expiry, refusals, scanning and history.
+proven `expired` once its blockhash's window has passed, and `bc.rebuild(id)` then signs a
+new transaction on a fresh blockhash. With one provider the proof quorum is 1, so in
+production use two or three independent providers.
+[Solana networks](./networks.md#solana-networks) covers the fees, the checks before signing,
+expiry, refusals, scanning and history.
 
 ## Next steps
 

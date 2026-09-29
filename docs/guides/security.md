@@ -227,17 +227,17 @@ transfer resolves.
 On Solana, one endpoint's answers set a transfer's price and compute limit, and a proof
 decides whether a transfer can be sent again. The driver's guards:
 
-- **Priority fee.** The compute-unit price is at most `chains.solana.options.maxComputeUnitPrice`
-  (10,000,000 micro-lamports per compute unit by default, `DEFAULT_MAX_COMPUTE_UNIT_PRICE`),
-  which no endpoint can raise. A speed is clamped below it, an override above it fails with
-  `INVALID_INTENT` before signing (naming the option, with `details.required` and
-  `details.maxComputeUnitPrice`), and the build checks it again. With the limit at its
-  1,400,000-unit maximum, the default bound caps a transfer's priority fee at 0.014 SOL, so
-  one lying endpoint cannot spend the wallet. Any other key in `chains.solana.options` fails
-  with `CONFIG_INVALID`. For a tighter policy per transfer, compare `ctx.fee` in
-  `beforeSign`.
-- **Proof providers.** A proof that a transfer never landed is what lets `rebuild` sign a new
-  one, so a wrong one pays twice. Each proof is a quorum over your endpoints: use two or
+- **Priority fee.** The compute-unit price is at most
+  `chains.solana.options.maxComputeUnitPrice` (10,000,000 micro-lamports per compute unit by
+  default, `DEFAULT_MAX_COMPUTE_UNIT_PRICE`), which no endpoint can raise. A speed is
+  clamped below it, an override above it fails with `INVALID_INTENT` before signing (naming
+  the option, with `details.required` and `details.maxComputeUnitPrice`), and the build
+  checks it again. With the limit at its 1,400,000-unit maximum, the default bound caps a
+  transfer's priority fee at 0.014 SOL, so one lying endpoint cannot spend the wallet. Any
+  other key in `chains.solana.options` fails with `CONFIG_INVALID`. For a tighter policy per
+  transfer, compare `ctx.fee` in `beforeSign`.
+- **Proof providers.** A proof that a transfer never landed is what lets `rebuild` sign a
+  new one, so a wrong one pays twice. Each proof is a quorum over your endpoints: use two or
   three independent keyed or self-hosted providers. The `public` preset's rate limits let it
   prove absence only slowly, over many passes, so a transfer that never landed stays
   unresolved for minutes there.
@@ -286,5 +286,5 @@ transfer resolves, and which addresses a scan filter matches.
       signers; and `allowExternalChangeAddress` only for a verified address.
 - [ ] Solana: two or three independent keyed or self-hosted providers; `maxComputeUnitPrice`
       set to your fee policy; a store that keeps each Attempt's `ordering` whole; after a
-      refusal, retry only with `rebroadcast` or the same idempotency key; credit SPL deposits
-      by the owner wallet (`transfer.to`).
+      refusal, retry only with `rebroadcast` or the same idempotency key; credit SPL
+      deposits by the owner wallet (`transfer.to`).

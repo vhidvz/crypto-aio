@@ -79,8 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Solana handle option `maxComputeUnitPrice` (`chains.solana.options`): the highest
   compute-unit price a transfer signs, 10,000,000 micro-lamports per compute unit by default
   (`DEFAULT_MAX_COMPUTE_UNIT_PRICE`, exported from `crypto-aio/solana`), so no endpoint can
-  raise a transfer's priority fee above 0.014 SOL by default. Speeds are clamped below it, an
-  override above it is refused before signing, and any other option key is `CONFIG_INVALID`.
+  raise a transfer's priority fee above 0.014 SOL by default. Speeds are clamped below it,
+  an override above it is refused before signing, and any other option key is
+  `CONFIG_INVALID`.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers

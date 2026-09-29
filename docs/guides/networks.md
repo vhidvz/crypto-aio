@@ -453,9 +453,10 @@ crypto-aio needs Node 22.
   so over `public` the proof completes only after many monitor passes: about 26 at 6 calls
   per 10 s, several minutes or more. Until then a transfer that never landed is not
   `expired`, and `rebuild` stays refused; a restart of the process starts the read over.
-  No funds are at risk. A block scan also reads one `getBlock` per block, but it waits out
-  each 429, so it falls behind without stopping. Senders should use keyed or self-hosted
-  providers for their proofs.
+  No funds are at risk. A block scan also reads two `getBlock` calls per block (its header,
+  then its transactions, and in `head` mode a few more lookups per block that is not final
+  yet), but it waits out each 429, so it falls behind without stopping. Senders should use
+  keyed or self-hosted providers for their proofs.
 - **Proven verdicts need independent providers.** Each proof is a quorum over your
   endpoints, and an endpoint is a URL: a single URL, load-balanced or not, is trusted for
   everything it answers. A backend that lags, was pruned or lacks blocks never decides
@@ -501,16 +502,17 @@ crypto-aio needs Node 22.
   `fee.details` is `SolanaFeeDetails`. The `network` charge, and so the `exact` bound, is
   one endpoint's `getFeeForMessage` quote: it is never signed, and the chain charges its own
   signature fee, so a wrong quote changes only the estimate and the balance check (a short
-  balance is then refused by the node and stalls, rather than paying more). `slow`, `normal` and `fast` take the 25th, 50th and
-  75th percentile of the node's `getRecentPrioritizationFees` for the accounts the transfer
-  writes (0 when it reports none), and the limit is a simulation plus 20% and 1,000 units
-  (the runtime's default of 200,000 units per instruction when the simulation fails). One
-  endpoint reports that price and runs that simulation, so the price is also bounded by your
-  own `chains.solana.options.maxComputeUnitPrice`, which no endpoint can raise:
-  micro-lamports per compute unit as a bigint, from 999 to 2^64 − 1, and 10,000,000 by
-  default (`DEFAULT_MAX_COMPUTE_UNIT_PRICE`). A speed's percentile is clamped to the bound
-  less 999 before the build's variant is added, so a speed never signs more than the bound.
-  At the 1,400,000-unit maximum limit, the default bound caps a transfer's priority fee at
+  balance is then refused by the node and stalls, rather than paying more). `slow`, `normal`
+  and `fast` take the 25th, 50th and 75th percentile of the node's
+  `getRecentPrioritizationFees` for the accounts the transfer writes (0 when it reports
+  none), and the limit is a simulation plus 20% and 1,000 units (the runtime's default of
+  200,000 units per instruction when the simulation fails). One endpoint reports that price
+  and runs that simulation, so the price is also bounded by your own
+  `chains.solana.options.maxComputeUnitPrice`, which no endpoint can raise: micro-lamports
+  per compute unit as a bigint, from 999 to 2^64 − 1, and 10,000,000 by default
+  (`DEFAULT_MAX_COMPUTE_UNIT_PRICE`). A speed's percentile is clamped to the bound less 999
+  before the build's variant is added, so a speed never signs more than the bound. At the
+  1,400,000-unit maximum limit, the default bound caps a transfer's priority fee at
   14,000,000 lamports (0.014 SOL), whatever an endpoint answers. The override is
   `{ computeUnitPrice, computeUnitLimit? }` (`SolanaFeeOverride`), as bigints only: the
   price in micro-lamports per compute unit, kept exactly, and optionally a limit from 1 to
@@ -570,19 +572,20 @@ crypto-aio needs Node 22.
   (`source: 'internal'`), and classic SPL transfers, whose `from` and `to` are the token
   accounts' owners when the node reports them. Transfers are checked against the
   transaction's balance changes: whatever they do not explain, such as a Token-2022
-  transfer, makes it `decoding: 'partial'`. Vote transactions are skipped. `filter.addresses`
-  may hold wallets, token accounts (associated or not) or both. A filtered scan returns
-  every transaction that may move funds for a watched address, an SPL transfer into or out
-  of a watched token account included; one it cannot fully attribute is returned as
-  `partial` rather than dropped. An SPL transfer's `to` is the owner wallet whenever the
-  node reports the owner, never the token account (only a `partial` transaction whose owner
-  was not reported names the token account), so credit token deposits by owner: a service
-  that watches token accounts matches `transfer.to` against their owners too. A token
-  transfer that creates the recipient's token account also shows the rent deposit as an
-  internal SOL transfer to that account.
+  transfer, makes it `decoding: 'partial'`. Vote transactions are skipped.
+  `filter.addresses` may hold wallets, token accounts (associated or not) or both. A
+  filtered scan returns every transaction that may move funds for a watched address, an SPL
+  transfer into or out of a watched token account included; one it cannot fully attribute is
+  returned as `partial` rather than dropped. An SPL transfer's `to` is the owner wallet
+  whenever the node reports the owner, never the token account (only a `partial` transaction
+  whose owner was not reported names the token account), so credit token deposits by owner:
+  a service that watches token accounts matches `transfer.to` against their owners too. A
+  token transfer that creates the recipient's token account also shows the rent deposit as
+  an internal SOL transfer to that account.
 - **History** comes from the RPC (`getSignaturesForAddress`), newest first, without an
   indexer: `bc.history(address)` lists transactions from `confirmed` on, at most 1,000 per
-  page, and reads each one back, so a page costs a request per item. An SPL deposit into an
+  page, and reads each one back, so a page costs two requests per item (`getTransaction`,
+  then a header-only `getBlock` for its height and hash). An SPL deposit into an
   existing token account appears in that account's history, not the owner's. A handle's
   `indexer`, when you set one, serves history instead; any Solana RPC endpoint can be one.
 - **Tokens.** USDC (mainnet, devnet) and USDT (mainnet) are registered by alias. Any other

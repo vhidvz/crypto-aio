@@ -434,11 +434,12 @@ for await (const event of scanner) {
   cannot fully attribute arrives as `decoding: 'partial'` rather than being dropped. An SPL
   transfer's `to` is the owner wallet whenever the node reports it, not the token account,
   so with token accounts in the filter, put their owner wallets in `mine` in the example
-  above too (and the token accounts, for the `partial` case where no owner was reported). A token transfer that creates the
-  recipient's token account also shows its rent deposit as an internal SOL transfer to that
-  account. Heights are block heights, so skipped slots leave no gap. The scan reads one
-  `getBlock` per block, so over the `public` preset it falls behind; scan through a keyed
-  provider or your own node.
+  above too (and the token accounts, for the `partial` case where no owner was reported). A
+  token transfer that creates the recipient's token account also shows its rent deposit as
+  an internal SOL transfer to that account. Heights are block heights, so skipped slots
+  leave no gap. The scan reads two `getBlock` calls per block, its header and then its
+  transactions, and in `head` mode a few more lookups per block that is not final yet, so
+  over the `public` preset it falls behind; scan through a keyed provider or your own node.
 
 ### Address history (`address-history`)
 
@@ -454,10 +455,11 @@ Credit from it as from the scanner: skip a transfer whose `to` is among its `fro
 addresses, which is the sender's change or a cancel's refund.
 
 Solana needs no indexer: its RPC serves history (`getSignaturesForAddress`), newest first,
-at most 1,000 per page, and each item is read back with its own request. An SPL deposit into
-an existing token account appears in that token account's history, not the owner's;
-`bc.ext.solana.getTokenAccounts(owner)` lists an owner's token accounts. History ends at
-the provider's retention ([Solana networks](./networks.md#solana-networks)).
+at most 1,000 per page, and each item is read back with two requests (the transaction, then
+its block's header). An SPL deposit into an existing token account appears in that token
+account's history, not the owner's; `bc.ext.solana.getTokenAccounts(owner)` lists an owner's
+token accounts. History ends at the provider's retention
+([Solana networks](./networks.md#solana-networks)).
 
 ## Error handling
 
