@@ -982,6 +982,27 @@ describe('the recipient binding (the landing guard trusts it)', () => {
       ...list.slice(2),
     ]);
     await expect(build(repriced, spl)).rejects.toMatchObject(MISMATCH);
+    // Task 7 M3: the recipient binding reads only the destination and the amount; the exact
+    // match closes the rest of the token instruction (its mint, discriminator, decimals).
+    const token = (edit: (ix: SolanaInstruction) => SolanaInstruction) =>
+      compiling(h.ctx, (list) =>
+        list.map((ix) => (ix.programId === TOKEN ? edit(ix) : ix)),
+      );
+    const remint = token((ix) => ({
+      ...ix,
+      accounts: ix.accounts.map((a, i) => (i === 1 ? { ...a, address: STRANGER } : a)),
+    }));
+    const unchecked = token((ix) => ({
+      ...ix,
+      data: Uint8Array.from([3, ...ix.data.slice(1)]),
+    }));
+    const redecimal = token((ix) => ({
+      ...ix,
+      data: Uint8Array.from([...ix.data.slice(0, 9), 9]),
+    }));
+    for (const ctx of [remint, unchecked, redecimal]) {
+      await expect(build(ctx, spl)).rejects.toMatchObject(MISMATCH);
+    }
     const readOnly = compiling(h.ctx, (list) =>
       list.map((ix) =>
         ix.programId === SYSTEM
@@ -1400,6 +1421,60 @@ describe("the caller's signal", () => {
     await expect(h.run(h.builder.checkFunds(request, fee, stopped))).rejects.toBe(reason);
     await expect(h.run(h.builder.build(request, fee, stopped))).rejects.toBe(reason);
     expect(h.node.served).toEqual([]);
+  });
+
+  it('rides on each read, not only the first: aborted at read k, no read k + 1 (Task 7 M1)', async () => {
+    const h = setup();
+    const request = intent({
+      asset: SPL,
+      outputs: [{ to: RECIPIENT, amount: 1n }],
+      memo: 'm',
+    });
+    const fee = await h.run(h.builder.estimateFee(request, h.build));
+    const reason = new Error('stopped');
+    /** A builder whose transport aborts the caller's signal as read `k` is sent. */
+    const abortingAt = (k: number, controller: AbortController) => {
+      let reads = 0;
+      const transport = new Proxy(h.ctx.transport, {
+        get(target, prop) {
+          const value = Reflect.get(target, prop) as unknown;
+          if (prop !== 'rpc') {
+            return typeof value === 'function' ? value.bind(target) : value;
+          }
+          return (method: string, params: unknown, options: object) => {
+            if (reads++ === k) controller.abort(reason);
+            return target.rpc(method, params, options);
+          };
+        },
+      });
+      return {
+        builder: createSolanaBuilder({ ...h.ctx, transport }),
+        reads: () => reads,
+      };
+    };
+    const steps: [
+      string,
+      (b: ReturnType<typeof createSolanaBuilder>, c: BuildContext) => Promise<unknown>,
+    ][] = [
+      ['estimateFee', (b, c) => b.estimateFee(request, c)],
+      ['checkFunds', (b, c) => b.checkFunds(request, fee, c)],
+      ['build', (b, c) => b.build(request, fee, c)],
+    ];
+    for (const [name, step] of steps) {
+      const plain = abortingAt(-1, new AbortController());
+      await h.run(step(plain.builder, h.build));
+      const total = plain.reads();
+      expect([name, total > 1]).toEqual([name, true]);
+      for (let k = 0; k < total; k++) {
+        const controller = new AbortController();
+        const probe = abortingAt(k, controller);
+        await expect(
+          h.run(step(probe.builder, { ...h.build, signal: controller.signal })),
+        ).rejects.toBe(reason);
+        // Read k carried the signal: it stopped there, and no later read was sent.
+        expect([name, k, probe.reads()]).toEqual([name, k, k + 1]);
+      }
+    }
   });
 });
 
