@@ -1442,6 +1442,30 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     expect(scanned(h)).toHaveLength(151);
   });
 
+  it('decides nothing when the last block read is not the attested top of the window', async () => {
+    const h = await driverFor(['a', 'b']);
+    h.node.produce(2);
+    const { ordering, id } = await built(h);
+    const last = (ordering as SolanaExpiryOrdering).lastValidHeight;
+    produceTo(h, last + 3n);
+    // Every endpoint serves the window's last block, read whole, under another hash (its
+    // height and parent unchanged); its header read (the attested top) is unchanged.
+    const top = Number(h.node.block(last + 1n)?.slot);
+    h.node.intercept = (endpoint, method, params) => {
+      const options = params[1] as { transactionDetails?: string } | undefined;
+      if (method !== 'getBlock' || params[0] !== top) return undefined;
+      if (options?.transactionDetails !== 'signatures') return undefined;
+      const block = h.node.answer(endpoint, method, params) as Record<string, unknown>;
+      return { result: { ...block, blockhash: h.node.block(1n)?.hash } };
+    };
+    await expect(
+      h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS)),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      message: 'the window does not end at its attested block',
+    });
+  });
+
   it('still proves an honest build expired and absent', async () => {
     const warnings: string[] = [];
     const h = await driverFor(['a', 'b'], undefined, warningsOf(warnings));
@@ -1449,8 +1473,27 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     const { ordering, id } = await built(h);
     const last = (ordering as SolanaExpiryOrdering).lastValidHeight;
     produceTo(h, last + 2n);
-    // The window's last block (lastValid + 1) is not final everywhere yet.
+    // The window's last block (lastValid + 1) is not final everywhere yet. The recorded slot
+    // attests the recorded height (F5-R14), whose predicate just said no: nothing more is
+    // read, in either order, and never a block of the window.
+    h.calls.length = 0;
+    expect(await verdicts(h, id, ordering, 1)).toEqual(['decides nothing']);
+    expect(h.calls.map((c) => c.method)).toEqual([
+      'getTransaction',
+      'getBlockHeight',
+      'getBlock',
+    ]);
+    const fresh = await driverFor(['a', 'b']);
+    fresh.node.produce(2);
+    const again = await built(fresh);
+    produceTo(fresh, (again.ordering as SolanaExpiryOrdering).lastValidHeight + 2n);
+    fresh.calls.length = 0;
+    expect(await fresh.run(fresh.driver.proofs.expired(again.ordering))).toBe(false);
+    expect(fresh.calls.map((c) => c.method)).toEqual(['getBlockHeight', 'getBlock']);
+    // Remembered: one predicate read at the attested height.
+    h.calls.length = 0;
     expect(await h.run(h.driver.proofs.expired(ordering))).toBe(false);
+    expect(h.calls.map((c) => c.method)).toEqual(['getBlockHeight']);
     produceTo(h, last + 3n);
     expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
     expect(
