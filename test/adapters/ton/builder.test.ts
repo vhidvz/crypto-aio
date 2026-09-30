@@ -27,7 +27,11 @@ import {
   TON_CAPABILITIES,
 } from '../../../src/adapters/ton/network';
 import type { TonSeqnoOrdering } from '../../../src/adapters/ton/types';
-import { SEND_MODE } from '../../../src/adapters/ton/wallets';
+import {
+  SEND_MODE,
+  resolveIdentity,
+  walletAddress,
+} from '../../../src/adapters/ton/wallets';
 import type { BuildContext } from '../../../src/core/driver/types';
 import type { LogFields } from '../../../src/core/events/logger';
 import { noopLogger } from '../../../src/core/events/logger';
@@ -36,7 +40,7 @@ import type { UnsignedTx } from '../../../src/core/model/transaction';
 import { hang, type FakeReply } from '../../../src/testing/fake-fetch';
 import { tonHarness } from './support/context';
 import { testWallet } from './support/harness';
-import { NODE_FEES } from './support/node';
+import { NODE_FEES, gasPricesBoc } from './support/node';
 import { KEY, PUBLIC_KEY, TEST_WALLETS, WALLET_IDS } from './support/vectors';
 
 const TESTNET = -3;
@@ -1143,8 +1147,12 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
               outputs: [{ to: FRESH, amount: 400n }],
             });
       const normal = await s.h.run(s.builder.estimateFee(i, s.build()));
-      // The config's forward fee equals the node's emulated one here.
-      const minimum = value + (normal.details as { forwardFee: bigint }).forwardFee;
+      // The config's forward fee equals the node's emulated one here; F6-R19: plus the
+      // config's flat gas price (param 21).
+      const minimum =
+        value +
+        (normal.details as { forwardFee: bigint }).forwardFee +
+        NODE_FEES.flatGasPrice;
       s.h.node.debit(s.from, 3n * GRAM - minimum);
       s.h.node.intercept = (_e, route) =>
         route === '/estimateFee' ? feesAnswer({ gas: 0n, fwd: 0n }) : undefined;
@@ -1171,6 +1179,76 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
+  it("counts the config's flat gas price in the least a transfer needs, and holds it to the ceiling (F6-R19, F6-R20)", async () => {
+    /** An emulation that ran nothing; config params 20/21 as `gas` gives them, else honest. */
+    const answer = (s: ReturnType<typeof setup>, gas?: string) => {
+      s.h.node.intercept = (_e, route, request) =>
+        route === '/estimateFee'
+          ? feesAnswer({ gas: 0n, fwd: 0n })
+          : route === '/getConfigParam' &&
+              gas !== undefined &&
+              ['20', '21'].includes(request.url.searchParams.get('param') ?? '')
+            ? { json: { ok: true, result: { config: { bytes: gas } } } }
+            : undefined;
+    };
+    for (const [version, workchain] of [
+      ['v4r2', 0],
+      ['v5r1', -1],
+    ] as const) {
+      const s = setup(version);
+      const from =
+        workchain === -1
+          ? walletAddress(resolveIdentity({ ton: { version, workchain } }, TESTNET), PK)
+          : s.from;
+      const b = { ...s.build(), from, wallet: { ton: { version, workchain } } };
+      const i = s.intent({ from, outputs: [{ to: FRESH, amount: 1_000n }] });
+      s.h.node.fund(from, 3n * GRAM);
+      const normal = await s.h.run(s.builder.estimateFee(i, b));
+      const fwd = (normal.details as { forwardFee: bigint }).forwardFee;
+      // The floor is `flat_gas_price` alone, param 21 or 20 by the sender's workchain (never
+      // flat_gas_limit × flat_gas_price, 100 times more).
+      const flat = workchain === -1 ? NODE_FEES.mcFlatGasPrice : NODE_FEES.flatGasPrice;
+      const minimum = 1_000n + fwd + flat;
+      s.h.node.debit(from, 3n * GRAM - minimum + 1n);
+      answer(s);
+      await expect(s.h.run(s.builder.estimateFee(i, b))).rejects.toMatchObject({
+        code: 'INSUFFICIENT_FUNDS',
+        details: { required: String(minimum), available: String(minimum - 1n) },
+      });
+      s.h.node.fund(from, 1n);
+      await expect(s.h.run(s.builder.estimateFee(i, b))).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+      // One endpoint's flat price above the ceiling is never a shortfall; a config without
+      // the flat prefix gives no floor; one that does not parse decides nothing.
+      const ceiling =
+        workchain === -1
+          ? DEFAULT_MAX_NETWORK_FEE.masterchain
+          : DEFAULT_MAX_NETWORK_FEE.basechain;
+      s.h.node.debit(from, 1n);
+      answer(s, gasPricesBoc(ceiling, 400n));
+      await expect(s.h.run(s.builder.estimateFee(i, b))).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        message: "the endpoint's config prices gas above the policy maximum",
+      });
+      // `gas_prices_ext#de` without the flat prefix: the floor is 0.
+      const noFlat = Cell.fromBoc(Buffer.from(gasPricesBoc(1n, 400n), 'base64'))[0]!
+        .beginParse()
+        .skip(8 + 64 + 64);
+      answer(s, beginCell().storeSlice(noFlat).endCell().toBoc().toString('base64'));
+      await expect(s.h.run(s.builder.estimateFee(i, b))).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+      answer(s, beginCell().storeUint(0xd1, 8).endCell().toBoc().toString('base64'));
+      await expect(s.h.run(s.builder.estimateFee(i, b))).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+  });
+
   it("never takes one endpoint's config forward fee above the ceiling for a shortfall (F6-R20)", async () => {
     /** Config param 25 whose lump price is the whole forward fee of a message without body. */
     const prices = (lump: bigint) =>
@@ -1186,8 +1264,8 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
         .toBoc()
         .toString('base64');
     const answer = (s: ReturnType<typeof setup>, lump: bigint, empty: boolean) => {
-      s.h.node.intercept = (_e, route) =>
-        route === '/getConfigParam'
+      s.h.node.intercept = (_e, route, request) =>
+        route === '/getConfigParam' && request.url.searchParams.get('param') === '25'
           ? { json: { ok: true, result: { config: { bytes: prices(lump) } } } }
           : route === '/estimateFee' && empty
             ? feesAnswer({ gas: 0n, fwd: 0n })
@@ -1206,11 +1284,12 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
         ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
       }
     }
-    // At exactly the ceiling the config's fee counts: a wallet below the amount plus it is
-    // short of funds, one above it is not.
+    // At exactly the ceiling the config's fees count (the forward fee and, F6-R19, the flat
+    // gas price): a wallet below the amount plus them is short of funds, one above is not.
+    const flat = NODE_FEES.flatGasPrice;
     const poor = setup();
     poor.h.node.fund(poor.from, GRAM + ceiling - 1n);
-    answer(poor, ceiling, true);
+    answer(poor, ceiling - flat, true);
     await expect(
       poor.h.run(poor.builder.estimateFee(poor.intent(), poor.build())),
     ).rejects.toMatchObject({
@@ -1220,12 +1299,12 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
         available: String(GRAM + ceiling - 1n),
       },
     });
-    answer(poor, ceiling + 1n, true);
+    answer(poor, ceiling - flat + 1n, true);
     await expect(
       poor.h.run(poor.builder.estimateFee(poor.intent(), poor.build())),
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
     poor.h.node.fund(poor.from, 1n);
-    answer(poor, ceiling, true);
+    answer(poor, ceiling - flat, true);
     await expect(
       poor.h.run(poor.builder.estimateFee(poor.intent(), poor.build())),
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });

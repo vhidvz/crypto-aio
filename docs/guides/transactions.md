@@ -109,7 +109,8 @@ jetton transfer adds an `attached` charge, the Gram sent along to its jetton wal
 GRAM by default, the unspent part refunded), and its bound is `upper`. The only override is
 `{ attached }` in nanograms, as a bigint (`TonFeeOverride`), on jetton transfers. On TON
 `estimateFee` needs the handle's wallet, and it can throw `INSUFFICIENT_FUNDS` when the
-wallet cannot pay; its `details.required` is then a lower bound, before gas.
+wallet cannot pay; its `details.required` is then a lower bound, with only the least gas a
+wallet run can cost.
 [TON networks](./networks.md#ton-networks) covers the charges and the fee ceiling.
 
 ### Cold, offline and asynchronous signing

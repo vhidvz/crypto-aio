@@ -101,7 +101,32 @@ export const NODE_FEES = Object.freeze({
   jettonGas: 10_000_000n,
   /** The gas fee toncenter's `estimateFee` reports when no code runs (live, mainnet). */
   flatGas: 6_667n,
+  /**
+   * Config params 21 and 20 (mainnet's values): `flat_gas_price`, what the first
+   * `flat_gas_limit` (100) gas units of any run cost, on the basechain and the masterchain.
+   */
+  flatGasPrice: 40_000n,
+  mcFlatGasPrice: 1_000_000n,
 });
+
+/** A config param 20/21 cell: `gas_flat_pfx#d1` over `gas_prices_ext#de` (block.tlb). */
+export function gasPricesBoc(flatGasPrice: bigint, gasPrice: bigint): string {
+  return beginCell()
+    .storeUint(0xd1, 8)
+    .storeUint(100, 64)
+    .storeUint(flatGasPrice, 64)
+    .storeUint(0xde, 8)
+    .storeUint(gasPrice * 65_536n, 64)
+    .storeUint(1_000_000, 64)
+    .storeUint(1_000_000, 64)
+    .storeUint(10_000, 64)
+    .storeUint(10_000_000, 64)
+    .storeUint(100_000_000, 64)
+    .storeUint(1_000_000_000, 64)
+    .endCell()
+    .toBoc()
+    .toString('base64');
+}
 
 /**
  * VM steps are not metered: a refusal the wallet code raises reports the step count of a
@@ -1318,7 +1343,11 @@ export class ScriptedTonNode {
               ? MSG_PRICES_BOC
               : param === 24
                 ? MC_MSG_PRICES_BOC
-                : null;
+                : param === 21
+                  ? gasPricesBoc(NODE_FEES.flatGasPrice, 400n)
+                  : param === 20
+                    ? gasPricesBoc(NODE_FEES.mcFlatGasPrice, 10_000n)
+                    : null;
         if (bytes === null) throw new Error('config param not found');
         return ok({ '@type': 'configInfo', config: { '@type': 'tvm.cell', bytes } });
       }

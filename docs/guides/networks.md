@@ -781,10 +781,11 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
 - **Funds.** Before signing, the wallet needs Gram for the fee and the amount, or for the
   fee and the attached value plus the jettons (`INSUFFICIENT_FUNDS`). A wallet that cannot
   pay can already fail the estimate with `INSUFFICIENT_FUNDS`; its `details.required` is
-  then a lower bound, the amount (or the attached value) plus the forward fee, before gas.
-  Leave room for gas: a wallet that covers that bound but not the gas gets a retryable
-  `PROVIDER_INCONSISTENT` from the estimate instead, so a transfer of nearly the whole
-  balance keeps failing with it. Right after a wallet's first transfer deploys it, an
+  then a lower bound: the amount (or the attached value), the forward fee, and the flat gas
+  price every wallet run pays (config param 21, or 20 for a masterchain wallet). Leave
+  room for the rest of the gas: a wallet that covers
+  that bound but not the whole run gets a retryable `PROVIDER_INCONSISTENT` from the
+  estimate instead, so a transfer of nearly the whole balance keeps failing with it. Right after a wallet's first transfer deploys it, an
   endpoint that lags can answer that way too until it catches up.
 - **Finality.** `final` needs masterchain inclusion and a completed message trace in which
   the value moved. A masterchain block is final once it exists, so `getFinalizedHeight()` is

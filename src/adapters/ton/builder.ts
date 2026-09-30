@@ -29,7 +29,11 @@ import {
   storeMessageRelaxed,
   type MessageRelaxed,
 } from '@ton/core';
-import { computeMessageForwardFees, configParseMsgPrices } from '@ton/ton';
+import {
+  computeMessageForwardFees,
+  configParseGasLimitsPrices,
+  configParseMsgPrices,
+} from '@ton/ton';
 import type {
   BroadcastResult,
   BuildContext,
@@ -342,6 +346,37 @@ async function configForwardFee(
   }
 }
 
+/** `gas_prices#dd` and `gas_prices_ext#de` (block.tlb): gas prices without a flat part. */
+const GAS_PRICES_TAGS: ReadonlySet<number> = new Set([0xdd, 0xde]);
+
+/**
+ * F6-R19, corrected by F6-R20: the least gas fee a wallet run pays, `flat_gas_price` of
+ * config param 21 (basechain) or 20 (masterchain), by the sender's workchain, which prices
+ * the account's own compute phase. It is the price of the first `flat_gas_limit` gas units,
+ * which every run that computes pays in full (transaction.cpp `gas_fee`); never
+ * `flat_gas_limit × flat_gas_price`, a units error about 100 times too high. A config
+ * without the flat part (`gas_prices`, `gas_prices_ext`) gives no floor; one that does not
+ * parse is the endpoint's fault, retryable. One endpoint's answer: the caller holds it to
+ * the ceiling before trusting it.
+ */
+async function configGasFloor(ctx: TonContext, from: string): Promise<bigint> {
+  const malformed = () =>
+    new ProviderError('PROVIDER_UNAVAILABLE', 'malformed gas prices in the config', {
+      retryable: true,
+    });
+  const cell = cellFromBoc(
+    await ctx.api.configParam(from.startsWith('-1:') ? 20 : 21, READ),
+  );
+  if (!cell) throw malformed();
+  try {
+    const slice = cell.beginParse();
+    if (GAS_PRICES_TAGS.has(slice.preloadUint(8))) return 0n;
+    return configParseGasLimitsPrices(slice).flatGasPrice;
+  } catch {
+    throw malformed();
+  }
+}
+
 /** The external message's body (the wallet request) as a base64 BOC. */
 const bodyOf = (external: Cell): string =>
   loadMessage(external.beginParse()).body.toBoc().toString('base64');
@@ -504,10 +539,16 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
       if (emulated.gasFee === 0n || emulated.forwardFee === 0n) {
         // F6-R17: tonlib buys the emulated gas with the balance (`compute_gas_limits`), so
         // a sender that cannot pay emulates to nothing too. Below what the transfer must at
-        // least send (the amount, or the jetton attached value, plus the config's forward
-        // fee) that is the answer; otherwise the endpoint's view lags, or it refused the
-        // request (another seqno), and a later read decides.
-        const minimum = (plan.attached ?? plan.output.amount) + computed;
+        // least pay (the amount, or the jetton attached value, plus the config's forward
+        // fee and the wallet run's flat gas price, F6-R19) that is the answer; otherwise
+        // the endpoint's view lags, or it refused the request (another seqno), and a later
+        // read decides. The gas floor comes from one endpoint too, so it is held to the
+        // ceiling first (F6-R20).
+        const gas = await configGasFloor(ctx, build.from);
+        if (computed + gas > ceiling) {
+          throw inconsistent("the endpoint's config prices gas above the policy maximum");
+        }
+        const minimum = (plan.attached ?? plan.output.amount) + computed + gas;
         if (state.balance < minimum) throw insufficient(minimum, state.balance);
         throw inconsistent("the endpoint's emulation did not run the transfer");
       }
