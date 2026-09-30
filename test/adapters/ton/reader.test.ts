@@ -356,6 +356,110 @@ describe('the TON reader: review fixes', () => {
     expect(await h.run(h.sequence.pending(from))).toBe(2n);
   });
 
+  it('binds the live seqno and the public key to the block and the state they were read at (F6-R29 Q6)', async () => {
+    const h = tonHarness();
+    const from = testWallet('v4r2', TESTNET);
+    h.node.fund(from, 3n * GRAM);
+    const deploy = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil: Math.floor(h.clock.now() / 1000) + 60,
+      deploy: true,
+      messages: [nativeMessage({ to: FRESH, value: 1n, bounce: false })],
+    });
+    h.node.submit(deploy.boc);
+    h.node.mine(3);
+    const next = await signedBoc('v4r2', TESTNET, {
+      seqno: 1,
+      validUntil: Math.floor(h.clock.now() / 1000) + 60,
+      deploy: false,
+      messages: [nativeMessage({ to: FRESH, value: 1n, bounce: false })],
+    });
+    h.node.submit(next.boc);
+    h.node.mine(3);
+    // The live read lags behind the second request: the floor reads the key at its block.
+    h.node.lagEndpoint('main', 3);
+    expect(await h.run(h.sequence.latest(from))).toBe(1n);
+    expect(await h.run(h.sequence.pending(from))).toBe(2n);
+    const shifted = (edit: (result: Json) => Json) => (json: Json) => ({
+      ...json,
+      result: edit(json.result as Json),
+    });
+    const otherBlock = (result: Json) => ({
+      ...result,
+      block_id: {
+        ...(result.block_id as Json),
+        seqno: ((result.block_id as Json).seqno as number) - 1,
+      },
+    });
+    const otherState = (result: Json) => ({
+      ...result,
+      last_transaction_id: { ...(result.last_transaction_id as Json), lt: '1' },
+    });
+    for (const [method, edit] of [
+      ['seqno', otherBlock],
+      ['seqno', otherState],
+      ['get_public_key', otherBlock],
+      ['get_public_key', otherState],
+    ] as const) {
+      rewrite(
+        h,
+        (_e, route, request) => getMethod(route, request, method),
+        shifted(edit),
+      );
+      const read =
+        method === 'seqno' ? h.sequence.latest(from) : h.sequence.pending(from);
+      await expect(h.run(read)).rejects.toMatchObject({
+        code: 'PROVIDER_INCONSISTENT',
+        retryable: true,
+      });
+    }
+    h.node.intercept = undefined;
+    expect(await h.run(h.ext.ton.getSeqno(from))).toBe(1n);
+  });
+
+  it('never takes a request the chain could not have run for the seqno floor: it had expired (Task 10 concern 3)', async () => {
+    const h = tonHarness();
+    const from = testWallet('v4r2', TESTNET);
+    h.node.fund(from, 3n * GRAM);
+    const deploy = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil: Math.floor(h.clock.now() / 1000) + 60,
+      deploy: true,
+      messages: [nativeMessage({ to: FRESH, value: 1n, bounce: false })],
+    });
+    h.node.submit(deploy.boc);
+    h.node.mine(3);
+    const validUntil = Math.floor(h.clock.now() / 1000) + 60;
+    const next = await signedBoc('v4r2', TESTNET, {
+      seqno: 1,
+      validUntil,
+      deploy: false,
+      messages: [nativeMessage({ to: FRESH, value: 1n, bounce: false })],
+    });
+    h.node.submit(next.boc);
+    h.node.mine(3);
+    // The live read lags behind the second request: the floor reads it from the indexer.
+    h.node.lagEndpoint('main', 3);
+    expect(await h.run(h.sequence.pending(from))).toBe(2n);
+    // A lone indexer dates the genuine request after its own lifetime: no chain runs that.
+    rewrite(
+      h,
+      (_e, route, request) =>
+        route === '/transactions' && request.url.searchParams.has('account'),
+      (json) => ({
+        ...json,
+        transactions: (json.transactions as Json[]).map((tx) => ({
+          ...tx,
+          now: validUntil + 10,
+        })),
+      }),
+    );
+    await expect(h.run(h.sequence.pending(from))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
+  });
+
   it('raises the floor only for proven requests newer than the live read (A23)', async () => {
     const h = tonHarness();
     const from = testWallet('v5r1', TESTNET);

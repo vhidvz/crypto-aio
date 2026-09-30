@@ -28,12 +28,17 @@ import type { AttemptRef } from '../../core/model/transaction';
 import type { Clock } from '../../core/util/clock';
 import { createTonAddressCodec } from './address';
 import {
+  MASTERCHAIN_SHARD,
   MONITOR,
   PROOF,
   READ,
   jettonDataOf,
   runResultOf,
+  sameBlock,
+  type AccountState,
   type BlockHeader,
+  type BlockId,
+  type BoundRunResult,
   type RunResult,
   type TonApi,
   type V3Trace,
@@ -787,12 +792,43 @@ export function createTonReader(ctx: TonContext): ChainReader {
 
 // ---- seqnos --------------------------------------------------------------------------------
 
-/** A live seqno read and the masterchain block it was read at. */
+/** A live seqno read and the account state it was read at. */
 interface LiveSeqno {
   readonly seqno: bigint;
-  readonly blockSeqno: number;
+  readonly state: AccountState;
   /** Whether the wallet is deployed at that block (it then has a public key there). */
   readonly deployed: boolean;
+}
+
+/**
+ * F6-R29 Q6: a get-method's answer is the one run where it was asked: at `block` (the full id
+ * when the caller has it, else the masterchain seqno), and on `state` when given, the
+ * account's last transaction there. An endpoint that drops the block answers at its own
+ * latest state, which decides nothing (a retryable `PROVIDER_INCONSISTENT`).
+ */
+function assertRunAt(
+  result: BoundRunResult,
+  block: BlockId | number,
+  state?: Pick<AccountState, 'lastLt' | 'lastHash'>,
+): void {
+  const atBlock =
+    typeof block === 'number'
+      ? result.block.workchain === -1 &&
+        result.block.shard === MASTERCHAIN_SHARD &&
+        result.block.seqno === block
+      : sameBlock(result.block, block);
+  if (
+    !atBlock ||
+    (state !== undefined &&
+      (result.lastTransaction.lt !== state.lastLt ||
+        result.lastTransaction.hash !== state.lastHash))
+  ) {
+    throw new ProviderError(
+      'PROVIDER_INCONSISTENT',
+      'a get-method was answered at another state than the one asked',
+      { retryable: true },
+    );
+  }
 }
 
 const MAX_WALLET_SEQNO = 0xffff_ffffn;
@@ -818,12 +854,19 @@ async function liveSeqno(
 ): Promise<LiveSeqno> {
   const state = await ctx.api.account(address, tags);
   if (state.status === 'uninitialized') {
-    return { seqno: 0n, blockSeqno: state.blockSeqno, deployed: false };
+    return { seqno: 0n, state, deployed: false };
   }
   if (state.status === 'frozen') {
     throw new ChainError('TX_REFUSED', 'the wallet account is frozen');
   }
-  const result = await ctx.api.runGetMethod(address, 'seqno', [], tags, state.blockSeqno);
+  const result = await ctx.api.runGetMethodAt(
+    address,
+    'seqno',
+    [],
+    tags,
+    state.blockSeqno,
+  );
+  assertRunAt(result, state.block, state);
   const first = result.stack[0];
   if (
     result.exitCode !== 0 ||
@@ -836,22 +879,32 @@ async function liveSeqno(
       'the account is not a v4r2 or v5r1 wallet',
     );
   }
-  return { seqno: first.value, blockSeqno: state.blockSeqno, deployed: true };
+  return { seqno: first.value, state, deployed: true };
 }
 
 /**
  * The wallet's public key at masterchain block `block` (`get_public_key`), read once and
- * only when needed; undefined when the account has none there.
+ * only when needed; undefined when the account has none there. The answer is bound to the
+ * block asked and, when given, to the account state read there (F6-R29 Q6).
  */
 export function publicKeyAt(
   ctx: TonContext,
   address: string,
   tags: TonCallTags,
-  block: number,
+  block: BlockId | number,
+  state?: Pick<AccountState, 'lastLt' | 'lastHash'>,
 ): () => Promise<Uint8Array | undefined> {
   let key: Promise<Uint8Array | undefined> | undefined;
+  const seqno = typeof block === 'number' ? block : block.seqno;
   const read = async (): Promise<Uint8Array | undefined> => {
-    const result = await ctx.api.runGetMethod(address, 'get_public_key', [], tags, block);
+    const result = await ctx.api.runGetMethodAt(
+      address,
+      'get_public_key',
+      [],
+      tags,
+      seqno,
+    );
+    assertRunAt(result, block, state);
     const first = result.stack[0];
     if (result.exitCode !== 0 || first?.type !== 'num') return undefined;
     if (first.value < 0n || first.value >= 1n << 256n) return undefined;
@@ -903,7 +956,7 @@ const FLOOR_PAGES = 4;
  * already covers the rest. The history is paged on the indexer's own pages (F6-R12: a page
  * whose newest transactions are not final yet still leads to the older ones) until it
  * reaches the live read's block; more than `FLOOR_PAGES` pages since then decides nothing
- * (retryable) rather than guess.
+ * (retryable) rather than guess, and so does a request dated after its own lifetime.
  */
 async function indexedSeqnoFloor(
   ctx: TonContext,
@@ -912,7 +965,7 @@ async function indexedSeqnoFloor(
   tags: TonCallTags,
 ): Promise<bigint> {
   const liveKey = live.deployed
-    ? publicKeyAt(ctx, address, tags, live.blockSeqno)
+    ? publicKeyAt(ctx, address, tags, live.state.block, live.state)
     : async () => undefined;
   // An undeployed wallet at the live read has no key there: read it at the evidence's own
   // block, which a lagging endpoint refuses (retryable), so nothing is guessed meanwhile.
@@ -926,9 +979,19 @@ async function indexedSeqnoFloor(
       tags,
     );
     for (const tx of transactions) {
-      if (tx.mcSeqno <= live.blockSeqno) return 0n; // newest first: the rest is older still
+      if (tx.mcSeqno <= live.state.blockSeqno) return 0n; // newest first: the rest is older still
       const request = await provenRequest(ctx, tx, address, key);
-      if (request) return BigInt(request.seqno) + 1n;
+      if (!request) continue;
+      // Task 10 concern 3: a request that ran after its own lifetime is a record the chain
+      // cannot produce (the wallet refuses it), so it decides nothing, as in the proofs.
+      if (request.validUntil <= tx.now) {
+        throw new ProviderError(
+          'PROVIDER_INCONSISTENT',
+          'the seqno consumer ran after its request expired',
+          { retryable: true },
+        );
+      }
+      return BigInt(request.seqno) + 1n;
     }
     if (next === undefined) return 0n;
     endLt = next;

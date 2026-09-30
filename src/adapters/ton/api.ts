@@ -414,6 +414,14 @@ export interface TokenInfo {
   readonly name?: string;
 }
 
+/** Whether two block ids name the same block: workchain, shard, seqno and both hashes. */
+export const sameBlock = (a: BlockId, b: BlockId): boolean =>
+  a.workchain === b.workchain &&
+  a.shard === b.shard &&
+  a.seqno === b.seqno &&
+  a.rootHash === b.rootHash &&
+  a.fileHash === b.fileHash;
+
 // ---- parsers ------------------------------------------------------------------------------
 // Lesson 6, sharpened: a field a verdict reads is required, or optional and then well
 // typed; a missing or ill-typed one is malformed (retryable), never `false` or `0`. Every

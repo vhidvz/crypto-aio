@@ -33,6 +33,7 @@ import {
   READ,
   boundRunResultOf,
   runResultOf,
+  sameBlock,
   type AccountState,
   type BlockHeader,
   type BlockId,
@@ -89,13 +90,6 @@ const undecided = (reason: string) =>
 
 const inconsistent = (reason: string) =>
   new ProviderError('PROVIDER_INCONSISTENT', reason, { retryable: true });
-
-const sameBlock = (a: BlockId, b: BlockId): boolean =>
-  a.workchain === b.workchain &&
-  a.shard === b.shard &&
-  a.seqno === b.seqno &&
-  a.rootHash === b.rootHash &&
-  a.fileHash === b.fileHash;
 
 /**
  * The masterchain block `seqno`, attested by the proof quorum (ids, hashes, time, global
@@ -289,11 +283,11 @@ async function consumerOf(
   from: string,
   seqno: bigint,
   head: BlockHeader,
-  lastLt: bigint,
+  state: AccountState,
 ): Promise<V3Transaction | undefined> {
-  const keyAtHead = publicKeyAt(ctx, from, PROOF, head.id.seqno);
+  const keyAtHead = publicKeyAt(ctx, from, PROOF, head.id, state);
   const key = () => keyAtHead();
-  let endLt = lastLt;
+  let endLt = state.lastLt;
   for (let page = 0; page < CONSUMER_PAGES; page++) {
     const { transactions, next } = await ctx.api.accountTransactionsPage(
       from,
@@ -574,7 +568,7 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
     return { absent: true };
   }
   const windowStart = windowStartOf(q.slot);
-  const key = publicKeyAt(ctx, q.wallet, PROOF, q.head.id.seqno);
+  const key = publicKeyAt(ctx, q.wallet, PROOF, q.head.id, q.state);
   let codeless = !q.active;
   let consumerFound = false;
   let reset = false;
@@ -863,7 +857,7 @@ export function createTonProofs(ctx: TonContext): ProofSource {
         throw undecided('the wallet state does not show its seqno');
       if (seqno > slot.seqno) {
         // (e) the indexer's consumer search: a hint that finds ours, never a "no".
-        const hint = await consumerOf(ctx, wallet, slot.seqno, head, state.lastLt);
+        const hint = await consumerOf(ctx, wallet, slot.seqno, head, state);
         if (hint && isOwnAttempt(hint, wallet, id))
           return proveIncluded(ctx, hint, wallet);
       }
