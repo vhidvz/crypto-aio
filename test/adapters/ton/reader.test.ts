@@ -415,6 +415,45 @@ describe('the TON reader: review fixes', () => {
     }
     h.node.intercept = undefined;
     expect(await h.run(h.ext.ton.getSeqno(from))).toBe(1n);
+    // A live read that shows the wallet undeployed reads the key at the request's own
+    // block, by its seqno alone: an answer at another block decides nothing there too.
+    h.node.lagEndpoint('main', 0);
+    let inner = false;
+    h.node.intercept = (_e, route, request) => {
+      if (inner) return undefined;
+      const latestState =
+        route === '/getAddressInformation' && !request.url.searchParams.has('seqno');
+      if (!latestState && !getMethod(route, request, 'get_public_key')) return undefined;
+      inner = true;
+      return (async () => {
+        try {
+          const response = await h.node.fetch.fetch(request.url.href, {
+            method: request.method,
+            ...(request.body !== undefined ? { body: request.body } : {}),
+          });
+          const json = (await response.json()) as Json;
+          const result = json.result as Json;
+          return {
+            json: {
+              ...json,
+              result: latestState
+                ? {
+                    ...result,
+                    state: 'uninitialized',
+                    block_id: { ...(result.block_id as Json), seqno: 1 },
+                  }
+                : otherBlock(result),
+            },
+          };
+        } finally {
+          inner = false;
+        }
+      })();
+    };
+    await expect(h.run(h.sequence.pending(from))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      retryable: true,
+    });
   });
 
   it('never takes a request the chain could not have run for the seqno floor: it had expired (Task 10 concern 3)', async () => {

@@ -71,8 +71,9 @@ import { requestIsOwn, resolveIdentity, walletAddress } from './wallets';
 
 /**
  * What every TON port is built from. Drivers are shared: the caches hold only immutable
- * chain data, and only values the proof quorum attested (I5); a single `read` or `monitor`
- * answer is used once and never cached.
+ * chain data, values the proof quorum attested (I5) or transactions bound to their own hash
+ * (`chainTxs`); a single `read` or `monitor` answer is used once and never cached. The one
+ * record of anything else is `assembled` (F6-R34): what this driver itself built and sent.
  */
 export interface TonContext {
   readonly api: TonApi;

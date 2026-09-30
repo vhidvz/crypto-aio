@@ -2268,7 +2268,17 @@ describe('the replay guard (F6-R34)', () => {
     );
     s.h.node.mine();
     expect(s.h.node.status(s.from)).toBe('uninitialized');
-    await expect(s.h.run(replayVerdict(s.h.ctx, await stored(s)))).rejects.toMatchObject({
+    const message = await stored(s);
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'the wallet may have been reset since our message',
+    });
+    // A seqno read that fails is only "not known": the walk still decides.
+    s.h.node.intercept = (_e, route, request) =>
+      route === '/runGetMethod' && request.json<{ method: string }>().method === 'seqno'
+        ? { status: 500, json: { ok: false, error: 'internal', code: 500 } }
+        : undefined;
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
       message: 'the wallet may have been reset since our message',
     });
