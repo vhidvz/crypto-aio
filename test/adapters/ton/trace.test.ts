@@ -621,6 +621,27 @@ describe('an answer that contradicts the chain or the request decides nothing (l
     ).toThrow(inconsistent);
   });
 
+  it('reads a bounce message whose flag the indexer leaves out as the bounce it is (F6-R14)', async () => {
+    const t = tonNode();
+    const { hashNorm } = await send(t, () => [
+      nativeMessage({ to: FRESH, value: GRAM, bounce: true }),
+    ]);
+    t.node.mine(2);
+    const { trace } = await verdictAfter(t, hashNorm);
+    // A bounceable transfer to an address with no code bounces: its only message goes back.
+    const bounced = trace!.transactions.find((tx) => tx.account === FRESH)!;
+    expect(bounced).toMatchObject({ aborted: true, bounce: 'ok' });
+    expect(bounced.outMsgs).toHaveLength(1);
+    const back = bounced.outMsgs[0]!;
+    expect(executed(bounced)).toBe(false);
+    // An indexer that omits the flag says nothing against the chain; one that says the
+    // message is not a bounce contradicts it.
+    expect(executed({ ...bounced, outMsgs: [{ ...back, bounced: null }] })).toBe(false);
+    expect(() =>
+      executed({ ...bounced, outMsgs: [{ ...back, bounced: false }] }),
+    ).toThrow(inconsistent);
+  });
+
   it("cross-checks the chain's own counters (M1)", async () => {
     const t = tonNode();
     const request = nativeMessage({ to: FRESH, value: GRAM, bounce: false });

@@ -225,7 +225,9 @@ function sentMessages(root: V3Transaction): readonly Sent[] | 'skipped' | 'threw
       'the wallet transaction sent a message the request did not ask for',
     );
   }
-  // Send mode +2: the wallet records exactly the messages it skipped (lesson 18, M1).
+  // Send mode +2: the wallet records exactly the messages it skipped (lesson 18, M1). The
+  // action phase counts skipped sends since global version 8 (config param 8), which both
+  // networks run; on an older chain this refuses (retryable), and never decides.
   if (missing !== action.skippedActions) {
     throw inconsistent('the wallet counts other skips than the messages it did not send');
   }

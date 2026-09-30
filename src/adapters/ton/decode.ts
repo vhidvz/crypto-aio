@@ -70,7 +70,8 @@ export function ran(tx: V3Transaction): boolean {
     new Set(outMsgs.map((m) => m.hash)).size !== outMsgs.length ||
     (done
       ? outMsgs.length !== action?.msgsCreated
-      : outMsgs.some((m) => m.bounced !== true))
+      : // F6-R14: a flag the indexer leaves out (null) says nothing against the chain.
+        outMsgs.some((m) => m.bounced === false))
   ) {
     throw new ProviderError(
       'PROVIDER_INCONSISTENT',
