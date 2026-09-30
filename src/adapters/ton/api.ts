@@ -619,9 +619,48 @@ function headerOf(result: unknown, route: string): BlockHeader {
   };
 }
 
-/** The newest masterchain block a `getMasterchainInfo` result names. */
-function lastOf(result: unknown, route: string): BlockId {
-  return blockIdOf(need(isRecord(result) ? result.last : undefined, route), route);
+/**
+ * F6-R23 M1: the one parser of a masterchain block id's seqno, for the proofs' head reads and
+ * the driver's health probes alike (lesson 17: a node's height is a claim): only a
+ * masterchain id (workchain -1), and only within a masterchain seqno's range (u32).
+ */
+function masterchainIdSeqno(value: unknown, route: string): number {
+  const id = record(value);
+  const seqno = int(id?.seqno);
+  if (id?.workchain !== -1 || seqno === undefined || seqno < 0 || seqno > 0xffff_ffff) {
+    throw malformed(route);
+  }
+  return seqno;
+}
+
+/** The newest masterchain block's seqno in a v2 `getMasterchainInfo` answer body. */
+export function masterchainInfoSeqno(body: unknown, route: string): number {
+  return masterchainIdSeqno(record(v2Result(body, route))?.last, route);
+}
+
+/**
+ * A v3 `masterchainInfo` answer body: the indexed head's seqno (`masterchainSeqnoOf`) and the
+ * network's global id, an int32.
+ */
+export function indexedHeadOf(
+  body: unknown,
+  route: string,
+): { readonly seqno: number; readonly globalId: number } {
+  const last = record(record(body)?.last);
+  const globalId = int(last?.global_id);
+  if (globalId === undefined || globalId < -(2 ** 31) || globalId > 2 ** 31 - 1) {
+    throw malformed(route);
+  }
+  return { seqno: masterchainIdSeqno(last, route), globalId };
+}
+
+/** A config param's cell (base64 BOC, within one message's limits) in a v2 answer body. */
+export function configParamBoc(body: unknown, route: string): string {
+  const result = v2Result(body, route);
+  return cellOf(
+    need(isRecord(result) ? record(result.config) : undefined, route).bytes,
+    route,
+  );
 }
 
 /** An account state, parsed. */
@@ -956,11 +995,8 @@ export class TonApi {
 
   /** The newest masterchain block the liteserver knows. */
   masterchainHead(tags: TonCallTags): Promise<number> {
-    return this.#v2(
-      '/getMasterchainInfo',
-      {},
-      tags,
-      (result, route) => lastOf(result, route).seqno,
+    return this.#v2('/getMasterchainInfo', {}, tags, (result, route) =>
+      masterchainIdSeqno(record(result)?.last, route),
     );
   }
 
@@ -974,7 +1010,7 @@ export class TonApi {
       '/getMasterchainInfo',
       {},
       tags,
-      (result, route) => lastOf(result, route).seqno >= seqno,
+      (result, route) => masterchainIdSeqno(record(result)?.last, route) >= seqno,
     );
   }
 
@@ -1170,13 +1206,7 @@ export class TonApi {
   indexerHead(
     tags: TonCallTags,
   ): Promise<{ readonly seqno: number; readonly globalId: number }> {
-    return this.#v3('/masterchainInfo', {}, tags, (body, route) => {
-      const last = need(isRecord(body) ? record(body.last) : undefined, route);
-      return {
-        seqno: need(int(last.seqno), route),
-        globalId: need(int(last.global_id), route),
-      };
-    });
+    return this.#v3('/masterchainInfo', {}, tags, indexedHeadOf);
   }
 
   /**
@@ -1184,10 +1214,12 @@ export class TonApi {
    * this predicate (lesson 17): indexers past `seqno` agree whatever their heads.
    */
   indexerReached(seqno: number, tags: TonCallTags): Promise<boolean> {
-    return this.#v3('/masterchainInfo', {}, tags, (body, route) => {
-      const last = need(isRecord(body) ? record(body.last) : undefined, route);
-      return need(int(last.seqno), route) >= seqno;
-    });
+    return this.#v3(
+      '/masterchainInfo',
+      {},
+      tags,
+      (body, route) => indexedHeadOf(body, route).seqno >= seqno,
+    );
   }
 
   /** The seqno of the masterchain block with this root hash (hex); null if unknown. */

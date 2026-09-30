@@ -324,6 +324,43 @@ describe('the toncenter API layer', () => {
     }
   });
 
+  it("reads every masterchain head with the probes' own strict parser (F6-R23 M1)", async () => {
+    const t = tonNode();
+    t.node.mine(3);
+    const mc = { workchain: -1, shard: '-9223372036854775808', seqno: 42 };
+    const v3 = { workchain: -1, seqno: 42, global_id: -3 };
+    let v2Last: unknown = mc;
+    let v3Last: unknown = v3;
+    t.node.intercept = (_endpoint, route) =>
+      route === '/getMasterchainInfo'
+        ? { json: { ok: true, result: { last: v2Last } } }
+        : route === '/masterchainInfo'
+          ? { json: { last: v3Last } }
+          : undefined;
+    expect(await t.run(t.api.masterchainHead(MONITOR))).toBe(42);
+    expect(await t.run(t.api.reachedMasterchain(42, MONITOR))).toBe(true);
+    expect(await t.run(t.api.indexerHead(MONITOR))).toEqual({ seqno: 42, globalId: -3 });
+    expect(await t.run(t.api.indexerReached(43, MONITOR))).toBe(false);
+    // A block of another workchain, or a seqno beyond a u32, is no masterchain head.
+    for (const bad of [{ workchain: 0 }, { seqno: 2 ** 32 }, { seqno: -1 }]) {
+      v2Last = { ...mc, ...bad };
+      v3Last = { ...v3, ...bad };
+      for (const call of [
+        (): Promise<unknown> => t.api.masterchainHead(MONITOR),
+        (): Promise<unknown> => t.api.reachedMasterchain(1, MONITOR),
+        (): Promise<unknown> => t.api.indexerHead(MONITOR),
+        (): Promise<unknown> => t.api.indexerReached(1, MONITOR),
+      ]) {
+        await expect(t.run(call())).rejects.toMatchObject(malformedAnswer);
+      }
+    }
+    // The indexer's global id is an int32.
+    v3Last = { ...v3, global_id: 2 ** 31 };
+    await expect(t.run(t.api.indexerHead(MONITOR))).rejects.toMatchObject(
+      malformedAnswer,
+    );
+  });
+
   it('agrees across endpoints that format alike facts differently, and not on other facts', async () => {
     const t = tonNode({}, ['a', 'b']);
     t.node.mine();

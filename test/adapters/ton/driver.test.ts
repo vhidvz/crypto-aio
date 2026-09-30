@@ -155,7 +155,12 @@ describe('the TON driver factory', () => {
   });
 
   it('refuses a network that adds batch-transfer or block-scan, before any probe (F6-R15)', async () => {
-    for (const add of ['batch-transfer', 'block-scan', 'replace-fee'] as const) {
+    for (const add of [
+      'batch-transfer',
+      'block-scan',
+      'replace-fee',
+      'cancel',
+    ] as const) {
       const t = tonNode();
       const rpc = counting(t.rpc);
       const indexer = counting(t.indexer);
@@ -369,6 +374,22 @@ describe('the TON driver factory', () => {
       ['a', 'healthy'],
       ['b', 'lagging'],
     ]);
+  });
+
+  it("trails its attested head by the transport's lag tolerance, never the network's (F6-R23 M2, R36)", async () => {
+    // The driver itself: with a peer 20 blocks behind, the head trailed by the skew (10) is
+    // not attested, so the proofs retry at the transport's tolerance (30), never at the
+    // network's `maxLagBlocks` (150).
+    const { t, driver } = await driverFor('testnet', {
+      endpoints: ['a', 'b'],
+      maxLagBlocks: 30,
+    });
+    t.node.mine(200);
+    t.node.lagEndpoint('b', 20);
+    const head = t.node.head;
+    expect(await t.run(driver.proofs.finalizedHead())).toMatchObject({
+      height: BigInt(head - 30),
+    });
   });
 
   it('gives each native client its own TonClient over the transport (R34)', async () => {

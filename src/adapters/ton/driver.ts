@@ -13,7 +13,7 @@ import type {
 } from '../../core/driver/types';
 import { ConfigError, ProviderError } from '../../core/errors/error';
 import type { EndpointCall, HealthProbes, Transport } from '../../core/transport/types';
-import { TonApi } from './api';
+import { TonApi, configParamBoc, indexedHeadOf, masterchainInfoSeqno } from './api';
 import { createTonBroadcaster, createTonBuilder } from './builder';
 import { cellFromBoc } from './messages';
 import { tonNetworkConfig } from './network';
@@ -32,38 +32,10 @@ const malformedProbe = (route: string) =>
     retryable: true,
   });
 
-type Json = Readonly<Record<string, unknown>>;
-
-const recordOf = (value: unknown): Json | undefined =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Json)
-    : undefined;
-
-/** An integer as a safe number or a short decimal string (as `api.ts` reads toncenter's). */
-const intOf = (value: unknown): number | undefined =>
-  typeof value === 'number' && Number.isSafeInteger(value)
-    ? value
-    : typeof value === 'string' && /^-?\d{1,15}$/.test(value)
-      ? Number(value)
-      : undefined;
-
-const inRange = (value: number | undefined, min: number, max: number): value is number =>
-  value !== undefined && value >= min && value <= max;
-
 /**
- * Lesson 17 (a node's height or identity is a claim): a masterchain block id's seqno, read
- * only from a masterchain id (workchain -1) and only within a masterchain seqno's range
- * (u32).
- */
-function masterchainSeqno(id: Json | undefined, route: string): bigint {
-  const seqno = intOf(id?.seqno);
-  if (id?.workchain !== -1 || !inRange(seqno, 0, 0xffff_ffff)) {
-    throw malformedProbe(route);
-  }
-  return BigInt(seqno);
-}
-
-/**
+ * F6-R23 M1: the probes read heights and the indexer's global id with `api.ts`'s own
+ * parsers, the ones the proofs use, so the two never drift.
+ *
  * v2 (R19): identity = config param 19, the network's global id, from a cell that holds
  * exactly one int32 (`global_id#_ global_id:int32 = ConfigParam 19`); height = the
  * liteserver's masterchain head. One call each (Plan 2.5 Task 2: each probe costs a token).
@@ -71,12 +43,13 @@ function masterchainSeqno(id: Json | undefined, route: string): bigint {
 const rpcProbes = (expectedIdentity: string): HealthProbes => ({
   identity: async (call: EndpointCall) => {
     const route = '/getConfigParam';
-    const body = recordOf(
-      await call.http({ method: 'GET', path: route, query: { param: '19' }, route }),
-    );
-    const bytes = recordOf(recordOf(body?.result)?.config)?.bytes;
-    const cell =
-      body?.ok === true && typeof bytes === 'string' ? cellFromBoc(bytes) : null;
+    const body = await call.http({
+      method: 'GET',
+      path: route,
+      query: { param: '19' },
+      route,
+    });
+    const cell = cellFromBoc(configParamBoc(body, route));
     const slice = cell && !cell.isExotic ? cell.beginParse() : null;
     if (!slice || slice.remainingBits !== 32 || slice.remainingRefs !== 0) {
       throw malformedProbe(route);
@@ -86,9 +59,9 @@ const rpcProbes = (expectedIdentity: string): HealthProbes => ({
   expectedIdentity,
   height: async (call: EndpointCall) => {
     const route = '/getMasterchainInfo';
-    const body = recordOf(await call.http({ method: 'GET', path: route, route }));
-    if (body?.ok !== true) throw malformedProbe(route);
-    return masterchainSeqno(recordOf(recordOf(body.result)?.last), route);
+    return BigInt(
+      masterchainInfoSeqno(await call.http({ method: 'GET', path: route, route }), route),
+    );
   },
 });
 
@@ -99,15 +72,11 @@ const rpcProbes = (expectedIdentity: string): HealthProbes => ({
 const indexerProbes = (expectedIdentity: string): HealthProbes => {
   const route = '/masterchainInfo';
   const indexedHead = async (call: EndpointCall) =>
-    recordOf(recordOf(await call.http({ method: 'GET', path: route, route }))?.last);
+    indexedHeadOf(await call.http({ method: 'GET', path: route, route }), route);
   return {
-    identity: async (call) => {
-      const id = intOf((await indexedHead(call))?.global_id);
-      if (!inRange(id, -(2 ** 31), 2 ** 31 - 1)) throw malformedProbe(route);
-      return String(id);
-    },
+    identity: async (call) => String((await indexedHead(call)).globalId),
     expectedIdentity,
-    height: async (call) => masterchainSeqno(await indexedHead(call), route),
+    height: async (call) => BigInt((await indexedHead(call)).seqno),
   };
 };
 
