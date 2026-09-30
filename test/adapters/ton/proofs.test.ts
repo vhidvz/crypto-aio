@@ -2251,6 +2251,66 @@ describe('the replay guard (F6-R34)', () => {
     });
   });
 
+  it('refuses after a destruction in the window, even when ours never ran (a reset it cannot rule out)', async () => {
+    const s = setup();
+    const theirs = await s.request([
+      nativeMessage({ to: PAYER, value: 7n, bounce: false }),
+    ]);
+    s.h.node.submit(theirs.boc);
+    s.h.node.mine();
+    // The same key's software destroys the wallet; extra currencies keep the account, so its
+    // chain goes on, uninitialized.
+    s.h.node.holdExtraCurrency(s.from);
+    s.h.node.submit(
+      v4Request(1, s.now() + 60, [
+        [128 + 32, nativeMessage({ to: PAYER, value: 0n, bounce: false })],
+      ]).boc,
+    );
+    s.h.node.mine();
+    expect(s.h.node.status(s.from)).toBe('uninitialized');
+    await expect(s.h.run(replayVerdict(s.h.ctx, await stored(s)))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'the wallet may have been reset since our message',
+    });
+  });
+
+  it('refuses a wallet with no chain whose history shows its code ran', async () => {
+    const s = setup();
+    const message = await stored(s);
+    rewrite(
+      s.h,
+      (_e, route, request) =>
+        route === '/transactions' && request.url.searchParams.has('account'),
+      (json) => ({
+        ...json,
+        transactions: [
+          {
+            account: s.from.toUpperCase(),
+            hash: Buffer.alloc(32, 9).toString('base64'),
+            lt: '500',
+            now: 1,
+            mc_block_seqno: 1,
+            trace_id: Buffer.alloc(32, 9).toString('base64'),
+            orig_status: 'active',
+            end_status: 'nonexist',
+            total_fees: '0',
+            description: {
+              type: 'ord',
+              aborted: true,
+              compute_ph: { skipped: true, reason: 'no_state' },
+            },
+            in_msg: null,
+            out_msgs: [],
+          },
+        ],
+      }),
+    );
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'the wallet may have been reset since our message',
+    });
+  });
+
   it('takes a fresh endpoint behind the attested head for nothing', async () => {
     const s = setup();
     await deposits(s, 2);

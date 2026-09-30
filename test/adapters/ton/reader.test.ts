@@ -608,6 +608,45 @@ describe('the TON reader: review fixes', () => {
         h.run(h.reader.observe(ref(hashNorm), ORDERING, sender)),
       ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
     }
+    // Our jetton wallet verified as the master's for another owner: it contradicts the
+    // attested build just the same.
+    const ours = h.node.jettonWalletOf(MASTER, sender);
+    h.node.intercept = (_e, route, request) => {
+      if (route !== '/runGetMethod') return undefined;
+      const body = request.json<{ method: string; address: string }>();
+      if (body.method === 'get_wallet_data' && body.address === ours) {
+        return {
+          json: {
+            ok: true,
+            result: {
+              exit_code: 0,
+              stack: [
+                ['num', '0x190'],
+                ['cell', { bytes: addressArgumentOf(FRESH) }],
+                ['cell', { bytes: addressArgumentOf(MASTER) }],
+                ['cell', { bytes: addressArgumentOf(MASTER) }],
+              ],
+            },
+          },
+        };
+      }
+      return body.method === 'get_wallet_address' &&
+        body.address === MASTER &&
+        request.body?.includes(addressArgumentOf(FRESH))
+        ? {
+            json: {
+              ok: true,
+              result: {
+                exit_code: 0,
+                stack: [['cell', { bytes: addressArgumentOf(ours) }]],
+              },
+            },
+          }
+        : undefined;
+    };
+    await expect(
+      h.run(h.reader.observe(ref(hashNorm), ORDERING, sender)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
     h.node.intercept = undefined;
     expect(await h.run(h.reader.observe(ref(hashNorm), ORDERING, sender))).toMatchObject({
       success: true,
