@@ -1170,6 +1170,81 @@ describe('TON end to end (scripted toncenter node)', () => {
     expect(env.node.jettonBalance(MASTER, env.address)).toBe(600_000n);
   });
 
+  describe('a jetton wallet that gives no answer decides nothing (final review I1)', () => {
+    /** Every endpoint answers `get_wallet_data` for `wallet` with exit -13 ("no state"). */
+    const noState = (env: Env, wallet: string, exitCode = -13) => {
+      env.node.intercept = (_e, route, request) => {
+        if (route !== '/runGetMethod') return undefined;
+        const body = request.json<{ method: string; address: string }>();
+        return body.method === 'get_wallet_data' && body.address === wallet
+          ? { json: { ok: true, result: { exit_code: exitCode, stack: [] } } }
+          : undefined;
+      };
+    };
+    const jettonEnv = async () => {
+      const { signer, calls } = countingSigner();
+      const env = await createTonEnv({ signer });
+      env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+      env.node.mintJetton(MASTER, env.address, 1_000_000n);
+      return { env, calls };
+    };
+    const asset = { standard: 'jetton', contract: MASTER };
+
+    it('keeps a delivered jetton transfer undecided, never failed, then proves it final (probe P1)', async () => {
+      for (const side of ['recipient', 'sender'] as const) {
+        const { env, calls } = await jettonEnv();
+        const wallet = env.node.jettonWalletOf(
+          MASTER,
+          side === 'sender' ? env.address : FRESH,
+        );
+        const sub = await env.run(
+          env.bc.transfer({ to: FRESH_UQ, amount: 400_000n, asset }),
+        );
+        noState(env, wallet);
+        await monitorFor(env, 20, async () => {
+          const record = await recordOf(env, sub.operationId);
+          expect(['submitted', 'included']).toContain(record.state);
+        });
+        expect(env.warnings).toContain('JETTON_UNVERIFIED');
+        env.node.intercept = undefined;
+        const done = await env.mineWhile(sub.wait({ finality: 'final' }));
+        expect(done.status).toMatchObject({ state: 'final', evidence: 'proven' });
+        expect([env.node.jettonBalance(MASTER, FRESH), calls()]).toEqual([400_000n, 1]);
+      }
+    });
+
+    it('never drops a jetton deposit from history on "no state" for its jetton wallet; a fake contract never stalls it', async () => {
+      const { env } = await jettonEnv();
+      const sub = await env.run(
+        env.bc.transfer({ to: FRESH_UQ, amount: 400_000n, asset }),
+      );
+      await env.mineWhile(sub.wait({ finality: 'final' }));
+      const wallet = env.node.jettonWalletOf(MASTER, FRESH);
+      // Another process: nothing verified yet (the proof's verification is kept per driver).
+      const { bc } = env.restart();
+      const arrivals = async () =>
+        (await env.run(bc.history(wallet))).items.flatMap((tx) =>
+          tx.transfers.filter((t) => t.id.endsWith(':msg:in:jetton')),
+        );
+      // The arrival's own jetton wallet ran at that block: "no state" there is unavailable.
+      noState(env, wallet);
+      await expect(env.run(bc.history(wallet))).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+      // Any other exit code reads as "not a jetton wallet": the page reads, `partial`.
+      noState(env, wallet, 11);
+      const page = await env.run(bc.history(wallet));
+      expect(page.items.some((tx) => tx.decoding === 'partial')).toBe(true);
+      // The owner's notification names its sender, which ran earlier: never a stall either.
+      noState(env, wallet);
+      const owner = await env.run(bc.history(FRESH));
+      expect(owner.items.length).toBeGreaterThan(0);
+      env.node.intercept = undefined;
+      expect(await arrivals()).toHaveLength(1);
+    });
+  });
+
   it("fails a jetton transfer the recipient's jetton wallet bounced", async () => {
     const env = await createTonEnv();
     env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });

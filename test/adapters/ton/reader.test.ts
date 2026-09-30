@@ -447,6 +447,69 @@ describe('the TON reader: review fixes', () => {
     });
   });
 
+  it('decides nothing when a jetton leg gives no answer or the sender wallet is not ours (final review I1)', async () => {
+    const h = tonHarness();
+    const sender = testWallet('v4r2', TESTNET);
+    h.node.fund(sender, 2n * GRAM);
+    h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    h.node.mintJetton(MASTER, sender, 1_000n);
+    const { boc, hashNorm } = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil: Math.floor(h.clock.now() / 1000) + 60,
+      deploy: true,
+      messages: [
+        jettonMessage({
+          jettonWallet: h.node.jettonWalletOf(MASTER, sender),
+          attached: 50_000_000n,
+          queryId: 0n,
+          amount: 400n,
+          destination: FRESH,
+          responseDestination: sender,
+          forwardAmount: 1n,
+        }),
+      ],
+    });
+    h.node.submit(boc);
+    h.node.mine(5);
+    const answer = (wallet: string, result: Record<string, unknown>) => {
+      h.node.intercept = (_e, route, request) =>
+        route === '/runGetMethod' &&
+        request.json<{ method: string }>().method === 'get_wallet_data' &&
+        request.json<{ address: string }>().address === wallet
+          ? { json: { ok: true, result } }
+          : undefined;
+    };
+    const cases: readonly (readonly [string, Record<string, unknown>])[] = [
+      // "No state at this block" for either wallet, or any other exit code.
+      [h.node.jettonWalletOf(MASTER, FRESH), { exit_code: -13, stack: [] }],
+      [h.node.jettonWalletOf(MASTER, sender), { exit_code: -13, stack: [] }],
+      [h.node.jettonWalletOf(MASTER, FRESH), { exit_code: 11, stack: [] }],
+      // Our own jetton wallet named for another owner: it contradicts the attested build.
+      [
+        h.node.jettonWalletOf(MASTER, sender),
+        {
+          exit_code: 0,
+          stack: [
+            ['num', '0x190'],
+            ['cell', { bytes: addressArgumentOf(FRESH) }],
+            ['cell', { bytes: addressArgumentOf(MASTER) }],
+            ['cell', { bytes: addressArgumentOf(MASTER) }],
+          ],
+        },
+      ],
+    ];
+    for (const [wallet, result] of cases) {
+      answer(wallet, result);
+      await expect(
+        h.run(h.reader.observe(ref(hashNorm), ORDERING, sender)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    }
+    h.node.intercept = undefined;
+    expect(await h.run(h.reader.observe(ref(hashNorm), ORDERING, sender))).toMatchObject({
+      success: true,
+    });
+  });
+
   it('reports a non-bounceable value a failing contract kept as executed (M7)', async () => {
     const h = tonHarness();
     const reverter = `0:${'55'.repeat(32)}`;

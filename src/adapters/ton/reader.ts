@@ -262,41 +262,76 @@ export async function jettonBalance(
 }
 
 /**
- * The owner and master of a jetton wallet, only when the master itself names it for that
- * owner (D14); `undefined` for any other contract. Both get-methods run at masterchain block
- * `block`, one at which the wallet had already run a transaction (lesson 17: a fact at its
- * own height): an endpoint that lags behind it refuses (retryable), so it decides nothing,
- * where a read at its own head would take a wallet it has not seen yet for a fake. Cached
- * once verified under the quorum.
+ * What the get-methods at masterchain block `block` say about a jetton wallet (D14):
+ * - `verified`: it names an owner and a master, and that master names it for that owner;
+ * - `foreign`: it names an owner and a master that parse, and that master names another
+ *   wallet for that owner: positive evidence that it is not the master's;
+ * - `unknown`: no evidence either way. `get_wallet_data` exited with `exitCode` (toncenter
+ *   answers -13 for an account it holds no state for at that block, I1), or named no owner
+ *   or master that parses, or the master named no wallet.
+ * Both get-methods run at `block`, one at which the wallet had already run a transaction
+ * (lesson 17: a fact at its own height): an endpoint that lags behind it refuses
+ * (retryable), where a read at its own head would take a wallet it has not seen yet for a
+ * fake. Cached once verified under the quorum.
+ */
+export type JettonWalletFacts =
+  | { readonly kind: 'verified'; readonly wallet: VerifiedJettonWallet }
+  | { readonly kind: 'foreign' }
+  | { readonly kind: 'unknown'; readonly exitCode?: number };
+
+/** toncenter's exit code for an account it holds no state for at the block asked (I1). */
+export const NO_STATE_EXIT = -13;
+
+export async function jettonWalletFacts(
+  ctx: TonContext,
+  address: string,
+  tags: TonCallTags,
+  block: number,
+): Promise<JettonWalletFacts> {
+  const known = ctx.verified.get(address);
+  if (known) return { kind: 'verified', wallet: known };
+  const data = await tokenCall(() =>
+    ctx.api.runGetMethod(address, 'get_wallet_data', [], tags, block),
+  );
+  if (data.exitCode !== 0) return { kind: 'unknown', exitCode: data.exitCode };
+  const ownerBoc = cellStack(data.stack[1]);
+  const masterBoc = cellStack(data.stack[2]);
+  const owner = ownerBoc ? addressFromBoc(ownerBoc) : null;
+  const master = masterBoc ? addressFromBoc(masterBoc) : null;
+  if (!owner || !master) return { kind: 'unknown' };
+  let named: string;
+  try {
+    named = await jettonWalletAddress(ctx, master, owner, tags, block);
+  } catch (error) {
+    if (isCryptoAioError(error, 'ASSET_RESOLUTION')) return { kind: 'unknown' };
+    throw error;
+  }
+  if (named !== address) return { kind: 'foreign' };
+  const verified = { address, owner, master };
+  if (tags.quorum !== undefined) ctx.verified.set(address, verified);
+  return { kind: 'verified', wallet: verified };
+}
+
+/**
+ * The lenient reading for history (D14): a wallet the master names, else `undefined` (any
+ * other contract; the transaction is then `partial`), so a fake contract never stalls a
+ * page. One exception (final review I1): "no state at this block" (exit -13) for the jetton
+ * wallet whose own transaction this is (`ranHere`) contradicts the chain, which shows it
+ * running there, so it is unavailable data (retryable), never a silent drop of a deposit.
  */
 export async function verifyJettonWallet(
   ctx: TonContext,
   address: string,
   tags: TonCallTags,
   block: number,
+  ranHere = false,
 ): Promise<VerifiedJettonWallet | undefined> {
-  const known = ctx.verified.get(address);
-  if (known) return known;
-  const data = await tokenCall(() =>
-    ctx.api.runGetMethod(address, 'get_wallet_data', [], tags, block),
-  );
-  if (data.exitCode !== 0) return undefined;
-  const ownerBoc = cellStack(data.stack[1]);
-  const masterBoc = cellStack(data.stack[2]);
-  const owner = ownerBoc ? addressFromBoc(ownerBoc) : null;
-  const master = masterBoc ? addressFromBoc(masterBoc) : null;
-  if (!owner || !master) return undefined;
-  let named: string;
-  try {
-    named = await jettonWalletAddress(ctx, master, owner, tags, block);
-  } catch (error) {
-    if (isCryptoAioError(error, 'ASSET_RESOLUTION')) return undefined;
-    throw error;
+  const facts = await jettonWalletFacts(ctx, address, tags, block);
+  if (facts.kind === 'verified') return facts.wallet;
+  if (ranHere && facts.kind === 'unknown' && facts.exitCode === NO_STATE_EXIT) {
+    throw notYet('the jetton wallet state is not available at its block');
   }
-  if (named !== address) return undefined;
-  const verified = { address, owner, master };
-  if (tags.quorum !== undefined) ctx.verified.set(address, verified);
-  return verified;
+  return undefined;
 }
 
 // ---- jetton metadata (TEP-64) -------------------------------------------------------------
@@ -577,8 +612,16 @@ export async function findOwnAttempt(
 /**
  * I5 and the phantom-success rule: each jetton leg's wallets must be the master's own for
  * the sender and the intended recipient (the same master), as masterchain block `block`
- * (the trace's last) records them. The verdict unchanged when they are; otherwise the
- * failure it becomes. Provider faults propagate (retryable).
+ * (the trace's last) records them. The verdict unchanged when they are.
+ *
+ * Final review I1 (lesson 18): only positive evidence decides `failed`, never a missing
+ * answer. The sender's jetton wallet is the one the proof quorum attested at build and the
+ * trace shows both wallets running, so a leg that cannot be verified (no answer, exit -13
+ * "no state at this block", nothing that parses), or a sender wallet that is not ours,
+ * contradicts the chain: a retryable `PROVIDER_INCONSISTENT` (logged `JETTON_UNVERIFIED`),
+ * never a terminal failure that a new key would pay again. `failed` only when the recipient
+ * wallet answered, and it is not the master's for the intended recipient (another wallet
+ * named, another owner, another master): the jettons went elsewhere.
  */
 export async function confirmLegs(
   ctx: TonContext,
@@ -589,14 +632,26 @@ export async function confirmLegs(
 ): Promise<Verdict> {
   if (verdict.kind !== 'success') return verdict;
   for (const leg of verdict.legs) {
-    const sender = await verifyJettonWallet(ctx, leg.senderWallet, tags, block);
-    const recipient = await verifyJettonWallet(ctx, leg.recipientWallet, tags, block);
+    const sender = await jettonWalletFacts(ctx, leg.senderWallet, tags, block);
+    const recipient = await jettonWalletFacts(ctx, leg.recipientWallet, tags, block);
     if (
-      !sender ||
-      !recipient ||
-      sender.owner !== from ||
-      recipient.owner !== leg.recipient ||
-      recipient.master !== sender.master
+      sender.kind !== 'verified' ||
+      sender.wallet.owner !== from ||
+      recipient.kind === 'unknown'
+    ) {
+      ctx.log.warn('a jetton wallet of the transfer could not be verified', {
+        code: 'JETTON_UNVERIFIED',
+      });
+      throw new ProviderError(
+        'PROVIDER_INCONSISTENT',
+        'the jetton wallets of the transfer could not be verified at its block',
+        { retryable: true },
+      );
+    }
+    if (
+      recipient.kind === 'foreign' ||
+      recipient.wallet.owner !== leg.recipient ||
+      recipient.wallet.master !== sender.wallet.master
     ) {
       return Object.freeze({ kind: 'failed', reason: REASONS.jettonUnverified });
     }
@@ -619,8 +674,9 @@ export async function decodeWithJettons(
   tags: TonCallTags,
 ) {
   const candidate = jettonWalletToVerify(tx);
+  // I1: the arrival's own jetton wallet ran here; a notification's sender ran earlier.
   const jetton = candidate
-    ? await verifyJettonWallet(ctx, candidate, tags, tx.mcSeqno)
+    ? await verifyJettonWallet(ctx, candidate, tags, tx.mcSeqno, candidate === tx.account)
     : undefined;
   const header = await ctx.api.masterchainHeader(tx.mcSeqno, tags);
   return decodeTransaction(tx, {

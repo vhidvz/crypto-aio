@@ -686,9 +686,10 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
 - **Archival endpoints for proofs.** Proofs walk a wallet's transactions back through a
   message's lifetime and run jetton get-methods at a transfer's own block, and history runs
   those get-methods at each jetton deposit's block. A node that has pruned a block answers
-  "not ready", which decides nothing: the proof or the read waits until an endpoint that
-  has the block answers. Run archival nodes behind the endpoints you configure. toncenter
-  answered for old blocks on both networks when this was written.
+  "not ready", or "no state" (exit code -13) for the jetton wallet asked; neither decides
+  anything: the proof, or the history read that holds the deposit, waits until an endpoint
+  that has the block answers. Run archival nodes behind the endpoints you configure.
+  toncenter answered for old blocks on both networks when this was written.
 - **Wallets.** `wallets.<name>.ton` names the wallet contract, and every field decides the
   address: `{ version: 'v4r2', workchain?, subwalletId? }` (default `698983191` plus the
   workchain) or `{ version: 'v5r1', workchain?, subwalletNumber?, networkGlobalId? }`

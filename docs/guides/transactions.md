@@ -347,8 +347,11 @@ const now = await bc.getTransactionStatus(operationId); // one read
   fees), `jetton transfer bounced` (the jettons did not arrive), `the wallet skipped a
   message` (the wallet could not send it when it ran, usually for lack of funds) or `the
   wallet transaction failed`; in these cases nothing was delivered. The one exception is
-  `the jetton wallets are not the master’s`: the jettons may have left your wallet, so check
-  the chain before you pay again.
+  `the jetton wallets are not the master’s`: the recipient's jetton wallet answered, and it
+  is not the one the master names for the recipient, so the jettons left your wallet for
+  another one; check the chain before you pay again. A jetton wallet that gives no answer
+  (for example "no state" at that block) decides nothing: the transfer stays undecided until
+  an endpoint answers.
 - **TON proofs.** A TON transfer that never landed is proven absent (`expired`, or
   `replaced` when another request used its seqno) only once its lifetime has passed at a
   masterchain block the proof quorum attests, and only from authenticated chain data: the
@@ -542,7 +545,7 @@ land.**
 | Tron: `TX_REVERTED` with reason `token transfer not evidenced` | The token call succeeded on chain but logged no `Transfer` to the recipient; value may have moved | Check the chain before you pay again ([Tron token verdicts](#waiting-and-watching)) |
 | Solana: `TX_REFUSED` or `INSUFFICIENT_FUNDS` with state `stalled` | A node refused the signed bytes (often `blockhash not found`), or claimed a signature the library found valid is invalid; they may still land until their window has passed | Never pay again: `rebroadcast` while the blockhash is valid, or repeat only with the **same** key; the workers never resend it. `rebuild` only once the Operation is `expired` |
 | TON: ambiguous, or `stalled` after a refusal | toncenter answers every refusal with HTTP 500 ("maybe sent"); the message may land until it expires | Never a new key. Wait for `final`, `failed` or `expired`; `rebuild` only once it is `expired` |
-| TON: `TX_REVERTED` with reason `the jetton wallets are not the master’s` | The jetton wallets involved are not the ones the master names; the jettons may have left your wallet | Check the chain before you pay again ([TON verdicts](#waiting-and-watching)) |
+| TON: `TX_REVERTED` with reason `the jetton wallets are not the master’s` | The recipient's jetton wallet is not the one the master names for the recipient (a non-standard jetton); the jettons left your wallet | Check the chain before you pay again ([TON verdicts](#waiting-and-watching)) |
 | TON: `TX_REPLACED` | A request signed with the wallet's key, not this transfer, used its seqno | Find what else holds the key and stop it; then a new key is safe |
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |
