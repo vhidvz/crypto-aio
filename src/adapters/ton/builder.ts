@@ -110,6 +110,18 @@ export const REQUEST_ID = 'wallet';
 /** How far an endpoint's `sync_utime` may be from the local clock (M3), in seconds. */
 export { CHAIN_TIME_TOLERANCE };
 
+/**
+ * How long after `assemble` a first send may skip the replay guard, in milliseconds
+ * (final-wave re-review N1). A normal transfer sends milliseconds after `assemble`. A first
+ * send that comes later (a slow store, a paused process) may follow another process's send
+ * of the same bytes through a shared store, so it is guarded like a resend. The bound stays
+ * well below any sane `lifecycle.leaseMs`; a slower first send only costs one guard.
+ */
+export const FIRST_SEND_MS = 2_000;
+
+/** Whether a first send `age` ms after `assemble` may skip the guard (never below 0). */
+const soonAfter = (age: number): boolean => age >= 0 && age < FIRST_SEND_MS;
+
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex');
 
 const inconsistent = (reason: string) =>
@@ -691,7 +703,11 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
       // F6-R34: assembled here and not sent yet. A repeat keeps the record as it is, so it
       // never makes sent bytes look unsent.
       if (!ctx.assembled.has(id)) {
-        const record: AssembledMessage = { validFrom, sent: false };
+        const record: AssembledMessage = {
+          validFrom,
+          assembledAt: ctx.clock.now(),
+          sent: false,
+        };
         keep(ctx.assembled, id, record, ASSEMBLED_MEMO);
       }
       return {
@@ -833,11 +849,15 @@ export function createTonBroadcaster(ctx: TonContext): Broadcaster {
       if (stored === null) return MALFORMED;
       const expected = stored.id;
       // F6-R34: bytes this driver assembled and never sent cannot have run anywhere, so a
-      // first send goes out at once. Every other send of stored bytes (a resend, a dropped
-      // rebroadcast, recovery, a caller's same-key retry, bytes from another process or a
-      // bare broadcast) asks the chain first: already run means never again.
+      // first send goes out at once, within FIRST_SEND_MS of `assemble` (N1: later, another
+      // process sharing the store may have sent them). Every other send of stored bytes (a
+      // resend, a dropped rebroadcast, recovery, a caller's same-key retry, bytes from
+      // another process or a bare broadcast) asks the chain first: already run means never
+      // again.
       const record = ctx.assembled.get(expected);
-      if (stored.message !== undefined && record?.sent !== false) {
+      const first =
+        record?.sent === false && soonAfter(ctx.clock.now() - record.assembledAt);
+      if (stored.message !== undefined && !first) {
         const verdict = await guarded(ctx, {
           ...stored.message,
           ...(record ? { validFrom: record.validFrom } : {}),

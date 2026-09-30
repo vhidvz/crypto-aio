@@ -1151,6 +1151,60 @@ describe('TON end to end (scripted toncenter node)', () => {
       expect(servedSince(env, from)).not.toContain('/getTransactions');
       expect(runsOf(env, ours.id)).toHaveLength(1);
     });
+
+    // Final-wave re-review N1 (probe R1): the first-send skip holds only within 2 s of
+    // `assemble`, so a first send that stalled past the address lease is guarded too.
+    it('guards a first send that comes more than 2 s after assemble: a shared store, a lapsed lease and a reset', async () => {
+      const { signer, calls } = countingSigner();
+      let release = (): void => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let paused = false;
+      // Container A's appendAttempt commits, then A stalls (a slow store, a paused
+      // process) before its first send, past the 30 s address lease.
+      const env = await createTonEnv({
+        version: 'v4r2',
+        signer,
+        stores: (clock) => {
+          const operations = new MemoryOperationStore(clock);
+          const append = operations.appendAttempt.bind(operations);
+          operations.appendAttempt = async (...args) => {
+            const record = await append(...args);
+            if (!paused) {
+              paused = true;
+              await gate;
+            }
+            return record;
+          };
+          return { operations };
+        },
+      });
+      const a = env.bc.transfer(intent, { idempotencyKey: 'ours' });
+      a.catch(() => undefined);
+      await env.clock.advance(31_000);
+      env.node.mine();
+      expect(paused).toBe(true);
+      // Container B, over the same store, recovers the Operation: it has no record of the
+      // bytes, so it guards them, finds that nothing ran, and sends.
+      await env.run(env.restart().aio.operations.recover());
+      const id =
+        (await env.stores.operations.getByKey('default', 'ours'))?.attempts[0]?.ref.id ??
+        '';
+      env.node.mine(2);
+      expect([runsOf(env, id).length, env.node.balance(FRESH)]).toEqual([1, GRAM]);
+      // Software sharing the key deletes the wallet and a deposit re-funds it: our message
+      // could run again while it is valid.
+      reset(env);
+      // A resumes. Its first send comes 31 s after assemble, so the guard runs and
+      // withholds the bytes.
+      release();
+      await env.run(a).catch(() => undefined);
+      env.node.mine(2);
+      expect(calls()).toBe(1);
+      expect([runsOf(env, id).length, env.node.balance(FRESH)]).toEqual([1, GRAM]);
+      expect(env.warnings).toContain('RESEND_WITHHELD');
+    });
   });
 
   it('moves jettons to final, with the memo in the notification', async () => {

@@ -105,6 +105,11 @@ export interface TonContext {
 export interface AssembledMessage {
   /** `TonSeqnoOrdering.validFrom`, as the ordering bound to the signed bytes holds it. */
   readonly validFrom: number;
+  /**
+   * The driver's clock when `assemble` ran, in ms: a first send skips the replay guard only
+   * within `FIRST_SEND_MS` of it (final-wave re-review N1).
+   */
+  readonly assembledAt: number;
   /** Set before the first send; never cleared. */
   sent: boolean;
 }

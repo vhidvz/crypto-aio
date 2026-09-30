@@ -486,6 +486,7 @@ describe("the TON builder: the Attempt's ordering is the signed request's own (f
     const ordering = unsigned.ordering as TonSeqnoOrdering;
     expect(s.h.ctx.assembled.get(signed.ref.id)).toEqual({
       validFrom: ordering.validFrom,
+      assembledAt: s.h.clock.now(),
       sent: false,
     });
     await s.h.run(s.broadcaster.broadcast(signed));

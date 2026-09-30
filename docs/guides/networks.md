@@ -759,11 +759,13 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   ruled out, or the check cannot finish (a rate limit, an indexer that is behind), nothing
   is sent: the call fails with a retryable, ambiguous `PROVIDER_UNAVAILABLE`, and the proof
   decides later. The first send of bytes built in the same process, and any send once the
-  wallet's seqno is past the message's, go out without the check. The check costs a few
-  quorum reads, plus one per 32 wallet transactions it has not read before; on the keyless
-  preset allow several seconds. It protects only the library's own sends: after a reset
-  under a shared key, anyone who saw the message can send it again while it is valid, and
-  no client can prevent that.
+  wallet's seqno is past the message's, go out without the check. That first send skips it
+  only within 2 seconds of assembling the signed bytes, so a later one (after a slow store
+  write or a paused process) is checked too: several processes sharing one store are
+  covered only through that bound. The check costs a few quorum reads, plus one per 32
+  wallet transactions it has not read before; on the keyless preset allow several seconds.
+  It protects only the library's own sends: after a reset under a shared key, anyone who
+  saw the message can send it again while it is valid, and no client can prevent that.
 - **Replaced.** TON never reports an observed `replaced` for your own message: masterchain
   state is final, so a transfer that landed but is not indexed yet stays `submitted` or
   `included` until the indexer catches up. A proven `replaced` (`TX_REPLACED`) means that a
@@ -822,9 +824,11 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   ([unresolved assets](./transactions.md#receiving)), and never counts as a deposit
   until you know its decimals. Anyone can send such a jetton to your address. A call that
   needs the decimals, such as a transfer of the jetton, fails with a non-retryable
-  `PROVIDER_UNAVAILABLE` before anything is signed. Register the decimals of a jetton you
-  use yourself, from its issuer, with a plugin of your own; the library then trusts them as
-  you wrote them:
+  `PROVIDER_UNAVAILABLE` before anything is signed. That refusal records nothing, not even
+  an Operation under the idempotency key, so the same call can simply be repeated later,
+  once the indexer has the metadata. Register the decimals of a jetton you use yourself,
+  from its issuer, with a plugin of your own; the library then trusts them as you wrote
+  them:
 
   ```ts
   aio.use({
