@@ -1356,6 +1356,50 @@ describe('TON end to end (scripted toncenter node)', () => {
     expect(arrival?.traceId).toBe(notification?.traceId);
   });
 
+  it('reads each block header and verifies each jetton wallet once per history page (final review M2)', async () => {
+    const env = await createTonEnv();
+    env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    env.node.mintJetton(MASTER, env.address, 1_000_000n);
+    const asset = { standard: 'jetton', contract: MASTER };
+    for (let i = 0; i < 3; i++) {
+      const sub = await env.run(env.bc.transfer({ to: FRESH_UQ, amount: 1_000n, asset }));
+      await env.mineWhile(sub.wait({ finality: 'final' }));
+    }
+    const wallet = env.node.jettonWalletOf(MASTER, FRESH);
+    // Another process: nothing verified yet.
+    const { bc } = env.restart();
+    const from = env.node.fetch.calls.length;
+    const page = await env.run(bc.history(wallet));
+    const calls = env.node.fetch.calls.slice(from);
+    const arrivals = page.items.filter((tx) =>
+      tx.transfers.some((t) => t.id.endsWith(':msg:in:jetton')),
+    );
+    expect(arrivals).toHaveLength(3);
+    const blocks = new Set(page.items.map((tx) => tx.block?.height));
+    const headers = calls.filter((call) =>
+      new URL(call.url).pathname.endsWith('/getBlockHeader'),
+    );
+    const walletData = calls.filter(
+      (call) =>
+        new URL(call.url).pathname.endsWith('/runGetMethod') &&
+        (JSON.parse(call.body ?? '{}') as { method?: string }).method ===
+          'get_wallet_data',
+    );
+    expect(headers).toHaveLength(blocks.size);
+    expect(walletData).toHaveLength(1);
+    // Three deposits in one block: one header read for them.
+    for (let i = 0; i < 3; i++)
+      env.node.inject(PAYER, SMALL, GRAM, beginCell().endCell());
+    env.node.mine(2);
+    const before = env.node.fetch.calls.length;
+    const deposits = await env.run(bc.history(SMALL));
+    expect(deposits.items).toHaveLength(3);
+    const reads = env.node.fetch.calls
+      .slice(before)
+      .filter((call) => new URL(call.url).pathname.endsWith('/getBlockHeader'));
+    expect(reads).toHaveLength(1);
+  });
+
   it("fails a jetton transfer the recipient's jetton wallet bounced", async () => {
     const env = await createTonEnv();
     env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });

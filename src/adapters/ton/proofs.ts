@@ -51,6 +51,7 @@ import {
   decodeWithJettons,
   findOwnAttempt,
   keep,
+  pageMemo,
   provenRequest,
   publicKeyAt,
   traceBlock,
@@ -856,8 +857,18 @@ export function createTonProofs(ctx: TonContext): ProofSource {
       if (seqno === undefined)
         throw undecided('the wallet state does not show its seqno');
       if (seqno > slot.seqno) {
-        // (e) the indexer's consumer search: a hint that finds ours, never a "no".
-        const hint = await consumerOf(ctx, wallet, slot.seqno, head, state);
+        // (e) the indexer's consumer search: a hint that finds ours, never a "no". Final
+        // review M3: nor a veto either; a hint that cannot be used (a record the chain could
+        // not produce, a failed read) is logged, and the authenticated path decides.
+        let hint: V3Transaction | undefined;
+        try {
+          hint = await consumerOf(ctx, wallet, slot.seqno, head, state);
+        } catch (error) {
+          if (!isCryptoAioError(error) || !error.retryable) throw error;
+          ctx.log.warn('the indexer gave no usable seqno consumer', {
+            code: 'SEQNO_CONSUMER_HINT_UNUSABLE',
+          });
+        }
         if (hint && isOwnAttempt(hint, wallet, id))
           return proveIncluded(ctx, hint, wallet);
       }
@@ -937,8 +948,9 @@ export function createTonHistory(ctx: TonContext): AddressHistorySource {
         READ,
       );
       const items = [];
+      const memo = pageMemo();
       for (const tx of page.transactions) {
-        items.push(await decodeWithJettons(ctx, tx, READ));
+        items.push(await decodeWithJettons(ctx, tx, READ, memo));
       }
       return {
         items,

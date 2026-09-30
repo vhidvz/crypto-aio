@@ -338,8 +338,11 @@ export async function verifyJettonWallet(
   tags: TonCallTags,
   block: number,
   ranHere = false,
+  memo?: PageMemo,
 ): Promise<VerifiedJettonWallet | undefined> {
-  const facts = await jettonWalletFacts(ctx, address, tags, block);
+  const facts = await remembered(memo?.jettonWallets, address, () =>
+    jettonWalletFacts(ctx, address, tags, block),
+  );
   if (facts.kind === 'verified') return facts.wallet;
   if (ranHere && facts.kind === 'unknown' && facts.exitCode === NO_STATE_EXIT) {
     throw notYet('the jetton wallet state is not available at its block');
@@ -688,20 +691,61 @@ export function traceBlock(root: V3Transaction, trace: V3Trace | null): number {
 }
 
 /**
+ * Final review M2: what one history page reads once and uses for every transaction on it:
+ * each masterchain block's header, and each jetton wallet's facts, read at the block of the
+ * first (newest) transaction that needs them. The same answer reused, so it trusts nothing
+ * more; a page reads from then on only what it has not read.
+ */
+export interface PageMemo {
+  readonly headers: Map<number, Promise<BlockHeader>>;
+  readonly jettonWallets: Map<string, Promise<JettonWalletFacts>>;
+}
+
+export const pageMemo = (): PageMemo => ({
+  headers: new Map(),
+  jettonWallets: new Map(),
+});
+
+/** `read()` once per key in `memo` (none: read every time). */
+function remembered<K, V>(
+  memo: Map<K, Promise<V>> | undefined,
+  key: K,
+  read: () => Promise<V>,
+): Promise<V> {
+  if (!memo) return read();
+  let pending = memo.get(key);
+  if (!pending) {
+    pending = read();
+    memo.set(key, pending);
+  }
+  return pending;
+}
+
+/**
  * A transaction decoded with its jetton wallet verified at the transaction's own block
- * (D14) and its block's hash.
+ * (D14) and its block's hash; `memo` shares both reads across one history page.
  */
 export async function decodeWithJettons(
   ctx: TonContext,
   tx: V3Transaction,
   tags: TonCallTags,
+  memo?: PageMemo,
 ) {
   const candidate = jettonWalletToVerify(tx);
   // I1: the arrival's own jetton wallet ran here; a notification's sender ran earlier.
   const jetton = candidate
-    ? await verifyJettonWallet(ctx, candidate, tags, tx.mcSeqno, candidate === tx.account)
+    ? await verifyJettonWallet(
+        ctx,
+        candidate,
+        tags,
+        tx.mcSeqno,
+        candidate === tx.account,
+        memo,
+      )
     : undefined;
-  const header = await ctx.api.masterchainHeader(tx.mcSeqno, tags);
+  const header = await remembered(memo?.headers, tx.mcSeqno, () =>
+    ctx.api.masterchainHeader(tx.mcSeqno, tags),
+  );
   return decodeTransaction(tx, {
     blockHash: header.id.rootHash,
     ...(jetton ? { jetton } : {}),

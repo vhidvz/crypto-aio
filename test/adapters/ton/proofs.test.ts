@@ -824,7 +824,7 @@ describe('TON proofs (lesson 17, final form)', () => {
       expect(pages).toBe(2);
     });
 
-    it('never takes a consumer the chain could not have run: its request expired first', async () => {
+    it('never takes a consumer the chain could not have run: its request expired first; the chain still decides (final review M3)', async () => {
       const s = setup();
       const ours = await s.pay();
       const theirs = await s.request([
@@ -845,9 +845,16 @@ describe('TON proofs (lesson 17, final form)', () => {
           ),
         }),
       );
+      // The hint is refused, and while ours may still run nothing is decided.
       await expect(
         s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), ours.ordering, s.from)),
-      ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+      ).rejects.toMatchObject({ retryable: true });
+      // The lying hint never stops the authenticated proof: once ours has expired, the
+      // wallet's own chain shows the real consumer, and ours never ran.
+      await s.tick(80);
+      expect(
+        await s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), ours.ordering, s.from)),
+      ).toEqual({ included: false });
     });
 
     it('recognises our own consumer whatever the case of the Attempt id', async () => {
