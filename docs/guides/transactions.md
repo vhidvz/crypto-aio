@@ -357,18 +357,22 @@ const now = await bc.getTransactionStatus(operationId); // one read
   `replaced` when another request used its seqno) only once its lifetime has passed at a
   masterchain block the proof quorum attests, and only from authenticated chain data: the
   wallet's state at that block, and the wallet's own transactions, each checked against the
-  hash that links it to the next, back through the whole time the message could have run.
-  The indexer's records never prove a transfer absent; they only help find one that landed.
+  hash that links it to the next, back to the build's recorded chain time less 5 minutes,
+  the whole time the message could have run. The proof rests on those transactions; the
+  indexer, under the proof quorum, only helps find a transfer that landed, and confirms
+  that a wallet whose chain starts inside that time, or that has none, never ran its code
+  before.
   A request that used the seqno counts only when the wallet ran it and it carries the
   wallet's own signature, relayed (gasless) v5r1 requests included, so a forged request that
   anyone can post never marks your transfer as replaced. A wallet can be reset: emptied and
   deleted, then deployed again by anyone with its seqno back at 0. So when those
   transactions show the wallet deleted or deployed again, when an earlier life of the
   wallet cannot be ruled out, or when the walk cannot reach back far enough within its
-  limit, the Attempt stays undecided (a retryable `PROVIDER_UNAVAILABLE`, logged) instead of
-  risking a second payment. The library never deletes a wallet, so only something else that
-  holds the key can reset it: never share the key. Proof endpoints should be archival
-  ([TON networks](./networks.md#ton-networks)).
+  limit (512 of the wallet's transactions), the Attempt stays undecided (a retryable
+  `PROVIDER_UNAVAILABLE`, logged) instead of risking a second payment. The library never
+  deletes a wallet, so only something else that holds the key (or years of unpaid storage
+  on an emptied wallet) can reset it: never share the key. Proof endpoints should be
+  archival ([TON networks](./networks.md#ton-networks)).
 
 ## Background workers and startup recovery
 
@@ -502,8 +506,9 @@ for await (const event of scanner) {
   over the `public` preset it falls behind; scan through a keyed provider or your own node.
 - **TON** has no block scan, since the chain is sharded: `bc.scanner()` throws
   `UNSUPPORTED_CAPABILITY`. Read deposits with `bc.history(address)` from the indexer
-  instead; [TON networks](./networks.md#ton-networks) shows how deposits appear there and
-  why to check a large one on a second indexer.
+  instead; [TON networks](./networks.md#ton-networks) shows how deposits appear there, that
+  they are `observed` only, and why to read each one you credit again through an
+  independent provider and indexer pair.
 
 ### Address history (`address-history`)
 
@@ -524,6 +529,9 @@ its block's header). An SPL deposit into an existing token account appears in th
 account's history, not the owner's; `bc.ext.solana.getTokenAccounts(owner)` lists an owner's
 token accounts. History ends at the provider's retention
 ([Solana networks](./networks.md#solana-networks)).
+
+TON reads it from its indexer (toncenter API v3); [TON networks](./networks.md#ton-networks)
+shows how its deposits appear there and how to credit them.
 
 ## Error handling
 

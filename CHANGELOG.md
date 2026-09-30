@@ -105,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wallet's authenticated chain, so a message that already ran is never sent into a wallet
   reset, and it withholds the bytes (a retryable, ambiguous `PROVIDER_UNAVAILABLE`) while it
   cannot decide.
+- `TonSeqnoOrdering`, an Attempt's TON ordering with its build's chain time (`validFrom`),
+  exported from the root entry and from `crypto-aio/ton`, for store authors.
 - The TON driver's `maxNetworkFee` option (`{ basechain?, masterchain? }`, nanograms), in
   `chains.ton.options` or a handle's `options`; any other TON option key is refused with
   `CONFIG_INVALID`.

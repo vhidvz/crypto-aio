@@ -39,15 +39,20 @@ app shows, so compare them before you fund or send.
 wallet app, a script, another service, or another crypto-aio namespace. Anything else that
 holds the key can use the wallet's seqnos, so your transfers end `replaced`, and it can
 empty and delete the wallet, which anyone can then deploy again with its seqno back at 0.
-A reset during a transfer's lifetime leaves the library unable to prove that the transfer
-did not land, so it stays undecided rather than risk a second payment. Before the library
-sends a transfer's signed bytes again (a retry, a rebroadcast or a recovery), it checks the
-wallet's chain and withholds them while a reset cannot be ruled out
-([TON resends](./networks.md#ton-networks)). No client can stop anyone else from sending
-them again: after a reset, a message that already ran can run a second time while it is
-valid, and anyone who saw it can send it. Prefer a key
-generated for the service (`localSigner.generate({ curves: ['ed25519'] })`) to one imported
-from a wallet app, and if you import one, stop sending from that wallet in the app.
+A reset during a transfer's lifetime, or in the 5 minutes before its build, leaves the
+library unable to prove that the transfer did not land, so it stays undecided rather than
+risk a second payment. Before the library sends a transfer's signed bytes again (a retry, a
+rebroadcast or a recovery), it checks the wallet's chain and withholds them while a reset
+cannot be ruled out ([TON resends](./networks.md#ton-networks)). No client can stop anyone
+else from sending them again: after a reset, a message that already ran can run a second
+time while it is valid, and anyone who saw it can send it.
+
+Prefer a TON key generated for the service to one imported from a wallet app: generate it
+once, keep its 32-byte seed in your secret store or KMS, and import it at startup with
+`localSigner({ id, ed25519: secret(seedHex) })`, or use a custody `callbackSigner`. A key
+from `localSigner.generate` lives only in memory, so a wallet funded from it is lost on
+restart unless you exported its seed. If you import a key from a wallet app, stop sending
+from that wallet in the app.
 
 Keys can leave a signer in only one way: `exportKey`, on a signer created with
 `exportable: true` (`generate`, `localSigner` and `fromMnemonic` all accept it). It returns a
@@ -317,6 +322,9 @@ transfer resolves, and which addresses a scan filter matches.
 - [ ] TON: two or three independent toncenter-compatible pairs (`provider` and `indexer`),
       archival where they serve proofs, with a key on toncenter, never the `public` preset;
       wallets whose keys nothing else holds; a store that keeps each Attempt's `ordering`
-      (`TonSeqnoOrdering`, `validFrom` included) exactly; and jetton deposits credited only
+      (`TonSeqnoOrdering`, `validFrom` included) exactly; a server clock in sync (builds
+      refused for chain-time skew mean fix the clock); and jetton deposits credited only
       from the arrival in the owner's jetton wallet's history, never from the owner's
-      notification, deduped on that transfer id, not on the trace id.
+      notification, deduped on that transfer id, not on the trace id. TON deposits are
+      `observed` only, an exception to "credit only on `proven`" above: credit one only
+      once an independent provider and indexer pair has read it final and agrees on it.

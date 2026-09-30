@@ -676,13 +676,14 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   the trial request that would let it rejoin the proof quorum, for as long as proof reads
   keep it busy. On endpoints you configure for proofs, set `burst: 2` or more where your
   plan allows it.
-- **Two or three independent providers.** `toncenter` and `public` are one service, so on
-  their own they give a proof quorum of 1: toncenter alone then decides finality, bounces, a
-  jetton's decimals and whether a transfer is proven absent, which `rebuild` acts on. Proofs
-  read the provider and the indexer under the proof quorum, so configure two or more
-  independent toncenter-compatible pairs, ideally three, for example toncenter and your
-  own. With two, once one has failed its health checks for about three refreshes, the other
-  decides alone until the first recovers.
+- **Two or three independent providers.** `toncenter` and `public` are one service:
+  configured together they count as two endpoints, yet they are one source, so toncenter
+  alone then decides finality, bounces, a jetton's decimals and whether a transfer is
+  proven absent, which `rebuild` acts on. Proofs read the provider and the indexer under the
+  proof quorum, so configure two or more independent toncenter-compatible pairs, ideally
+  three, for example toncenter and your own: with three, a quorum of two survives one
+  outage. With two, once one has failed its health checks for about three refreshes, the
+  other decides alone until the first recovers.
 - **Archival endpoints for proofs.** Proofs walk a wallet's transactions back through a
   message's lifetime and run jetton get-methods at a transfer's own block, and history runs
   those get-methods at each jetton deposit's block. A node that has pruned a block answers
@@ -699,7 +700,8 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   compare it with your wallet app before you fund it. An undeployed wallet can receive, and
   its first transfer deploys it. A watch-only wallet needs its `ton` settings too:
   `{ publicKey: '<hex>', ton: { version: 'v5r1' } }`. `Blockchain.estimateFee` needs the
-  handle's wallet (`CONFIG_INVALID` without one), since the fee is emulated with its code.
+  handle's wallet, since the fee is emulated with its code: without one it fails with
+  `INVALID_INTENT`, or with `CONFIG_INVALID` when the intent names a `from`.
   For keys, see [Local signers](./security.md#local-signers).
 - **One output per transfer.** A TON wallet delivers each output of a batch in its own
   transaction, so a batch can partly land: one output can bounce while the others are
@@ -730,7 +732,10 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   subwallet id or number gives the same key another address. A message lives 60 seconds of
   chain time from its build (`validForSeconds`, fixed in this release). A build refuses an
   endpoint whose chain time is more than 5 minutes from your server's clock (a retryable
-  `PROVIDER_INCONSISTENT`), so keep the clock in sync. A message that never lands is proven
+  `PROVIDER_INCONSISTENT`), so keep the clock in sync: builds refused for chain-time skew
+  mean fix the clock, not the endpoint. An endpoint and a clock both more than 5 minutes
+  ahead at a build could let a later proof miss a wallet reset, the one case this check
+  cannot catch. A message that never lands is proven
   `expired` about a minute after its build, and `bc.rebuild(id)` then signs it again at the
   wallet's next seqno. `rebuild` signs on the spot, so it needs a synchronous signer; with
   `prepareTransfer` or a `pending` signer, sign within that minute. TON has no replace and
@@ -851,17 +856,23 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   jetton wallet sends on (also `msg:in:jetton`, with another transfer id and the same
   `details.traceId`): never credit that one, or one deposit counts twice. One trace (one
   external request) may carry several genuine transfers to the same owner, so a trace id
-  is not a dedupe key; dedupe on the arrival's transfer id. History entries are one
-  indexer's reads, so their evidence is `observed` (with `finality: 'final'`), not
-  `proven`: before you credit a large
-  deposit, read it again through an independent indexer, for example
-  `bc.with({ indexer: 'other' }).getTransaction(tx.id)`.
+  is not a dedupe key; dedupe on the arrival's transfer id.
+- **Crediting deposits.** History entries are reads of one provider and one indexer, so
+  their evidence is `observed` (with `finality: 'final'`), never `proven`. This release has
+  no proven deposit read: TON deposits are an explicit exception to "credit only on `final`
+  with `proven` evidence", and a jetton deposit's genuineness also rests on the provider's
+  get-methods. So before you credit any deposit automatically (or any above your risk
+  threshold), read it again through an independent provider **and** indexer pair, for
+  example `bc.with({ provider: 'own-v2', indexer: 'own-v3' }).getTransaction(tx.id)`, and
+  credit it only when both reads are final and agree on the transaction hash, the
+  recipient, the asset, the amount and the memo.
 - **Extras and types.** `bc.ext.ton.getSeqno(address)` reads a wallet's seqno (0 while it
   is undeployed), and `bc.ext.ton.jettonWallet(owner, master)` the jetton wallet the master
   names for an owner. `crypto-aio/ton` exports `TON_CAPABILITIES`,
   `TON_INDEXER_CAPABILITIES` and `TON_PEER_DEPENDENCIES`, and importing it types
   `native(bc, '@ton/ton')` as a `TonClient` ([Keys, signers and secrets](./security.md));
-  the root entry exports the `Ton*` types.
+  the root entry exports the `Ton*` types, and both entries export `TonSeqnoOrdering`, an
+  Attempt's TON ordering, for store authors (below).
 - **Stores.** A custom `OperationStore` must keep each Attempt's `ordering` whole and
   unchanged, every property included. On TON it is a `TonSeqnoOrdering`,
   `{ kind: 'seqno', seqno, validUntil, validFrom }`: the seqno as a `bigint`; `validUntil`,
@@ -876,8 +887,9 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   `test/integration/ton.test.ts` against testnet (`CRYPTO_AIO_IT_TON_NETWORK=mainnet` for
   mainnet) through the keyless `public` preset. `CRYPTO_AIO_IT_TON_RPC_URL` and
   `CRYPTO_AIO_IT_TON_INDEXER_URL` point them at other v2 and v3 endpoints: use them for
-  keyed or self-hosted endpoints, since a custom endpoint has no client-side rate limit and
-  keyless toncenter then answers 429.
+  keyed or self-hosted endpoints. The suite gives each such endpoint the keyless preset's
+  rate limit, `rateLimit: { rps: 0.5 }`; set one on any keyless toncenter endpoint you
+  configure yourself, since without it toncenter answers a burst with HTTP 429.
 
 ## 2. More networks of an existing family
 
