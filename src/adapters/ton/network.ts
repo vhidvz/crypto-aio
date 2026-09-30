@@ -122,9 +122,17 @@ export function recordedValidFrom(slot: {
     : undefined;
 }
 
+/**
+ * The only driver options (`HandleOptions.options`, `chains.ton.options`) the TON driver
+ * reads (F6-R24, F6-R25). Any other key is refused, so a typo fails loudly instead of
+ * leaving the default in place.
+ */
+const OPTION_KEYS: ReadonlySet<string> = new Set(['maxNetworkFee']);
+
 export function tonNetworkConfig(
   chain: ChainInfo,
   network: NetworkInfo,
+  options: Readonly<Record<string, unknown>> = {},
 ): TonNetworkConfig {
   const fail = (reason: string): never => {
     throw new ConfigError(
@@ -176,7 +184,28 @@ export function tonNetworkConfig(
   if (!isIntegerIn(skew, 1, 1_000)) {
     fail('params.finalitySkewBlocks must be an integer in [1, 1000]');
   }
-  const maxNetworkFee = feeCeiling(param('maxNetworkFee', {}), fail);
+  // F3-R16: the refusal names the accepted option and shows neither the caller's key, which
+  // may be a pasted secret, nor its value.
+  for (const key of Object.keys(options)) {
+    if (!OPTION_KEYS.has(key)) {
+      fail(`unknown option; the TON driver's only option is 'maxNetworkFee'`);
+    }
+  }
+  // F6-R24, F6-R25: per workchain, the handle's option, else the network's params, else the
+  // default. A network value is checked even where an option overrides it.
+  const networkFeeCeiling = feeCeiling(
+    param('maxNetworkFee', {}),
+    'params.maxNetworkFee',
+    DEFAULT_MAX_NETWORK_FEE,
+    fail,
+  );
+  const option = Object.hasOwn(options, 'maxNetworkFee')
+    ? options.maxNetworkFee
+    : undefined;
+  const maxNetworkFee =
+    option === undefined
+      ? networkFeeCeiling
+      : feeCeiling(option, 'maxNetworkFee', networkFeeCeiling, fail);
   const capabilities = new Set<Capability>([
     ...TON_CAPABILITIES,
     ...TON_INDEXER_CAPABILITIES,
@@ -198,25 +227,31 @@ export function tonNetworkConfig(
 }
 
 /**
- * `params.maxNetworkFee`: `{ basechain?, masterchain? }`, each a positive bigint within Coins
- * (the charge is compared with nanogram amounts); a workchain left out keeps its default.
- * Any other key, or value, is `CONFIG_INVALID`, which never echoes the key (M2, F3-R16).
+ * `maxNetworkFee` (`name`: the network's `params.maxNetworkFee` or the handle option):
+ * `{ basechain?, masterchain? }`, each a positive bigint within Coins (the charge is
+ * compared with nanogram amounts); a workchain left out keeps `fallback`'s. Any other key,
+ * or value, is `CONFIG_INVALID`, which never echoes the key (M2, F3-R16).
  */
-function feeCeiling(value: unknown, fail: (reason: string) => never): TonFeeCeiling {
+function feeCeiling(
+  value: unknown,
+  name: string,
+  fallback: TonFeeCeiling,
+  fail: (reason: string) => never,
+): TonFeeCeiling {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return fail('params.maxNetworkFee must be { basechain?, masterchain? } (nanograms)');
+    return fail(`${name} must be { basechain?, masterchain? } (nanograms)`);
   }
   const record = value as Readonly<Record<string, unknown>>;
   for (const key of Object.keys(record)) {
     if (!WORKCHAINS.has(key)) {
-      fail(`params.maxNetworkFee takes only 'basechain' and 'masterchain'`);
+      fail(`${name} takes only 'basechain' and 'masterchain'`);
     }
   }
   const bound = (key: keyof TonFeeCeiling): bigint => {
     const own = Object.hasOwn(record, key) ? record[key] : undefined;
-    const ceiling = own === undefined ? DEFAULT_MAX_NETWORK_FEE[key] : own;
+    const ceiling = own === undefined ? fallback[key] : own;
     if (typeof ceiling !== 'bigint' || ceiling <= 0n || ceiling > MAX_COINS) {
-      fail(`params.maxNetworkFee.${key} must be a bigint in [1, 2^120 - 1] (nanograms)`);
+      fail(`${name}.${key} must be a bigint in [1, 2^120 - 1] (nanograms)`);
     }
     return ceiling as bigint;
   };

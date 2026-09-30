@@ -100,7 +100,8 @@ export const tonDriverFactory = (
   async create(ctx): Promise<ChainDriver> {
     // First: a network that adds a capability TON lacks (`batch-transfer`, `block-scan`, …)
     // or carries inconsistent data fails here, before any probe (F6-R15, M3).
-    const config = tonNetworkConfig(ctx.chain, ctx.network);
+    // F6-R24, F6-R25: the handle's options too (`maxNetworkFee`); an unknown one is refused.
+    const config = tonNetworkConfig(ctx.chain, ctx.network, ctx.options);
     if (!ctx.indexer) {
       throw new ConfigError(
         'CONFIG_INVALID',

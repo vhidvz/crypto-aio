@@ -81,6 +81,7 @@ async function driverFor(
     readonly network?: Partial<NetworkInfo>;
     readonly endpoints?: readonly string[];
     readonly maxLagBlocks?: number;
+    readonly options?: Readonly<Record<string, unknown>>;
   } = {},
 ) {
   const network = {
@@ -102,7 +103,7 @@ async function driverFor(
     indexer: indexer.proxy,
     clock: t.clock,
     log: noopLogger,
-    options: {},
+    options: options.options ?? {},
   };
   const driver = await tonLibraryDriverFactory.create(ctx);
   return { t, driver, rpc, indexer, ctx };
@@ -538,6 +539,46 @@ describe('the assembled TON driver', () => {
     expect(
       (await t.run(driver.history!.list(from, { limit: 10 }))).items.length,
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('reads its handle options: maxNetworkFee reaches the builder, anything else is refused before any probe (F6-R24, F6-R25)', async () => {
+    const tight = await driverFor('testnet', {
+      options: { maxNetworkFee: { basechain: 1n } },
+    });
+    tight.t.node.fund(from, 3n * GRAM);
+    await expect(
+      tight.t.run(tight.driver.builder.estimateFee(intent, buildAt(0n))),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    // The option overrides the network's own ceiling.
+    const loose = await driverFor('testnet', {
+      network: { params: { maxNetworkFee: { basechain: 1n } } },
+      options: { maxNetworkFee: { basechain: 10n ** 9n } },
+    });
+    loose.t.node.fund(from, 3n * GRAM);
+    expect(
+      (await loose.t.run(loose.driver.builder.estimateFee(intent, buildAt(0n)))).kind,
+    ).toBe('ton');
+    for (const options of [
+      { maxNetworkFe: { basechain: 1n } },
+      { maxNetworkFee: 'high' },
+    ]) {
+      const t = tonNode();
+      const rpc = counting(t.rpc);
+      const indexer = counting(t.indexer);
+      await expect(
+        tonLibraryDriverFactory.create({
+          chain,
+          network: testnet,
+          library: '@ton/ton',
+          transport: rpc.proxy,
+          indexer: indexer.proxy,
+          clock: t.clock,
+          log: noopLogger,
+          options,
+        }),
+      ).rejects.toMatchObject({ code: 'CONFIG_INVALID' });
+      expect([...rpc.log, ...indexer.log]).toEqual([]);
+    }
   });
 
   it("takes the network's maxNetworkFee into its builder (F6-R17)", async () => {

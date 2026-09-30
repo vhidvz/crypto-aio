@@ -163,6 +163,67 @@ describe('TON network config', () => {
     ).toBe(60);
   });
 
+  it("takes maxNetworkFee as a handle option too: the option, then the network's, then the default (F6-R24, F6-R25)", () => {
+    const config = (
+      options: Readonly<Record<string, unknown>>,
+      params: Readonly<Record<string, unknown>> = {},
+    ) => tonNetworkConfig(chain, { ...mainnet, params }, options).maxNetworkFee;
+    expect(config({})).toEqual(DEFAULT_MAX_NETWORK_FEE);
+    expect(config({ maxNetworkFee: undefined })).toEqual(DEFAULT_MAX_NETWORK_FEE);
+    // Per workchain: the option's, else the network's, else the default.
+    expect(
+      config(
+        { maxNetworkFee: { basechain: 7n } },
+        { maxNetworkFee: { basechain: 5n, masterchain: 9n } },
+      ),
+    ).toEqual({ basechain: 7n, masterchain: 9n });
+    expect(config({ maxNetworkFee: { masterchain: 3n } })).toEqual({
+      basechain: 1_000_000_000n,
+      masterchain: 3n,
+    });
+    expect(Object.isFrozen(config({ maxNetworkFee: { basechain: 7n } }))).toBe(true);
+    // Validated like the network's value; the network's is checked even when overridden.
+    const refused = (
+      options: Readonly<Record<string, unknown>>,
+      params: Readonly<Record<string, unknown>>,
+      message: string,
+    ) => {
+      let thrown: unknown;
+      try {
+        config(options, params);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message: expect.stringContaining(message),
+      });
+      return (thrown as Error).message;
+    };
+    refused({ maxNetworkFee: { basechain: 0n } }, {}, 'maxNetworkFee.basechain must be');
+    refused(
+      { maxNetworkFee: 5n },
+      {},
+      'maxNetworkFee must be { basechain?, masterchain? }',
+    );
+    refused({ maxNetworkFee: { basechain: 5 } }, {}, 'maxNetworkFee.basechain must be');
+    refused(
+      { maxNetworkFee: { basechain: 5n } },
+      { maxNetworkFee: { basechain: -1n } },
+      'params.maxNetworkFee.basechain must be',
+    );
+    // F3-R16: an unknown option is refused, naming the accepted one, never echoing its key.
+    const secret = 'EQ' + 'k'.repeat(46);
+    for (const key of ['maxNetworkFees', 'validForSeconds', secret]) {
+      const message = refused(
+        { [key]: 1n },
+        {},
+        "unknown option; the TON driver's only option is 'maxNetworkFee'",
+      );
+      expect(message).not.toContain(key === secret ? secret : `'${key}'`);
+    }
+  });
+
   it('takes a per-workchain fee ceiling, validated as Coins (F6-R17)', () => {
     const ceiling = (maxNetworkFee: unknown) =>
       tonNetworkConfig(chain, { ...mainnet, params: { maxNetworkFee } }).maxNetworkFee;

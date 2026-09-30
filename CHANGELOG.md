@@ -105,6 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wallet's authenticated chain, so a message that already ran is never sent into a wallet
   reset, and it withholds the bytes (a retryable, ambiguous `PROVIDER_UNAVAILABLE`) while it
   cannot decide.
+- The TON driver's `maxNetworkFee` option (`{ basechain?, masterchain? }`, nanograms), in
+  `chains.ton.options` or a handle's `options`; any other TON option key is refused with
+  `CONFIG_INVALID`.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers

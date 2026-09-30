@@ -330,6 +330,40 @@ describe('the built-in TON plugin', () => {
     await aio.close();
   });
 
+  it('takes maxNetworkFee from the handle and chain options on the built-in networks (F6-R24, F6-R25)', async () => {
+    const { aio, node, run } = container({
+      chains: {
+        ton: { network: 'testnet', options: { maxNetworkFee: { basechain: 1n } } },
+      },
+    });
+    node.fund(TEST_WALLETS.v4r2.basechain, 3n * GRAM);
+    const intent = { to: TEST_WALLETS.v5r1.testnet, amount: GRAM };
+    const handle = (options?: Readonly<Record<string, unknown>>) =>
+      aio.blockchain({
+        chain: 'ton',
+        network: 'testnet',
+        provider: 'node',
+        indexer: 'nodeIndex',
+        wallet: 'hot',
+        ...(options ? { options } : {}),
+      });
+    await expect(run(handle().estimateFee(intent))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      message: expect.stringContaining('the policy maximum'),
+    });
+    expect(
+      (await run(handle({ maxNetworkFee: { basechain: GRAM } }).estimateFee(intent)))
+        .kind,
+    ).toBe('ton');
+    await expect(
+      run(handle({ maxNetworkFe: { basechain: GRAM } }).estimateFee(intent)),
+    ).rejects.toMatchObject({
+      code: 'CONFIG_INVALID',
+      message: expect.stringContaining("the TON driver's only option is 'maxNetworkFee'"),
+    });
+    await aio.close();
+  });
+
   it.each(['batch-transfer', 'block-scan', 'replace-fee'])(
     'refuses a plugin network that adds %s, before any traffic (Task 11)',
     async (capability) => {

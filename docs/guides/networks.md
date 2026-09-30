@@ -776,8 +776,14 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   exceed the 1-nanogram forward amount. An estimate whose `network` charge exceeds 1 GRAM
   (a basechain wallet) or 100 GRAM (a masterchain wallet) is not trusted: it is a retryable
   `PROVIDER_INCONSISTENT`, so one endpoint cannot fail a transfer for good with an inflated
-  fee. TON signs no fee, so the chain charges its own prices either way. This release has
-  no setting for that ceiling, and the TON driver takes no handle `options`.
+  fee. TON signs no fee, so the chain charges its own prices either way. Set the ceiling in
+  nanograms with the `maxNetworkFee` option, `{ basechain?, masterchain? }` as bigints, in
+  `chains.ton.options` or a handle's `options` (a network of a plugin may also set it in its
+  `params`); for each workchain the option wins, then the network's value, then the
+  default. It is the TON driver's only option: any other key is refused with
+  `CONFIG_INVALID`. Set it once per chain rather than per handle: handles with different
+  options get their own transports, so two keyless handles make twice the requests
+  toncenter allows one address.
 - **Funds.** Before signing, the wallet needs Gram for the fee and the amount, or for the
   fee and the attached value plus the jettons (`INSUFFICIENT_FUNDS`). A wallet that cannot
   pay can already fail the estimate with `INSUFFICIENT_FUNDS`; its `details.required` is
