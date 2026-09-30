@@ -742,6 +742,22 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   Operation ends only on proof: `final` or `failed` if it landed, or `expired`, after which
   `rebuild` sends it again. Only bytes that are no TON message at all are `rejected`, and
   the library never builds those. Never pay again with a new key while the Operation lives.
+- **Resends.** A wallet reset (emptied and deleted, then re-funded or deployed again with
+  its seqno back at 0) makes a message that already ran runnable again. So before the TON
+  driver sends signed bytes again (a caller's retry with the same key, a rebroadcast of a
+  dropped transfer, `bc.rebroadcast`, `recover()`, or `bc.broadcast` of a wallet message),
+  it checks the wallet's chain: from the newest state an endpoint serves, linked to the
+  state the proof quorum attests, back to the message's build time (for bytes this process
+  did not build, the longest lifetime a message can have, a day). A message that already
+  ran is not sent again (`already-known`). While a deletion or a new deployment cannot be
+  ruled out, or the check cannot finish (a rate limit, an indexer that is behind), nothing
+  is sent: the call fails with a retryable, ambiguous `PROVIDER_UNAVAILABLE`, and the proof
+  decides later. The first send of bytes built in the same process, and any send once the
+  wallet's seqno is past the message's, go out without the check. The check costs a few
+  quorum reads, plus one per 32 wallet transactions it has not read before; on the keyless
+  preset allow several seconds. It protects only the library's own sends: after a reset
+  under a shared key, anyone who saw the message can send it again while it is valid, and
+  no client can prevent that.
 - **Replaced.** TON never reports an observed `replaced` for your own message: masterchain
   state is final, so a transfer that landed but is not indexed yet stays `submitted` or
   `included` until the indexer catches up. A proven `replaced` (`TX_REPLACED`) means that a

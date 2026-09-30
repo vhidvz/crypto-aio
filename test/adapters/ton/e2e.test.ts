@@ -871,6 +871,288 @@ describe('TON end to end (scripted toncenter node)', () => {
     });
   });
 
+  describe('the replay guard before every send of stored bytes (F6-R34)', () => {
+    /** The external messages sent so far, an intercepted one included. */
+    const sends = (env: Env) => sentBocs(env).length;
+    const intent = { to: FRESH_UQ, amount: GRAM };
+    const retry = (env: Env) =>
+      env.run(env.bc.transfer(intent, { idempotencyKey: 'ours' }));
+
+    /**
+     * Our first send reaches the only endpoint, which relays it when `relay` and answers HTTP
+     * 500 either way: ambiguous. `heal()` makes the endpoint honest again.
+     */
+    async function ambiguousSend(env: Env, relay: boolean) {
+      env.node.intercept = (_endpoint, route, request) => {
+        if (route !== '/sendBocReturnHash') return undefined;
+        if (relay) {
+          try {
+            env.node.submit(request.json<{ boc: string }>().boc);
+          } catch {
+            // Already taken.
+          }
+        }
+        return { status: 500, json: { ok: false, error: 'internal', code: 500 } };
+      };
+      await expect(retry(env)).rejects.toMatchObject({ ambiguous: true });
+      const record = await env.stores.operations.getByKey('default', 'ours');
+      const attempt = record?.attempts[0];
+      return {
+        operationId: record?.id ?? '',
+        id: attempt?.ref.id ?? '',
+        raw: attempt?.raw ?? { encoding: 'base64' as const, data: '' },
+        heal: () => {
+          env.node.intercept = undefined;
+        },
+      };
+    }
+
+    /** Software sharing the key deletes the wallet (+128+32), and a deposit re-funds it. */
+    function reset(env: Env) {
+      const now = Math.floor(env.clock.now() / 1000);
+      env.node.submit(
+        v4Request(1, now + VALID_FOR, [
+          [128 + 32, nativeMessage({ to: PAYER, value: 0n, bounce: false })],
+        ]),
+      );
+      env.node.mine();
+      expect(env.node.status(env.address)).toBe('uninitialized');
+      env.node.inject(PAYER, env.address, 2n * GRAM, beginCell().endCell());
+      env.node.mine();
+    }
+
+    // The two saved Task 13 reproductions (task-13-resend-after-reset), now passing.
+    it('never resends, on a caller retry after an ambiguous send, a message that ran into a reset', async () => {
+      const { signer, calls } = countingSigner();
+      const env = await createTonEnv({
+        version: 'v4r2',
+        signer,
+        lifecycle: { droppedGracePeriodMs: 120_000, rebroadcastIntervalMs: 60_000 },
+      });
+      // The endpoint relays our message, then its answer is lost (HTTP 500): ambiguous.
+      let failing = true;
+      env.node.intercept = (_endpoint, route, request) => {
+        if (route !== '/sendBocReturnHash' || !failing) return undefined;
+        try {
+          env.node.submit(request.json<{ boc: string }>().boc);
+        } catch {
+          // Already taken.
+        }
+        return { status: 500, json: { ok: false, error: 'internal', code: 500 } };
+      };
+      await expect(
+        env.run(
+          env.bc.transfer({ to: FRESH_UQ, amount: GRAM }, { idempotencyKey: 'ours' }),
+        ),
+      ).rejects.toMatchObject({ ambiguous: true });
+      const record = await env.stores.operations.getByKey('default', 'ours');
+      const id = record?.attempts[0]?.ref.id ?? '';
+      const now = () => Math.floor(env.clock.now() / 1000);
+      env.node.mine(2);
+      env.node.submit(
+        v4Request(1, now() + VALID_FOR, [
+          [128 + 32, nativeMessage({ to: PAYER, value: 0n, bounce: false })],
+        ]),
+      );
+      env.node.mine();
+      env.node.inject(PAYER, env.address, 2n * GRAM, beginCell().endCell());
+      env.node.mine();
+      failing = false;
+      // The caller retries with the same key, as an ambiguous error asks.
+      await env
+        .run(env.bc.transfer({ to: FRESH_UQ, amount: GRAM }, { idempotencyKey: 'ours' }))
+        .catch(() => undefined);
+      env.node.mine(2);
+      expect(calls()).toBe(1);
+      expect([runsOf(env, id).length, env.node.balance(FRESH)]).toEqual([1, GRAM]);
+    });
+
+    it('never resends a message that ran into a wallet reset and a refund within its lifetime', async () => {
+      const { signer, calls } = countingSigner();
+      // The indexer has not caught up with our transfer (Review Focus 2).
+      const env = await createTonEnv({
+        version: 'v4r2',
+        signer,
+        node: { indexerLag: 500 },
+      });
+      const sub = await env.run(
+        env.bc.transfer({ to: FRESH_UQ, amount: GRAM }, { idempotencyKey: 'ours' }),
+      );
+      const id = sub.attempt?.id ?? '';
+      const now = () => Math.floor(env.clock.now() / 1000);
+      const passes = (blocks: number) => monitorFor(env, blocks, async () => undefined);
+      await passes(2);
+      expect([runsOf(env, id).length, env.node.balance(FRESH)]).toEqual([1, GRAM]);
+      // Software sharing the key sends everything and deletes the wallet (+128+32) while our
+      // message is still valid; the monitor keeps watching.
+      env.node.submit(
+        v4Request(1, now() + VALID_FOR, [
+          [128 + 32, nativeMessage({ to: PAYER, value: 0n, bounce: false })],
+        ]),
+      );
+      await passes(15);
+      // A deposit re-funds the deleted wallet: our deploy message (seqno 0, its StateInit)
+      // is runnable again until it expires.
+      env.node.inject(PAYER, env.address, 2n * GRAM, beginCell().endCell());
+      await passes(15);
+      expect(calls()).toBe(1);
+      // Fund safety: the library never makes our message run twice.
+      expect([runsOf(env, id).length, env.node.balance(FRESH)]).toEqual([1, GRAM]);
+      // The monitor's dropped rebroadcasts asked the chain first, and withheld the bytes.
+      expect(env.warnings).toContain('RESEND_WITHHELD');
+    });
+
+    it('never resends through recover() after a reset (a new process: the widest window)', async () => {
+      const env = await createTonEnv({ version: 'v4r2' });
+      const ours = await ambiguousSend(env, true);
+      env.node.mine(2);
+      expect(runsOf(env, ours.id)).toHaveLength(1);
+      reset(env);
+      ours.heal();
+      const before = sends(env);
+      const restarted = env.restart({ killPrevious: true });
+      const report = await env.run(restarted.aio.operations.recover());
+      expect(report).toMatchObject({ failed: 0 });
+      env.node.mine(2);
+      expect([sends(env) - before, runsOf(env, ours.id).length]).toEqual([0, 1]);
+      expect(env.node.balance(FRESH)).toBe(GRAM);
+      expect(env.warnings).toContain('RESEND_WITHHELD');
+    });
+
+    it('never resends through bc.rebroadcast() or a bare broadcast after a reset', async () => {
+      const env = await createTonEnv({ version: 'v4r2' });
+      const ours = await ambiguousSend(env, true);
+      env.node.mine(2);
+      reset(env);
+      ours.heal();
+      const before = sends(env);
+      await expect(env.run(env.bc.rebroadcast(ours.operationId))).rejects.toMatchObject({
+        ambiguous: true,
+        retryable: true,
+      });
+      // A bare broadcast of the same bytes is guarded too (no record: the widest window).
+      await expect(env.run(env.bc.broadcast(ours.raw))).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+      env.node.mine(2);
+      expect([sends(env) - before, runsOf(env, ours.id).length]).toEqual([0, 1]);
+      expect(env.node.balance(FRESH)).toBe(GRAM);
+    });
+
+    it('finds our message in the part of the chain the attested head does not reach yet: already known, never sent', async () => {
+      const env = await createTonEnv({ version: 'v4r2' });
+      const ours = await ambiguousSend(env, true);
+      env.node.mine(2);
+      // The same key's software destroys the wallet; extra currencies keep the account, so
+      // its chain goes on, uninitialized: our seqno-0 deploy message could run again.
+      env.node.holdExtraCurrency(env.address);
+      env.node.submit(
+        v4Request(1, Math.floor(env.clock.now() / 1000) + VALID_FOR, [
+          [128 + 32, nativeMessage({ to: PAYER, value: 0n, bounce: false })],
+        ]),
+      );
+      env.node.mine();
+      expect(env.node.status(env.address)).toBe('uninitialized');
+      ours.heal();
+      const before = sends(env);
+      // All of it is younger than the attested head (it trails by the skew): only the walk
+      // from the freshest state sees our run, behind the destruction.
+      const sub = await retry(env);
+      expect(sub.state).toBe('submitted');
+      expect([sends(env) - before, runsOf(env, ours.id).length]).toEqual([0, 1]);
+    });
+
+    it("resends a new wallet's message minutes after its funding: a chain start whose code never ran", async () => {
+      const { signer, calls } = countingSigner();
+      const env = await createTonEnv({ fund: 0n, signer });
+      env.node.inject(PAYER, env.address, 5n * GRAM, beginCell().endCell());
+      env.node.mine();
+      // The first send is lost on the way; the monitor rebroadcasts the dropped bytes.
+      env.node.swallow = true;
+      const sub = await env.run(env.bc.transfer(intent));
+      env.node.swallow = false;
+      const id = sub.attempt?.id ?? '';
+      const done = await env.mineWhile(sub.wait({ finality: 'final' }), 60);
+      expect(done.status.state).toBe('final');
+      expect([env.node.sendCount(id), runsOf(env, id).length, calls()]).toEqual([
+        2, 1, 1,
+      ]);
+    });
+
+    it('never sends while the walk cannot finish: a 429 in its middle', async () => {
+      const env = await createTonEnv({ fund: 0n });
+      // More wallet transactions inside the window than one page holds.
+      for (let i = 0; i < 40; i++) {
+        env.node.inject(PAYER, env.address, GRAM / 4n, beginCell().endCell());
+      }
+      env.node.mine();
+      const ours = await ambiguousSend(env, false);
+      let pages = 0;
+      env.node.intercept = (_endpoint, route) => {
+        if (route !== '/getTransactions') return undefined;
+        pages += 1;
+        return pages === 1
+          ? undefined
+          : { status: 429, json: { ok: false, error: 'Ratelimit exceed', code: 429 } };
+      };
+      const before = sends(env);
+      await expect(retry(env)).rejects.toMatchObject({
+        ambiguous: true,
+        retryable: true,
+      });
+      expect([pages > 1, sends(env) - before]).toEqual([true, 0]);
+      ours.heal();
+      await env.clock.advance(20_000);
+      const sub = await retry(env);
+      expect(sends(env) - before).toBe(1);
+      await env.mineWhile(sub.wait({ finality: 'final' }));
+      expect(runsOf(env, ours.id)).toHaveLength(1);
+    });
+
+    it('walks back only to the recorded build time, and each authenticated transaction once; a new process takes the widest window', async () => {
+      const env = await createTonEnv({ fund: 0n });
+      for (let i = 0; i < 40; i++) {
+        env.node.inject(PAYER, env.address, GRAM / 4n, beginCell().endCell());
+      }
+      env.node.mine();
+      // The deposits are older than any message built from now on, less the tolerance.
+      await env.clock.advance((CHAIN_TIME_TOLERANCE + 100) * 1_000);
+      env.node.mine();
+      const ours = await ambiguousSend(env, false);
+      const walked = async (send: () => Promise<unknown>) => {
+        const from = env.node.served.length;
+        await send().catch(() => undefined);
+        return servedSince(env, from).filter((route) => route === '/getTransactions')
+          .length;
+      };
+      // This process assembled the bytes: the walk stops at their recorded start (one page),
+      // and a second guard reads nothing it has authenticated already.
+      expect(await walked(() => retry(env))).toBe(1);
+      expect(await walked(() => retry(env))).toBe(0);
+      // Another process has no record: the widest lifetime, so the whole history (2 pages).
+      const restarted = env.restart({ killPrevious: true });
+      expect(
+        await walked(() =>
+          env.run(restarted.bc.transfer(intent, { idempotencyKey: 'ours' })),
+        ),
+      ).toBe(2);
+      expect(runsOf(env, ours.id)).toHaveLength(0);
+    });
+
+    it("skips the walk once the wallet's seqno is past ours: the message cannot run", async () => {
+      const env = await createTonEnv();
+      const ours = await ambiguousSend(env, true);
+      env.node.mine(2);
+      expect(env.node.seqno(env.address)).toBe(1);
+      ours.heal();
+      const from = env.node.served.length;
+      await retry(env).catch(() => undefined);
+      expect(servedSince(env, from)).not.toContain('/getTransactions');
+      expect(runsOf(env, ours.id)).toHaveLength(1);
+    });
+  });
+
   it('moves jettons to final, with the memo in the notification', async () => {
     const env = await createTonEnv();
     env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });

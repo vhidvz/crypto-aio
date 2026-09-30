@@ -100,6 +100,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TON_PEER_DEPENDENCIES`, and the SDK type for `native(bc, '@ton/ton')` (a `TonClient`);
   also a typed `ChainRegistry` entry for `ton`, and the root type exports `TonExt`,
   `TonFeeDetails`, `TonFeeOverride`, `TonWalletIdentity` and `TonWalletVersion`.
+- TON resends are guarded: before the TON driver sends stored bytes again (a same-key retry,
+  a dropped rebroadcast, `rebroadcast`, `recover()` or a bare `broadcast`), it walks the
+  wallet's authenticated chain, so a message that already ran is never sent into a wallet
+  reset, and it withholds the bytes (a retryable, ambiguous `PROVIDER_UNAVAILABLE`) while it
+  cannot decide.
 - `CallOptions.quorumKey`: under a quorum, endpoints must agree only on the part of the
   result that the key returns.
 - `CallOptions.exactIntegers`: `Transport.rpc`, `rpcRaw` and `http` can parse JSON integers

@@ -320,6 +320,36 @@ export interface WalletRequest {
   readonly modes: readonly number[];
 }
 
+/** A W5 external request's bits: op, wallet id, `valid_until`, seqno, two flags, signature. */
+const W5_EXTERNAL_BITS = 32 + 32 + 32 + 32 + 1 + 1 + 512;
+/** A v4r2 request's least bits: signature, subwallet id, `valid_until`, seqno. */
+const V4_HEADER_BITS = 512 + 32 + 32 + 32;
+
+/**
+ * The signed header of an external wallet request, read alone (F6-R34, like M8's consumer
+ * read): a W5 request's (its op, then the wallet id, `valid_until` and seqno, in a body of
+ * exactly a W5 request's length) or a v4r2 request's (after the signature, whatever the op).
+ * Null when the body cannot hold one. Nothing here says whose request it is.
+ */
+export function requestHeaderOf(body: Cell): {
+  readonly walletId: number;
+  readonly validUntil: number;
+  readonly seqno: number;
+} | null {
+  try {
+    const bits = body.bits.length;
+    const s = body.beginParse();
+    const w5 = bits === W5_EXTERNAL_BITS && s.preloadUint(32) === OP.w5SignedExternal;
+    if (!w5 && bits < V4_HEADER_BITS) return null;
+    s.skip(w5 ? 32 : 512);
+    const walletId = w5 ? s.loadInt(32) : s.loadUint(32);
+    const validUntil = s.loadUint(32);
+    return { walletId, validUntil, seqno: s.loadUint(32) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The signed request inside a v4r2 or v5r1 external message body: its seqno, lifetime and
  * the internal messages it asks for. Null for anything else (another wallet, a plugin or

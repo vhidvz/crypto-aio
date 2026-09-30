@@ -96,6 +96,32 @@ export interface TonNetworkConfig {
 const isIntegerIn = (value: unknown, min: number, max: number): value is number =>
   Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max;
 
+/** The lifetimes a network may configure (`params.validForSeconds`), in seconds. */
+export const MIN_VALID_FOR_SECONDS = 10;
+export const MAX_VALID_FOR_SECONDS = 86_400;
+
+/** How far an endpoint's `sync_utime` may be from the local clock (M3), in seconds. */
+export const CHAIN_TIME_TOLERANCE = 300;
+
+/**
+ * F6-R29: a build's recorded chain time (`TonSeqnoOrdering.validFrom`) when the ordering holds
+ * a well-formed one for its lifetime: a safe integer at least the shortest lifetime before
+ * `validUntil`, and at most the longest (plus the chain-time tolerance) before it. Undefined
+ * otherwise (an attempt built before the field existed, or a damaged record).
+ */
+export function recordedValidFrom(slot: {
+  readonly validUntil: number;
+}): number | undefined {
+  const { validUntil } = slot;
+  const { validFrom } = slot as { readonly validFrom?: unknown };
+  return typeof validFrom === 'number' &&
+    Number.isSafeInteger(validFrom) &&
+    validFrom <= validUntil - MIN_VALID_FOR_SECONDS &&
+    validFrom >= validUntil - MAX_VALID_FOR_SECONDS - CHAIN_TIME_TOLERANCE
+    ? validFrom
+    : undefined;
+}
+
 export function tonNetworkConfig(
   chain: ChainInfo,
   network: NetworkInfo,
@@ -134,7 +160,7 @@ export function tonNetworkConfig(
     return value === undefined ? fallback : value;
   };
   const validFor = param('validForSeconds', 60);
-  if (!isIntegerIn(validFor, 10, 86_400)) {
+  if (!isIntegerIn(validFor, MIN_VALID_FOR_SECONDS, MAX_VALID_FOR_SECONDS)) {
     fail('params.validForSeconds must be an integer in [10, 86400]');
   }
   // Encoded as Coins in every jetton wallet message (lesson 19).

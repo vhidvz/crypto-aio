@@ -4,7 +4,7 @@
  * queries, `monitor` for heights, observations and seqnos (R41). Jetton metadata, which the
  * core caches for the container's life, is a `read` under the proof quorum (M4, board).
  */
-import { Cell, Dictionary } from '@ton/core';
+import { Cell, Dictionary, type Transaction } from '@ton/core';
 import { createHash } from 'node:crypto';
 import type {
   AddressCodec,
@@ -81,6 +81,39 @@ export interface TonContext {
   readonly jettonWallets: Map<string, string>;
   /** jetton wallet → its owner and master, verified under the quorum. */
   readonly verified: Map<string, VerifiedJettonWallet>;
+  /**
+   * F6-R34, F5-R20: wallet transactions the chain walk authenticated, by `lt:hash`. A
+   * transaction is immutable and its cell hashes to its id, so a kept one is as good as one
+   * fetched again; each walk fetches only what it has not seen (bounded, `CHAIN_MEMO`).
+   */
+  readonly chainTxs: Map<string, Transaction>;
+  /**
+   * F6-R34: the external messages this driver assembled, by TEP-467 hash: the build's
+   * recorded chain time (the `Broadcaster` port carries only the bytes) and whether they
+   * were ever handed to a send (bounded, `ASSEMBLED_MEMO`).
+   */
+  readonly assembled: Map<string, AssembledMessage>;
+}
+
+/** What `assemble` recorded about a message it made (F6-R34). */
+export interface AssembledMessage {
+  /** `TonSeqnoOrdering.validFrom`, as the ordering bound to the signed bytes holds it. */
+  readonly validFrom: number;
+  /** Set before the first send; never cleared. */
+  sent: boolean;
+}
+
+/** The most authenticated transactions a driver keeps (each at most `MEMO_TX_LENGTH`). */
+export const CHAIN_MEMO = 4_096;
+/** The longest transaction BOC text kept: a wallet transaction takes about 1-2 KB. */
+export const MEMO_TX_LENGTH = 16_384;
+/** The most assembled messages a driver remembers; an evicted one is guarded as foreign. */
+export const ASSEMBLED_MEMO = 4_096;
+
+/** Keeps `value` in a bounded memo, dropping the oldest entry beyond `size` (F5-R20). */
+export function keep<K, V>(memo: Map<K, V>, key: K, value: V, size: number): void {
+  memo.set(key, value);
+  if (memo.size > size) memo.delete(memo.keys().next().value as K);
 }
 
 export function createTonContext(args: {
@@ -96,7 +129,14 @@ export function createTonContext(args: {
     fromPublicKey: (publicKey: Uint8Array, wallet?: WalletOptions) =>
       walletAddress(resolveIdentity(wallet, args.config.globalId), publicKey),
   });
-  return { ...args, codec, jettonWallets: new Map(), verified: new Map() };
+  return {
+    ...args,
+    codec,
+    jettonWallets: new Map(),
+    verified: new Map(),
+    chainTxs: new Map(),
+    assembled: new Map(),
+  };
 }
 
 const assetError = (reason: string) => new ValidationError('ASSET_RESOLUTION', reason);

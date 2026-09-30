@@ -44,17 +44,23 @@ import {
 } from './api';
 import { OP } from './messages';
 import {
+  CHAIN_MEMO,
+  MEMO_TX_LENGTH,
   confirmLegs,
   decodeWithJettons,
   findOwnAttempt,
+  keep,
   provenRequest,
   publicKeyAt,
   traceBlock,
   type TonContext,
 } from './reader';
-import { CHAIN_TIME_TOLERANCE } from './builder';
+import {
+  CHAIN_TIME_TOLERANCE,
+  MAX_VALID_FOR_SECONDS,
+  recordedValidFrom,
+} from './network';
 import { attemptVerdict, consumesSeqno, isOwnAttempt } from './trace';
-import type { TonSeqnoOrdering } from './types';
 import { externalHashOf, requestIsOwn } from './wallets';
 
 /** How far back the consumer of a seqno is searched: pages of `CONSUMER_PAGE` transactions. */
@@ -155,26 +161,17 @@ function coversBasechain(tops: readonly BlockId[]): boolean {
   return next === SHARD_SPACE;
 }
 
-/** The lifetimes a network may configure (`validForSeconds`, network.ts). */
-const MIN_VALID_FOR = 10;
-const MAX_VALID_FOR = 86_400;
-
 /**
  * F6-R29 (review N1): the earliest chain time our message can have run at. The build
  * recorded it (`TonSeqnoOrdering.validFrom`); less the builder's chain-time tolerance, it
  * covers an endpoint whose time ran ahead of the chain within that tolerance, whatever the
  * network's `validForSeconds` is now. Without a well-formed record (an attempt built before
- * it), the widest lifetime any network allows before `validUntil`, less the tolerance.
+ * it, or bytes this driver did not assemble, F6-R34), the widest lifetime any network
+ * allows before `validUntil`, less the tolerance.
  */
 function windowStartOf(slot: { readonly validUntil: number }): number {
-  const { validUntil } = slot;
-  const { validFrom } = slot as Partial<TonSeqnoOrdering>;
-  const recorded =
-    typeof validFrom === 'number' &&
-    Number.isSafeInteger(validFrom) &&
-    validFrom <= validUntil - MIN_VALID_FOR &&
-    validFrom >= validUntil - MAX_VALID_FOR - CHAIN_TIME_TOLERANCE;
-  return (recorded ? validFrom : validUntil - MAX_VALID_FOR) - CHAIN_TIME_TOLERANCE;
+  const recorded = recordedValidFrom(slot);
+  return (recorded ?? slot.validUntil - MAX_VALID_FOR_SECONDS) - CHAIN_TIME_TOLERANCE;
 }
 
 /** M9: a lifetime is a positive chain time; the reservation's placeholder 0 is none. */
@@ -332,13 +329,14 @@ const hex256 = (value: bigint): string => value.toString(16).padStart(64, '0');
  * API before this decodes it, lesson 20) hashes to the id expected, and it is the account's
  * own at the lt expected. Anything else is not the chain's.
  */
+const notTheChains = () =>
+  inconsistent("the liteserver answered a transaction that is not the chain's");
+
 function authenticated(
   row: RawTransaction,
   expected: TransactionId,
   account: bigint,
 ): Transaction {
-  const notTheChains = () =>
-    inconsistent("the liteserver answered a transaction that is not the chain's");
   if (row.lt !== expected.lt || row.hash !== expected.hash) throw notTheChains();
   let cell: Cell;
   let tx: Transaction;
@@ -360,11 +358,17 @@ function authenticated(
   return tx;
 }
 
+/** The most transactions one walk visits, fetched or kept: `WALK_PAGES` full pages. */
+const WALK_LIMIT = WALK_PAGES * WALK_PAGE;
+
 /**
  * The account's chain from `from` back, one authenticated transaction at a time, each naming
  * the next by its `prev_trans_lt`/`prev_trans_hash`; `visit` returns true to stop. Ends at
  * the chain's start (`prev_trans_lt` 0: the account's first transaction, or its first since
- * a deletion, transaction.cpp `init_new`), or after `WALK_PAGES` pages.
+ * a deletion, transaction.cpp `init_new`), or after `WALK_LIMIT` transactions or
+ * `WALK_PAGES` pages. F5-R20 (the replay guard walks before every resend): a transaction
+ * authenticated once is kept by its id (`chainTxs`), so a walk fetches only the part of the
+ * chain it has not seen; a kept one is bound to the account as a fetched one is.
  */
 async function walkChain(
   ctx: TonContext,
@@ -374,17 +378,36 @@ async function walkChain(
 ): Promise<'stopped' | 'start' | 'exhausted'> {
   const account = BigInt(`0x${wallet.slice(wallet.indexOf(':') + 1)}`);
   let expected = from;
-  for (let page = 0; page < WALK_PAGES; page++) {
-    const rows = await ctx.api.rawTransactions(wallet, expected, WALK_PAGE, PROOF);
-    if (rows.length === 0) {
-      throw undecided('the liteserver does not hold the transaction asked');
+  let page: RawTransaction[] = [];
+  let fetched = 0;
+  for (let visited = 0; visited < WALK_LIMIT; visited++) {
+    const key = `${expected.lt}:${expected.hash}`;
+    const row = page.shift();
+    let tx = ctx.chainTxs.get(key);
+    if (tx !== undefined) {
+      if (tx.address !== account) throw notTheChains();
+      // The page fetched earlier no longer follows the walk: drop it.
+      if (row !== undefined && (row.lt !== expected.lt || row.hash !== expected.hash)) {
+        page = [];
+      }
+    } else {
+      let next = row;
+      if (next === undefined) {
+        if (fetched === WALK_PAGES) return 'exhausted';
+        fetched += 1;
+        page = await ctx.api.rawTransactions(wallet, expected, WALK_PAGE, PROOF);
+        next = page.shift();
+        if (next === undefined) {
+          throw undecided('the liteserver does not hold the transaction asked');
+        }
+      }
+      tx = authenticated(next, expected, account);
+      // Lesson 20: only a wallet-sized transaction is kept (a lying endpoint's is not).
+      if (next.boc.length <= MEMO_TX_LENGTH) keep(ctx.chainTxs, key, tx, CHAIN_MEMO);
     }
-    for (const row of rows) {
-      const tx = authenticated(row, expected, account);
-      if (await visit(tx, expected.hash)) return 'stopped';
-      if (tx.prevTransactionLt === 0n) return 'start';
-      expected = { lt: tx.prevTransactionLt, hash: hex256(tx.prevTransactionHash) };
-    }
+    if (await visit(tx, expected.hash)) return 'stopped';
+    if (tx.prevTransactionLt === 0n) return 'start';
+    expected = { lt: tx.prevTransactionLt, hash: hex256(tx.prevTransactionHash) };
   }
   return 'exhausted';
 }
@@ -480,46 +503,27 @@ const walkExhausted = (ctx: TonContext) => {
   return undecided('the wallet history is beyond the proof window');
 };
 
-/** The indexer has indexed the attested block, so its history up to `head` is whole. */
-async function indexedThrough(ctx: TonContext, head: BlockHeader): Promise<void> {
-  if (!(await ctx.api.indexerReached(head.id.seqno, PROOF))) {
+/**
+ * F6-R21 (c, d) and F6-R32 L1: the wallet's code never ran in the history the indexer holds
+ * below lt `below` (an earlier incarnation, before a chain start), or in all of it when
+ * `below` is undefined (no chain now: never created, or deleted with its last transaction),
+ * read under the proof quorum once the indexer has indexed masterchain block `reached`: no
+ * compute phase that ran, and no status with code. Our message runs only in the wallet's
+ * code, so an incarnation whose code never ran cannot hold it, whether the wallet is active
+ * or uninitialized now (L1: a deposit that bounced before the wallet existed is no reset).
+ * A row where the code ran, a row without its statuses, or a history past the window
+ * decides nothing.
+ */
+async function codeNeverRan(
+  ctx: TonContext,
+  wallet: string,
+  reached: number,
+  below?: bigint,
+): Promise<void> {
+  if (!(await ctx.api.indexerReached(reached, PROOF))) {
     throw undecided('the indexer has not reached the attested block yet');
   }
-}
-
-/**
- * F6-R21 (c): the chain began at lt `start` inside what the proof must see. A genuine first
- * creation has no earlier history; any earlier row (anchored below `start`, under the proof
- * quorum) is an earlier incarnation, which decides nothing.
- */
-async function noEarlierHistory(
-  ctx: TonContext,
-  wallet: string,
-  head: BlockHeader,
-  start: bigint,
-): Promise<void> {
-  await indexedThrough(ctx, head);
-  const page = await ctx.api.accountTransactionsPage(
-    wallet,
-    { limit: 1, endLt: start - 1n },
-    PROOF,
-  );
-  if (page.transactions.length > 0 || page.next !== undefined) throw resetSuspected(ctx);
-}
-
-/**
- * F6-R21 (d): an account without a chain at `head` (never created, or deleted with its last
- * transaction): its code never ran in the history the indexer holds, under the proof
- * quorum: no compute phase that ran, and no status with code. A row without its statuses,
- * or a history past the window, decides nothing.
- */
-async function neverRan(
-  ctx: TonContext,
-  wallet: string,
-  head: BlockHeader,
-): Promise<void> {
-  await indexedThrough(ctx, head);
-  let endLt: bigint | undefined;
+  let endLt = below === undefined ? undefined : below - 1n;
   for (let page = 0; page < HISTORY_PAGES; page++) {
     const { transactions, next } = await ctx.api.accountTransactionsPage(
       wallet,
@@ -555,7 +559,7 @@ async function neverRan(
  *   time our message could have run (`windowStart`, from the attempt's own record, F6-R29)
  *   with, when our seqno is consumed at `head`, its consumer found (another request, by its
  *   signed header, M8); or it reaches the chain's start inside that window, and the anchored
- *   indexer history holds nothing earlier (c).
+ *   indexer history shows that the code never ran before it (c, F6-R32 L1).
  * An activation, a destruction, or a consumer of a lower seqno first is a reset: from then
  * on the wallet must never have run, as far as the chain goes back into the window; a walk
  * past its cap decides nothing. An uninitialized wallet (d) must never have run in the
@@ -566,7 +570,7 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
   if (q.state.lastLt === 0n) {
     // No chain at `head`: never created, or deleted with its last transaction (d).
     if (q.active) throw inconsistent('an active account without a transaction');
-    await neverRan(ctx, q.wallet, q.head);
+    await codeNeverRan(ctx, q.wallet, q.head.id.seqno);
     return { absent: true };
   }
   const windowStart = windowStartOf(q.slot);
@@ -584,11 +588,7 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
       first = tx.lt;
       const t = phasesOf(tx);
       const inbound = tx.inMessage;
-      if (
-        t.consumed &&
-        inbound?.info.type === 'external-in' &&
-        externalHashOf(q.wallet, inbound.body) === q.id
-      ) {
+      if (ourRun(tx, t, q.wallet, q.id)) {
         ours = hash;
         return true;
       }
@@ -613,8 +613,159 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
   if (ours !== undefined) return { ours };
   if (end === 'exhausted') throw walkExhausted(ctx);
   if (reset || (needConsumer && !consumerFound)) throw resetSuspected(ctx);
-  if (end === 'start') await noEarlierHistory(ctx, q.wallet, q.head, first);
+  if (end === 'start') await codeNeverRan(ctx, q.wallet, q.head.id.seqno, first);
   return { absent: true };
+}
+
+/**
+ * Whether `tx` is our message run to the end: its inbound external message's TEP-467 hash,
+ * computed here from the authenticated body, is `id`, and it consumed its seqno.
+ */
+function ourRun(
+  tx: Transaction,
+  t: ReturnType<typeof phasesOf>,
+  wallet: string,
+  id: string,
+): boolean {
+  const inbound = tx.inMessage;
+  return (
+    t.consumed &&
+    inbound?.info.type === 'external-in' &&
+    externalHashOf(wallet, inbound.body) === id
+  );
+}
+
+// ---- the replay guard (F6-R34) ------------------------------------------------------------
+
+/**
+ * Stored bytes about to be sent again: the wallet they go to (raw), their TEP-467 hash, and
+ * the seqno and lifetime their signed header carries. `validFrom` is the build's recorded
+ * chain time when this driver assembled them; otherwise the widest lifetime applies.
+ */
+export interface StoredMessage {
+  readonly wallet: string;
+  readonly id: string;
+  readonly seqno: bigint;
+  readonly validUntil: number;
+  readonly validFrom?: number;
+}
+
+/**
+ * The monotone predicate "my seqno is above `seqno`" at the endpoints' own states, under the
+ * proof quorum (lesson 17); its key is the verdict itself (F3-R12) and never throws.
+ */
+async function seqnoAbove(
+  ctx: TonContext,
+  wallet: string,
+  seqno: bigint,
+): Promise<boolean> {
+  const above = (result: RunResult): boolean => {
+    const value = seqnoIn(result);
+    return value !== undefined && value > seqno;
+  };
+  const key = (body: unknown): unknown => {
+    try {
+      return above(runResultOf(body));
+    } catch {
+      return 'malformed';
+    }
+  };
+  return above(
+    await ctx.api.runGetMethod(wallet, 'seqno', [], { ...PROOF, quorumKey: key }),
+  );
+}
+
+/**
+ * F6-R34: whether stored bytes may go out again. A wallet reset (a deletion, then a deposit,
+ * or a re-deploy from the public `StateInit` back to our seqno) makes a message that already
+ * ran and paid runnable again while it is valid, so every send of stored bytes asks first:
+ * - `send`: the wallet's seqno is already above ours under the proof quorum, so the message
+ *   cannot run (addition 5: no walk); or the chain shows it cannot have run: the walk
+ *   reaches the earliest time it could have run (`windowStartOf`, from the recorded build
+ *   time, else the widest lifetime; addition 1) with no reset, or a chain start whose
+ *   earlier history shows the code never ran (addition 3, F6-R32 L1: a wallet funded a
+ *   minute ago is sent to);
+ * - `ours`: the chain holds our message run to the end: it must never be sent again.
+ * The walk starts from the freshest state an endpoint serves (addition 2: the attested head
+ * trails it by 10 to 150 blocks, and a reset in that trail is exactly the danger), and must
+ * lead down to the attested state's last transaction, so a lying fresh endpoint can hide
+ * only what the attested walk could not see either. Anything else, including a deletion or
+ * a new chain since the attested head, an activation or a destruction in the window, a walk
+ * past its cap, an indexer behind the fresh block or a failed read, throws a retryable
+ * error: the guard never sends while it cannot decide (addition 4), and the proof decides.
+ */
+export async function replayVerdict(
+  ctx: TonContext,
+  message: StoredMessage,
+): Promise<'send' | 'ours'> {
+  const { wallet, id } = message;
+  // Addition 5 (F5-R20): a seqno past ours needs no walk. A failed read is only "not known".
+  const past = await seqnoAbove(ctx, wallet, message.seqno).catch(() => false);
+  if (past) return 'send';
+  const windowStart = windowStartOf(message);
+  const head = await attestedHead(ctx);
+  const attested = await stateAt(ctx, wallet, head);
+  const fresh = await ctx.api.account(wallet, MONITOR);
+  // An endpoint behind the attested head adds nothing; one past it must agree with it.
+  const top = fresh.blockSeqno > head.id.seqno ? fresh : attested;
+  if (top === fresh) {
+    if (
+      fresh.lastLt === attested.lastLt
+        ? fresh.lastHash !== attested.lastHash
+        : fresh.lastLt < attested.lastLt && fresh.lastLt !== 0n
+    ) {
+      throw inconsistent('the freshest state does not follow the attested one');
+    }
+  }
+  if (top.status === 'frozen')
+    throw undecided('the wallet state does not show its seqno');
+  // The account was deleted since the attested head: our message may have run just before.
+  if (top.lastLt === 0n && attested.lastLt !== 0n) throw resetSuspected(ctx);
+  if (top.lastLt === 0n) {
+    // No chain now, nor at the attested head: never created, or deleted long ago.
+    await codeNeverRan(ctx, wallet, top.blockSeqno);
+    return 'send';
+  }
+  // The fresh part of the chain must lead to the attested state's last transaction.
+  const link = top !== attested && attested.lastLt !== 0n ? attested : undefined;
+  let linked = link === undefined || link.lastLt === top.lastLt;
+  let codeless = top.status !== 'active';
+  let reset = false;
+  let ours = false;
+  let first = top.lastLt;
+  const end = await walkChain(
+    ctx,
+    wallet,
+    { lt: top.lastLt, hash: top.lastHash },
+    async (tx, hash) => {
+      first = tx.lt;
+      if (!linked && link !== undefined) {
+        if (tx.lt < link.lastLt || (tx.lt === link.lastLt && hash !== link.lastHash)) {
+          throw inconsistent('the freshest state does not follow the attested one');
+        }
+        linked = tx.lt === link.lastLt;
+      }
+      const t = phasesOf(tx);
+      if (ourRun(tx, t, wallet, id)) {
+        ours = true;
+        return true;
+      }
+      if (linked && tx.now < windowStart) return true;
+      if (codeless) {
+        if (t.ran || t.lived || t.destruction) reset = true;
+        return false;
+      }
+      if (t.destruction) reset = true;
+      if (t.activation) codeless = true;
+      return false;
+    },
+  );
+  if (ours) return 'ours';
+  if (end === 'exhausted') throw walkExhausted(ctx);
+  // Not linked at the chain's start: a new chain since the attested head, so a deletion.
+  if (reset || !linked) throw resetSuspected(ctx);
+  if (end === 'start') await codeNeverRan(ctx, wallet, top.blockSeqno, first);
+  return 'send';
 }
 
 type Included = Extract<
@@ -740,22 +891,8 @@ export function createTonProofs(ctx: TonContext): ProofSource {
       // I4: masterchain state is final once it exists, so TON gives no separate `latest`
       // evidence: our own landed-but-unindexed message is never observed as `replaced`.
       if (level === 'latest') return false;
-      const above = (result: RunResult): boolean => {
-        const value = seqnoIn(result);
-        return value !== undefined && value > slot.seqno;
-      };
-      // Lesson 17: "my seqno at the final state is above n", a monotone predicate; the key
-      // is the verdict itself (F3-R12), and never throws.
-      const key = (body: unknown): unknown => {
-        try {
-          return above(runResultOf(body));
-        } catch {
-          return 'malformed';
-        }
-      };
-      return above(
-        await api.runGetMethod(walletOf(from), 'seqno', [], { ...PROOF, quorumKey: key }),
-      );
+      // Lesson 17: "my seqno at the final state is above n", a monotone predicate.
+      return seqnoAbove(ctx, walletOf(from), slot.seqno);
     },
 
     async expired(ordering) {

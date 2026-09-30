@@ -22,6 +22,7 @@ import {
   WALK_PAGES,
   createTonHistory,
   createTonProofs,
+  replayVerdict,
 } from '../../../src/adapters/ton/proofs';
 import { REASONS } from '../../../src/adapters/ton/trace';
 import { normalizedHash } from '../../../src/adapters/ton/wallets';
@@ -42,6 +43,28 @@ const GRAM = 1_000_000_000n;
 const FRESH = `0:${'11'.repeat(32)}`;
 const PAYER = `0:${'33'.repeat(32)}`;
 const ZERO_HASH = Buffer.alloc(32).toString('base64');
+/** Earlier rows the code-never-ran rule refuses: the code ran, or no statuses (F6-R32 L1). */
+const CODE_RAN: readonly Record<string, unknown>[] = [
+  {
+    description: {
+      type: 'ord',
+      aborted: false,
+      compute_ph: { skipped: false, success: true, exit_code: 0 },
+      action: {
+        success: true,
+        valid: true,
+        no_funds: false,
+        result_code: 0,
+        tot_actions: 0,
+        skipped_actions: 0,
+        msgs_created: 0,
+      },
+    },
+  },
+  { end_status: 'active' },
+  { orig_status: 'frozen', end_status: 'frozen' },
+  { orig_status: undefined },
+];
 const ref = (id: string): AttemptRef => ({
   id,
   idKind: 'message-hash',
@@ -1215,6 +1238,40 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     s: ReturnType<typeof setup>,
     t: { readonly hashNorm: string; readonly ordering: OrderingData },
   ) => s.h.run(s.proofs.includedFinal(ref(t.hashNorm), t.ordering, s.from));
+  /**
+   * The indexer holds one row below the chain's first transaction (an earlier incarnation):
+   * by default a deposit that bounced before the wallet existed, its code never run.
+   */
+  const earlierHistory = (s: ReturnType<typeof setup>, patch: Json) =>
+    rewrite(
+      s.h,
+      (_e, route, request) =>
+        route === '/transactions' && request.url.searchParams.has('end_lt'),
+      (json, request) => ({
+        ...json,
+        transactions: [
+          {
+            account: s.from.toUpperCase(),
+            hash: Buffer.alloc(32, 9).toString('base64'),
+            lt: request.url.searchParams.get('end_lt'),
+            now: 1,
+            mc_block_seqno: 1,
+            trace_id: Buffer.alloc(32, 9).toString('base64'),
+            orig_status: 'nonexist',
+            end_status: 'uninit',
+            total_fees: '0',
+            description: {
+              type: 'ord',
+              aborted: true,
+              compute_ph: { skipped: true, reason: 'no_state' },
+            },
+            in_msg: null,
+            out_msgs: [],
+            ...patch,
+          },
+        ],
+      }),
+    );
 
   it("never takes our own earlier, expired request for the seqno for our landed transfer's consumer (I1)", async () => {
     const s = setup();
@@ -1765,7 +1822,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     });
   });
 
-  it("reads an active wallet's chain start strictly: any earlier history decides nothing (c)", async () => {
+  it("reads an active wallet's chain start by the code-never-ran rule (c, F6-R32 L1)", async () => {
     const s = setup();
     s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
     s.h.node.mine();
@@ -1774,40 +1831,18 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     s.h.node.mine();
     await s.tick(80);
     expect(await final(s, ours)).toEqual({ included: false });
-    // Below the chain's first transaction, the indexer holds a row: another incarnation,
-    // even one whose code never ran, is not the first creation.
-    rewrite(
-      s.h,
-      (_e, route, request) =>
-        route === '/transactions' && request.url.searchParams.get('limit') === '1',
-      (json, request) => ({
-        ...json,
-        transactions: [
-          {
-            account: s.from.toUpperCase(),
-            hash: Buffer.alloc(32, 9).toString('base64'),
-            lt: request.url.searchParams.get('end_lt'),
-            now: 1,
-            mc_block_seqno: 1,
-            trace_id: Buffer.alloc(32, 9).toString('base64'),
-            orig_status: 'nonexist',
-            end_status: 'uninit',
-            total_fees: '0',
-            description: {
-              type: 'ord',
-              aborted: true,
-              compute_ph: { skipped: true, reason: 'no_state' },
-            },
-            in_msg: null,
-            out_msgs: [],
-          },
-        ],
-      }),
-    );
-    await expect(final(s, ours)).rejects.toMatchObject({
-      code: 'PROVIDER_UNAVAILABLE',
-      retryable: true,
-    });
+    // Below the chain's first transaction, an earlier incarnation whose code never ran (a
+    // deposit that bounced before the wallet existed) cannot hold our message: it decides.
+    earlierHistory(s, {});
+    expect(await final(s, ours)).toEqual({ included: false });
+    // One whose code ran, or whose statuses the indexer leaves out, decides nothing.
+    for (const patch of CODE_RAN) {
+      earlierHistory(s, patch);
+      await expect(final(s, ours)).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+    }
   });
 
   describe("the window starts at the attempt's own chain time (F6-R29, review N1)", () => {
@@ -1969,14 +2004,120 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
       expect(walked).toBe(1);
     });
 
-    it('reads a chain start inside the window strictly, for an uninitialized wallet too (N4)', async () => {
+    it('reads a chain start inside the window by the code-never-ran rule, for an uninitialized wallet too (N4, F6-R32 L1)', async () => {
       const s = setup();
       s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
       s.h.node.mine();
       const ours = await transfer(s, 0);
       await s.tick(80);
       expect(await final(s, ours)).toEqual({ included: false });
-      // An earlier row, even one where the code never ran: another incarnation.
+      earlierHistory(s, {});
+      expect(await final(s, ours)).toEqual({ included: false });
+      for (const patch of CODE_RAN) {
+        earlierHistory(s, patch);
+        await expect(final(s, ours)).rejects.toMatchObject({
+          code: 'PROVIDER_UNAVAILABLE',
+          retryable: true,
+        });
+      }
+    });
+  });
+
+  it('decides a slot-0 proof near the first funding after an earlier bounced delivery (F6-R32 L1, the saved probe)', async () => {
+    const h = tonHarness();
+    const proofs = createTonProofs(h.ctx);
+    const from = testWallet('v4r2', TESTNET);
+    const now = () => Math.floor(h.clock.now() / 1000);
+    // Someone sends a bounceable transfer to the not-yet-existing wallet: it bounces.
+    h.node.inject(PAYER, from, GRAM, beginCell().endCell(), true);
+    h.node.mine(2);
+    await h.clock.advance(3_600_000);
+    h.node.mine();
+    // The wallet is funded (its chain starts), and our first send is built at once; it
+    // never lands.
+    h.node.inject(PAYER, from, 5n * GRAM, beginCell().endCell());
+    h.node.mine();
+    const validUntil = now() + 60;
+    const ours = await signedBoc('v4r2', TESTNET, {
+      seqno: 0,
+      validUntil,
+      deploy: true,
+      messages: [nativeMessage({ to: FRESH, value: GRAM, bounce: false })],
+    });
+    for (let i = 0; i < 400; i++) {
+      await h.clock.advance(1_000);
+      h.node.mine();
+    }
+    const ordering = {
+      kind: 'seqno' as const,
+      seqno: 0n,
+      validUntil,
+      validFrom: validUntil - 60,
+    };
+    // The earlier incarnation's code never ran, so it cannot hold our message (was: "the
+    // wallet may have been reset since our message", undecided forever).
+    expect(await h.run(proofs.includedFinal(ref(ours.hashNorm), ordering, from))).toEqual(
+      {
+        included: false,
+      },
+    );
+  });
+
+  it('decides nothing for a lifetime that is no time (M9)', async () => {
+    const s = setup();
+    const ours = await s.pay();
+    await s.tick(80);
+    const unset = { kind: 'seqno' as const, seqno: 0n, validUntil: 0 };
+    await expect(s.h.run(s.proofs.expired(unset))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), unset, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(await final(s, ours)).toEqual({ included: false });
+  });
+});
+
+describe('the replay guard (F6-R34)', () => {
+  /** Our first send, never sent: what the broadcaster hands the guard. */
+  const stored = async (s: ReturnType<typeof setup>) => {
+    const { hashNorm, ordering } = await s.pay();
+    return {
+      wallet: s.from,
+      id: hashNorm,
+      seqno: 0n,
+      validUntil: ordering.validUntil,
+      validFrom: ordering.validFrom,
+    };
+  };
+  /** The latest state (a read without `seqno`), as `edit` makes it. */
+  const freshState = (s: ReturnType<typeof setup>, edit: (result: Json) => Json) =>
+    rewrite(
+      s.h,
+      (_e, route, request) =>
+        route === '/getAddressInformation' && !request.url.searchParams.has('seqno'),
+      (json) => ({ ...json, result: edit(json.result as Json) }),
+    );
+  const deposits = async (s: ReturnType<typeof setup>, count: number) => {
+    for (let i = 0; i < count; i++) {
+      s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+      s.h.node.mine();
+    }
+    await s.tick(FINALITY_SKEW + 2);
+  };
+
+  it('sends a message the chain cannot have run: no chain, no history', async () => {
+    const s = setup();
+    expect(await s.h.run(replayVerdict(s.h.ctx, await stored(s)))).toBe('send');
+  });
+
+  it('sends after a chain start whose earlier history never ran the code, and not after one that did', async () => {
+    const s = setup();
+    await deposits(s, 1);
+    const message = await stored(s);
+    expect(await s.h.run(replayVerdict(s.h.ctx, message))).toBe('send');
+    for (const patch of CODE_RAN) {
       rewrite(
         s.h,
         (_e, route, request) =>
@@ -2001,30 +2142,121 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
               },
               in_msg: null,
               out_msgs: [],
+              ...patch,
             },
           ],
         }),
       );
-      await expect(final(s, ours)).rejects.toMatchObject({
+      await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
         code: 'PROVIDER_UNAVAILABLE',
         retryable: true,
       });
+    }
+  });
+
+  it('decides nothing while the indexer is behind the freshest block at a chain start', async () => {
+    const s = setup();
+    await deposits(s, 1);
+    const message = await stored(s);
+    s.h.node.indexerLag = 1;
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'the indexer has not reached the attested block yet',
     });
   });
 
-  it('decides nothing for a lifetime that is no time (M9)', async () => {
+  it('decides nothing when the freshest state does not follow the attested one', async () => {
     const s = setup();
-    const ours = await s.pay();
-    await s.tick(80);
-    const unset = { kind: 'seqno' as const, seqno: 0n, validUntil: 0 };
-    await expect(s.h.run(s.proofs.expired(unset))).rejects.toMatchObject({
-      code: 'PROVIDER_UNAVAILABLE',
-      retryable: true,
+    await deposits(s, 3);
+    const message = await stored(s);
+    const attested = s.h.node.block(s.h.node.head - FINALITY_SKEW);
+    expect(attested).toBeDefined();
+    // The freshest state names the attested last transaction's lt with another hash.
+    freshState(s, (result) => ({
+      ...result,
+      last_transaction_id: {
+        ...(result.last_transaction_id as Json),
+        hash: Buffer.alloc(32, 5).toString('base64'),
+      },
+    }));
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
     });
-    await expect(
-      s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), unset, s.from)),
-    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
-    expect(await final(s, ours)).toEqual({ included: false });
+    // An lt below the attested one that is not zero: an older chain, never a newer state.
+    freshState(s, (result) => ({
+      ...result,
+      last_transaction_id: {
+        ...(result.last_transaction_id as Json),
+        lt: '1',
+      },
+    }));
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+    });
+  });
+
+  it('decides nothing when the freshest chain skips the attested last transaction', async () => {
+    const s = setup();
+    await deposits(s, 3);
+    s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
+    s.h.node.mine();
+    const message = await stored(s);
+    // The attested state names an lt between two of the chain's transactions: the walk from
+    // the freshest state passes below it without meeting it.
+    rewrite(
+      s.h,
+      (_e, route, request) =>
+        route === '/getAddressInformation' && request.url.searchParams.has('seqno'),
+      (json) => {
+        const result = json.result as Json;
+        const id = result.last_transaction_id as Json;
+        return {
+          ...json,
+          result: {
+            ...result,
+            last_transaction_id: { ...id, lt: (BigInt(id.lt as string) + 1n).toString() },
+          },
+        };
+      },
+    );
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_INCONSISTENT',
+      message: 'the freshest state does not follow the attested one',
+    });
+  });
+
+  it('decides nothing for a wallet deleted since the attested head, or frozen now', async () => {
+    const s = setup();
+    await deposits(s, 1);
+    const message = await stored(s);
+    freshState(s, (result) => ({
+      ...result,
+      state: 'uninitialized',
+      last_transaction_id: { lt: '0', hash: ZERO_HASH },
+    }));
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'the wallet may have been reset since our message',
+    });
+    freshState(s, (result) => ({ ...result, state: 'frozen' }));
+    await expect(s.h.run(replayVerdict(s.h.ctx, message))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+    });
+  });
+
+  it('takes a fresh endpoint behind the attested head for nothing', async () => {
+    const s = setup();
+    await deposits(s, 2);
+    const message = await stored(s);
+    // A lagging endpoint's latest state (an older block, an older chain) is not "newer".
+    rewrite(
+      s.h,
+      (_e, route, request) =>
+        route === '/getAddressInformation' && !request.url.searchParams.has('seqno'),
+      (json) => json,
+      (url) => url.searchParams.set('seqno', '1'),
+    );
+    expect(await s.h.run(replayVerdict(s.h.ctx, message))).toBe('send');
   });
 });
 

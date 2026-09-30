@@ -71,10 +71,14 @@ import {
   memoBytes,
   messageFacts,
   nativeMessage,
+  requestHeaderOf,
   sdkAddress,
 } from './messages';
+import { CHAIN_TIME_TOLERANCE, recordedValidFrom } from './network';
+import { replayVerdict, type StoredMessage } from './proofs';
 import {
   normalizedHash,
+  requestIsOwn,
   resolveIdentity,
   SEND_MODE,
   signedRequest,
@@ -85,10 +89,13 @@ import {
   type TonIdentity,
 } from './wallets';
 import {
+  ASSEMBLED_MEMO,
   jettonBalance,
   jettonMaster,
   jettonWalletAddress,
+  keep,
   walletSeqno,
+  type AssembledMessage,
   type TonContext,
 } from './reader';
 import type { TonFeeDetails, TonSeqnoOrdering } from './types';
@@ -97,7 +104,7 @@ import type { TonFeeDetails, TonSeqnoOrdering } from './types';
 export const REQUEST_ID = 'wallet';
 
 /** How far an endpoint's `sync_utime` may be from the local clock (M3), in seconds. */
-export const CHAIN_TIME_TOLERANCE = 300;
+export { CHAIN_TIME_TOLERANCE };
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex');
 
@@ -633,16 +640,70 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
       }
       // D5: the signature goes only where the rest of the request hashes to its digest.
       const signed = signedRequest(payload, request.payload, signature.bytes);
+      const validFrom = boundOrdering(
+        unsigned.ordering,
+        signed,
+        request.publicKey,
+        ctx.config.globalId,
+      );
+      const id = hex(normalizedHash(signed));
+      // F6-R34: assembled here and not sent yet. A repeat keeps the record as it is, so it
+      // never makes sent bytes look unsent.
+      if (!ctx.assembled.has(id)) {
+        const record: AssembledMessage = { validFrom, sent: false };
+        keep(ctx.assembled, id, record, ASSEMBLED_MEMO);
+      }
       return {
         raw: { encoding: 'base64', data: signed.toBoc().toString('base64') },
-        ref: {
-          id: hex(normalizedHash(signed)),
-          idKind: 'message-hash',
-          canonical: false,
-        },
+        ref: { id, idKind: 'message-hash', canonical: false },
       };
     },
   };
+}
+
+/**
+ * Final review M1 (Tron F4-R13 and Solana F5-R22 bind theirs the same way): the proofs and
+ * the replay guard read the Attempt's stored ordering, never the bytes, so it must be the
+ * signed request's own: a `seqno` ordering with the request's seqno and `valid_until`, a
+ * well-formed recorded start (F6-R29), and a request whose signature verifies under the
+ * signing key and whose wallet id that key derives into the message's destination. An
+ * ordering changed on its way through a store would otherwise move the proof's window.
+ * Returns the recorded start.
+ */
+function boundOrdering(
+  ordering: UnsignedTx['ordering'],
+  signed: Cell,
+  publicKey: Uint8Array,
+  globalId: number,
+): number {
+  const refuse = () =>
+    new SigningError(
+      'SIGNING_FAILED',
+      "the Attempt's ordering does not match the signed TON request",
+    );
+  let external: ReturnType<typeof loadMessage>;
+  try {
+    external = loadMessage(signed.beginParse());
+  } catch {
+    throw refuse();
+  }
+  const slot = ordering as Partial<TonSeqnoOrdering> | undefined;
+  const request =
+    external.info.type === 'external-in' ? decodeWalletRequest(external.body) : null;
+  if (
+    external.info.type !== 'external-in' ||
+    request === null ||
+    slot?.kind !== 'seqno' ||
+    typeof slot.seqno !== 'bigint' ||
+    slot.seqno !== BigInt(request.seqno) ||
+    slot.validUntil !== request.validUntil ||
+    !requestIsOwn(external.info.dest.toRawString(), external.body, publicKey, globalId)
+  ) {
+    throw refuse();
+  }
+  const validFrom = recordedValidFrom({ ...slot, validUntil: request.validUntil });
+  if (validFrom === undefined) throw refuse();
+  return validFrom;
 }
 
 const MALFORMED: BroadcastResult = Object.freeze({
@@ -650,17 +711,59 @@ const MALFORMED: BroadcastResult = Object.freeze({
   reason: 'malformed message',
 });
 
+const ALREADY_KNOWN: BroadcastResult = Object.freeze({ kind: 'already-known' });
+
 /**
- * The normalized hash of raw bytes, or null when they are no external message. The bytes
- * go through the capped `cellFromBoc` (lesson 20): a bare broadcast's bytes are anyone's.
+ * Raw bytes as the broadcaster reads them (lesson 20: through the capped `cellFromBoc`, a
+ * bare broadcast's bytes are anyone's): their TEP-467 hash, and, when their body carries a
+ * wallet request's signed header, what the replay guard needs. Null when they are no
+ * external message.
  */
-function hashOfRaw(data: string): string | null {
+function storedOf(
+  data: string,
+): { readonly id: string; readonly message?: StoredMessage } | null {
   const cell = cellFromBoc(data);
   if (!cell) return null;
   try {
-    return hex(normalizedHash(cell));
+    const external = loadMessage(cell.beginParse());
+    if (external.info.type !== 'external-in') return null;
+    const id = hex(normalizedHash(cell));
+    const header = requestHeaderOf(external.body);
+    if (!header) return { id };
+    return {
+      id,
+      message: {
+        wallet: external.info.dest.toRawString(),
+        id,
+        seqno: BigInt(header.seqno),
+        validUntil: header.validUntil,
+      },
+    };
   } catch {
     return null;
+  }
+}
+
+/**
+ * F6-R34: the replay guard's answer for stored bytes (`replayVerdict`). One that cannot
+ * decide never sends: its reason is logged by code, and the send fails with a retryable
+ * error, which the engine records as ambiguous (the monitor and the proof go on).
+ */
+async function guarded(
+  ctx: TonContext,
+  message: StoredMessage,
+): Promise<'send' | 'ours'> {
+  try {
+    return await replayVerdict(ctx, message);
+  } catch (error) {
+    ctx.log.warn('stored bytes were not sent again: they may already have run', {
+      code: 'RESEND_WITHHELD',
+    });
+    throw new ProviderError(
+      'PROVIDER_UNAVAILABLE',
+      'not sent: the replay guard could not rule out an earlier run of this message',
+      { retryable: true, ...(isCryptoAioError(error) ? { cause: error } : {}) },
+    );
   }
 }
 
@@ -685,8 +788,22 @@ export function createTonBroadcaster(ctx: TonContext): Broadcaster {
       // Bytes that are no external message can never be valid anywhere: `rejected`, from
       // our own parse, is the only rejection (lesson 21, F6-R9: never from a node's text).
       if (signed.raw.encoding !== 'base64') return MALFORMED;
-      const expected = hashOfRaw(signed.raw.data);
-      if (expected === null) return MALFORMED;
+      const stored = storedOf(signed.raw.data);
+      if (stored === null) return MALFORMED;
+      const expected = stored.id;
+      // F6-R34: bytes this driver assembled and never sent cannot have run anywhere, so a
+      // first send goes out at once. Every other send of stored bytes (a resend, a dropped
+      // rebroadcast, recovery, a caller's same-key retry, bytes from another process or a
+      // bare broadcast) asks the chain first: already run means never again.
+      const record = ctx.assembled.get(expected);
+      if (stored.message !== undefined && record?.sent !== false) {
+        const verdict = await guarded(ctx, {
+          ...stored.message,
+          ...(record ? { validFrom: record.validFrom } : {}),
+        });
+        if (verdict === 'ours') return ALREADY_KNOWN;
+      }
+      if (record) record.sent = true;
       try {
         const sent = await ctx.api.send(signed.raw.data, {
           ...BROADCAST,

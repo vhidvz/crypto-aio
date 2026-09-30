@@ -416,6 +416,81 @@ describe('the TON builder', () => {
   });
 });
 
+describe("the TON builder: the Attempt's ordering is the signed request's own (final review M1)", () => {
+  it('assembles only an ordering with the signed seqno, lifetime and a well-formed recorded start', async () => {
+    for (const version of ['v4r2', 'v5r1'] as const) {
+      const s = setup(version);
+      s.h.node.fund(s.from, GRAM);
+      const { unsigned, signed } = await s.prepare(s.intent());
+      const ordering = unsigned.ordering as TonSeqnoOrdering;
+      expect(ordering.validFrom).toBe(ordering.validUntil - 60);
+      expect(signed.ref.id).toMatch(/^[0-9a-f]{64}$/);
+      const refused = [
+        undefined,
+        { kind: 'nonce', nonce: 0n },
+        { ...ordering, seqno: 1n },
+        { ...ordering, seqno: 0 },
+        { ...ordering, validUntil: ordering.validUntil + 1 },
+        { kind: 'seqno', seqno: 0n, validUntil: ordering.validUntil },
+        { ...ordering, validFrom: ordering.validUntil - 9 },
+        {
+          ...ordering,
+          validFrom: ordering.validUntil - 86_400 - CHAIN_TIME_TOLERANCE - 1,
+        },
+        { ...ordering, validFrom: 1.5 },
+        { ...ordering, validFrom: String(ordering.validFrom) },
+      ];
+      for (const tampered of refused) {
+        await expect(
+          s.sign({ ...unsigned, ordering: tampered } as unknown as UnsignedTx),
+        ).rejects.toMatchObject({
+          code: 'SIGNING_FAILED',
+          message: "the Attempt's ordering does not match the signed TON request",
+        });
+      }
+      // The widest well-formed starts are taken.
+      for (const validFrom of [
+        ordering.validUntil - 10,
+        ordering.validUntil - 86_400 - CHAIN_TIME_TOLERANCE,
+      ]) {
+        await expect(
+          s.sign({
+            ...unsigned,
+            ordering: { ...ordering, validFrom } as UnsignedTx['ordering'],
+          }),
+        ).resolves.toMatchObject({ ref: signed.ref });
+      }
+    }
+  });
+
+  it("refuses a signature that is not the wallet key's over the request", async () => {
+    const s = setup();
+    s.h.node.fund(s.from, GRAM);
+    const { unsigned } = await s.prepare(s.intent());
+    const request = unsigned.signingRequests[0]!;
+    // Another key's signature over the right digest: never assembled into our bytes.
+    const other = ed25519.sign(request.payload, Buffer.alloc(32, 7));
+    await expect(
+      s.builder.assemble(unsigned, [{ requestId: request.id, bytes: other }]),
+    ).rejects.toMatchObject({ code: 'SIGNING_FAILED' });
+  });
+
+  it('remembers the assembled message as not sent yet, and a repeat never clears a send (F6-R34)', async () => {
+    const s = setup();
+    s.h.node.fund(s.from, GRAM);
+    const { unsigned, signed } = await s.prepare(s.intent());
+    const ordering = unsigned.ordering as TonSeqnoOrdering;
+    expect(s.h.ctx.assembled.get(signed.ref.id)).toEqual({
+      validFrom: ordering.validFrom,
+      sent: false,
+    });
+    await s.h.run(s.broadcaster.broadcast(signed));
+    expect(s.h.ctx.assembled.get(signed.ref.id)?.sent).toBe(true);
+    await s.sign(unsigned);
+    expect(s.h.ctx.assembled.get(signed.ref.id)?.sent).toBe(true);
+  });
+});
+
 describe('the TON builder: the signed message is exactly the intent', () => {
   it('sends the one native message to the recipient, with its value, bounce flag and memo', async () => {
     const s = setup();

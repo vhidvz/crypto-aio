@@ -40,7 +40,12 @@ wallet app, a script, another service, or another crypto-aio namespace. Anything
 holds the key can use the wallet's seqnos, so your transfers end `replaced`, and it can
 empty and delete the wallet, which anyone can then deploy again with its seqno back at 0.
 A reset during a transfer's lifetime leaves the library unable to prove that the transfer
-did not land, so it stays undecided rather than risk a second payment. Prefer a key
+did not land, so it stays undecided rather than risk a second payment. Before the library
+sends a transfer's signed bytes again (a retry, a rebroadcast or a recovery), it checks the
+wallet's chain and withholds them while a reset cannot be ruled out
+([TON resends](./networks.md#ton-networks)). No client can stop anyone else from sending
+them again: after a reset, a message that already ran can run a second time while it is
+valid, and anyone who saw it can send it. Prefer a key
 generated for the service (`localSigner.generate({ curves: ['ed25519'] })`) to one imported
 from a wallet app, and if you import one, stop sending from that wallet in the app.
 
