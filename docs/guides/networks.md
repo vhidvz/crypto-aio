@@ -803,11 +803,16 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   cached for the container's life. Metadata kept wholly on chain states them, or means 9
   decimals (TEP-64's default). Metadata that links to an off-chain document takes them from
   the indexer's copy of that document, never from a default: while it states no decimals,
-  or the indexer has not fetched it, the jetton stays unresolved. Every call that needs it
-  then fails with a retryable `PROVIDER_UNAVAILABLE`, and so does a history page or
-  `getTransaction` that holds a transfer of it, possibly for good; anyone can send such a
-  jetton to your address. Register the decimals of a jetton you use yourself, from its
-  issuer, with a plugin of your own; the library then trusts them as you wrote them:
+  or the indexer has not fetched it, the jetton stays unresolved, and that is never cached,
+  so a later read resolves it once the indexer has it. A history page or `getTransaction`
+  that holds a transfer of it still reads: the transfer arrives unresolved, with its raw
+  amount in base units and the code `PROVIDER_UNAVAILABLE`
+  ([unresolved assets](./transactions.md#receiving)), and never counts as a deposit
+  until you know its decimals. Anyone can send such a jetton to your address. A call that
+  needs the decimals, such as a transfer of the jetton, fails with a non-retryable
+  `PROVIDER_UNAVAILABLE` before anything is signed. Register the decimals of a jetton you
+  use yourself, from its issuer, with a plugin of your own; the library then trusts them as
+  you wrote them:
 
   ```ts
   aio.use({
@@ -820,8 +825,8 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   });
   ```
 
-  To read past a jetton you do not accept, register it the same way: its amounts then mean
-  nothing, so never credit it.
+  A jetton you register this way is never read from the chain, so never register one you
+  do not accept: leave it unresolved, and never credit it.
 - **Memos** are text comments of at most 1,024 UTF-8 bytes, public forever. A deposit's memo
   arrives as `transfer.memo`: a Gram deposit's from its message, a jetton deposit's from its
   notification.

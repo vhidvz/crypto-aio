@@ -1014,15 +1014,16 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     );
   });
 
-  it("never defaults an off-chain jetton's decimals, and reads a missing index as not yet", async () => {
+  it("never defaults an off-chain jetton's decimals, and reads a missing index as unresolved, never cached (F6-R30 (1))", async () => {
     const h = tonHarness({ node: { indexerLag: 2 } });
     h.node.mine(3);
     const off = `0:${'78'.repeat(32)}`;
     h.node.deployJetton(off, { symbol: 'OFF', decimals: 2, content: 'offchain' });
-    // Not indexed yet: nothing is decided (retryable), so the core caches nothing.
+    // Not indexed yet: unresolved (non-retryable, so a history page reads on) under a code
+    // the core never caches (not ASSET_RESOLUTION); a later read resolves it.
     await expect(h.run(h.reader.getTokenMetadata!(jetton(off)))).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
-      retryable: true,
+      retryable: false,
     });
     h.node.mine(2);
     expect(await h.run(h.reader.getTokenMetadata!(jetton(off)))).toEqual({
@@ -1035,7 +1036,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     h.node.mine(2);
     await expect(
       h.run(h.reader.getTokenMetadata!(jetton(nodecimals))),
-    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: false });
     // Content wholly on chain says everything itself: TEP-64's default of 9 applies.
     const nine = `0:${'7a'.repeat(32)}`;
     h.node.deployJetton(nine, { symbol: 'NIN', content: 'onchain' });
@@ -1084,12 +1085,12 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
         message: 'the jetton has no symbol',
       },
     );
-    // Not valid (not fetched yet, or refused): nothing is decided.
+    // Not valid (not fetched yet, or refused): unresolved, never cached (F6-R30 (1)).
     token = { valid: false, symbol: 'X' };
     await expect(h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).rejects.toMatchObject(
       {
         code: 'PROVIDER_UNAVAILABLE',
-        retryable: true,
+        retryable: false,
       },
     );
   });

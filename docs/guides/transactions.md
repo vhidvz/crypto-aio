@@ -461,8 +461,9 @@ for await (const event of scanner) {
   with unusable metadata, does not stop the scanner. It arrives as an `UnresolvedTransfer`:
   `asset` and `amount` are `undefined`, and `unresolved` holds `{ asset, amount, code }`,
   meaning the raw `AssetRef`, the amount in base units as a bigint, and the reason (such as
-  `ASSET_RESOLUTION`). Its transaction has `decoding: 'partial'`. `getTransaction` and
-  `history` return the same marker. A retryable failure still fails the read.
+  `ASSET_RESOLUTION`, or `PROVIDER_UNAVAILABLE` for a TON jetton whose metadata the indexer
+  does not have). Its transaction has `decoding: 'partial'`. `getTransaction` and `history`
+  return the same marker. A retryable failure still fails the read.
 - Stop an idle scanner with `signal`. `iterator.return()` acts only after a pending `next()`.
 - **EVM.** Blocks carry native transfers and ERC-20 `Transfer` logs. A transaction that ran
   contract code is `decoding: 'partial'`: internal transfers need traces, which are out of

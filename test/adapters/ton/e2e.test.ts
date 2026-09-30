@@ -20,7 +20,7 @@ import { WalletContractV4 } from '@ton/ton';
 import type { TonSeqnoOrdering } from '../../../src/adapters/ton';
 import { friendlyAddress } from '../../../src/adapters/ton/address';
 import { CHAIN_TIME_TOLERANCE } from '../../../src/adapters/ton/builder';
-import { nativeMessage } from '../../../src/adapters/ton/messages';
+import { jettonMessage, nativeMessage } from '../../../src/adapters/ton/messages';
 import { REASONS } from '../../../src/adapters/ton/trace';
 import { MemoryOperationStore } from '../../../src/core/store/memory';
 import type { OperationPatch } from '../../../src/core/store/types';
@@ -1243,6 +1243,77 @@ describe('TON end to end (scripted toncenter node)', () => {
       env.node.intercept = undefined;
       expect(await arrivals()).toHaveLength(1);
     });
+  });
+
+  describe('a junk jetton never stalls deposit history (F6-R30 (1), probes P2 and P3)', () => {
+    const JUNK = `0:${'88'.repeat(32)}`;
+    /** A genuine 1 GRAM deposit to FRESH, then 7 base units of a junk jetton. */
+    async function junkDeposit(jetton: { readonly symbol?: string }) {
+      const env = await createTonEnv({ version: 'v4r2' });
+      env.node.deployJetton(JUNK, { ...jetton, content: 'offchain' });
+      env.node.mintJetton(JUNK, env.address, 1_000n);
+      env.node.inject(PAYER, FRESH, GRAM, beginCell().endCell());
+      env.node.mine(2);
+      const { boc } = await signedBoc('v4r2', TESTNET, {
+        seqno: 0,
+        validUntil: Math.floor(env.clock.now() / 1000) + 60,
+        deploy: true,
+        messages: [
+          jettonMessage({
+            jettonWallet: env.node.jettonWalletOf(JUNK, env.address),
+            attached: 50_000_000n,
+            queryId: 0n,
+            amount: 7n,
+            destination: FRESH,
+            responseDestination: env.address,
+            forwardAmount: 1n,
+          }),
+        ],
+      });
+      env.node.submit(boc);
+      env.node.mine(11);
+      await env.clock.advance(5_000);
+      return env;
+    }
+    const transfersOf = async (env: Env, bc: Env['bc']) =>
+      (await env.run(bc.history(FRESH))).items.flatMap((tx) => tx.transfers);
+
+    for (const [name, jetton] of [
+      ['never indexed (P2)', {}],
+      ['indexed without decimals (P3)', { symbol: 'JUNK' }],
+    ] as const) {
+      it(`reads the page with the junk transfer raw and unresolved: metadata ${name}`, async () => {
+        const env = await junkDeposit(jetton);
+        for (let i = 0; i < 3; i++) {
+          const transfers = await transfersOf(env, env.bc);
+          // The genuine deposit is there, and so is the junk one, in base units, unresolved.
+          expect(transfers).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                amount: expect.objectContaining({ base: GRAM }),
+              }),
+              expect.objectContaining({
+                unresolved: {
+                  asset: { standard: 'jetton', contract: JUNK },
+                  amount: 7n,
+                  code: 'PROVIDER_UNAVAILABLE',
+                },
+              }),
+            ]),
+          );
+          env.node.mine(5);
+          await env.clock.advance(5_000);
+        }
+        // Nothing was cached: once the indexer has usable metadata, a read resolves it.
+        env.node.deployJetton(JUNK, { symbol: 'JUNK', decimals: 2, content: 'offchain' });
+        env.node.mine(2);
+        const resolved = (await transfersOf(env, env.bc)).find((t) =>
+          t.id.endsWith(':msg:in:jetton'),
+        );
+        expect(resolved).toMatchObject({ amount: { base: 7n } });
+        expect(resolved?.unresolved).toBeUndefined();
+      });
+    }
   });
 
   it("fails a jetton transfer the recipient's jetton wallet bounced", async () => {

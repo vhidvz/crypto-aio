@@ -145,6 +145,14 @@ const notYet = (reason: string) =>
   new ProviderError('PROVIDER_UNAVAILABLE', reason, { retryable: true });
 
 /**
+ * F6-R30 (1): metadata the indexer does not have, for a token read anywhere (`jettonMetadata`):
+ * non-retryable, so the core reports a transfer of it unresolved instead of failing the
+ * read, and not `ASSET_RESOLUTION`, so the core never caches it.
+ */
+const unresolvable = (reason: string) =>
+  new ProviderError('PROVIDER_UNAVAILABLE', reason, { retryable: false });
+
+/**
  * M4 (the board's "token metadata under proof quorum"): the core caches a token's metadata,
  * and its "no such token", for the container's life, so one lagging or buggy endpoint must
  * never decide it. Balances stay plain reads.
@@ -498,10 +506,20 @@ function jettonDataKey(cellOf: (boc: string) => Cell | undefined) {
  * - content wholly on chain: its own symbol, and its decimals or TEP-64's default of 9;
  * - otherwise the off-chain JSON fills in what the chain does not state, as the indexer
  *   fetched it, and only those fields are judged (F6-R13): one the indexer holds but is not
- *   one (agreed by the quorum) is the token's own `ASSET_RESOLUTION`. A missing answer is
- *   "not yet" (retryable), never a default: an index that lags or drops its filter would
- *   otherwise cache 9 decimals for the container's life, and a JSON that states no
- *   decimals stays unresolved (F6-R13 M1: fund safety over liveness).
+ *   one (agreed by the quorum) is the token's own `ASSET_RESOLUTION`. Metadata the indexer
+ *   does not have (no usable entry: never indexed, not valid, an unfetchable JSON; or a JSON
+ *   that states no decimals) is never a default: an index that lags or drops its filter
+ *   would otherwise cache 9 decimals for the container's life (F6-R13 M1: fund safety over
+ *   liveness).
+ *
+ * F6-R30 (1), widened by the final review (probes P2, P3): that absence is `unresolvable`, a
+ * non-retryable `PROVIDER_UNAVAILABLE`. Anyone can send a junk jetton to a deposit address,
+ * and a retryable answer would fail every history page and `getTransaction` that holds it,
+ * forever. Non-retryable, the core reports the transfer with its raw base-unit amount and
+ * the asset unresolved (R35) and reads the rest of the page. Its code is not
+ * `ASSET_RESOLUTION`, the one failure the core caches for the container's life (N6), so it
+ * is never cached: once the indexer has the metadata, the next read resolves the token. A
+ * transfer of such a token fails the same way, before anything is signed.
  */
 async function jettonMetadata(ctx: TonContext, master: string): Promise<AssetMetadata> {
   const cellOf = contentCells();
@@ -525,14 +543,14 @@ async function jettonMetadata(ctx: TonContext, master: string): Promise<AssetMet
     decimals ??= '9';
   } else if (decimals === undefined || symbol === undefined) {
     const info = await tokenCall(() => ctx.api.tokenInfo(master, METADATA));
-    if (!info) throw notYet('the jetton metadata is not indexed yet');
+    if (!info) throw unresolvable('the jetton metadata is not indexed');
     if (decimals === undefined) decimals = info.decimals;
     if (symbol === undefined) symbol = info.symbol;
     name ??= info.name;
     if (decimals === null) throw assetError('the jetton decimals are unreadable');
     if (symbol === null) throw assetError('the jetton symbol is unreadable');
     if (decimals === undefined)
-      throw notYet('the jetton metadata states no decimals yet');
+      throw unresolvable('the jetton metadata states no decimals');
   }
   if (!/^\d{1,3}$/.test(decimals) || Number(decimals) > 255) {
     throw assetError('the jetton decimals are unreadable');
