@@ -828,19 +828,25 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   A jetton you register this way is never read from the chain, so never register one you
   do not accept: leave it unresolved, and never credit it.
 - **Memos** are text comments of at most 1,024 UTF-8 bytes, public forever. A deposit's memo
-  arrives as `transfer.memo`: a Gram deposit's from its message, a jetton deposit's from its
-  notification.
+  arrives as `transfer.memo`: a Gram deposit's from its message, a jetton deposit's from the
+  forward payload its arrival carries (the notification repeats it).
 - **Receiving.** There is no block scanner (TON is sharded): `bc.scanner()` throws
   `UNSUPPORTED_CAPABILITY`. `bc.history(address, { cursor?, limit? })` lists the address's
   transactions from the indexer, newest first, at most 1,000 per page, and only those the
   indexer reports final. A Gram deposit is the `msg:in` transfer of the transaction that
   received it; a bounce that brings your own value back is `source: 'internal'`, a refund,
   not a deposit. A jetton deposit is decoded only from a jetton wallet that the master itself
-  names for the owner, since anyone can deploy a contract that claims a master, and it
-  appears on the owner's transaction that received the notification (`msg:in:jetton`). A
-  jetton transfer sent with no forward amount has no notification: it shows only in the
-  history of the owner's jetton wallet. History entries are one indexer's reads, so their
-  evidence is `observed` (with `finality: 'final'`), not `proven`: before you credit a large
+  names for the owner, since anyone can deploy a contract that claims a master. **Credit a
+  jetton deposit only from its arrival**: the `msg:in:jetton` transfer in the history of
+  the owner's jetton wallet (`bc.ext.ton.jettonWallet(owner, master)`), whose `to` is the
+  owner. Every jetton transfer arrives there, one sent with no forward amount included. The
+  owner's own history shows the same movement a second time, from the notification the
+  jetton wallet sends on (also `msg:in:jetton`, with another transfer id and the same
+  `details.traceId`): never credit that one, or one deposit counts twice. One trace (one
+  external request) may carry several genuine transfers to the same owner, so a trace id
+  is not a dedupe key; dedupe on the arrival's transfer id. History entries are one
+  indexer's reads, so their evidence is `observed` (with `finality: 'final'`), not
+  `proven`: before you credit a large
   deposit, read it again through an independent indexer, for example
   `bc.with({ indexer: 'other' }).getTransaction(tx.id)`.
 - **Extras and types.** `bc.ext.ton.getSeqno(address)` reads a wallet's seqno (0 while it
@@ -850,12 +856,15 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   `native(bc, '@ton/ton')` as a `TonClient` ([Keys, signers and secrets](./security.md));
   the root entry exports the `Ton*` types.
 - **Stores.** A custom `OperationStore` must keep each Attempt's `ordering` whole and
-  unchanged. On TON it is `{ kind: 'seqno', seqno, validUntil }`: the seqno as a `bigint`
-  and `validUntil`, the chain time in seconds at which the message expires. The proofs read
-  both from the store, not from the signed bytes, so a changed seqno, or a `validUntil`
-  changed or rounded down, can prove a transfer that landed `expired` or `replaced`, and
-  `rebuild` then pays twice. The contract suites do not check this yet
-  ([stores](#testing-an-adapter-or-a-store)).
+  unchanged, every property included. On TON it is a `TonSeqnoOrdering`,
+  `{ kind: 'seqno', seqno, validUntil, validFrom }`: the seqno as a `bigint`; `validUntil`,
+  the chain time in seconds at which the message expires; and `validFrom`, the chain time
+  the build ran at. The proofs read all three from the store, not from the signed bytes. A
+  changed seqno, or a `validUntil` changed or rounded down, can prove a transfer that landed
+  `expired` or `replaced`. A `validFrom` that is lost only costs time (the proof then reads
+  back through the longest lifetime a message can have), but one moved later hides a wallet
+  reset that happened before it: a false "not included", and `rebuild` then pays twice.
+  The contract suites do not check this yet ([stores](#testing-an-adapter-or-a-store)).
 - **Live checks (this repository).** `CRYPTO_AIO_INTEGRATION=1` runs the read-only checks in
   `test/integration/ton.test.ts` against testnet (`CRYPTO_AIO_IT_TON_NETWORK=mainnet` for
   mainnet) through the keyless `public` preset. `CRYPTO_AIO_IT_TON_RPC_URL` and
@@ -1156,6 +1165,15 @@ worst leaves the Attempt undecided, never `expired`, so `rebuild` stays refused.
 changed `blockhash` misplaces the window: the proof can then find the transaction absent
 from blocks that could never hold it and prove it `expired` although it landed, and
 `rebuild` then pays twice.
+
+A TON Attempt's ordering is a `TonSeqnoOrdering`: `kind: 'seqno'` and `seqno` (a bigint),
+plus `validUntil`, the chain time in seconds at which the message expires, and `validFrom`,
+the chain time the build ran at, both numbers. The proofs read all three from the store,
+not from the signed bytes, so keeping them exact is a safety precondition, not only a
+liveness one. A lost `validFrom` only costs time, but a changed seqno, or a `validUntil`
+changed or rounded down, can prove a transfer that landed `expired` or `replaced`, and a
+`validFrom` moved later hides a wallet reset that happened before it; either way `rebuild`
+then pays twice ([TON networks](#ton-networks)).
 
 Never store a key set to `undefined` as a value, such as `NULL`, whether it is in an
 `OperationStore` patch or in an observation:

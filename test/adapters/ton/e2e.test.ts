@@ -1316,6 +1316,46 @@ describe('TON end to end (scripted toncenter node)', () => {
     }
   });
 
+  it("reports one jetton deposit twice: the jetton wallet's arrival, which is credited, and the owner's notification (final review I2, probe P4)", async () => {
+    const env = await createTonEnv();
+    env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+    env.node.mintJetton(MASTER, env.address, 1_000_000n);
+    const sub = await env.run(
+      env.bc.transfer({
+        to: FRESH_UQ,
+        amount: 400_000n,
+        asset: { standard: 'jetton', contract: MASTER },
+        memo: 'order 9',
+      }),
+    );
+    await env.mineWhile(sub.wait({ finality: 'final' }));
+    const jettonDeposits = async (address: string) =>
+      (await env.run(env.bc.history(address))).items.flatMap((tx) =>
+        tx.transfers
+          .filter((t) => t.id.endsWith(':msg:in:jetton'))
+          .map((t) => ({
+            id: t.id,
+            tx: tx.id,
+            traceId: tx.details.traceId,
+            to: t.to.canonical,
+            amount: t.amount?.base,
+            memo: t.memo,
+          })),
+      );
+    const wallet = await env.run(env.bc.ext.ton.jettonWallet(FRESH_UQ, MASTER));
+    expect(wallet).toBe(env.node.jettonWalletOf(MASTER, FRESH));
+    const [arrival, ...moreArrivals] = await jettonDeposits(wallet);
+    const [notification, ...moreNotifications] = await jettonDeposits(FRESH);
+    expect([moreArrivals, moreNotifications]).toEqual([[], []]);
+    // The same movement, twice: different transfer ids, one trace. Credit only the arrival,
+    // on the owner's jetton wallet; it names the owner as `to` and carries the memo.
+    expect(arrival).toMatchObject({ to: FRESH, amount: 400_000n, memo: 'order 9' });
+    expect(notification).toMatchObject({ to: FRESH, amount: 400_000n, memo: 'order 9' });
+    expect(arrival?.id).not.toBe(notification?.id);
+    expect(arrival?.tx).not.toBe(notification?.tx);
+    expect(arrival?.traceId).toBe(notification?.traceId);
+  });
+
   it("fails a jetton transfer the recipient's jetton wallet bounced", async () => {
     const env = await createTonEnv();
     env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });

@@ -316,5 +316,7 @@ transfer resolves, and which addresses a scan filter matches.
       deposits by the owner wallet (`transfer.to`).
 - [ ] TON: two or three independent toncenter-compatible pairs (`provider` and `indexer`),
       archival where they serve proofs, with a key on toncenter, never the `public` preset;
-      wallets whose keys nothing else holds; and a store that keeps each Attempt's
-      `ordering` exactly.
+      wallets whose keys nothing else holds; a store that keeps each Attempt's `ordering`
+      (`TonSeqnoOrdering`, `validFrom` included) exactly; and jetton deposits credited only
+      from the arrival in the owner's jetton wallet's history, never from the owner's
+      notification, deduped on that transfer id, not on the trace id.
