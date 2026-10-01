@@ -1,6 +1,0 @@
-# Local preview of the documentation site, with the same gems GitHub Pages uses.
-# See docs/README.md.
-source "https://rubygems.org"
-
-gem "github-pages", group: :jekyll_plugins
-gem "webrick" # Ruby 3 no longer bundles the server `jekyll serve` needs

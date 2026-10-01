@@ -1,10 +1,5 @@
 ---
 title: Idempotency
-parent: Engineering for money
-grand_parent: Learn
-nav_order: 2
-layout: lesson
-journey: learn
 description: Idempotency keys, request fingerprints and conflicts, the technique that makes retrying a payment safe.
 ---
 
@@ -83,7 +78,7 @@ request, a hash of its normalized contents, and refuses a mismatch with an error
 "Normalized" matters: `amount: '0.001'` and `amount: 100_000n` can be the same amount, written
 two ways. Comparing the meaning, not the text, keeps innocent retries from being refused.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: exactly-once is an illusion, effectively-once is not</summary>
 
 Distributed systems cannot guarantee that a message is **delivered** exactly once: the Two
@@ -157,7 +152,7 @@ recovery](../../tour/recovery.md) follows this path inside the library.
    What goes wrong after a crash?
 3. A retry fails with `IDEMPOTENCY_CONFLICT`. Should you retry with a new key?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Yes; no.

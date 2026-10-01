@@ -1,10 +1,5 @@
 ---
 title: Transactions
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 5
-layout: lesson
-journey: learn
 description: How "pay Bob" becomes a signed transaction, how it travels to the network, and why the same bytes can be sent twice but a new signature cannot.
 ---
 
@@ -94,7 +89,7 @@ always to **send the bytes you already signed again**, and never to sign a fresh
 "to be sure". That only works if you kept the signed bytes, which is
 [lesson 12](../engineering/persistence.md).
 
-<details markdown="1">
+<details>
 <summary>Under the hood: memos, contract calls and transaction ids</summary>
 
 - **Memos.** Some chains let a transaction carry a short note: Tron, Solana (through its memo
@@ -161,7 +156,7 @@ requests ([Cold and asynchronous signing](../../build/cold-signing.md)).
    build and sign a new transaction?
 3. A node answered "accepted". Has Bob been paid?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. The intent is what you want ("pay Bob 25 USDC"); the transaction is the exact, signed data

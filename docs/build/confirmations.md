@@ -1,7 +1,5 @@
 ---
 title: Wait for confirmation
-parent: Build
-nav_order: 4
 description: waitForConfirmation, watch and getTransactionStatus, and how each family proves a verdict.
 ---
 

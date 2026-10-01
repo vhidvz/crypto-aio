@@ -1,7 +1,5 @@
 ---
 title: Design records
-parent: Explore
-nav_order: 5
 description: The design specification and implementation plans behind crypto-aio 0.1.0, and how they relate to these pages.
 ---
 

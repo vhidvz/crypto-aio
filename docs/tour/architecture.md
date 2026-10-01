@@ -1,9 +1,5 @@
 ---
 title: The big picture
-parent: Developer tour
-nav_order: 1
-layout: lesson
-journey: learn
 description: The layers of crypto-aio, the container, scopes and handles, configuration precedence, and how one call flows through the library.
 ---
 
@@ -194,7 +190,7 @@ The [Source map](../explore/source-map.md) covers the whole tree.
 3. You call `bc.with({ confirmations: 12 })`. What happens to transfers already started from
    `bc`?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. So that you install only the SDKs you use, and so that every safety property is written

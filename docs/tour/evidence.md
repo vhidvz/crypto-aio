@@ -1,9 +1,5 @@
 ---
 title: Evidence, proofs and finality
-parent: Developer tour
-nav_order: 6
-layout: lesson
-journey: learn
 description: How the transport checks endpoints, how proof reads use a quorum, and why an Operation ends only on proven evidence.
 ---
 
@@ -150,7 +146,7 @@ token contract logged, not only by the receipt's success.
 2. One of your three endpoints is 40 blocks behind. Can it make a proof fail? Make one succeed?
 3. Why does a proof read throw instead of answering "no" when the data is pruned?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Observed data from one endpoint; only proven data, read under the quorum.

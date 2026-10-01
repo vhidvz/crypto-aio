@@ -1,10 +1,5 @@
 ---
 title: Money, ledgers and blockchains
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 1
-layout: lesson
-journey: learn
 description: What a ledger is, why a shared ledger with no owner is useful and hard, and what a blockchain network is.
 ---
 
@@ -97,7 +92,7 @@ The double-spend problem is solved the same way a bank solves it, by ordering: o
 payment is in the agreed history, a second payment of the same money is invalid, and every
 node refuses it.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: what "decentralized" costs</summary>
 
 Removing the keeper is not free. Every node must check every payment, so a blockchain
@@ -174,7 +169,7 @@ Chains of one family share a driver: every EVM chain is served by the one EVM dr
 3. Alice sends coins to a mistyped but valid address. Who can reverse the payment?
 4. You are testing a new payment feature. Mainnet or testnet?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Files can be copied, so the same money could be spent twice (the double-spend problem).

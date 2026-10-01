@@ -1,7 +1,5 @@
 ---
 title: Glossary
-parent: Reference
-nav_order: 8
 description: Every blockchain, engineering and crypto-aio term these pages use, defined in a sentence or two, with a link to where it is explained.
 ---
 

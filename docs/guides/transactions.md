@@ -1,8 +1,7 @@
 ---
 title: "Sending and receiving (moved)"
-nav_exclude: true
-search_exclude: true
-redirect_to: /build/
+redirect: ../build/index.md
+search: false
 ---
 
 # Sending and receiving

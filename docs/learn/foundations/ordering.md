@@ -1,10 +1,5 @@
 ---
 title: Accounts, UTXOs and transaction order
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 7
-layout: lesson
-journey: learn
 description: The account and UTXO models, and the four ways chains stop a payment from being applied twice or out of order.
 ---
 
@@ -103,7 +98,7 @@ in order.
 | Expiry | Tron, Solana | The window's memory, then the deadline | Ends when the window passes; then re-issue |
 | Seqno | TON | The wallet's counter, plus a deadline | Ends at the deadline; then re-issue |
 
-<details markdown="1">
+<details>
 <summary>Under the hood: why "cancel" is a race</summary>
 
 You cannot delete a transaction from the network. "Cancelling" one means sending a
@@ -167,7 +162,7 @@ several servers.
    still land?
 4. What is the safe way to "cancel" a pending EVM payment?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. They wait: nonces land in order. Replace nonce 7 with the same payment at a higher fee (same

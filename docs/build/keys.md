@@ -1,7 +1,5 @@
 ---
 title: Keys, signers and secrets
-parent: Build
-nav_order: 9
 description: Local and callback signers, the beforeSign policy hook, secrets and redaction, and the native escape hatch.
 ---
 

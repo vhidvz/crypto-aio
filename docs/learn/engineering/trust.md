@@ -1,10 +1,5 @@
 ---
 title: "Trust: one server's word is not proof"
-parent: Engineering for money
-grand_parent: Learn
-nav_order: 5
-layout: lesson
-journey: learn
 description: Why answers from one endpoint can be wrong, how quorums and identity checks catch it, and the difference between observed and proven.
 ---
 
@@ -79,7 +74,7 @@ a transaction with an **expiry** (lesson 7) that is missing from **every** block
 window, read from finalized blocks and agreed by a quorum. Without such a rule, "not found"
 proves nothing, ever, and the honest answer is "undecided".
 
-<details markdown="1">
+<details>
 <summary>Under the hood: safety versus liveness</summary>
 
 Distributed systems distinguish **safety** (nothing bad ever happens, such as a double payment)
@@ -146,7 +141,7 @@ deeper into the transport.
 4. Which is worse for an exchange: a withdrawal stuck "undecided" for an hour, or one wrongly
    marked "failed"?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Nothing. It may be lagging, pruned, or lying. Only a proven absence (on chains that allow

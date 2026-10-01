@@ -1,7 +1,5 @@
 ---
 title: Capabilities
-parent: Reference
-nav_order: 5
 description: What each capability means, and which chains have it.
 ---
 

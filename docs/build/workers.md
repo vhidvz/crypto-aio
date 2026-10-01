@@ -1,7 +1,5 @@
 ---
 title: Run workers and recover
-parent: Build
-nav_order: 8
 description: Startup recovery, background workers, runOnce from a scheduler, and shutting down cleanly.
 ---
 

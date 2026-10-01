@@ -1,7 +1,5 @@
 ---
 title: Configuration
-parent: Reference
-nav_order: 2
 description: Every container, chain, provider, wallet, lifecycle and transport option, with its default, plus environment variables and per-family handle options.
 ---
 

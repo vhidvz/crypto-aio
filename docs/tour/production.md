@@ -1,9 +1,5 @@
 ---
 title: Production architecture
-parent: Developer tour
-nav_order: 9
-layout: lesson
-journey: learn
 description: "How the pieces fit in a real deployment: processes, durable stores, custody, providers, tenants, startup and shutdown, observability, and failure drills."
 ---
 
@@ -146,7 +142,7 @@ What happens, in production, when things break:
 2. Why run `recover()` before serving traffic?
 3. Which three events would you page someone for?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. The stores: `OperationStore`, `LockManager`, `SequenceStore` (and `CursorStore` for

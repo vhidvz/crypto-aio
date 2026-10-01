@@ -1,8 +1,7 @@
 ---
 title: "Core concepts (moved)"
-nav_exclude: true
-search_exclude: true
-redirect_to: /reference/concepts.html
+redirect: ../reference/concepts.md
+search: false
 ---
 
 # Core concepts

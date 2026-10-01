@@ -1,8 +1,5 @@
 ---
 title: Build
-nav_order: 5
-has_children: true
-has_toc: false
 description: Task guides and examples for building withdrawals, deposits, custody signing, background workers and production services with crypto-aio.
 ---
 

@@ -1,9 +1,5 @@
 ---
 title: Keys, signers and policy
-parent: Developer tour
-nav_order: 8
-layout: lesson
-journey: learn
 description: The Signer port, local and custody signers, asynchronous signing, the beforeSign policy seam, and how secrets stay out of logs, errors and stores.
 ---
 
@@ -155,7 +151,7 @@ checks on `ctx.operationId`, and keep it short: it runs while the address lease 
 2. Your approval flow takes hours. How should the custody signer answer?
 3. Why should a `beforeSign` hook be idempotent?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. The orchestrator's verification fails with `SIGNATURE_MISMATCH`; nothing is assembled or sent.

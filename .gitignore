@@ -114,3 +114,7 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Local builds of the documentation site (docs/README.md)
+docs/.vitepress/cache/
+docs/.vitepress/dist/

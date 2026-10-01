@@ -1,7 +1,5 @@
 ---
 title: Add networks to a family
-parent: Explore
-nav_order: 2
 description: Serve your own EVM chains with the built-in driver, and the registry rules that apply.
 ---
 

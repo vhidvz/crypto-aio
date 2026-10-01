@@ -1,9 +1,6 @@
 ---
 title: Tron networks
-parent: Networks
-grand_parent: Reference
 description: "Tron: bandwidth and energy, fee limits, expiry, memos, TronGrid and proofs."
-nav_order: 3
 ---
 
 # Tron networks

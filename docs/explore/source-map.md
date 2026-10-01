@@ -1,7 +1,5 @@
 ---
 title: Source map
-parent: Explore
-nav_order: 1
 description: A guided map of the crypto-aio source tree, what each directory does, where to start reading for a given question, and how the tests are organized.
 ---
 
@@ -21,7 +19,7 @@ src/
   adapters/           one directory per chain family; only these import SDKs, lazily
   testing/            crypto-aio/testing: the fake family, fake time, fakes and contract suites
 test/                 unit, architecture, documentation, end-to-end and integration tests
-docs/                 this site (Jekyll); docs/superpowers/ holds the design records
+docs/                 this site (VitePress); docs/superpowers/ holds the design records
 scripts/pack-check.mjs  loads every entry point from the packed tarball
 ```
 
@@ -111,7 +109,7 @@ one family's `reader.ts` and `decode.ts`.
 | `test/core/` | The core, subsystem by subsystem, on the fake family and fake time; no network |
 | `test/adapters/<family>/` | Each driver against scripted nodes (`FakeFetch`) |
 | `test/architecture/` | The dependency rule, packaging, registry typing, and that secrets never echo |
-| `test/docs/` | These pages: links, the tutorial, the quick start, runnable snippets, the API and capability pages |
+| `test/docs/` | These pages: links, navigation, the tutorial, the quick start, runnable snippets, the API and capability pages |
 | `test/e2e/` | The public API through the package entry points |
 | `test/integration/` | Read-only checks against live testnets, only with `CRYPTO_AIO_INTEGRATION=1` |
 
@@ -121,7 +119,8 @@ The commands a contributor runs:
 pnpm install
 pnpm check          # lint, typecheck and the unit tests
 pnpm test:coverage  # the tests with the coverage thresholds CI enforces
-pnpm doc            # the TypeDoc type reference, into docs/api/
+pnpm doc            # the API reference pages, from the doc comments, into docs/api/
+pnpm docs:dev       # this site, with live reload, at http://localhost:5173/crypto-aio/
 pnpm test:pack      # build, pack, and load every entry point from the tarball
 CRYPTO_AIO_INTEGRATION=1 pnpm test test/integration   # live, read-only
 ```

@@ -1,9 +1,6 @@
 ---
 title: TON networks
-parent: Networks
-grand_parent: Reference
 description: "TON: wallets, jettons, message traces, seqnos, resends and proofs."
-nav_order: 5
 ---
 
 # TON networks

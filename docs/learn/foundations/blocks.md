@@ -1,10 +1,5 @@
 ---
 title: Blocks, confirmations and finality
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 6
-layout: lesson
-journey: learn
 description: How blocks are agreed on, what a reorg is, what confirmations measure, and when a payment is final.
 ---
 
@@ -87,7 +82,7 @@ different ways:
 
 The [network pages](../../reference/networks/index.md) give each network's exact rule.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: "included" is not "succeeded" either</summary>
 
 A transaction can be included in a block and still **fail**. A token contract can refuse a
@@ -154,7 +149,7 @@ when a reorg discards blocks it delivered ([Receive deposits](../../build/receiv
 3. Why is "included" not enough to mark a withdrawal complete?
 4. A transaction is final, but the token contract refused the call. Did value move?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Yes: a reorg can replace its block. Deeper blocks, and finality, make that ever less likely

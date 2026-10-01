@@ -1,7 +1,5 @@
 ---
 title: API at a glance
-parent: Reference
-nav_order: 1
 description: Every entry point, the container, every handle method, signers, the model, errors, stores, events and the testing kit, each with a link to its guide.
 ---
 
@@ -225,12 +223,10 @@ origin an SDK sees instead of a real URL. Family entry points add their own:
 
 ## The full type reference
 
-Every type, with its documentation comments, is generated from the source with TypeDoc. In a
-clone of the repository:
+The [API reference](../api/index.md) has every type, with its documentation comments, for every
+entry point listed above. TypeDoc generates it from the source; after changing a doc comment or a
+signature, regenerate it with:
 
 ```sh
-pnpm install
 pnpm doc
 ```
-
-Then open [`docs/api/index.html`](https://htmlpreview.github.io/?https://github.com/vhidvz/crypto-aio/blob/main/docs/api/index.html). It covers every entry point listed above.

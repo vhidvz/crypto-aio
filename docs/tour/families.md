@@ -1,9 +1,5 @@
 ---
 title: Chains, families and drivers
-parent: Developer tour
-nav_order: 2
-layout: lesson
-journey: learn
 description: How plugins describe chains as data, how drivers translate each family, and how capabilities, ext and native keep chain differences explicit.
 ---
 
@@ -114,7 +110,7 @@ returns the SDK's own client, built for that handle only and wired to the handle
 it never sees a real URL or key. It is deliberately outside semver: the SDK's behavior is the
 SDK's ([Keys, signers and secrets](../build/keys.md#the-native-escape-hatch-crypto-aionative)).
 
-<details markdown="1">
+<details>
 <summary>Under the hood: types from a registry</summary>
 
 TypeScript learns which chains exist, and which family and networks each has, from interfaces
@@ -149,7 +145,7 @@ the first payment.
 2. Your service runs on many chains and wants to attach a memo when it can. How?
 3. Why does `native()` return a new client per handle instead of the driver's own?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Every EVM chain shares one transaction format and RPC API, so the EVM driver serves them all;

@@ -1,7 +1,5 @@
 ---
 title: Write a durable store
-parent: Explore
-nav_order: 4
 description: The store ports, their contract suites, data classification and what every store must preserve.
 ---
 

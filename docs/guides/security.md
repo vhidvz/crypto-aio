@@ -1,8 +1,7 @@
 ---
 title: "Keys, signers and secrets (moved)"
-nav_exclude: true
-search_exclude: true
-redirect_to: /build/keys.html
+redirect: ../build/keys.md
+search: false
 ---
 
 # Keys, signers and secrets

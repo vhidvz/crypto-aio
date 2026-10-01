@@ -1,7 +1,5 @@
 ---
 title: Hands-on tutorial
-parent: Get started
-nav_order: 3
 description: Ten hands-on steps on the fake chain that review the main concepts, in about 20 minutes.
 ---
 

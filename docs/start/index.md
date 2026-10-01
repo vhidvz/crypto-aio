@@ -1,8 +1,5 @@
 ---
 title: Get started
-nav_order: 2
-has_children: true
-has_toc: false
 description: The fastest route from installing crypto-aio to a working transfer, and to its mental model.
 ---
 

@@ -1,10 +1,5 @@
 ---
 title: Wallets, keys and addresses
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 3
-layout: lesson
-journey: learn
 description: What a wallet really holds, how addresses are made from keys, and how one secret can produce many addresses.
 ---
 
@@ -87,7 +82,7 @@ That last property is what deposit systems are built on. A server that holds onl
 give each customer a unique deposit address, and know which customer paid, without a single
 private key on the server. The keys that can spend those deposits stay offline.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: what an xpub leaks</summary>
 
 An xpub cannot sign, but it is not harmless. It reveals every address it derives, and so the
@@ -163,7 +158,7 @@ and [Keys, signers and secrets](../../build/keys.md) shows mnemonics and derivat
 3. Two strings `0xABC…` and `0xabc…` name the same EVM address. How should your code compare
    addresses?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Not if you kept the mnemonic: the coins are in the ledger, and the mnemonic re-creates

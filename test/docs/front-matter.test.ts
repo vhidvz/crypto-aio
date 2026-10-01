@@ -1,24 +1,16 @@
 // Every page of the documentation site has front matter the site can read: a `---` block of
 // `key: value` lines with a title, where a plain value never holds `: ` or ` #` (which YAML
-// would misread, silently dropping the page from its section). And every page laid out as a
-// lesson is in _data/journeys.yml, which names only pages that exist.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
-
-const DOCS = join(__dirname, '../../docs');
-
-/** Every Markdown page of docs/, without the theme's own folders, the design records and the README. */
-function pages(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name))
-        return [];
-      return pages(path);
-    }
-    return entry.name.endsWith('.md') && path !== join(DOCS, 'README.md') ? [path] : [];
-  });
-}
+// would misread). And the site's navigation (docs/.vitepress/navigation.ts) lists every page
+// once, and only pages that exist, so a new page cannot be left out of the sidebar.
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import {
+  LEARNING_PATH,
+  SIDEBAR,
+  journeySteps,
+  sectionPages,
+} from '../../docs/.vitepress/navigation';
+import { DOCS, pages } from './support';
 
 /** The front matter's top-level `key: value` pairs, or the problems found reading it. */
 function frontMatter(text: string): { fields: Map<string, string>; problems: string[] } {
@@ -27,7 +19,7 @@ function frontMatter(text: string): { fields: Map<string, string>; problems: str
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
   if (match === null) return { fields, problems: ['no front matter'] };
   for (const line of (match[1] as string).split('\n')) {
-    const field = /^([a-z_]+):(?: (.*))?$/.exec(line);
+    const field = /^([A-Za-z_]+):(?: (.*))?$/.exec(line);
     if (field === null) {
       if (!/^\s+\S/.test(line)) problems.push(`unreadable line: ${line}`);
       continue;
@@ -42,7 +34,14 @@ function frontMatter(text: string): { fields: Map<string, string>; problems: str
 }
 
 describe('documentation front matter', () => {
-  const all = pages(DOCS);
+  const all = pages().filter((file) => file !== join(DOCS, 'README.md'));
+  const fields = new Map(
+    all.map((file) => [
+      relative(DOCS, file),
+      frontMatter(readFileSync(file, 'utf8')).fields,
+    ]),
+  );
+  const moved = [...fields].filter(([, page]) => page.has('redirect'));
 
   it.each(all.map((file) => [relative(DOCS, file), file]))(
     '%s can be read',
@@ -51,20 +50,28 @@ describe('documentation front matter', () => {
     },
   );
 
-  it('lists every lesson page in _data/journeys.yml, and nothing else', () => {
-    const data = readFileSync(join(DOCS, '_data/journeys.yml'), 'utf8');
-    const listed = [...data.matchAll(/path: ([^\s}]+)/g)].map(
-      ([, path]) => path as string,
+  it('lists every page in the sidebar once, but the home page and the moved pages', () => {
+    const listed = SIDEBAR.flatMap(sectionPages);
+    expect(new Set(listed).size).toBe(listed.length);
+    const expected = [...fields.keys()].filter(
+      (page) => page !== 'index.md' && !fields.get(page)?.has('redirect'),
     );
-    const finish = [...data.matchAll(/finish: (\S+)/g)].map(([, path]) => path as string);
-    for (const path of [...listed, ...finish])
-      expect(existsSync(join(DOCS, path))).toBe(true);
-    const lessons = all
-      .filter(
-        (file) =>
-          frontMatter(readFileSync(file, 'utf8')).fields.get('layout') === 'lesson',
-      )
-      .map((file) => relative(DOCS, file));
-    expect([...lessons].sort()).toEqual([...listed].sort());
+    expect([...listed].sort()).toEqual(expected.sort());
   });
+
+  it('walks the learning path through sidebar pages, to a page that exists', () => {
+    const steps = journeySteps(LEARNING_PATH).map((step) => step.path);
+    const listed = new Set(SIDEBAR.flatMap(sectionPages));
+    expect(steps.filter((step) => !listed.has(step))).toEqual([]);
+    expect(listed.has(LEARNING_PATH.finish)).toBe(true);
+  });
+
+  it.each(moved)(
+    '%s redirects to a page that exists, and is left out of search',
+    (page, front) => {
+      const target = join(DOCS, dirname(page), front.get('redirect') ?? '');
+      expect(target.endsWith('.md') && existsSync(target)).toBe(true);
+      expect(front.get('search')).toBe('false');
+    },
+  );
 });

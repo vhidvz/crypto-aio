@@ -1,7 +1,5 @@
 ---
 title: Core concepts
-parent: Reference
-nav_order: 3
 description: The vocabulary of crypto-aio, with a small example for each term.
 ---
 
