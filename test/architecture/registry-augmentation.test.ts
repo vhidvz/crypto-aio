@@ -48,6 +48,7 @@ const OPTIONS: ts.CompilerOptions = {
     'crypto-aio/utxo': [join(ROOT, 'src', 'adapters', 'utxo', 'index.ts')],
     'crypto-aio/solana': [join(ROOT, 'src', 'adapters', 'solana', 'index.ts')],
     'crypto-aio/ton': [join(ROOT, 'src', 'adapters', 'ton', 'index.ts')],
+    'crypto-aio/avalanche': [join(ROOT, 'src', 'adapters', 'avalanche', 'index.ts')],
   },
 };
 
@@ -376,6 +377,11 @@ export const tonExt: TonExt = ton.ext;
 export const tonFee: TonFeeOverride = { attached: 1n };
 export type TonDetails = TonFeeDetails;
 export const wallet: TonWalletIdentity = { version: 'v5r1' };
+import type { AvalancheExt, AvalancheFeeDetails, AvalancheFeeOverride } from 'crypto-aio';
+export const xChain = aio.blockchain({ chain: 'avalanche-x', network: 'fuji' });
+export const avalancheExt: AvalancheExt = xChain.ext;
+export const gas: AvalancheFeeOverride = { gasPrice: 2n };
+export type AvalancheDetails = AvalancheFeeDetails;
 `;
 
 /** Where the in-memory declaration files live: the `dist` of the tests. */
@@ -407,6 +413,7 @@ function declarations(): ReadonlyMap<string, string> {
     join(ROOT, 'src', 'adapters', 'utxo', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'solana', 'index.ts'),
     join(ROOT, 'src', 'adapters', 'ton', 'index.ts'),
+    join(ROOT, 'src', 'adapters', 'avalanche', 'index.ts'),
   ];
   const { diagnostics } = ts.createProgram(entries, options, host).emit();
   expect(diagnostics.map(message)).toEqual([]);
@@ -431,6 +438,7 @@ const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
       'crypto-aio/utxo': [join(DTS, 'adapters', 'utxo', 'index.d.ts')],
       'crypto-aio/solana': [join(DTS, 'adapters', 'solana', 'index.d.ts')],
       'crypto-aio/ton': [join(DTS, 'adapters', 'ton', 'index.d.ts')],
+      'crypto-aio/avalanche': [join(DTS, 'adapters', 'avalanche', 'index.d.ts')],
     },
   },
   // Every SDK scope: bitcoinjs-lib with its whole dependency scope (its types pull in bip174,
@@ -440,7 +448,7 @@ const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
   // package the three TON SDKs declare (axios, dataloader, zod, jssha, tweetnacl; their types
   // name axios and zod): the main entry needs none of them.
   hidden:
-    /[\\/]node_modules[\\/](ethers|web3|bitcoinjs-lib|bip174|valibot|varuint-bitcoin|uint8array-tools|bech32|bs58check|bs58|base-x|tronweb|axios|bignumber\.js|eventemitter3|@solana|@ton|dataloader|zod|jssha|tweetnacl)[\\/]/,
+    /[\\/]node_modules[\\/](ethers|web3|bitcoinjs-lib|bip174|valibot|varuint-bitcoin|uint8array-tools|bech32|bs58check|bs58|base-x|tronweb|axios|bignumber\.js|eventemitter3|@solana|@ton|dataloader|zod|jssha|tweetnacl|@avalabs|micro-eth-signer)[\\/]/,
   files: dts,
 });
 
@@ -592,6 +600,51 @@ describe('Tron registry augmentation (R37)', () => {
     expect(errors).toEqual([
       expect.stringContaining(`'"goerli"' is not assignable`),
       expect.stringContaining(`'"web3"' is not assignable`),
+    ]);
+  }, 120_000);
+});
+
+/** The Avalanche family is typed from the entry; its native client from `crypto-aio/avalanche`. */
+const USE_AVALANCHE = `
+import { CryptoAio, type AvalancheFeeOverride } from 'crypto-aio';
+import { native } from 'crypto-aio/native';
+import 'crypto-aio/avalanche';
+const aio = new CryptoAio({ env: false });
+export const x = aio.blockchain({ chain: 'avalanche-x', network: 'fuji', library: '@avalabs/avalanchejs' });
+export const p = aio.blockchain({ chain: 'avalanche-p', network: 'mainnet' });
+export const fee: AvalancheFeeOverride = { gasPrice: '3' };
+export async function unspent(): Promise<bigint | undefined> {
+  return (await p.ext.avalanche.listUnspent('P-avax1')).at(0)?.amount;
+}
+export async function networkId(): Promise<number> {
+  return (await native(x, '@avalabs/avalanchejs')).context.networkID;
+}
+`;
+
+describe('Avalanche registry augmentation (R37)', () => {
+  it('types the X-Chain and P-Chain, networks, library, ext and native client, in both file orders', () => {
+    const first = compile({
+      'augment.ts': AUGMENT,
+      'avalanche.ts': USE_AVALANCHE,
+      'acme.ts': USE_ACME,
+    });
+    expect(first.errors).toEqual([]);
+    const second = compile(
+      { 'acme.ts': USE_ACME, 'avalanche.ts': USE_AVALANCHE, 'augment.ts': AUGMENT },
+      first.program,
+    );
+    expect(second.errors).toEqual([]);
+  }, 120_000);
+
+  it('rejects a network or library the Avalanche family does not have', () => {
+    const wrong = USE_AVALANCHE.replace("network: 'fuji'", "network: 'local'").replace(
+      "library: '@avalabs/avalanchejs'",
+      "library: 'ethers'",
+    );
+    const { errors } = compile({ 'avalanche.ts': wrong });
+    expect(errors).toEqual([
+      expect.stringContaining(`'"local"' is not assignable`),
+      expect.stringContaining(`'"ethers"' is not assignable`),
     ]);
   }, 120_000);
 });

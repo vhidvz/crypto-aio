@@ -183,20 +183,41 @@ export function avalancheBuilder(ctx: AvalancheContext): AvalancheBuilder {
   const minIssuanceTime = (): bigint => BigInt(Math.floor(clock.now() / 1000));
 
   /** Builds with the first `MAX_INPUTS` candidates, which must cover the transfer. */
+  /**
+   * Builds with the first `MAX_INPUTS` of `utxos`. When they do not cover the transfer but
+   * every output of the wallet would, the wallet holds enough in too many small outputs: an
+   * `INVALID_INTENT` that says so, not `INSUFFICIENT_FUNDS`.
+   */
   const buildWith = (
     planned: Awaited<ReturnType<typeof plan>>,
     fee: FeePlan,
     utxos: readonly ParsedUtxo[],
-  ): BuiltTx =>
-    buildBaseTx({
-      config,
-      from: planned.from,
-      utxos: utxos.slice(0, MAX_INPUTS),
-      outputs: planned.outputs,
-      memo: planned.memo,
-      minIssuanceTime: minIssuanceTime(),
-      fee,
-    });
+  ): BuiltTx => {
+    try {
+      return buildBaseTx({
+        config,
+        from: planned.from,
+        utxos: utxos.slice(0, MAX_INPUTS),
+        outputs: planned.outputs,
+        memo: planned.memo,
+        minIssuanceTime: minIssuanceTime(),
+        fee,
+      });
+    } catch (error) {
+      const needed = sumOf(planned.outputs.map((o) => o.amount));
+      if (
+        isCryptoAioError(error, 'INSUFFICIENT_FUNDS') &&
+        utxos.length > MAX_INPUTS &&
+        sumOf(utxos.map((u) => u.amount)) > needed
+      ) {
+        throw new ValidationError(
+          'INVALID_INTENT',
+          `this transfer needs more than ${MAX_INPUTS} inputs; consolidate the wallet's small outputs first`,
+        );
+      }
+      throw error;
+    }
+  };
 
   /** The plan a stored estimate fixed, with today's fee state (capacity) and weights. */
   const planOfStored = async (
@@ -230,7 +251,12 @@ export function avalancheBuilder(ctx: AvalancheContext): AvalancheBuilder {
         try {
           built = buildWith(planned, fee, planned.candidates);
         } catch (error) {
-          if (!isCryptoAioError(error, 'INSUFFICIENT_FUNDS')) throw error;
+          if (
+            !isCryptoAioError(error, 'INSUFFICIENT_FUNDS') &&
+            !isCryptoAioError(error, 'INVALID_INTENT')
+          ) {
+            throw error;
+          }
           built = buildWith(planned, fee, [
             syntheticUtxo(planned.from, paid + config.maxFee, config),
           ]);

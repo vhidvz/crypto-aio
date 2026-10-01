@@ -17,6 +17,32 @@ declare module '../../index' {
 export type { AvalancheNativeClient } from './driver';
 export { AVALANCHE_PEER_DEPENDENCIES } from './plugin';
 export { AVALANCHE_CAPABILITIES } from './network';
+/** The part of `@avalabs/avalanchejs` this library uses, as the native client types it. */
+export type {
+  AvalancheSdk,
+  SdkAddress,
+  SdkBaseTx,
+  SdkBigInt,
+  SdkContext,
+  SdkCredential,
+  SdkDimensions,
+  SdkFeeState,
+  SdkId,
+  SdkInt,
+  SdkManager,
+  SdkOutputOwners,
+  SdkSerializable,
+  SdkSignature,
+  SdkSignedTx,
+  SdkTransaction,
+  SdkTransferOutput,
+  SdkTransferableInput,
+  SdkTransferableOutput,
+  SdkUnpacker,
+  SdkUnsignedTx,
+  SdkUtxo,
+  SdkUtxoId,
+} from './sdk';
 export type {
   AvalancheExt,
   AvalancheFeeDetails,

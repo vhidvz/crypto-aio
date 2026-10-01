@@ -104,19 +104,22 @@ const singleRead = (tags: AvalancheCallTags): AvalancheCallTags => ({
 /**
  * The accepted block holding `txId`, a transaction the node has accepted: from the cache,
  * else the indexer (checked against the node's block at its height), else the newest
- * `SCAN_DEPTH` blocks. `undefined` when none of them names it yet. Reads are single
+ * `SCAN_DEPTH` blocks. `undefined` when none of them names it yet, `'no-block'` for an
+ * X-Chain transaction from before the chain had blocks. Reads are single
  * (`monitor` or `read`) reads: a location is a candidate; proofs re-read it under quorum.
  */
 export async function locate(
   ctx: AvalancheContext,
   txId: string,
   tags: AvalancheCallTags,
-): Promise<Location | undefined> {
+): Promise<Location | 'no-block' | undefined> {
   const cached = ctx.located.get(txId);
   if (cached) return cached;
   const read = singleRead(tags);
   const indexed = await ctx.dataApi.locate(txId, read);
-  if (indexed !== null && indexed !== 'no-block') {
+  // An X-Chain transaction accepted before the linearization (April 2023) has no block.
+  if (indexed === 'no-block') return 'no-block';
+  if (indexed !== null) {
     const block = await ctx.node.blockAt(indexed.height, read);
     if (block === null) return undefined; // the node has not reached it yet
     if (block.id !== indexed.hash || !block.txIds.includes(txId)) {

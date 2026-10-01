@@ -68,6 +68,12 @@ function validateChain(chain: ChainInfo): void {
     fail('native asset decimals must be an integer in [0, 255]');
   }
   if (chain.schemes.length === 0) fail('at least one signature scheme is required');
+  if (
+    chain.xpubNetworkClass !== undefined &&
+    typeof chain.xpubNetworkClass !== 'boolean'
+  ) {
+    fail('xpubNetworkClass must be a boolean');
+  }
   for (const [key, network] of Object.entries(chain.networks)) {
     if (network.id !== key)
       fail(`network key '${key}' does not match its id '${network.id}'`);

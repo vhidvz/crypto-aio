@@ -257,13 +257,15 @@ export class Blockchain<C extends ChainId = ChainId> {
     // O1: a non-string xpubPath is CONFIG_INVALID, as at wallet resolution.
     const path = (xpubPathOf(config) ?? '0/{index}').replace('{index}', String(index));
     // A20 (D7): a UTXO chain's extended keys carry its network class; account-model
-    // wallets (EVM, Tron) export `xpub` on every network, so theirs is not checked.
+    // wallets (EVM, Tron) export `xpub` on every network, so theirs is not checked. A chain
+    // whose wallets do the same says so (`xpubNetworkClass: false`, Avalanche X/P).
     const { chain, network } = internals.selection;
+    const classed = chain.xpubNetworkClass ?? chain.model === 'utxo';
     const publicKey = deriveXpubChild(
       config.xpub,
       path,
       config.xpubVersions,
-      chain.model === 'utxo' ? { testnet: network.testnet } : undefined,
+      classed ? { testnet: network.testnet } : undefined,
     );
     // I1: the core's own options, with the wallet's `hd`, reach the driver directly.
     return this.driverAddress(publicKey, walletOptionsOf(config));

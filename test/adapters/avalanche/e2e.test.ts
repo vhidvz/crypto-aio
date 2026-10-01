@@ -239,6 +239,29 @@ describe('X-Chain memos and P-Chain limits', () => {
   });
 });
 
+describe('deposit addresses from an xpub (hd-public-derivation)', () => {
+  it("derives m/44'/9000'/0'/0/i addresses without any private key, from an xpub on Fuji too", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { HDKey } = require('@scure/bip32') as typeof import('@scure/bip32');
+    const account = HDKey.fromMasterSeed(new Uint8Array(32).fill(1)).derive(
+      "m/44'/9000'/0'",
+    );
+    const env = await createAvalancheEnv({ vm: 'avm' });
+    const aio = env.aio.scope({
+      wallets: { deposits: { xpub: account.publicExtendedKey } },
+    });
+    const bc = aio.blockchain({ chain: 'avalanche-x' });
+    // Avalanche wallets export `xpub` on every network (no SLIP-0132 testnet versions).
+    expect(account.publicExtendedKey.startsWith('xpub')).toBe(true);
+    const child = account.deriveChild(0).deriveChild(7).publicKey as Uint8Array;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { addressBytesOf } = require('../../../src/adapters/avalanche/address');
+    expect((await env.run(bc.deriveAddress('deposits', 7))).canonical).toBe(
+      env.addressOf(addressBytesOf(child)),
+    );
+  });
+});
+
 describe('the handle without a configured indexer', () => {
   it('falls back to the public Data API preset, which is not for production', () => {
     const aio = new CryptoAio({ env: false });

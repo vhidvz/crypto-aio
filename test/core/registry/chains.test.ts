@@ -88,6 +88,11 @@ describe('ChainCatalog', () => {
     expect(thrown(() => catalog.register(chain({ schemes: [] })))).toMatchObject({
       message: expect.stringMatching(/signature scheme/),
     });
+    expect(
+      thrown(() => catalog.register(chain({ xpubNetworkClass: 'no' as never }))),
+    ).toMatchObject({
+      message: expect.stringMatching(/xpubNetworkClass must be a boolean/),
+    });
   });
 
   it('clones independently', () => {

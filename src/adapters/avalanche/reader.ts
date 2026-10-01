@@ -7,7 +7,8 @@
  * reports accepted or unknown), so a transaction is in a block once the node holds it and
  * unknown before. The P-Chain also reports its mempool (`Processing`) and an aborted
  * proposal. An accepted transaction whose block is not located yet reads as `mempool`: it
- * is known to the network, and the next look finds its block.
+ * is known to the network, and the next look finds its block. An X-Chain transaction from
+ * before the linearization (April 2023) has no block and reads as not seen.
  */
 import type {
   AddressCodec,
@@ -155,6 +156,8 @@ async function inBlock(
   tags: AvalancheCallTags,
 ): Promise<DriverTxObservation> {
   const location = await locate(ctx, txId, tags);
+  // Accepted before the X-Chain had blocks: final, but there is no block to name.
+  if (location === 'no-block') return { seen: 'none' };
   if (!location) return { seen: 'mempool', txHash: txId };
   return {
     seen: 'block',

@@ -180,7 +180,9 @@ export function proofSource(ctx: AvalancheContext): ProofSource {
       const status = await acceptance(ref.id);
       if (status !== 'not') {
         const location = await locate(ctx, ref.id, MONITOR);
-        if (!location) throw undecided('the block of the transaction is not located yet');
+        if (!location || location === 'no-block') {
+          throw undecided('the block of the transaction is not located yet');
+        }
         const block = await blockAt(location.height);
         if (!block || block.id !== location.hash || !block.txIds.includes(ref.id)) {
           ctx.located.forget(ref.id);

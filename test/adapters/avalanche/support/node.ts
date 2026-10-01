@@ -159,15 +159,19 @@ export class ScriptedAvalancheNode {
     this.#txFee = options.txFee ?? 1_000_000n;
     this.#gasPrice = options.gasPrice ?? 1n;
     this.#weights = options.weights ?? DEFAULT_WEIGHTS;
-    // Genesis: block 0 carries the network's identity and funds the faucet.
-    const faucet = this.#utxo(ZERO_ID, 0, FAUCET_BYTES, options.faucet ?? 10n ** 18n);
+    // Genesis: block 0 carries the network's identity and funds the faucet, in 16 outputs
+    // so that several faucet payments can wait in the mempool together.
+    const share = (options.faucet ?? 10n ** 18n) / 16n;
+    const faucet = Array.from({ length: 16 }, (_, i) =>
+      this.#utxo(ZERO_ID, i, FAUCET_BYTES, share),
+    );
     this.#blocks.push({
       id: this.config.genesisBlockId,
       parentId: cb58Encode(new Uint8Array(32).fill(1)),
       height: 0,
       time: Math.floor(this.#clock.now() / 1000),
       txIds: [],
-      utxos: new Map([[faucet.key, faucet]]),
+      utxos: new Map(faucet.map((u) => [u.key, u])),
     });
   }
 

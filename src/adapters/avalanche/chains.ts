@@ -102,6 +102,8 @@ function chain(id: string, vm: AvalancheVm): ChainInfo {
     schemes: ['secp256k1-ecdsa'],
     nativeAsset: { symbol: 'AVAX', decimals: 9, name: 'Avalanche' },
     defaultNetwork: 'mainnet',
+    // Avalanche wallets export `xpub` on every network: no SLIP-0132 network class.
+    xpubNetworkClass: false,
     networks: Object.fromEntries(NETWORKS.map((spec) => [spec.id, network(spec, vm)])),
   };
 }
