@@ -1,7 +1,5 @@
 ---
 title: Quick start
-parent: Get started
-nav_order: 1
 description: Install crypto-aio and run a first transfer to proven finality in 5 minutes, with no network and no keys.
 ---
 
@@ -71,7 +69,7 @@ The fake chain runs on fake time. Time moves only when the kit advances its cloc
 `env.run(promise)` does that until the promise settles. Blocks appear only when you call
 `env.chain.mine()`.
 
-<details markdown="1">
+<details>
 <summary>Explain it to me: chain, wallet, handle, block</summary>
 
 - A **chain** (a blockchain) is a shared record of who owns what. Payments are added to it in
@@ -178,7 +176,7 @@ sequenceDiagram
   chain data, read with a proof quorum: by default, two healthy endpoints must agree when two
   exist. The fake env has one endpoint.
 
-<details markdown="1">
+<details>
 <summary>Explain it to me: Operation, Attempt, idempotency key, proven</summary>
 
 - An **Operation** is your payment as a business fact: "pay this address 0.001 FAKE, for order

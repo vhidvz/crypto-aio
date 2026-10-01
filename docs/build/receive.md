@@ -1,7 +1,5 @@
 ---
 title: Receive deposits
-parent: Build
-nav_order: 7
 description: Scan blocks or read address history for deposits, handle reorgs, and credit deposits safely.
 ---
 

@@ -1,7 +1,5 @@
 ---
 title: Examples
-parent: Build
-nav_order: 1
 description: Short, working recipes for common tasks, from reading a balance to scanning deposits, custody signing and a custom EVM chain.
 ---
 

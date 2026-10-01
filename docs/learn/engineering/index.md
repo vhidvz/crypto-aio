@@ -1,9 +1,5 @@
 ---
 title: Engineering for money
-parent: Learn
-nav_order: 2
-has_children: true
-has_toc: false
 description: "Part 2 of the learning path: failures, retries, idempotency, persistence, concurrency, trust and secrets, the engineering behind payment systems."
 ---
 

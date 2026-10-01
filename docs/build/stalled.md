@@ -1,7 +1,5 @@
 ---
 title: Fix a stuck transfer
-parent: Build
-nav_order: 5
 description: The Operation lifecycle, stalled transfers, and rebroadcast, replace, cancel and rebuild.
 ---
 

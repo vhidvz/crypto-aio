@@ -1,9 +1,5 @@
 ---
 title: Retries, ambiguity and recovery
-parent: Developer tour
-nav_order: 4
-layout: lesson
-journey: learn
 description: How crypto-aio handles ambiguous broadcasts, refusals and crashes, what background workers do, and what recover() does at startup.
 ---
 
@@ -155,7 +151,7 @@ startup sequence of a service.
 2. Why does a refused transaction become `stalled` rather than `failed`?
 3. Why do workers and `recover()` never need the signer?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Create a new transfer (a new idempotency key) for the same payment. Repeat with the same key,

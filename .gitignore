@@ -125,8 +125,5 @@ docs/api/
 .superpowers/
 
 # Local builds of the documentation site (docs/README.md)
-docs/_site/
-docs/.jekyll-cache/
-docs/.sass-cache/
-docs/vendor/
-docs/Gemfile.lock
+docs/.vitepress/cache/
+docs/.vitepress/dist/

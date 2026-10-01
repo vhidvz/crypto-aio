@@ -1,9 +1,5 @@
 ---
 title: Networks
-parent: Reference
-nav_order: 6
-has_children: true
-has_toc: false
 description: Every built-in chain family and network, what each supports, and how more networks are added.
 ---
 

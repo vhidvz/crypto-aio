@@ -1,7 +1,5 @@
 ---
 title: Send a transfer
-parent: Build
-nav_order: 3
 description: "transfer(), outputs, assets, memos and fees: build withdrawals into a service."
 ---
 

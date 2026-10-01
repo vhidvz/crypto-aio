@@ -1,28 +1,15 @@
 // Plan 7: every relative link in the README, the changelog and the documentation site
 // resolves to a tracked file, and every `#anchor` to a heading of its target (GitHub's heading
-// ids, which the site's GFM Markdown also uses). Links to the published site
-// (https://vhidvz.github.io/crypto-aio/…) must name a page of docs/ the same way.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+// ids, which the site gives its headings too: docs/.vitepress/slugify.ts). Links to the
+// published site (https://vhidvz.github.io/crypto-aio/…) must name a page of docs/ the same way.
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
+import { slugify } from '../../docs/.vitepress/slugify';
+import { DOCS, ROOT, pages } from './support';
 
-const ROOT = join(__dirname, '../..');
-const DOCS = join(ROOT, 'docs');
 const SITE = 'https://vhidvz.github.io/crypto-aio/';
 
-/** Every Markdown page of docs/, without the theme's own folders and the design records. */
-function pages(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name))
-        return [];
-      return pages(path);
-    }
-    return entry.name.endsWith('.md') ? [path] : [];
-  });
-}
-
-const FILES = [join(ROOT, 'README.md'), join(ROOT, 'CHANGELOG.md'), ...pages(DOCS)];
+const FILES = [join(ROOT, 'README.md'), join(ROOT, 'CHANGELOG.md'), ...pages()];
 
 /** The lines of a Markdown file outside fenced code blocks. */
 function prose(text: string): string[] {
@@ -36,17 +23,14 @@ function prose(text: string): string[] {
   });
 }
 
-/** GitHub's heading ids (github-slugger), with -1, -2 … for repeats. */
+/** GitHub's heading ids, with -1, -2 … for repeats. */
 function anchors(file: string): Set<string> {
   const seen = new Map<string, number>();
   const ids = new Set<string>();
   for (const line of prose(readFileSync(file, 'utf8'))) {
     const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line)?.[1];
     if (heading === undefined) continue;
-    const base = heading
-      .toLowerCase()
-      .replace(/[\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*+,./:;<=>?@[\]^`{|}~]/g, '')
-      .replace(/ /g, '-');
+    const base = slugify(heading);
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     ids.add(count === 0 ? base : `${base}-${count}`);

@@ -1,9 +1,5 @@
 ---
 title: Blockchain foundations
-parent: Learn
-nav_order: 1
-has_children: true
-has_toc: false
 description: "Part 1 of the learning path: money, cryptography, wallets, transactions, blocks, fees and nodes, from first principles."
 ---
 

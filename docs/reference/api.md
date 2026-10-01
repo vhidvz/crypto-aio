@@ -1,7 +1,5 @@
 ---
 title: API at a glance
-parent: Reference
-nav_order: 1
 description: Every entry point, the container, every handle method, signers, the model, errors, stores, events and the testing kit, each with a link to its guide.
 ---
 

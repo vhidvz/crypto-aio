@@ -1,8 +1,5 @@
 ---
 title: Developer tour
-nav_order: 4
-has_children: true
-has_toc: false
 description: A guided walk through crypto-aio, from its big picture to production architecture, connecting each blockchain and engineering idea to the code that implements it.
 ---
 

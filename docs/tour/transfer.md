@@ -1,9 +1,5 @@
 ---
 title: The life of a transfer
-parent: Developer tour
-nav_order: 3
-layout: lesson
-journey: learn
 description: Operations and Attempts, every step of transfer(), write-ahead signing, how a broadcast answer is classified, and the Operation state machine.
 ---
 
@@ -192,7 +188,7 @@ any process that shares the stores.
 2. A process crashes right after step 11. What does the next process find, and do?
 3. A node answers "nonce too high". Is the payment failed?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. The Operation is the one payment you asked for; Attempts are the transactions that try to

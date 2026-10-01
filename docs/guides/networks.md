@@ -1,8 +1,7 @@
 ---
 title: "Using any blockchain network (moved)"
-nav_exclude: true
-search_exclude: true
-redirect_to: /reference/networks/
+redirect: ../reference/networks/index.md
+search: false
 ---
 
 # Using any blockchain network

@@ -1,7 +1,5 @@
 ---
 title: Test with the fake chain
-parent: Build
-nav_order: 10
 description: "The testing kit: the fake chain, fake time, scripted nodes and crash injection."
 ---
 

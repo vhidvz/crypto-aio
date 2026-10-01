@@ -1,10 +1,5 @@
 ---
 title: "Concurrency: locks, leases and fencing"
-parent: Engineering for money
-grand_parent: Learn
-nav_order: 4
-layout: lesson
-journey: learn
 description: Race conditions, distributed locks that expire (leases), and fencing tokens that stop a paused worker from doing damage.
 ---
 
@@ -90,7 +85,7 @@ sequenceDiagram
 The same idea works without locks, too: each record carries a **version**, and an update that
 expects version 7 fails if the record is at 8 (lesson 12's optimistic concurrency).
 
-<details markdown="1">
+<details>
 <summary>Under the hood: why time is not enough</summary>
 
 It is tempting to have the paused process check "is my lease still valid?" before each write.
@@ -149,7 +144,7 @@ shows where the library takes each lease.
 3. A worker's lease expired during a pause; another worker took over. The first one now writes
    with its old token. Who stops it?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Only one of the two transactions can use nonce 42; the other is invalid, so one payment

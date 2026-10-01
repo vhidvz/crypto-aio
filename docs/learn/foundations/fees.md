@@ -1,10 +1,5 @@
 ---
 title: Fees and fee markets
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 8
-layout: lesson
-journey: learn
 description: Why transactions pay fees, how each family prices them, and how a stuck payment is unstuck with a higher fee.
 ---
 
@@ -73,7 +68,7 @@ chains, so that replacements cannot be used to spam.
 Chains with an expiry (Tron, Solana) or a seqno and deadline (TON) have no replacement: a
 transaction that does not land expires, and is then re-issued.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: estimates are not prices</summary>
 
 A fee estimate is a prediction made before the transaction runs. On Bitcoin, once the
@@ -133,7 +128,7 @@ documents every family's fee options and bounds, and
 3. An EVM payment is stuck with a low tip. What do you send?
 4. A node suggests a fee rate 100 times higher than usual. What should your code do?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. TRX (or staked resources) to pay for bandwidth and energy: fees are paid in the native coin.

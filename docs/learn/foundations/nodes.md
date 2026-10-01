@@ -1,10 +1,5 @@
 ---
 title: Nodes, RPC and providers
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 9
-layout: lesson
-journey: learn
 description: "How your code reaches a blockchain: HTTP, JSON-RPC, nodes, providers, indexers, API keys and rate limits."
 ---
 
@@ -171,7 +166,7 @@ configures providers for each family.
    a transaction in block 1,020?
 4. When do you need an indexer rather than a node?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. You hit its rate limit. Wait as long as `Retry-After` says, then retry, ideally slower.

@@ -1,7 +1,5 @@
 ---
 title: Write a chain family plugin
-parent: Explore
-nav_order: 3
 description: The Plugin and AdapterManifest data, and the driver contract every family follows.
 ---
 

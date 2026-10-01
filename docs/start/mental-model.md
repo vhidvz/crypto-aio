@@ -1,7 +1,5 @@
 ---
 title: crypto-aio in 10 minutes
-parent: Get started
-nav_order: 2
 description: The mental model for developers who already know blockchains, and how familiar SDK code maps to crypto-aio.
 ---
 

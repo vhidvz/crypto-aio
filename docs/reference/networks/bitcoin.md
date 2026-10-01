@@ -1,9 +1,6 @@
 ---
 title: Bitcoin networks
-parent: Networks
-grand_parent: Reference
 description: "Bitcoin: address types, coin selection, fees, replace and cancel, limits and safeguards."
-nav_order: 2
 ---
 
 # Bitcoin networks

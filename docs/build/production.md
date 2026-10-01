@@ -1,7 +1,5 @@
 ---
 title: Go to production
-parent: Build
-nav_order: 11
 description: "The production checklist: tenants, stores, signers, providers, workers, and each family's rules."
 ---
 

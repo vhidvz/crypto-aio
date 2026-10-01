@@ -1,9 +1,5 @@
 ---
 title: How receiving works
-parent: Developer tour
-nav_order: 7
-layout: lesson
-journey: learn
 description: Scanners with durable cursors, at-least-once delivery, reorg rollbacks, deterministic transfer ids, and why deposits are observed and how to credit them.
 ---
 
@@ -153,7 +149,7 @@ deposits by the owner wallet, and TON jettons by their arrival in the owner's je
 2. Why does the scanner stop on a reorg deeper than its window instead of rolling back?
 3. A scanner in `final` mode reports a deposit. Why is its evidence still `observed`?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Block 812 is delivered again; your credit is keyed on `transfer.id`, so the second credit is a

@@ -1,10 +1,5 @@
 ---
 title: When networks fail
-parent: Engineering for money
-grand_parent: Learn
-nav_order: 1
-layout: lesson
-journey: learn
 description: Timeouts, retries, backoff and circuit breakers, and the ambiguous failure, where you cannot know whether a payment happened.
 ---
 
@@ -65,7 +60,7 @@ So a request has three outcomes, not two:
 The third outcome is the dangerous one, and the most common mistake in payment code is to
 treat it as the second: "it timed out, so it failed, so let's pay again".
 
-<details markdown="1">
+<details>
 <summary>Under the hood: the Two Generals' Problem</summary>
 
 Computer science has a name for this: the **Two Generals' Problem**. Two generals must agree on
@@ -154,7 +149,7 @@ code, and [Configuration](../../reference/configuration.md) the transport's sett
    5"?
 3. Why add random jitter to backoff delays?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. The request never arrived; it arrived and the server failed partway; or it was fully done

@@ -1,10 +1,5 @@
 ---
 title: Hashes, keys and signatures
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 2
-layout: lesson
-journey: learn
 description: The three pieces of cryptography every blockchain is built from, explained without math.
 ---
 
@@ -103,7 +98,7 @@ This is the answer to the question from lesson 1. A blockchain payment is a mess
 the owner's private key. Every node verifies the signature with the owner's public key. Nobody
 needs to be trusted, and nobody needs to be asked.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: curves and signature schemes</summary>
 
 The math behind keys and signatures comes in a few standard flavors, named after the
@@ -162,7 +157,7 @@ secrets](../../build/keys.md) covers signers in full.
    What do nodes do?
 4. Why does a block store the hash of the previous block?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. It changes completely and unpredictably (the avalanche effect).

@@ -1,10 +1,5 @@
 ---
 title: Secrets and key custody
-parent: Engineering for money
-grand_parent: Learn
-nav_order: 6
-layout: lesson
-journey: learn
 description: How secrets leak, how to keep them out of logs, and where private keys should live, from hot wallets to HSMs and MPC.
 ---
 
@@ -86,7 +81,7 @@ in front of signing: withdrawal limits, allow-lists, rate limits, human approval
 threshold. The check must run **before** the signature, on the exact payment being signed,
 because after signing it is too late.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: deterministic keys and the export trap</summary>
 
 Some libraries can export a private key "for backup". Every export is a new copy of the money,
@@ -142,7 +137,7 @@ policy](../../tour/keys.md) explains the design.
    ask the HSM to sign?
 3. Where should withdrawal limits be enforced: before or after signing?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Every API key embedded in a URL path or query string, to everyone who can read the logs.

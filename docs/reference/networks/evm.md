@@ -1,9 +1,6 @@
 ---
 title: EVM networks
-parent: Networks
-grand_parent: Reference
 description: "The EVM chains: networks, fees, tokens, presets and the fee ceiling."
-nav_order: 1
 ---
 
 # EVM networks

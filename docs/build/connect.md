@@ -1,7 +1,5 @@
 ---
 title: Connect to a real network
-parent: Build
-nav_order: 2
 description: Configure providers, signers and wallets for EVM chains, Bitcoin, Tron, Solana, TON and Avalanche.
 ---
 

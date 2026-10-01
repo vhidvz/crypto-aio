@@ -1,9 +1,6 @@
 ---
 title: Avalanche X-Chain and P-Chain
-parent: Networks
-grand_parent: Reference
 description: "The Avalanche X-Chain and P-Chain: fees, spending, finality and limits."
-nav_order: 6
 ---
 
 # Avalanche X-Chain and P-Chain networks

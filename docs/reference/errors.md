@@ -1,7 +1,5 @@
 ---
 title: Errors
-parent: Reference
-nav_order: 4
 description: Every error code, its category, and the safe action for each.
 ---
 

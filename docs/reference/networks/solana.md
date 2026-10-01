@@ -1,9 +1,6 @@
 ---
 title: Solana networks
-parent: Networks
-grand_parent: Reference
 description: "Solana: priority fees, SPL tokens, expiry, scanning, history and safeguards."
-nav_order: 4
 ---
 
 # Solana networks

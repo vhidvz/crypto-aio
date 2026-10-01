@@ -1,8 +1,5 @@
 ---
 title: Learn
-nav_order: 3
-has_children: true
-has_toc: false
 description: A guided path from zero to confident use of crypto-aio, for programmers new to cryptocurrency, blockchains or payment systems.
 ---
 
@@ -63,7 +60,7 @@ Along the way you will meet a few recurring elements:
 > **The short version** opens each lesson: the whole idea in two or three sentences. If it
 > already makes sense to you, skim the lesson or skip it.
 
-<details markdown="1">
+<details>
 <summary>Under the hood</summary>
 
 Folded sections like this one hold deeper technical detail. They are worth reading, but the

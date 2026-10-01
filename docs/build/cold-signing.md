@@ -1,7 +1,5 @@
 ---
 title: Cold and asynchronous signing
-parent: Build
-nav_order: 6
 description: "prepareTransfer and submitSignatures: watch-only wallets, hardware wallets, PSBTs and custody tickets."
 ---
 

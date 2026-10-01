@@ -1,8 +1,7 @@
 ---
 title: "Quick start (moved)"
-nav_exclude: true
-search_exclude: true
-redirect_to: /start/quick-start.html
+redirect: ../start/quick-start.md
+search: false
 ---
 
 # Quick start

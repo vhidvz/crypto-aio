@@ -5,7 +5,7 @@
 // its lines follow a `// Prints:` line instead, one `// line` per printed line. Every block
 // must also type-check under strict settings, as a reader's own project would check it, and
 // so must the blocks marked `<!-- typecheck -->`, which other tests run.
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative } from 'node:path';
 import { format } from 'node:util';
@@ -13,8 +13,8 @@ import ts from 'typescript';
 import * as library from '../../src';
 import * as nativeEntry from '../../src/native';
 import * as testing from '../../src/testing';
+import { ROOT, pages } from './support';
 
-const ROOT = join(__dirname, '../..');
 /** Loads the other packages a block imports, such as `node:crypto` or `@scure/bip32`. */
 const packages = createRequire(__filename);
 
@@ -24,19 +24,6 @@ const ENTRY_POINTS: Record<string, unknown> = {
   'crypto-aio/testing': testing,
 };
 
-/** Every Markdown page of docs/, without the theme's own folders and the design records. */
-function pages(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name))
-        return [];
-      return pages(path);
-    }
-    return entry.name.endsWith('.md') ? [path] : [];
-  });
-}
-
 interface Block {
   readonly name: string;
   readonly code: string;
@@ -45,7 +32,7 @@ interface Block {
 /** The `ts` blocks after a `<!-- runnable -->` (or `<!-- typecheck -->`) comment. */
 function blocks(marker: 'runnable' | 'typecheck'): Block[] {
   const out: Block[] = [];
-  for (const file of [join(ROOT, 'README.md'), ...pages(join(ROOT, 'docs'))]) {
+  for (const file of [join(ROOT, 'README.md'), ...pages()]) {
     const text = readFileSync(file, 'utf8');
     const marked = new RegExp(
       `<!-- ${marker} -->\\s*\\n\`\`\`ts\\n([\\s\\S]*?)^\`\`\`$`,

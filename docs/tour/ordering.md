@@ -1,9 +1,5 @@
 ---
 title: Nonces, leases and many processes
-parent: Developer tour
-nav_order: 5
-layout: lesson
-journey: learn
 description: How crypto-aio reserves ordering slots under an address lease, when a slot is released, how gaps and coin conflicts are handled, and how fencing protects shared stores.
 ---
 
@@ -143,7 +139,7 @@ contract suites, which include "a paused worker wakes up after its lease was tak
    nonce 12 to the next transfer?
 3. Two TON transfers from one wallet arrive together. What happens to the second?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. Otherwise another sender could read the same "next" value between reading and recording it.

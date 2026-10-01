@@ -1,8 +1,7 @@
 ---
 title: "Tutorial (moved)"
-nav_exclude: true
-search_exclude: true
-redirect_to: /start/tutorial.html
+redirect: ../start/tutorial.md
+search: false
 ---
 
 # Tutorial

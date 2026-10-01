@@ -1,23 +1,42 @@
 ---
-title: Home
-nav_order: 1
-permalink: /
+layout: home
+title: crypto-aio
+titleTemplate: One TypeScript API for moving money on blockchains
 description: One TypeScript API for balances, transfers, confirmations and deposit scanning across EVM chains, Bitcoin, Tron, Solana, TON and Avalanche.
+hero:
+  name: crypto-aio
+  text: "One TypeScript API for moving money on blockchains"
+  tagline: "Balances, transfers, confirmations and deposit scanning across EVM chains, Bitcoin, Tron, Solana, TON and Avalanche, built for exchanges, wallets and payment systems."
+  actions:
+    - theme: brand
+      text: Get started in 5 minutes
+      link: /start/quick-start
+    - theme: alt
+      text: Learn blockchain from zero
+      link: /learn/
+    - theme: alt
+      text: Browse the API
+      link: /reference/api
+features:
+  - title: "New to crypto: start from zero"
+    details: "Never touched a blockchain? Money, keys and transactions in plain words, then the engineering behind safe payments, then how crypto-aio works inside."
+    link: /learn/
+    linkText: "Begin the learning path"
+  - title: "Know blockchains: fast track"
+    details: "You know nonces, UTXOs and finality. Run a transfer in 5 minutes, then get crypto-aio's mental model in 10."
+    link: /start/
+    linkText: "Take the fast track"
+  - title: "Building now: guides and examples"
+    details: "Send withdrawals, scan deposits, sign with custody, run workers and go to production: task by task, with code."
+    link: /build/
+    linkText: "Open the build guides"
+  - title: "Looking it up: reference"
+    details: "Every handle method, configuration key, error code and network, and a glossary of the blockchain terms behind them."
+    link: /reference/
+    linkText: "Go to the reference"
 ---
 
-<div class="hero" markdown="1">
-
-# crypto-aio
-
-<p class="hero-tagline">One TypeScript API for balances, transfers, confirmations and deposit
-scanning across EVM chains, Bitcoin, Tron, Solana, TON and Avalanche, built for exchanges,
-wallets and payment systems.</p>
-
-[Get started in 5 minutes](start/quick-start.md){: .btn .btn-primary }
-[Learn blockchain from zero](learn/index.md){: .btn }
-[Browse the API](reference/api.md){: .btn }
-
-</div>
+## Why crypto-aio
 
 Moving money on a blockchain looks easy: build a transaction, sign it, send it. The hard part
 is everything around it. A reply gets lost and you do not know whether you paid. A process
@@ -25,55 +44,57 @@ crashes between signing and sending. A node tells you a payment landed, and a mi
 the block it was in is gone. crypto-aio handles those cases for you, with the same API on
 every chain it supports.
 
-## Choose your path
+<div class="home-cards">
 
-These pages are one connected set, with several ways in. Pick the one that matches you; you
-can switch paths at any time.
+<div class="home-card">
+<p class="home-card-title">One shape for every chain</p>
 
-<div class="card-grid card-grid-2" markdown="1">
+`getBalance`, `estimateFee`, `transfer`, `waitForConfirmation`, `scanner` and `history` work the
+same way on Ethereum, Bitcoin, Tron, Solana, TON and the rest. What a chain cannot do is a
+named [capability](reference/capabilities.md), never a silent difference.
 
-<div class="card" markdown="1">
-<p class="card-kicker">New to crypto</p>
-<p class="card-title">Start from zero</p>
-
-Never touched a blockchain? Start with money, keys and transactions in plain words, then the
-engineering ideas behind safe payments, then how crypto-aio works.
-
-[Begin the learning path](learn/index.md){: .card-link }
-<p class="card-route">Learn → Engineering → Developer tour</p>
 </div>
 
-<div class="card" markdown="1">
-<p class="card-kicker">Know blockchains</p>
-<p class="card-title">Fast track</p>
+<div class="home-card">
+<p class="home-card-title">Pay exactly once</p>
 
-You know nonces, UTXOs and finality. Run a transfer in 5 minutes, then get crypto-aio's mental
-model in 10.
+Every transfer carries your own idempotency key. Repeat the call after a timeout, a crash or a
+lost reply, and you get the same transfer back, never a second payment.
+[How](tour/recovery.md)
 
-[Take the fast track](start/index.md){: .card-link }
-<p class="card-route">Quick start → Mental model → Tutorial</p>
 </div>
 
-<div class="card" markdown="1">
-<p class="card-kicker">Building now</p>
-<p class="card-title">Guides and examples</p>
+<div class="home-card">
+<p class="home-card-title">Crash-safe by design</p>
 
-Send withdrawals, scan deposits, sign with custody, run workers and go to production: task by
-task, with code.
+A signed transaction is stored before it is sent. After a restart, the library sends those
+exact bytes again; it never signs a second, different payment.
+[How](tour/transfer.md)
 
-[Open the build guides](build/index.md){: .card-link }
-<p class="card-route">Examples → Send → Receive → Production</p>
 </div>
 
-<div class="card" markdown="1">
-<p class="card-kicker">Looking it up</p>
-<p class="card-title">Reference</p>
+<div class="home-card">
+<p class="home-card-title">Proof, not hearsay</p>
 
-Every handle method, configuration key, error code and network, and a glossary of the
-blockchain terms behind them.
+A transfer is final only on finalized chain data that several independent endpoints agree on,
+never on one node's word. [How](tour/evidence.md)
 
-[Go to the reference](reference/index.md){: .card-link }
-<p class="card-route">API → Configuration → Errors → Networks</p>
+</div>
+
+<div class="home-card">
+<p class="home-card-title">Deposits that survive reorgs</p>
+
+Durable scanners deliver blocks at least once, roll back when the chain reorganizes, and never
+guess past a reorg deeper than they can see. [How](tour/receiving.md)
+
+</div>
+
+<div class="home-card">
+<p class="home-card-title">Keys stay with signers</p>
+
+Private keys live only in signers: in memory, or behind your HSM, KMS or MPC custody. Logs,
+errors and events never carry a secret. [How](tour/keys.md)
+
 </div>
 
 </div>
@@ -82,57 +103,6 @@ blockchain terms behind them.
 > Looking for one term, such as **UTXO**, **nonce** or `IDEMPOTENCY_CONFLICT`? Press
 > <kbd>Ctrl</kbd> + <kbd>K</kbd> (or <kbd>⌘</kbd> + <kbd>K</kbd>) to search every page, or
 > open the [Glossary](reference/glossary.md).
-
-## What crypto-aio gives you
-
-<div class="card-grid card-grid-2" markdown="1">
-
-<div class="card" markdown="1">
-<p class="card-title">One shape for every chain</p>
-
-`getBalance`, `estimateFee`, `transfer`, `waitForConfirmation`, `scanner` and `history` work the
-same way on Ethereum, Bitcoin, Tron, Solana, TON and the rest. What a chain cannot do is a
-named [capability](reference/capabilities.md), never a silent difference.
-</div>
-
-<div class="card" markdown="1">
-<p class="card-title">Pay exactly once</p>
-
-Every transfer carries your own idempotency key. Repeat the call after a timeout, a crash or a
-lost reply, and you get the same transfer back, never a second payment.
-[How](tour/recovery.md)
-</div>
-
-<div class="card" markdown="1">
-<p class="card-title">Crash-safe by design</p>
-
-A signed transaction is stored before it is sent. After a restart, the library sends those
-exact bytes again; it never signs a second, different payment.
-[How](tour/transfer.md)
-</div>
-
-<div class="card" markdown="1">
-<p class="card-title">Proof, not hearsay</p>
-
-A transfer is final only on finalized chain data that several independent endpoints agree on,
-never on one node's word. [How](tour/evidence.md)
-</div>
-
-<div class="card" markdown="1">
-<p class="card-title">Deposits that survive reorgs</p>
-
-Durable scanners deliver blocks at least once, roll back when the chain reorganizes, and never
-guess past a reorg deeper than they can see. [How](tour/receiving.md)
-</div>
-
-<div class="card" markdown="1">
-<p class="card-title">Keys stay with signers</p>
-
-Private keys live only in signers: in memory, or behind your HSM, KMS or MPC custody. Logs,
-errors and events never carry a secret. [How](tour/keys.md)
-</div>
-
-</div>
 
 ## Supported networks
 
@@ -176,6 +146,9 @@ No key at hand? The [Quick start](start/quick-start.md) runs the same flow on an
 chain that needs no network.
 
 ## How these pages fit together
+
+These pages are one connected set, with several ways in. Pick the path that matches you; you
+can switch paths at any time.
 
 ```mermaid
 flowchart TB

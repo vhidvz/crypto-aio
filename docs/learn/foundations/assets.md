@@ -1,10 +1,5 @@
 ---
 title: Coins, tokens and exact amounts
-parent: Blockchain foundations
-grand_parent: Learn
-nav_order: 4
-layout: lesson
-journey: learn
 description: Native coins and tokens, decimals and base units, and why money must never be a floating-point number.
 ---
 
@@ -144,7 +139,7 @@ cannot be resolved, such as a spam token with unusable metadata, arrives marked
 2. A token transfer says "USDT". What do you check before crediting it?
 3. You send `amount: 5n` of a token with 6 decimals. How much is that?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. As base units in a `bigint`: 100,000,000,000,000,000 wei, or keep the decimal string

@@ -1,7 +1,5 @@
 ---
 title: Stability before 1.0
-parent: Reference
-nav_order: 9
 description: What may change before crypto-aio 1.0, surface by surface.
 ---
 

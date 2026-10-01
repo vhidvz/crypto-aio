@@ -1,10 +1,5 @@
 ---
 title: Persistence and crash recovery
-parent: Engineering for money
-grand_parent: Learn
-nav_order: 3
-layout: lesson
-journey: learn
 description: Why a payment system writes down what it is about to do before doing it, and how it recovers after a crash.
 ---
 
@@ -77,7 +72,7 @@ recovery does for each state:
 
 Notice what recovery never does: sign. Everything after signing is a resend of stored bytes.
 
-<details markdown="1">
+<details>
 <summary>Under the hood: versions protect stored state</summary>
 
 Several processes may update the same stored payment. To stop one from overwriting another's
@@ -145,7 +140,7 @@ recovery in a real service.
    sign and send it?
 3. Why is it safe for recovery to resend stored signed bytes many times?
 
-<details markdown="1">
+<details>
 <summary>Answers</summary>
 
 1. If the process dies after broadcasting but before storing, the next process does not know
