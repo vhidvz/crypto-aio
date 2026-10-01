@@ -50,6 +50,8 @@ A **provider** is a named set of endpoints, or a preset name plus an API key. A 
 list several providers for failover. The **transport** is the core-owned HTTP layer under
 every driver. It applies timeouts, retries by retry class, rate limits, a circuit breaker per
 endpoint, health and identity checks, and quorum reads for proofs. SDKs never see real URLs.
+One answer is at most `transport.maxResponseBytes` (64 MiB by default); a longer one is cut
+off and retried elsewhere, so one endpoint cannot exhaust the process's memory.
 An endpoint more than `maxLagBlocks` behind the best known height is lagging, and the
 monitor and scanner never decide anything from a view that far behind. The tolerance comes
 from `chains.<id>.maxLagBlocks`, then the root `transport.maxLagBlocks`, then the network's

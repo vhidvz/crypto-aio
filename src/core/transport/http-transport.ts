@@ -42,6 +42,8 @@ const DEFAULTS = {
   failureThreshold: 5,
   openMs: 30_000,
   healthIntervalMs: 15_000,
+  /** Plan 7 D10: an answer's byte cap; a full Solana block in `jsonParsed` stays far below. */
+  maxResponseBytes: 64 * 1024 * 1024,
 };
 
 type ResolvedOptions = typeof DEFAULTS & { fetch?: typeof fetch };
@@ -138,6 +140,10 @@ function validateOptions(options: TransportOptions): void {
     if (value !== undefined && !(Number.isFinite(value) && value > 0)) {
       throw new ConfigError('CONFIG_INVALID', `${key} must be a finite number > 0`);
     }
+  }
+  const cap = options.maxResponseBytes;
+  if (cap !== undefined && !(Number.isSafeInteger(cap) && cap > 0)) {
+    throw new ConfigError('CONFIG_INVALID', 'maxResponseBytes must be an integer > 0');
   }
 }
 
@@ -489,7 +495,7 @@ export class HttpTransport implements Transport {
           // I1: buffer the whole body here, while the deadline and the caller's signal are
           // still attached, and hand the SDK a fresh Response whose `url` is always '' — the
           // real endpoint URL (and any secret it carries) never reaches the SDK.
-          const buffer = await response.arrayBuffer();
+          const buffer = await this.#body(endpoint, response);
           this.#emitResponse(endpoint, label, started, buffer.byteLength);
           // N1: the Response constructor throws if a body is given alongside a status that
           // must never carry one.
@@ -1395,7 +1401,8 @@ export class HttpTransport implements Transport {
       signal,
       redirect: 'error',
     });
-    const text = await response.text();
+    const bytes = await this.#body(endpoint, response);
+    const text = new TextDecoder().decode(bytes);
     this.#throwForStatus(endpoint, response);
     const context = this.#context(endpoint);
     let json: unknown;
@@ -1449,8 +1456,51 @@ export class HttpTransport implements Transport {
         );
       }
     }
-    this.#emitResponse(endpoint, label, started, new TextEncoder().encode(text).length);
+    this.#emitResponse(endpoint, label, started, bytes.byteLength);
     return { text, json };
+  }
+
+  /**
+   * Plan 7 D10 (lesson 20): an answer's body, at most `maxResponseBytes`. A longer one, by
+   * its declared length or as it streams, is cancelled and fails as a retryable
+   * `PROVIDER_UNAVAILABLE`, tagged as possibly delivered, since the server did answer (R16).
+   */
+  async #body(endpoint: Endpoint, response: Response): Promise<Uint8Array> {
+    const limit = this.#opts.maxResponseBytes;
+    const tooLarge = () =>
+      this.#markSent(
+        new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          `endpoint answered more than ${limit} bytes`,
+          { context: this.#context(endpoint) },
+        ),
+      );
+    const declared = Number(response.headers.get('content-length') ?? Number.NaN);
+    if (declared > limit) {
+      void response.body?.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    if (!response.body) return new Uint8Array(0);
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        void reader.cancel().catch(() => undefined);
+        throw tooLarge();
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(size);
+    let at = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, at);
+      at += chunk.byteLength;
+    }
+    return out;
   }
 
   /** M9: the `rpc.response` event is emitted identically from `#exchange` and the SDK bridge. */
