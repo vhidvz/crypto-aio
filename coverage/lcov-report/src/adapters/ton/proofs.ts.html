@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">98.43% </span>
+                <span class="strong">98.45% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>946/961</span>
+                <span class='fraction'>954/969</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">98.43% </span>
+                <span class="strong">98.45% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>946/961</span>
+                <span class='fraction'>954/969</span>
             </div>
         
             
@@ -1024,7 +1024,16 @@
 <a name='L959'></a><a href='#L959'>959</a>
 <a name='L960'></a><a href='#L960'>960</a>
 <a name='L961'></a><a href='#L961'>961</a>
-<a name='L962'></a><a href='#L962'>962</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L962'></a><a href='#L962'>962</a>
+<a name='L963'></a><a href='#L963'>963</a>
+<a name='L964'></a><a href='#L964'>964</a>
+<a name='L965'></a><a href='#L965'>965</a>
+<a name='L966'></a><a href='#L966'>966</a>
+<a name='L967'></a><a href='#L967'>967</a>
+<a name='L968'></a><a href='#L968'>968</a>
+<a name='L969'></a><a href='#L969'>969</a>
+<a name='L970'></a><a href='#L970'>970</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -1181,6 +1190,10 @@
 <span class="cline-any cline-yes">192x</span>
 <span class="cline-any cline-yes">183x</span>
 <span class="cline-any cline-yes">183x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -1422,6 +1435,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">70x</span>
+<span class="cline-any cline-yes">670x</span>
 <span class="cline-any cline-yes">670x</span>
 <span class="cline-any cline-yes">670x</span>
 <span class="cline-any cline-yes">670x</span>
@@ -1716,6 +1730,8 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">55x</span>
 <span class="cline-any cline-yes">55x</span>
 <span class="cline-any cline-yes">55x</span>
@@ -1986,24 +2002,25 @@
 <span class="cline-any cline-yes">73x</span>
 <span class="cline-any cline-yes">73x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
- * Proofs and address history (spec §6.7, §10, D9, D10, D12). Every proof follows lesson 17's
- * final form: a fact is attested at its own height, with a monotone predicate or at a fixed
- * block, and no endpoint proposes a height. The one exception is the unanchored head: one
- * endpoint's masterchain head, trailed by `finalitySkewBlocks` and attested by a quorum read
- * of that block, retried at the transport's own lag tolerance (M1). Every lookup is bound to
- * what it asked for (the board): a header names the block asked, the shard tops cover the
- * basechain, a state and a get-method name the block asked and the state read there.
+ * Proofs and address history. Every proof attests a fact at its own height, with a
+ * monotone predicate or at a fixed block, and no endpoint proposes a height. The one
+ * exception is the unanchored head: one endpoint's masterchain head, trailed by
+ * `finalitySkewBlocks` and attested by a quorum read of that block, retried at the
+ * transport's own lag tolerance. Every lookup is bound to what it asked for: a header
+ * names the block asked, the shard tops cover the basechain, a state and a get-method
+ * name the block asked and the state read there.
  *
- * "Not included" rests only on authenticated chain data, never on an indexer's records
- * (F6-R21): at an attested block where the message is expired, the account's own chain of
- * transactions, as the liteserver serves their cells, each hashed here and linked by its
- * `prev_trans` fields back from the attested state's last transaction. A wallet can be
- * reset (deleted, or destroyed to uninitialized, then re-deployed from its public
- * `StateInit` with seqno 0), so an activation, a destruction or a chain start inside what
- * the proof must see decides nothing, unless the chain itself shows our transaction.
- * Anything not yet decidable throws a retryable `PROVIDER_UNAVAILABLE`, and an answer the
- * chain could not have produced a retryable `PROVIDER_INCONSISTENT`; both decide nothing
- * (lessons 16, 18).
+ * "Not included" rests only on authenticated chain data, never on an indexer's records: a
+ * lying or lagging indexer can miss a message that ran, and a `rebuild` on its word would
+ * pay twice. The proof reads, at an attested block where the message is expired, the
+ * account's own chain of transactions, as the liteserver serves their cells, each hashed
+ * here and linked by its `prev_trans` fields back from the attested state's last
+ * transaction. A wallet can be reset (deleted, or destroyed to uninitialized, then
+ * re-deployed from its public `StateInit` with seqno 0), so an activation, a destruction
+ * or a chain start inside what the proof must see decides nothing, unless the chain
+ * itself shows our transaction. Anything not yet decidable throws a retryable
+ * `PROVIDER_UNAVAILABLE`, and an answer the chain could not have produced a retryable
+ * `PROVIDER_INCONSISTENT`; both decide nothing.
  */
 import { Cell, loadTransaction, type Message, type Transaction } from '@ton/core';
 import type { AddressHistorySource, ProofSource } from '../../core/driver/types';
@@ -2056,7 +2073,7 @@ import { externalHashOf, requestIsOwn } from './wallets';
 export const CONSUMER_PAGES = 8;
 const CONSUMER_PAGE = 64;
 &nbsp;
-/** How far the chain is walked (F6-R21): pages of `WALK_PAGE` transactions. */
+/** How far the chain is walked: pages of `WALK_PAGE` transactions. */
 export const WALK_PAGES = 16;
 const WALK_PAGE = 32;
 /** How far an anchored indexer history is read: pages of `HISTORY_PAGE` transactions. */
@@ -2065,7 +2082,7 @@ const HISTORY_PAGE = 64;
 &nbsp;
 /** toncenter v3 refuses a page of more rows ("limit is not allowed: 1001 &gt; 1000", live). */
 const HISTORY_PAGE_MAX = 1000;
-/** A logical time is a u64 (lesson 19); a history cursor is one, in decimal. */
+/** A logical time is a u64; a history cursor is one, in decimal. */
 const MAX_LT = (1n &lt;&lt; 64n) - 1n;
 const MAX_LT_DIGITS = 20;
 /** A wallet seqno is a u32: any other number is no seqno. */
@@ -2099,9 +2116,9 @@ async function masterchainBlock(ctx: TonContext, seqno: number): Promise&lt;Bloc
 }
 &nbsp;
 /**
- * The one unanchored head (lesson 17): one endpoint's head, trailed by the network's skew
- * and attested by the quorum; when a healthy peer trails further, retried at the transport's
- * lag tolerance, the furthest a proof endpoint may trail (M1). Never a false head, only a
+ * The one unanchored head: one endpoint's head, trailed by the network's skew and
+ * attested by the quorum; when a healthy peer trails further, retried at the transport's
+ * lag tolerance, the furthest a proof endpoint may trail. Never a false head, only a
  * later one.
  */
 export async function attestedHead(ctx: TonContext): Promise&lt;BlockHeader&gt; {
@@ -2123,7 +2140,7 @@ export async function attestedHead(ctx: TonContext): Promise&lt;BlockHeader&gt; 
 /**
  * Whether the basechain shards among `tops` partition its whole id space: a shard id is its
  * prefix, then a 1 bit, then zeros, so it covers `id ± lowest set bit` (unsigned). A set that
- * leaves a shard out would hide that shard's time (D9).
+ * leaves a shard out would hide that shard's time.
  */
 function coversBasechain(tops: readonly BlockId[]): boolean {
   const ranges: (readonly [bigint, bigint])[] = [];
@@ -2144,30 +2161,34 @@ function coversBasechain(tops: readonly BlockId[]): boolean {
 }
 &nbsp;
 /**
- * F6-R29 (review N1): the earliest chain time our message can have run at. The build
- * recorded it (`TonSeqnoOrdering.validFrom`); less the builder's chain-time tolerance, it
- * covers an endpoint whose time ran ahead of the chain within that tolerance, whatever the
- * network's `validForSeconds` is now. Without a well-formed record (an attempt built before
- * it, or bytes this driver did not assemble, F6-R34), the widest lifetime any network
- * allows before `validUntil`, less the tolerance.
+ * The earliest chain time our message can have run at. The build recorded it
+ * (`TonSeqnoOrdering.validFrom`); less the builder's chain-time tolerance, it covers an
+ * endpoint whose time ran ahead of the chain within that tolerance, whatever the
+ * network's `validForSeconds` is now (a window from today's setting could start after an
+ * earlier run, and a reset wallet's history would then prove "not included" falsely).
+ * Without a well-formed record (an attempt built before it, or bytes this driver did not
+ * assemble), the widest lifetime any network allows before `validUntil`, less the
+ * tolerance.
+ * Known gap: an endpoint and the local clock both more than the tolerance ahead of the
+ * chain start the window too late; the host's clock must stay in sync.
  */
 function windowStartOf(slot: { readonly validUntil: number }): number {
   const recorded = recordedValidFrom(slot);
   return (recorded ?? slot.validUntil - MAX_VALID_FOR_SECONDS) - CHAIN_TIME_TOLERANCE;
 }
 &nbsp;
-/** M9: a lifetime is a positive chain time; the reservation's placeholder 0 is none. */
+/** A lifetime is a positive chain time; the reservation's placeholder 0 is none. */
 const hasLifetime = (validUntil: number): boolean =&gt;
   Number.isSafeInteger(validUntil) &amp;&amp; validUntil &gt; 0;
 &nbsp;
 /**
- * D9: no block after `header` can include a message valid until `validUntil`: the
+ * No block after `header` can include a message valid until `validUntil`: the
  * masterchain block and every shard top it commits are at least that old, every later block
  * of a shard is younger than its top (the collator's `now` rises), and a wallet rejects a
  * message once `valid_until &lt;= now()`. The shard tops are asked for the attested block's
  * seqno; toncenter's answer names no block (live), so only the proof quorum binds the list
- * to it (M6), and it must cover the basechain. Each top's header is read under the quorum
- * and bound to the id the list gives. A lifetime that is no time decides nothing (M9).
+ * to it, and it must cover the basechain. Each top's header is read under the quorum
+ * and bound to the id the list gives. A lifetime that is no time decides nothing.
  */
 export async function expiredAt(
   ctx: TonContext,
@@ -2190,7 +2211,7 @@ export async function expiredAt(
   return true;
 }
 &nbsp;
-/** The seqno a `seqno` get-method answers; undefined when it answers none (I6). */
+/** The seqno a `seqno` get-method answers; undefined when it answers none. */
 function seqnoIn(result: RunResult): bigint | undefined {
   const first = result.stack[0];
   return result.exitCode === 0 &amp;&amp;
@@ -2202,7 +2223,7 @@ function seqnoIn(result: RunResult): bigint | undefined {
 }
 &nbsp;
 /**
- * The account state at the attested block `head`, bound to it (I3, M7): the block the
+ * The account state at the attested block `head`, bound to it: the block the
  * answer names is `head`, its workchain, shard, seqno and hashes.
  */
 async function stateAt(
@@ -2218,10 +2239,10 @@ async function stateAt(
 }
 &nbsp;
 /**
- * The wallet's seqno in the attested `state` (I2): the get-method's answer must name the
+ * The wallet's seqno in the attested `state`: the get-method's answer must name the
  * attested block and the state's last transaction, so it is the state whose status was
- * read, never an endpoint's latest one. The quorum key is the seqno and that binding
- * (F3-R12); it never throws.
+ * read, never an endpoint's latest one. The quorum key is the seqno and that binding, as
+ * parsed values, so formatting never splits the quorum; it never throws.
  */
 async function seqnoAt(
   ctx: TonContext,
@@ -2259,12 +2280,12 @@ const attemptId = (id: string): string | undefined =&gt;
   /^[0-9a-fA-F]{64}$/.test(id) ? id.toLowerCase() : undefined;
 &nbsp;
 /**
- * A positive-path hint only (F6-R21 e): the wallet transaction the indexer lists as the
- * consumer of `seqno`, searched newest-first below the wallet's last transaction at the
- * attested block `head`, on the indexer's pages as served (F6-R12). Only a proven request
- * counts (`provenRequest`: A23, the final review, C8-2), and one whose request had expired
- * by its transaction's time contradicts the chain. The caller takes it only when it is our
- * own; it is never the basis of "not included". `undefined` when none is indexed.
+ * A positive-path hint only: the wallet transaction the indexer lists as the consumer of
+ * `seqno`, searched newest-first below the wallet's last transaction at the attested
+ * block `head`, on the indexer's pages as served. Only a proven request counts
+ * (`provenRequest`), and one whose request had expired by its transaction's time
+ * contradicts the chain. The caller takes it only when it is our own; it is never the
+ * basis of "not included". `undefined` when none is indexed.
  */
 async function consumerOf(
   ctx: TonContext,
@@ -2302,14 +2323,14 @@ async function consumerOf(
   return undefined;
 }
 &nbsp;
-// ---- the account's own chain (F6-R21) -----------------------------------------------------
+// ---- the account's own chain --------------------------------------------------------------
 &nbsp;
 const hex256 = (value: bigint): string =&gt; value.toString(16).padStart(64, '0');
 &nbsp;
 /**
- * A transaction the liteserver served, authenticated (F6-R21 a): its cell (capped by the
- * API before this decodes it, lesson 20) hashes to the id expected, and it is the account's
- * own at the lt expected. Anything else is not the chain's.
+ * A transaction the liteserver served, authenticated: its cell (capped by the API before
+ * this decodes it) hashes to the id expected, and it is the account's own at the lt
+ * expected. Anything else is not the chain's.
  */
 const notTheChains = () =&gt;
   inconsistent("the liteserver answered a transaction that is not the chain's");
@@ -2348,9 +2369,9 @@ const WALK_LIMIT = WALK_PAGES * WALK_PAGE;
  * the next by its `prev_trans_lt`/`prev_trans_hash`; `visit` returns true to stop. Ends at
  * the chain's start (`prev_trans_lt` 0: the account's first transaction, or its first since
  * a deletion, transaction.cpp `init_new`), or after `WALK_LIMIT` transactions or
- * `WALK_PAGES` pages. F5-R20 (the replay guard walks before every resend): a transaction
- * authenticated once is kept by its id (`chainTxs`), so a walk fetches only the part of the
- * chain it has not seen; a kept one is bound to the account as a fetched one is.
+ * `WALK_PAGES` pages. The replay guard walks before every resend, so a transaction
+ * authenticated once is kept by its id (`chainTxs`), and a walk fetches only the part of
+ * the chain it has not seen; a kept one is bound to the account as a fetched one is.
  */
 async function walkChain(
   ctx: TonContext,
@@ -2384,7 +2405,8 @@ async function walkChain(
 <span class="cstat-no" title="statement not covered" >        }</span>
       }
       tx = authenticated(next, expected, account);
-      // Lesson 20: only a wallet-sized transaction is kept (a lying endpoint's is not).
+      // Only a wallet-sized transaction is kept (a lying endpoint's is not): the memo
+      // stays bounded.
       if (next.boc.length &lt;= MEMO_TX_LENGTH) keep(ctx.chainTxs, key, tx, CHAIN_MEMO);
     }
     if (await visit(tx, expected.hash)) return 'stopped';
@@ -2406,7 +2428,7 @@ function phasesOf(tx: Transaction) {
     /** The wallet's code ran: the chain runs it only when code exists or a StateInit
      * activates the account (transaction.cpp). */
     ran: vm !== undefined,
-    /** A request ran to the end, so a seqno moved (the action phase keeps it, M1). */
+    /** A request ran to the end, so a seqno moved (the action phase keeps it). */
     consumed:
       d.type === 'generic' &amp;&amp; vm?.success === true &amp;&amp; d.actionPhase?.success === true,
     /** The account had code before or after. */
@@ -2421,10 +2443,10 @@ function phasesOf(tx: Transaction) {
 }
 &nbsp;
 /**
- * M8: the seqno a request the wallet ran claims, read from its signed header alone (so a
+ * The seqno a request the wallet ran claims, read from its signed header alone (so a
  * v4r2 plugin request or a W5 extended-action request counts too): an external request, or
  * a W5 `internal_signed` one, signed by the wallet's key for this very wallet
- * (`requestIsOwn`, A23: a v5r1 wallet runs a forged relayed body and ignores it).
+ * (`requestIsOwn`: a v5r1 wallet runs a forged relayed body and ignores it).
  */
 async function claimedSeqno(
   ctx: TonContext,
@@ -2486,13 +2508,13 @@ const walkExhausted = (ctx: TonContext) =&gt; {
 };
 &nbsp;
 /**
- * F6-R21 (c, d) and F6-R32 L1: the wallet's code never ran in the history the indexer holds
+ * The wallet's code never ran in the history the indexer holds
  * below lt `below` (an earlier incarnation, before a chain start), or in all of it when
  * `below` is undefined (no chain now: never created, or deleted with its last transaction),
  * read under the proof quorum once the indexer has indexed masterchain block `reached`: no
  * compute phase that ran, and no status with code. Our message runs only in the wallet's
  * code, so an incarnation whose code never ran cannot hold it, whether the wallet is active
- * or uninitialized now (L1: a deposit that bounced before the wallet existed is no reset).
+ * or uninitialized now (a deposit that bounced before the wallet existed is no reset).
  * A row where the code ran, a row without its statuses, or a history past the window
  * decides nothing.
  */
@@ -2533,24 +2555,24 @@ async function codeNeverRan(
 }
 &nbsp;
 /**
- * F6-R21 (a, b): at an attested block where the message is expired, whether our message
+ * At an attested block where the message is expired, whether our message
  * consumed its seqno, from the account's own chain alone, walked back from the attested
  * state's last transaction:
  * - our message (its TEP-467 hash computed here) run to the end: ours, proven by the caller;
  * - otherwise "absent" only when the chain shows no reset: the walk reaches the earliest
- *   time our message could have run (`windowStart`, from the attempt's own record, F6-R29)
- *   with, when our seqno is consumed at `head`, its consumer found (another request, by its
- *   signed header, M8); or it reaches the chain's start inside that window, and the anchored
- *   indexer history shows that the code never ran before it (c, F6-R32 L1).
+ *   time our message could have run (`windowStart`, from the attempt's own record) with,
+ *   when our seqno is consumed at `head`, its consumer found (another request, by its
+ *   signed header); or it reaches the chain's start inside that window, and the anchored
+ *   indexer history shows that the code never ran before it.
  * An activation, a destruction, or a consumer of a lower seqno first is a reset: from then
  * on the wallet must never have run, as far as the chain goes back into the window; a walk
- * past its cap decides nothing. An uninitialized wallet (d) must never have run in the
- * window (N4: our message cannot have run before it), nor, without a chain, at all.
+ * past its cap decides nothing. An uninitialized wallet must never have run in the
+ * window (our message cannot have run before it), nor, without a chain, at all.
  */
 async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise&lt;Absence&gt; {
   const needConsumer = q.active &amp;&amp; q.seqno &gt; q.slot.seqno;
   if (q.state.lastLt === 0n) {
-    // No chain at `head`: never created, or deleted with its last transaction (d).
+    // No chain at `head`: never created, or deleted with its last transaction.
     if (q.active) <span class="branch-0 cbranch-no" title="branch not covered" >throw inconsistent('an active account without a transaction');</span>
     await codeNeverRan(ctx, q.wallet, q.head.id.seqno);
     return { absent: true };
@@ -2617,7 +2639,7 @@ function ourRun(
   );
 }
 &nbsp;
-// ---- the replay guard (F6-R34) ------------------------------------------------------------
+// ---- the replay guard ---------------------------------------------------------------------
 &nbsp;
 /**
  * Stored bytes about to be sent again: the wallet they go to (raw), their TEP-467 hash, and
@@ -2634,7 +2656,7 @@ export interface StoredMessage {
 &nbsp;
 /**
  * The monotone predicate "my seqno is above `seqno`" at the endpoints' own states, under the
- * proof quorum (lesson 17); its key is the verdict itself (F3-R12) and never throws.
+ * proof quorum; its key is the verdict itself and never throws.
  */
 async function seqnoAbove(
   ctx: TonContext,
@@ -2658,30 +2680,32 @@ async function seqnoAbove(
 }
 &nbsp;
 /**
- * F6-R34: whether stored bytes may go out again. A wallet reset (a deletion, then a deposit,
+ * Whether stored bytes may go out again. A wallet reset (a deletion, then a deposit,
  * or a re-deploy from the public `StateInit` back to our seqno) makes a message that already
  * ran and paid runnable again while it is valid, so every send of stored bytes asks first:
  * - `send`: the wallet's seqno is already above ours under the proof quorum, so the message
- *   cannot run (addition 5: no walk); or the chain shows it cannot have run: the walk
- *   reaches the earliest time it could have run (`windowStartOf`, from the recorded build
- *   time, else the widest lifetime; addition 1) with no reset, or a chain start whose
- *   earlier history shows the code never ran (addition 3, F6-R32 L1: a wallet funded a
- *   minute ago is sent to);
+ *   cannot run (no walk); or the chain shows it cannot have run: the walk reaches the
+ *   earliest time it could have run (`windowStartOf`, from the recorded build time, else
+ *   the widest lifetime) with no reset, or a chain start whose earlier history shows the
+ *   code never ran (a wallet funded a minute ago is sent to);
  * - `ours`: the chain holds our message run to the end: it must never be sent again.
- * The walk starts from the freshest state an endpoint serves (addition 2: the attested head
- * trails it by 10 to 150 blocks, and a reset in that trail is exactly the danger), and must
- * lead down to the attested state's last transaction, so a lying fresh endpoint can hide
- * only what the attested walk could not see either. Anything else, including a deletion or
- * a new chain since the attested head, an activation or a destruction in the window, a walk
+ * The walk starts from the freshest state an endpoint serves (the attested head trails it
+ * by 10 to 150 blocks, and a reset in that trail is exactly the danger), and must lead
+ * down to the attested state's last transaction, so a lying fresh endpoint can hide only
+ * what the attested walk could not see either. Anything else, including a deletion or a
+ * new chain since the attested head, an activation or a destruction in the window, a walk
  * past its cap, an indexer behind the fresh block or a failed read, throws a retryable
- * error: the guard never sends while it cannot decide (addition 4), and the proof decides.
+ * error: the guard never sends while it cannot decide, and the proof decides.
+ * Known gap: once a wallet is reset (which takes software that shares its key), anyone
+ * can replay our message from the chain's public record; no client can stop that, and the
+ * guard covers only this library's own sends.
  */
 export async function replayVerdict(
   ctx: TonContext,
   message: StoredMessage,
 ): Promise&lt;'send' | 'ours'&gt; {
   const { wallet, id } = message;
-  // Addition 5 (F5-R20): a seqno past ours needs no walk. A failed read is only "not known".
+  // A seqno past ours needs no walk. A failed read is only "not known".
   const past = await seqnoAbove(ctx, wallet, message.seqno).catch(() =&gt; false);
   if (past) return 'send';
   const windowStart = windowStartOf(message);
@@ -2757,8 +2781,8 @@ type Included = Extract&lt;
 &nbsp;
 /**
  * Our indexed transaction that consumed its seqno, proven: a complete trace, whose last
- * block the endpoints attest they hold (lesson 17), and the verdict, its jetton wallets
- * confirmed at that block under the proof quorum (Task 8, D6).
+ * block the endpoints attest they hold, and the verdict, its jetton wallets confirmed at
+ * that block under the proof quorum.
  */
 async function proveIncluded(
   ctx: TonContext,
@@ -2821,9 +2845,9 @@ export function createTonProofs(ctx: TonContext): ProofSource {
 &nbsp;
     async includedFinal(ref, ordering, from) {
       const wallet = walletOf(from);
-      // C1: only our own wallet transaction, its hash computed here from the bound body. A
-      // run that did not consume its seqno (a failed action phase) moved nothing and may run
-      // again until the message expires: only the seqno decides it (Task 7).
+      // Only our own wallet transaction, its hash computed here from the bound body. A
+      // run that did not consume its seqno (a failed action phase) moved nothing and may
+      // run again until the message expires: only the seqno decides it.
       const own = await findOwnAttempt(ctx, ref, wallet, PROOF);
       if (own &amp;&amp; consumesSeqno(own)) return proveIncluded(ctx, own, wallet);
       const id = attemptId(ref.id);
@@ -2832,11 +2856,11 @@ export function createTonProofs(ctx: TonContext): ProofSource {
       if (!slot) <span class="branch-0 cbranch-no" title="branch not covered" >throw undecided('a TON attempt needs its seqno ordering');</span>
       if (!hasLifetime(slot.validUntil))
         throw undecided('a TON attempt needs its lifetime');
-      // Not proven under our hash: decide only from state at an attested block (D12).
+      // Not proven under our hash: decide only from state at an attested block.
       const head = await attestedHead(ctx);
       const state = await stateAt(ctx, wallet, head);
       const active = state.status === 'active';
-      // I6: a frozen wallet, or an uninitialized one past seqno 0, shows no seqno.
+      // A frozen wallet, or an uninitialized one past seqno 0, shows no seqno (never 0).
       if (!active &amp;&amp; (state.status === 'frozen' || slot.seqno !== 0n)) {
         throw undecided('the wallet state does not show its seqno');
       }
@@ -2844,9 +2868,9 @@ export function createTonProofs(ctx: TonContext): ProofSource {
       if (seqno === undefined)
         throw undecided('the wallet state does not show its seqno');
       if (seqno &gt; slot.seqno) {
-        // (e) the indexer's consumer search: a hint that finds ours, never a "no". Final
-        // review M3: nor a veto either; a hint that cannot be used (a record the chain could
-        // not produce, a failed read) is logged, and the authenticated path decides.
+        // The indexer's consumer search: a hint that finds ours, never a "no", nor a veto
+        // either; a hint that cannot be used (a record the chain could not produce, a
+        // failed read) is logged, and the authenticated path decides.
         let hint: V3Transaction | undefined;
         try {
           hint = await consumerOf(ctx, wallet, slot.seqno, head, state);
@@ -2880,10 +2904,10 @@ export function createTonProofs(ctx: TonContext): ProofSource {
     async slotConsumed(ordering, from, level) {
       const slot = seqnoOrdering(ordering);
       if (!slot) return false;
-      // I4: masterchain state is final once it exists, so TON gives no separate `latest`
+      // Masterchain state is final once it exists, so TON gives no separate `latest`
       // evidence: our own landed-but-unindexed message is never observed as `replaced`.
       if (level === 'latest') return false;
-      // Lesson 17: "my seqno at the final state is above n", a monotone predicate.
+      // "My seqno at the final state is above n", a monotone predicate.
       return seqnoAbove(ctx, walletOf(from), slot.seqno);
     },
 &nbsp;
@@ -2901,7 +2925,7 @@ export function createTonProofs(ctx: TonContext): ProofSource {
   };
 }
 &nbsp;
-/** A history cursor: the next page's `end_lt`, a u64 in decimal (lessons 19, 20). */
+/** A history cursor: the next page's `end_lt`, a u64 in decimal, capped before use. */
 function cursorLt(cursor: string | undefined): bigint | undefined {
   if (cursor === undefined) return undefined;
   if (
@@ -2918,7 +2942,7 @@ function cursorLt(cursor: string | undefined): bigint | undefined {
 /**
  * An address's transactions from the indexer, newest first, decoded with jettons only for
  * verified jetton wallets. The cursor is the next page's `end_lt`, taken from the page as
- * the indexer served it (F6-R12), so rows not final yet never end the history early; a page
+ * the indexer served it, so rows not final yet never end the history early; a page
  * is at most what toncenter serves.
  */
 export function createTonHistory(ctx: TonContext): AddressHistorySource {
@@ -2953,7 +2977,7 @@ export function createTonHistory(ctx: TonContext): AddressHistorySource {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">99.32% </span>
+                <span class="strong">99.33% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>886/892</span>
+                <span class='fraction'>894/900</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">99.32% </span>
+                <span class="strong">99.33% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>886/892</span>
+                <span class='fraction'>894/900</span>
             </div>
         
             
@@ -955,7 +955,16 @@
 <a name='L890'></a><a href='#L890'>890</a>
 <a name='L891'></a><a href='#L891'>891</a>
 <a name='L892'></a><a href='#L892'>892</a>
-<a name='L893'></a><a href='#L893'>893</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L893'></a><a href='#L893'>893</a>
+<a name='L894'></a><a href='#L894'>894</a>
+<a name='L895'></a><a href='#L895'>895</a>
+<a name='L896'></a><a href='#L896'>896</a>
+<a name='L897'></a><a href='#L897'>897</a>
+<a name='L898'></a><a href='#L898'>898</a>
+<a name='L899'></a><a href='#L899'>899</a>
+<a name='L900'></a><a href='#L900'>900</a>
+<a name='L901'></a><a href='#L901'>901</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -1236,6 +1245,9 @@
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">252x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">256x</span>
@@ -1763,6 +1775,7 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">39x</span>
 <span class="cline-any cline-yes">39x</span>
 <span class="cline-any cline-yes">39x</span>
@@ -1799,11 +1812,14 @@
 <span class="cline-any cline-yes">126x</span>
 <span class="cline-any cline-yes">126x</span>
 <span class="cline-any cline-yes">126x</span>
+<span class="cline-any cline-yes">103x</span>
 <span class="cline-any cline-yes">103x</span>
 <span class="cline-any cline-yes">103x</span>
 <span class="cline-any cline-yes">103x</span>
 <span class="cline-any cline-yes">102x</span>
 <span class="cline-any cline-yes">103x</span>
+<span class="cline-any cline-yes">99x</span>
+<span class="cline-any cline-yes">99x</span>
 <span class="cline-any cline-yes">99x</span>
 <span class="cline-any cline-yes">99x</span>
 <span class="cline-any cline-yes">99x</span>
@@ -1848,10 +1864,10 @@
 <span class="cline-any cline-yes">126x</span>
 <span class="cline-any cline-yes">126x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
- * TON transfers (spec §7, §15): fees, funds, the unsigned external request, its assembly,
- * and the broadcaster. Builds use `read` tags, except the sender's jetton wallet, which the
- * proof quorum attests (I5); sending uses `broadcast` / `ambiguous-on-failure` with the
- * caller's fanout and signal (R41).
+ * TON transfers: fees, funds, the unsigned external request, its assembly, and the
+ * broadcaster. Builds use `read` tags, except the sender's jetton wallet, which the proof
+ * quorum attests; sending uses `broadcast` / `ambiguous-on-failure` with the caller's
+ * fanout and signal.
  *
  * The fund-safety rules this module keeps:
  * - One output per transfer. The verdict answers `failed` for a partly delivered batch, and
@@ -1866,7 +1882,7 @@
  *   fee or a forward fee of 0 is never an `expected` draft that `checkFunds` would trust.
  *   tonlib buys the emulated gas with the balance, so a sender whose balance is below what
  *   the transfer must at least send is answered `INSUFFICIENT_FUNDS`; any other such
- *   emulation is a retryable `PROVIDER_INCONSISTENT` (F6-R17).
+ *   emulation is a retryable `PROVIDER_INCONSISTENT`.
  * - A node-suggested fee is bounded by the network's `maxNetworkFee` (the economic ceiling).
  * - A frozen wallet, or an undeployed one at an allocated seqno past 0, is refused from its
  *   state before anything is built.
@@ -1953,18 +1969,19 @@ import {
 } from './reader';
 import type { TonFeeDetails, TonSeqnoOrdering } from './types';
 &nbsp;
-/** The id of the one signing request (spec §15: 1 × ed25519 over the signing cell hash). */
+/** The id of the one signing request (1 × ed25519 over the signing cell hash). */
 export const REQUEST_ID = 'wallet';
 &nbsp;
-/** How far an endpoint's `sync_utime` may be from the local clock (M3), in seconds. */
+/** How far an endpoint's `sync_utime` may be from the local clock, in seconds. */
 export { CHAIN_TIME_TOLERANCE };
 &nbsp;
 /**
- * How long after `assemble` a first send may skip the replay guard, in milliseconds
- * (final-wave re-review N1). A normal transfer sends milliseconds after `assemble`. A first
- * send that comes later (a slow store, a paused process) may follow another process's send
- * of the same bytes through a shared store, so it is guarded like a resend. The bound stays
- * well below any sane `lifecycle.leaseMs`; a slower first send only costs one guard.
+ * How long after `assemble` a first send may skip the replay guard, in milliseconds. A
+ * normal transfer sends milliseconds after `assemble`. A first send that comes later (a
+ * slow store, a paused process) may follow another process's send of the same bytes
+ * through a shared store, and a wallet reset in between would make an unguarded late send
+ * pay twice, so it is guarded like a resend. The bound stays well below any sane
+ * `lifecycle.leaseMs`; a slower first send only costs one guard.
  */
 export const FIRST_SEND_MS = 2_000;
 &nbsp;
@@ -2003,9 +2020,9 @@ interface Plan {
 }
 &nbsp;
 /**
- * The recipient's bounce flag (spec §6.4, D7): the variant is `{ bounceable }` only
- * (P25-R13), and a raw address without one is bounceable. Any other variant did not come
- * from the TON codec, and the driver never guesses what it meant.
+ * The recipient's bounce flag: the variant is `{ bounceable }` only, and a raw address
+ * without one is bounceable. Any other variant did not come from the TON codec, and the
+ * driver never guesses what it meant.
  */
 function bounceOf(output: DriverOutput): boolean {
   const variant = output.variant;
@@ -2022,7 +2039,7 @@ function bounceOf(output: DriverOutput): boolean {
 }
 &nbsp;
 /**
- * The checks every builder method runs before any codec, signing or I/O work (lesson 5):
+ * The checks every builder method runs before any codec, signing or I/O work:
  * the wallet identity derives exactly `from`, the intent is one output with a memo that
  * fits, and the fee is TON's.
  */
@@ -2054,7 +2071,7 @@ function planOf(ctx: TonContext, intent: DriverIntent, build: BuildContext): Pla
       `a TON memo is at most ${MAX_MEMO_BYTES} bytes`,
     );
   }
-  sdkAddress(first.to); // INVALID_ADDRESS unless raw (lesson 4)
+  sdkAddress(first.to); // INVALID_ADDRESS unless raw
   const output = { to: first.to, amount: first.amount, bounce: bounceOf(first) };
   const asset = intent.asset;
   let jetton: Plan['jetton'];
@@ -2082,7 +2099,7 @@ function planOf(ctx: TonContext, intent: DriverIntent, build: BuildContext): Pla
   };
 }
 &nbsp;
-/** The allocated seqno (lesson 19: a uint32); a build never runs without one. */
+/** The allocated seqno (a uint32, never wrapped); a build never runs without one. */
 function seqnoOf(build: BuildContext): number {
   const ordering = build.ordering;
   if (ordering?.kind !== 'seqno' || ordering.seqno &gt; 0xffffffffn || ordering.seqno &lt; 0n) {
@@ -2095,8 +2112,8 @@ function seqnoOf(build: BuildContext): number {
 }
 &nbsp;
 /**
- * The fee draft `build` and `checkFunds` are given, read strictly (R11): TON's, and made for
- * this transfer's attached value (none for native coin).
+ * The fee draft `build` and `checkFunds` are given, read strictly as a stored record:
+ * TON's, and made for this transfer's attached value (none for native coin).
  */
 function feeOf(fee: FeeEstimateDraft, plan: Plan): TonFeeDetails {
   const details = tonFeeDetails(fee.details);
@@ -2119,7 +2136,7 @@ async function walletState(ctx: TonContext, from: string): Promise&lt;AccountSta
 }
 &nbsp;
 /**
- * I6: an undeployed wallet only runs a request at seqno 0 (its `StateInit`'s). At a later
+ * An undeployed wallet only runs a request at seqno 0 (its `StateInit`'s). At a later
  * allocated seqno the state lags, or the wallet was deleted, and its `StateInit` would
  * restart it at 0: either way nothing is built, and a later read decides.
  */
@@ -2129,7 +2146,10 @@ function assertDeployable(state: AccountState, seqno: number): void {
   }
 }
 &nbsp;
-/** M3: the endpoint's chain time, when it is within the tolerance of the local clock. */
+/**
+ * The endpoint's chain time, when it is within the tolerance of the local clock: one bad
+ * read must not set a lifetime the core then waits out.
+ */
 function chainTime(ctx: TonContext, state: AccountState): number {
   if (Math.abs(state.syncUtime - ctx.clock.now() / 1000) &gt; CHAIN_TIME_TOLERANCE) {
     throw inconsistent('the endpoint reports a chain time far from the local clock');
@@ -2157,7 +2177,7 @@ async function messageOf(
       }),
     };
   }
-  // I5 and C8-4: the jetton wallet is the one the intent's master names for our wallet, as
+  // The jetton wallet is the one the intent's master names for our wallet, as
   // the proof quorum attests it (cached only so). The verdict's legs carry no master, so
   // this is what binds a transfer to the intended jetton.
   const jettonWallet = await jettonWalletAddress(ctx, plan.jetton.master, from, PROOF);
@@ -2182,10 +2202,10 @@ const malformedConfig = () =&gt;
   });
 &nbsp;
 /**
- * The config's forward fee of `message` (D13): param 25, or 24 when the masterchain is
+ * The config's forward fee of `message`: param 25, or 24 when the masterchain is
  * involved (transaction.cpp prices a message by the source's or the destination's chain).
- * The cell goes through the capped `cellFromBoc` (lesson 20); an answer that does not parse
- * is the endpoint's fault, retryable, never a bare SDK error (M12).
+ * The cell goes through the capped `cellFromBoc`; an answer that does not parse is the
+ * endpoint's fault, retryable, never a bare SDK error.
  */
 async function configForwardFee(
   ctx: TonContext,
@@ -2211,7 +2231,7 @@ async function configForwardFee(
 const GAS_PRICES_TAGS: ReadonlySet&lt;number&gt; = new Set([0xdd, 0xde]);
 &nbsp;
 /**
- * F6-R19, corrected by F6-R20: the least gas fee a wallet run pays, `flat_gas_price` of
+ * The least gas fee a wallet run pays, `flat_gas_price` of
  * config param 21 (basechain) or 20 (masterchain), by the sender's workchain, which prices
  * the account's own compute phase. It is the price of the first `flat_gas_limit` gas units,
  * which every run that computes pays in full (transaction.cpp `gas_fee`); never
@@ -2349,7 +2369,7 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
       const now = chainTime(ctx, state);
       const deploy = state.status === 'uninitialized';
       // The engine allocates the seqno; an estimate outside it (`Blockchain.estimateFee`)
-      // runs at the wallet's live one, read at the state's own block (Task 8), since the
+      // runs at the wallet's live one, read at the state's own block, since the
       // wallet code refuses any other and the emulation would then run nothing.
       const seqno =
         build.ordering !== undefined
@@ -2381,10 +2401,10 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
         },
         READ,
       );
-      // I3: the forward fee counts once. The emulation's follows the real action list; the
+      // The forward fee counts once. The emulation's follows the real action list; the
       // config's formula is its floor, so an endpoint that reports less cannot shrink it.
       const computed = await configForwardFee(ctx, build.from, message);
-      // The economic ceiling by the sender's workchain. F6-R20: the config's forward fee
+      // The economic ceiling by the sender's workchain. The config's forward fee
       // comes from one endpoint too, so it is held to the ceiling before anything trusts it:
       // an inflated param 25 must never turn an empty emulation into a definitive shortfall.
       const ceiling = build.from.startsWith('-1:')
@@ -2395,16 +2415,16 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
           "the endpoint's config prices a forward fee above the policy maximum",
         );
       }
-      // Task 6 review: the wallet runs (deployed, or by its `StateInit`) and sends one
+      // The wallet runs (deployed, or by its `StateInit`) and sends one
       // message, so an emulation without gas or without a forward fee ran nothing.
       if (emulated.gasFee === 0n || emulated.forwardFee === 0n) {
-        // F6-R17: tonlib buys the emulated gas with the balance (`compute_gas_limits`), so
+        // tonlib buys the emulated gas with the balance (`compute_gas_limits`), so
         // a sender that cannot pay emulates to nothing too. Below what the transfer must at
         // least pay (the amount, or the jetton attached value, plus the config's forward
-        // fee and the wallet run's flat gas price, F6-R19) that is the answer; otherwise
+        // fee and the wallet run's flat gas price) that is the answer; otherwise
         // the endpoint's view lags, or it refused the request (another seqno), and a later
         // read decides. The gas floor comes from one endpoint too, so it is held to the
-        // ceiling first (F6-R20).
+        // ceiling first.
         const gas = await configGasFloor(ctx, build.from);
         if (computed + gas &gt; ceiling) {
           throw inconsistent("the endpoint's config prices gas above the policy maximum");
@@ -2465,11 +2485,11 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
       const seqno = seqnoOf(build);
       feeOf(fee, plan);
       const state = await walletState(ctx, build.from);
-      // M3 and D8: the lifetime runs from the endpoint's chain time, bounded by the local
-      // clock; Task 10 proves expiry against attested chain time, never a node's clock.
+      // The lifetime runs from the endpoint's chain time, bounded by the local clock; the
+      // proof checks expiry against attested chain time, never a node's clock.
       const now = chainTime(ctx, state);
       const validUntil = now + config.validForSeconds;
-      // F6-R29: when the message may first run, for the proof's window: the chain time, but
+      // When the message may first run, for the proof's window: the chain time, but
       // never later than the local clock (an endpoint ahead of it sets only the lifetime).
       const validFrom = Math.min(now, Math.floor(ctx.clock.now() / 1000));
       const ordering: TonSeqnoOrdering = {
@@ -2540,7 +2560,7 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
           'the unsigned TON payload does not parse',
         );
       }
-      // D5: the signature goes only where the rest of the request hashes to its digest.
+      // The signature goes only where the rest of the request hashes to its digest.
       const signed = signedRequest(payload, request.payload, signature.bytes);
       const validFrom = boundOrdering(
         unsigned.ordering,
@@ -2549,8 +2569,8 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
         ctx.config.globalId,
       );
       const id = hex(normalizedHash(signed));
-      // F6-R34: assembled here and not sent yet. A repeat keeps the record as it is, so it
-      // never makes sent bytes look unsent.
+      // Assembled here and not sent yet, for the replay guard. A repeat keeps the record
+      // as it is, so it never makes sent bytes look unsent.
       if (!ctx.assembled.has(id)) {
         const record: AssembledMessage = {
           validFrom,
@@ -2568,13 +2588,13 @@ export function createTonBuilder(ctx: TonContext): TxBuilder {
 }
 &nbsp;
 /**
- * Final review M1 (Tron F4-R13 and Solana F5-R22 bind theirs the same way): the proofs and
- * the replay guard read the Attempt's stored ordering, never the bytes, so it must be the
- * signed request's own: a `seqno` ordering with the request's seqno and `valid_until`, a
- * well-formed recorded start (F6-R29), and a request whose signature verifies under the
- * signing key and whose wallet id that key derives into the message's destination. An
- * ordering changed on its way through a store would otherwise move the proof's window.
- * Returns the recorded start.
+ * The proofs and the replay guard read the Attempt's stored ordering, never the bytes, so
+ * it must be the signed request's own (the Tron and Solana builders bind theirs the same
+ * way): a `seqno` ordering with the request's seqno and `valid_until`, a well-formed
+ * recorded start, and a request whose signature verifies under the signing key and whose
+ * wallet id that key derives into the message's destination. An ordering changed on its
+ * way through a store would otherwise move the proof's window. Returns the recorded
+ * start.
  */
 function boundOrdering(
   ordering: UnsignedTx['ordering'],
@@ -2620,8 +2640,8 @@ const MALFORMED: BroadcastResult = Object.freeze({
 const ALREADY_KNOWN: BroadcastResult = Object.freeze({ kind: 'already-known' });
 &nbsp;
 /**
- * Raw bytes as the broadcaster reads them (lesson 20: through the capped `cellFromBoc`, a
- * bare broadcast's bytes are anyone's): their TEP-467 hash, and, when their body carries a
+ * Raw bytes as the broadcaster reads them (through the capped `cellFromBoc`: a bare
+ * broadcast's bytes are anyone's): their TEP-467 hash, and, when their body carries a
  * wallet request's signed header, what the replay guard needs. Null when they are no
  * external message.
  */
@@ -2651,9 +2671,10 @@ function storedOf(
 }
 &nbsp;
 /**
- * F6-R34: the replay guard's answer for stored bytes (`replayVerdict`). One that cannot
- * decide never sends: its reason is logged by code, and the send fails with a retryable
- * error, which the engine records as ambiguous (the monitor and the proof go on).
+ * The replay guard's answer for stored bytes (`replayVerdict`). One that cannot decide
+ * never sends: its reason is logged by code, and the send fails with a retryable error,
+ * which the engine records as ambiguous (the monitor and the proof go on), never as a
+ * refusal: a non-retryable `TX_REFUSED` would invite a caller's retry with a new seqno.
  */
 async function guarded(
   ctx: TonContext,
@@ -2692,17 +2713,20 @@ export function createTonBroadcaster(ctx: TonContext): Broadcaster {
   return {
     async broadcast(signed, options = {}) {
       // Bytes that are no external message can never be valid anywhere: `rejected`, from
-      // our own parse, is the only rejection (lesson 21, F6-R9: never from a node's text).
+      // our own parse, is the only rejection, never a node's text: toncenter's refusals
+      // are unstructured, and a lying endpoint could claim one for bytes it then relays.
       if (signed.raw.encoding !== 'base64') return MALFORMED;
       const stored = storedOf(signed.raw.data);
       if (stored === null) return MALFORMED;
       const expected = stored.id;
-      // F6-R34: bytes this driver assembled and never sent cannot have run anywhere, so a
-      // first send goes out at once, within FIRST_SEND_MS of `assemble` (N1: later, another
-      // process sharing the store may have sent them). Every other send of stored bytes (a
+      // Bytes this driver assembled and never sent cannot have run anywhere, so a first
+      // send goes out at once, within FIRST_SEND_MS of `assemble` (later, another process
+      // sharing the store may have sent them). Every other send of stored bytes (a
       // resend, a dropped rebroadcast, recovery, a caller's same-key retry, bytes from
-      // another process or a bare broadcast) asks the chain first: already run means never
-      // again.
+      // another process or a bare broadcast) asks the chain first: already run means
+      // never again. Resending the same bytes is not idempotent on TON: a wallet deleted
+      // and re-deployed from its `StateInit` counts its seqno from 0 again, so a message
+      // that already ran can run, and pay, twice.
       const record = ctx.assembled.get(expected);
       const first =
         record?.sent === false &amp;&amp; soonAfter(ctx.clock.now() - record.assembledAt);
@@ -2727,8 +2751,8 @@ export function createTonBroadcaster(ctx: TonContext): Broadcaster {
         }
         return { kind: 'accepted' };
       } catch (error) {
-        // D16, lesson 3: only a definitive 4xx answer is classified, and the classifier
-        // itself throws a retryable, ambiguous error for a "not now" answer (F6-R10). A
+        // Only a definitive 4xx answer is classified, and the classifier itself throws a
+        // retryable, ambiguous error for a "not now" answer. A
         // 429, 408, 5xx (toncenter's refusals), a timeout or any answer after an attempt
         // that may have been delivered goes back unchanged: the ambiguous path.
         if (isCryptoAioError(error, 'RPC_ERROR') &amp;&amp; !error.ambiguous) {
@@ -2746,7 +2770,7 @@ export function createTonBroadcaster(ctx: TonContext): Broadcaster {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>143/143</span>
+                <span class='fraction'>145/145</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>143/143</span>
+                <span class='fraction'>145/145</span>
             </div>
         
             
@@ -206,7 +206,9 @@
 <a name='L141'></a><a href='#L141'>141</a>
 <a name='L142'></a><a href='#L142'>142</a>
 <a name='L143'></a><a href='#L143'>143</a>
-<a name='L144'></a><a href='#L144'>144</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -238,6 +240,7 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -287,6 +290,7 @@
 <span class="cline-any cline-yes">70x</span>
 <span class="cline-any cline-yes">70x</span>
 <span class="cline-any cline-yes">70x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -350,10 +354,10 @@
 <span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
- * The TON driver (spec §15): one factory for both built-in networks, configured by each
- * network's registry data. The family shape (Plan 2 Task 10, lesson 17 board entry):
- * `tonDriverFactory(makeNative)` lives here and imports no client module; the library's
- * module (`native-client.ts`) supplies the native client and exports the loadable factory.
+ * The TON driver: one factory for both built-in networks, configured by each network's
+ * registry data. The family shape: `tonDriverFactory(makeNative)` lives here and imports
+ * no client module; the library's module (`native-client.ts`) supplies the native client
+ * and exports the loadable factory.
  */
 import type {
   ChainDriver,
@@ -384,12 +388,13 @@ const malformedProbe = (route: string) =&gt;
   });
 &nbsp;
 /**
- * F6-R23 M1: the probes read heights and the indexer's global id with `api.ts`'s own
+ * The probes read heights and the indexer's global id with `api.ts`'s own
  * parsers, the ones the proofs use, so the two never drift.
  *
- * v2 (R19): identity = config param 19, the network's global id, from a cell that holds
+ * v2: identity = config param 19, the network's global id, from a cell that holds
  * exactly one int32 (`global_id#_ global_id:int32 = ConfigParam 19`); height = the
- * liteserver's masterchain head. One call each (Plan 2.5 Task 2: each probe costs a token).
+ * liteserver's masterchain head. One call each: each probe takes a token from the
+ * endpoint's rate limit.
  */
 const rpcProbes = (expectedIdentity: string): HealthProbes =&gt; ({
   identity: async (call: EndpointCall) =&gt; {
@@ -417,7 +422,7 @@ const rpcProbes = (expectedIdentity: string): HealthProbes =&gt; ({
 });
 &nbsp;
 /**
- * v3 (R19): identity = the indexed head's `global_id` (an int32); height = the newest
+ * v3: identity = the indexed head's `global_id` (an int32); height = the newest
  * indexed masterchain block.
  */
 const indexerProbes = (expectedIdentity: string): HealthProbes =&gt; {
@@ -432,13 +437,14 @@ const indexerProbes = (expectedIdentity: string): HealthProbes =&gt; {
 };
 &nbsp;
 /**
- * F6-R15: a TON transfer carries exactly one output (a partly delivered batch has no safe
- * single verdict), whatever the wallet version. The core prefers this answer to its own
- * capability default, so it holds even for a selection that somehow lists `batch-transfer`.
+ * A TON transfer carries exactly one output (a partly delivered batch has no safe single
+ * verdict: `failed` invites a whole re-send that pays the delivered outputs twice),
+ * whatever the wallet version. The core prefers this answer to its own capability
+ * default, so it holds even for a selection that somehow lists `batch-transfer`.
  */
 const ONE_OUTPUT: DriverLimits = Object.freeze({ maxOutputs: 1 });
 &nbsp;
-/** The batch limit of a wallet; a malformed TON identity throws its `CONFIG_INVALID` (M18). */
+/** The batch limit of a wallet; a malformed TON identity throws its `CONFIG_INVALID`. */
 function limitsOf(wallet: WalletOptions, globalId: number): DriverLimits {
   if (wallet.ton !== undefined) resolveIdentity(wallet, globalId);
   return ONE_OUTPUT;
@@ -450,8 +456,8 @@ export const tonDriverFactory = (
 ): DriverFactory =&gt; ({
   async create(ctx): Promise&lt;ChainDriver&gt; {
     // First: a network that adds a capability TON lacks (`batch-transfer`, `block-scan`, …)
-    // or carries inconsistent data fails here, before any probe (F6-R15, M3).
-    // F6-R24, F6-R25: the handle's options too (`maxNetworkFee`); an unknown one is refused.
+    // or carries inconsistent data fails here, before any probe. The handle's options too
+    // (`maxNetworkFee`); an unknown one is refused.
     const config = tonNetworkConfig(ctx.chain, ctx.network, ctx.options);
     if (!ctx.indexer) {
       throw new ConfigError(
@@ -459,8 +465,8 @@ export const tonDriverFactory = (
         'TON needs an indexer provider (toncenter API v3); set chains.ton.indexer',
       );
     }
-    // M12: probes go on every transport this driver receives, before any traffic. Both
-    // expect the global id as parsed from the registry (F3-R12).
+    // Probes go on every transport this driver receives, before any traffic. Both expect
+    // the global id as parsed from the registry, so they compare values, never spellings.
     const identity = String(config.globalId);
     ctx.transport.setProbes(rpcProbes(identity));
     ctx.indexer.setProbes(indexerProbes(identity));
@@ -487,7 +493,7 @@ export const tonDriverFactory = (
       history: createTonHistory(ton),
       ext: { ton: { getSeqno: ext.ton.getSeqno, jettonWallet: ext.ton.jettonWallet } },
       limits: (wallet) =&gt; limitsOf(wallet, config.globalId),
-      // R34: a fresh SDK client on every call, over this driver's transport (D1).
+      // A fresh SDK client on every call, over this driver's transport.
       createNativeClient: () =&gt; makeNative(ctx.transport),
     };
   },
@@ -499,7 +505,7 @@ export const tonDriverFactory = (
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

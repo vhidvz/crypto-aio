@@ -702,34 +702,34 @@
 <span class="cline-any cline-yes">135x</span>
 <span class="cline-any cline-yes">135x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
- * The verdict on one of our own Attempts (D11, lesson 7): did the value move? A TON wallet
- * transaction "succeeds" even when it moved nothing (send mode +2 skips a message it cannot
- * pay), and a transfer can still bounce, or a jetton move fail, one or two hops later. So an
+ * The verdict on one of our own Attempts: did the value move? A TON wallet transaction
+ * "succeeds" even when it moved nothing (send mode +2 skips a message it cannot pay), and
+ * a transfer can still bounce, or a jetton move fail, one or two hops later. So an
  * Attempt succeeded only when:
  * - the wallet transaction consumed the request's seqno and ran it to the end;
  * - every message of the signed request is among its outgoing messages (a missing one is a
  *   skip only when the wallet's action phase itself counts that many skipped actions);
  * - no native message came back bounced (a `nofunds` or `negfunds` bounce, a failed action
  *   phase without send mode +16 and a non-bounceable message all leave the value with the
- *   recipient, M7), each delivery's bounce phase agreeing with the flag we signed (I1);
+ *   recipient), each delivery's bounce phase agreeing with the flag we signed;
  * - every jetton request reached a jetton wallet as an `internal_transfer` of a positive
  *   amount from our wallet, sent by our jetton wallet and run to the end by the receiving
- *   one (the exact amount is not required: the phantom-success rule), and both jetton
+ *   one (the exact amount is not required: fee-on-transfer tokens exist), and both jetton
  *   wallets are the master's own for the sender and the intended recipient. That last
  *   check needs chain reads, so the verdict returns the `legs` for the caller to confirm
  *   (`confirmLegs` in `reader.ts`); the receiving wallet's own 707 check then holds.
- * Only a request that consumed its seqno is final (lessons 16–18): any other run (a failed
- * action phase, or a compute phase that failed before `commit()`) left the same message
- * valid until it expires, so anyone may replay it and move the value; such a run decides
- * nothing (`pending`), and only the seqno or the proven expiry can.
- * Used on the verdict paths only (`observe`, `includedFinal`; lesson 15). Every body read
- * here is bound to the hash the quorum keyed (C1, `messageBody`). A batch is one Attempt:
- * one bounced output fails it, although the other outputs moved. Lesson 18 (widened): only
- * the chain's own record of a failure decides `failed`; an answer that contradicts the
- * chain or the signed request (a message missing that the wallet did not skip, a jetton
- * wallet that ran the transfer yet sent nothing from the sender, phases that contradict
- * each other or the chain's own counters) throws a retryable `PROVIDER_INCONSISTENT`,
- * which decides nothing. Every output is checked before any of them decides (M2).
+ * Only a request that consumed its seqno is final: any other run (a failed action phase,
+ * or a compute phase that failed before `commit()`) left the same message valid until it
+ * expires, so anyone may replay it and move the value; such a run decides nothing
+ * (`pending`), and only the seqno or the proven expiry can.
+ * Used on the verdict paths only (`observe`, `includedFinal`). Every body read here is
+ * bound to the hash the quorum keyed (`messageBody`). A batch is one Attempt: one bounced
+ * output fails it, although the other outputs moved. Only the chain's own record of a
+ * failure decides `failed`; an answer that contradicts the chain or the signed request (a
+ * message missing that the wallet did not skip, a jetton wallet that ran the transfer yet
+ * sent nothing from the sender, phases that contradict each other or the chain's own
+ * counters) throws a retryable `PROVIDER_INCONSISTENT`, which decides nothing. Every
+ * output is checked before any of them decides.
  */
 import { ProviderError } from '../../core/errors/error';
 import type { V3Message, V3Trace, V3Transaction } from './api';
@@ -761,7 +761,7 @@ export type Verdict =
    */
   | { readonly kind: 'pending' };
 &nbsp;
-/** Fixed reasons (R24): no addresses, amounts or node text. */
+/** Fixed reasons: a stored reason never holds an address, an amount or node text. */
 export const REASONS = Object.freeze({
   walletFailed: 'the wallet transaction failed',
   skipped: 'the wallet skipped a message',
@@ -781,7 +781,7 @@ const inconsistent = (reason: string) =&gt;
  * stored the next seqno with an empty action list. The chain counts that compute phase a
  * success (transaction.cpp: `success = accepted &amp;&amp; committed`) and runs the empty list, so
  * the transaction ran; the scripted node records it that way too. An indexer that wrote it
- * as a failed compute phase is still read as W5's refusal (M4).
+ * as a failed compute phase is still read as W5's refusal.
  */
 const W5_REFUSED_AFTER_COMMIT = 137;
 &nbsp;
@@ -800,7 +800,7 @@ function w5External(tx: V3Transaction): boolean {
  * Whether the wallet transaction of an external request `tx` consumed the request's seqno,
  * so that the same message can never run again: it ran (the new seqno stands with the
  * actions, W5's 137 included), or, as a defensive reading of W5 alone, its compute phase is
- * recorded failed with 137 (M4). Any other run left the old seqno (transaction.cpp: a
+ * recorded failed with 137. Any other run left the old seqno (transaction.cpp: a
  * failed action phase drops the compute phase's state, and a compute phase that failed
  * before `commit()` never had one): a foreign request signed with the same key, or our
  * own, whose action phase failed does not consume the seqno. Throws the retryable
@@ -817,7 +817,7 @@ export function consumesSeqno(tx: V3Transaction): boolean {
 }
 &nbsp;
 /**
- * C1: whether `tx` is our Attempt: the external message to `from` whose TEP-467 hash,
+ * Whether `tx` is our Attempt: the external message to `from` whose TEP-467 hash,
  * computed here from the bound body, is the Attempt id. The indexer's `hash_norm` only
  * finds candidates; it never decides.
  */
@@ -853,7 +853,7 @@ function receiver(trace: V3Trace, message: V3Message, sender: string): V3Transac
 &nbsp;
 interface Sent {
   readonly out: V3Message;
-  /** The bounce flag we signed for it: it decides whether a bounce phase may exist (I1). */
+  /** The bounce flag we signed for it: it decides whether a bounce phase may exist. */
   readonly bounceable: boolean;
   /** For a jetton request: its intended recipient (the owner). */
   readonly jettonRecipient?: string;
@@ -871,7 +871,7 @@ function plainTransfer(facts: NonNullable&lt;ReturnType&lt;typeof messageFacts&g
  * messages; or why they did not all go out: the wallet skipped them (send mode +2), or its
  * code threw after committing the seqno. `ran` holds, so the outgoing messages are
  * distinct and as many as the action phase created; the skips must be exactly the missing
- * messages (M1).
+ * messages.
  */
 function sentMessages(root: V3Transaction): readonly Sent[] | 'skipped' | 'threw' {
   const body = messageBody(root.inMsg as V3Message);
@@ -881,7 +881,7 @@ function sentMessages(root: V3Transaction): readonly Sent[] | 'skipped' | 'threw
 <span class="cstat-no" title="statement not covered" >    throw inconsistent('the indexed external message is not a wallet transfer');</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
   const action = root.action as NonNullable&lt;V3Transaction['action']&gt;;
-  // Committed, then threw (W5 137): the list committed with the seqno was empty (M1).
+  // Committed, then threw (W5 137): the list committed with the seqno was empty.
   if (threwAfterCommit(root)) {
     if (action.msgsCreated !== 0 || action.skippedActions !== 0) {
       throw inconsistent('the wallet threw after committing, yet ran an action');
@@ -912,7 +912,7 @@ function sentMessages(root: V3Transaction): readonly Sent[] | 'skipped' | 'threw
       continue;
     }
     const out = unused.splice(index, 1)[0] as V3Message;
-    // I1: a message leaves the wallet with the flag we signed.
+    // A message leaves the wallet with the flag we signed.
     const bounceable = requested.info.type === 'internal' &amp;&amp; requested.info.bounce;
     if (out.bounce !== null &amp;&amp; out.bounce !== bounceable) {
       throw inconsistent('a message went out with another bounce flag than signed');
@@ -928,9 +928,9 @@ function sentMessages(root: V3Transaction): readonly Sent[] | 'skipped' | 'threw
 <span class="cstat-no" title="statement not covered" >      'the wallet transaction sent a message the request did not ask for',</span>
 <span class="cstat-no" title="statement not covered" >    );</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
-  // Send mode +2: the wallet records exactly the messages it skipped (lesson 18, M1). The
-  // action phase counts skipped sends since global version 8 (config param 8), which both
-  // networks run; on an older chain this refuses (retryable), and never decides.
+  // Send mode +2: the wallet records exactly the messages it skipped. The action phase
+  // counts skipped sends since global version 8 (config param 8), which both networks
+  // run; on an older chain this refuses (retryable), and never decides.
   if (missing !== action.skippedActions) {
     throw inconsistent('the wallet counts other skips than the messages it did not send');
   }
@@ -947,7 +947,7 @@ function onward(hop: V3Transaction, from: string): V3Message | null {
     const body = messageBody(m);
     const internal = body ? decodeJettonInternalTransfer(body) <span class="branch-0 cbranch-no" title="branch not covered" >: null;</span>
     if (!internal || internal.from !== from) continue;
-    // From the sender, a positive amount (the phantom-success rule, final wording).
+    // From the sender, a positive amount, never the exact one (fee-on-transfer tokens).
     if (internal.amount &gt; 0n) return m;
     nothingMoved = true; // a zero amount: nothing moved, so `failed` is accurate
   }
@@ -966,11 +966,11 @@ function outcomeOf(trace: V3Trace, from: string, sent: Sent): Outcome {
   const { out, bounceable, jettonRecipient } = sent;
   const hop = receiver(trace, out, from);
   const hopRan = ran(hop);
-  // I1 (collator.cpp, transaction.cpp `bounce_enabled`): a bounce phase exists only for a
-  // bounceable message, and always when its compute phase failed. A bounce on a message we
-  // signed non-bounceable would fail a delivery that credited the value; a failed bounceable
-  // delivery without one lacks data. The flag we signed decides, even when the indexer
-  // leaves the delivery's own flag out.
+  // A bounce phase exists only for a bounceable message, and always when its compute
+  // phase failed (collator.cpp, transaction.cpp `bounce_enabled`). A bounce on a message
+  // we signed non-bounceable would fail a delivery that credited the value; a failed
+  // bounceable delivery without one lacks data. The flag we signed decides, even when the
+  // indexer leaves the delivery's own flag out.
   if (
     (hop.inMsg?.bounce !== null &amp;&amp; hop.inMsg?.bounce !== bounceable) ||
     (hop.bounce !== undefined &amp;&amp; !bounceable) ||
@@ -979,7 +979,7 @@ function outcomeOf(trace: V3Trace, from: string, sent: Sent): Outcome {
     throw inconsistent('the delivery contradicts the bounce flag we signed');
   }
   if (jettonRecipient === undefined) {
-    // The value stays unless the bounce phase sent it back (M7).
+    // The value stays unless the bounce phase sent it back.
     return hop.bounce === 'ok' ? { failed: REASONS.bounced } : { delivered: true };
   }
   // The owner's jetton wallet ran `transfer` and sent `internal_transfer` onwards. A
@@ -1011,8 +1011,8 @@ export function attemptVerdict(root: V3Transaction, trace: V3Trace | null): Verd
   if (sent === 'threw') return failed(REASONS.walletFailed);
   if (sent === 'skipped') return failed(REASONS.skipped);
   if (!trace || !trace.complete) return PENDING;
-  // M2: every output is checked before any decides, so an early failure never hides a
-  // later contradiction.
+  // Every output is checked before any decides, so an early failure never hides a later
+  // contradiction.
   const outcomes = sent.map((each) =&gt; outcomeOf(trace, root.account, each));
   for (const outcome of outcomes) {
     if ('failed' in outcome) return failed(outcome.failed);
@@ -1027,7 +1027,7 @@ export function attemptVerdict(root: V3Transaction, trace: V3Trace | null): Verd
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

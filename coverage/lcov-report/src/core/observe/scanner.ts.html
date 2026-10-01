@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">99.79% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>476/477</span>
+                <span class='fraction'>478/479</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">99.79% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>476/477</span>
+                <span class='fraction'>478/479</span>
             </div>
         
             
@@ -540,7 +540,9 @@
 <a name='L475'></a><a href='#L475'>475</a>
 <a name='L476'></a><a href='#L476'>476</a>
 <a name='L477'></a><a href='#L477'>477</a>
-<a name='L478'></a><a href='#L478'>478</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L478'></a><a href='#L478'>478</a>
+<a name='L479'></a><a href='#L479'>479</a>
+<a name='L480'></a><a href='#L480'>480</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -940,6 +942,8 @@
 <span class="cline-any cline-yes">57x</span>
 <span class="cline-any cline-yes">57x</span>
 <span class="cline-any cline-yes">57x</span>
+<span class="cline-any cline-yes">57x</span>
+<span class="cline-any cline-yes">57x</span>
 <span class="cline-any cline-yes">41x</span>
 <span class="cline-any cline-yes">41x</span>
 <span class="cline-any cline-yes">41x</span>
@@ -1039,7 +1043,7 @@ export interface ScannerOptions {
   readonly from?: 'latest' | bigint;
   /**
    * `'final'` emits finalized blocks only; a rollback can then still come from a provider
-   * inconsistency (spec §10). `'head'` follows the tip and may roll back within the window.
+   * inconsistency. `'head'` follows the tip and may roll back within the window.
    * Default `'head'`. The mode is not stored with the cursor: resuming a head-mode cursor in
    * final mode keeps the unfinalized blocks it already delivered.
    */
@@ -1172,7 +1176,7 @@ function sameCursor(a: ScanCursor, b: ScanCursor): boolean {
 }
 &nbsp;
 /**
- * Reorg-aware, at-least-once block scanner (spec §10). Each event's `ack()` commits the
+ * Reorg-aware, at-least-once block scanner. Each event's `ack()` commits the
  * cursor (compare-and-set on its version, so two scanners sharing a `cursorKey` never both
  * commit the same advance); asking for the next event first throws `INVALID_TRANSITION`.
  * A view that cannot decide (stale, or missing a block) never causes a rollback: the
@@ -1181,7 +1185,7 @@ function sameCursor(a: ScanCursor, b: ScanCursor): boolean {
  * A cursor stopped by `SCANNER_REORG_TOO_DEEP` is reset explicitly: scan under a new
  * `cursorKey`, or `put` a checkpoint `{ height, hash, recent }` for its key through the
  * `CursorStore`. A checkpoint without `recent` is validated on its own block, and its
- * window is then refilled from the chain below that block (M4).
+ * window is then refilled from the chain below that block.
  */
 export class Scanner implements AsyncIterable&lt;ScanEvent&gt; {
   constructor(
@@ -1228,7 +1232,7 @@ export class Scanner implements AsyncIterable&lt;ScanEvent&gt; {
         if (cursor) {
           let verdict = validated ? 'canonical' : await this.findRollback(source, cursor);
           if (!validated &amp;&amp; verdict === 'canonical') {
-            // M4: a short window (a reset checkpoint) is refilled from the chain below the
+            // A short window (a reset checkpoint) is refilled from the chain below the
             // validated block, so a reorg within the window still rolls back.
             const recent = await this.refill(source, windowOf(cursor));
             if (recent) cursor = { ...cursor, recent };
@@ -1413,8 +1417,10 @@ export class Scanner implements AsyncIterable&lt;ScanEvent&gt; {
    * block is, and `undefined` when this view cannot decide: it is stale, or it does not show
    * a block yet (absence is never divergence). Throws `SCANNER_REORG_TOO_DEEP` only when
    * every retained block is visible and none is canonical. The rolled-back cursor's window
-   * is refilled from the chain below the ancestor. R33: a rollback or TOO_DEEP verdict of
-   * this header walk stands only once the proof quorum confirms it.
+   * is refilled from the chain below the ancestor. A rollback or TOO_DEEP verdict of this
+   * header walk stands only once the proof quorum confirms it, so one endpoint serving a
+   * fork never rolls a cursor back. Only verdicts are confirmed: a block's transactions
+   * are still read from the one endpoint that serves them.
    */
   private async findRollback(
     source: Source,
@@ -1449,7 +1455,7 @@ export class Scanner implements AsyncIterable&lt;ScanEvent&gt; {
   }
 &nbsp;
   /**
-   * R33: whether the quorum-served hashes confirm a verdict: every `removed` block has been
+   * Whether the quorum-served hashes confirm a verdict: every `removed` block has been
    * replaced at its height, and `ancestor` (when given) is still canonical. No block at a
    * height decides nothing (`false`); a quorum that disagrees throws a retryable error,
    * which the scan loop also treats as "look again later".
@@ -1501,7 +1507,7 @@ export class Scanner implements AsyncIterable&lt;ScanEvent&gt; {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

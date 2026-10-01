@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>268/268</span>
+                <span class='fraction'>267/267</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>268/268</span>
+                <span class='fraction'>267/267</span>
             </div>
         
             
@@ -330,9 +330,7 @@
 <a name='L265'></a><a href='#L265'>265</a>
 <a name='L266'></a><a href='#L266'>266</a>
 <a name='L267'></a><a href='#L267'>267</a>
-<a name='L268'></a><a href='#L268'>268</a>
-<a name='L269'></a><a href='#L269'>269</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<a name='L268'></a><a href='#L268'>268</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -600,22 +598,22 @@
 <span class="cline-any cline-yes">65x</span>
 <span class="cline-any cline-yes">65x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
- * Indexed TON transactions as `DriverTransaction`s (spec §6.6), for anyone's transactions:
- * `getTransaction` and `history` report what the chain did (lesson 15). Locators (D15):
+ * Indexed TON transactions as `DriverTransaction`s, for anyone's transactions:
+ * `getTransaction` and `history` report what the chain did. Locators:
  * `msg:in` for the inbound internal message's value, `msg:in:jetton` for the jettons it
  * brings, `msg:&lt;i&gt;` for outbound message `i`.
  *
  * Execution status: a wallet (external-in) transaction executed when its compute and action
  * phases succeeded and its code did not throw after committing; an internal one whenever its
- * value stayed, i.e. no bounce phase sent it back (M7): a non-bounceable deposit to a fresh
+ * value stayed, i.e. no bounce phase sent it back: a non-bounceable deposit to a fresh
  * address is `aborted` on chain yet credited, and so is a non-bounceable message to a
  * failing contract, a failed action phase without send mode +16 and a `nofunds` or
  * `negfunds` bounce. Jettons move only when the jetton wallet ran the message to the end
- * (a failed phase drops its state). Bodies are bound to their keyed hashes (C1). Jetton
+ * (a failed phase drops its state). Bodies are bound to their keyed hashes. Jetton
  * movements are decoded only for a jetton wallet the master itself names for its owner
  * (`jetton`, resolved by the reader): anyone can deploy a contract that claims a master or
  * sends a `transfer_notification`. A record whose phases contradict each other decides
- * nothing (lesson 18, widened).
+ * nothing.
  */
 import type { Cell } from '@ton/core';
 import type {
@@ -647,15 +645,14 @@ export interface VerifiedJettonWallet {
  * nothing else (transaction.cpp, collator.cpp):
  * - an action phase follows exactly a successful compute phase, and a skipped compute
  *   phase never succeeded;
- * - `aborted` is exactly "not ran" (M3: a skipped compute phase included);
+ * - `aborted` is exactly "not ran" (a skipped compute phase included);
  * - a bounce phase exists exactly for a bounceable inbound message (`bounce_enabled`, the
  *   message's own flag; never an external one or a bounce) whose phases failed, and always
- *   when its compute phase did (I1);
+ *   when its compute phase did;
  * - the outgoing messages are distinct, as many as the action phase created when it ran,
- *   and nothing but the bounce when it did not (M1).
+ *   and nothing but the bounce when it did not.
  * A record that breaks any of these contradicts the chain: a retryable
- * `PROVIDER_INCONSISTENT`, which decides nothing (lesson 18, widened), never a default
- * (lesson 6).
+ * `PROVIDER_INCONSISTENT`, which decides nothing, never a default.
  */
 export function ran(tx: V3Transaction): boolean {
   const { compute, action, inMsg, outMsgs } = tx;
@@ -671,7 +668,7 @@ export function ran(tx: V3Transaction): boolean {
     new Set(outMsgs.map((m) =&gt; m.hash)).size !== outMsgs.length ||
     (done
       ? outMsgs.length !== action?.msgsCreated
-      : // F6-R14: a flag the indexer leaves out (null) says nothing against the chain.
+      : // A flag the indexer leaves out (null) says nothing against the chain.
         outMsgs.some((m) =&gt; m.bounced === false))
   ) {
     throw new ProviderError(
@@ -787,7 +784,7 @@ function jettonTransfer(
 }
 &nbsp;
 /**
- * A wallet request's TEP-467 hash, computed here from its bound body (C1): the indexer's
+ * A wallet request's TEP-467 hash, computed here from its bound body: the indexer's
  * `hash_norm` is only its claim.
  */
 function requestHashOf(tx: V3Transaction): string | undefined {
@@ -823,7 +820,7 @@ export function decodeTransaction(
     if (body.cell &amp;&amp; jettonsMoved(tx, body.kind)) {
       const jetton = jettonTransfer(tx, body.cell, options.jetton);
       if (!jetton) partial = true;
-      // M6: a zero credit moved nothing, as a zero native value does not.
+      // A zero credit moved nothing, as a zero native value does not.
       else if (jetton.amount &gt; 0n) transfers.push(jetton);
     }
   }
@@ -874,7 +871,7 @@ export function decodeTransaction(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

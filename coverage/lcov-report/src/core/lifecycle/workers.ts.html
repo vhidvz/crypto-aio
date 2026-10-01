@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">89.42% </span>
+                <span class="strong">89.47% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>372/416</span>
+                <span class='fraction'>374/418</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">89.42% </span>
+                <span class="strong">89.47% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>372/416</span>
+                <span class='fraction'>374/418</span>
             </div>
         
             
@@ -479,7 +479,9 @@
 <a name='L414'></a><a href='#L414'>414</a>
 <a name='L415'></a><a href='#L415'>415</a>
 <a name='L416'></a><a href='#L416'>416</a>
-<a name='L417'></a><a href='#L417'>417</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L417'></a><a href='#L417'>417</a>
+<a name='L418'></a><a href='#L418'>418</a>
+<a name='L419'></a><a href='#L419'>419</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -664,6 +666,8 @@
 <span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-yes">32x</span>
 <span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">267x</span>
+<span class="cline-any cline-yes">267x</span>
 <span class="cline-any cline-yes">267x</span>
 <span class="cline-any cline-yes">267x</span>
 <span class="cline-any cline-yes">267x</span>
@@ -910,8 +914,8 @@ import { PRE_SIGNING_STATES, errorCode } from './engine-rules';
 import type { MonitorDeps, ReadResolver, TargetResolver } from './monitor';
 &nbsp;
 /*
- * The monitor's background worker loop and startup recovery (M11: moved out of
- * `Monitor`, which delegates to `Workers`). They check Operations through the monitor
+ * The monitor's background worker loop and startup recovery (`Monitor` delegates to
+ * `Workers`). They check Operations through the monitor
  * (`MonitorChecks`) and write only through the engine.
  */
 &nbsp;
@@ -969,7 +973,7 @@ export interface MonitorChecks {
 export class Workers {
   /**
    * Per Operation, the expected nonces a `nonce.gap` was already emitted for; least
-   * recently reported first, capped at `GAP_MEMORY` Operations (M2).
+   * recently reported first, capped at `GAP_MEMORY` Operations.
    */
   readonly #gaps = new Map&lt;string, Set&lt;string&gt;&gt;();
 &nbsp;
@@ -980,7 +984,7 @@ export class Workers {
 &nbsp;
   /**
    * One worker pass: claims up to `batch` due Operations, checks each under its claim fence
-   * (a stale worker's writes fail), then releases the claim. R26: every claimed Operation
+   * (a stale worker's writes fail), then releases the claim. Every claimed Operation
    * that stays live leaves the pass scheduled a poll interval ahead, including when its
    * check threw, its view was stale or its all-rejected verdict could not run, so no worker
    * claims it again before then. A stale view also skips gap handling and reconciliation.
@@ -1088,7 +1092,9 @@ export class Workers {
    * a caller and are reported through `recovery.skipped` (codes and states only). Then each
    * wallet with a live Operation has its nonces reconciled under its address lease. A
    * failure is logged by code and counted, and the rest go on. `signal` stops recovery
-   * between Operations and bounds each check and lease wait.
+   * between Operations and bounds each check and lease wait. Known gap: a `signed` or
+   * ambiguous Operation whose wallet-bound target cannot be resolved is counted `failed`
+   * without its check, although the check needs no wallet.
    */
   async recover(
     options: { readonly signal?: AbortSignal } = {},
@@ -1179,7 +1185,7 @@ export class Workers {
 &nbsp;
   /**
    * `resolve` for one pass: each execution context's target is rebuilt at most once, and
-   * only when first asked for (R32: a wallet-bound one only by a write that needs it).
+   * only when first asked for (a wallet-bound one only by a write that needs it).
    */
   #passResolver&lt;T&gt;(
     resolve: (op: OperationRecord) =&gt; Promise&lt;T | undefined&gt;,
@@ -1210,7 +1216,7 @@ export class Workers {
   }
 &nbsp;
   /**
-   * R26: leaves a claimed, live Operation scheduled a poll interval ahead, unless it ended,
+   * Leaves a claimed, live Operation scheduled a poll interval ahead, unless it ended,
    * another worker took it over or a writer scheduled it meanwhile. A pre-signing Operation
    * is never scheduled (callers drive it), so it is unscheduled instead. Best effort.
    */
@@ -1246,11 +1252,11 @@ export class Workers {
   /**
    * `nonce.gap`, once per (Operation, expected nonce): a `submitted` Operation has waited
    * longer than `droppedGracePeriodMs` since its active Attempt was first seen or sent, and
-   * the chain's pending nonce is still below its own (spec §8.5: a lower nonce is missing
+   * the chain's pending nonce is still below its own (a lower nonce is missing
    * even from the mempool, so congestion alone is no gap). It names the live Operation
    * holding the expected nonce, when one exists. Every such pass then reconciles the wallet's nonces, trying the lease
-   * once (never a filler transaction): a leaked value goes back for the next transfer. R32:
-   * only that write resolves the wallet-bound target (`writes`).
+   * once (never a filler transaction): a leaked value goes back for the next transfer.
+   * Only that write resolves the wallet-bound target (`writes`).
    */
   async #detectNonceGap(
     target: ReadTarget,
@@ -1266,7 +1272,7 @@ export class Workers {
     const observation = attempt
       ? await this.deps.stores.operations.getObservation(attempt.id)
 <span class="branch-0 cbranch-no" title="branch not covered" >      : null;</span>
-    // M3: not `lastBroadcastAt`, which every resend of a dropped Attempt refreshes.
+    // Not `lastBroadcastAt`, which every resend of a dropped Attempt refreshes.
     const since = observation?.firstSeenAt<span class="branch-0 cbranch-no" title="branch not covered" > ?? attempt?.createdAt<span class="branch-0 cbranch-no" title="branch not covered" > </span>?? op.createdAt;</span>
     if (this.deps.clock.now() - since &lt; this.deps.lifecycle().droppedGracePeriodMs)
       return;
@@ -1318,7 +1324,7 @@ export class Workers {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

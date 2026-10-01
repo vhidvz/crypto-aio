@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>163/163</span>
+                <span class='fraction'>168/168</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>163/163</span>
+                <span class='fraction'>168/168</span>
             </div>
         
             
@@ -226,7 +226,17 @@
 <a name='L161'></a><a href='#L161'>161</a>
 <a name='L162'></a><a href='#L162'>162</a>
 <a name='L163'></a><a href='#L163'>163</a>
-<a name='L164'></a><a href='#L164'>164</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -392,7 +402,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
  * What the Avalanche driver needs from a network's registry entry and from the handle's
  * `options`, validated once when a driver is created, so bad data fails with
- * `CONFIG_INVALID` instead of misbehaving (lessons 10 and 14: every number is checked).
+ * `CONFIG_INVALID` instead of misbehaving: every number is checked, and a confirmation
+ * count must be a safe integer of at least 1.
  * SDK-free.
  */
 import { ConfigError } from '../../core/errors/error';
@@ -403,8 +414,8 @@ import { isId } from './cb58';
 import type { AvalancheVm } from './types';
 &nbsp;
 /**
- * Every capability of an Avalanche network. The Data API indexer is required (spec §15's
- * shape for UTXO chains): it locates a transaction's block and serves address history.
+ * Every capability of an Avalanche network. The Data API indexer is required: it locates
+ * a transaction's block and serves address history.
  */
 export const AVALANCHE_CAPABILITIES: readonly Capability[] = Object.freeze([
   'batch-transfer',
@@ -424,7 +435,10 @@ export interface AvalancheNetworkConfig {
   /** The chain's own id (CB58), written into every transaction. */
   readonly blockchainId: string;
   readonly avaxAssetId: string;
-  /** The id of the block at height 0: the endpoint identity (spec §11). */
+  /**
+   * The id of the block at height 0: the endpoint identity. An endpoint whose identity
+   * probe reports another id serves another network or chain, and is disabled.
+   */
   readonly genesisBlockId: string;
   /** Finality depth N: a block with N confirmations is final. */
   readonly confirmations: number;
@@ -444,10 +458,11 @@ export const OPTION_DEFAULTS = Object.freeze({
 const OPTION_KEYS = new Set(Object.keys(OPTION_DEFAULTS));
 &nbsp;
 /**
- * F3-R15: a network's capability overrides, checked against what the driver serves. The
- * handle advertises the manifest's capabilities plus `add`, minus `remove`, and the core
- * accepts what it advertises, so each name must be one the driver serves; the error names a
- * library capability, never a caller's unknown text.
+ * A network's capability overrides, checked against what the driver serves. The handle
+ * advertises the manifest's capabilities plus `add`, minus `remove`, and the core accepts
+ * what it advertises, so each name must be one the driver serves: otherwise the core
+ * accepts a request the driver cannot serve. The error names a library capability, never
+ * a caller's unknown text.
  */
 function checkCapabilities(network: NetworkInfo, fail: (reason: string) =&gt; never): void {
   const add: unknown = network.capabilities?.add ?? [];
@@ -521,7 +536,7 @@ export function avalancheNetworkConfig(
   }
 &nbsp;
   for (const key of Object.keys(options)) {
-    // F3-R16: the accepted names, never the caller's key (it may be a pasted secret).
+    // The accepted names, never the caller's key (it may be a pasted secret).
     if (!OPTION_KEYS.has(key)) fail(unknownName('option', OPTION_KEYS));
   }
   const merged: Readonly&lt;Record&lt;string, unknown&gt;&gt; = { ...OPTION_DEFAULTS, ...options };
@@ -559,7 +574,7 @@ export function avalancheNetworkConfig(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

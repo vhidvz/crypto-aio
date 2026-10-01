@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>152/152</span>
+                <span class='fraction'>157/157</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>152/152</span>
+                <span class='fraction'>157/157</span>
             </div>
         
             
@@ -215,7 +215,12 @@
 <a name='L150'></a><a href='#L150'>150</a>
 <a name='L151'></a><a href='#L151'>151</a>
 <a name='L152'></a><a href='#L152'>152</a>
-<a name='L153'></a><a href='#L153'>153</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -245,6 +250,7 @@
 <span class="cline-any cline-yes">181x</span>
 <span class="cline-any cline-yes">181x</span>
 <span class="cline-any cline-yes">181x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -354,6 +360,10 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">148x</span>
 <span class="cline-any cline-yes">148x</span>
 <span class="cline-any cline-yes">148x</span>
 <span class="cline-any cline-yes">148x</span>
@@ -380,7 +390,7 @@ import { ChainError, ProviderError, ValidationError } from '../../core/errors/er
 import type { FeeOverride, FeeSpeed } from '../../core/model/fee';
 import type { UtxoNetworkConfig } from './network';
 &nbsp;
-/** Confirmation targets (blocks) per speed: library policy (Plan 3 D-decisions). */
+/** Confirmation targets (blocks) per speed: library policy, not a network fact. */
 export const SPEED_TARGETS: Readonly&lt;Record&lt;FeeSpeed, number&gt;&gt; = Object.freeze({
   fast: 2,
   normal: 6,
@@ -402,8 +412,9 @@ const outOfRange = (): ProviderError =&gt;
   new ProviderError('PROVIDER_UNAVAILABLE', 'the fee estimate is out of range');
 &nbsp;
 /**
- * The largest sat/vB an estimate may carry before it is converted (Task 7's parser bound);
- * above about 1.8e302, `satPerKvB`'s `x × 1e6` overflows to Infinity.
+ * The largest sat/vB an estimate may carry before it is converted (the `/fee-estimates`
+ * parser's bound too); above about 1.8e302, `satPerKvB`'s `x × 1e6` overflows to
+ * Infinity.
  */
 const MAX_ESTIMATE = 1e7;
 &nbsp;
@@ -427,7 +438,7 @@ export function rateForSpeed(
   let rate: bigint;
   if (best !== undefined) {
     const estimate = estimates.get(best) as number;
-    // M3: one endpoint's estimate never sets an absurd rate (an explicit override may), and a
+    // One endpoint's estimate never sets an absurd rate (an explicit override may), and a
     // malformed one (negative, not finite or beyond any real rate) decides nothing either;
     // the negated range test also refuses NaN.
     if (!(estimate &gt;= 0 &amp;&amp; estimate &lt;= MAX_ESTIMATE)) throw outOfRange();
@@ -497,7 +508,10 @@ export interface PaidFee {
   readonly fee: bigint;
   /** Estimated with worst-case signatures (an upper bound of the real size). */
   readonly vsize: number;
-  /** A lower bound of the real size (M1); default `vsize`. */
+  /**
+   * A lower bound of the real size: a signature can be shorter than the worst case the
+   * estimate assumes. Default `vsize`.
+   */
   readonly minVsize?: number;
 }
 &nbsp;
@@ -512,8 +526,9 @@ export function replacementFloor(
   incrementalRelayFee: bigint,
 ): bigint {
   const byBandwidth = previous.fee + feeAt(incrementalRelayFee, vsize);
-  // M1: the replaced rate at its smallest possible size, rounded up to sat/kvB, plus one:
-  // strictly higher both exactly (v30) and truncated to sat/kvB (v28, v29).
+  // The replaced rate at its smallest possible size (the worst-case size understates it),
+  // rounded up to sat/kvB, plus one: strictly higher both exactly (v30) and truncated to
+  // sat/kvB (v28, v29).
   const smallest = BigInt(previous.minVsize ?? previous.vsize);
   const oldRate = (previous.fee * 1_000n + smallest - 1n) / smallest;
   const byRate = ((oldRate + 1n) * BigInt(vsize) + 999n) / 1_000n;
@@ -526,7 +541,7 @@ export function replacementFloor(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-01T09:51:53.170Z
+                at 2026-10-01T12:45:40.634Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
