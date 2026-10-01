@@ -119,7 +119,7 @@ The commands a contributor runs:
 pnpm install
 pnpm check          # lint, typecheck and the unit tests
 pnpm test:coverage  # the tests with the coverage thresholds CI enforces
-pnpm doc            # the TypeDoc type reference, into docs/api/
+pnpm doc            # the API reference pages, from the doc comments, into docs/api/
 pnpm docs:dev       # this site, with live reload, at http://localhost:5173/crypto-aio/
 pnpm test:pack      # build, pack, and load every entry point from the tarball
 CRYPTO_AIO_INTEGRATION=1 pnpm test test/integration   # live, read-only

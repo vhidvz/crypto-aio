@@ -1,0 +1,2405 @@
+[
+  {
+    "title": "crypto-aio",
+    "kind": 2,
+    "path": "crypto-aio/index.md",
+    "isDeprecated": false,
+    "children": [
+      {
+        "title": "Classes",
+        "children": [
+          {
+            "title": "Address",
+            "kind": 128,
+            "path": "crypto-aio/classes/Address.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Amount",
+            "kind": 128,
+            "path": "crypto-aio/classes/Amount.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Blockchain",
+            "kind": 128,
+            "path": "crypto-aio/classes/Blockchain.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ChainError",
+            "kind": 128,
+            "path": "crypto-aio/classes/ChainError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ConfigError",
+            "kind": 128,
+            "path": "crypto-aio/classes/ConfigError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CryptoAio",
+            "kind": 128,
+            "path": "crypto-aio/classes/CryptoAio.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CryptoAioError",
+            "kind": 128,
+            "path": "crypto-aio/classes/CryptoAioError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "MemoryCursorStore",
+            "kind": 128,
+            "path": "crypto-aio/classes/MemoryCursorStore.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "MemoryLockManager",
+            "kind": 128,
+            "path": "crypto-aio/classes/MemoryLockManager.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "MemoryOperationStore",
+            "kind": 128,
+            "path": "crypto-aio/classes/MemoryOperationStore.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "MemorySequenceStore",
+            "kind": 128,
+            "path": "crypto-aio/classes/MemorySequenceStore.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ProviderError",
+            "kind": 128,
+            "path": "crypto-aio/classes/ProviderError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Secret",
+            "kind": 128,
+            "path": "crypto-aio/classes/Secret.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SigningError",
+            "kind": 128,
+            "path": "crypto-aio/classes/SigningError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "StateError",
+            "kind": 128,
+            "path": "crypto-aio/classes/StateError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TimeoutError",
+            "kind": 128,
+            "path": "crypto-aio/classes/TimeoutError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UnsupportedCapabilityError",
+            "kind": 128,
+            "path": "crypto-aio/classes/UnsupportedCapabilityError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ValidationError",
+            "kind": 128,
+            "path": "crypto-aio/classes/ValidationError.md",
+            "isDeprecated": false
+          }
+        ]
+      },
+      {
+        "title": "Interfaces",
+        "children": [
+          {
+            "title": "AdapterManifest",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AdapterManifest.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AddressCodec",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AddressCodec.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AddressHistorySource",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AddressHistorySource.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AioEvents",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AioEvents.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AioOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AioOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AssetInfo",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AssetInfo.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AssetMetadata",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AssetMetadata.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AssetRegistration",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AssetRegistration.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AttemptObservation",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AttemptObservation.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AttemptRecord",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AttemptRecord.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AttemptRef",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AttemptRef.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AttemptView",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AttemptView.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AvalancheExt",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AvalancheExt.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AvalancheFeeDetails",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AvalancheFeeDetails.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AvalancheUnspent",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/AvalancheUnspent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Balance",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Balance.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Block",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Block.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "BlockRef",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/BlockRef.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "BlockSource",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/BlockSource.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Broadcaster",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Broadcaster.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "BuildContext",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/BuildContext.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CallbackSignerOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/CallbackSignerOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CallOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/CallOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ChainDefaults",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ChainDefaults.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ChainDriver",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ChainDriver.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ChainInfo",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ChainInfo.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ChainReader",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ChainReader.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ChainRegistry",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ChainRegistry.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Checkpoint",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Checkpoint.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Clock",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Clock.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ConfirmationResult",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ConfirmationResult.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CreateResult",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/CreateResult.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CryptoAioErrorOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/CryptoAioErrorOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CursorStore",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/CursorStore.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DisposableNativeClient",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DisposableNativeClient.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverBlock",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverBlock.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverContext",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverContext.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverFactory",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverFactory.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverIntent",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverIntent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverLimits",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverLimits.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverOutput",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverOutput.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverTransaction",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverTransaction.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverTransfer",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverTransfer.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DriverTxObservation",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/DriverTxObservation.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "EndpointCall",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/EndpointCall.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "EndpointConfig",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/EndpointConfig.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "EndpointStatus",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/EndpointStatus.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "EvmExt",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/EvmExt.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "EvmFeeDetails",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/EvmFeeDetails.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ExecutionContext",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ExecutionContext.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ExtendedKeyVersions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ExtendedKeyVersions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FamilyRegistry",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/FamilyRegistry.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FeeCharge",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/FeeCharge.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FeeChargeDraft",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/FeeChargeDraft.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FeeEstimate",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/FeeEstimate.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FeeEstimateDraft",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/FeeEstimateDraft.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Fence",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Fence.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "GeneratedSigner",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/GeneratedSigner.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "GenerateOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/GenerateOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "HandleOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/HandleOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "HealthProbes",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/HealthProbes.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Hooks",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Hooks.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "HttpRequest",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/HttpRequest.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "IntentSummary",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/IntentSummary.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "KeyRef",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/KeyRef.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Lease",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Lease.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "LifecycleOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/LifecycleOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "LocalSignerOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/LocalSignerOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "LockManager",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/LockManager.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Logger",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Logger.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "MnemonicSignerOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/MnemonicSignerOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "MonitorApi",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/MonitorApi.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NativeAssetInfo",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/NativeAssetInfo.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NativeClientMap",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/NativeClientMap.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NetworkInfo",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/NetworkInfo.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NetworkStatus",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/NetworkStatus.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NormalizedAddress",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/NormalizedAddress.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationClaim",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationClaim.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationFilter",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationFilter.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationPatch",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationPatch.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationRecord",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationRecord.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationsApi",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationsApi.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationsFilter",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationsFilter.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationStore",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationStore.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationView",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/OperationView.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "PeerDependency",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/PeerDependency.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Plugin",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Plugin.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "PreparedOperation",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/PreparedOperation.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "PresetInput",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/PresetInput.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ProofSource",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ProofSource.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ProviderPreset",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ProviderPreset.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "RawTx",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/RawTx.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "RecoveryReport",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/RecoveryReport.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ReplacementPolicy",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ReplacementPolicy.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ResolvedTransfer",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ResolvedTransfer.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ScanCursor",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ScanCursor.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ScanFilter",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ScanFilter.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Scanner",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Scanner.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ScannerOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ScannerOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ScopeOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/ScopeOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SequenceSource",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SequenceSource.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SequenceState",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SequenceState.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SequenceStore",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SequenceStore.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SerializedError",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SerializedError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SignatureBundle",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SignatureBundle.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SignatureScheme",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SignatureScheme.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SignedTx",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SignedTx.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Signer",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Signer.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SignerTicket",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SignerTicket.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SigningContext",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SigningContext.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SigningParams",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SigningParams.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SigningRequest",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SigningRequest.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SolanaExpiryOrdering",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SolanaExpiryOrdering.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SolanaExt",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SolanaExt.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SolanaFeeDetails",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SolanaFeeDetails.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SolanaTokenAccount",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/SolanaTokenAccount.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "StoredCursor",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/StoredCursor.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "StoredIntent",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/StoredIntent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Stores",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Stores.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Submission",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Submission.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TonExt",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TonExt.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TonFeeDetails",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TonFeeDetails.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TonFeeOverride",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TonFeeOverride.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TonSeqnoOrdering",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TonSeqnoOrdering.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Transaction",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Transaction.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TransferIntent",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TransferIntent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TransferOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TransferOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TransferOutputInput",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TransferOutputInput.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Transport",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/Transport.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TransportOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TransportOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TronExpiryOrdering",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TronExpiryOrdering.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TronExt",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TronExt.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TronFeeDetails",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TronFeeDetails.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TronResources",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TronResources.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TxBuilder",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TxBuilder.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TxStatus",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TxStatus.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TxStatusEvent",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/TxStatusEvent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UnresolvedTransfer",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UnresolvedTransfer.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UnsignedTx",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UnsignedTx.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoExt",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UtxoExt.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoFeeDetails",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UtxoFeeDetails.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoSelectionPreview",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UtxoSelectionPreview.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoSelectionRequest",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UtxoSelectionRequest.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoUnspent",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UtxoUnspent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoWalletOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/UtxoWalletOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "VerifyInput",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/VerifyInput.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "WaitOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/WaitOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "WalletConfig",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/WalletConfig.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "WalletHdOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/WalletHdOptions.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "WalletKey",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/WalletKey.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "WorkerOptions",
+            "kind": 256,
+            "path": "crypto-aio/interfaces/WorkerOptions.md",
+            "isDeprecated": false
+          }
+        ]
+      },
+      {
+        "title": "Type Aliases",
+        "children": [
+          {
+            "title": "AddressFormatter",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AddressFormatter.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AioEvent",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AioEvent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AioEventName",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AioEventName.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AmountInput",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AmountInput.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AssetId",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AssetId.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AssetRef",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AssetRef.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AttemptIdKind",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AttemptIdKind.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AttemptPurpose",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AttemptPurpose.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AvalancheFeeOverride",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AvalancheFeeOverride.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "AvalancheVm",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/AvalancheVm.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "BroadcastResult",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/BroadcastResult.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Capability",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/Capability.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ChainId",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ChainId.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ClearableField",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ClearableField.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CodesOf",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/CodesOf.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Curve",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/Curve.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DataClass",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/DataClass.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Decoding",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/Decoding.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "EndpointState",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/EndpointState.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ErrorCategory",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ErrorCategory.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ErrorCode",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ErrorCode.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ErrorContext",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ErrorContext.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ErrorContextValue",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ErrorContextValue.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Evidence",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/Evidence.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "EvmFeeOverride",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/EvmFeeOverride.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ExtOf",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ExtOf.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FamilyOf",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/FamilyOf.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FeeBound",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/FeeBound.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FeeOverride",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/FeeOverride.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FeeSpeed",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/FeeSpeed.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Finality",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/Finality.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FinalityLevel",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/FinalityLevel.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FinalityPolicy",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/FinalityPolicy.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "FundsCheck",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/FundsCheck.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "HandleConfig",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/HandleConfig.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "KnownCapability",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/KnownCapability.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "KnownLibrary",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/KnownLibrary.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "LibraryOf",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/LibraryOf.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "LogFields",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/LogFields.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "LogLevel",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/LogLevel.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "LogWriter",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/LogWriter.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NetworkOf",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/NetworkOf.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NewOperation",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/NewOperation.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OperationState",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/OperationState.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OrderingData",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/OrderingData.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OrderingKind",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/OrderingKind.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ProviderConfig",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ProviderConfig.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ProviderRef",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ProviderRef.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "RequestPurpose",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/RequestPurpose.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "RetryClass",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/RetryClass.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ScanEvent",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ScanEvent.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ScanEventBody",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/ScanEventBody.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SigningPurpose",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/SigningPurpose.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SigningResult",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/SigningResult.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "SolanaFeeOverride",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/SolanaFeeOverride.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TokenRef",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/TokenRef.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TonWalletIdentity",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/TonWalletIdentity.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TonWalletVersion",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/TonWalletVersion.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Transfer",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/Transfer.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TransferSource",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/TransferSource.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TronFeeOverride",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/TronFeeOverride.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TxState",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/TxState.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoAddressType",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/UtxoAddressType.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoFeeOverride",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/UtxoFeeOverride.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "UtxoOutputType",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/UtxoOutputType.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "WalletOptions",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/WalletOptions.md",
+            "isDeprecated": false
+          }
+        ]
+      },
+      {
+        "title": "Variables",
+        "children": [
+          {
+            "title": "BUILTIN_SCHEMES",
+            "kind": 32,
+            "path": "crypto-aio/variables/BUILTIN_SCHEMES.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "CLEARABLE_FIELDS",
+            "kind": 32,
+            "path": "crypto-aio/variables/CLEARABLE_FIELDS.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "DATA_CLASSIFICATION",
+            "kind": 32,
+            "path": "crypto-aio/variables/DATA_CLASSIFICATION.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "ERROR_CODES",
+            "kind": 32,
+            "path": "crypto-aio/variables/ERROR_CODES.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "KNOWN_CAPABILITIES",
+            "kind": 32,
+            "path": "crypto-aio/variables/KNOWN_CAPABILITIES.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "Library",
+            "kind": 32,
+            "path": "crypto-aio/variables/Library.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "NON_TERMINAL_STATES",
+            "kind": 32,
+            "path": "crypto-aio/variables/NON_TERMINAL_STATES.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "noopLogger",
+            "kind": 32,
+            "path": "crypto-aio/variables/noopLogger.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OPERATION_PATCH_KEYS",
+            "kind": 32,
+            "path": "crypto-aio/variables/OPERATION_PATCH_KEYS.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "PLACEHOLDER_ORIGIN",
+            "kind": 32,
+            "path": "crypto-aio/variables/PLACEHOLDER_ORIGIN.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "REDACTED",
+            "kind": 32,
+            "path": "crypto-aio/variables/REDACTED.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "TERMINAL_STATES",
+            "kind": 32,
+            "path": "crypto-aio/variables/TERMINAL_STATES.md",
+            "isDeprecated": false
+          }
+        ]
+      },
+      {
+        "title": "Functions",
+        "children": [
+          {
+            "title": "assetId",
+            "kind": 64,
+            "path": "crypto-aio/functions/assetId.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "callbackSigner",
+            "kind": 64,
+            "path": "crypto-aio/functions/callbackSigner.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "configure",
+            "kind": 64,
+            "path": "crypto-aio/functions/configure.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "createError",
+            "kind": 64,
+            "path": "crypto-aio/functions/createError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "createLogger",
+            "kind": 64,
+            "path": "crypto-aio/functions/createLogger.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "createMemoryStores",
+            "kind": 64,
+            "path": "crypto-aio/functions/createMemoryStores.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "defaultContainer",
+            "kind": 64,
+            "path": "crypto-aio/functions/defaultContainer.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "deriveXpubChild",
+            "kind": 64,
+            "path": "crypto-aio/functions/deriveXpubChild.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "explorerUrl",
+            "kind": 64,
+            "path": "crypto-aio/functions/explorerUrl.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "feeTotal",
+            "kind": 64,
+            "path": "crypto-aio/functions/feeTotal.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "isCryptoAioError",
+            "kind": 64,
+            "path": "crypto-aio/functions/isCryptoAioError.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "isSecret",
+            "kind": 64,
+            "path": "crypto-aio/functions/isSecret.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "isTerminal",
+            "kind": 64,
+            "path": "crypto-aio/functions/isTerminal.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "localSigner",
+            "kind": 64,
+            "path": "crypto-aio/functions/localSigner.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "mutuallyExclusive",
+            "kind": 64,
+            "path": "crypto-aio/functions/mutuallyExclusive.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "parseAssetId",
+            "kind": 64,
+            "path": "crypto-aio/functions/parseAssetId.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "parseTagged",
+            "kind": 64,
+            "path": "crypto-aio/functions/parseTagged.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "redactDeep",
+            "kind": 64,
+            "path": "crypto-aio/functions/redactDeep.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "redactUrl",
+            "kind": 64,
+            "path": "crypto-aio/functions/redactUrl.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "reveal",
+            "kind": 64,
+            "path": "crypto-aio/functions/reveal.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "secret",
+            "kind": 64,
+            "path": "crypto-aio/functions/secret.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "stringifyTagged",
+            "kind": 64,
+            "path": "crypto-aio/functions/stringifyTagged.md",
+            "isDeprecated": false
+          }
+        ]
+      },
+      {
+        "title": "avalanche",
+        "kind": 2,
+        "path": "crypto-aio/avalanche/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Interfaces",
+            "children": [
+              {
+                "title": "AvalancheNativeClient",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/AvalancheNativeClient.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "AvalancheSdk",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/AvalancheSdk.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkAddress",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkAddress.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkBaseTx",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkBaseTx.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkBigInt",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkBigInt.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkContext",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkContext.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkCredential",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkCredential.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkDimensions",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkDimensions.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkFeeState",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkFeeState.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkId",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkId.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkInt",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkInt.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkManager",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkManager.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkOutputOwners",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkOutputOwners.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkSerializable",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkSerializable.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkSignature",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkSignature.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkSignedTx",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkSignedTx.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkTransaction",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkTransaction.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkTransferableInput",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkTransferableInput.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkTransferableOutput",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkTransferableOutput.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkTransferOutput",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkTransferOutput.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkUnpacker",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkUnpacker.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkUnsignedTx",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkUnsignedTx.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkUtxo",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkUtxo.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SdkUtxoId",
+                "kind": 256,
+                "path": "crypto-aio/avalanche/interfaces/SdkUtxoId.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Variables",
+            "children": [
+              {
+                "title": "AVALANCHE_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/avalanche/variables/AVALANCHE_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "AVALANCHE_PEER_DEPENDENCIES",
+                "kind": 32,
+                "path": "crypto-aio/avalanche/variables/AVALANCHE_PEER_DEPENDENCIES.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "evm",
+        "kind": 2,
+        "path": "crypto-aio/evm/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Interfaces",
+            "children": [
+              {
+                "title": "EvmChainPluginOptions",
+                "kind": 256,
+                "path": "crypto-aio/evm/interfaces/EvmChainPluginOptions.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Variables",
+            "children": [
+              {
+                "title": "DEFAULT_MAX_FEE_PER_GAS",
+                "kind": 32,
+                "path": "crypto-aio/evm/variables/DEFAULT_MAX_FEE_PER_GAS.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "EVM_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/evm/variables/EVM_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "EVM_PEER_DEPENDENCIES",
+                "kind": 32,
+                "path": "crypto-aio/evm/variables/EVM_PEER_DEPENDENCIES.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Functions",
+            "children": [
+              {
+                "title": "evmChainPlugin",
+                "kind": 64,
+                "path": "crypto-aio/evm/functions/evmChainPlugin.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "native",
+        "kind": 2,
+        "path": "crypto-aio/native/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Functions",
+            "children": [
+              {
+                "title": "native",
+                "kind": 64,
+                "path": "crypto-aio/native/functions/native.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "solana",
+        "kind": 2,
+        "path": "crypto-aio/solana/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Variables",
+            "children": [
+              {
+                "title": "DEFAULT_MAX_COMPUTE_UNIT_PRICE",
+                "kind": 32,
+                "path": "crypto-aio/solana/variables/DEFAULT_MAX_COMPUTE_UNIT_PRICE.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SOLANA_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/solana/variables/SOLANA_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SOLANA_PEER_DEPENDENCIES",
+                "kind": 32,
+                "path": "crypto-aio/solana/variables/SOLANA_PEER_DEPENDENCIES.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "testing",
+        "kind": 2,
+        "path": "crypto-aio/testing/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Classes",
+            "children": [
+              {
+                "title": "CrashError",
+                "kind": 128,
+                "path": "crypto-aio/testing/classes/CrashError.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeChain",
+                "kind": 128,
+                "path": "crypto-aio/testing/classes/FakeChain.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeClock",
+                "kind": 128,
+                "path": "crypto-aio/testing/classes/FakeClock.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeFetch",
+                "kind": 128,
+                "path": "crypto-aio/testing/classes/FakeFetch.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FaultyOperationStore",
+                "kind": 128,
+                "path": "crypto-aio/testing/classes/FaultyOperationStore.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Interfaces",
+            "children": [
+              {
+                "title": "ContractTestApi",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/ContractTestApi.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "CursorHarness",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/CursorHarness.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeChainOptions",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeChainOptions.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeEndpointOptions",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeEndpointOptions.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeEnv",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeEnv.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeEnvelope",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeEnvelope.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeEnvOptions",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeEnvOptions.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeExt",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeExt.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeNativeClient",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeNativeClient.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeReceipt",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeReceipt.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeRequest",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeRequest.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeUnsigned",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeUnsigned.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeWireBlock",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeWireBlock.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeWireTx",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FakeWireTx.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FaultPoint",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/FaultPoint.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "LockHarness",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/LockHarness.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "OperationHarness",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/OperationHarness.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "RecordedCall",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/RecordedCall.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SequenceHarness",
+                "kind": 256,
+                "path": "crypto-aio/testing/interfaces/SequenceHarness.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Type Aliases",
+            "children": [
+              {
+                "title": "FakeChainId",
+                "kind": 2097152,
+                "path": "crypto-aio/testing/type-aliases/FakeChainId.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeHandler",
+                "kind": 2097152,
+                "path": "crypto-aio/testing/type-aliases/FakeHandler.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeOrdering",
+                "kind": 2097152,
+                "path": "crypto-aio/testing/type-aliases/FakeOrdering.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "FakeReply",
+                "kind": 2097152,
+                "path": "crypto-aio/testing/type-aliases/FakeReply.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Variables",
+            "children": [
+              {
+                "title": "fakeManifest",
+                "kind": 32,
+                "path": "crypto-aio/testing/variables/fakeManifest.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "REVERT_ADDRESS",
+                "kind": 32,
+                "path": "crypto-aio/testing/variables/REVERT_ADDRESS.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "SAMPLE_ORDERINGS",
+                "kind": 32,
+                "path": "crypto-aio/testing/variables/SAMPLE_ORDERINGS.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Functions",
+            "children": [
+              {
+                "title": "createFakeEnv",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/createFakeEnv.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "decodeEnvelope",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/decodeEnvelope.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "describeCursorStoreContract",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/describeCursorStoreContract.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "describeLockManagerContract",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/describeLockManagerContract.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "describeOperationStoreContract",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/describeOperationStoreContract.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "describeSequenceStoreContract",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/describeSequenceStoreContract.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "drive",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/drive.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "encodeEnvelope",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/encodeEnvelope.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "fakeAddress",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/fakeAddress.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "fakeDigest",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/fakeDigest.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "fakePlugin",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/fakePlugin.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "fakeTxId",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/fakeTxId.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "hang",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/hang.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "isFakeAddress",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/isFakeAddress.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "rejectsWithCode",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/rejectsWithCode.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "rpcError",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/rpcError.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "rpcResult",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/rpcResult.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "sampleAttempt",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/sampleAttempt.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "sampleOperation",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/sampleOperation.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "settle",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/settle.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "signFake",
+                "kind": 64,
+                "path": "crypto-aio/testing/functions/signFake.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "ton",
+        "kind": 2,
+        "path": "crypto-aio/ton/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Variables",
+            "children": [
+              {
+                "title": "TON_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/ton/variables/TON_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "TON_INDEXER_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/ton/variables/TON_INDEXER_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "TON_PEER_DEPENDENCIES",
+                "kind": 32,
+                "path": "crypto-aio/ton/variables/TON_PEER_DEPENDENCIES.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "tron",
+        "kind": 2,
+        "path": "crypto-aio/tron/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Variables",
+            "children": [
+              {
+                "title": "DEFAULT_ENERGY_MARGIN_PERCENT",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/DEFAULT_ENERGY_MARGIN_PERCENT.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "DEFAULT_EXPIRATION_MS",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/DEFAULT_EXPIRATION_MS.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "DEFAULT_MAX_FEE_LIMIT",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/DEFAULT_MAX_FEE_LIMIT.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "MAX_EXPIRATION_MS",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/MAX_EXPIRATION_MS.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "MAX_MEMO_BYTES",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/MAX_MEMO_BYTES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "MIN_EXPIRATION_MS",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/MIN_EXPIRATION_MS.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "TRON_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/TRON_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "TRON_INDEXER_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/TRON_INDEXER_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "TRON_PEER_DEPENDENCIES",
+                "kind": 32,
+                "path": "crypto-aio/tron/variables/TRON_PEER_DEPENDENCIES.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "utxo",
+        "kind": 2,
+        "path": "crypto-aio/utxo/index.md",
+        "isDeprecated": false,
+        "children": [
+          {
+            "title": "Interfaces",
+            "children": [
+              {
+                "title": "UtxoNativeClient",
+                "kind": 256,
+                "path": "crypto-aio/utxo/interfaces/UtxoNativeClient.md",
+                "isDeprecated": false
+              }
+            ]
+          },
+          {
+            "title": "Variables",
+            "children": [
+              {
+                "title": "UTXO_CAPABILITIES",
+                "kind": 32,
+                "path": "crypto-aio/utxo/variables/UTXO_CAPABILITIES.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "UTXO_PEER_DEPENDENCIES",
+                "kind": 32,
+                "path": "crypto-aio/utxo/variables/UTXO_PEER_DEPENDENCIES.md",
+                "isDeprecated": false
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

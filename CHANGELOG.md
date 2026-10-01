@@ -29,10 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   <https://vhidvz.github.io/crypto-aio/>: a quick start and a 10-minute mental model, a learning
   path from first principles (blockchain foundations, then the engineering of payments), a
   developer tour of the library, task guides with examples, and a reference (API, configuration,
-  errors, capabilities, networks, glossary). The guides' content moved into it; `docs/guides/`
-  keeps redirects from the old pages. Code samples marked runnable are executed and type-checked
-  by the test suite, and the API and capability pages are checked against the library. Every page
-  still reads as plain Markdown on GitHub, with the same heading anchors as on the site.
+  errors, capabilities, networks, glossary), with an API reference generated from the source by
+  TypeDoc. The guides' content moved into it; `docs/guides/` keeps redirects from the old pages.
+  Code samples marked runnable are executed and type-checked by the test suite, and the API and
+  capability pages are checked against the library. Every page still reads as plain Markdown on
+  GitHub, with the same heading anchors as on the site.
 - A watch-only wallet's `publicKey` must be hex of exactly its scheme's key length (33 bytes
   for secp256k1, 32 for ed25519), or the handle fails with `CONFIG_INVALID`. An uncompressed
   secp256k1 key used to derive an address, but no signature ever verified against it.

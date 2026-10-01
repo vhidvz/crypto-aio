@@ -15,6 +15,7 @@ published.
 | `build/` | Build | Task guides and the examples cookbook |
 | `reference/` | Reference | API, configuration, concepts, errors, capabilities, networks, glossary |
 | `explore/` | Explore | Source map, plugins, stores, design records |
+| `api/` | API | The API reference, generated from the source's doc comments by `pnpm doc`; do not edit by hand |
 | `guides/` | | Redirects from the pre-site guide URLs; do not add pages here |
 | `superpowers/` | | Design records of the 0.1.0 release; not published as pages |
 | `.vitepress/` | | The site itself: its configuration, navigation and theme |
@@ -24,7 +25,7 @@ The files of the site:
 | File | What it holds |
 | --- | --- |
 | `.vitepress/navigation.ts` | The sidebar: each section's pages, in reading order, and the learning path through three of them |
-| `.vitepress/config.mts` | Everything else the site needs: the top bar, search, the learning path's step headers and pagers, redirects, the sitemap |
+| `.vitepress/config.mts` | Everything else the site needs: the top bar, search, the API reference's sidebar, the learning path's step headers and pagers, redirects, the sitemap |
 | `.vitepress/slugify.ts` | Heading ids, the same as GitHub's, so an `#anchor` works on both |
 | `.vitepress/theme/` | VitePress's default theme, with the diagrams, the step header and the site's styles |
 
@@ -76,9 +77,14 @@ From the repository root, after `pnpm install`:
 pnpm docs:dev       # a live preview at http://localhost:5173/crypto-aio/
 pnpm docs:build     # the site, into docs/.vitepress/dist/
 pnpm docs:preview   # serves that build at http://localhost:4173/crypto-aio/
+pnpm doc            # only the API reference, into docs/api/
 ```
 
+`docs:dev` and `docs:build` regenerate the API reference first, so the site always matches the
+source. `docs/api/` is committed, so it can be read on GitHub too: commit it again with a change
+to the public API or its doc comments. TypeDoc's settings are in `typedoc.json`; its
+`typedoc-plugin-markdown` writes Markdown pages, with an HTML anchor on every member, and a
+`navigation.json` that becomes the API reference's sidebar.
+
 The `Documentation` workflow (`.github/workflows/docs.yml`) runs these tests and builds the site
-for every pull request that changes it, and publishes it to GitHub Pages from `main`. The
-type-level API reference is separate: `pnpm doc` generates it into `docs/api/`, which the site
-does not publish.
+for every pull request that changes it, and publishes it to GitHub Pages from `main`.

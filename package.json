@@ -39,8 +39,8 @@
     "test:coverage": "jest --coverage && pnpm run make-coverage-badge",
     "test:pack": "pnpm run build && node scripts/pack-check.mjs",
     "doc": "typedoc",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
+    "docs:dev": "pnpm doc && vitepress dev docs",
+    "docs:build": "pnpm doc && vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "check": "pnpm run lint && pnpm run typecheck && pnpm test",
     "make-coverage-badge": "make-coverage-badge --report-path coverage/coverage-summary.json --output-path coverage-badge.svg"
@@ -84,6 +84,7 @@
     "tronweb": "6.5.1",
     "ts-jest": "29.4.12",
     "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.13.1",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.70.1",
     "vitepress": "^1.6.4",

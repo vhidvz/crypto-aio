@@ -2,7 +2,7 @@
 // to preview it). Every page is plain Markdown that also reads well on github.com: links
 // between pages are relative `.md` links, diagrams are ```mermaid fences, callouts are GitHub
 // alerts (`> [!NOTE]`), and heading ids are GitHub's, so the same `#anchor` works on both.
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type DefaultTheme, type HeadConfig } from 'vitepress';
@@ -22,7 +22,10 @@ const DESCRIPTION =
   'payment systems.';
 
 /** Folders and files of docs/ that are not pages of the site. */
-const NOT_PAGES = ['README.md', 'superpowers/**', 'api/**'];
+const NOT_PAGES = ['README.md', 'superpowers/**'];
+
+/** The API reference, generated from the source's doc comments by TypeDoc (`pnpm doc`). */
+const API = 'api/';
 
 /** A page's top-level front matter: its `key: value` lines, with quotes removed. */
 function frontMatter(path: string): Record<string, string> {
@@ -64,7 +67,7 @@ function sidebar(section: Section): DefaultTheme.SidebarItem {
   };
 }
 
-/** Every page of the site, as a path under docs/. */
+/** Every hand-written page of the site (not the API reference), as a path under docs/. */
 function pages(dir = ''): string[] {
   return readdirSync(join(DOCS, dir), { withFileTypes: true }).flatMap((entry) => {
     const path = posix.join(dir, entry.name);
@@ -83,6 +86,26 @@ const MOVED = new Set(
     .filter((path) => frontMatter(path).redirect)
     .map(pageUrl),
 );
+
+/** An entry of the navigation TypeDoc writes next to the API reference (`navigationJson`). */
+interface ApiNavigation {
+  readonly title: string;
+  readonly path?: string;
+  readonly children?: readonly ApiNavigation[];
+}
+
+/** The API reference's sidebar: each entry point, its kinds of symbol, then each symbol. */
+function apiSidebar(): DefaultTheme.SidebarItem[] {
+  const file = join(DOCS, API, 'navigation.json');
+  if (!existsSync(file))
+    throw new Error(`docs/${API} holds no API reference: run pnpm doc`);
+  const item = ({ title, path, children }: ApiNavigation): DefaultTheme.SidebarItem => ({
+    text: title,
+    ...(path ? { link: link(`${API}${path}`) } : {}),
+    ...(children?.length ? { collapsed: true, items: children.map(item) } : {}),
+  });
+  return (JSON.parse(readFileSync(file, 'utf8')) as ApiNavigation[]).map(item);
+}
 
 const STEPS = journeySteps(LEARNING_PATH);
 
@@ -115,8 +138,10 @@ export default defineConfig({
     transformItems: (items) => items.filter((item) => !MOVED.has(item.url)),
   },
 
-  // Mermaid's own chunks pass 500 kB; only a page with a diagram loads them, after it renders.
-  vite: { build: { chunkSizeWarningLimit: 1000 } },
+  // Mermaid's chunks and the search index (the API reference makes it ~1.7 MB, 350 kB gzipped)
+  // pass 500 kB; each loads only when needed: a diagram after its page renders, the index when
+  // the reader opens search.
+  vite: { build: { chunkSizeWarningLimit: 2000 } },
 
   markdown: {
     // GitHub's heading ids, so an `#anchor` works on the site and on github.com alike.
@@ -165,6 +190,9 @@ export default defineConfig({
       ],
     );
 
+    // The API reference is generated: its source is the doc comments, not the page.
+    if (path.startsWith(API)) front.editLink = false;
+
     // A step of the learning path: its part, its place in the part, and the steps either side.
     const index = STEPS.findIndex((step) => step.path === path);
     if (index >= 0) {
@@ -189,6 +217,7 @@ export default defineConfig({
       { text: 'Learn', link: '/learn/', activeMatch: '^/(learn|tour)/' },
       { text: 'Build', link: '/build/', activeMatch: '^/build/' },
       { text: 'Reference', link: '/reference/', activeMatch: '^/reference/' },
+      { text: 'API', link: `/${API}`, activeMatch: `^/${API}` },
       { text: 'Explore', link: '/explore/', activeMatch: '^/explore/' },
       {
         text: `v${PACKAGE.version}`,
@@ -198,9 +227,26 @@ export default defineConfig({
         ],
       },
     ],
-    sidebar: SIDEBAR.map(sidebar),
+    sidebar: {
+      [`/${API}`]: [
+        { text: 'API reference', link: `/${API}`, items: apiSidebar() },
+        { text: 'API at a glance', link: '/reference/api' },
+      ],
+      '/': SIDEBAR.map(sidebar),
+    },
     outline: { level: [2, 3], label: 'On this page' },
-    search: { provider: 'local' },
+    search: {
+      provider: 'local',
+      options: {
+        miniSearch: {
+          // When a guide and the generated API reference both match, the guide comes first.
+          // (Sent to the browser as source text: it must not use anything outside itself.)
+          searchOptions: {
+            boostDocument: (id: string) => (id.includes('/api/') ? 0.4 : 1),
+          },
+        },
+      },
+    },
     externalLinkIcon: true,
     editLink: {
       pattern: `${REPOSITORY}/edit/main/docs/:path`,
