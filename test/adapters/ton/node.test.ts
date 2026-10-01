@@ -1384,6 +1384,9 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect(s.node.status(s.wallet)).toBe('active');
   });
 
+  // Retries and a timeout on the fake clock: `--detectOpenHandles` slows it past Jest's
+  // 5-second default, so it carries an explicit budget (as probe-rate-limit.test.ts
+  // does).
   it('lets a test script a late answer, or one that never comes (intercept)', async () => {
     const t = tonNode();
     const info = { method: 'GET', path: '/getMasterchainInfo' } as const;
@@ -1407,7 +1410,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
       endpoint: 'main',
       route: '/getMasterchainInfo',
     });
-  });
+  }, 30_000);
 });
 
 describe('the scripted toncenter node: the raw chain, deletion and re-deploy (F6-R21)', () => {
