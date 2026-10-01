@@ -59,6 +59,9 @@ web_modules/
 # Output of 'npm pack'
 *.tgz
 
+# Coverage reports (pnpm test:coverage)
+coverage/
+
 # Yarn Integrity file
 .yarn-integrity
 

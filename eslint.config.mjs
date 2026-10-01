@@ -50,7 +50,13 @@ export default defineConfig(
   {
     files: ['**/*.js', '**/*.mjs'],
     languageOptions: {
-      globals: { module: 'writable', require: 'readonly', process: 'readonly' },
+      globals: {
+        module: 'writable',
+        require: 'readonly',
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+      },
     },
   },
 );
