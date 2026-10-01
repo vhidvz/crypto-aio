@@ -9,8 +9,8 @@ import {
 } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
-import { redactText } from '../secret/redact';
-import { REDACTED, reveal } from '../secret/secret';
+import { createScrubber, endpointSecrets } from '../secret/fragments';
+import { reveal } from '../secret/secret';
 import { randomId } from '../util/bytes';
 import type { Clock } from '../util/clock';
 import { parseJson, quorumJson } from '../util/json';
@@ -84,7 +84,9 @@ interface Endpoint {
   readonly kind: 'rpc' | 'indexer';
   readonly url: string;
   readonly headers: Readonly<Record<string, string>>;
-  readonly secrets: readonly string[];
+  /** F3-R20: removes this endpoint's URL, header values and every secret fragment of them
+   * from a text; with `limit`, reads and returns at most that many characters. */
+  readonly scrub: (text: string, limit?: number) => string;
   readonly priority: number;
   readonly timeoutMs?: number;
   readonly breaker: CircuitBreaker;
@@ -311,20 +313,12 @@ export class HttpTransport implements Transport {
         }
         headers[name] = revealed;
       }
-      const pathAndQuery = `${parsed.pathname}${parsed.search}`;
-      const secrets = [
-        url,
-        parsed.href,
-        ...(pathAndQuery.length > 1 ? [pathAndQuery] : []),
-      ];
-      for (const value of Object.values(headers))
-        if (value.length >= 4) secrets.push(value);
       return {
         id,
         kind: config.kind ?? 'rpc',
         url,
         headers,
-        secrets: secrets.sort((a, b) => b.length - a.length),
+        scrub: createScrubber(`<${id}>`, endpointSecrets(url, headers)),
         priority: config.priority ?? 0,
         ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
         breaker: new CircuitBreaker(
@@ -1336,9 +1330,9 @@ export class HttpTransport implements Transport {
       },
       signal,
       mode,
-      // Error message text keeps the real path (unchanged, existing behaviour); only the
-      // event label above is route-based to avoid leaking identifiers into events.
-      `${request.method} ${request.path}`,
+      // F3-R20 (Plan 7 D2): error texts name the route template, as events do, never the
+      // concrete path, which carries addresses and transaction ids.
+      routeLabel(request.method, request.route),
       exactIntegers,
     );
     return (mode === 'text' ? text : json) as T;
@@ -1449,7 +1443,7 @@ export class HttpTransport implements Transport {
             context,
             details: {
               status: response.status,
-              body: this.#scrub(endpoint, text).slice(0, 300),
+              body: endpoint.scrub(text, 300),
             },
           },
         );
@@ -1565,18 +1559,18 @@ export class HttpTransport implements Transport {
     if (hasError) {
       const err = body.error as { code?: unknown; message?: unknown; data?: unknown };
       const code = typeof err.code === 'number' ? err.code : undefined;
-      const message = this.#scrub(
-        endpoint,
+      const message = endpoint.scrub(
         typeof err.message === 'string' ? err.message : 'unknown error',
-      ).slice(0, 300);
+        300,
+      );
       const rawData = err.data;
       const data =
         rawData === undefined
           ? undefined
-          : this.#scrub(
-              endpoint,
+          : endpoint.scrub(
               typeof rawData === 'string' ? rawData : stringifyData(rawData),
-            ).slice(0, 512);
+              512,
+            );
       const details = {
         rpcCode: code,
         rpcMessage: message,
@@ -1760,7 +1754,8 @@ export class HttpTransport implements Transport {
       transportId: this.id,
       endpointId: endpoint.id,
       expected: sanitizeIdentityField(expected),
-      actual: sanitizeIdentityField(String(actual)),
+      // F3-R20: an endpoint could answer its identity probe with our own key.
+      actual: sanitizeIdentityField(endpoint.scrub(String(actual), 256)),
     });
     this.#log.warn('endpoint serves a different network; disabled', {
       endpointId: endpoint.id,
@@ -1937,20 +1932,6 @@ export class HttpTransport implements Transport {
     return { transportId: this.id, endpointId: endpoint.id };
   }
 
-  /** Replaces the endpoint URL and header values with placeholders, then redacts URLs. */
-  #scrub(endpoint: Endpoint, text: string): string {
-    let out = text;
-    for (const value of endpoint.secrets)
-      out = out
-        .split(value)
-        .join(
-          value === endpoint.url || value.startsWith('http')
-            ? `<${endpoint.id}>`
-            : REDACTED,
-        );
-    return redactText(out);
-  }
-
   #classify(error: unknown, endpoint: Endpoint, signal: AbortSignal): CryptoAioError {
     const context = this.#context(endpoint);
     if (isCryptoAioError(error))
@@ -1965,7 +1946,7 @@ export class HttpTransport implements Transport {
     const inner =
       error instanceof Error && error.cause instanceof Error ? error.cause : error;
     const clean = new Error(
-      this.#scrub(endpoint, inner instanceof Error ? inner.message : String(inner)),
+      endpoint.scrub(inner instanceof Error ? inner.message : String(inner), 1_000),
     );
     clean.name = inner instanceof Error ? inner.name : 'Error';
     clean.stack = `${clean.name}: ${clean.message}`;

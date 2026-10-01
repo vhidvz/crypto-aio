@@ -151,7 +151,7 @@ private key in a `Secret`. Redaction happens in these places:
 | --- | --- |
 | Provider URLs | A `Secret` URL shows as `https://host/[REDACTED]`. In a plain URL, user info, query values and key-like path segments (16 or more characters) are redacted |
 | Headers | `Secret` values, and headers named like `authorization`, `api-key`, `token`, `secret` or `cookie` |
-| Errors | Transport errors name the endpoint (`<provider/endpoint>`), never its URL. A REST error's text may carry the request path, such as an address or a txid, but never the host or a credential. Signer failures carry a sanitized cause |
+| Errors | Transport errors name the endpoint (`<provider/endpoint>`), never its URL. Every part of an endpoint's configuration a provider may echo back is removed from error messages, `details` and causes, in any letter case: a key in a path segment, a query value, a header value or the token after an auth scheme (as `[REDACTED]`, for parts of 8 characters or more, and whole URLs and header values of any length). A REST error names the route template, such as `GET /address/:address/txs`, never the path with its address or txid. Signer failures carry a sanitized cause |
 | `bc.config` | A frozen, redacted snapshot of the resolved configuration |
 | Events | Operational data only: no URLs, addresses, amounts, raw transactions or signatures |
 | Logs | `createLogger` redacts URLs in messages, and fields named like `key`, `secret`, `token`, `password`, `passphrase`, `mnemonic`, `private`, `seed`, `authorization` or `cookie` |
@@ -214,6 +214,9 @@ const client = await native(env.bc, 'fake-sdk'); // native(eth, 'ethers'), nativ
   Import `crypto-aio/ton` once to type it. Its `send*` methods are broadcasts: a send that
   fails may still have been delivered, so treat it as sent until the chain shows otherwise.
   Errors that `@ton/ton` raises itself may carry the node's whole answer.
+- **An SDK's own errors are not scrubbed.** The client never sees the real URL or key, but
+  an error the SDK raises itself may quote the provider's answer, and a provider may echo
+  your key in it. Log a native client's errors by type or code, not by message.
 - The root container's `close()` closes every native client handed out, once, then the
   driver pool. A client that fails to close is logged by error code only. After that,
   `native()` and the handle's methods throw `INVALID_TRANSITION`.
