@@ -117,11 +117,11 @@ only.
 ```ts
 import { localSigner, redactUrl, secret } from 'crypto-aio';
 
-const apiKey = secret('sk_live_123456789abcdef');
+const apiKey = secret('my-api-key'); // in real code: secret(process.env.PROVIDER_KEY ?? '')
 console.log(String(apiKey)); // [REDACTED]
 console.log(JSON.stringify({ apiKey })); // {"apiKey":"[REDACTED]"}
-console.log(apiKey.reveal().length); // 23
-console.log(redactUrl('https://eth.example.com/v2/abcdef0123456789abcdef')); // https://eth.example.com/v2/[REDACTED]
+console.log(apiKey.reveal().length); // 10
+console.log(redactUrl('https://eth.example.com/v2/YOUR-API-KEY-GOES-HERE')); // https://eth.example.com/v2/[REDACTED]
 
 const { signer } = localSigner.generate({ curves: ['secp256k1'] }); // not exportable
 const exported = await signer.exportKey?.('secp256k1').catch((e) => e.code);
