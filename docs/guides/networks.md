@@ -335,8 +335,10 @@ optional memo. [Sending and receiving](./transactions.md) covers what else diffe
   `TRON-PRO-API-KEY` header, as a `Secret`. `public` is TronGrid without a key, for trying
   things out on Shasta and Nile, not for production; a `tron` handle with no provider falls
   back to it, with a logged warning. **Mainnet needs `trongrid` with a key, or another
-  provider:** keyless TronGrid answers mainnet with HTTP 429, and the handle then finds no
-  healthy endpoint. TronGrid publishes no rate limit, so neither preset sets `rateLimit`; to
+  provider:** keyless TronGrid answers most mainnet requests with HTTP 429. An endpoint
+  that rate-limits a health check keeps its last good height and is checked again after its
+  `Retry-After`, but one that has never answered a check is never confirmed, and the handle
+  then finds no healthy endpoint. TronGrid publishes no rate limit, so neither preset sets `rateLimit`; to
   pace a busy service, configure the endpoint yourself with a `rateLimit` (a 429 answer is
   retried with backoff). An endpoint of your own must serve `/wallet`, `/walletsolidity` and
   `/jsonrpc` under one base URL, as TronGrid does: its identity check reads block 0 from all

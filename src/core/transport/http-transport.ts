@@ -64,6 +64,18 @@ const MAX_RETRY_AFTER_MS = 60_000;
  * sustained outage, not a hiccup). */
 const HEALTH_MISS_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
+/**
+ * Plan 7 D10 (F4-R24, F6-R28): whether a probe failed only because the endpoint rate-limited
+ * it, directly or as the cause of a failed identity check. Such a probe learned nothing
+ * about the endpoint's health, which keeps its last good height and identity.
+ */
+function rateLimited(error: unknown): boolean {
+  return (
+    isCryptoAioError(error, 'RATE_LIMITED') ||
+    (error instanceof Error && isCryptoAioError(error.cause, 'RATE_LIMITED'))
+  );
+}
+
 /** N1: statuses that must never carry a body on the Response passed back to the SDK. */
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
@@ -260,8 +272,11 @@ export class HttpTransport implements Transport {
   #probes: HealthProbes = {};
   #best: bigint | undefined;
   #highest: bigint | undefined;
-  /** I2: the highest height ever verified by an identity-checked endpoint; never lowered. */
+  /** I2: the highest height verified by an identity-checked endpoint; lowered only by
+   * `#decayPeak`. */
   #verifiedPeak: bigint | undefined;
+  /** Plan 7 D10: completed refreshes in a row whose verified best stayed below the peak. */
+  #peakMisses = 0;
   #lastHealthAt = Number.NEGATIVE_INFINITY;
   /** #3 (round 3): set after a refresh where every probe failed, so ensureFreshHealth backs
    * off instead of storming the same down endpoints on every read during an outage. */
@@ -1753,7 +1768,11 @@ export class HttpTransport implements Transport {
       // throttle, or a single-endpoint transport could be locked out entirely.
       const callerAborted = signal.aborted && signal.reason !== TIMEOUT;
       if (!callerAborted) {
-        endpoint.identityRetryAt = this.#clock.now() + this.#opts.healthIntervalMs;
+        // Plan 7 D10: a rate-limited probe waits out the endpoint's own delay (its
+        // Retry-After, or backoff), not a whole health interval.
+        endpoint.identityRetryAt = rateLimited(error)
+          ? endpoint.notBefore
+          : this.#clock.now() + this.#opts.healthIntervalMs;
       }
       const failure = this.#identityProbeFailed(endpoint, error, signal);
       if (callerAborted) this.#abandonedChecks.add(failure);
@@ -1856,6 +1875,10 @@ export class HttpTransport implements Transport {
     let anyAbandoned = false;
     await Promise.all(
       targets.map(async (endpoint) => {
+        // Plan 7 D10: an endpoint that asked us to wait (a 429's Retry-After, or backoff) is
+        // not probed until then, and keeps its last height and identity meanwhile: neither
+        // a miss nor a success.
+        if (endpoint.notBefore > this.#clock.now()) return;
         // I8: the shared run is never bound to any single caller's signal; each probe only
         // ever times out against its own deadline.
         const { signal: deadline, cancel } = this.#deadline(
@@ -1905,6 +1928,9 @@ export class HttpTransport implements Transport {
           }
           anySucceeded = true;
         } catch (error) {
+          // Plan 7 D10 (F4-R24, F6-R28): a rate-limited probe learned nothing, so the
+          // endpoint keeps its last good height and identity and records no miss.
+          if (rateLimited(error)) return;
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
           // instead of leaving it stale, so the endpoint counts as unknown.
           endpoint.height = undefined;
@@ -1934,6 +1960,7 @@ export class HttpTransport implements Transport {
       // I2: with an identity probe, `best` came from identity-verified endpoints only.
       if (this.#identityProbed())
         this.#verifiedPeak = maxHeight(this.#verifiedPeak, best);
+      this.#decayPeak(best);
     }
     for (const status of this.status()) {
       // 'half-open' has no matching value in the provider.health event payload; 'unknown'
@@ -1974,6 +2001,26 @@ export class HttpTransport implements Transport {
         this.#clock.now() +
         Math.max(Math.min(this.#opts.healthIntervalMs, 1_000), refillMs);
     }
+  }
+
+  /**
+   * Plan 7 D10 (F4-R20 (2), F6-R22): the high-water mark only rose, so one probe that saw a
+   * forged far-future head made every view stale until restart. A peak that no verified
+   * endpoint comes within `maxLagBlocks` of, for three completed refreshes in a row (A24's
+   * count), falls back to the refresh's verified best. Liveness only: a stale view decides
+   * nothing, and proofs never read this mark.
+   */
+  #decayPeak(best: bigint): void {
+    const peak = this.#highest;
+    if (peak === undefined || best + BigInt(this.#opts.maxLagBlocks) >= peak) {
+      this.#peakMisses = 0;
+      return;
+    }
+    this.#peakMisses += 1;
+    if (this.#peakMisses < HEALTH_MISS_LIMIT) return;
+    this.#peakMisses = 0;
+    this.#highest = best;
+    this.#verifiedPeak = best;
   }
 
   // ---- errors ----------------------------------------------------------------------

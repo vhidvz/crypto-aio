@@ -57,6 +57,12 @@ monitor and scanner never decide anything from a view that far behind. The toler
 from `chains.<id>.maxLagBlocks`, then the root `transport.maxLagBlocks`, then the network's
 own value, then the built-in default of 5. The BSC, Arbitrum, OP and Base mainnets set about
 60 s of blocks (134, 240, 30 and 30); set your own for fast testnets with several endpoints.
+A health check that an endpoint answers with HTTP 429 learns nothing: the endpoint keeps
+its last good height and identity, and is checked again after its `Retry-After`. The
+highest height a verified endpoint reported is the mark every view must stay within
+`maxLagBlocks` of; a mark that no verified endpoint comes that close to for three health
+refreshes in a row is dropped, so one endpoint that once reported a far-future head cannot
+leave every view stale.
 
 A proof read needs `proofQuorum` endpoints (2 by default) to agree. The quorum's size counts
 every endpoint not proven to serve another network, including lagging ones, ones whose
