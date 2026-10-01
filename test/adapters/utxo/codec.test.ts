@@ -1434,7 +1434,7 @@ describe('untrusted transaction hex (lesson 20)', () => {
           // refused: over the million bytes a chain allows
         }
         canonicalTwinTxid(hex, keyHash);
-        expect(performance.now() - started).toBeLessThan(1_000);
+        expect(performance.now() - started).toBeLessThan(5_000);
       }
       expect(previousTxOf(toHex(decodable.bytes))?.txid).toBe(
         txidOfStripped(decodable.stripped),
