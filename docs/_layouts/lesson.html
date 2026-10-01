@@ -1,0 +1,64 @@
+---
+layout: default
+---
+{%- comment -%}
+  A page of a guided journey (_data/journeys.yml): a header with the part, the step and a
+  progress bar, the page, and a pager to the previous and next step. The journey order
+  lives in the data file only, so pages never hard-code "lesson 3 of 9".
+{%- endcomment -%}
+{%- assign journey = site.data.journeys[page.journey] -%}
+{%- assign steps = journey.steps -%}
+{%- assign index = -1 -%}
+{%- for step in steps -%}
+  {%- if step.path == page.path -%}{%- assign index = forloop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- if index >= 0 -%}
+  {%- assign current = steps[index] -%}
+  {%- assign part_steps = steps | where: "part", current.part -%}
+  {%- assign position = 0 -%}
+  {%- for step in part_steps -%}
+    {%- if step.path == page.path -%}{%- assign position = forloop.index -%}{%- endif -%}
+  {%- endfor -%}
+  {%- assign percent = position | times: 100 | divided_by: part_steps.size -%}
+  {%- assign words = content | strip_html | number_of_words -%}
+  {%- assign minutes = words | divided_by: 200 | at_least: 1 -%}
+  <div class="lesson-meta" role="note">
+    <span class="lesson-part">{{ current.part }}</span>
+    <span class="lesson-step">{{ journey.unit }} {{ position }} of {{ part_steps.size }}</span>
+    <span class="lesson-time">About {{ minutes }} min</span>
+    <div class="lesson-progress" aria-hidden="true"><span style="width: {{ percent }}%"></span></div>
+  </div>
+{%- endif -%}
+
+{{ content }}
+
+{%- if index >= 0 -%}
+  {%- assign prev_index = index | minus: 1 -%}
+  {%- assign next_index = index | plus: 1 -%}
+  <nav class="lesson-pager" aria-label="{{ journey.name }}">
+    {%- if prev_index >= 0 -%}
+      {%- assign prev_path = steps[prev_index].path -%}
+      {%- assign prev_page = site.pages | where: "path", prev_path | first -%}
+      <a class="lesson-pager-link lesson-pager-prev" href="{{ prev_page.url | relative_url }}">
+        <span class="lesson-pager-label">Previous</span>
+        <span class="lesson-pager-title">{{ prev_page.title }}</span>
+      </a>
+    {%- else -%}
+      <span></span>
+    {%- endif -%}
+    {%- if next_index < steps.size -%}
+      {%- assign next_path = steps[next_index].path -%}
+      {%- assign next_page = site.pages | where: "path", next_path | first -%}
+      <a class="lesson-pager-link lesson-pager-next" href="{{ next_page.url | relative_url }}">
+        <span class="lesson-pager-label">Next{% if steps[next_index].part != current.part %} · {{ steps[next_index].part }}{% endif %}</span>
+        <span class="lesson-pager-title">{{ next_page.title }}</span>
+      </a>
+    {%- elsif journey.finish -%}
+      {%- assign finish_page = site.pages | where: "path", journey.finish | first -%}
+      <a class="lesson-pager-link lesson-pager-next" href="{{ finish_page.url | relative_url }}">
+        <span class="lesson-pager-label">You made it · next</span>
+        <span class="lesson-pager-title">{{ finish_page.title }}</span>
+      </a>
+    {%- endif -%}
+  </nav>
+{%- endif -%}

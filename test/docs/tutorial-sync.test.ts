@@ -1,10 +1,10 @@
-// Keeps docs/guides/tutorial.md and tutorial.test.ts in step: every `ts` code block of the
+// Keeps docs/start/tutorial.md and tutorial.test.ts in step: every `ts` code block of the
 // guide must be the matching code of the test, character for character, apart from import
 // lines. Import lines must bring in the same names from the matching entry points.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const guide = readFileSync(join(__dirname, '../../docs/guides/tutorial.md'), 'utf8');
+const guide = readFileSync(join(__dirname, '../../docs/start/tutorial.md'), 'utf8');
 const source = readFileSync(join(__dirname, 'tutorial.test.ts'), 'utf8');
 
 /** The test's source paths, as the guide names them. */
@@ -61,7 +61,7 @@ function testPreamble(): string {
   return withoutImports(before.replace(/^\/\/.*\n/gm, ''));
 }
 
-describe('docs/guides/tutorial.md matches test/docs/tutorial.test.ts', () => {
+describe('docs/start/tutorial.md matches test/docs/tutorial.test.ts', () => {
   const blocks = guideBlocks();
   const steps = testSteps();
 

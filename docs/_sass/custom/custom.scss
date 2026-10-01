@@ -1,0 +1,333 @@
+// crypto-aio site styles, compiled once per color scheme: the theme's variables
+// ($body-background-color, $border-color, ...) give each scheme its own colors.
+
+$aio-dark: $color-scheme == dark;
+$aio-surface: if($aio-dark, $grey-dk-250, $grey-lt-000);
+$aio-surface-strong: if($aio-dark, $grey-dk-200, $grey-lt-100);
+$aio-muted: if($aio-dark, $grey-dk-000, $grey-dk-100);
+$aio-accent: if($aio-dark, lighten($purple-000, 12%), $purple-000);
+$aio-radius: 10px;
+
+// ---- Reading comfort ----------------------------------------------------------------
+
+.main-content {
+  line-height: 1.65;
+
+  h1:first-of-type {
+    margin-bottom: $sp-4;
+  }
+
+  h2 {
+    margin-top: $sp-8;
+    padding-top: $sp-2;
+  }
+
+  p,
+  li {
+    max-width: 46rem;
+  }
+
+  img {
+    border-radius: $aio-radius;
+  }
+
+  table {
+    font-size: 0.92em;
+  }
+
+  // Answers, "under the hood" asides and other folded detail.
+  details {
+    margin: $sp-4 0;
+    padding: $sp-2 $sp-4;
+    border: $border $border-color;
+    border-radius: $aio-radius;
+    background: $aio-surface;
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: $body-heading-color;
+    }
+
+    &[open] summary {
+      margin-bottom: $sp-2;
+    }
+  }
+
+  kbd {
+    padding: 0 $sp-1;
+    border: $border $border-color;
+    border-radius: $border-radius;
+    font-size: 0.85em;
+  }
+}
+
+// ---- Callouts (GitHub alerts, converted in _includes/head_custom.html) ---------------
+
+@mixin aio-alert($color) {
+  border-left: 4px solid $color;
+  background: rgba($color, if($aio-dark, 0.12, 0.08));
+
+  .alert-title {
+    color: if($aio-dark, lighten($color, 10%), darken($color, 8%));
+  }
+}
+
+.main-content blockquote.alert {
+  margin: $sp-5 0;
+  padding: $sp-3 $sp-4;
+  border-radius: 0 $aio-radius $aio-radius 0;
+  color: $body-text-color;
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  .alert-title {
+    margin: 0 0 $sp-1;
+    font-size: $font-size-3;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  &.alert-note {
+    @include aio-alert($blue-100);
+  }
+
+  &.alert-tip {
+    @include aio-alert($green-200);
+  }
+
+  &.alert-important {
+    @include aio-alert($purple-000);
+  }
+
+  &.alert-warning {
+    @include aio-alert($yellow-300);
+  }
+
+  &.alert-caution {
+    @include aio-alert($red-200);
+  }
+}
+
+// ---- Diagrams ------------------------------------------------------------------------
+
+.main-content pre.language-mermaid,
+.main-content .language-mermaid {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  margin: $sp-5 0;
+  padding: $sp-4;
+  border: $border $border-color;
+  border-radius: $aio-radius;
+  background: if($aio-dark, $grey-dk-300, $white);
+}
+
+// ---- Header: the light/dark switch ---------------------------------------------------
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0 $sp-2;
+  padding: 0;
+  border: $border $border-color;
+  border-radius: 50%;
+  background: transparent;
+  color: $body-text-color;
+  cursor: pointer;
+
+  &:hover {
+    color: $aio-accent;
+    border-color: $aio-accent;
+  }
+
+  .theme-toggle-sun {
+    display: if($aio-dark, block, none);
+  }
+
+  .theme-toggle-moon {
+    display: if($aio-dark, none, block);
+  }
+}
+
+// ---- Journeys: the step header and the pager (_layouts/lesson.html) -----------------
+
+.lesson-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $sp-2 $sp-3;
+  align-items: center;
+  margin-bottom: $sp-5;
+  font-size: $font-size-3;
+  color: $aio-muted;
+
+  .lesson-part {
+    padding: 2px $sp-2;
+    border-radius: 999px;
+    background: rgba($purple-000, if($aio-dark, 0.25, 0.1));
+    color: $aio-accent;
+    font-weight: 600;
+  }
+
+  .lesson-progress {
+    flex-basis: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: $aio-surface-strong;
+    overflow: hidden;
+
+    span {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, $purple-000, $blue-000);
+    }
+  }
+}
+
+.lesson-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $sp-4;
+  margin-top: $sp-8;
+
+  .lesson-pager-link {
+    display: flex;
+    flex-direction: column;
+    gap: $sp-1;
+    padding: $sp-3 $sp-4;
+    border: $border $border-color;
+    border-radius: $aio-radius;
+    text-decoration: none;
+    background-image: none;
+
+    &:hover {
+      border-color: $aio-accent;
+    }
+  }
+
+  .lesson-pager-next {
+    text-align: right;
+  }
+
+  .lesson-pager-label {
+    font-size: $font-size-3;
+    color: $aio-muted;
+  }
+
+  .lesson-pager-title {
+    font-weight: 600;
+    color: $aio-accent;
+  }
+}
+
+// ---- Home and section landing pages --------------------------------------------------
+
+.hero {
+  margin: $sp-2 0 $sp-6;
+
+  .hero-tagline {
+    max-width: 44rem;
+    font-size: $font-size-6;
+    color: $aio-muted;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $sp-3;
+    margin-top: $sp-4;
+  }
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr));
+  gap: $sp-4;
+  margin: $sp-5 0 $sp-6;
+
+  &.card-grid-2 {
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  }
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: $sp-4;
+  border: $border $border-color;
+  border-radius: $aio-radius;
+  background: $aio-surface;
+  transition: border-color 150ms ease, transform 150ms ease;
+
+  &:hover {
+    border-color: $aio-accent;
+    transform: translateY(-1px);
+  }
+
+  .card-kicker {
+    margin: 0 0 $sp-1;
+    font-size: $font-size-2;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: $aio-accent;
+  }
+
+  .card-title {
+    margin: 0 0 $sp-2;
+    font-size: $font-size-6;
+    font-weight: 600;
+    color: $body-heading-color;
+  }
+
+  p {
+    margin: 0 0 $sp-2;
+    font-size: $font-size-4;
+  }
+
+  .card-route {
+    margin-top: auto;
+    padding-top: $sp-2;
+    font-size: $font-size-3;
+    color: $aio-muted;
+  }
+
+  // The whole card is the link.
+  a.card-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+}
+
+.main-content ul.chain-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $sp-2;
+  margin: $sp-3 0 $sp-5;
+  padding: 0;
+  list-style: none;
+
+  > li {
+    margin: 0;
+    padding: 2px $sp-3;
+    border: $border $border-color;
+    border-radius: 999px;
+    font-size: $font-size-4;
+    background: $aio-surface;
+
+    &::before {
+      content: none;
+    }
+  }
+}

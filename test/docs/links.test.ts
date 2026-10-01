@@ -1,19 +1,25 @@
-// Plan 7: every relative link in the README, the changelog and the guides resolves to a
-// tracked file, and every `#anchor` to a heading of its target (GitHub's heading ids).
-import { existsSync, readFileSync } from 'node:fs';
+// Plan 7: every relative link in the README, the changelog and the documentation site
+// resolves to a tracked file, and every `#anchor` to a heading of its target (GitHub's heading
+// ids, which the site's GFM Markdown also uses).
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 const ROOT = join(__dirname, '../..');
-const GUIDES = [
-  'concepts.md',
-  'index.md',
-  'networks.md',
-  'quick-start.md',
-  'security.md',
-  'transactions.md',
-  'tutorial.md',
-].map((name) => join(ROOT, 'docs/guides', name));
-const FILES = [join(ROOT, 'README.md'), join(ROOT, 'CHANGELOG.md'), ...GUIDES];
+const DOCS = join(ROOT, 'docs');
+
+/** Every Markdown page of docs/, without the theme's own folders and the design records. */
+function pages(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name)) return [];
+      return pages(path);
+    }
+    return entry.name.endsWith('.md') ? [path] : [];
+  });
+}
+
+const FILES = [join(ROOT, 'README.md'), join(ROOT, 'CHANGELOG.md'), ...pages(DOCS)];
 
 /** The lines of a Markdown file outside fenced code blocks. */
 function prose(text: string): string[] {
