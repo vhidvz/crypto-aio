@@ -116,7 +116,7 @@ const late = await env
   .catch((e: { code: string }) => e.code);
 console.log(late); // TIMEOUT
 const op = await env.run(env.bc.getOperation(sub.operationId));
-console.log(op?.state, op?.attempts[0]?.status.evidence, disagreements > 0); // included observed true
+console.log(op?.state, op?.attempts[0]?.status?.evidence, disagreements > 0); // included observed true
 
 env.chain.configureEndpoint('b', { forkFinalized: false }); // the liar is fixed
 const done = await env.run(sub.wait({ finality: 'final' }));

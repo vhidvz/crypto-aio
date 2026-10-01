@@ -5,7 +5,10 @@
   "excludePrivate": true,
   "excludeProtected": true,
   "readme": "none",
-  "projectDocuments": ["docs/guides/index.md"],
+  "navigationLinks": {
+    "Documentation": "https://vhidvz.github.io/crypto-aio/",
+    "GitHub": "https://github.com/vhidvz/crypto-aio"
+  },
   "treatWarningsAsErrors": true,
   "intentionallyNotExported": ["ChainEntry"]
 }

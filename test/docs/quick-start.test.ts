@@ -23,7 +23,12 @@ describe('docs/start/quick-start.md', () => {
     expect(source).toContain('\nmain().catch(');
     const { outputText } = ts.transpileModule(
       source.replace('\nmain().catch(', '\nmodule.exports = main().catch('),
-      { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+      {
+        compilerOptions: {
+          module: ts.ModuleKind.CommonJS,
+          target: ts.ScriptTarget.ES2022,
+        },
+      },
     );
     const lines: string[] = [];
     const errors: unknown[] = [];

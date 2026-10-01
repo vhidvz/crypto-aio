@@ -96,6 +96,7 @@ released, nothing signed.
 
 <!-- runnable -->
 ```ts
+import { isCryptoAioError } from 'crypto-aio';
 import { createFakeEnv } from 'crypto-aio/testing';
 
 const env = await createFakeEnv({
@@ -112,9 +113,11 @@ console.log(small.state); // submitted
 
 const large = await env
   .run(env.bc.transfer({ to: env.stranger(), amount: '0.009' }))
-  .catch((e: { code: string; context: { operationId: string } }) => e);
+  .catch((e: unknown) => e);
+if (!isCryptoAioError(large)) throw new Error('expected a veto');
 console.log(large.code); // POLICY_REJECTED
-console.log((await env.run(env.bc.getOperation(large.context.operationId)))?.state); // failed
+const vetoed = await env.run(env.bc.getOperation(String(large.context.operationId)));
+console.log(vetoed?.state); // failed
 ```
 
 The hook is a seam, not a policy engine: withdrawal limits, approvals, allow-lists and treasury

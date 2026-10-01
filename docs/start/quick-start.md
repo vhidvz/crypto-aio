@@ -89,6 +89,7 @@ this from the start.
 
 Save this as `first.ts`:
 
+<!-- typecheck -->
 ```ts
 import { createFakeEnv, type FakeEnv } from 'crypto-aio/testing';
 

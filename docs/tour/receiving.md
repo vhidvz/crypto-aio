@@ -90,7 +90,9 @@ const events = env.bc
   [Symbol.asyncIterator]();
 const seen: string[] = [];
 const take = async () => {
-  const { value: event } = await env.run(events.next(), 500);
+  const result = await env.run(events.next(), 500);
+  if (result.done) throw new Error('the scanner stopped');
+  const event = result.value;
   if (event.type === 'block') {
     const mine = event.transactions.flatMap((tx) => tx.transfers).filter((t) => t.to.canonical === customer);
     const found = mine.map((t) => `${t.id.split(':')[1]} ${t.amount?.format()}`).join(', ');

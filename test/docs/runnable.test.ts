@@ -2,8 +2,11 @@
 // package's entry points taken from source, and checks what it prints: each
 // `console.log(…); // expected` line must print the text of its comment, where `…` matches
 // anything, and each `console.log` must run once. A `console.log` in a loop has no comment;
-// its lines follow a `// Prints:` line instead, one `// line` per printed line.
+// its lines follow a `// Prints:` line instead, one `// line` per printed line. Every block
+// must also type-check under strict settings, as a reader's own project would check it, and
+// so must the blocks marked `<!-- typecheck -->`, which other tests run.
 import { readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join, relative } from 'node:path';
 import { format } from 'node:util';
 import ts from 'typescript';
@@ -12,6 +15,8 @@ import * as nativeEntry from '../../src/native';
 import * as testing from '../../src/testing';
 
 const ROOT = join(__dirname, '../..');
+/** Loads the other packages a block imports, such as `node:crypto` or `@scure/bip32`. */
+const packages = createRequire(__filename);
 
 const ENTRY_POINTS: Record<string, unknown> = {
   'crypto-aio': library,
@@ -24,7 +29,8 @@ function pages(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name)) return [];
+      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name))
+        return [];
       return pages(path);
     }
     return entry.name.endsWith('.md') ? [path] : [];
@@ -36,11 +42,15 @@ interface Block {
   readonly code: string;
 }
 
-function blocks(): Block[] {
+/** The `ts` blocks after a `<!-- runnable -->` (or `<!-- typecheck -->`) comment. */
+function blocks(marker: 'runnable' | 'typecheck'): Block[] {
   const out: Block[] = [];
   for (const file of pages(join(ROOT, 'docs'))) {
     const text = readFileSync(file, 'utf8');
-    const marked = /<!-- runnable -->\s*\n```ts\n([\s\S]*?)^```$/gm;
+    const marked = new RegExp(
+      `<!-- ${marker} -->\\s*\\n\`\`\`ts\\n([\\s\\S]*?)^\`\`\`$`,
+      'gm',
+    );
     for (const match of text.matchAll(marked)) {
       const line = text.slice(0, match.index).split('\n').length;
       out.push({ name: `${relative(ROOT, file)}:${line}`, code: match[1] as string });
@@ -86,8 +96,11 @@ async function run(code: string): Promise<string[]> {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   });
   const printed: string[] = [];
-  const fakeConsole = { ...console, log: (...parts: unknown[]) => printed.push(format(...parts)) };
-  const load = (name: string): unknown => ENTRY_POINTS[name] ?? require(name);
+  const fakeConsole = {
+    ...console,
+    log: (...parts: unknown[]) => printed.push(format(...parts)),
+  };
+  const load = (name: string): unknown => ENTRY_POINTS[name] ?? packages(name);
   const module = { exports: {} };
   const body = `return (async () => {\n${outputText}\n})();`;
   await new Function('require', 'module', 'exports', 'console', body)(
@@ -99,8 +112,59 @@ async function run(code: string): Promise<string[]> {
   return printed;
 }
 
+/** Type errors of every block, compiled together as strict ES modules against the source. */
+function typeErrors(found: readonly Block[]): string[] {
+  const files = new Map(
+    found.map((block, i) => [join(ROOT, `__docs__/block-${i}.ts`), block]),
+  );
+  const options: ts.CompilerOptions = {
+    target: ts.ScriptTarget.ES2022,
+    lib: ['lib.es2022.d.ts'],
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    strict: true,
+    noUncheckedIndexedAccess: true,
+    skipLibCheck: true,
+    noEmit: true,
+    types: ['node'],
+    baseUrl: ROOT,
+    paths: {
+      'crypto-aio': ['src/index.ts'],
+      'crypto-aio/native': ['src/native.ts'],
+      'crypto-aio/testing': ['src/testing/index.ts'],
+      'crypto-aio/*': ['src/adapters/*/index.ts'],
+    },
+  };
+  const host = ts.createCompilerHost(options);
+  const { fileExists, readFile, getSourceFile } = host;
+  host.fileExists = (name) => files.has(name) || fileExists.call(host, name);
+  host.readFile = (name) => files.get(name)?.code ?? readFile.call(host, name);
+  host.getSourceFile = (name, language, onError, create) => {
+    const block = files.get(name);
+    return block === undefined
+      ? getSourceFile.call(host, name, language, onError, create)
+      : ts.createSourceFile(name, block.code, language);
+  };
+  const program = ts.createProgram([...files.keys()], options, host);
+  return [...files].flatMap(([name, block]) =>
+    ts.getPreEmitDiagnostics(program, program.getSourceFile(name)).map((diagnostic) => {
+      const { line } = diagnostic.file?.getLineAndCharacterOfPosition(
+        diagnostic.start ?? 0,
+      ) ?? {
+        line: 0,
+      };
+      const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ');
+      return `${block.name} (block line ${line + 1}): ${message}`;
+    }),
+  );
+}
+
 describe('runnable documentation blocks', () => {
-  const found = blocks();
+  const found = blocks('runnable');
+
+  it('type-check under strict settings, with the blocks marked typecheck', () => {
+    expect(typeErrors([...found, ...blocks('typecheck')])).toEqual([]);
+  }, 60_000);
 
   it('finds the runnable blocks', () => {
     expect(found.length).toBeGreaterThan(0);
@@ -113,7 +177,8 @@ describe('runnable documentation blocks', () => {
     expected.forEach((want, i) => {
       if (want === undefined) return;
       const got = printed[i] as string;
-      if (!matches(got, want)) expect({ line: i + 1, printed: got }).toEqual({ line: i + 1, printed: want });
+      if (!matches(got, want))
+        expect({ line: i + 1, printed: got }).toEqual({ line: i + 1, printed: want });
     });
   });
 });

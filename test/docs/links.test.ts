@@ -12,7 +12,8 @@ function pages(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name)) return [];
+      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name))
+        return [];
       return pages(path);
     }
     return entry.name.endsWith('.md') ? [path] : [];
