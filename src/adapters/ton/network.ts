@@ -6,6 +6,7 @@
 import { ConfigError } from '../../core/errors/error';
 import { KNOWN_CAPABILITIES, type Capability } from '../../core/model/capability';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { knownName, unknownName } from '../../core/util/names';
 import { MAX_COINS } from './fees';
 
 /**
@@ -72,9 +73,7 @@ const WORKCHAINS: ReadonlySet<string> = new Set(['basechain', 'masterchain']);
  * never echoed either; their errors list the accepted names instead.
  */
 const shown = (capability: Capability): string =>
-  (KNOWN_CAPABILITIES as readonly string[]).includes(capability)
-    ? `'${capability}'`
-    : 'an unknown capability';
+  knownName(capability, KNOWN_CAPABILITIES, 'an unknown capability');
 
 export interface TonNetworkConfig {
   /** Config param 19; the network identity. */
@@ -188,7 +187,7 @@ export function tonNetworkConfig(
   // may be a pasted secret, nor its value.
   for (const key of Object.keys(options)) {
     if (!OPTION_KEYS.has(key)) {
-      fail(`unknown option; the TON driver's only option is 'maxNetworkFee'`);
+      fail(unknownName('option', OPTION_KEYS));
     }
   }
   // F6-R24, F6-R25: per workchain, the handle's option, else the network's params, else the

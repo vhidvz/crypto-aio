@@ -203,7 +203,8 @@ describe('SchemeCatalog', () => {
     expect(catalog.get('ed25519')).toBe(ed25519Scheme);
     expect(thrown(() => catalog.get('bls'))).toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown signature scheme 'bls'/),
+      message:
+        "unknown signature scheme; the accepted names are 'ed25519', 'secp256k1-ecdsa' and 'secp256k1-schnorr'",
     });
     expect(thrown(() => catalog.register(ed25519Scheme))).toMatchObject({
       code: 'CONFIG_INVALID',

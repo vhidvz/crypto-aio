@@ -218,7 +218,7 @@ describe('TON network config', () => {
       const message = refused(
         { [key]: 1n },
         {},
-        "unknown option; the TON driver's only option is 'maxNetworkFee'",
+        "unknown option; the only accepted name is 'maxNetworkFee'",
       );
       expect(message).not.toContain(key === secret ? secret : `'${key}'`);
     }

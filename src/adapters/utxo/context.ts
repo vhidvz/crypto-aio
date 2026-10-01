@@ -10,6 +10,7 @@ import {
   isCryptoAioError,
 } from '../../core/errors/error';
 import type { AssetRef } from '../../core/model/asset';
+import { unknownName } from '../../core/util/names';
 import type { Logger } from '../../core/events/logger';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
 import { decodeAddress, type DecodedAddress } from './address';
@@ -117,7 +118,7 @@ export function parseWalletOptions(
   if (Object.keys(options).some((key) => !WALLET_OPTION_KEYS.includes(key))) {
     throw new ConfigError(
       'CONFIG_INVALID',
-      `wallet.utxo has an unknown option; the options are ${WALLET_OPTION_KEYS.join(', ')}`,
+      `wallet.utxo has an ${unknownName('option', WALLET_OPTION_KEYS)}`,
     );
   }
   const type = options.addressType ?? 'p2wpkh';

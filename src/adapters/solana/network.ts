@@ -6,6 +6,7 @@
 import { ConfigError } from '../../core/errors/error';
 import type { Capability } from '../../core/model/capability';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { unknownName } from '../../core/util/names';
 import { MAX_PRICE_VARIANT } from './fees';
 import { decodeBase58 } from './keys';
 
@@ -100,7 +101,7 @@ export function solanaNetworkConfig(
   // may be a pasted secret, nor its value.
   for (const key of Object.keys(options)) {
     if (!OPTION_KEYS.includes(key)) {
-      fail(`unknown option; the Solana driver's only option is 'maxComputeUnitPrice'`);
+      fail(unknownName('option', OPTION_KEYS));
     }
   }
   // F5-R9 (b), F4-R28's shape: the handle's option, else the network entry's own, else the

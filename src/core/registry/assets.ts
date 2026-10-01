@@ -8,6 +8,7 @@ import {
   type AssetRef,
 } from '../model/asset';
 import type { ChainInfo } from '../model/chain';
+import { unknownName } from '../util/names';
 
 export interface AssetRegistration {
   readonly chain: string;
@@ -102,10 +103,9 @@ export class AssetCatalog {
     const id = scope?.get(alias.trim().toUpperCase());
     const info = id ? this.#byId.get(id) : undefined;
     if (!info) {
-      const known = [...(scope?.keys() ?? [])].sort().join(', ') || 'none';
       throw new ValidationError(
         'ASSET_RESOLUTION',
-        `unknown asset alias '${alias.trim()}' on ${scopeKey} (known: ${known})`,
+        unknownName(`asset alias on ${scopeKey}`, scope?.keys() ?? []),
       );
     }
     return info;

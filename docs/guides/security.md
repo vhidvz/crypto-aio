@@ -160,6 +160,11 @@ private key in a `Secret`. Redaction happens in these places:
 `redactUrl(url)` and `redactDeep(value)` are exported for your own logging. Log a library
 error by its `code`, or by `error.toJSON()`, which leaves out the cause chain.
 
+An error never repeats a name you typed that the library does not know: a chain, network,
+library, provider, wallet, signer, signature scheme, asset alias, option key or capability.
+It lists the names it accepts instead (`unknown wallet; the accepted names are 'cold' and
+'hot'`), so a secret pasted into the wrong field never reaches a message or a log.
+
 ## Data classification (for store implementers)
 
 The core never hands key material to a store. It classifies everything else it persists in

@@ -146,20 +146,21 @@ describe('resolveSelection', () => {
     expect(thrown(() => resolve({ chain: 'testchain', library: 'lib-c' }))).toMatchObject(
       {
         code: 'INCOMPATIBLE_SELECTION',
-        message: expect.stringMatching(
-          /library 'lib-c' does not support chain 'testchain' \(supported: lib-a, lib-b\)/,
-        ),
+        message:
+          "unknown library for chain 'testchain'; the accepted names are 'lib-a' and 'lib-b'",
       },
     );
     expect(thrown(() => resolve({ chain: 'nope' }))).toMatchObject({
       code: 'CONFIG_INVALID',
     });
     expect(thrown(() => resolve({ chain: 'testchain', network: 'main' }))).toMatchObject({
-      message: expect.stringMatching(/supported: local, other/),
+      message: expect.stringMatching(/the accepted names are 'local' and 'other'/),
     });
     expect(
       thrown(() => resolve({ chain: 'testchain', provider: 'ghost' })),
-    ).toMatchObject({ message: expect.stringMatching(/unknown provider 'ghost'/) });
+    ).toMatchObject({
+      message: expect.stringMatching(/^unknown rpc provider; the accepted names are /),
+    });
     expect(
       thrown(() => resolve({ chain: 'otherchain', provider: 'acme' })),
     ).toMatchObject({
@@ -176,19 +177,19 @@ describe('resolveSelection', () => {
     ).toBe('hot');
     expect(
       thrown(() => resolve({ chain: 'testchain', provider: 'acme', wallet: 'ghost' })),
-    ).toMatchObject({ message: expect.stringMatching(/unknown wallet 'ghost'/) });
+    ).toMatchObject({ message: expect.stringMatching(/^unknown wallet; /) });
     // Own-key lookups: inherited Object.prototype names are unknown, not "found".
     expect(
       thrown(() => resolve({ chain: 'testchain', provider: 'acme', wallet: 'toString' })),
     ).toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown wallet 'toString'/),
+      message: expect.stringMatching(/^unknown wallet; /),
     });
     expect(
       thrown(() => resolve({ chain: 'testchain', provider: 'toString' })),
     ).toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown provider/),
+      message: expect.stringMatching(/^unknown rpc provider; /),
     });
     expect(
       thrown(() =>
@@ -196,7 +197,7 @@ describe('resolveSelection', () => {
       ),
     ).toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown signer '__proto__'/),
+      message: expect.stringMatching(/^unknown signer; /),
     });
     expect(
       thrown(() =>

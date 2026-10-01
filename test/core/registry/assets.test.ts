@@ -83,9 +83,7 @@ describe('AssetCatalog', () => {
       thrown(() => catalog.resolveAlias('testchain', 'other', 'USDT')),
     ).toMatchObject({
       code: 'ASSET_RESOLUTION',
-      message: expect.stringMatching(
-        /unknown asset alias 'USDT' on testchain:other \(known: TST\)/,
-      ),
+      message: "unknown asset alias on testchain:other; the only accepted name is 'TST'",
     });
   });
 

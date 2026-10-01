@@ -266,7 +266,7 @@ describe('the handle option maxComputeUnitPrice (F5-R9 (b), F4-R28 shape)', () =
       expect(caught).toMatchObject({
         code: 'CONFIG_INVALID',
         message:
-          "Solana network solana:devnet: unknown option; the Solana driver's only option is 'maxComputeUnitPrice'",
+          "Solana network solana:devnet: unknown option; the only accepted name is 'maxComputeUnitPrice'",
       });
       expect(JSON.stringify(caught)).not.toContain(key);
       expect(String((caught as Error).stack)).not.toContain(key);

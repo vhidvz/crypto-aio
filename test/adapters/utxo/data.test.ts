@@ -246,15 +246,13 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     );
   });
 
-  it('names an unknown option key only when it is short and plain, never a pasted value', () => {
+  it('never names an unknown option key, listing the accepted ones (F3-R16)', () => {
     const message = (key: string) =>
       (thrown(() => utxoNetworkConfig(BITCOIN_CHAIN, mainnet, { [key]: 1 })) as Error)
         .message;
-    expect(message('maxFeeRates')).toBe(
-      "UTXO network bitcoin:mainnet: unknown option 'maxFeeRates'",
-    );
-    expect(message(`a.b:c-d_${'e'.repeat(32)}`)).toContain(`'a.b:c-d_${'e'.repeat(32)}'`);
     for (const key of [
+      'maxFeeRates',
+      `a.b:c-d_${'e'.repeat(32)}`,
       'e'.repeat(41),
       `xprv${'K'.repeat(107)}`,
       'apiKey=hunter2',
@@ -264,7 +262,7 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
       'x'.repeat(100_000),
     ]) {
       expect(message(key)).toBe(
-        'UTXO network bitcoin:mainnet: unknown option (name not shown)',
+        "UTXO network bitcoin:mainnet: unknown option; the accepted names are 'coinSelection', 'maxEstimatedFeeRate', 'maxFee', 'maxFeeRate', 'minInputConfirmations', 'nonWitnessUtxo' and 'rbf'",
       );
     }
   });

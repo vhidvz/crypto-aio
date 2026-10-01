@@ -307,7 +307,10 @@ export class CryptoAio {
     }
     const namespace = options.namespace ?? 'default';
     if (!NAMESPACE.test(namespace))
-      throw new ConfigError('CONFIG_INVALID', `invalid namespace '${namespace}'`);
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        'invalid namespace: use 1 to 64 letters, digits, dots, underscores or hyphens',
+      );
     const clock = options.clock ?? systemClock;
     const log = options.logger ?? createLogger();
     const catalogs = createCatalogs();
