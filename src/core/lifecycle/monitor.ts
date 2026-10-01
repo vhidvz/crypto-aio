@@ -72,7 +72,7 @@ export type TargetResolver = (
   op: OperationRecord,
 ) => Promise<OperationTarget | undefined>;
 
-/** R32: rebuilds the signer-free read target of a stored Operation; see `TargetResolver`. */
+/** Rebuilds the signer-free read target of a stored Operation; see `TargetResolver`. */
 export type ReadResolver = (op: OperationRecord) => Promise<ReadTarget | undefined>;
 
 export interface MonitorDeps {
@@ -83,11 +83,17 @@ export interface MonitorDeps {
   readonly log: Logger;
   readonly namespace: string;
   readonly lifecycle: () => ResolvedLifecycle;
-  /** R32: every check, worker pass and recovery read runs on this target (no wallet). */
+  /**
+   * Every check, worker pass and recovery read runs on this target (no wallet), so a
+   * signer rotated out of config or a hung `getPublicKey` never stalls monitoring.
+   */
   readonly resolveRead: ReadResolver;
   /**
-   * R26.3/R32: resolved lazily, only for the writes that need a wallet-bound target: the
+   * Resolved lazily, only for the writes that need a wallet-bound target: the
    * all-rejected verdict, nonce reconciliation and recovery's resend (none of them signs).
+   * Known gap: for the all-rejected verdict this resolution is bounded neither by the
+   * pass `signal` nor by a per-pass cache, so each such Operation of a pass can wait up
+   * to `lifecycle.signTimeoutMs` for a wallet whose resolution keeps failing.
    */
   readonly resolveTarget: TargetResolver;
 }
@@ -105,19 +111,19 @@ const UNKNOWN: TxStatus = {
   finality: 'none',
 };
 
-/** Proven and settled: nothing observed later may overwrite it (R25). */
+/** Proven and settled: nothing observed later may overwrite it. */
 function isSettled(observation: AttemptObservation | null | undefined): boolean {
   return observation?.evidence === 'proven' && SETTLED.has(observation.state);
 }
 
 /**
- * Watches Attempts on chain and moves their Operation on evidence (spec §6.7, §8.8).
+ * Watches Attempts on chain and moves their Operation on evidence.
  * Observed data (a single endpoint's view, absence, `dropped`, `refused`, an unfinalized
  * block) only ever produces non-terminal states; a terminal state needs `proven` evidence
  * (finalized data confirmed by quorum proof reads). A stale view decides nothing.
  */
 export class Monitor {
-  /** M11: the worker loop and recovery, over this monitor's checks. */
+  /** The worker loop and recovery, over this monitor's checks. */
   readonly #workers: Workers;
 
   constructor(private readonly deps: MonitorDeps) {
@@ -148,7 +154,7 @@ export class Monitor {
 
   /**
    * One evaluation pass: observe live Attempts, persist observations, apply the transition.
-   * `signal` (M4) is checked before every read, so an aborted pass stops after at most the
+   * `signal` is checked before every read, so an aborted pass stops after at most the
    * read in flight; it then throws the signal's reason and decides nothing further.
    */
   async check(
@@ -216,7 +222,7 @@ export class Monitor {
   /**
    * Polls until the wanted status: `confirmations` (default: the handle's) or, with
    * `finality: 'final'`, proven finality for a managed Operation and observed finality for
-   * a transaction it does not manage. M4: the caller's `signal` and the deadline bound
+   * a transaction it does not manage. The caller's `signal` and the deadline bound
    * every pass and sleep; a pass stops after at most the read in flight.
    */
   async waitFor(
@@ -299,7 +305,7 @@ export class Monitor {
   }
 
   /**
-   * Yields each status change until the Operation is terminal, or (I3) until a transaction
+   * Yields each status change until the Operation is terminal, or until a transaction
    * it does not manage reaches observed finality, whether it succeeded or reverted. Ends
    * quietly when `signal` aborts.
    */
@@ -385,7 +391,7 @@ export class Monitor {
     let patch: ObservationPatch;
     if (seen.seen === 'block' && seen.blockHeight !== undefined) {
       // The transaction is in another block than recorded: its old block was orphaned, once
-      // the quorum confirms it (R33); one endpoint's other block alone decides nothing.
+      // the quorum confirms it; one endpoint's other block alone decides nothing.
       if (
         current?.blockHash !== undefined &&
         seen.blockHash !== undefined &&
@@ -402,8 +408,8 @@ export class Monitor {
         blockHeight: seen.blockHeight,
         blockHash: seen.blockHash,
         ...(seen.txHash !== undefined ? { txHash: seen.txHash } : {}),
-        // P6-2: why an included transaction failed, as the driver's fixed text (R24); any
-        // earlier reason (a refusal, an old failure) is cleared otherwise (M8).
+        // Why an included transaction failed, as the driver's fixed text; any earlier
+        // reason (a refusal, an old failure) is cleared otherwise.
         reason: seen.success === false ? seen.reason : undefined,
         firstSeenAt: current?.firstSeenAt ?? now,
         lastSeenAt: now,
@@ -420,8 +426,9 @@ export class Monitor {
         signal?.throwIfAborted();
         reorgedFrom = current.blockHash;
       }
-      // M8: out of a block, an earlier failure's reason no longer applies (a refusal keeps
-      // its own, below).
+      // Out of a block, an earlier failure's reason no longer applies (a refusal keeps
+      // its own, below). Clearing relies on `putObservation` replacing the whole record,
+      // a key set to `undefined` being absent.
       const cleared: ObservationPatch = {
         blockHash: undefined,
         blockHeight: undefined,
@@ -442,7 +449,7 @@ export class Monitor {
               ...(await this.whenAbsent(target, op, attempt, current, now, signal)),
             };
     }
-    // R25: this patch was derived from `current`; when another writer changed the
+    // This patch was derived from `current`; when another writer changed the
     // observation meanwhile (possibly with stronger evidence), keep theirs and decide nothing.
     let applied = false;
     const saved = await writeObservation(
@@ -506,8 +513,8 @@ export class Monitor {
   }
 
   /**
-   * Whether the block recorded for `observation` is no longer the one at its height. R33:
-   * only the quorum-served hash decides; a disagreement or other retryable failure, or no
+   * Whether the block recorded for `observation` is no longer the one at its height.
+   * Only the quorum-served hash decides; a disagreement or other retryable failure, or no
    * block at that height yet, decides nothing (`false`).
    */
   private async orphaned(
@@ -540,7 +547,7 @@ export class Monitor {
       signal?.throwIfAborted();
       return work();
     };
-    // The built ordering (carry-forward: never the reservation, whose seqno `validUntil`
+    // The built ordering (never the reservation, whose seqno `validUntil`
     // the driver may have replaced while building).
     const ordering = attempt.ordering;
     const from = op.intent.from;
@@ -589,7 +596,7 @@ export class Monitor {
     if (winner) {
       // The winner consumed the ordering slot: every other Attempt is proven replaced by it.
       // As in `whenAbsent`, a proven `replaced` carries no reason: a refusal's no longer
-      // applies (M8, P25-R15).
+      // applies.
       const linked = (o: AttemptObservation | null | undefined) =>
         isSettled(o) && !(o?.state === 'replaced' && o.replacedBy === undefined);
       for (const attempt of op.attempts) {
@@ -606,12 +613,12 @@ export class Monitor {
         );
       }
     }
-    // R26.3: failing an all-rejected Operation releases its nonce, so the engine applies it
+    // Failing an all-rejected Operation releases its nonce, so the engine applies it
     // under the address lease; the monitor never makes a reservation-holding transition.
     if (evaluation.error?.code === 'TX_REJECTED')
       return this.failRejected(op, signal, fence);
     const terminal = isTerminal(evaluation.state);
-    // R26.1: a read-only pass (no fence) writes the Operation only when its state, outcome
+    // A read-only pass (no fence) writes the Operation only when its state, outcome
     // or error changes, never just to schedule it: a version bump would make a concurrent
     // engine write (e.g. right after a broadcast) lose its compare-and-set. Scheduling
     // (`nextCheckAt`) belongs to fenced workers and to engine transitions.
@@ -721,7 +728,7 @@ export class Monitor {
 
   /**
    * Resends the stored raw bytes of a dropped active Attempt, at most once per
-   * `rebroadcastIntervalMs`. The answer decides nothing (R25): `dropped` is never terminal,
+   * `rebroadcastIntervalMs`. The answer decides nothing: `dropped` is never terminal,
    * and a refusal or rejection of bytes a node once held says nothing about them. An
    * acceptance is remembered (`firstSeenAt`) like the engine's broadcast path does.
    */
@@ -786,7 +793,11 @@ function depth(head: bigint, height: bigint): number {
   return d > 0n ? Number(d) : 0;
 }
 
-/** P6-2: a proven failure's fixed reason (R24); a success clears any earlier reason (M8). */
+/**
+ * A proven failure's fixed reason; a success clears any earlier reason. Drivers give a
+ * fixed text because a node's own text can carry addresses or amounts; the stored reason
+ * is sensitive data, and no event carries it.
+ */
 function failureReason(proof: {
   readonly success: boolean;
   readonly reason?: string;

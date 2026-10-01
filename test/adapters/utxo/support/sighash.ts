@@ -1,7 +1,7 @@
 /**
  * An independent implementation of the three signature hashes the driver uses (legacy
  * SIGHASH_ALL, BIP143 SIGHASH_ALL, BIP341 key path SIGHASH_DEFAULT), over `@noble/hashes`
- * only, for cross-checking bitcoinjs-lib (lesson 11, M9). Test-only.
+ * only, for cross-checking bitcoinjs-lib. Test-only.
  */
 import { sha256 } from '@noble/hashes/sha256';
 import { utf8ToBytes } from '@noble/hashes/utils';

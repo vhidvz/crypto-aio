@@ -63,7 +63,7 @@ export function signedSpend(
   return psbt.extractTransaction(true).toHex();
 }
 
-/** C2: the ways a miner can change a p2pkh transaction without its key (consensus-valid). */
+/** The ways a miner can change a p2pkh transaction without its key (consensus-valid). */
 export type Malleation = 'high-s' | 'pushdata1' | 'junk-push' | 'op-nop';
 
 /** A malleated copy of a p2pkh transaction: same effect, another txid. */
@@ -121,7 +121,7 @@ export function signedLegacySpend(
   return psbt.extractTransaction(true).toHex();
 }
 
-// ---- hand-serialized transactions (F3-R24 F2: bitcoinjs' decoder is quadratic) ----------
+// ---- hand-serialized transactions (bitcoinjs' decoder is quadratic) -------------------
 
 export const u32 = (n: number): Uint8Array => {
   const out = new Uint8Array(4);

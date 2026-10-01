@@ -15,7 +15,7 @@ const patchState = (state: string) => (args: readonly unknown[]) =>
   (args[2] as OperationPatch | undefined)?.state === state;
 
 /**
- * R26.2/R27: a crash while recording a broadcast answer reaches the caller as an ambiguous
+ * A crash while recording a broadcast answer reaches the caller as an ambiguous
  * STATE_UNRECORDED naming the Operation (the crash is not a crypto-aio error: `UNKNOWN`).
  */
 const crashedAfterBroadcast = {
@@ -148,7 +148,7 @@ describe('crash safety', () => {
     expect(env.chain.receipt(sub.attempt?.id ?? '')?.success).toBe(true);
   });
 
-  // Recovery (Task 26) resumes through `rebroadcast`, which resends the stored raw bytes.
+  // Recovery resumes through `rebroadcast`, which resends the stored raw bytes.
   it('rebroadcasts the persisted attempt after a restart without signing again', async () => {
     const { env, faulty, calls, intent } = await crashEnv();
     faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
@@ -275,8 +275,9 @@ describe('crash safety', () => {
     ]);
   });
 
-  // Task 26 reconciles this gap, and since M9 so does the next prepare: the nonce of an
-  // Operation whose only Attempt is proven rejected is reused once, by one live Operation.
+  // Nonce reconciliation (recovery, a worker pass) closes this gap, and so does the next
+  // prepare: the nonce of an Operation whose only Attempt is proven rejected is reused
+  // once, by one live Operation.
   it('never hands out a nonce twice when the process died after the failed write', async () => {
     const { env, faulty, calls, intent } = await crashEnv();
     env.chain.configureEndpoint('main', { refuseNext: 'invalid signature' });

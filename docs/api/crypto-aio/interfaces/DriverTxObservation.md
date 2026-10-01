@@ -2,7 +2,7 @@
 
 # Interface: DriverTxObservation
 
-Defined in: [src/core/driver/types.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L65)
+Defined in: [src/core/driver/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L66)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:65](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **blockHash?**: `string`
 
-Defined in: [src/core/driver/types.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L69)
+Defined in: [src/core/driver/types.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L70)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/driver/types.ts:69](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **blockHeight?**: `bigint`
 
-Defined in: [src/core/driver/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L68)
+Defined in: [src/core/driver/types.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L69)
 
 ***
 
@@ -32,10 +32,11 @@ Defined in: [src/core/driver/types.ts:68](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **reason?**: `string`
 
-Defined in: [src/core/driver/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L76)
+Defined in: [src/core/driver/types.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L78)
 
-P6-2: with `success: false`, why, as a short fixed text (R24: no addresses, amounts or
-node text). The monitor records it on the observation (`TxStatus.reason`).
+With `success: false`, why, as a short fixed text: no addresses, amounts or node
+text, which can carry either. The monitor records it on the observation
+(`TxStatus.reason`).
 
 ***
 
@@ -45,7 +46,7 @@ node text). The monitor records it on the observation (`TxStatus.reason`).
 
 > `readonly` **seen**: `"mempool"` \| `"none"` \| `"block"`
 
-Defined in: [src/core/driver/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L66)
+Defined in: [src/core/driver/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L67)
 
 ***
 
@@ -55,7 +56,7 @@ Defined in: [src/core/driver/types.ts:66](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **success?**: `boolean`
 
-Defined in: [src/core/driver/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L71)
+Defined in: [src/core/driver/types.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L72)
 
 For included transactions: false when execution failed or reverted.
 
@@ -67,4 +68,4 @@ For included transactions: false when execution failed or reverted.
 
 > `readonly` `optional` **txHash?**: `string`
 
-Defined in: [src/core/driver/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L67)
+Defined in: [src/core/driver/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L68)

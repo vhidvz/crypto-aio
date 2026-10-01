@@ -15,9 +15,9 @@ Defined in: [src/testing/env.ts:29](https://github.com/vhidvz/crypto-aio/blob/ma
 Defined in: [src/testing/env.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/env.ts#L47)
 
 Extra container options merged last. Never `clock`, `stores` or `transport` — those are
-always the generation-fenced values (N3), so this type excludes them; passing any of them
+always the generation-fenced values, so this type excludes them; passing any of them
 would either fail to type-check or (if forced through) be silently overridden. Its
-`signers` are merged by name over the default signer, and every entry is fenced (N-B).
+`signers` are merged by name over the default signer, and every entry is fenced.
 
 ***
 

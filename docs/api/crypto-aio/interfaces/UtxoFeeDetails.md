@@ -2,7 +2,7 @@
 
 # Interface: UtxoFeeDetails
 
-Defined in: [src/adapters/utxo/types.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L51)
+Defined in: [src/adapters/utxo/types.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L52)
 
 `FeeEstimate.details` of the `utxo` fee kind.
 
@@ -14,7 +14,7 @@ Defined in: [src/adapters/utxo/types.ts:51](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **change**: `bigint`
 
-Defined in: [src/adapters/utxo/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L60)
+Defined in: [src/adapters/utxo/types.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L61)
 
 The change amount; `0n` when there is no change output.
 
@@ -26,7 +26,7 @@ The change amount; `0n` when there is no change output.
 
 > `readonly` **changeIndex**: `number`
 
-Defined in: [src/adapters/utxo/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L62)
+Defined in: [src/adapters/utxo/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L63)
 
 Index of the change output, or `-1` when there is none.
 
@@ -38,7 +38,7 @@ Index of the change output, or `-1` when there is none.
 
 > `readonly` **inputs**: `number`
 
-Defined in: [src/adapters/utxo/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L56)
+Defined in: [src/adapters/utxo/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L57)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [src/adapters/utxo/types.ts:56](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **outputs**: `number`
 
-Defined in: [src/adapters/utxo/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L58)
+Defined in: [src/adapters/utxo/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L59)
 
 Outputs including change.
 
@@ -60,7 +60,7 @@ Outputs including change.
 
 > `readonly` **satPerKvB**: `bigint`
 
-Defined in: [src/adapters/utxo/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L53)
+Defined in: [src/adapters/utxo/types.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L54)
 
 The fee rate in satoshis per 1,000 virtual bytes (Bitcoin Core's unit).
 
@@ -72,6 +72,6 @@ The fee rate in satoshis per 1,000 virtual bytes (Bitcoin Core's unit).
 
 > `readonly` **vsize**: `number`
 
-Defined in: [src/adapters/utxo/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L55)
+Defined in: [src/adapters/utxo/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L56)
 
 Virtual size of the transaction, counting worst-case (72-byte) ECDSA signatures.

@@ -6,5 +6,5 @@
 
 Defined in: [src/adapters/tron/network.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L29)
 
-The longest expiration window this driver builds (D3). The negative inclusion proof does
-not depend on it: it scans from the reference block to the signed expiration (F4-R12).
+The longest expiration window this driver builds. The negative inclusion proof does
+not depend on it: it scans from the reference block to the signed expiration.

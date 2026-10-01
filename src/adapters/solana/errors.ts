@@ -1,9 +1,9 @@
 /**
- * Broadcast classification (spec §6.7, §8.3; lesson 3). `rejected` is only for bytes that
- * are invalid by construction on every node: a signature that does not verify. Everything
- * that depends on state, time, fork or node policy (an unknown or expired blockhash,
- * balances, rent, account locks, versions, sizes) is `refused`, and so is every error not
- * listed. Reasons are fixed literals that never repeat the node's text (R24).
+ * Broadcast classification. `rejected` is only for bytes that are invalid by construction
+ * on every node: a signature that does not verify. Everything that depends on state,
+ * time, fork or node policy (an unknown or expired blockhash, balances, rent, account
+ * locks, versions, sizes) is `refused`, and so is every error not listed. Reasons are
+ * fixed literals that never repeat the node's text, which can carry addresses or amounts.
  *
  * A preflight failure (`-32002`) carries the simulation result as its `data`, whose `err` is
  * agave's `TransactionError` in serde's form (`"BlockhashNotFound"`,
@@ -11,7 +11,7 @@
  * text one endpoint chose to show; otherwise the texts decide: agave's `TransactionError`
  * displays behind `sendTransaction`'s preflight prefix, matched whole.
  *
- * Lesson 21 (F5-R15): a node's rejection is a claim. `classifyBroadcastError` takes the node
+ * A node's rejection is a claim. `classifyBroadcastError` takes the node
  * at its word; `classifyOwnBroadcast`, which the broadcaster uses, keeps a `rejected` only
  * when the bytes that were sent really carry a signature that does not verify, checked here
  * with the core's own ed25519 rule (the one that accepted our signer's signatures). A claim
@@ -174,7 +174,8 @@ const CLAIMED_INVALID_SIGNATURE = refused(
 /**
  * Whether `sent` carries a signature that does not verify (each signature against its
  * signer's key, in order, over the message), or `undefined` when the bytes do not read as
- * one signed legacy transaction within the packet limit (lesson 20: refused before parsing).
+ * one signed legacy transaction within the packet limit (larger bytes are refused before
+ * any parsing).
  */
 function carriesBadSignature(sent: Uint8Array): boolean | undefined {
   if (sent.length > MAX_TRANSACTION_SIZE) return undefined;
@@ -191,7 +192,7 @@ function carriesBadSignature(sent: Uint8Array): boolean | undefined {
 }
 
 /**
- * Lesson 21: the node's answer to `sent`, the bytes this driver sent. A `rejected` stands
+ * The node's answer to `sent`, the bytes this driver sent. A `rejected` stands
  * only when `sent` carries a signature that does not verify; otherwise the answer is
  * `refused`. Every other answer is the node's, as `classifyBroadcastError` reads it.
  */

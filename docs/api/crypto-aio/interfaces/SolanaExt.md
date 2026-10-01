@@ -4,7 +4,7 @@
 
 Defined in: [src/adapters/solana/types.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L30)
 
-`bc.ext.solana`: the Solana family extension (spec §5.5).
+`bc.ext.solana`: the Solana family extension.
 
 ## Properties
 

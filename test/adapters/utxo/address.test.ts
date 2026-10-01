@@ -31,14 +31,14 @@ import {
 const MAIN: AddressParams = { bech32: 'bc', pubKeyHash: 0x00, scriptHash: 0x05 };
 const TEST: AddressParams = { bech32: 'tb', pubKeyHash: 0x6f, scriptHash: 0xc4 };
 const REGTEST: AddressParams = { bech32: 'bcrt', pubKeyHash: 0x6f, scriptHash: 0xc4 };
-/** A custom network whose base58 p2pkh addresses can start with its HRP plus "1" (M5). */
+/** A custom network whose base58 p2pkh addresses can start with its HRP plus "1". */
 const COLLIDING: AddressParams = { bech32: 'am', pubKeyHash: 0x17, scriptHash: 0x05 };
 const paramsOf = (address: string) =>
   address.toLowerCase().startsWith('tb1') ? TEST : MAIN;
 
 beforeAll(() => bitcoin.initEccLib(nobleEcc));
 
-describe('decodeAddress (strict, lesson 4)', () => {
+describe('decodeAddress (strict)', () => {
   it.each(BIP350_VALID)('decodes %s to its BIP350 script', (address, script) => {
     const decoded = decodeAddress(address, paramsOf(address));
     expect(toHex(decoded.script)).toBe(script);
@@ -91,11 +91,11 @@ describe('decodeAddress (strict, lesson 4)', () => {
     }
   });
 
-  it('refuses input over 90 characters before decoding it (lesson 20)', () => {
+  it('refuses input over 90 characters before decoding it', () => {
     // Base58 decoding is quadratic: 100,000 characters would block for over a minute. The
-    // cap is pinned by structure, not by time (final review M2): with every decoder counted,
-    // none is reached for an over-long input. The 100,000-character input comes last, so a
-    // missing cap fails fast on the others.
+    // cap is pinned by structure, not by time (a wall-clock test flaked under load): with
+    // every decoder counted, none is reached for an over-long input. The
+    // 100,000-character input comes last, so a missing cap fails fast on the others.
     type Coder = { decode: (...args: unknown[]) => unknown };
     let decodes = 0;
     const counted = <T extends Coder>(coder: T): T => ({
@@ -137,7 +137,7 @@ describe('decodeAddress (strict, lesson 4)', () => {
     expect(decodes).toBe(2);
   });
 
-  it('refuses a flipped checksum character and trailing garbage (M7)', () => {
+  it('refuses a flipped checksum character and trailing garbage', () => {
     const p2pkh = '1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH';
     for (const address of [
       `${BIP173_P2WPKH.slice(0, -1)}5`,
@@ -154,7 +154,7 @@ describe('decodeAddress (strict, lesson 4)', () => {
     }
   });
 
-  it('decodes regtest addresses with the regtest parameters (M7)', () => {
+  it('decodes regtest addresses with the regtest parameters', () => {
     expect(
       toHex(
         decodeAddress('bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', REGTEST).script,
@@ -175,7 +175,7 @@ describe('decodeAddress (strict, lesson 4)', () => {
     ).toThrow(expect.objectContaining({ code: 'INVALID_ADDRESS' }));
   });
 
-  it('takes the base58 path when a base58 address starts with the HRP and "1" (M5)', () => {
+  it('takes the base58 path when a base58 address starts with the HRP and "1"', () => {
     // On COLLIDING, TEST_PUBKEY's p2pkh address starts with "AM1": the HRP "am" plus "1".
     const address = 'AM1TAr9Bci1FZtcFXEUnjhDG914jaZJUmj';
     const wallet = walletAddress(TEST_PUBKEY, 'p2pkh', COLLIDING);
@@ -206,7 +206,7 @@ describe('decodeAddress (strict, lesson 4)', () => {
     ).toBe(script);
   });
 
-  it('maps each output type to its wallet type, and p2wsh cannot send (M7)', () => {
+  it('maps each output type to its wallet type, and p2wsh cannot send', () => {
     const main = (address: string) => walletTypeOf(decodeAddress(address, MAIN));
     expect(main(BIP173_P2WPKH)).toBe('p2wpkh');
     expect(main('3P14159f73E4gFr7JterCCQh9QjiTjiZrG')).toBe('p2sh-p2wpkh');
@@ -223,7 +223,7 @@ describe('decodeAddress (strict, lesson 4)', () => {
   });
 });
 
-describe('walletAddress (independent of bitcoinjs-lib, lesson 11)', () => {
+describe('walletAddress (independent of bitcoinjs-lib)', () => {
   it('matches BIP173 and BIP86', () => {
     expect(walletAddress(hexToBytes(BIP173_PUBKEY), 'p2wpkh', MAIN).address).toBe(
       BIP173_P2WPKH,
@@ -262,7 +262,7 @@ describe('walletAddress (independent of bitcoinjs-lib, lesson 11)', () => {
     }
   });
 
-  it('refuses private-key-sized, uncompressed and off-curve keys (R58)', () => {
+  it('refuses private-key-sized, uncompressed and off-curve keys', () => {
     const uncompressed = new Uint8Array(65).fill(4);
     const offCurve = Uint8Array.from([0x02, ...new Uint8Array(32).fill(0xff)]);
     for (const [key, type] of [
@@ -278,7 +278,7 @@ describe('walletAddress (independent of bitcoinjs-lib, lesson 11)', () => {
     }
   });
 
-  it('fits a 30-letter HRP: its p2tr address is exactly 90 characters (M4)', () => {
+  it('fits a 30-letter HRP: its p2tr address is exactly 90 characters', () => {
     const params: AddressParams = {
       bech32: 'a'.repeat(30),
       pubKeyHash: 0x00,
@@ -292,7 +292,7 @@ describe('walletAddress (independent of bitcoinjs-lib, lesson 11)', () => {
   });
 });
 
-describe('outputScript (M2)', () => {
+describe('outputScript', () => {
   it.each([
     ['p2pkh', 20, '76a914', '88ac'],
     ['p2sh', 20, 'a914', '87'],
@@ -314,7 +314,7 @@ describe('outputScript (M2)', () => {
   });
 });
 
-describe('addressFromScript (the inverse of outputScript; lesson 11)', () => {
+describe('addressFromScript (the inverse of outputScript)', () => {
   const NETWORKS = [
     [MAIN, bitcoin.networks.bitcoin],
     [TEST, bitcoin.networks.testnet],
@@ -372,7 +372,7 @@ describe('addressFromScript (the inverse of outputScript; lesson 11)', () => {
   });
 });
 
-describe('the @noble/curves ECC backend (spec §15)', () => {
+describe('the @noble/curves ECC backend', () => {
   it("passes bitcoinjs-lib's own verification and tweaks as BIP86 does", () => {
     // Clear bitcoinjs' cache first: it verifies a backend only when a new one is installed.
     bitcoin.initEccLib(undefined);
@@ -393,7 +393,7 @@ describe('the @noble/curves ECC backend (spec §15)', () => {
     ).toBeNull();
   });
 
-  it('pins the tweaked key and its parity to BIP341 wallet-test-vectors (M7)', () => {
+  it('pins the tweaked key and its parity to BIP341 wallet-test-vectors', () => {
     const keyPath = hexToBytes(BIP341_KEY_PATH.internalPubkey);
     expect(toHex(taprootTweak(keyPath).tweak)).toBe(BIP341_KEY_PATH.tweak);
     expect(walletAddress(keyPath, 'p2tr', MAIN).address).toBe(BIP341_KEY_PATH.address);
@@ -414,7 +414,7 @@ describe('the @noble/curves ECC backend (spec §15)', () => {
     }
   });
 
-  it('refuses a taproot internal key that is not an x-only point (M1)', () => {
+  it('refuses a taproot internal key that is not an x-only point', () => {
     for (const key of [
       new Uint8Array(32),
       new Uint8Array(32).fill(0xff),
@@ -443,7 +443,7 @@ describe('dustThreshold (Bitcoin Core GetDustThreshold at 3,000 sat/kvB)', () =>
     expect(dustThreshold(hexToBytes(script), 3_000n)).toBe(dust);
   });
 
-  it('is zero for an unspendable script, as Core IsUnspendable (M3)', () => {
+  it('is zero for an unspendable script, as Core IsUnspendable', () => {
     expect(dustThreshold(Uint8Array.of(0x6a), 3_000n)).toBe(0n);
     expect(dustThreshold(hexToBytes('6a04deadbeef'), 3_000n)).toBe(0n);
     expect(dustThreshold(new Uint8Array(10_001).fill(0x51), 3_000n)).toBe(0n);
@@ -453,7 +453,7 @@ describe('dustThreshold (Bitcoin Core GetDustThreshold at 3,000 sat/kvB)', () =>
     expect(dustThreshold(new Uint8Array(0), 3_000n)).toBe(471n);
   });
 
-  it('counts the full CompactSize of the script length (M3)', () => {
+  it('counts the full CompactSize of the script length', () => {
     // 8 + 1 + 252 + 148 = 409 bytes; 8 + 3 + 253 + 148 = 412 bytes.
     expect(dustThreshold(new Uint8Array(252).fill(0x51), 3_000n)).toBe(1_227n);
     expect(dustThreshold(new Uint8Array(253).fill(0x51), 3_000n)).toBe(1_236n);

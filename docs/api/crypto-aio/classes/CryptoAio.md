@@ -2,7 +2,7 @@
 
 # Class: CryptoAio
 
-Defined in: [src/core/container/container.ts:315](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L315)
+Defined in: [src/core/container/container.ts:317](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L317)
 
 Dependency container: stores, signers, wallets, hooks, plugins and a shared driver pool.
 Separate `new CryptoAio()` instances are fully isolated (use one per tenant).
@@ -15,7 +15,7 @@ Separate `new CryptoAio()` instances are fully isolated (use one per tenant).
 
 > **new CryptoAio**(`options?`): `CryptoAio`
 
-Defined in: [src/core/container/container.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L318)
+Defined in: [src/core/container/container.ts:320](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L320)
 
 #### Parameters
 
@@ -35,7 +35,7 @@ Defined in: [src/core/container/container.ts:318](https://github.com/vhidvz/cryp
 
 > `readonly` **namespace**: `string`
 
-Defined in: [src/core/container/container.ts:316](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L316)
+Defined in: [src/core/container/container.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L318)
 
 ## Accessors
 
@@ -47,7 +47,7 @@ Defined in: [src/core/container/container.ts:316](https://github.com/vhidvz/cryp
 
 > **get** **monitor**(): [`MonitorApi`](../interfaces/MonitorApi.md)
 
-Defined in: [src/core/container/container.ts:509](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L509)
+Defined in: [src/core/container/container.ts:511](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L511)
 
 Background workers that check due Operations without anyone waiting on them.
 
@@ -65,7 +65,7 @@ Background workers that check due Operations without anyone waiting on them.
 
 > **get** **operations**(): [`OperationsApi`](../interfaces/OperationsApi.md)
 
-Defined in: [src/core/container/container.ts:477](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L477)
+Defined in: [src/core/container/container.ts:479](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L479)
 
 Stored Operations of this namespace, as views, and startup recovery.
 
@@ -81,7 +81,7 @@ Stored Operations of this namespace, as views, and startup recovery.
 
 > **blockchain**\<`C`\>(`config`): [`Blockchain`](Blockchain.md)\<`C`\>
 
-Defined in: [src/core/container/container.ts:392](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L392)
+Defined in: [src/core/container/container.ts:394](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L394)
 
 #### Type Parameters
 
@@ -107,9 +107,9 @@ Defined in: [src/core/container/container.ts:392](https://github.com/vhidvz/cryp
 
 > **close**(): `Promise`\<`void`\>
 
-Defined in: [src/core/container/container.ts:532](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L532)
+Defined in: [src/core/container/container.ts:534](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L534)
 
-Closes the root container (R34): runs the `close` of every native client that
+Closes the root container: runs the `close` of every native client that
 `crypto-aio/native` handed out (a failing one is logged by code and skipped), then
 closes the pooled drivers. Its handles and `native()` then fail with
 `INVALID_TRANSITION`. A scope's `close()` does nothing; scopes share their root's pool.
@@ -126,7 +126,7 @@ closes the pooled drivers. Its handles and `native()` then fail with
 
 > **on**\<`E`\>(`type`, `handler`): () => `void`
 
-Defined in: [src/core/container/container.ts:468](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L468)
+Defined in: [src/core/container/container.ts:470](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L470)
 
 #### Type Parameters
 
@@ -156,7 +156,7 @@ Defined in: [src/core/container/container.ts:468](https://github.com/vhidvz/cryp
 
 > **onAny**(`handler`): () => `void`
 
-Defined in: [src/core/container/container.ts:472](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L472)
+Defined in: [src/core/container/container.ts:474](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L474)
 
 #### Parameters
 
@@ -176,7 +176,7 @@ Defined in: [src/core/container/container.ts:472](https://github.com/vhidvz/cryp
 
 > **scope**(`overrides`): `CryptoAio`
 
-Defined in: [src/core/container/container.ts:388](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L388)
+Defined in: [src/core/container/container.ts:390](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L390)
 
 Child container: inherits config, pool, stores and namespace; overrides merge on top.
 Not a tenant boundary — a scope shares its root's pool and stores. Use a separate
@@ -200,7 +200,7 @@ Not a tenant boundary — a scope shares its root's pool and stores. Use a separ
 
 > **use**(`plugin`): `this`
 
-Defined in: [src/core/container/container.ts:447](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L447)
+Defined in: [src/core/container/container.ts:449](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L449)
 
 Registers a plugin on this root container (copy-on-write catalogs).
 

@@ -1,7 +1,7 @@
 /**
- * The Solana fee policy (spec §6.5, §15: base fee plus priority), pure and bigint-only. The
+ * The Solana fee policy (base fee plus priority), pure and bigint-only. The
  * priority fee is `ceil(computeUnitPrice × computeUnitLimit / 1_000_000)` lamports, charged
- * on the requested limit (Solana's fee documentation, Plan 5 appendix).
+ * on the requested limit (Solana's fee documentation).
  */
 import { ValidationError } from '../../core/errors/error';
 import type {
@@ -34,7 +34,7 @@ export function fallbackComputeUnitLimit(instructions: number): bigint {
 }
 
 /**
- * Build variants (Plan 5 D10): identical intents built on the same blockhash would
+ * Build variants: identical intents built on the same blockhash would
  * sign byte-identical messages, so a second Operation would silently share the first one's
  * signature and one payment would be lost. Each estimate therefore adds a variant to the
  * compute-unit limit (0 to 1,023 units) and, for a speed, to the price (0 to 999
@@ -56,9 +56,9 @@ export function variantOffsets(variant: number): {
 export const MAX_PRICE_VARIANT = 999n;
 
 /**
- * A speed's signed price within the handle's `maxComputeUnitPrice` (F5-R9 (b)): the node's
+ * A speed's signed price within the handle's `maxComputeUnitPrice`: the node's
  * percentile, at most the bound less the largest variant, plus this build's variant. The
- * signed price never exceeds the bound, and identical transfers still differ at it (D10).
+ * signed price never exceeds the bound, and identical transfers still differ at it.
  * The bound is at least `MAX_PRICE_VARIANT` (`solanaNetworkConfig`).
  */
 export function speedPrice(
@@ -92,7 +92,7 @@ export function aboveMaxPrice(
 
 /**
  * The highest recent price a speed pays: the u64 range less the largest price variant
- * (999), so the varied price still fits its u64 field (lesson 19, F5-R3).
+ * (999), so the varied price still fits its u64 field.
  */
 const MAX_RECENT_PRICE = 2n ** 64n - 1n - 999n;
 
@@ -113,7 +113,7 @@ export function priorityFee(computeUnitPrice: bigint, computeUnitLimit: bigint):
 /**
  * The nearest-rank percentile of `getRecentPrioritizationFees` answers (micro-lamports per
  * compute unit); `0n` when the node reports none. A malformed entry, including one outside
- * the u64 range or without room for the price variant (lesson 19), is a retryable
+ * the u64 range or without room for the price variant, is a retryable
  * `PROVIDER_UNAVAILABLE`.
  */
 export function priceForSpeed(recent: unknown, speed: FeeSpeed): bigint {
@@ -214,7 +214,7 @@ export function detailsOf(fee: FeeEstimateDraft): SolanaFeeDetails {
 }
 
 /**
- * The compute budget `build` signs (F5-R9 (b) and (c) M2), checked wherever the estimate
+ * The compute budget `build` signs, checked wherever the estimate
  * came from (the store, `prepareTransfer`, a caller): the price within the handle's bound,
  * the limit within the protocol's, and the priority fee exactly the one that budget costs.
  */

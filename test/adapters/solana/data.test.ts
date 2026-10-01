@@ -13,9 +13,11 @@ const preset = (name: string) => SOLANA_PRESETS.find((p) => p.name === name)!;
 const KEYED = ['alchemy', 'infura', 'ankr'] as const;
 
 /**
- * Every supported (preset, cluster) pair and its endpoint for the key `k` (Appendix A). The
- * public RPC publishes 100 requests per 10 s and 40 per 10 s for one method, per IP (A28), so
- * 4 rps; the observed `getBlock` limit is lower (about 6 per 10 s), which A28 leaves out.
+ * Every supported (preset, cluster) pair and its endpoint for the key `k`, as each
+ * provider documents it. The public RPC publishes 100 requests per 10 s and 40 per 10 s
+ * for one method, per IP, so 4 rps; the observed `getBlock` limit is lower (about 6 per
+ * 10 s), which the preset leaves out: a keyless preset sets only a rate its operator
+ * publishes.
  */
 const PUBLIC_LIMIT = { rps: 4 };
 const ENDPOINTS = [
@@ -87,7 +89,7 @@ describe('Solana chain data', () => {
     );
   });
 
-  it('is deeply frozen (R56)', () => {
+  it('is deeply frozen', () => {
     expect(Object.isFrozen(SOLANA_CHAIN)).toBe(true);
     expect(Object.isFrozen(SOLANA_CHAIN.networks.mainnet?.finality)).toBe(true);
     expect(Object.isFrozen(SOLANA_TOKENS[0]?.ref)).toBe(true);
@@ -149,7 +151,7 @@ describe('Solana provider presets', () => {
     expect(preset('public').production).toBe(false);
   });
 
-  it('refuses a missing or empty key with a fixed text that names no key (lesson 10)', () => {
+  it('refuses a missing or empty key with a fixed text that names no key', () => {
     for (const name of KEYED) {
       for (const apiKey of [undefined, '', secret(''), secret('   ')]) {
         expect(() =>
@@ -188,7 +190,7 @@ describe('solanaNetworkConfig', () => {
     ).toEqual(['address-history', 'block-scan', 'expiry', 'tokens']);
   });
 
-  it('refuses data the driver cannot serve with CONFIG_INVALID (M3)', () => {
+  it('refuses data the driver cannot serve with CONFIG_INVALID', () => {
     const cases: (() => unknown)[] = [
       withNetwork({ identity: 'not-base58!' }),
       withNetwork({ identity: '1111' }),
@@ -211,7 +213,7 @@ describe('solanaNetworkConfig', () => {
   });
 });
 
-describe('the handle option maxComputeUnitPrice (F5-R9 (b), F4-R28 shape)', () => {
+describe('the handle option maxComputeUnitPrice', () => {
   const devnet = SOLANA_CHAIN.networks.devnet as NetworkInfo;
   const withParams = (params: Record<string, unknown>): NetworkInfo => ({
     ...devnet,

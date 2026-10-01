@@ -8,7 +8,7 @@ Type-level registries. Users and plugins augment them through the package entry,
 `declare module 'crypto-aio' { interface ChainRegistry { ethereum: {...} } }`, and plugins
 inside this package augment the entry module (`declare module '../index'`). Never augment
 this file directly: an augmentation here and one through the entry are then merged in file
-order, and a user's chains can be lost (R37).
+order, and a user's chains can be lost.
 
 ## Properties
 
@@ -54,7 +54,7 @@ Defined in: [src/adapters/evm/types.ts:15](https://github.com/vhidvz/crypto-aio/
 
 > **avalanche-p**: `object`
 
-Defined in: [src/adapters/avalanche/types.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L13)
+Defined in: [src/adapters/avalanche/types.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L14)
 
 #### family
 
@@ -72,7 +72,7 @@ Defined in: [src/adapters/avalanche/types.ts:13](https://github.com/vhidvz/crypt
 
 > **avalanche-x**: `object`
 
-Defined in: [src/adapters/avalanche/types.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L12)
+Defined in: [src/adapters/avalanche/types.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L13)
 
 #### family
 

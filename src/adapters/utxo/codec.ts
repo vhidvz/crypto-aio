@@ -1,8 +1,9 @@
 /**
- * The bitcoinjs-lib codec (spec §15): the unsigned transaction and its PSBT (BIP174), the
+ * The bitcoinjs-lib codec: the unsigned transaction and its PSBT (BIP174), the
  * per-input signature hashes (legacy, BIP143 for segwit v0, BIP341 key path for taproot),
  * assembly of the signed transaction, and the signatures of a PSBT signed elsewhere. The
- * driver persists only the PSBT (base64) and plain data (R11), and re-parses it here.
+ * driver persists only the PSBT (base64) and plain data, never an SDK object, and
+ * re-parses it here.
  */
 import { bytesToNumberBE, numberToBytesBE } from '@noble/curves/abstract/utils';
 import { secp256k1 } from '@noble/curves/secp256k1';
@@ -32,7 +33,7 @@ export const SEQUENCE_RBF = 0xfffffffd;
 export const SEQUENCE_FINAL_LOCKTIME = 0xfffffffe;
 
 /**
- * A previous transaction, decoded strictly once (F3-R14, F3-R7): its txid, its outputs, and
+ * A previous transaction, decoded strictly once: its txid, its outputs, and
  * its bytes without the witness (Bitcoin Core's `TX_NO_WITNESS` form, which BIP174
  * `non_witness_utxo` carries). Only `previousTxOf` makes one, so its txid is the hash of its
  * bytes: they authenticate themselves.
@@ -47,13 +48,13 @@ export interface PlannedInput extends Spendable {
   /**
    * The previous transaction to carry in the PSBT (BIP174 `non_witness_utxo`), checked
    * against the input's outpoint, value and script: required for p2pkh, and added for segwit
-   * v0 so hardware wallets can check the input amounts (D12). Never on p2tr.
+   * v0 so hardware wallets can check the input amounts. Never on p2tr.
    */
   readonly prevTx?: PreviousTx;
 }
 
 export interface BuiltTx {
-  /** The PSBT, base64 (spec §15: the signing payload a cold signer receives). */
+  /** The PSBT, base64 (the signing payload a cold signer receives). */
   readonly psbt: string;
   /** One signature hash per input, in input order. */
   readonly digests: readonly Uint8Array[];
@@ -61,7 +62,7 @@ export interface BuiltTx {
   readonly txid?: string;
 }
 
-/** Bitcoin Core's `MAX_MONEY` (21 million bitcoin): no amount is larger (lesson 19). */
+/** Bitcoin Core's `MAX_MONEY` (21 million bitcoin): no amount is larger. */
 const MAX_MONEY = 2_100_000_000_000_000n;
 const TXID = /^[0-9a-f]{64}$/;
 
@@ -74,8 +75,8 @@ const txidBytes = (txid: string): Uint8Array => fromHex(txid).reverse();
 
 /**
  * Untrusted transaction hex (a node's answer) as a previous transaction, read in one linear
- * pass by `rawtx.ts` (F3-R24 F2: bitcoinjs' decoder is quadratic), capped before decoding
- * (lesson 20) and at the million bytes without witness a chain can hold; `undefined` when it
+ * pass by `rawtx.ts` (bitcoinjs' decoder is quadratic), capped before decoding
+ * and at the million bytes without witness a chain can hold; `undefined` when it
  * does not decode.
  */
 export function previousTxOf(hex: string): PreviousTx | undefined {
@@ -93,8 +94,8 @@ export function previousTxOf(hex: string): PreviousTx | undefined {
 }
 
 /**
- * Lesson 19: every integer `buildTx` encodes fits its field, refused with a fixed text that
- * names no value (bitcoinjs' own check quotes it).
+ * Every integer `buildTx` encodes fits its field, never wrapped; anything else is refused
+ * with a fixed text that names no value (bitcoinjs' own check quotes it).
  */
 function assertEncodable(
   inputs: readonly PlannedInput[],
@@ -137,7 +138,7 @@ export function isPreviousTxRefusal(error: unknown): boolean {
 }
 
 /**
- * F3-R14: an input is what its previous transaction says: `prev` is the outpoint's
+ * An input is what its previous transaction says: `prev` is the outpoint's
  * transaction (its txid, which the bytes hash to), and it has the output, with the input's
  * value and the wallet's script. Otherwise `INVALID_INTENT` (`isPreviousTxRefusal`).
  */
@@ -281,7 +282,8 @@ export function viewPsbt(base64: string, network: Network): PsbtTxView {
     let value: bigint;
     if (data?.witnessUtxo) value = data.witnessUtxo.value;
     else if (data?.nonWitnessUtxo) {
-      // Read linearly (F3-R24 F2), though `buildTx` checked it: a real one can be large.
+      // Read linearly, though `buildTx` checked it: a real one can be large, and
+      // bitcoinjs' decoder is quadratic.
       const prev = readTx(data.nonWitnessUtxo);
       const output = prev?.txid === txid ? prev.outputs[input.index] : undefined;
       if (!output) {
@@ -354,7 +356,7 @@ export function assembleTx(
 }
 
 /**
- * P3-B (A6): the signatures of a PSBT signed elsewhere, synchronous and I/O-free. The
+ * The signatures of a PSBT signed elsewhere, synchronous and I/O-free. The
  * signed PSBT is untrusted (`signed-psbt.ts`): parsed strictly, it must carry exactly our
  * unsigned transaction (anti-tamper) and nothing that could change the spend. From each
  * input only the signature for the request's key is taken (partial or final), and the core
@@ -435,7 +437,7 @@ export function networkOf(params: {
 }
 
 /**
- * The txid of untrusted transaction hex, read linearly (`rawtx.ts`, F3-R24 F2; lesson 20);
+ * The txid of untrusted transaction hex, read linearly (`rawtx.ts`);
  * `INVALID_INTENT` when it does not decode or holds more than a chain can.
  */
 export function txidOfHex(hex: string): string {
@@ -447,19 +449,19 @@ export function txidOfHex(hex: string): string {
 }
 
 /**
- * C2: the txid `hex` would have with canonical p2pkh scriptSigs: per input, the last push that
- * is a strict-DER SIGHASH_ALL signature (normalized to low-s) and the last push that is a
- * 33-byte key hashing to `pubkeyHash`, re-pushed minimally as `<sig> <key>`. A third party
- * without the key can change only that encoding (BIP66 strict DER is consensus; the sighash
- * byte is signed), so this equals our Attempt's txid exactly when `hex` is a malleated copy
- * of it: same version, lock time, outpoints, sequences and outputs. `undefined` when an
- * input has a witness or no such pushes.
+ * The txid `hex` would have with canonical p2pkh scriptSigs: per input, the last push
+ * that is a strict-DER SIGHASH_ALL signature (normalized to low-s) and the last push that
+ * is a 33-byte key hashing to `pubkeyHash`, re-pushed minimally as `<sig> <key>`. A third
+ * party without the key can change only that encoding (BIP66 strict DER is consensus; the
+ * sighash byte is signed), so this equals our Attempt's txid exactly when `hex` is a
+ * malleated copy of it: same version, lock time, outpoints, sequences and outputs.
+ * `undefined` when an input has a witness or no such pushes.
  */
 export function canonicalTwinTxid(
   hex: string,
   pubkeyHash: Uint8Array,
 ): string | undefined {
-  // Read linearly (F3-R24 F2); only each input's short script goes through bitcoinjs.
+  // Read linearly; only each input's short script goes through bitcoinjs.
   const tx = readTxHex(hex);
   if (!tx || tx.hasWitness) return undefined;
   if (tx.inputs.length === 0) return tx.txid;

@@ -1,6 +1,6 @@
 /**
  * What the TON driver needs from a network's registry entry, validated once when a driver
- * is created, so inconsistent data fails with `CONFIG_INVALID` instead of misbehaving (M3).
+ * is created, so inconsistent data fails with `CONFIG_INVALID` instead of misbehaving.
  * SDK-free.
  */
 import { ConfigError } from '../../core/errors/error';
@@ -10,8 +10,8 @@ import { knownName, unknownName } from '../../core/util/names';
 import { MAX_COINS } from './fees';
 
 /**
- * The TON manifest's capabilities (spec §15); `address-history` comes with the indexer. No
- * `batch-transfer` (Task 9): the verdict answers `failed` for a partly delivered batch, and
+ * The TON manifest's capabilities; `address-history` comes with the indexer. No
+ * `batch-transfer`: the verdict answers `failed` for a partly delivered batch, and
  * a failed Operation sent again whole would pay twice the outputs that moved, so a TON
  * transfer carries exactly one output.
  */
@@ -24,16 +24,16 @@ export const TON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
   'address-history',
 ]);
 /**
- * The only capabilities a TON network may add or remove (M2). Never on TON: `block-scan`
- * (sharded, no block source), `replace-fee` and `cancel` (spec §15), `batch-transfer` (one
- * output per transfer, Task 9), nor any other.
+ * The only capabilities a TON network may add or remove. Never on TON: `block-scan`
+ * (sharded, no block source), `replace-fee` and `cancel` (TON has neither),
+ * `batch-transfer` (one output per transfer), nor any other.
  */
 const OWN_CAPABILITIES: ReadonlySet<Capability> = new Set([
   ...TON_CAPABILITIES,
   ...TON_INDEXER_CAPABILITIES,
 ]);
 
-/** The TON network options (`NetworkInfo.params`); any other key is a typo (M2). */
+/** The TON network options (`NetworkInfo.params`); any other key is a typo. */
 const OPTIONS: ReadonlySet<string> = new Set([
   'validForSeconds',
   'jettonAttached',
@@ -49,16 +49,15 @@ export interface TonFeeCeiling {
 }
 
 /**
- * The default economic ceiling on the `network` charge an endpoint's emulation suggests
- * (board: "economic ceilings on fees taken from a node"; F6-R16, F6-R17), which a network
- * replaces with `params.maxNetworkFee`. TON signs no fee: the chain charges gas and forward
- * fees by its config, so an inflated estimate cannot make a transfer pay more, but it would
- * fail the funds check for good (`INSUFFICIENT_FUNDS`) or mislead whoever approves the fee.
- * A basechain wallet's transfer costs about 0.001-0.01 TON, and a whole gas limit (1M gas at
- * 400 nanograms) 0.4 TON; a masterchain wallet pays about 25 times the gas and far more
- * storage (about 6 TON a year for a v4r2 wallet at mainnet's config param 18), so 100 TON
- * refuses only a wallet idle for more than about 13 years. Above the ceiling an estimate is
- * a retryable `PROVIDER_INCONSISTENT`.
+ * The default economic ceiling on the `network` charge an endpoint's emulation suggests,
+ * which a network replaces with `params.maxNetworkFee`. TON signs no fee: the chain
+ * charges gas and forward fees by its config, so an inflated estimate cannot make a
+ * transfer pay more, but it would fail the funds check for good (`INSUFFICIENT_FUNDS`) or
+ * mislead whoever approves the fee. A basechain wallet's transfer costs about 0.001-0.01
+ * TON, and a whole gas limit (1M gas at 400 nanograms) 0.4 TON; a masterchain wallet pays
+ * about 25 times the gas and far more storage (about 6 TON a year for a v4r2 wallet at
+ * mainnet's config param 18), so 100 TON refuses only a wallet idle for more than about
+ * 13 years. Above the ceiling an estimate is a retryable `PROVIDER_INCONSISTENT`.
  */
 export const DEFAULT_MAX_NETWORK_FEE: TonFeeCeiling = Object.freeze({
   basechain: 1_000_000_000n,
@@ -68,7 +67,7 @@ export const DEFAULT_MAX_NETWORK_FEE: TonFeeCeiling = Object.freeze({
 const WORKCHAINS: ReadonlySet<string> = new Set(['basechain', 'masterchain']);
 
 /**
- * A capability as an error may show it (F3-R16): a core capability's name is a fixed word, so
+ * A capability as an error may show it: a core capability's name is a fixed word, so
  * it is shown; any other text could be a pasted secret, so it is not. Unknown option keys are
  * never echoed either; their errors list the accepted names instead.
  */
@@ -85,7 +84,7 @@ export interface TonNetworkConfig {
   readonly jettonAttached: bigint;
   /** Nanograms forwarded with each jetton notification. */
   readonly jettonForwardAmount: bigint;
-  /** Masterchain blocks the attested head first trails the freshest endpoint by (M1). */
+  /** Masterchain blocks the attested head first trails the freshest endpoint by. */
   readonly finalitySkewBlocks: number;
   /** The most an estimate's `network` charge may be, per workchain of the sender. */
   readonly maxNetworkFee: TonFeeCeiling;
@@ -99,11 +98,11 @@ const isIntegerIn = (value: unknown, min: number, max: number): value is number 
 export const MIN_VALID_FOR_SECONDS = 10;
 export const MAX_VALID_FOR_SECONDS = 86_400;
 
-/** How far an endpoint's `sync_utime` may be from the local clock (M3), in seconds. */
+/** How far an endpoint's `sync_utime` may be from the local clock, in seconds. */
 export const CHAIN_TIME_TOLERANCE = 300;
 
 /**
- * F6-R29: a build's recorded chain time (`TonSeqnoOrdering.validFrom`) when the ordering holds
+ * A build's recorded chain time (`TonSeqnoOrdering.validFrom`) when the ordering holds
  * a well-formed one for its lifetime: a safe integer at least the shortest lifetime before
  * `validUntil`, and at most the longest (plus the chain-time tolerance) before it. Undefined
  * otherwise (an attempt built before the field existed, or a damaged record).
@@ -123,8 +122,8 @@ export function recordedValidFrom(slot: {
 
 /**
  * The only driver options (`HandleOptions.options`, `chains.ton.options`) the TON driver
- * reads (F6-R24, F6-R25). Any other key is refused, so a typo fails loudly instead of
- * leaving the default in place.
+ * reads. Any other key is refused, so a typo fails loudly instead of leaving the default
+ * in place.
  */
 const OPTION_KEYS: ReadonlySet<string> = new Set(['maxNetworkFee']);
 
@@ -170,7 +169,7 @@ export function tonNetworkConfig(
   if (!isIntegerIn(validFor, MIN_VALID_FOR_SECONDS, MAX_VALID_FOR_SECONDS)) {
     fail('params.validForSeconds must be an integer in [10, 86400]');
   }
-  // Encoded as Coins in every jetton wallet message (lesson 19).
+  // Encoded as Coins in every jetton wallet message: range-checked here, never wrapped.
   const attached = param('jettonAttached', 50_000_000n);
   if (typeof attached !== 'bigint' || attached <= 0n || attached > MAX_COINS) {
     fail('params.jettonAttached must be a bigint in [1, 2^120 - 1] (nanograms)');
@@ -183,14 +182,14 @@ export function tonNetworkConfig(
   if (!isIntegerIn(skew, 1, 1_000)) {
     fail('params.finalitySkewBlocks must be an integer in [1, 1000]');
   }
-  // F3-R16: the refusal names the accepted option and shows neither the caller's key, which
+  // The refusal names the accepted option and shows neither the caller's key, which
   // may be a pasted secret, nor its value.
   for (const key of Object.keys(options)) {
     if (!OPTION_KEYS.has(key)) {
       fail(unknownName('option', OPTION_KEYS));
     }
   }
-  // F6-R24, F6-R25: per workchain, the handle's option, else the network's params, else the
+  // Per workchain, the handle's option, else the network's params, else the
   // default. A network value is checked even where an option overrides it.
   const networkFeeCeiling = feeCeiling(
     param('maxNetworkFee', {}),
@@ -229,7 +228,7 @@ export function tonNetworkConfig(
  * `maxNetworkFee` (`name`: the network's `params.maxNetworkFee` or the handle option):
  * `{ basechain?, masterchain? }`, each a positive bigint within Coins (the charge is
  * compared with nanogram amounts); a workchain left out keeps `fallback`'s. Any other key,
- * or value, is `CONFIG_INVALID`, which never echoes the key (M2, F3-R16).
+ * or value, is `CONFIG_INVALID`, which never echoes the key.
  */
 function feeCeiling(
   value: unknown,

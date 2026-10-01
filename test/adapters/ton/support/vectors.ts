@@ -1,5 +1,5 @@
 /**
- * Frozen TON vectors. Cross-checks (Plan 6 appendix):
+ * Frozen TON vectors, each cross-checked against an independent source:
  * - `KEY`/`PUBLIC_KEY`: RFC 8032 §7.1 test 1, so the ed25519 key pair is independent.
  * - `CHAIN_WALLETS`: live mainnet wallets (toncenter `walletInformation` type and
  *   `get_public_key`); our derivation must reproduce the address the chain holds.

@@ -1,7 +1,7 @@
 /**
- * Well-known SPL tokens (spec §6.2): USDC and USDT where their issuers list a Solana mint
- * (Circle's USDC addresses page, Tether's supported-protocols page). All are classic Token
- * program mints with 6 decimals, read from the chain (Plan 5 appendix).
+ * Well-known SPL tokens: USDC and USDT where their issuers list a Solana mint (Circle's
+ * USDC addresses page, Tether's supported-protocols page). All are classic Token program
+ * mints with 6 decimals, read from the chain (`getAccountInfo` on mainnet and devnet).
  */
 import type { AssetRegistration } from '../../core/registry/assets';
 import { deepFreeze } from '../../core/util/freeze';

@@ -12,7 +12,7 @@ const ADDRESS = '77PLe4JWFMyQgaUNhWLPA6fsGKGNoGapd2XrbpC2Jhxa';
 const SIGNATURE =
   '4DETGWWsC9zQ83YrU5EyYJmAgaug1dDas7cLWBVRBnvxxfo8Knfm4osJbmN4fXnrHZLFJmrPn8XbpcnTWWQsixv';
 
-describe('strict Solana keys (lesson 4)', () => {
+describe('strict Solana keys', () => {
   it('accepts only canonical base58 of the exact length', () => {
     expect(isAddress(ADDRESS)).toBe(true);
     expect(isAddress('11111111111111111111111111111111')).toBe(true);
@@ -37,7 +37,7 @@ describe('strict Solana keys (lesson 4)', () => {
     expect(decodeBase58(ADDRESS, 32)).toEqual(ed25519.getPublicKey(SEED));
   });
 
-  it('refuses text longer than the format allows before decoding it (lesson 20)', () => {
+  it('refuses text longer than the format allows before decoding it', () => {
     // base58 decoding is O(n²): 30,000 characters block the event loop for seconds.
     const decode = jest.spyOn(base58, 'decode');
     try {

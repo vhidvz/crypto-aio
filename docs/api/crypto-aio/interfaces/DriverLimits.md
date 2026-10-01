@@ -2,7 +2,7 @@
 
 # Interface: DriverLimits
 
-Defined in: [src/core/driver/types.ts:276](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L276)
+Defined in: [src/core/driver/types.ts:281](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L281)
 
 ## Properties
 
@@ -12,4 +12,4 @@ Defined in: [src/core/driver/types.ts:276](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **maxOutputs**: `number`
 
-Defined in: [src/core/driver/types.ts:277](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L277)
+Defined in: [src/core/driver/types.ts:282](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L282)

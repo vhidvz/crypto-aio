@@ -2,7 +2,7 @@
 
 # Interface: UtxoUnspent
 
-Defined in: [src/adapters/utxo/types.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L72)
+Defined in: [src/adapters/utxo/types.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L73)
 
 An unspent output of an address, as `ext.utxo.listUnspent` reports it.
 
@@ -14,7 +14,7 @@ An unspent output of an address, as `ext.utxo.listUnspent` reports it.
 
 > `readonly` `optional` **blockHeight?**: `bigint`
 
-Defined in: [src/adapters/utxo/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L79)
+Defined in: [src/adapters/utxo/types.ts:80](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L80)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/utxo/types.ts:79](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **confirmed**: `boolean`
 
-Defined in: [src/adapters/utxo/types.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L78)
+Defined in: [src/adapters/utxo/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L79)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/adapters/utxo/types.ts:78](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **outpoint**: `string`
 
-Defined in: [src/adapters/utxo/types.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L74)
+Defined in: [src/adapters/utxo/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L75)
 
 `txid:vout`, the reservation key of this output.
 
@@ -46,7 +46,7 @@ Defined in: [src/adapters/utxo/types.ts:74](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **txid**: `string`
 
-Defined in: [src/adapters/utxo/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L75)
+Defined in: [src/adapters/utxo/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L76)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [src/adapters/utxo/types.ts:75](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **value**: `bigint`
 
-Defined in: [src/adapters/utxo/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L77)
+Defined in: [src/adapters/utxo/types.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L78)
 
 ***
 
@@ -66,4 +66,4 @@ Defined in: [src/adapters/utxo/types.ts:77](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **vout**: `number`
 
-Defined in: [src/adapters/utxo/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L76)
+Defined in: [src/adapters/utxo/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L77)

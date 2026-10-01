@@ -1,8 +1,10 @@
 /**
  * The `@ton/ton` library module (the family shape: the client module exports the loadable
- * factory). The native client is a `TonClient` whose `httpAdapter` posts to the transport
- * (spec §11), off the driver's own request path (D1). SDKs are required by their bare peer
- * names (R80).
+ * factory). The native client is a `TonClient` whose `httpAdapter` posts to the
+ * transport, off the driver's own request path: the driver sends REST straight to the
+ * transport, because `TonClient` runs axios with a real request timer. SDKs are required
+ * by their bare peer names: the core turns a missing module into `DEPENDENCY_MISSING`
+ * only when the error names a peer dependency.
  */
 import { TonClient } from '@ton/ton';
 import type { DisposableNativeClient } from '../../core/driver/types';
@@ -15,7 +17,7 @@ type HttpAdapter = NonNullable<ConstructorParameters<typeof TonClient>[0]['httpA
 
 /**
  * The tags of a native request: plain reads, except a toncenter `send*` method, which is a
- * broadcast (M3, as EVM's native client): a failure after the transport may have delivered
+ * broadcast (as EVM's native client): a failure after the transport may have delivered
  * it is `ambiguous`, never an invitation to sign again with a new seqno.
  */
 const tagsOf = (body: unknown): TonCallTags => {
@@ -27,7 +29,7 @@ const tagsOf = (body: unknown): TonCallTags => {
 };
 
 /**
- * A fresh `TonClient` over `transport` on every call (R34); `crypto-aio/native` only. The
+ * A fresh `TonClient` over `transport` on every call; `crypto-aio/native` only. The
  * client holds only a placeholder URL and no key (secrets stay in the transport), and
  * nothing to close.
  */

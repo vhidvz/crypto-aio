@@ -6,7 +6,7 @@
 
 Defined in: [src/core/errors/codes.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/codes.ts#L17)
 
-Frozen (M1), with every entry: the table is shared by every error and every caller.
+Frozen, with every entry: the table is shared by every error and every caller.
 
 ## Type Declaration
 
@@ -394,7 +394,7 @@ Frozen (M1), with every entry: the table is shared by every error and every call
 
 > `readonly` **STATE\_UNRECORDED**: `object`
 
-R27: the outcome may have happened (e.g. a delivered broadcast) but was not recorded.
+The outcome may have happened (e.g. a delivered broadcast) but was not recorded.
 
 #### STATE\_UNRECORDED.category
 

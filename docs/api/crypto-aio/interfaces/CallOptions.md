@@ -14,7 +14,7 @@ Defined in: [src/core/transport/types.ts:35](https://github.com/vhidvz/crypto-ai
 
 Defined in: [src/core/transport/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L68)
 
-A12: parse JSON answers with exact integers: an integer outside the safe range becomes a
+Parse JSON answers with exact integers: an integer outside the safe range becomes a
 `bigint` instead of a rounded number (`rpc`, `rpcRaw` and `http`; health probes always
 parse plainly). A quorum key sees the revived values.
 

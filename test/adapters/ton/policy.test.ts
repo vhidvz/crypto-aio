@@ -30,7 +30,7 @@ const SECRET_SHAPED = [
 ];
 
 describe('TON network config', () => {
-  it("never echoes a caller's key or capability name into an error (F3-R16)", () => {
+  it("never echoes a caller's key or capability name into an error", () => {
     for (const name of SECRET_SHAPED) {
       const patches: readonly Partial<NetworkInfo>[] = [
         { params: { [name]: 1 } },
@@ -77,7 +77,7 @@ describe('TON network config', () => {
     expect(Object.isFrozen(TON_INDEXER_CAPABILITIES)).toBe(true);
   });
 
-  it('refuses inconsistent network data with CONFIG_INVALID (M3)', () => {
+  it('refuses inconsistent network data with CONFIG_INVALID', () => {
     const bad: readonly Partial<NetworkInfo>[] = [
       { identity: 'ton' },
       { identity: '0' },
@@ -95,7 +95,8 @@ describe('TON network config', () => {
       { params: { jettonAttached: 0n } },
       { params: { jettonAttached: -1n } },
       { params: { jettonAttached: 5 } },
-      // Lesson 19: the value is encoded as Coins (VarUInteger 16).
+      // The value is encoded as Coins (VarUInteger 16): a larger one is refused, never
+      // wrapped.
       { params: { jettonAttached: MAX_COINS + 1n } },
       { params: { jettonForwardAmount: 50_000_000n } },
       { params: { jettonForwardAmount: -1n } },
@@ -106,7 +107,7 @@ describe('TON network config', () => {
       { capabilities: { add: ['block-scan'] } },
       { capabilities: { add: ['replace-fee'] } },
       { capabilities: { add: ['cancel'] } },
-      // M2: only its own options and capabilities.
+      // Only its own options and capabilities.
       { params: { jettonAttachd: 1n } },
       { params: { ...mainnet.params, validForSecond: 60 } },
       { capabilities: { add: ['fee-market-1559'] } },
@@ -163,7 +164,7 @@ describe('TON network config', () => {
     ).toBe(60);
   });
 
-  it("takes maxNetworkFee as a handle option too: the option, then the network's, then the default (F6-R24, F6-R25)", () => {
+  it("takes maxNetworkFee as a handle option too: the option, then the network's, then the default", () => {
     const config = (
       options: Readonly<Record<string, unknown>>,
       params: Readonly<Record<string, unknown>> = {},
@@ -212,7 +213,8 @@ describe('TON network config', () => {
       { maxNetworkFee: { basechain: -1n } },
       'params.maxNetworkFee.basechain must be',
     );
-    // F3-R16: an unknown option is refused, naming the accepted one, never echoing its key.
+    // An unknown option is refused, naming the accepted one, never echoing its key: a
+    // mistyped key can be a pasted secret.
     const secret = 'EQ' + 'k'.repeat(46);
     for (const key of ['maxNetworkFees', 'validForSeconds', secret]) {
       const message = refused(
@@ -224,7 +226,7 @@ describe('TON network config', () => {
     }
   });
 
-  it('takes a per-workchain fee ceiling, validated as Coins (F6-R17)', () => {
+  it('takes a per-workchain fee ceiling, validated as Coins', () => {
     const ceiling = (maxNetworkFee: unknown) =>
       tonNetworkConfig(chain, { ...mainnet, params: { maxNetworkFee } }).maxNetworkFee;
     expect(DEFAULT_MAX_NETWORK_FEE).toEqual({
@@ -259,7 +261,7 @@ describe('TON network config', () => {
       [{ basechain: '1000' }, 'maxNetworkFee.basechain'],
       [{ masterchain: MAX_COINS + 1n }, 'maxNetworkFee.masterchain'],
       [{ masterchain: null }, 'maxNetworkFee.masterchain'],
-      // F3-R16: the caller's key is never echoed; the accepted names are.
+      // The caller's key is never echoed; the accepted names are.
       [
         { shardchain: 1n },
         "params.maxNetworkFee takes only 'basechain' and 'masterchain'",
@@ -281,7 +283,7 @@ describe('TON network config', () => {
     }
   });
 
-  it('allows only its own options and capabilities, listing what it accepts (M2, F3-R16)', () => {
+  it('allows only its own options and capabilities, listing what it accepts', () => {
     const long = 'k'.repeat(100_000);
     const options =
       'TON network ton:mainnet: params has a key that is not a TON network option ' +
@@ -294,7 +296,7 @@ describe('TON network config', () => {
         { capabilities: { add: ['fee-market-1559'] } },
         "TON network ton:mainnet: 'fee-market-1559' is not available on TON",
       ],
-      // One output per transfer (Task 9): no network can offer TON batches.
+      // One output per transfer: no network can offer TON batches.
       [
         { capabilities: { add: ['batch-transfer'] } },
         "TON network ton:mainnet: 'batch-transfer' is not available on TON",
@@ -470,7 +472,10 @@ describe('TON fees', () => {
   });
 });
 
-describe('TON broadcast classification (D16)', () => {
+// toncenter answers every refused message with HTTP 500, which the broadcaster rethrows
+// unclassified and ambiguous: this table serves only the definitive 4xx answers of other
+// v2-compatible endpoints.
+describe('TON broadcast classification', () => {
   // The chain's own texts. The wallet refusal and the skipped compute phase were captured
   // from testnet toncenter (2026-09-28); the rest are cited in src/adapters/ton/errors.ts.
   const HEX = 'CCA3DC4922DEAA32160983996E8482B5F179112552943DE3A0AC0D0E449A1381';
@@ -539,10 +544,10 @@ describe('TON broadcast classification (D16)', () => {
       BY_ACCOUNT,
       { kind: 'refused', code: 'INSUFFICIENT_FUNDS', reason: 'insufficient funds' },
     ],
-    // Success (spec §8.4): the liteserver already took these exact bytes.
+    // Success: the liteserver already took these exact bytes.
     [DUPLICATE, { kind: 'already-known' }],
     [`LITE_SERVER_UNKNOWN: ${DUPLICATE}`, { kind: 'already-known' }],
-    // M4: success is matched as strictly as a refusal, and only after every refusal.
+    // Success is matched as strictly as a refusal, and only after every refusal.
     [`${DUPLICATE}\n${byTransaction(33)}`, seqno],
     [`${DUPLICATE} and more`, byNode],
     [`not ${DUPLICATE}`, byNode],
@@ -559,7 +564,7 @@ describe('TON broadcast classification (D16)', () => {
       byNode,
     ],
     ['failed to validate request: empty boc', byNode],
-    // Texts no TON node writes (the plan's first guesses) are plain refusals, never success.
+    // Plausible texts that no TON node writes are plain refusals, never success.
     ['duplicate external message', byNode],
     ['External message already known', byNode],
     ['External message was not accepted: exitcode=33, steps=5', byNode],
@@ -612,7 +617,7 @@ describe('TON broadcast classification (D16)', () => {
     expect(classifyBroadcastError(envelope(DUPLICATE))).toEqual(byNode);
   });
 
-  it('rethrows a transient node answer as retryable and ambiguous, never a stalling refusal (M4)', () => {
+  it('rethrows a transient node answer as retryable and ambiguous, never a stalling refusal', () => {
     // ext-message-pool.cpp: "not ready" and "too many pending external message checks"
     // (ErrorCode::notready, so tonlib names them LITE_SERVER_NOTREADY), and "too many
     // external messages to address <wc>:<HEX>" (the per-address limit).
@@ -641,7 +646,7 @@ describe('TON broadcast classification (D16)', () => {
         retryable: true,
         ambiguous: true,
       });
-      // R24: the node's text (an address) never reaches the error.
+      // The node's text (an address) never reaches the error.
       expect((thrown as Error).message).not.toMatch(/0:|[0-9A-F]{64}/i);
       expect((thrown as Error).cause).toBeUndefined();
     }
@@ -659,7 +664,7 @@ describe('TON broadcast classification (D16)', () => {
     }
   });
 
-  it('reads only a bounded prefix of a long text (lesson 20)', () => {
+  it('reads only a bounded prefix of a long text', () => {
     expect(classifyBroadcastError('x'.repeat(100_000))).toEqual(byNode);
     expect(classifyBroadcastError('x'.repeat(100_000) + byTransaction(33))).toEqual(
       byNode,
@@ -671,7 +676,7 @@ describe('TON broadcast classification (D16)', () => {
       ),
     ).toEqual(byNode);
     expect(classifyBroadcastError(`${'\\n'.repeat(50_000)}${DUPLICATE}`)).toEqual(byNode);
-    // M1: the classifier's own cut never completes a whole-text answer, success above all.
+    // The classifier's own cut never completes a whole-text answer, success above all.
     const padded = (text: string, length: number): string =>
       text + ' '.repeat(length - text.length);
     expect(classifyBroadcastError(`${DUPLICATE}${' '.repeat(1_000)}x`)).toEqual(byNode);

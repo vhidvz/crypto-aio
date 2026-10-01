@@ -7,7 +7,8 @@
  */
 import type { Connection } from '@solana/web3.js';
 
-// R37: through the package entry. SDK types appear only here (spec §5.6).
+// Augments the package entry's map. SDK types appear only here, so the main entry's
+// typings name no SDK.
 declare module '../../index' {
   interface NativeClientMap {
     '@solana/web3.js': Connection;

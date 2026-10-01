@@ -1,7 +1,7 @@
 /**
  * A container on the scripted Solana node, for end-to-end tests. `restart({ killPrevious })`
  * builds a new container over the same stores, node and clock; with `killPrevious` the old
- * generation's clock, fetch, stores and signer are fenced (`fenceGeneration`, handoff R20),
+ * generation's clock, fetch, stores and signer are fenced (`fenceGeneration`),
  * so nothing it started can still act. `aio` and `bc` are the current generation's; `clock`
  * and `stores` are the shared, unfenced objects: drive time and assert on durable state
  * through them. A killed container is never closed (its fenced calls never settle).

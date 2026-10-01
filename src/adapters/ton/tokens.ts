@@ -1,9 +1,9 @@
 /**
- * Well-known TON assets (spec §6.2). USDT is Tether's jetton on TON mainnet (master and
+ * Well-known TON assets. USDT is Tether's jetton on TON mainnet (master and
  * 6 decimals verified against docs.ton.org and the master's on-chain content). The native
  * coin keeps the alias `TON` beside its ticker `GRAM` (formerly Toncoin).
  * USDT's `name` ('Tether USD') is the master's on-chain jetton metadata name, not verified
- * live (it is not in the Plan 6 appendix).
+ * live.
  * Jetton asset ids use the master's raw address: `ton:mainnet/jetton:0:<hex>`.
  */
 import type { AssetRegistration } from '../../core/registry/assets';

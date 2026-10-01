@@ -2,9 +2,9 @@
 
 # Interface: ChainDriver
 
-Defined in: [src/core/driver/types.ts:334](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L334)
+Defined in: [src/core/driver/types.ts:340](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L340)
 
-The driver port. I4: every method's contract, as the core relies on it. Purpose, retry
+The driver port: every method's contract, as the core relies on it. Purpose, retry
 class and quorum are the `CallOptions` a driver passes to its `Transport` (defaults:
 purpose `read`, retry `safe`, no quorum). A `monitor` or `proof` read only goes to
 endpoints that are not lagging.
@@ -12,11 +12,11 @@ endpoints that are not lagging.
 | Method | Purpose | Retry | Quorum | Returns / throws |
 | --- | --- | --- | --- | --- |
 | `reader.getBalance`, `getBlock`, `getTransaction` | `read` | `safe` | none | `null` when not found; provider errors propagate |
-| `reader.getTokenMetadata` | `read` | `safe` | none (a driver may use a quorum) | N6: a token's own unusable metadata (no contract, a reverting or malformed `decimals`/`symbol`) throws `ValidationError('ASSET_RESOLUTION')`, which the core caches per container (R53: only a non-retryable `ASSET_RESOLUTION` is cached); every other failure, e.g. a transient provider failure (propagated retryable) or any other provider error, is not cached and the next lookup queries again. Stricter than this minimum, the EVM driver reads `decimals()` and `symbol()` under `quorum: 'proof'` (M4): the metadata is cached for the container's life, and one endpoint's wrong `decimals` would mis-scale every amount; endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, which is not cached |
+| `reader.getTokenMetadata` | `read` | `safe` | none (a driver may use a quorum) | A token's own unusable metadata (no contract, a reverting or malformed `decimals`/`symbol`) throws `ValidationError('ASSET_RESOLUTION')`, which the core caches per container (only a non-retryable `ASSET_RESOLUTION` is cached); every other failure, e.g. a transient provider failure (propagated retryable) or any other provider error, is not cached and the next lookup queries again. Stricter than this minimum, the EVM driver reads `decimals()` and `symbol()` under `quorum: 'proof'`: the metadata is cached for the container's life, and one endpoint's wrong `decimals` would mis-scale every amount; endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, which is not cached |
 | `reader.getBlockHeight`, `getFinalizedHeight` | `monitor` | `safe` | none | propagate; they feed the stale-view guards and confirmation depths |
 | `reader.observe(ref, ordering, from)` | `monitor` | `safe` | none | `{ seen: 'none' }` when not visible; `ordering` and `from` are `undefined` for a transaction the library does not manage |
 | `sequence.pending`, `sequence.latest` | `monitor` | `safe` | none | propagate |
-| `proofs.*` (`finalizedHead`, `includedFinal`, `slotConsumed`, `expired`, `blockHash`) | `proof` | `safe` | `'proof'` | endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, and the core then decides nothing. Lesson 18: only a definitive negative proof answers "no"; every other RPC error throws retryable `PROVIDER_UNAVAILABLE`, which decides nothing (see below). Only `slotConsumed(…, 'latest')` may be a single `monitor` read: the core records it as observed evidence |
+| `proofs.*` (`finalizedHead`, `includedFinal`, `slotConsumed`, `expired`, `blockHash`) | `proof` | `safe` | `'proof'` | endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, and the core then decides nothing. Only a definitive negative proof answers "no"; every other RPC error throws retryable `PROVIDER_UNAVAILABLE`, which decides nothing (see below). Only `slotConsumed(…, 'latest')` may be a single `monitor` read: the core records it as observed evidence |
 | `broadcaster.broadcast` | `broadcast` | `ambiguous-on-failure` | none (passes `fanout` and `signal` through) | classifies a definitive `RPC_ERROR` into a `BroadcastResult`; rethrows an ambiguous one (`error.ambiguous`) and every other failure unclassified |
 | `builder.estimateFee`, `checkFunds`, `build` | `read` | `safe` | none | `ValidationError` / `UnsupportedCapabilityError` for an intent it cannot build |
 | `builder.assemble` | no I/O | – | – | `SigningError('SIGNING_FAILED')` when a signature is missing |
@@ -28,7 +28,7 @@ endpoints that are not lagging.
 | `createNativeClient` | no I/O | – | – | a fresh SDK instance on every call, never the pooled one |
 
 Further rules:
-- Lesson 18, widened: on a proof path (`proofs.*`), only a definitive negative proof may
+- On a proof path (`proofs.*`), only a definitive negative proof may
   answer "no" (`included: false`, a slot not consumed, a `null` block hash). Every other
   RPC error, including state or history not available, pruned data, an index still being
   built ("transaction indexing is in progress"), or an endpoint's non-definitive error,
@@ -43,9 +43,10 @@ Further rules:
   from or to one of them; empty (`[]`) or absent means no filter. `ScanFilter.assets` is a
   hint only: a driver may narrow by it or ignore it, and the core does not filter again.
 - `fee.details.requestedFee` is reserved. On replacements the core records the requested
-  fee spec there (R30), so a driver never sets or reads it.
-- M10 (open; Plan 4 decides): `DriverContext` has no asset resolver and `DriverIntent`
-  carries no decimals. Amounts reach drivers in base units only.
+  fee spec there, so a driver never sets or reads it.
+- `DriverContext` has no asset resolver and `DriverIntent` carries no decimals. Amounts
+  reach drivers in base units only; a driver that needs a token's decimals (Solana's
+  `transferChecked`) reads them from the chain itself.
 
 ## Properties
 
@@ -55,7 +56,7 @@ Further rules:
 
 > `readonly` **address**: [`AddressCodec`](AddressCodec.md)
 
-Defined in: [src/core/driver/types.ts:337](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L337)
+Defined in: [src/core/driver/types.ts:343](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L343)
 
 ***
 
@@ -65,7 +66,7 @@ Defined in: [src/core/driver/types.ts:337](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **blocks?**: [`BlockSource`](BlockSource.md)
 
-Defined in: [src/core/driver/types.ts:344](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L344)
+Defined in: [src/core/driver/types.ts:350](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L350)
 
 ***
 
@@ -75,7 +76,7 @@ Defined in: [src/core/driver/types.ts:344](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **broadcaster**: [`Broadcaster`](Broadcaster.md)
 
-Defined in: [src/core/driver/types.ts:340](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L340)
+Defined in: [src/core/driver/types.ts:346](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L346)
 
 ***
 
@@ -85,7 +86,7 @@ Defined in: [src/core/driver/types.ts:340](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **builder**: [`TxBuilder`](TxBuilder.md)
 
-Defined in: [src/core/driver/types.ts:339](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L339)
+Defined in: [src/core/driver/types.ts:345](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L345)
 
 ***
 
@@ -95,7 +96,7 @@ Defined in: [src/core/driver/types.ts:339](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **capabilities**: `ReadonlySet`\<[`Capability`](../type-aliases/Capability.md)\>
 
-Defined in: [src/core/driver/types.ts:336](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L336)
+Defined in: [src/core/driver/types.ts:342](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L342)
 
 ***
 
@@ -105,7 +106,7 @@ Defined in: [src/core/driver/types.ts:336](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **ext?**: `Readonly`\<`Record`\<`string`, `Readonly`\<`Record`\<`string`, (...`args`) => `Promise`\<`unknown`\>\>\>\>\>
 
-Defined in: [src/core/driver/types.ts:347](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L347)
+Defined in: [src/core/driver/types.ts:353](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L353)
 
 Two-level, capability-gated family API: `ext.<family>.<method>(...) → Promise`.
 
@@ -117,7 +118,7 @@ Two-level, capability-gated family API: `ext.<family>.<method>(...) → Promise`
 
 > `readonly` `optional` **history?**: [`AddressHistorySource`](AddressHistorySource.md)
 
-Defined in: [src/core/driver/types.ts:345](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L345)
+Defined in: [src/core/driver/types.ts:351](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L351)
 
 ***
 
@@ -127,7 +128,7 @@ Defined in: [src/core/driver/types.ts:345](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **ordering**: [`OrderingKind`](../type-aliases/OrderingKind.md)
 
-Defined in: [src/core/driver/types.ts:335](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L335)
+Defined in: [src/core/driver/types.ts:341](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L341)
 
 ***
 
@@ -137,7 +138,7 @@ Defined in: [src/core/driver/types.ts:335](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **proofs**: [`ProofSource`](ProofSource.md)
 
-Defined in: [src/core/driver/types.ts:341](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L341)
+Defined in: [src/core/driver/types.ts:347](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L347)
 
 ***
 
@@ -147,7 +148,7 @@ Defined in: [src/core/driver/types.ts:341](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **reader**: [`ChainReader`](ChainReader.md)
 
-Defined in: [src/core/driver/types.ts:338](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L338)
+Defined in: [src/core/driver/types.ts:344](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L344)
 
 ***
 
@@ -157,7 +158,7 @@ Defined in: [src/core/driver/types.ts:338](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **replacement?**: [`ReplacementPolicy`](ReplacementPolicy.md)
 
-Defined in: [src/core/driver/types.ts:343](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L343)
+Defined in: [src/core/driver/types.ts:349](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L349)
 
 ***
 
@@ -167,7 +168,7 @@ Defined in: [src/core/driver/types.ts:343](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **sequence?**: [`SequenceSource`](SequenceSource.md)
 
-Defined in: [src/core/driver/types.ts:342](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L342)
+Defined in: [src/core/driver/types.ts:348](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L348)
 
 ## Methods
 
@@ -177,7 +178,7 @@ Defined in: [src/core/driver/types.ts:342](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **close**(): `Promise`\<`void`\>
 
-Defined in: [src/core/driver/types.ts:356](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L356)
+Defined in: [src/core/driver/types.ts:362](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L362)
 
 #### Returns
 
@@ -191,7 +192,7 @@ Defined in: [src/core/driver/types.ts:356](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **createNativeClient**(): [`DisposableNativeClient`](DisposableNativeClient.md)
 
-Defined in: [src/core/driver/types.ts:355](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L355)
+Defined in: [src/core/driver/types.ts:361](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L361)
 
 A fresh, caller-owned SDK client for `crypto-aio/native`: a new SDK instance on every
 call, never the pooled one.
@@ -208,7 +209,7 @@ call, never the pooled one.
 
 > `optional` **limits**(`wallet`): [`DriverLimits`](DriverLimits.md)
 
-Defined in: [src/core/driver/types.ts:350](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L350)
+Defined in: [src/core/driver/types.ts:356](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L356)
 
 #### Parameters
 

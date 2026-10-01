@@ -65,7 +65,7 @@ describe('Solana addresses', () => {
     expect(() => codec.fromPublicKey(KEY_PUBLIC.slice(0, 31))).toThrow(
       expect.objectContaining({ code: 'INVALID_ADDRESS' }),
     );
-    // Lesson 20: an overlong text is refused before it is decoded.
+    // An overlong text is refused before it is decoded.
     expect(codec.validate('1'.repeat(100_000))).toBe(false);
   });
 });
@@ -135,7 +135,7 @@ describe('the Solana reader', () => {
     ).toBe(5_000_000n);
   });
 
-  it('reads balances above 2^53 lamports exactly (P5-A)', async () => {
+  it('reads balances above 2^53 lamports exactly', async () => {
     const h = setup();
     h.node.fund(RECIPIENT, 2n ** 60n + 1n);
     expect(await h.run(h.reader.getBalance(RECIPIENT, 'native'))).toBe(2n ** 60n + 1n);
@@ -257,7 +257,7 @@ describe('the Solana reader', () => {
       success: true,
     });
     h.calls.length = 0;
-    // An answer whose balances do not show our transfer (lesson 7): nothing moved.
+    // An answer whose balances do not show our transfer: nothing moved.
     const raw = (await rawTransaction(h, id)) as {
       meta: {
         preTokenBalances: { accountIndex: number; uiTokenAmount: { amount: string } }[];
@@ -287,7 +287,7 @@ describe('the Solana reader', () => {
       reason: 'token transfer failed',
     });
     expect(h.calls.every((c) => c.tags.purpose === 'monitor')).toBe(true);
-    // Lesson 15: an unmanaged lookup reports the chain's own view.
+    // An unmanaged lookup reports the chain's own view.
     expect(await h.run(h.reader.observe(ref(id), undefined, undefined))).toMatchObject({
       success: true,
     });
@@ -303,7 +303,7 @@ describe('the Solana reader', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
-  it('classifies token metadata failures (lesson 13)', async () => {
+  it('classifies token metadata failures', async () => {
     const h = setup();
     const meta = (mint: string) =>
       h.run(h.reader.getTokenMetadata!({ standard: 'spl', contract: mint }));
@@ -334,7 +334,7 @@ describe('the Solana reader', () => {
     });
   });
 
-  it('reads token metadata under the proof quorum, comparing the mint verdict only (board rule)', async () => {
+  it('reads token metadata under the proof quorum, comparing the mint verdict only', async () => {
     const h = setup(['a', 'b']);
     const meta = () =>
       h.run(h.reader.getTokenMetadata!({ standard: 'spl', contract: MINT }));
@@ -441,7 +441,7 @@ describe('the Solana reader', () => {
     expect(await meta()).toEqual({ symbol: MINT.slice(0, 8), decimals: 6 });
   });
 
-  it('reads accounts of any size the chain allows, up to 10 MiB (lesson 6)', async () => {
+  it('reads accounts of any size the chain allows, up to 10 MiB', async () => {
     const h = setup();
     for (const size of [4 * 1024 * 1024, 10 * 1024 * 1024]) {
       const data = new Uint8Array(size).fill(7);

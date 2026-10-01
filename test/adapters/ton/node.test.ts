@@ -70,8 +70,8 @@ function tonNode(...args: Parameters<typeof makeNode>) {
 }
 
 /**
- * F6-R11, transaction.cpp: `compute_ph.success = accepted && committed`; the action phase
- * exists exactly when the compute phase succeeded (`act`); `aborted = !(act && action
+ * transaction.cpp: `compute_ph.success = accepted && committed`; the action phase exists
+ * exactly when the compute phase succeeded (`act`); `aborted = !(act && action
  * succeeded)`. Every transaction the node writes has that shape.
  */
 afterEach(() => {
@@ -149,7 +149,7 @@ describe('the scripted toncenter node: wallets', () => {
       { boc: undeployed.boc },
       s.fetchFn,
     );
-    // F6-R7: the liteserver's own texts (live toncenter for an account that does not exist).
+    // The liteserver's own texts (live toncenter for an account that does not exist).
     expect(answer.status).toBe(500);
     expect(String(answer.json.error)).toMatch(/: Failed to unpack account state$/);
     const unfunded = await signedBoc('v4r2', TESTNET, {
@@ -397,10 +397,10 @@ describe('the scripted toncenter node: indexer and history', () => {
   });
 });
 
-describe('the scripted toncenter node: fidelity (lesson 8)', () => {
-  it('emulates fees with the real forward fee of every requested message (I3)', async () => {
+describe('the scripted toncenter node: fidelity', () => {
+  it('emulates fees with the real forward fee of every requested message', async () => {
     const s = setup('v4r2');
-    // tonlib buys the emulated run's gas with the balance (F6-R17): a funded wallet.
+    // tonlib buys the emulated run's gas with the balance: a funded wallet.
     s.node.fund(s.wallet, GRAM);
     const { boc } = await signedBoc('v4r2', TESTNET, {
       seqno: 0,
@@ -411,7 +411,7 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     const { body, init } = loadMessage(
       Cell.fromBoc(Buffer.from(boc, 'base64'))[0]!.beginParse(),
     );
-    // An undeployed wallet is emulated with its StateInit, as the driver sends it (D13).
+    // An undeployed wallet is emulated with its StateInit, as the driver sends it.
     const fees = await post(
       `${s.v2}/estimateFee`,
       {
@@ -429,7 +429,7 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
   });
 
   it.each(['v4r2', 'v5r1'] as const)(
-    'emulates a %s run only as its balance and its own checks allow, as tonlib does (F6-R17)',
+    'emulates a %s run only as its balance and its own checks allow, as tonlib does',
     async (version) => {
       const s = setup(version);
       // tonlib `Query::estimate_fees`: gas is bought with the balance (`compute_gas_limits`),
@@ -519,9 +519,10 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     s.node.mine(2);
     expect(s.node.seqno(s.wallet)).toBe(1);
     const [tx] = s.node.transactions();
-    // F6-R11: `success = accepted && committed`, and the VM committed before the throw, so
-    // the compute phase succeeded with 137; the empty action list committed with the seqno
-    // then runs, and the transaction is not aborted. The indexer reports it so.
+    // transaction.cpp: `success = accepted && committed`, and the VM committed before the
+    // throw, so the compute phase succeeded with 137; the empty action list committed
+    // with the seqno then runs, and the transaction is not aborted. The indexer reports
+    // it so.
     const [served] = (
       await get(`${s.v3}/transactions?account=${s.wallet}&limit=1`, s.fetchFn)
     ).json.transactions as { description: Record<string, unknown> }[];
@@ -544,13 +545,13 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     expect(tx?.totalFees).toBe(
       NODE_FEES.importFee + NODE_FEES.gasV5 + NODE_FEES.deployGas,
     );
-    // M3: the trace is named after its root transaction.
+    // The trace is named after its root transaction.
     expect(tx?.traceId).toBe(tx?.hash);
     expect(tx?.outMsgs).toHaveLength(0);
     expect(s.node.balance(RECIPIENT)).toBe(0n);
   });
 
-  it('runs a relayed v5r1 request only when the wallet key signed it (A23)', async () => {
+  it('runs a relayed v5r1 request only when the wallet key signed it', async () => {
     const s = setup('v5r1');
     const relayer = `0:${'22'.repeat(32)}`;
     s.node.fund(s.wallet, 2n * GRAM);
@@ -581,7 +582,7 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
       aborted: false,
       compute_ph: { success: true },
     });
-    // M3: an injected message's delivery is its trace's root.
+    // An injected message's delivery is its trace's root.
     expect(fromRelayer()[0]?.traceId).toBe(fromRelayer()[0]?.hash);
     s.node.inject(relayer, s.wallet, 50_000_000n, relayed());
     s.node.mine(2);
@@ -597,7 +598,7 @@ describe('the scripted toncenter node: fidelity (lesson 8)', () => {
     ]);
   });
 
-  it('serves two shards, each with its own time (D9)', async () => {
+  it('serves two shards, each with its own time', async () => {
     const s = setup('v4r2', { shards: 2, shardLagSeconds: 1, secondShardLagSeconds: 9 });
     s.node.mine();
     const shards = await get(`${s.v2}/getShards?seqno=${s.node.head}`, s.fetchFn);
@@ -735,12 +736,14 @@ function internalTransfer(amount: bigint, from: string | null): Cell {
     .endCell();
 }
 
-describe('the scripted toncenter node: never more lenient than the chain (F6-R5)', () => {
+// Later verdicts depend on each of these refusal paths, so the node is never more lenient
+// than the chain.
+describe('the scripted toncenter node: never more lenient than the chain', () => {
   it.each([
     ['below', NODE_FEES.internalGas - 1n, 'nofunds'],
     ['exactly at', NODE_FEES.internalGas, 'ok'],
   ] as const)(
-    'bounces a value %s the bounce cost as transaction.cpp does (nofunds only below it, M7)',
+    'bounces a value %s the bounce cost as transaction.cpp does (nofunds only below it)',
     async (_where, value, type) => {
       const s = setup('v4r2');
       s.node.fund(s.wallet, GRAM);
@@ -858,7 +861,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
       compute_ph: { success: true },
       action: { success: false, no_funds: true, result_code: 37 },
     });
-    // F6-R7: an action failure bounces only with send mode +16 (transaction.cpp
+    // An action failure bounces only with send mode +16 (transaction.cpp
     // `need_bounce_on_fail`); the bounce phase needs a failed compute phase (collator.cpp).
     expect(tx?.description).not.toHaveProperty('bounce');
     expect(tx?.outMsgs).toHaveLength(0);
@@ -939,7 +942,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     for (const boc of [replay.boc, accepted.boc]) {
       const answer = await post(`${s.v2}/sendBocReturnHash`, { boc }, s.fetchFn);
       expect(answer.status).toBe(500);
-      // F6-R7: a frozen account runs no code; the chain's text, not an invented one.
+      // A frozen account runs no code; the chain's text, not an invented one.
       expect(String(answer.json.error)).toBe(skippedCompute(s.wallet));
     }
     expect(s.node.status(s.wallet)).toBe('frozen');
@@ -1012,7 +1015,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     ]);
   });
 
-  it('serves jetton metadata from indexed state only (M6)', async () => {
+  it('serves jetton metadata from indexed state only', async () => {
     const s = setup('v4r2', { indexerLag: 2 });
     s.node.mine(3);
     s.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
@@ -1026,7 +1029,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect((await metadata()).json).toHaveProperty([MASTER.toUpperCase()]);
   });
 
-  it('checks a message against a lagging endpoint’s own view, then again at inclusion (M6)', async () => {
+  it('checks a message against a lagging endpoint’s own view, then again at inclusion', async () => {
     const s = setup('v4r2');
     s.node.fund(s.wallet, 2n * GRAM);
     const request = (seqno: number, validUntil: number, deploy: boolean) =>
@@ -1054,7 +1057,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect(s.node.transactions().filter((t) => t.account === s.wallet)).toHaveLength(1);
   });
 
-  it('emulates fees on a lagging endpoint’s own view (M6)', async () => {
+  it('emulates fees on a lagging endpoint’s own view', async () => {
     const s = setup('v5r1');
     s.node.fund(s.wallet, GRAM);
     const { boc } = await signedBoc('v5r1', TESTNET, {
@@ -1089,11 +1092,11 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect(await fees()).toMatchObject({ gas_fee: Number(NODE_FEES.gasV5) });
     s.node.lagEndpoint('main', 1);
     // Not deployed in the endpoint's view: nothing runs, so no forward fee, and live
-    // toncenter answers the flat gas price (F6-R7).
+    // toncenter answers the flat gas price.
     expect(await fees()).toMatchObject({ gas_fee: 6667, fwd_fee: 0 });
   });
 
-  it('answers errors in each API’s own envelope (M6)', async () => {
+  it('answers errors in each API’s own envelope', async () => {
     const s = setup('v4r2');
     const v3 = await get(`${s.v3}/transactions?account=notanaddress&limit=1`, s.fetchFn);
     expect(v3.status).toBe(422);
@@ -1119,7 +1122,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     });
   });
 
-  it('runs each account at its own shard’s time (M2)', async () => {
+  it('runs each account at its own shard’s time', async () => {
     // The test wallet (0:cd…) is in the second shard, 9 s behind; RECIPIENT (0:11…) in the first.
     const s = setup('v4r2', { shards: 2, shardLagSeconds: 1, secondShardLagSeconds: 9 });
     s.node.fund(s.wallet, GRAM);
@@ -1140,7 +1143,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     expect(s.node.transactions()[1]?.now).toBe(s.node.block(s.node.head)!.genUtime - 1);
   });
 
-  it('names every trace after its root transaction (M3)', async () => {
+  it('names every trace after its root transaction', async () => {
     const s = setup('v4r2');
     s.node.inject(`0:${'22'.repeat(32)}`, RECIPIENT, GRAM, beginCell().endCell());
     s.node.mine();
@@ -1154,7 +1157,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     });
   });
 
-  it('reports account statuses and the StateInit a message carries (M4)', async () => {
+  it('reports account statuses and the StateInit a message carries', async () => {
     const s = setup('v4r2');
     s.node.fund(s.wallet, 3n * GRAM);
     const { boc } = await signedBoc('v4r2', TESTNET, {
@@ -1190,7 +1193,7 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
     });
   });
 
-  it('keys accounts by their canonical raw address, however a test spells them (M8)', () => {
+  it('keys accounts by their canonical raw address, however a test spells them', () => {
     const s = setup('v4r2');
     const address = `0:${'ab'.repeat(32)}`;
     const friendly = Address.parseRaw(address).toString({
@@ -1413,7 +1416,10 @@ describe('the scripted toncenter node: never more lenient than the chain (F6-R5)
   }, 30_000);
 });
 
-describe('the scripted toncenter node: the raw chain, deletion and re-deploy (F6-R21)', () => {
+// The proofs authenticate "not included" from this raw chain, so the node writes each
+// transaction cell as the chain does and models deletion and a re-deploy from the public
+// `StateInit`.
+describe('the scripted toncenter node: the raw chain, deletion and re-deploy', () => {
   const PAYER = `0:${'33'.repeat(32)}`;
   type RawRow = { data: string; transaction_id: { lt: string; hash: string } };
 
@@ -1614,7 +1620,7 @@ describe('the scripted toncenter node: the raw chain, deletion and re-deploy (F6
     expect(s.node.seqno(s.wallet)).toBe(1);
   });
 
-  it('leaves a non-existing account without a chain when a delivery to it bounces (N3)', async () => {
+  it('leaves a non-existing account without a chain when a delivery to it bounces', async () => {
     const s = setup('v4r2');
     const nowhere = `0:${'44'.repeat(32)}`;
     s.node.inject(PAYER, nowhere, GRAM, beginCell().endCell(), true);

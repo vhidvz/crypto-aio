@@ -24,8 +24,8 @@ import {
 
 const NETWORK = networkOf(REGTEST);
 
-// Determinism (R46; the board's harness rule of a fixed `random`): the container builds its
-// own transports, so their backoff jitter is pinned here, through Math.random.
+// Determinism: the container builds its own transports and takes no `random` for them, so
+// their backoff jitter is pinned here, through Math.random.
 beforeEach(() => {
   jest.spyOn(Math, 'random').mockReturnValue(0.5);
 });
@@ -55,10 +55,10 @@ describe('UTXO transfers end to end (scripted Esplora node)', () => {
         env.bc.prepareTransfer(intent, { idempotencyKey: 'k' }),
       );
       expect(prepared.unsigned?.payload.encoding).toBe('base64');
-      // The next transfer with the key signs the stored PSBT (spec §8.2).
+      // The next transfer with the key signs the stored PSBT.
       const sub = await env.run(env.bc.transfer(intent, { idempotencyKey: 'k' }));
       expect(sub.state).toBe('submitted');
-      // The txid is known before signing only when every input is witness-type (spec §15).
+      // The txid is known before signing only when every input is witness-type.
       expect(prepared.unsigned?.expectedRef?.id).toBe(
         addressType === 'p2pkh' ? undefined : sub.attempt?.id,
       );
@@ -93,7 +93,7 @@ describe('UTXO transfers end to end (scripted Esplora node)', () => {
   });
 });
 
-describe('cold signing with a PSBT (A6)', () => {
+describe('cold signing with a PSBT', () => {
   async function coldEnv(addressType: 'p2wpkh' | 'p2tr' = 'p2wpkh') {
     const env = await createUtxoEnv({ addressType });
     const cold = env.aio
@@ -137,7 +137,7 @@ describe('cold signing with a PSBT (A6)', () => {
     },
   );
 
-  it('refuses a PSBT whose outputs were changed, and writes nothing (Review Focus 1)', async () => {
+  it('refuses a PSBT whose outputs were changed, and writes nothing', async () => {
     const { env, cold, prepared } = await coldEnv();
     const psbt = bitcoin.Psbt.fromBase64(prepared.unsigned?.payload.data ?? '', {
       network: NETWORK,
@@ -162,12 +162,12 @@ describe('cold signing with a PSBT (A6)', () => {
   });
 });
 
-describe('the inputs ordering (handoff §3)', () => {
+describe('the inputs ordering', () => {
   it.each([
     ['its index is current', 0],
     ['its index trails the mempool', 60_000],
   ])(
-    'never lets two concurrent transfers spend the same output while %s (Review Focus 3)',
+    'never lets two concurrent transfers spend the same output while %s',
     async (_case, delay) => {
       const env = await createUtxoEnv({ fund: [100_000n, 100_000n, 100_000n] });
       // Trailing, the index still lists an output a sent transfer spends: only the inputs
@@ -208,7 +208,7 @@ describe('the inputs ordering (handoff §3)', () => {
       env.run(env.bc.transfer({ to: env.stranger(), amount: 10_000n })),
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
     // minInputConfirmations 0 spends unconfirmed outputs of the wallet's own transactions
-    // only; someone else's unconfirmed payment waits for a block (F3-R24 F1).
+    // only; someone else's unconfirmed payment waits for a block.
     const eager = await createUtxoEnv({
       fund: [],
       options: { minInputConfirmations: 0 },
@@ -234,7 +234,7 @@ describe('the inputs ordering (handoff §3)', () => {
 describe('replace and cancel (BIP125 RBF)', () => {
   it('replaces a transfer with a higher fee over the same inputs, and the replacement wins', async () => {
     // Two outputs of 30,000 for 50,000: the original spends both, so "the replacement keeps
-    // every input" says more than "it conflicts" (F3-R18).
+    // every input" says more than "it conflicts".
     const env = await createUtxoEnv({ fund: [30_000n, 30_000n] });
     const sub = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 50_000n, fee: 'slow' }),
@@ -276,7 +276,7 @@ describe('replace and cancel (BIP125 RBF)', () => {
     expect((await env.run(env.bc.getBalance(to))).amount.base).toBe(0n);
   });
 
-  it('refuses a replacement or cancel once the original is mined, and the payment stands (F3-R22)', async () => {
+  it('refuses a replacement or cancel once the original is mined, and the payment stands', async () => {
     const env = await createUtxoEnv();
     const to = env.stranger();
     const sub = await env.run(env.bc.transfer({ to, amount: 50_000n, fee: 'slow' }));
@@ -340,11 +340,11 @@ describe('replace and cancel (BIP125 RBF)', () => {
   });
 });
 
-describe('crash safety on the inputs ordering (handoff R20: killPrevious)', () => {
+describe('crash safety on the inputs ordering (killPrevious)', () => {
   async function crashEnv() {
     const { signer, calls } = countingSigner();
     let faulty: FaultyOperationStore | undefined;
-    // The stores run on the env's FakeClock, never the wall clock (F3-R18).
+    // The stores run on the env's FakeClock, never the wall clock.
     const env = await createUtxoEnv({
       signer,
       stores: (clock) => ({
@@ -464,7 +464,7 @@ describe('crash safety on the inputs ordering (handoff R20: killPrevious)', () =
   });
 });
 
-describe('crash during replace (M12)', () => {
+describe('crash during replace', () => {
   it('resends the stored replacement after a crash, never re-signs it, and keeps its inputs', async () => {
     const { signer, calls } = countingSigner();
     let faulty: FaultyOperationStore | undefined;
@@ -512,7 +512,7 @@ describe('crash during replace (M12)', () => {
       restarted.bc.waitForConfirmation(sub.operationId, { finality: 'final' }),
     );
     expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
-    // F3-R18: the stored replacement won, nothing was signed again, and the payee was paid
+    // The stored replacement won, nothing was signed again, and the payee was paid
     // exactly once.
     expect(calls()).toBe(2);
     expect(await restarted.run(restarted.bc.getOperation(sub.operationId))).toMatchObject(
@@ -525,8 +525,8 @@ describe('crash during replace (M12)', () => {
   });
 });
 
-describe('proofs that must decide nothing (C1) and a malleated p2pkh copy (C2)', () => {
-  it('never proves our own final transfer replaced while a backend is behind (C1)', async () => {
+describe('proofs that must decide nothing and a malleated p2pkh copy', () => {
+  it('never proves our own final transfer replaced while a backend is behind', async () => {
     const env = await createUtxoEnv({ endpoints: ['a', 'b'] });
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 50_000n }));
     const ours = sub.attempt?.id ?? '';
@@ -580,7 +580,7 @@ describe('proofs that must decide nothing (C1) and a malleated p2pkh copy (C2)',
     expect(done.operation).toMatchObject({ state: 'final', outcome: 'executed' });
   });
 
-  it('finalizes a p2pkh transfer that a miner mined as a malleated copy (C2)', async () => {
+  it('finalizes a p2pkh transfer that a miner mined as a malleated copy', async () => {
     const env = await createUtxoEnv({ addressType: 'p2pkh' });
     const to = env.stranger();
     const sub = await env.run(env.bc.transfer({ to, amount: 150_000n }));
@@ -616,7 +616,7 @@ describe('proofs that must decide nothing (C1) and a malleated p2pkh copy (C2)',
 });
 
 describe('mempool eviction, reorgs and lagging endpoints', () => {
-  it('stalls an evicted low-fee transfer until it is replaced, keeping its inputs (Review Focus 5)', async () => {
+  it('stalls an evicted low-fee transfer until it is replaced, keeping its inputs', async () => {
     const env = await createUtxoEnv({
       fund: [100_000n],
       node: { errorFormat: 'mempool' },
@@ -629,7 +629,7 @@ describe('mempool eviction, reorgs and lagging endpoints', () => {
     env.node.evict(ref);
     await env.clock.advance(11_000); // past droppedGracePeriodMs
     await env.run(env.aio.monitor.runOnce({ workerId: 'w' }));
-    // Absence is never proof (spec §6.7): pending or dropped, never terminal.
+    // Absence is never proof: pending or dropped, never terminal.
     const status = await env.run(env.bc.getTransactionStatus(ref));
     expect(['pending', 'dropped']).toContain(status.state);
     // The explicit resend meets bitcoind's "mempool min fee not met": refused, never terminal.
@@ -671,7 +671,7 @@ describe('mempool eviction, reorgs and lagging endpoints', () => {
     ['b', 'a'],
     ['a', 'b'],
   ] as const)(
-    'decides nothing while an endpoint lags or over-reports its head (Review Focus 2: %s over-reports, %s lags)',
+    'decides nothing while an endpoint lags or over-reports its head (%s over-reports, %s lags)',
     async (over, lagging) => {
       const env = await createUtxoEnv({ endpoints: ['a', 'b'] });
       const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 50_000n }));
@@ -732,7 +732,7 @@ describe('observation', () => {
   });
 });
 
-describe('the monitor, pass by pass (Task 9 carries)', () => {
+describe('the monitor, pass by pass', () => {
   /** One monitor pass; the Operation's state and error, and its first Attempt's observation. */
   async function pass(env: UtxoEnv, operationId: string, n: number) {
     await env.clock.advance(1_000);
@@ -748,7 +748,7 @@ describe('the monitor, pass by pass (Task 9 carries)', () => {
     };
   }
 
-  it('keeps a transient own spend observed only, never terminal, and finalizes the transfer (F3-R9)', async () => {
+  it('keeps a transient own spend observed only, never terminal, and finalizes the transfer', async () => {
     const env = await createUtxoEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 50_000n }));
     const ours = sub.attempt?.id ?? '';
@@ -876,7 +876,8 @@ describe('the monitor, pass by pass (Task 9 carries)', () => {
   );
 });
 
-describe("a node's rejection is a claim (lesson 21: F3-R11, F3-R13)", () => {
+// A terminal `rejected` would free the inputs, and a caller's retry could then pay twice.
+describe("a node's rejection is a claim", () => {
   it.each([
     ['Blockstream', 'sendrawtransaction RPC error -26: bad-txns-inputs-duplicate'],
     [
@@ -940,8 +941,8 @@ describe("a node's rejection is a claim (lesson 21: F3-R11, F3-R13)", () => {
   );
 });
 
-describe('replacements over descendants, and stalled Operations (M4, F3-R14)', () => {
-  it('refuses a replacement below the fees of the descendants it would evict; a higher fee wins (M4)', async () => {
+describe('replacements over descendants, and stalled Operations', () => {
+  it('refuses a replacement below the fees of the descendants it would evict; a higher fee wins', async () => {
     const env = await createUtxoEnv();
     const payee = walletAddress(OTHER_PUBKEY, 'p2wpkh', REGTEST);
     const sub = await env.run(
@@ -982,10 +983,10 @@ describe('replacements over descendants, and stalled Operations (M4, F3-R14)', (
     expect((await env.run(env.bc.getBalance(payee.address))).amount.base).toBe(50_000n);
   });
 
-  it('never releases a stalled signed Operation by hand, but cancels it once a node accepts (F3-R14)', async () => {
+  it('never releases a stalled signed Operation by hand, but cancels it once a node accepts', async () => {
     const env = await createUtxoEnv({ fund: [100_000n] });
     const to = env.stranger();
-    // A node that refuses every transaction with a claim our bytes disprove (lesson 21).
+    // A node that refuses every transaction with a claim our bytes disprove.
     env.node.intercept('a', (request) =>
       request.method === 'POST'
         ? {
@@ -1033,7 +1034,7 @@ describe('replacements over descendants, and stalled Operations (M4, F3-R14)', (
   });
 });
 
-describe('a previous transaction no chain holds (F3-R24 F1)', () => {
+describe('a previous transaction no chain holds', () => {
   it('refuses to build on it, retryably, and never signs, when one endpoint of three lies once', async () => {
     type Json = Record<string, unknown>;
     const { signer, calls } = countingSigner();

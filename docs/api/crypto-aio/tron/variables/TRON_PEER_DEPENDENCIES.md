@@ -6,4 +6,4 @@
 
 Defined in: [src/adapters/tron/plugin.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/plugin.ts#L18)
 
-The SDK version this adapter is validated against (spec §16), keyed by library.
+The SDK version this adapter is validated against, keyed by library.

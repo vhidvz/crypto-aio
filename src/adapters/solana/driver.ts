@@ -1,10 +1,10 @@
 /**
- * The Solana driver (spec §15), over the `SolanaCodec` of `@solana/web3.js`. One factory
+ * The Solana driver, over the `SolanaCodec` of `@solana/web3.js`. One factory
  * serves every Solana cluster; each network's registry data configures it.
  *
  * Every I/O call carries the tags of the `ChainDriver` contract table (core
  * `driver/types.ts`), with one documented exception on the proof paths (`proofs.ts`): the
- * finalized height behind `finalizedHead` (the one unanchored head, lesson 17) and the
+ * finalized height behind `finalizedHead` (the one unanchored head) and the
  * height-to-slot lookups of `HeightIndex` are single-endpoint `monitor` reads. They are
  * hints only: the proof quorum then attests the block they name, its height and its hash,
  * so a wrong hint decides nothing.
@@ -28,7 +28,7 @@ import {
 import { malformed, u64 } from './rpc';
 import type { SolanaCodec } from './types';
 
-/** R19: identity is the genesis hash; the height is the `confirmed` block height. */
+/** Identity is the genesis hash; the height is the `confirmed` block height. */
 function probes(genesisHash: string): HealthProbes {
   return {
     identity: async (call: EndpointCall) => {
@@ -51,7 +51,9 @@ export function solanaDriverFactory(
   return {
     async create(ctx): Promise<ChainDriver> {
       const config = solanaNetworkConfig(ctx.chain, ctx.network, ctx.options);
-      // M12: probes go on every transport this driver receives, before any traffic.
+      // Probes go on every transport this driver receives, the indexer included, before
+      // any traffic: a Solana transaction names no cluster, and only the genesis hash
+      // keeps another cluster's endpoint out.
       ctx.transport.setProbes(probes(config.genesisHash));
       ctx.indexer?.setProbes(probes(config.genesisHash));
       const codec = makeCodec(ctx.transport);
@@ -69,7 +71,7 @@ export function solanaDriverFactory(
           new DataView(seed.buffer, seed.byteOffset, 4).getUint32(0),
         ),
       };
-      // Handoff §3: history reads the indexer transport when one is configured.
+      // History reads the indexer transport when one is configured.
       const history = ctx.indexer
         ? { ...solana, transport: ctx.indexer, heights: new HeightIndex(ctx.indexer) }
         : solana;
@@ -86,7 +88,7 @@ export function solanaDriverFactory(
         history: createSolanaHistory(history),
         ext: { solana: { getTokenAccounts: ext.solana.getTokenAccounts } },
         limits: () => ({ maxOutputs: 1 }),
-        // R34: a fresh `Connection` on every call, never a shared one.
+        // A fresh `Connection` on every call, never a shared one.
         createNativeClient: () => codec.createNative(),
       };
     },

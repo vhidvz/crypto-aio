@@ -1,5 +1,5 @@
 /**
- * The `ton` fee kind (spec §6.5, §15, D13), pure: the `network` charge (import, gas and
+ * The `ton` fee kind, pure: the `network` charge (import, gas and
  * storage from the endpoint's emulation, plus every outgoing message's forward fee) and,
  * for jettons, the `attached` charge whose unspent part the jetton wallet refunds. TON fees
  * are fixed by the network config, so a speed changes nothing; the only override is the
@@ -51,7 +51,8 @@ export function feeRequest(fee: FeeSpeed | FeeOverride, jetton: boolean): FeeReq
       `'attached' applies to jetton transfers only`,
     );
   }
-  // Encoded as Coins in each jetton wallet message (lesson 19).
+  // Encoded as Coins in each jetton wallet message: range-checked here with a fixed text,
+  // never left to the encoder to wrap or throw.
   if (!isCoins(attached) || attached === 0n) {
     throw new ValidationError(
       'INVALID_INTENT',
@@ -74,7 +75,7 @@ export function tonFeeDraft(args: {
   readonly jettonOutputs?: number;
   readonly payer: string;
 }): FeeEstimateDraft {
-  // A draft is a stored record (R11): only what `tonFeeDetails` reads back goes in it.
+  // A draft is a stored record of plain data: only what `tonFeeDetails` reads back.
   const details = tonFeeDetails({ ...args.details });
   const outputs = args.jettonOutputs;
   if ((outputs === undefined) !== (details.attached === undefined)) {
@@ -110,7 +111,7 @@ export function tonFeeDraft(args: {
 }
 
 /**
- * Parses `fee.details` back (drafts are stored records: plain data only, R11). Strict: a
+ * Parses `fee.details` back (drafts are stored records: plain data only). Strict: a
  * missing or ill-typed field is refused, never filled with a default, so a damaged record
  * cannot change what a transfer attaches or whether it deploys. `undefined` is absent, and
  * keys the core adds (`requestedFee`) are not read.

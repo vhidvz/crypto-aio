@@ -14,7 +14,7 @@ Defined in: [src/testing/fake-driver.ts:54](https://github.com/vhidvz/crypto-aio
 
 Defined in: [src/testing/fake-driver.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L58)
 
-How many times the driver's `close` for this client ran (R34).
+How many times the driver's `close` for this client ran.
 
 ***
 

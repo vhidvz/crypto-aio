@@ -30,7 +30,7 @@ export function tonClock(): FakeClock {
 export function tonNode(
   options: Omit<TonNodeOptions, 'clock'> = {},
   endpoints: readonly string[] = ['main'],
-  /** The transports' lag tolerance (the pool resolves it per R36; default 5). */
+  /** The transports' lag tolerance, as a container would resolve it (default 5). */
   maxLagBlocks?: number,
 ) {
   const clock = tonClock();
@@ -45,7 +45,7 @@ export function tonNode(
         clock,
         events,
         log: noopLogger,
-        // Deterministic (lesson 1, R46): a fixed id and backoff jitter, never `Math.random`.
+        // Deterministic: a fixed id and backoff jitter, never `Math.random`.
         id: `ton-${api}`,
         random: () => 0.5,
         options: {

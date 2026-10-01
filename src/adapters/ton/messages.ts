@@ -33,27 +33,28 @@ export const OP = Object.freeze({
 export const MAX_MEMO_BYTES = 1024;
 
 /**
- * Lesson 20: the longest provider text `addressFromBoc` decodes. An address is one cell of
- * at most 1023 bits, under 200 base64 characters as a BOC; the rest leaves room for a
- * slice that still carries refs, so a jetton wallet is never refused for its encoding.
+ * The longest provider text `addressFromBoc` decodes (untrusted text is capped before
+ * decoding). An address is one cell of at most 1023 bits, under 200 base64 characters as
+ * a BOC; the rest leaves room for a slice that still carries refs, so a jetton wallet is
+ * never refused for its encoding.
  */
 export const MAX_ADDRESS_BOC_LENGTH = 4096;
 
-// Lesson 20: the body limits (`MAX_BODY_CELLS`, `MAX_BODY_BOC_LENGTH`) and their header
-// check live in the SDK-free `api.ts`, which bounds the cells it hands on the same way.
+// The body limits (`MAX_BODY_CELLS`, `MAX_BODY_BOC_LENGTH`) and their header check live
+// in the SDK-free `api.ts`, which bounds the cells it hands on the same way.
 export { MAX_BODY_BOC_LENGTH, MAX_BODY_CELLS } from './api';
 
 /**
- * Lesson 20: the most cells a comment's snake chain may span. A cell holds at most 127
- * bytes, so a memo of `MAX_MEMO_BYTES` spans 9 cells; 256 cells (about 32 KB of text) keeps
- * the longer comments other wallets write readable while bounding the work on an untrusted
+ * The most cells a comment's snake chain may span. A cell holds at most 127 bytes, so a
+ * memo of `MAX_MEMO_BYTES` spans 9 cells; 256 cells (about 32 KB of text) keeps the
+ * longer comments other wallets write readable while bounding the work on an untrusted
  * body. A longer chain reads as no comment.
  */
 export const MAX_COMMENT_CELLS = 256;
 
 /**
- * M1: an address read from an untrusted body, in raw form; null for a workchain other than
- * 0 or -1, which names no TON account.
+ * An address read from an untrusted body, in raw form; null for a workchain other than 0
+ * or -1, which names no TON account.
  */
 function toRaw(address: Address): string | null {
   const workchain = address.workChain;
@@ -62,8 +63,8 @@ function toRaw(address: Address): string | null {
 }
 
 /**
- * The SDK's `Address` for a raw address, parsed strictly (lesson 4): `Address.parseRaw`
- * takes any `parseInt` workchain and throws a bare `Error` (M12).
+ * The SDK's `Address` for a raw address, parsed strictly: `Address.parseRaw` takes any
+ * `parseInt` workchain and throws a bare `Error`.
  */
 export function sdkAddress(raw: string): Address {
   const parsed = parseTonAddress(raw);
@@ -76,8 +77,8 @@ export function sdkAddress(raw: string): Address {
 const MAX_QUERY_ID = (1n << 64n) - 1n;
 
 /**
- * Lesson 19: an amount that does not fit `Coins` is refused with a fixed text that never
- * carries it (`@ton/core` would throw a bare `Error` naming the value).
+ * An amount that does not fit `Coins` is refused with a fixed text that never carries it
+ * (`@ton/core` would throw a bare `Error` naming the value).
  */
 function coins(value: bigint): bigint {
   if (typeof value !== 'bigint' || value < 0n || value > MAX_COINS) {
@@ -86,7 +87,7 @@ function coins(value: bigint): bigint {
   return value;
 }
 
-/** Lesson 19: a TEP-74 `query_id` is a uint64. */
+/** A TEP-74 `query_id` is a uint64: range-checked here, never wrapped. */
 function queryIdOf(value: bigint): bigint {
   if (typeof value !== 'bigint' || value < 0n || value > MAX_QUERY_ID) {
     throw new ValidationError('INVALID_INTENT', 'a TON query id must be a uint64');
@@ -172,10 +173,11 @@ export function addressFromBoc(boc: string): string | null {
 }
 
 /**
- * The text of a comment body, or undefined for any other body. The snake string is read in
- * one pass (lesson 20): `@ton/core`'s `loadStringTail` recurses per cell and concatenates at
- * each level, which is quadratic in the chain length. Past `MAX_COMMENT_CELLS` cells, or for
- * a cell that is not a whole number of bytes with at most one ref, it is no comment.
+ * The text of a comment body, or undefined for any other body. The snake string is read
+ * in one pass: `@ton/core`'s `loadStringTail` recurses per cell and concatenates at each
+ * level, which is quadratic in the chain length (3.6 s for one 1 MB comment). Past
+ * `MAX_COMMENT_CELLS` cells, or for a cell that is not a whole number of bytes with at
+ * most one ref, it is no comment.
  */
 export function decodeComment(body: Cell): string | undefined {
   try {
@@ -307,7 +309,7 @@ export function decodeJettonNotification(body: Cell): JettonNotificationBody | n
 export interface WalletRequest {
   /**
    * `internal`: a W5 signed request relayed in an internal message (gasless). Anyone can
-   * post such a body: it proves nothing until `requestIsOwn` authenticates it (A23).
+   * post such a body: it proves nothing until `requestIsOwn` authenticates it.
    */
   readonly auth: 'external' | 'internal';
   /** v4r2: the subwallet id; v5r1: the signed 32-bit wallet id. */
@@ -325,10 +327,12 @@ const W5_EXTERNAL_BITS = 32 + 32 + 32 + 32 + 1 + 1 + 512;
 const V4_HEADER_BITS = 512 + 32 + 32 + 32;
 
 /**
- * The signed header of an external wallet request, read alone (F6-R34, like M8's consumer
- * read): a W5 request's (its op, then the wallet id, `valid_until` and seqno, in a body of
- * exactly a W5 request's length) or a v4r2 request's (after the signature, whatever the op).
- * Null when the body cannot hold one. Nothing here says whose request it is.
+ * The signed header of an external wallet request, read alone, as the proof reads a
+ * consumer's seqno, so that the replay guard knows stored bytes whose message list does
+ * not decode: a W5 request's (its op, then the wallet id, `valid_until` and seqno, in a
+ * body of exactly a W5 request's length) or a v4r2 request's (after the signature,
+ * whatever the op). Null when the body cannot hold one. Nothing here says whose request
+ * it is.
  */
 export function requestHeaderOf(body: Cell): {
   readonly walletId: number;
@@ -428,7 +432,7 @@ export function cellFromBoc(boc: string | null | undefined): Cell | null {
 }
 
 /**
- * C1: an indexed message's body, bound to the body hash the quorum keyed. A body that does
+ * An indexed message's body, bound to the body hash the quorum keyed. A body that does
  * not parse or hash to `bodyHash`, or that comes without one, is a malformed answer
  * (retryable): no verdict or decoding ever reads an unbound body.
  */

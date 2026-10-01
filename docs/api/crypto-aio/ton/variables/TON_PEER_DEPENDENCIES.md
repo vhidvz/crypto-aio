@@ -4,7 +4,8 @@
 
 > `const` **TON\_PEER\_DEPENDENCIES**: `Readonly`\<`Record`\<`"@ton/ton"` \| `"@ton/core"` \| `"@ton/crypto"`, [`PeerDependency`](../../interfaces/PeerDependency.md)\>\>
 
-Defined in: [src/adapters/ton/plugin.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/plugin.ts#L22)
+Defined in: [src/adapters/ton/plugin.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/plugin.ts#L23)
 
-The SDK versions this adapter is validated against (spec §16, D2), keyed by package name
-(Plan 2's final family shape). The one `@ton/ton` library needs all three.
+The SDK versions this adapter is validated against, keyed by package name. The one
+`@ton/ton` library needs all three: `@ton/ton` and `@ton/core` both declare
+`@ton/crypto` as a peer, and `@ton/core` requires it at load time.

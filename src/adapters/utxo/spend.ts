@@ -5,7 +5,7 @@
  *
  * This module loads bitcoinjs-lib (`spendable` reads through `reader.ts`, which imports the
  * codec and `sdk.ts`), so only modules behind the manifest's `load()` may import it; an
- * SDK-free module (the plugin, an entry's types) must not (review M8).
+ * SDK-free module (the plugin, an entry's types) must not.
  */
 import type { WalletKey, WalletOptions } from '../../core/driver/types';
 import { ConfigError, ValidationError } from '../../core/errors/error';
@@ -35,7 +35,11 @@ import { rateForSpeed, rateFromOverride } from './fees';
 import { listUnspent } from './reader';
 import type { UtxoAddressType } from './types';
 
-/** D25/M2: the most outputs one transfer may pay (`limits().maxOutputs`), enforced here. */
+/**
+ * The most outputs one transfer may pay (`limits().maxOutputs`), enforced here because
+ * the core only reports it. Library policy: 1,000 taproot outputs are about 43 kvB, far
+ * below the 100 kvB standard size.
+ */
 export const MAX_OUTPUTS = 1_000;
 
 /** The intent's outputs as scripts; each must be a standard address and above dust. */
@@ -101,10 +105,10 @@ export function walletOf(
   return { wallet, key };
 }
 
-/** A22: how many indexes `changeAddressOf` searches on each chain of the wallet's xpub. */
+/** How many indexes `changeAddressOf` searches on each chain of the wallet's xpub. */
 export const XPUB_CHANGE_SEARCH = 20;
 
-/** Final review I2: the chains `xpubDerives` keeps, each as the addresses it derives. */
+/** The chains `xpubDerives` keeps, each as the addresses it derives. */
 const XPUB_CACHE_ENTRIES = 64;
 const xpubChains = new Map<string, ReadonlySet<string>>();
 
@@ -128,18 +132,19 @@ function childKey(root: HDKey, parents: Map<string, HDKey>, path: string): Uint8
 }
 
 /**
- * A22 (with A19): whether the wallet's xpub derives `target` for the sender's address type, at
- * indexes 0–19 of its configured path (default `0/{index}`) or of the change chain
- * `1/{index}`. A bounded search: at most 40 child keys, and only after the key check failed.
- * X7: `wallet.hd` is the core's own `WalletHdOptions` (a caller's `hd` never reaches a
- * driver), and its `xpub` is always a public key. X4 (A20): an xpub of the other network
- * class (a mainnet `xpub` on a test network, or the reverse) is `CONFIG_INVALID`.
+ * Whether the wallet's xpub derives `target` for the sender's address type, at indexes
+ * 0–19 of its configured path (default `0/{index}`) or of the change chain `1/{index}`. A
+ * bounded search: at most 40 child keys, and only after the key check failed. `wallet.hd`
+ * is the core's own `WalletHdOptions` (a caller's `hd` never reaches a driver), and its
+ * `xpub` is always a public key. An xpub of the other network class (a mainnet `xpub` on
+ * a test network, or the reverse) is `CONFIG_INVALID`.
  *
- * Final review I2: the search runs on every estimate, build, replacement and cancel, so it
- * parses the xpub once, derives each chain node once, and keeps each chain's addresses (per
- * xpub, versions, network, wallet type and template) in a bounded cache. The core's
- * `deriveXpubChild` checks the key first (A26, X4, hardened segments), with its fixed texts,
- * and derives any path this shortcut does not model.
+ * The search runs on every estimate, build, replacement and cancel, so it parses the xpub
+ * once, derives each chain node once, and keeps each chain's addresses (per xpub,
+ * versions, network, wallet type and template) in a bounded cache. The core's
+ * `deriveXpubChild` checks the key first (a public key of the network's class, no
+ * hardened segments), with its fixed texts, and derives any path this shortcut does not
+ * model.
  */
 function xpubDerives(
   ctx: UtxoContext,
@@ -207,10 +212,10 @@ function xpubDerives(
 }
 
 /**
- * A19: where change goes. A configured `changeAddress` must be derivable from the wallet:
- * the sending address, or any of the four wallet types of one of the wallet's keys (a
- * bounded search, at most 4 per key). Otherwise it is refused with `CONFIG_INVALID`, naming
- * no address, because a valid but mistyped address would lose every change output. The
+ * Where change goes. A configured `changeAddress` must be derivable from the wallet: the
+ * sending address, or any of the four wallet types of one of the wallet's keys (a bounded
+ * search, at most 4 per key). Otherwise it is refused with `CONFIG_INVALID`, naming no
+ * address, because a valid but mistyped address would lose every change output. The
  * wallet opts out with `allowExternalChangeAddress: true`.
  */
 export function changeAddressOf(

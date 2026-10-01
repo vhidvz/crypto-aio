@@ -1,6 +1,6 @@
 /**
  * What every UTXO port is built from, the transport tags of the `ChainDriver` contract
- * table (R41), and the wallet options every builder call parses.
+ * table, and the wallet options every builder call parses.
  */
 import type { WalletOptions } from '../../core/driver/types';
 import {
@@ -34,7 +34,7 @@ export const withSignal = (tags: UtxoCallTags, signal?: AbortSignal): UtxoCallTa
   signal ? { ...tags, signal } : tags;
 
 /**
- * Runs `work` on each item, at most `limit` at a time (final review M3). After a failure the
+ * Runs `work` on each item, at most `limit` at a time. After a failure the
  * other runners stop at their next step, and the first failure is thrown.
  */
 export async function forEachBounded<T>(
@@ -59,10 +59,10 @@ export async function forEachBounded<T>(
 }
 
 /**
- * Lesson 18, widened (R85): on a proof path only a definitive negative proof may answer "no"
- * (for Bitcoin: a quorum-attested final spend by another transaction, C1). Every other RPC or
+ * On a proof path only a definitive negative proof may answer "no"
+ * (for Bitcoin: a quorum-attested final spend by another transaction). Every other RPC or
  * HTTP error decides nothing: a non-retryable provider error, such as a CDN or proxy 400,
- * 410 or 422 (the transport's `RPC_ERROR`, R17, ambiguous or not) or a 401/403
+ * 410 or 422 (the transport's `RPC_ERROR`, ambiguous or not) or a 401/403
  * (`PROVIDER_MISCONFIGURED`), becomes a retryable `PROVIDER_UNAVAILABLE` here, so the monitor
  * never rethrows it. Retryable provider errors already decide nothing and pass unchanged, as
  * do Esplora's own 404s, which the client maps to `null` first. The cost is liveness only.
@@ -92,7 +92,7 @@ export const ADDRESS_TYPES: readonly UtxoAddressType[] = [
 export interface ParsedWalletOptions {
   readonly addressType: UtxoAddressType;
   readonly changeAddress?: DecodedAddress;
-  /** A19: the explicit opt-out for a change address the wallet's key does not derive. */
+  /** The explicit opt-out for a change address the wallet's key does not derive. */
   readonly allowExternalChangeAddress: boolean;
 }
 
@@ -114,7 +114,7 @@ export function parseWalletOptions(
     throw new ConfigError('CONFIG_INVALID', 'wallet.utxo must be an object');
   }
   const options = raw as Readonly<Record<string, unknown>>;
-  // Final review M1: the accepted names, never the caller's key (it may be a pasted secret).
+  // The accepted names, never the caller's key (it may be a pasted secret).
   if (Object.keys(options).some((key) => !WALLET_OPTION_KEYS.includes(key))) {
     throw new ConfigError(
       'CONFIG_INVALID',

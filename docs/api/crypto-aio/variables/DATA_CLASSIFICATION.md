@@ -8,7 +8,7 @@ Defined in: [src/core/store/types.ts:374](https://github.com/vhidvz/crypto-aio/b
 
 Field classification so backing stores can apply encryption and retention per field.
 
-M7: `operation.reservation` and `attempt.ordering` are `sensitive` because an `inputs`
+`operation.reservation` and `attempt.ordering` are `sensitive` because an `inputs`
 ordering lists UTXO outpoints, which tie a wallet to its coins. A nonce or seqno value
 on its own is an operational identifier, like an Operation id: the `nonce.allocated`
 and `nonce.gap` events carry it, and logs may too.

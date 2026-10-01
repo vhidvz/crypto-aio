@@ -1,5 +1,5 @@
 /**
- * Transaction size and coin selection (pure; spec §15: `accumulative`, the default, and
+ * Transaction size and coin selection (pure; `accumulative`, the default, and
  * `all`). Sizes are exact weight units with worst-case signatures (a low-s DER ECDSA
  * signature is at most 71 bytes plus the sighash byte; BIP340 is 64 bytes), so the signed
  * transaction is never larger than estimated and its fee rate never lower. Change below the

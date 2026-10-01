@@ -1,7 +1,7 @@
-// A15 (found by Plans 4 and 5): the engine never records one Attempt ref on two Operations
-// of a namespace. Without it, two identical transfers on a chain without nonces sign into
-// the same bytes, the second broadcast answers "already known", and both Operations end
-// `final`: one payment is silently lost.
+// The engine never records one Attempt ref on two Operations of a namespace. Without it,
+// two identical transfers on a chain without nonces sign into the same bytes, the second
+// broadcast answers "already known", and both Operations end `final`: one payment is
+// silently lost.
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { sequenceKey } from '../../../src/core/ordering/sequence';
 import type { SignedTx, UnsignedTx } from '../../../src/core/model/transaction';
@@ -36,7 +36,7 @@ async function refOf(env: FakeEnv, operationId: string): Promise<string> {
   return (await record(env, operationId))?.attempts[0]?.ref.id ?? '';
 }
 
-describe('Attempt ref uniqueness (A15)', () => {
+describe('Attempt ref uniqueness', () => {
   it("refuses a second Operation that would hold another Operation's Attempt ref", async () => {
     // The fake expiry chain signs identical transfers into identical bytes, as Tron and
     // Solana do without their drivers' build variants.
@@ -70,7 +70,7 @@ describe('Attempt ref uniqueness (A15)', () => {
     expect(third.state).toBe('submitted');
   });
 
-  it('refuses when the holder has already ended, too (D4)', async () => {
+  it('refuses when the holder has already ended, too', async () => {
     const env = await createFakeEnv({ ordering: 'expiry' });
     const to = env.stranger();
     const first = await env.run(
@@ -111,7 +111,9 @@ describe('Attempt ref uniqueness (A15)', () => {
     });
   });
 
-  it('lets exactly one of two processes record a shared ref (D5: the ref lease)', async () => {
+  // The ref lease: the check and the append run under one lease on the ref, which both
+  // processes take through the lock manager they share.
+  it('lets exactly one of two processes record a shared ref', async () => {
     const env = await createFakeEnv({ ordering: 'expiry' });
     const other = await env.restart();
     const to = env.stranger();
@@ -130,7 +132,8 @@ describe('Attempt ref uniqueness (A15)', () => {
     expect(holders.filter((op) => op.attempts.length > 0)).toHaveLength(1);
   });
 
-  it('keeps the nonce of a refused original on a nonce chain (M6)', async () => {
+  // Identical bytes of another Operation may use that nonce, so the refusal keeps it.
+  it('keeps the nonce of a refused original on a nonce chain', async () => {
     const env = await createFakeEnv();
     const a = await env.run(
       env.bc.transfer({ to: env.stranger(), amount: 5n }, { idempotencyKey: 'a' }),
@@ -160,7 +163,7 @@ describe('Attempt ref uniqueness (A15)', () => {
     expect(stored?.reservation).toEqual({ kind: 'nonce', nonce });
   });
 
-  it('reports a ref lease held elsewhere as SEQUENCE_BUSY with its own text (M7)', async () => {
+  it('reports a ref lease held elsewhere as SEQUENCE_BUSY with its own text', async () => {
     const env = await createFakeEnv({ ordering: 'expiry' });
     const to = env.stranger();
     await signInto(env, 'busy-ref');

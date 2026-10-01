@@ -4,7 +4,7 @@
 
 Defined in: [src/adapters/evm/types.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/types.ts#L26)
 
-`bc.ext.evm`: the EVM family extension (spec §5.5).
+`bc.ext.evm`: the EVM family extension.
 
 ## Properties
 

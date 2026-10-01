@@ -56,7 +56,7 @@ describe('the address codec', () => {
     expect(() =>
       codec.fromPublicKey(TEST_PUBKEY, { utxo: { addressType: 'p2wsh' } }),
     ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
-    // Final review M1: an unknown option names the accepted ones, never the caller's key,
+    // An unknown option names the accepted ones, never the caller's key,
     // which may be a pasted secret.
     for (const key of ['changeAdress', `xprv${'K'.repeat(107)}`, 'apiKey=hunter2']) {
       expect(() => codec.fromPublicKey(TEST_PUBKEY, { utxo: { [key]: 'x' } })).toThrow(
@@ -71,7 +71,7 @@ describe('the address codec', () => {
 });
 
 describe('the reader', () => {
-  it('tags every call as the contract table says, with identifier-free routes (R14, R41)', async () => {
+  it('tags every call as the contract table says, with identifier-free routes', async () => {
     const h = await withSpend();
     h.calls.length = 0;
     await h.run(h.reader.getBalance(OWN.address, 'native'));
@@ -137,7 +137,7 @@ describe('the reader', () => {
     });
   });
 
-  it('turns a malformed answer into a retryable PROVIDER_UNAVAILABLE (lesson 6)', async () => {
+  it('turns a malformed answer into a retryable PROVIDER_UNAVAILABLE', async () => {
     const h = await utxoHarness();
     h.node.intercept('a', (request) =>
       request.url.pathname.includes('/tx/') ? { json: { txid: 'nope' } } : undefined,
@@ -180,7 +180,7 @@ describe('history and unspent outputs (indexer)', () => {
   });
 });
 
-describe('answers bound to requests (I2)', () => {
+describe('answers bound to requests', () => {
   it('refuses an answer for another transaction or block as malformed (retryable)', async () => {
     const h = await withSpend();
     h.node.mine();
@@ -235,7 +235,7 @@ describe('answers bound to requests (I2)', () => {
   });
 });
 
-describe('a miner-malleated copy of our p2pkh Attempt (C2)', () => {
+describe('a miner-malleated copy of our p2pkh Attempt', () => {
   it('is observed under its own txid; a segwit sender never looks for one', async () => {
     const h = await utxoHarness();
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
@@ -280,7 +280,9 @@ type TxJson = Record<string, unknown> & {
   vout: Record<string, unknown>[];
 };
 
-describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
+// Full-mode electrs serves a reorg-dropped transaction as unconfirmed forever, so the
+// first input's spender decides where an Attempt is.
+describe('an unconfirmed Attempt the index serves', () => {
   it('is in a mempool only while its first input is spent by it', async () => {
     const h = await withSpend();
     h.calls.length = 0;
@@ -315,7 +317,9 @@ describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
     h.node.reorg(1, { drop: [h.spent] });
     h.node.mine();
     expect(h.node.inMempool(h.spent)).toBe(false);
-    // A status lookup by id cannot tell: the index's own view (a residual for the guide).
+    // Known gap: a status lookup by id (no ordering) cannot tell. It shows the index's
+    // own view, and full-mode electrs keeps showing a reorg-dropped transaction
+    // unconfirmed.
     expect(await h.run(h.reader.observe(ref(h.spent), undefined, undefined))).toEqual({
       seen: 'mempool',
       txHash: h.spent,
@@ -354,7 +358,7 @@ describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
     ).toEqual({ seen: 'none' });
   });
 
-  it('is its malleated copy when the copy spends the input (p2pkh, C2)', async () => {
+  it('is its malleated copy when the copy spends the input (p2pkh)', async () => {
     const h = await utxoHarness();
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
     const outpoint = h.node.fund(legacy.address, 100_000n);
@@ -385,7 +389,7 @@ describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it('decides nothing when the spend read is refused (lesson 18, widened)', async () => {
+  it('decides nothing when the spend read is refused', async () => {
     const h = await withSpend();
     h.node.intercept('a', (request) =>
       request.url.pathname.includes('/outspend/')
@@ -397,7 +401,7 @@ describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
-  it('decides nothing when the transaction read is refused (lesson 18, widened; M1)', async () => {
+  it('decides nothing when the transaction read is refused', async () => {
     const h = await withSpend();
     const refusals = [
       { status: 400, text: 'Bad Request' },
@@ -418,7 +422,7 @@ describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
     }
   });
 
-  it('decides nothing when the index contradicts itself (M2)', async () => {
+  it('decides nothing when the index contradicts itself', async () => {
     const h = await utxoHarness();
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
     const outpoint = h.node.fund(legacy.address, 100_000n);
@@ -454,7 +458,7 @@ describe('an unconfirmed Attempt the index serves (F3-R8)', () => {
     ).toMatchObject({ seen: 'block', txHash: txidOfHex(copy) });
   });
 
-  it('reads the first input only: a conflict on another input leaves it out too (M8)', async () => {
+  it('reads the first input only: a conflict on another input leaves it out too', async () => {
     const h = await utxoHarness();
     const first = h.node.fund(OWN.address, 100_000n);
     const second = h.node.fund(OWN.address, 50_000n);
@@ -520,7 +524,7 @@ describe('raw transactions bound to the id asked for', () => {
     }
   });
 
-  it('keys a quorum on the txid the bytes hash to, and decodes each answer once (F3-R9 M9)', async () => {
+  it('keys a quorum on the txid the bytes hash to, and decodes each answer once', async () => {
     const h = await utxoHarness({ endpoints: ['a', 'b'] });
     const outpoint = h.node.fund(OWN.address, 100_000n);
     const [funding] = outpoint.split(':') as [string];
@@ -537,7 +541,7 @@ describe('raw transactions bound to the id asked for', () => {
         request.url.pathname.endsWith(`/tx/${spent}/hex`) ? { text } : undefined,
       );
     serve('a', full.toHex());
-    // Decodes are counted at the linear reader (F3-R24 F2); bitcoinjs never decodes answers.
+    // Decodes are counted at the linear reader; bitcoinjs never decodes answers.
     const reads = jest.spyOn(rawtx, 'readTxHex');
     const fromBuffer = jest.spyOn(bitcoin.Transaction, 'fromBuffer');
     try {
@@ -563,7 +567,7 @@ describe('raw transactions bound to the id asked for', () => {
     }
   });
 
-  it('keeps previous transactions per txid, oldest out first, within its bounds (F3-R14)', async () => {
+  it('keeps previous transactions per txid, oldest out first, within its bounds', async () => {
     const h = await utxoHarness();
     const [t0, t1, t2] = [1_000n, 2_000n, 3_000n].map(
       (value) => (h.node.fund(OWN.address, value).split(':') as [string])[0],
@@ -611,7 +615,7 @@ describe('raw transactions bound to the id asked for', () => {
     const big = manyOutputs(2, 3_990_000);
     const hex = toHex(big.bytes);
     const id = txidOfStripped(big.stripped);
-    // 3.99 MB without witness: weight 15.96 M, more than a block (F3-R24 F2).
+    // 3.99 MB without witness: weight 15.96 M, more than a block.
     const tooBig = manyOutputs(443_000);
     const h = await utxoHarness();
     h.node.intercept('a', (request) => {
@@ -627,7 +631,7 @@ describe('raw transactions bound to the id asked for', () => {
   });
 });
 
-describe('strict verdict fields, lenient chain data (lesson 6; lenient readers)', () => {
+describe('strict verdict fields, lenient chain data (lenient readers)', () => {
   async function served() {
     const h = await withSpend();
     h.node.mine();
@@ -662,7 +666,7 @@ describe('strict verdict fields, lenient chain data (lesson 6; lenient readers)'
     }
   });
 
-  it('refuses an ill-typed outpoint index, value or status, never a default (M8)', async () => {
+  it('refuses an ill-typed outpoint index, value or status, never a default', async () => {
     const h = await served();
     const status = h.honest.status as Record<string, unknown>;
     const withVin = (vary: (input: Record<string, unknown>) => unknown) => ({
@@ -724,7 +728,7 @@ describe('strict verdict fields, lenient chain data (lesson 6; lenient readers)'
     });
   });
 
-  it('reads any 32-bit version, printed signed or not, as one signed value (M5)', async () => {
+  it('reads any 32-bit version, printed signed or not, as one signed value', async () => {
     const h = await served();
     for (const [printed, version] of [
       [-1, -1],
@@ -747,7 +751,7 @@ describe('strict verdict fields, lenient chain data (lesson 6; lenient readers)'
     }
   });
 
-  it('names every output by its script, whatever address the server prints (M4)', async () => {
+  it('names every output by its script, whatever address the server prints', async () => {
     const h = await served();
     const named = (address: (output: Record<string, unknown>) => unknown) => ({
       ...h.honest,
@@ -882,7 +886,7 @@ describe('indexer lists', () => {
     expect(page.items.map((t) => t.id)).not.toContain(foreign);
   });
 
-  it('lists an unspent output named twice once, and refuses two that disagree (M3)', async () => {
+  it('lists an unspent output named twice once, and refuses two that disagree', async () => {
     const h = await utxoHarness();
     h.node.fund(OWN.address, 7_000n);
     type Utxo = Record<string, unknown>;
@@ -916,7 +920,7 @@ describe('indexer lists', () => {
 });
 
 describe('the harness', () => {
-  it('is deterministic: a retried read never draws on Math.random (R46)', async () => {
+  it('is deterministic: a retried read never draws on Math.random', async () => {
     // Spied before the transports exist, which capture the jitter source when built.
     const random = jest.spyOn(Math, 'random');
     try {

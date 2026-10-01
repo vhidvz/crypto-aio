@@ -4,7 +4,7 @@
 
 > **describeOperationStoreContract**(`api`, `create`): `void`
 
-Defined in: [src/testing/contracts/operations.ts:163](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L163)
+Defined in: [src/testing/contracts/operations.ts:165](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L165)
 
 ## Parameters
 

@@ -4,7 +4,7 @@
 
 Defined in: [src/adapters/utxo/types.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L36)
 
-`WalletConfig.utxo` (spec §9).
+`WalletConfig.utxo`.
 
 ## Properties
 
@@ -24,10 +24,11 @@ Defined in: [src/adapters/utxo/types.ts:37](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **allowExternalChangeAddress?**: `boolean`
 
-Defined in: [src/adapters/utxo/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L47)
+Defined in: [src/adapters/utxo/types.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L48)
 
-A19: send change to a `changeAddress` the wallet's key does not derive (default `false`).
-An additive deviation from spec §9: without it, a valid but mistyped address is refused.
+Send change to a `changeAddress` the wallet's key does not derive (default `false`).
+Change sent to a valid but foreign address is lost, so without it a mistyped address
+is refused.
 
 ***
 

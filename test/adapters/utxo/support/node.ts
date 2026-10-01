@@ -1,8 +1,9 @@
 /**
- * A scripted Esplora node for the UTXO family (test-only, ruling A7): an in-memory Bitcoin
- * chain behind Esplora's REST API. It exists to test safety invariants, so it is never more
- * lenient than a real node: it applies bitcoind's rules in bitcoind's order and answers with
- * bitcoind's texts and codes (Bitcoin Core 30 by default; Plan 3 appendix):
+ * A scripted Esplora node for the UTXO family (test-only: it needs bitcoinjs-lib, an
+ * optional peer): an in-memory Bitcoin chain behind Esplora's REST API. It exists to test
+ * safety invariants, so it is never more lenient than a real node: it applies bitcoind's
+ * rules in bitcoind's order and answers with bitcoind's texts and codes (Bitcoin Core
+ * 30's, from its source, by default):
  * - `sendrawtransaction`: strict hex decoding (-22), `maxburnamount` (-25), outputs already
  *   in the UTXO set (-27), already in the mempool (re-announced), then AcceptToMemoryPool;
  * - AcceptToMemoryPool (`PreChecks`): `CheckTransaction`, coinbase, `IsStandardTx`, finality,
@@ -21,10 +22,11 @@
  * - Blocks: a test mines them (`mine`, whose `extra` transactions are held to consensus
  *   rules only, as a miner's block is), disconnects them (`reorg`, which re-adds their
  *   transactions with the fee limits bypassed, as bitcoind does) and evicts from the mempool.
- * - Esplora (`esplora.ts`): the routes and answer shapes of electrs, per endpoint. An endpoint may lag
- *   (I1: it hides blocks above its view but still holds in its mempool what it saw relayed)
- *   and its index may trail its node's mempool (`mempoolDelayMs`). electrs keeps the
- *   transactions and txids of a disconnected block (its txstore is append-only).
+ * - Esplora (`esplora.ts`): the routes and answer shapes of electrs, per endpoint. An
+ *   endpoint may lag (it hides blocks above its view but still holds in its mempool what
+ *   it saw relayed, as a real lagging endpoint does) and its index may trail its node's
+ *   mempool (`mempoolDelayMs`). electrs keeps the transactions and txids of a
+ *   disconnected block (its txstore is append-only).
  *
  * Every change is applied to a copy of the state and committed only when it succeeds, so a
  * refused transaction or an invalid block leaves no trace. Blocks and transactions are
@@ -134,7 +136,7 @@ export interface ScriptedEsploraNodeOptions {
 }
 
 export interface EndpointOptions {
-  /** Blocks this endpoint has not indexed yet (I1). */
+  /** Blocks this endpoint has not indexed yet. */
   readonly lag?: number;
   /** How long a new mempool transaction takes to reach this endpoint's index. */
   readonly mempoolDelayMs?: number;
@@ -421,7 +423,7 @@ const signalsRbf = (tx: Parsed): boolean =>
 
 // ---- the node ------------------------------------------------------------------------------
 
-/** Nodes of the running test: after it, none may have met an unmodelled path (M2). */
+/** Nodes of the running test: after it, none may have met an unmodelled path. */
 const live = new Set<ScriptedEsploraNode>();
 
 /**
@@ -444,7 +446,7 @@ export class ScriptedEsploraNode {
   /** Raw bodies POSTed to `/tx` that reached the node, in order (accepted or not). */
   readonly broadcasts: string[] = [];
   /**
-   * Paths met through `fetch` that this node does not model (M2): the driver sees them as a
+   * Paths met through `fetch` that this node does not model: the driver sees them as a
    * network failure, so every test file that uses the node fails a test that leaves one.
    */
   readonly unmodelled: string[] = [];
@@ -517,7 +519,7 @@ export class ScriptedEsploraNode {
     return base;
   }
 
-  /** The endpoint hides its top `lag` blocks (I1). */
+  /** The endpoint hides its top `lag` blocks. */
   setLag(name: string, lag: number): void {
     this.#endpointOf(name).lag = this.#count(lag, 'lag');
   }

@@ -2,7 +2,7 @@
 
 # Interface: DriverTransfer
 
-Defined in: [src/core/driver/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L79)
+Defined in: [src/core/driver/types.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L81)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:79](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **amount**: `bigint`
 
-Defined in: [src/core/driver/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L85)
+Defined in: [src/core/driver/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L87)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/driver/types.ts:85](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **asset**: [`AssetRef`](../type-aliases/AssetRef.md)
 
-Defined in: [src/core/driver/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L84)
+Defined in: [src/core/driver/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L86)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/driver/types.ts:84](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **from**: readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L82)
+Defined in: [src/core/driver/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L84)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/driver/types.ts:82](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **locator**: `string`
 
-Defined in: [src/core/driver/types.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L81)
+Defined in: [src/core/driver/types.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L83)
 
 Deterministic within the transaction, e.g. `native`, `log:3`, `vout:1`, `ix:0.2`.
 
@@ -54,7 +54,7 @@ Deterministic within the transaction, e.g. `native`, `log:3`, `vout:1`, `ix:0.2`
 
 > `readonly` `optional` **memo?**: `string`
 
-Defined in: [src/core/driver/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L87)
+Defined in: [src/core/driver/types.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L89)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [src/core/driver/types.ts:87](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **source**: [`TransferSource`](../type-aliases/TransferSource.md)
 
-Defined in: [src/core/driver/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L86)
+Defined in: [src/core/driver/types.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L88)
 
 ***
 
@@ -74,4 +74,4 @@ Defined in: [src/core/driver/types.ts:86](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **to**: `string`
 
-Defined in: [src/core/driver/types.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L83)
+Defined in: [src/core/driver/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L85)

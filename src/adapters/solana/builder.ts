@@ -1,9 +1,9 @@
 /**
- * Solana transfers (spec §15): SystemProgram and SPL `transferChecked`, with
+ * Solana transfers: SystemProgram and SPL `transferChecked`, with
  * `createAssociatedTokenAccountIdempotent` when the recipient's token account is missing,
  * an optional Memo, and compute-budget instructions. Expiry ordering: the recent blockhash's
  * `lastValidBlockHeight` is the Attempt's ordering, recorded with the blockhash and the slot
- * of its block (`SolanaExpiryOrdering`, F5-R9) so proofs can attest the height before a
+ * of its block (`SolanaExpiryOrdering`) so proofs can attest the height before a
  * verdict rests on it. One `ed25519` signing request per required signer, over the
  * message; the Attempt ref is the first signature (canonical).
  *
@@ -147,7 +147,7 @@ function keyOf(from: string, keys: readonly WalletKey[]): WalletKey {
   return key;
 }
 
-/** D16: at most 256 UTF-8 bytes of well-formed text (the intent's policy, not `memo()`'s). */
+/** At most 256 UTF-8 bytes of well-formed text (the intent's policy, not `memo()`'s). */
 function memoOf(text: string | undefined): string | undefined {
   if (text === undefined) return undefined;
   if (LONE_SURROGATE.test(text))
@@ -263,9 +263,11 @@ async function planTransfer(
     return { ...base, createsRecipientAccount: false };
   }
   const mint = mintOf(intent.asset);
-  // Token metadata under the proof quorum (the board's rule), with the caller's signal.
+  // Token metadata under the proof quorum, with the caller's signal: the decimals are
+  // signed into `transferChecked`, so a lagging endpoint without the mint decides
+  // nothing.
   const decimals = await mintDecimals(ctx, mint, withSignal(METADATA, tags.signal));
-  // M4: nobody can sign for a program's associated token account.
+  // Nobody can sign for a program's associated token account.
   if (recipient?.executable) {
     throw invalid('the recipient is a program; send to a wallet or a PDA owner');
   }
@@ -330,7 +332,7 @@ const withBudget = (limit: bigint, price: bigint, list: readonly SolanaInstructi
  * The newest blockhash at `confirmed`, its last valid height, and the slot of its block:
  * agave answers from one bank (`rpc.rs` `get_latest_blockhash`: the bank's last blockhash,
  * that blockhash's last valid height, and `new_response`'s context slot, the bank's own).
- * One endpoint's word: proofs attest the three together before using the height (F5-R9).
+ * One endpoint's word: proofs attest the three together before using the height.
  */
 async function latestBlockhash(
   ctx: SolanaContext,
@@ -513,7 +515,7 @@ async function simulatedUnits(
 
 /**
  * The base64 wire bytes of a signed transaction, or `null` when they exceed the packet
- * limit. The text is capped before it is decoded (lesson 20), and only a canonical text is
+ * limit. The text is capped before it is decoded, and only a canonical text is
  * read: `Buffer` skips what it cannot decode, and a truncated transaction is never sent.
  */
 function wirePayload(raw: RawTx): string | null {
@@ -534,8 +536,8 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
   return {
     async estimateFee(intent, build) {
       const tags = withSignal(READ, build.signal);
-      // F5-R9 (b): the handle's bound, which no endpoint can raise. An explicit price above
-      // it is refused before any request; a speed's is clamped below it.
+      // The handle's bound, which no endpoint can raise. An explicit price above it is
+      // refused before any request; a speed's is clamped below it.
       const bound = ctx.config.maxComputeUnitPrice;
       const override = isFeeSpeed(intent.fee) ? undefined : parseOverride(intent.fee);
       if (override && override.computeUnitPrice > bound) {
@@ -572,13 +574,15 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
             ? fallbackComputeUnitLimit(list.length)
             : computeUnitLimitFor(units);
       }
-      // D10, M3: every build varies the limit, an explicit one included (the price of an
-      // explicit fee is kept exactly); at the protocol maximum no variant fits.
+      // Every build varies the limit, an explicit one included, so identical transfers
+      // sign different bytes (the price of an explicit fee is kept exactly). At the
+      // protocol maximum no variant fits, and only the core's guard against two
+      // Operations sharing one Attempt ref keeps them apart.
       const limit =
         base + variant.limit > MAX_COMPUTE_UNIT_LIMIT
           ? MAX_COMPUTE_UNIT_LIMIT
           : base + variant.limit;
-      // Lesson 19: a fee is a u64 of lamports. An explicit price without one is the
+      // A fee is a u64 of lamports. An explicit price without one is the
       // caller's; a node's recent prices or quote without one decide nothing (retryable).
       const unpriced = (what: string) =>
         override
@@ -708,7 +712,7 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
       const parts = readBack(message, plan.from);
       checkRecipient(ctx, parts, output, mint);
       checkInstructions(parts, blockhash, list);
-      // F5-R9: the height, with the blockhash and slot that let a proof attest it.
+      // The height, with the blockhash and slot that let a proof attest it.
       const ordering: SolanaExpiryOrdering = {
         kind: 'expiry',
         lastValidHeight: lastValidBlockHeight,
@@ -748,9 +752,9 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
       // A `null` is a refusal, never "no signers needed": one request per required signer.
       const parts = parseMessage(message);
       if (!parts || parts.required !== unsigned.signingRequests.length) throw mismatch();
-      // Final review M1 (the Tron handoff's "bind it in assemble"): the core stores this
-      // `ordering` as the Attempt's, and the expiry proof reads its blockhash as the
-      // message's. A changed one between build and signing would misplace the window.
+      // The core stores this `ordering` as the Attempt's, and the expiry proof reads its
+      // blockhash as the message's. A changed one between build and signing would
+      // misplace the window.
       const ordering = unsigned.ordering as Partial<SolanaExpiryOrdering>;
       if (
         ordering.kind !== 'expiry' ||
@@ -807,10 +811,10 @@ export function createSolanaBroadcaster(ctx: SolanaContext): Broadcaster {
         );
         return { kind: 'accepted' };
       } catch (error) {
-        // Handoff §3, R16/R17: only a definitive, non-ambiguous node answer is classified:
-        // by its code, then its structured data (a preflight failure's simulation result),
-        // then its anchored text. Anything else may have been sent: rethrown unchanged.
-        // Lesson 21: a claimed bad signature stands only when these bytes carry one.
+        // Only a definitive, non-ambiguous node answer is classified: by its code, then
+        // its structured data (a preflight failure's simulation result), then its
+        // anchored text. Anything else may have been sent: rethrown unchanged. A claimed
+        // bad signature stands only when these bytes carry one.
         const code = rpcCode(error);
         if (code === undefined) throw error;
         const failure = error as CryptoAioError;

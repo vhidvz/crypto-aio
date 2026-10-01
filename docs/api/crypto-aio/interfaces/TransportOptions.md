@@ -100,7 +100,7 @@ Defined in: [src/core/transport/types.ts:32](https://github.com/vhidvz/crypto-ai
 
 The most bytes one answer may carry (default 64 MiB). A longer answer, by its declared
 length or as it arrives, is cancelled and fails as a retryable `PROVIDER_UNAVAILABLE`,
-so one endpoint can never make a call hold unbounded memory (lesson 20).
+so one endpoint can never make a call hold unbounded memory.
 
 ***
 

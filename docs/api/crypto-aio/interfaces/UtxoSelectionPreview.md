@@ -2,7 +2,7 @@
 
 # Interface: UtxoSelectionPreview
 
-Defined in: [src/adapters/utxo/types.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L91)
+Defined in: [src/adapters/utxo/types.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L92)
 
 A dry run of the configured coin selection.
 
@@ -14,7 +14,7 @@ A dry run of the configured coin selection.
 
 > `readonly` **change**: `bigint`
 
-Defined in: [src/adapters/utxo/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L97)
+Defined in: [src/adapters/utxo/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L98)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/utxo/types.ts:97](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **fee**: `bigint`
 
-Defined in: [src/adapters/utxo/types.ts:94](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L94)
+Defined in: [src/adapters/utxo/types.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L95)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/adapters/utxo/types.ts:94](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **inputs**: readonly `object`[]
 
-Defined in: [src/adapters/utxo/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L93)
+Defined in: [src/adapters/utxo/types.ts:94](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L94)
 
 The outputs it would spend (every eligible one when `sufficient` is `false`).
 
@@ -46,7 +46,7 @@ The outputs it would spend (every eligible one when `sufficient` is `false`).
 
 > `readonly` **satPerKvB**: `bigint`
 
-Defined in: [src/adapters/utxo/types.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L95)
+Defined in: [src/adapters/utxo/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L96)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [src/adapters/utxo/types.ts:95](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **sufficient**: `boolean`
 
-Defined in: [src/adapters/utxo/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L99)
+Defined in: [src/adapters/utxo/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L100)
 
 `false` when the eligible outputs cannot pay for the outputs and the fee.
 
@@ -68,4 +68,4 @@ Defined in: [src/adapters/utxo/types.ts:99](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **vsize**: `number`
 
-Defined in: [src/adapters/utxo/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L96)
+Defined in: [src/adapters/utxo/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L97)

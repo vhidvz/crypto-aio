@@ -1,6 +1,6 @@
 /**
  * The Esplora REST layer of the scripted node (test-only): what one endpoint shows (its view
- * of the chain and the mempool, I1) and electrs' routes and answer shapes over that view.
+ * of the chain and the mempool) and electrs' routes and answer shapes over that view.
  * Two servers are modelled, by the node's `errorFormat`: Blockstream's electrs (new-index
  * branch, `blockstream`) and mempool/electrs (`mempool`). They share the routes, and differ
  * in their page checks, a disconnected block's transactions, invalid-id and invalid-address
@@ -24,7 +24,7 @@ const base58check = createBase58check(sha256);
  * rust-bitcoin 0.32's `Address::from_str` (both electrs builds use it): `undefined` when the
  * string is an address of some network, else the top of its `ParseError` text. A segwit
  * decode comes first; anything else is read as a base58 legacy address of at most 50
- * characters (so base58 never sees a long string: lesson 20).
+ * characters (so base58, whose decoding is quadratic, never sees a long string).
  */
 function addressParseError(address: string): string | undefined {
   try {

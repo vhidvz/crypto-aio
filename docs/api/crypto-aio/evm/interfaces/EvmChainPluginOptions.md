@@ -2,7 +2,7 @@
 
 # Interface: EvmChainPluginOptions
 
-Defined in: [src/adapters/evm/plugin.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L87)
+Defined in: [src/adapters/evm/plugin.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L92)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/adapters/evm/plugin.ts:87](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **assets?**: readonly [`AssetRegistration`](../../interfaces/AssetRegistration.md)[]
 
-Defined in: [src/adapters/evm/plugin.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L97)
+Defined in: [src/adapters/evm/plugin.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L102)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/adapters/evm/plugin.ts:97](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **chains**: readonly [`ChainInfo`](../../interfaces/ChainInfo.md)[]
 
-Defined in: [src/adapters/evm/plugin.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L95)
+Defined in: [src/adapters/evm/plugin.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L100)
 
 Chains with `family: 'evm'`, nonce ordering and the `secp256k1-ecdsa` scheme.
 
@@ -34,7 +34,7 @@ Chains with `family: 'evm'`, nonce ordering and the `secp256k1-ecdsa` scheme.
 
 > `readonly` **name**: `string`
 
-Defined in: [src/adapters/evm/plugin.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L93)
+Defined in: [src/adapters/evm/plugin.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L98)
 
 A unique name matching `/^[a-z][a-z0-9-]*$/`. The plugin registers as `evm:<name>`, so
 it never collides with a family plugin, and its manifests as `evm:<name>/ethers` and
@@ -48,4 +48,4 @@ it never collides with a family plugin, and its manifests as `evm:<name>/ethers`
 
 > `readonly` `optional` **presets?**: readonly [`ProviderPreset`](../../interfaces/ProviderPreset.md)[]
 
-Defined in: [src/adapters/evm/plugin.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L96)
+Defined in: [src/adapters/evm/plugin.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L101)

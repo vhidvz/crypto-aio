@@ -2,7 +2,7 @@
 
 # Interface: AddressCodec
 
-Defined in: [src/core/driver/types.ts:109](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L109)
+Defined in: [src/core/driver/types.ts:111](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L111)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:109](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **format?**: [`AddressFormatter`](../type-aliases/AddressFormatter.md)
 
-Defined in: [src/core/driver/types.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L120)
+Defined in: [src/core/driver/types.ts:122](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L122)
 
 ## Methods
 
@@ -22,7 +22,7 @@ Defined in: [src/core/driver/types.ts:120](https://github.com/vhidvz/crypto-aio/
 
 > **fromPublicKey**(`publicKey`, `wallet?`): [`NormalizedAddress`](NormalizedAddress.md)
 
-Defined in: [src/core/driver/types.ts:119](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L119)
+Defined in: [src/core/driver/types.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L121)
 
 #### Parameters
 
@@ -46,7 +46,7 @@ Defined in: [src/core/driver/types.ts:119](https://github.com/vhidvz/crypto-aio/
 
 > **normalize**(`address`): [`NormalizedAddress`](NormalizedAddress.md)
 
-Defined in: [src/core/driver/types.ts:118](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L118)
+Defined in: [src/core/driver/types.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L120)
 
 Throws `ValidationError('INVALID_ADDRESS')`. The returned `variant` is part of the
 intent hash: it must hold only JSON scalars (strings, finite numbers, booleans, `null`)
@@ -72,7 +72,7 @@ with the same meaning hash the same.
 
 > **validate**(`address`): `boolean`
 
-Defined in: [src/core/driver/types.ts:110](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L110)
+Defined in: [src/core/driver/types.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L112)
 
 #### Parameters
 

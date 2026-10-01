@@ -1,5 +1,5 @@
 /**
- * Opt-in, read-only checks against a live Bitcoin network over Esplora (spec §17), skipped
+ * Opt-in, read-only checks against a live Bitcoin network over Esplora, skipped
  * unless CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only:
  * - CRYPTO_AIO_IT_UTXO_NETWORK: `mainnet`, `testnet`, `testnet4` or `signet` (default `signet`);
  * - CRYPTO_AIO_IT_UTXO_PROVIDER: a preset, `blockstream` or `mempool` (default `blockstream`).
@@ -42,19 +42,19 @@ suite(`UTXO integration on bitcoin:${network} (${provider})`, () => {
         network,
         provider,
         indexer: provider,
-        // A test network's estimates can exceed the 200 sat/vB an estimate may set (M3),
+        // A test network's estimates can exceed the 200 sat/vB an estimate may set,
         // which refuses them, retryably, by design; this handle takes up to 1,000 sat/vB.
         options: { maxEstimatedFeeRate: 1_000_000n },
       });
       await bc.ready();
       const status = await bc.getNetworkStatus();
       expect(status.height).toBeGreaterThan(0n);
-      // M14: two concurrent reads, possibly on different backends, may land a block apart
+      // Two concurrent reads, possibly on different backends, may land a block apart
       // either way; the gap is 5 (six confirmations) give or take that block.
       expect([4n, 5n, 6n]).toContain(status.height - status.finalizedHeight);
       const block = await bc.getBlock(status.finalizedHeight);
       expect(block?.hash).toMatch(/^[0-9a-f]{64}$/);
-      // D-T9-2 (F3-R12, F3-R17): a block scan accepts a page only when every transaction on
+      // A block scan accepts a page only when every transaction on
       // it is confirmed in that very block. A provider that labelled each status with the
       // transaction's own confirmation would stall scans forever at BIP30's duplicate
       // coinbases, so the page must name the block it was read from.
@@ -99,7 +99,7 @@ suite(`UTXO integration on bitcoin:${network} (${provider})`, () => {
     }
   }, 120_000);
 
-  it("labels BIP30's repeated coinbase with the page's own block, on mainnet only (D-T9-2, F3-R20)", async () => {
+  it("labels BIP30's repeated coinbase with the page's own block, on mainnet only", async () => {
     // On an ordinary block a page status and the transaction's own status agree, so only a
     // repeated txid tells the labellings apart. A network fact, gated by the network's
     // identity (its genesis hash), never by a height on another network.

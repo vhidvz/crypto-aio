@@ -1,7 +1,7 @@
 /**
  * Solana addresses, reads and the `ext.solana` API. Every call carries the tags of the
  * `ChainDriver` contract table: `read` for point queries, `monitor` for heights and
- * observations. Heads are read at `confirmed`, finality at `finalized` (spec §15).
+ * observations. Heads are read at `confirmed`, finality at `finalized`.
  */
 import type {
   AddressCodec,
@@ -78,7 +78,7 @@ export interface AccountInfo {
  * Account data in agave's `base64` encoding, refused unless it is canonical: Node decodes
  * leniently (a stray character is skipped, `AB==` reads as `AA==`), so the bytes must
  * encode back to the same text. The check is linear, which matters: accounts hold up to
- * 10 MiB, and a repeated-group regex overflows the stack on a few MiB (lesson 20).
+ * 10 MiB, and a repeated-group regex overflows the stack on a few MiB.
  */
 function base64Data(value: unknown, what: string): Uint8Array {
   if (
@@ -155,7 +155,7 @@ function mintVerdict(info: AccountInfo | null): MintVerdict {
 }
 
 /**
- * A mint read's quorum key (board rule: verdict fields only): the verdict itself, never the
+ * A mint read's quorum key, verdict fields only: the verdict itself, never the
  * context slot, the lamports or the supply, on which honest endpoints differ. A malformed
  * answer keys as such, so it never agrees with a verdict.
  */
@@ -168,9 +168,9 @@ function mintKey(result: unknown): unknown {
 }
 
 /**
- * A classic Token mint's decimals (lesson 13): a missing mint, an account of another
+ * A classic Token mint's decimals: a missing mint, an account of another
  * program or data that does not parse is the token's own `ASSET_RESOLUTION`; a Token-2022
- * mint is `UNSUPPORTED_CAPABILITY` (spec §15). A definitive node error is made retryable;
+ * mint is `UNSUPPORTED_CAPABILITY`. A definitive node error is made retryable;
  * `PROVIDER_MISCONFIGURED` and retryable errors propagate unchanged. Under a quorum (the
  * token metadata the core caches), endpoints must agree on the verdict: a lagging one that
  * has no mint yet, or one with other decimals, decides nothing (`PROVIDER_INCONSISTENT`).
@@ -277,11 +277,11 @@ export async function readTransaction(
 }
 
 /**
- * Token metadata is read under the proof quorum (the board's rule, EVM M4), stricter than
+ * Token metadata is read under the proof quorum, stricter than
  * the contract table's minimum: the core caches a token's decimals and "no such token" for
  * the container's life, so one lagging or wrong endpoint must not mis-scale every amount
  * until a restart. `mintDecimals` compares the mint's verdict only. The builder reads the
- * decimals it signs into `transferChecked` the same way (final review M3), so a lagging
+ * decimals it signs into `transferChecked` the same way, so a lagging
  * endpoint without the mint decides nothing instead of refusing the transfer.
  */
 export const METADATA: SolanaCallTags = Object.freeze({ ...READ, quorum: 'proof' });
@@ -342,7 +342,7 @@ export function createSolanaReader(ctx: SolanaContext): ChainReader {
       const { parsed, header } = found;
       let success = parsed.err === null;
       let reason = success ? undefined : 'transaction failed';
-      // Lesson 7/15: the phantom-success guard applies to our own Attempts only. This is
+      // The phantom-success guard applies to our own Attempts only. This is
       // one endpoint's `confirmed` view, so the core records it as observed evidence,
       // never terminal: a verdict reads the finalized transaction under the proof quorum's
       // key (`proofs.ts`). A node that drops the token instruction makes the transfer look
@@ -366,7 +366,7 @@ export function createSolanaReader(ctx: SolanaContext): ChainReader {
       const mint = mintOf(ref);
       const decimals = await mintDecimals(ctx, mint, METADATA);
       // SPL mints carry no symbol on chain: a registered token has its own; any other
-      // shows the first characters of its mint (display only, spec §6.2).
+      // shows the first characters of its mint (display only).
       return { symbol: mint.slice(0, 8), decimals };
     },
     normalizeTokenRef: (ref) => ({ standard: 'spl', contract: mintOf(ref) }),

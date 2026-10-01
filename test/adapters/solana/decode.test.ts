@@ -90,7 +90,7 @@ describe('Solana transaction decoding', () => {
     expect(
       touches(decoded, parsed, new Set(['75AjMdh7Gn1TLigfze541AVJGJ4TyqBEaRZk3pozfBza'])),
     ).toBe(true);
-    // I1: a watched token account matches the transfers into and out of it, although the
+    // A watched token account matches the transfers into and out of it, although the
     // decoded transfer names the owners.
     for (const tokenAccount of [
       'DeJGcDqExnXDaMc2TX4bG9A5hRQ5SPxszsb37Zq4kNj3',
@@ -101,7 +101,7 @@ describe('Solana transaction decoding', () => {
     expect(touches(decoded, parsed, new Set(['Z']))).toBe(false);
   });
 
-  it('reports a failed transaction as the chain does: fee only, nothing moved (lesson 15)', () => {
+  it('reports a failed transaction as the chain does: fee only, nothing moved', () => {
     const failed = nativeTx({
       err: { InstructionError: [0, { Custom: 1 }] },
       postBalances: [95_000, 0, 1],
@@ -170,7 +170,7 @@ describe('Solana transaction decoding', () => {
         PLACE,
       ).decoding,
     ).toBe('partial');
-    // A Token-2022 transfer is not decoded (spec §15), but its balances moved.
+    // A Token-2022 transfer is not decoded, but its balances moved.
     const t22 = nativeTx(
       {
         preTokenBalances: [
@@ -237,7 +237,7 @@ describe('Solana transaction decoding', () => {
     expect(two.transfers[0]?.memo).toBeUndefined();
   });
 
-  it('keeps lamports above 2^53 exact, as the transport revives them (P5-A)', () => {
+  it('keeps lamports above 2^53 exact, as the transport revives them', () => {
     const big = 2n ** 60n;
     const tx = nativeTx(
       {
@@ -289,7 +289,7 @@ describe('Solana transaction decoding', () => {
   });
 });
 
-describe('the scan filter is a superset (I4)', () => {
+describe('the scan filter is a superset', () => {
   it('keeps a deposit it cannot attribute, and drops an unrelated transaction', () => {
     // B gained lamports no decoded instruction explains (e.g. a closed token account).
     const unexplained = nativeTx({ postBalances: [94_000, 1_500, 1] });
@@ -314,7 +314,7 @@ describe('the scan filter is a superset (I4)', () => {
     );
   });
 
-  it('keeps an SPL deposit when the node reports no token balances (R4)', () => {
+  it('keeps an SPL deposit when the node reports no token balances', () => {
     // The recipient's owner is not an account key: only the balances would name it.
     const recipient = '75AjMdh7Gn1TLigfze541AVJGJ4TyqBEaRZk3pozfBza';
     const bare = clone(DEVNET_TRANSFER_CHECKED) as unknown as { meta: Json };
@@ -331,7 +331,7 @@ describe('the scan filter is a superset (I4)', () => {
   });
 });
 
-describe('the scan filter matches watched token accounts (final review I1)', () => {
+describe('the scan filter matches watched token accounts', () => {
   const DESTINATION = 'DeJGcDqExnXDaMc2TX4bG9A5hRQ5SPxszsb37Zq4kNj3';
   const SOURCE = '8CvwyW7amb4MB547dqWh633vsKPTiQrmDsKxn3p2Jcn3';
   type Fixture = {
@@ -390,7 +390,7 @@ describe('the scan filter matches watched token accounts (final review I1)', () 
   });
 });
 
-describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict paths only)', () => {
+describe('tokenTransfersLanded (verdict paths only)', () => {
   const owner = '8sh86hmWL4ka7U44dFn3U72ZagLsAME4iRMwajfgR8QT';
   type Fixture = {
     meta: {
@@ -424,7 +424,7 @@ describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict pat
     expect(landed(nativeTx(), 'A')).toBe(true);
   });
 
-  it('decides nothing on missing or contradictory evidence (lesson 18, widened)', () => {
+  it('decides nothing on missing or contradictory evidence', () => {
     // Token instructions, none by the sender: the answer contradicts the signed message.
     expect(() => landed(DEVNET_TRANSFER_CHECKED, 'Someone')).toThrow(
       expect.objectContaining({ code: 'PROVIDER_INCONSISTENT', retryable: true }),
@@ -445,7 +445,7 @@ describe('tokenTransfersLanded (lessons 7 and 15, the final wording; verdict pat
   });
 });
 
-// ---- Beyond the brief: verdict fields, lookups, lesson 20 caps, mint-aware balances ----
+// ---- Edge cases: verdict fields, lookups, input caps, mint-aware balances -------------
 
 const VOTE = 'Vote111111111111111111111111111111111111111';
 const OWNER = '8sh86hmWL4ka7U44dFn3U72ZagLsAME4iRMwajfgR8QT';
@@ -509,7 +509,7 @@ const nested = (depth: number): unknown => {
   return value;
 };
 
-describe('a missing or ill-typed field is malformed, never a default (lesson 6, 20)', () => {
+describe('a missing or ill-typed field is malformed, never a default', () => {
   const refused: [string, (tx: Devnet) => void][] = [
     ['no execution error (never read as success)', (tx) => delete tx.meta.err],
     ['an ill-typed execution error', (tx) => (tx.meta.err = 1)],
@@ -614,7 +614,7 @@ describe('a missing or ill-typed field is malformed, never a default (lesson 6, 
     expect(() => parseTransaction(devnet(change))).toThrow(UNAVAILABLE);
   });
 
-  it('accepts every answer at the format limits (lesson 19 boundaries)', () => {
+  it('accepts every answer at the format limits', () => {
     const widest = devnet((tx) => {
       widen(tx, 256);
       tx.transaction.message.accountKeys![255] = { pubkey: '1'.repeat(44) };
@@ -663,7 +663,7 @@ describe('a missing or ill-typed field is malformed, never a default (lesson 6, 
   });
 });
 
-describe('reconciliation reads every account by index and mint (spec §15)', () => {
+describe('reconciliation reads every account by index and mint', () => {
   it('is partial when a token account holds another mint afterwards', () => {
     const moved = devnet((tx) => (tx.meta.postTokenBalances![1]!.mint = OTHER_MINT));
     expect(decodeTransaction(parseTransaction(moved), PLACE).decoding).toBe('partial');
@@ -689,7 +689,7 @@ describe('reconciliation reads every account by index and mint (spec §15)', () 
   });
 });
 
-describe('scans skip only what cannot move value to a watched address (I4)', () => {
+describe('scans skip only what cannot move value to a watched address', () => {
   it('keeps a vote-program transaction that moves lamports', () => {
     // A vote-account withdrawal paying B (the default balances move 1,000 lamports to B).
     const withdraw = parseTransaction(
@@ -701,7 +701,7 @@ describe('scans skip only what cannot move value to a watched address (I4)', () 
     );
   });
 
-  it('keeps a token deposit made through another program the node did not record (R4)', () => {
+  it('keeps a token deposit made through another program the node did not record', () => {
     // Neither inner instructions nor token balances: only the keyed token program tells.
     const hidden = parseTransaction(
       devnet((tx) => {
@@ -778,7 +778,7 @@ describe('the landing guard reads balances by account, mint and program (phantom
     expect(landed(zero(true))).toBe(false);
   });
 
-  it('needs the sender debited: a credit alone is no transfer from the sender (F5-R6 M1)', () => {
+  it('needs the sender debited: a credit alone is no transfer from the sender', () => {
     // The recipient gained 1,000 while the sender's account kept its 406,000.
     const credited = devnet(
       (tx) => (tx.meta.postTokenBalances![0]!.uiTokenAmount.amount = '406000'),
@@ -786,7 +786,7 @@ describe('the landing guard reads balances by account, mint and program (phantom
     expect(landed(credited)).toBe(false);
   });
 
-  it('decides nothing when the node reported no token balances at all (F5-R6 M5)', () => {
+  it('decides nothing when the node reported no token balances at all', () => {
     const bare = devnet((tx) => {
       delete tx.meta.preTokenBalances;
       delete tx.meta.postTokenBalances;
@@ -801,7 +801,8 @@ describe('the landing guard reads balances by account, mint and program (phantom
   });
 });
 
-describe('inner memos never refuse a transaction (F5-R6 I1)', () => {
+// A block parse is all or nothing: one refused CPI memo would stall every deposit scan.
+describe('inner memos never refuse a transaction', () => {
   /** The transfer, with its memo moved into a CPI (a CPI's data reaches 10 KiB). */
   const innerMemo = (text: string) =>
     parseTransaction(

@@ -1,20 +1,24 @@
 /**
- * The UTXO builder, broadcaster and RBF replacement policy (spec §15, §8.6).
+ * The UTXO builder, broadcaster and RBF replacement policy.
  *
  * - `build` spends only outputs not held by another live Operation (`ctx.excludeInputs`),
  *   pays change to the wallet's change address, and records the spent outpoints as the
  *   `inputs` ordering. The fee is `exact` once built; the absurd-fee guard runs first.
  * - Every input a build, a replacement or a cancel spends is authenticated against its
- *   previous transaction first (F3-R14): the indexer's value and script count only when the
- *   bytes that hash to the outpoint's txid say the same.
+ *   previous transaction first: the indexer's value and script count only when the
+ *   bytes that hash to the outpoint's txid say the same. A lied value could burn the
+ *   difference as fee, or make our own signed bytes invalid for good and stall the
+ *   Operation with its inputs held.
  * - Replacements and cancels keep EVERY input of the Attempt they replace (and may add
- *   confirmed ones), so each new Attempt conflicts with every earlier one (handoff §3:
- *   exclusion is not transitive). Neither ever raises a fee on its own: a fee below the
- *   replacement floor is `FEE_TOO_LOW` (R30, Plan 2 D12).
- * - A cancel pays everything back to the sending address itself (M3).
+ *   confirmed ones), so each new Attempt conflicts with every earlier one (exclusion is
+ *   not transitive). Neither ever raises a fee on its own: a fee below the
+ *   replacement floor is `FEE_TOO_LOW`.
+ * - A cancel pays everything back to the sending address itself.
  * - Broadcast answers are classified by `errors.ts`; an ambiguous transport failure is
- *   rethrown unclassified (R16/R17). A node's rejection is a claim (lesson 21): it stands
- *   only when its reason holds for the bytes that were sent, checked here; else `refused`.
+ *   rethrown unclassified. A node's rejection is a claim: it stands only when its reason
+ *   holds for the bytes that were sent, checked here; else `refused`. A terminal
+ *   `rejected` frees the inputs, so a lying endpoint that relayed our valid bytes would
+ *   let the caller's retry spend other coins, and both transactions could confirm.
  */
 import type {
   BroadcastResult,
@@ -100,7 +104,7 @@ function draft(
   };
 }
 
-/** `UtxoFeeDetails` of a stored fee, checked (it is our own plain data, R11). */
+/** `UtxoFeeDetails` of a stored fee, checked (it is our own plain data). */
 function detailsOf(fee: FeeEstimateDraft): UtxoFeeDetails {
   const d = fee.details as Partial<UtxoFeeDetails>;
   if (
@@ -132,7 +136,10 @@ const scopeOf = (ctx: UtxoContext, network: Network): Scope => ({
 const changeOf = (scope: Scope, build: BuildContext, sender: Sender): DecodedAddress =>
   changeAddressOf(scope.ctx, build.wallet, sender, build.keys);
 
-/** R24: the message is a fixed text; the amounts go only in the details (Plan 2's shape). */
+/**
+ * The message is a fixed text, so no amount reaches a log line; the amounts go only in
+ * the details, as decimal strings, as in every family.
+ */
 const insufficient = (
   what: 'this transfer' | 'the replacement' | 'a cancel',
   required: bigint,
@@ -142,7 +149,7 @@ const insufficient = (
     details: { required: required.toString(), available: available.toString() },
   });
 
-/** F3-R14 (M3): at most this many previous transactions are read at once for one build. */
+/** At most this many previous transactions are read at once for one build. */
 export const PREVIOUS_TX_READS = 4;
 
 /**
@@ -184,7 +191,7 @@ async function previousTxs(
   return found;
 }
 
-/** Which inputs of a build are new, and how their parents must be confirmed (F3-R24 F1). */
+/** Which inputs of a build are new, and how their parents must be confirmed. */
 interface NewInputs {
   /** The outpoints a replacement or cancel keeps: attested when their Attempt was built. */
   readonly kept: ReadonlySet<string>;
@@ -196,14 +203,16 @@ interface NewInputs {
 }
 
 /**
- * F3-R14: every input's value and script, authenticated against its previous transaction
+ * Every input's value and script, authenticated against its previous transaction
  * (all wallet types, whatever `nonWitnessUtxo` says), so the node never judges bytes built
- * on an indexer's wrong value, and an outpoint its transaction does not have (a phantom that
- * nothing would ever spend, so never proven dead) is never built on. F3-R24 F1: a new
- * input's previous transaction must also be in a block the proof quorum attests, unless it
- * is the wallet's own sent transaction and `minInputConfirmations` is 0. p2pkh inputs carry it
- * (D12), and segwit v0 ones while `nonWitnessUtxo` is on (M15); taproot never does: BIP341
- * commits to every amount, and `signed-psbt.ts` refuses one on a taproot input.
+ * on an indexer's wrong value, and an outpoint its transaction does not have (a phantom
+ * that nothing would ever spend, so never proven dead) is never built on. Either would
+ * stall the Operation for good with its inputs held, since signed bytes cannot be
+ * abandoned. A new input's previous transaction must also be in a block the proof quorum
+ * attests, unless it is the wallet's own sent transaction and `minInputConfirmations` is
+ * 0: a made-up parent would freeze the transfer the same way. p2pkh inputs carry it, and
+ * segwit v0 ones while `nonWitnessUtxo` is on; taproot never does: BIP341 commits to
+ * every amount, and `signed-psbt.ts` refuses one on a taproot input.
  */
 async function authenticated(
   scope: Scope,
@@ -213,7 +222,7 @@ async function authenticated(
   signal?: AbortSignal,
 ): Promise<PlannedInput[]> {
   const { esplora, config } = scope.ctx;
-  // F3-R24 F1: first, each new input's parent must be in a block the proof quorum attests,
+  // First, each new input's parent must be in a block the proof quorum attests,
   // at its own height; only then are its bytes read. Self-authenticating bytes prove what a
   // transaction is, never that a chain holds it.
   const parents = inputs
@@ -317,7 +326,7 @@ function previousOf(scope: Scope, previous: UnsignedTx, sender: Sender) {
     value: i.value,
   }));
   const outputs = view.outputs.filter((_, index) => index !== details.changeIndex);
-  // M1: a real signature may be a byte shorter than the worst case the estimate counts: a
+  // A real signature may be a byte shorter than the worst case the estimate counts: a
   // full vbyte per legacy input, a quarter per witness input.
   const slack = sender.type === 'p2pkh' ? inputs.length : Math.ceil(inputs.length / 4);
   const minVsize = Math.max(1, details.vsize - slack);
@@ -335,7 +344,8 @@ export function utxoBuilder(ctx: UtxoContext, network: Network): UtxoBuilder {
 
   const plan = async (intent: DriverIntent, rate: bigint, build: BuildContext) => {
     assertNative(intent.asset);
-    // F3-R15: defence in depth behind the network check; nothing here writes a memo.
+    // Defence in depth behind the network's capability check: nothing here writes a memo,
+    // and the core would otherwise accept one this builder drops.
     if (intent.memo !== undefined) {
       throw new UnsupportedCapabilityError(
         'UNSUPPORTED_CAPABILITY',
@@ -466,15 +476,16 @@ export function utxoBuilder(ctx: UtxoContext, network: Network): UtxoBuilder {
 }
 
 /**
- * Twice Bitcoin Core's `MAX_BLOCK_SERIALIZED_SIZE`: no transaction's hex is longer (lesson
- * 20). A flat character class, never a repeated group: V8's regexp stack overflows on a
- * repeated group of a few million matches, which a valid transaction can have.
+ * Twice Bitcoin Core's `MAX_BLOCK_SERIALIZED_SIZE`: no transaction's hex is longer, so
+ * the untrusted text is capped before any decoding. A flat character class, never a
+ * repeated group: V8's regexp stack overflows on a repeated group of a few million
+ * matches, which a valid transaction can have.
  */
 const MAX_TX_HEX = 8_000_000;
 const HEX = /^[0-9a-fA-F]+$/;
 
 /**
- * F3-R24 F1: an Attempt's bytes a node took (accepted, or already holds) are this wallet's
+ * An Attempt's bytes a node took (accepted, or already holds) are this wallet's
  * own sent transaction: its client keeps them. A bare broadcast (no ref) is not an Attempt.
  */
 function rememberOwn(ctx: UtxoContext, signed: SignedTx, hex: string): void {
@@ -503,7 +514,7 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
           ...(options.fanout !== undefined ? { fanout: options.fanout } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
         });
-        // M7: a bare broadcast (no ref) is checked against the bytes' own txid.
+        // A bare broadcast (no ref) is checked against the bytes' own txid.
         const expected =
           signed.ref.id !== ''
             ? signed.ref.id
@@ -521,8 +532,8 @@ export function utxoBroadcaster(ctx: UtxoContext): Broadcaster {
         rememberOwn(ctx, signed, hex);
         return { kind: 'accepted' };
       } catch (error) {
-        // A definitive 400 is bitcoind's answer; anything else is rethrown (R16/R17). Lesson
-        // 21: a rejection stands only when its reason holds for these bytes, checked here.
+        // A definitive 400 is bitcoind's answer; anything else is rethrown. A rejection
+        // stands only when its reason holds for these bytes, checked here.
         if (
           isCryptoAioError(error, 'RPC_ERROR') &&
           !error.ambiguous &&
@@ -603,9 +614,9 @@ export function utxoReplacement(ctx: UtxoContext, network: Network): Replacement
     async buildCancel(previous, build, fee) {
       const sender = senderOf(ctx, build.from);
       const prev = previousOf(scope, previous, sender);
-      // M3: a cancel pays everything back to the sending address itself, never to a
+      // A cancel pays everything back to the sending address itself, never to a
       // configured change address (under `allowExternalChangeAddress` an external one). A
-      // misconfigured change address is still refused here, as on every path (A19).
+      // misconfigured change address is still refused here, as on every path.
       changeOf(scope, build, sender);
       const own = sender.from;
       const total = prev.inputs.reduce((sum, i) => sum + i.value, 0n);

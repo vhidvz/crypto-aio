@@ -160,7 +160,7 @@ describe('background workers', () => {
   });
 });
 
-describe('workers schedule every pass they make (R26)', () => {
+describe('workers schedule every pass they make', () => {
   it('reschedules an operation whose check throws instead of spinning on it', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
@@ -248,7 +248,7 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
     expect(restarted.chain.nonce(restarted.address)).toBe(1n);
   });
 
-  // M9: a quiet wallet (no worker pass, no recovery) is never stuck behind a leaked nonce.
+  // A quiet wallet (no worker pass, no recovery) is never stuck behind a leaked nonce.
   it('reclaims a leaked nonce in the next prepare of a quiet wallet', async () => {
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
     const env = await createFakeEnv({ stores: { operations: faulty } });
@@ -298,7 +298,7 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
     });
     const gaps: AioEvent[] = [];
     env.aio.on('nonce.gap', (e) => gaps.push(e));
-    // M9: the blocked transfer is allocated before the leak (a later prepare reclaims it).
+    // The blocked transfer is allocated before the leak (a later prepare reclaims it).
     veto = false;
     const vetoed = { to: env.stranger(), amount: 1n };
     await env.run(env.bc.prepareTransfer(vetoed, { idempotencyKey: 'vetoed' }));
@@ -341,7 +341,7 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
         env.bc.transfer({ to: env.stranger(), amount: 1n }, { idempotencyKey: 'lost' }),
       ),
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
-    // M9: the blocked transfer is allocated before the leak (a later prepare reclaims it).
+    // The blocked transfer is allocated before the leak (a later prepare reclaims it).
     const blocked = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
     expect((await stored(env, blocked.operationId)).reservation).toEqual({
       kind: 'nonce',
@@ -374,7 +374,7 @@ describe('nonce reconciliation returns leaked values, never a live or consumed o
   });
 });
 
-describe('a lost append keeps its contract (Task 24 review)', () => {
+describe('a lost append keeps its contract', () => {
   it('rethrows the conflict when the stored operation was not signed meanwhile', async () => {
     const operations = new RacingAppendStore();
     const env = await createFakeEnv({ stores: { operations } });
@@ -399,7 +399,7 @@ describe('a lost append keeps its contract (Task 24 review)', () => {
   });
 });
 
-describe('gaps follow the pending nonce; verdicts carry the claim (fix round 1)', () => {
+describe('gaps follow the pending nonce; verdicts carry the claim', () => {
   it('reports no gap while every lower nonce is still pending (congestion)', async () => {
     const env = await createFakeEnv();
     const gaps: AioEvent[] = [];
@@ -433,7 +433,7 @@ describe('gaps follow the pending nonce; verdicts carry the claim (fix round 1)'
   });
 });
 
-describe('fix round 1 minors (M1, M4)', () => {
+describe('workers: lagging endpoints, stale views, aborts and batch sizes', () => {
   it('never releases a consumed nonce when a lagging endpoint under-reports pending', async () => {
     const env = await createFakeEnv();
     const first = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
@@ -501,7 +501,7 @@ describe('fix round 1 minors (M1, M4)', () => {
   });
 });
 
-describe('fix round 2 minors', () => {
+describe('workers: the consumed-nonce floor, wallet history reads and shutdown', () => {
   it('never releases the nonce of a mined revert when a lagging endpoint under-reports pending', async () => {
     const env = await createFakeEnv();
     const first = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
@@ -518,7 +518,11 @@ describe('fix round 2 minors', () => {
     expect(await sequenceOf(env)).toMatchObject({ next: 3n, released: [] });
   });
 
-  it('never releases the nonce of a proven replacement when a lagging endpoint under-reports pending (B113)', async () => {
+  // The floor counts a proven replacement's nonce as consumed. Known gap: reconciliation
+  // still starts from the chain's pending nonce, so while an endpoint lags it can reclaim
+  // a value that only a transaction outside this namespace's records consumed; a
+  // transfer that reuses it fails, and nothing is paid twice.
+  it('never releases the nonce of a proven replacement when a lagging endpoint under-reports pending', async () => {
     const key = secp256k1.utils.randomPrivateKey();
     const env = await createFakeEnv({
       signer: localSigner({ id: 'hot', secp256k1: secret(key) }),
@@ -591,7 +595,7 @@ describe('fix round 2 minors', () => {
   });
 });
 
-describe('reconciliation fences out a stale prepared write (R29)', () => {
+describe('reconciliation fences out a stale prepared write', () => {
   it('never lets a paused prepared write land on a nonce reconciliation released', async () => {
     const operations = new GatedUpdateStore();
     const { signer, signed } = recordingSigner();
@@ -650,7 +654,7 @@ describe('reconciliation fences out a stale prepared write (R29)', () => {
   });
 });
 
-describe('monitoring is signer-free (R32)', () => {
+describe('monitoring is signer-free', () => {
   it('takes an in-flight operation to final after its signer id is rotated out of config', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
@@ -756,7 +760,7 @@ describe('monitoring is signer-free (R32)', () => {
   });
 });
 
-describe('resends carry the pass signal (M8)', () => {
+describe('resends carry the pass signal', () => {
   it('passes the pass signal to the rebroadcast of a dropped attempt', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
@@ -769,7 +773,8 @@ describe('resends carry the pass signal (M8)', () => {
       await env.run(env.aio.monitor.runOnce({ workerId: 'w', signal: ctl.signal })),
     ).toBe(1);
     expect(signals).toHaveLength(1);
-    // N3: the pass runs under the caller's signal combined with the container's `closing`.
+    // The pass runs under the caller's signal combined with the container's `closing`,
+    // so the root's `close()` stops it too.
     expect(signals[0]?.aborted).toBe(false);
     ctl.abort();
     expect(signals[0]?.aborted).toBe(true);

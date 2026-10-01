@@ -1,11 +1,11 @@
 /**
  * Esplora transactions as `DriverTransaction`s (SDK-free). Every output whose script has an
- * address is a `vout:<n>` transfer from the input addresses (spec §6.6); an output this
+ * address is a `vout:<n>` transfer from the input addresses; an output this
  * library cannot name that carries value (a future witness version, a bare script) makes the
  * decoding `partial`. Addresses are derived from the scripts, never taken from the server's
  * `scriptpubkey_address`, which a server could leave out (making a deposit `partial`) or
  * change (crediting another address). A Bitcoin transaction that is in a block has executed:
- * `success` is `true` (lesson 15: general decoding reports the chain as it is).
+ * `success` is `true` (general decoding reports the chain as it is).
  */
 import type {
   DriverTransaction,

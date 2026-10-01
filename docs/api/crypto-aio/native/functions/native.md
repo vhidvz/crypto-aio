@@ -14,7 +14,7 @@ instance the drivers use, so mutating it cannot affect other handles or tenants,
 reachable only through this function (not through the handle, `JSON` or `inspect`). The
 library name must match the handle's (`INCOMPATIBLE_SELECTION` otherwise).
 
-R34: the root container's `close()` releases every client handed out here; after it,
+The root container's `close()` releases every client handed out here; after it,
 `native()` fails with `INVALID_TRANSITION`, as the handle's own methods do.
 
 ## Type Parameters

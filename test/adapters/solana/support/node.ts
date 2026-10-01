@@ -1,7 +1,9 @@
 /**
- * A scripted Solana JSON-RPC node for offline tests (test-only, Plan 5 D5). It models what
- * the driver's safety rests on (lesson 8): dense block heights over skipped slots, the
- * `confirmed` head and a `finalized` block `finalizedDepth` heights below it, blockhash
+ * A scripted Solana JSON-RPC node for offline tests. It is test-only: it decodes with
+ * `@solana/web3.js`, so shipping it in `crypto-aio/testing` would make the testing kit
+ * depend on an optional peer. It models what the driver's safety rests on, exactly and
+ * deterministically: dense block heights over skipped slots, the `confirmed` head and a
+ * `finalized` block `finalizedDepth` heights below it, blockhash
  * expiry after `blockhashValidity` blocks, the status cache ("already processed"), fees
  * (5,000 lamports per signature plus `ceil(price × limit / 1e6)`), compute-unit limits,
  * agave's rent-state rule (fee payer included), System transfers, SPL `transferChecked` and
@@ -701,7 +703,7 @@ export class ScriptedSolanaNode {
   /**
    * A blockhash is valid in the block at `height` while its age against that block's
    * PARENT is at most `validity` (agave registers a block's own hash only after its
-   * transactions ran): so a transaction can land up to `lastValidBlockHeight + 1` (I1).
+   * transactions ran): so a transaction can land up to `lastValidBlockHeight + 1`.
    * A simulation (and so a preflight) allows six blocks less (`#simulationAge`).
    */
   #blockhashValid(

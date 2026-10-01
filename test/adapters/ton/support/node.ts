@@ -1,7 +1,9 @@
 /**
- * A scripted toncenter node for offline tests (test-only, D19): API v2 (a liteserver proxy)
- * and API v3 (an indexer) over one simulated chain. It exists to test safety invariants, so
- * it models the rules the driver relies on (lesson 8), each from the contract or node source:
+ * A scripted toncenter node for offline tests: API v2 (a liteserver proxy) and API v3 (an
+ * indexer) over one simulated chain. It is test-only, since it parses messages with
+ * `@ton/core` and `crypto-aio/testing` must not depend on an optional peer. It exists to
+ * test safety invariants, so it models the rules the driver relies on exactly, never more
+ * leniently than the chain, each from the contract or node source:
  * - wallets v4r2 and v5r1: signature over the signing cell hash (front / tail), wallet id,
  *   seqno, `valid_until <= now` refusal, deployment by `StateInit`, seqno committed before
  *   the actions; a v5r1 `internal_signed` request relayed in an internal message, ignored
@@ -12,7 +14,7 @@
  *   while the gas stays charged and nothing bounces; other flags are refused (34);
  * - fee emulation as tonlib's `estimate_fees` runs it: on the endpoint's view, gas bought
  *   with the balance, the wallet's own checks before its accept, a forward fee only for a
- *   run that succeeded (F6-R17);
+ *   run that succeeded;
  * - external messages the chain cannot accept are refused at send time (HTTP 500, with the
  *   liteserver's own texts), checked against the endpoint's own view, and, when state
  *   changed meanwhile, silently never included; one whose balance pays the accept but not
@@ -75,7 +77,7 @@ const SHARD_SETS: Readonly<Record<1 | 2, readonly string[]>> = {
   2: ['4611686018427387904', '-4611686018427387904'],
 };
 
-/** Config param 25 (basechain message prices), as on mainnet (Plan 6 appendix). */
+/** Config param 25 (basechain message prices), as read live from mainnet. */
 export const MSG_PRICES_BOC =
   'te6cckEBAQEAIwAAQuoAAAAAAAEEawAAAAAAQqqrAAAAABoKqqsAAYAAVVVVVXUQ/H0=';
 /** Config param 24 (masterchain message prices), as on mainnet. */
@@ -174,7 +176,7 @@ interface Account {
   jettonWallet?: JettonWallet;
   /** A contract that throws on every inbound internal message. */
   reverter?: boolean;
-  /** It holds an extra currency: a +128+32 destroy leaves it uninitialized (F6-R21). */
+  /** It holds an extra currency: a +128+32 destroy leaves it uninitialized. */
   extraCurrency?: boolean;
   lastLt: bigint;
   lastHash: string;
@@ -211,7 +213,7 @@ interface Tx {
   readonly description: Record<string, unknown>;
   readonly inMsg: Msg;
   readonly outMsgs: readonly Msg[];
-  /** The transaction cell (block.tlb `transaction$0111`): `hash` is its hash (F6-R21). */
+  /** The transaction cell (block.tlb `transaction$0111`): `hash` is its hash. */
   readonly raw: Cell;
   /** The account's previous transaction (0 and zeros at the start of a chain). */
   readonly prevLt: bigint;
@@ -359,7 +361,7 @@ export class ScriptedTonNode {
   }
 
   // ---- scripting ------------------------------------------------------------------------
-  // Every helper keys accounts by the canonical raw address, however a test spells it (M8).
+  // Every helper keys accounts by the canonical raw address, however a test spells it.
 
   fund(address: string, nanograms: bigint): void {
     this.#account(normalizeParam(address)).balance += nanograms;
@@ -395,7 +397,7 @@ export class ScriptedTonNode {
 
   /**
    * Freezes an account (storage debt), as the chain does to an account it cannot charge.
-   * A frozen wallet refuses every message, its deploy `StateInit` included (I3).
+   * A frozen wallet refuses every message, its deploy `StateInit` included.
    */
   freeze(address: string): void {
     this.#account(normalizeParam(address)).status = 'frozen';
@@ -404,7 +406,7 @@ export class ScriptedTonNode {
 
   /**
    * The account holds an extra currency: a +128+32 destroy leaves it uninitialized in the
-   * same chain rather than deleted (transaction.cpp, F6-R21).
+   * same chain rather than deleted (transaction.cpp).
    */
   holdExtraCurrency(address: string): void {
     this.#account(normalizeParam(address)).extraCurrency = true;
@@ -507,7 +509,7 @@ export class ScriptedTonNode {
 
   /**
    * Queues an internal message from any account, delivered with the next block. Its
-   * delivery is the root of its trace (M3).
+   * delivery is the root of its trace.
    */
   inject(
     source: string,
@@ -572,7 +574,7 @@ export class ScriptedTonNode {
     return { hash, hashNorm };
   }
 
-  /** Chain time at `account`: its shard block's time, older than the masterchain's (M2). */
+  /** Chain time at `account`: its shard block's time, older than the masterchain's. */
   #now(account: string): number {
     return Math.floor(this.#clock.now() / 1000) - this.#shardLag(account);
   }
@@ -638,7 +640,7 @@ export class ScriptedTonNode {
    * - the balance pays the import fee before any code runs (`unpack_input_msg`);
    * - a frozen account, or one without code or a matching `StateInit`, runs nothing (its
    *   compute phase is skipped): a frozen wallet is never revived by its deploy `StateInit`,
-   *   which never matches the frozen state's hash (I3);
+   *   which never matches the frozen state's hash;
    * - the wallet code's checks, in its order, until `accept_message` (the liteserver stops
    *   there, so a request its balance cannot finish is still accepted).
    */
@@ -719,7 +721,7 @@ export class ScriptedTonNode {
   }
 
   /**
-   * Records a transaction as the chain does (F6-R21): its cell (block.tlb
+   * Records a transaction as the chain does: its cell (block.tlb
    * `transaction$0111`, transaction.cpp `Transaction::serialize`) links to the account's
    * previous transaction, and the cell's hash names it (`last_trans_hash_ =
    * root->get_hash()`). Without a `traceId`, it is its trace's root, named after itself.
@@ -745,7 +747,7 @@ export class ScriptedTonNode {
     };
     account.lastLt = lt;
     account.lastHash = hash;
-    // N3: an account left non-existing is `account_none` (transaction.cpp `compute_state`:
+    // An account left non-existing is `account_none` (transaction.cpp `compute_state`:
     // uninitialized, not activated, zero balance), which the collator never stores: no chain.
     if (tx.endStatus === 'nonexist') {
       account.lastLt = 0n;
@@ -823,7 +825,7 @@ export class ScriptedTonNode {
    * its own fee. A failed phase sends nothing and leaves the balance; the list stays valid
    * and earlier skips count. +128 carries the whole remaining balance, its fees out of it
    * (`act_rec.mode &= ~1`); +128+32 (`(mode & 0xa0) == 0xa0`) then asks to delete the
-   * account (F6-R21). A flag this node does not model (+16, +64 included) fails the phase
+   * account. A flag this node does not model (+16, +64 included) fails the phase
    * (34), never guessed. Only +16 would bounce an action failure, so none bounces here.
    */
   #actions(account: Account, from: string, requested: readonly Requested[]): Actions {
@@ -892,7 +894,7 @@ export class ScriptedTonNode {
     // The `StateInit` activates the account whatever happens next (transaction.cpp).
     account.status = 'active';
     account.wallet = wallet;
-    // The root of its trace: the trace is named after it, as toncenter's `trace_id` (M3).
+    // The root of its trace: the trace is named after it, as toncenter's `trace_id`.
     const record = (
       totalFees: bigint,
       description: Record<string, unknown>,
@@ -938,7 +940,7 @@ export class ScriptedTonNode {
       // wallet_v5.fc: `commit()` stores the next seqno with an empty action list, then the
       // contract throws 137. transaction.cpp: `success = accepted && committed`, so the
       // compute phase succeeded (with 137), the committed empty list runs, and the
-      // transaction is not aborted (F6-R11).
+      // transaction is not aborted.
       wallet.seqno += 1;
       record(
         fees,
@@ -955,7 +957,7 @@ export class ScriptedTonNode {
     const actions = this.#actions(account, dest, request.messages);
     if (!actions.ok) {
       // The action phase failed: the seqno (c4) and every message roll back, the gas stays
-      // paid, and the same message applies again until it expires (I2).
+      // paid, and the same message applies again until it expires.
       record(
         fees,
         {
@@ -1011,7 +1013,7 @@ export class ScriptedTonNode {
       const back = value - NODE_FEES.internalGas;
       if (back < 0n) {
         // Below the bounce's cost (strictly, transaction.cpp `prepare_bounce_phase`):
-        // `nofunds`, and the value stays here (I1, M7).
+        // `nofunds`, and the value stays here.
         bounce = { type: 'nofunds' };
         return;
       }
@@ -1068,7 +1070,7 @@ export class ScriptedTonNode {
             destroy = actions.destroy === true;
           } else {
             // The action phase failed: the seqno rolls back (no `commit()` here), and with
-            // no +16 nothing bounces, so the relayed value stays at the wallet (F6-R7).
+            // no +16 nothing bounces, so the relayed value stays at the wallet.
             aborted = true;
           }
         }
@@ -1107,7 +1109,7 @@ export class ScriptedTonNode {
       const { master } = jettonIdentity;
       const sender = msg.source as string;
       // The `StateInit` deploys the jetton wallet with its initial data (no jettons), and
-      // that stays whatever the outcome: a later transfer meets the balance check (F6-R7).
+      // that stays whatever the outcome: a later transfer meets the balance check.
       account.status = 'active';
       account.jettonWallet = account.jettonWallet ?? {
         master,
@@ -1153,7 +1155,7 @@ export class ScriptedTonNode {
       account: msg.destination,
       now,
       mcSeqno: seqno,
-      // A delivery is its trace's root when injected (M3): named after itself.
+      // A delivery is its trace's root when injected: named after itself.
       ...(item.root ? {} : { traceId }),
       totalFees: NODE_FEES.internalGas,
       origStatus,
@@ -1238,7 +1240,7 @@ export class ScriptedTonNode {
     try {
       return api === 'v2' ? this.#v2(name, route, request) : this.#v3(route, request);
     } catch (error) {
-      // Each API's own envelope (M6): v2 `{ ok: false, error, code }`, v3 `{ error }`.
+      // Each API's own envelope: v2 `{ ok: false, error, code }`, v3 `{ error }`.
       const message = error instanceof Error ? error.message : String(error);
       const status = error instanceof ParamError ? 422 : 500;
       return api === 'v2'
@@ -1394,7 +1396,7 @@ export class ScriptedTonNode {
           init_data?: string;
         }>();
         const address = normalizeParam(body.address);
-        // The endpoint emulates on its own view of the chain (M6).
+        // The endpoint emulates on its own view of the chain.
         const account = this.#blockAt(name, null).state.get(address);
         const deployed = account?.status === 'active' ? account.wallet : undefined;
         const fees = (gas: bigint, fwd: bigint) =>
@@ -1420,11 +1422,11 @@ export class ScriptedTonNode {
             data: cellOf(body.init_data),
           });
         // No wallet in this view and no usable `StateInit`: no code runs, so nothing is
-        // sent, and toncenter reports the flat gas price (live, F6-R7).
+        // sent, and toncenter reports the flat gas price (seen live).
         if (!wallet) return fees(NODE_FEES.flatGas, 0n);
         // tonlib `Query::estimate_fees` buys the run's gas with the balance
         // (`compute_gas_limits`), and reports `gas_fee` only for an accepted run and
-        // `fwd_fee` only for a successful one (F6-R17). No balance buys no gas.
+        // `fwd_fee` only for a successful one. No balance buys no gas.
         const balance = account?.balance ?? 0n;
         if (balance < NODE_FEES.flatGas) return fees(0n, 0n);
         // The wallet code's own checks run before its accept (`ignore_chksig` skips only the
@@ -1454,7 +1456,7 @@ export class ScriptedTonNode {
       case '/getTransactions': {
         // The liteserver's own list: from the transaction (lt, hash) back along the
         // account's `prev_trans` links, each with its raw cell (`data`), as far as this
-        // endpoint's view holds them (F6-R21).
+        // endpoint's view holds them.
         const address = normalizeParam(q.get('address'));
         const limit = Number(q.get('limit') ?? '10');
         const lt = bigParam(q.get('lt'));
@@ -1490,7 +1492,7 @@ export class ScriptedTonNode {
       }
       case '/sendBocReturnHash': {
         const { boc } = request.json<{ boc: string }>();
-        // Checked against this endpoint's own view (M6), then again at inclusion.
+        // Checked against this endpoint's own view, then again at inclusion.
         const sent = this.#submit(boc, this.#blockAt(name, null).state);
         return ok({
           '@type': 'raw.extMessageInfo',
@@ -1677,7 +1679,7 @@ export class ScriptedTonNode {
       }
       case '/jetton/masters': {
         const address = normalizeParam(q.get('address'));
-        // The indexer knows only what it has indexed (M6).
+        // The indexer knows only what it has indexed.
         const jetton = (this.block(this.indexed) as Block).state.get(address)?.jetton;
         if (!jetton) return { json: { jetton_masters: [], ...book } };
         const content: Record<string, string> = {};
@@ -1693,7 +1695,7 @@ export class ScriptedTonNode {
       }
       case '/metadata': {
         const address = normalizeParam(q.get('address'));
-        // The indexer knows only what it has indexed (M6).
+        // The indexer knows only what it has indexed.
         const jetton = (this.block(this.indexed) as Block).state.get(address)?.jetton;
         return {
           json: jetton?.symbol
@@ -1865,7 +1867,7 @@ function parseTransfer(body: Cell) {
     const queryId = s.loadUintBig(64);
     const amount = s.loadCoins();
     const destination = rawOf(s.loadAddress());
-    // TEP-74 allows `addr_none` here: no excess is returned (M7).
+    // TEP-74 allows `addr_none` here: no excess is returned.
     const response = s.loadMaybeAddress();
     s.loadMaybeRef();
     const forwardAmount = s.loadCoins();

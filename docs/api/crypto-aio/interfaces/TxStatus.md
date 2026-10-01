@@ -67,7 +67,7 @@ Defined in: [src/core/model/transaction.ts:56](https://github.com/vhidvz/crypto-
 Why the transaction did not go through. Present only with `failed`, `refused` or
 `rejected`. It is either a broadcast's refusal or rejection text, or the chain
 driver's text for an on-chain failure. It is a short, fixed text with no addresses,
-amounts or node detail (R24). It is `sensitive` data, so it never appears in events
+amounts or node detail. It is `sensitive` data, so it never appears in events
 or logs.
 
 ***

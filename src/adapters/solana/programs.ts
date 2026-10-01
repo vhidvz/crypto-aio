@@ -1,7 +1,7 @@
 /**
- * Solana program ids, account layouts and the instructions the driver builds, SDK-free (spec
- * §15: "built without `@solana/spl-token`"). Every encoding is checked against a real devnet
- * transaction and `@solana/web3.js`'s own builders (Plan 5 appendix and `codec.test.ts`).
+ * Solana program ids, account layouts and the instructions the driver builds, SDK-free
+ * (built without `@solana/spl-token`). Every encoding is checked against a real devnet
+ * transaction and `@solana/web3.js`'s own builders (`codec.test.ts`).
  */
 import { ValidationError } from '../../core/errors/error';
 import type { SolanaInstruction } from './types';
@@ -29,9 +29,10 @@ export const DEFAULT_INSTRUCTION_COMPUTE_UNITS = 200_000n;
 export const MAX_MEMO_BYTES = 256;
 
 /**
- * DataView and `Uint8Array.of` silently wrap a value that does not fit; we refuse it with a
- * fixed text (lesson 19): `INVALID_AMOUNT` for a u64 (lamports, token amounts and
- * micro-lamports), `INVALID_INTENT` for a u8 (decimals) or a u32 (compute units).
+ * DataView and `Uint8Array.of` silently wrap a value that does not fit (2^64 + 5 lamports
+ * would encode as 5); we refuse it with a fixed text: `INVALID_AMOUNT` for a u64
+ * (lamports, token amounts and micro-lamports), `INVALID_INTENT` for a u8 (decimals) or a
+ * u32 (compute units).
  */
 const outOfRange = (bits: 8 | 32 | 64) =>
   new ValidationError(

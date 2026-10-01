@@ -66,7 +66,7 @@ The forward fees of every outgoing internal message (full `fwd_fee`), counted on
 
 Defined in: [src/adapters/ton/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L67)
 
-Where `forwardFee` comes from (I3): the endpoint's emulation (`fwd_fee`, which follows
+Where `forwardFee` comes from: the endpoint's emulation (`fwd_fee`, which follows
 the real action list), or, when it reports none, config params 24/25.
 
 ***

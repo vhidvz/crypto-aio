@@ -1,9 +1,10 @@
 /**
- * Esplora provider presets (spec §11). Each is registered twice, as an `rpc` provider
+ * Esplora provider presets. Each is registered twice, as an `rpc` provider
  * (blocks, transactions, broadcasts, proofs, fee estimates) and as an `indexer` (address
  * UTXOs, balances, history), because the core requires an `rpc` provider and the UTXO
  * manifest `requiresIndexer`. Only base URLs verified against the operators' own sources
- * are listed (Plan 3 appendix); a preset refuses every other network with `CONFIG_INVALID`.
+ * are listed (Blockstream's `esplora/API.md` and live answers; mempool.space's frontend
+ * source); a preset refuses every other network with `CONFIG_INVALID`.
  * Both services are free and rate limited, so they are marked `production: false`: for
  * production, run your own Esplora and configure it as `{ endpoints: [...] }`.
  */

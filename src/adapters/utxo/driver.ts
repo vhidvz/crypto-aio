@@ -1,6 +1,6 @@
 /**
  * The UTXO driver factory: validated network config, endpoint probes on both transports,
- * and the ports (spec §7). Loaded only by the manifest's `load()`, with bitcoinjs-lib.
+ * and the ports. Loaded only by the manifest's `load()`, with bitcoinjs-lib.
  */
 import type { ChainDriver, DriverContext, DriverFactory } from '../../core/driver/types';
 import { ConfigError } from '../../core/errors/error';
@@ -47,7 +47,8 @@ export const utxoDriverFactory: DriverFactory = {
         'the UTXO driver requires an indexer provider',
       );
     }
-    // M12: both transports, before any traffic.
+    // Both transports, before any traffic: the genesis-hash probe keeps an endpoint of
+    // another network out of the `rpc` reads and the `indexer` reads alike.
     ctx.transport.setProbes(probes(config.genesisHash));
     ctx.indexer.setProbes(probes(config.genesisHash));
     const esplora = new EsploraClient(ctx.transport, ctx.indexer);

@@ -35,7 +35,7 @@ interface Recorded {
   answer?: unknown;
 }
 
-/** Records each call's route, tags, quorum key and answer (R41, R14, M7). */
+/** Records each call's route, tags, quorum key and answer. */
 function recorded(transport: Transport) {
   const calls: Recorded[] = [];
   const proxy: Transport = new Proxy(transport, {
@@ -211,7 +211,7 @@ describe('the toncenter API layer', () => {
     expect(await t.run(t.api.reachedMasterchain(t.node.head + 1, PROOF))).toBe(false);
   });
 
-  it('tags all 22 calls per the ChainDriver table, labels each with a route and keys its facts (R41, M6, M7)', async () => {
+  it('tags all 22 calls per the ChainDriver table, labels each with a route and keys its facts', async () => {
     const t = tonNode();
     t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
     const { wallet, hashNorm } = await withTransfer(t);
@@ -289,9 +289,9 @@ describe('the toncenter API layer', () => {
     ]);
     for (const call of [...rpc.calls, ...indexer.calls]) {
       expect(call.path).toBe(call.route);
-      // A12: every call reads integers exactly (toncenter writes some u64 values as numbers).
+      // Every call reads integers exactly (toncenter writes some u64 values as numbers).
       expect(call.options).toEqual({ ...PROOF, exactIntegers: true });
-      // M6: a default key over the parsed facts reaches the transport; it reads neither the
+      // A default key over the parsed facts reaches the transport; it reads neither the
       // envelope (v2's `@extra`) nor fields the method does not read.
       expect(call.quorumKey).toEqual(expect.any(Function));
       const facts = canonicalJson(call.quorumKey!(call.answer));
@@ -304,7 +304,7 @@ describe('the toncenter API layer', () => {
     expect(rpc.calls.at(-1)?.quorumKey).toBeUndefined();
   });
 
-  it('turns a malformed answer into a retryable PROVIDER_UNAVAILABLE (lesson 6)', async () => {
+  it('turns a malformed answer into a retryable PROVIDER_UNAVAILABLE', async () => {
     const t = tonNode();
     t.node.intercept = (_endpoint, route) =>
       route === '/getMasterchainInfo'
@@ -324,7 +324,7 @@ describe('the toncenter API layer', () => {
     }
   });
 
-  it("reads every masterchain head with the probes' own strict parser (F6-R23 M1)", async () => {
+  it("reads every masterchain head with the probes' own strict parser", async () => {
     const t = tonNode();
     t.node.mine(3);
     const mc = { workchain: -1, shard: '-9223372036854775808', seqno: 42 };
@@ -382,7 +382,7 @@ describe('the toncenter API layer', () => {
             '@type': 'blocks.header',
             id,
             global_id: -3,
-            gen_utime: String(block.genUtime), // M5: a string where toncenter writes a number
+            gen_utime: String(block.genUtime), // a string where toncenter writes a number
             extra: 1,
             prev_blocks: [],
           },
@@ -418,7 +418,7 @@ describe('the toncenter API layer', () => {
     });
   });
 
-  it("attests a caller's predicate across endpoints at different heights (lesson 17)", async () => {
+  it("attests a caller's predicate across endpoints at different heights", async () => {
     const t = tonNode({}, ['a', 'b']);
     t.node.fund(testWallet('v4r2', TESTNET), GRAM);
     t.node.mine(5);
@@ -444,7 +444,7 @@ describe('the toncenter API layer', () => {
     ).resolves.toMatchObject({ status: 'uninitialized' });
   });
 
-  it('keys a trace on every fact a verdict reads, not only its hashes (C1)', async () => {
+  it('keys a trace on every fact a verdict reads, not only its hashes', async () => {
     const t = tonNode({}, ['a', 'b']);
     const { hashNorm } = await withTransfer(t);
     const [tx] = await t.run(t.api.transactionsByMessage(hashNorm, READ));
@@ -473,7 +473,8 @@ describe('the toncenter API layer', () => {
     });
   });
 
-  it('turns a definitive 4xx to a state read into "decide nothing" (M2)', async () => {
+  // TON's negatives come only from attested state, never from an error of any text.
+  it('turns a definitive 4xx to a state read into "decide nothing"', async () => {
     const t = tonNode();
     t.node.intercept = (_endpoint, route) =>
       route === '/getBlockHeader'
@@ -530,7 +531,7 @@ describe('the toncenter API layer', () => {
       expect(await t.run(t.api.transactionsByMessage(hashNorm, READ))).toEqual([]);
       expect(await t.run(t.api.trace(tx!.hash, READ))).toMatchObject({ complete: false });
     }
-    // An indexer that writes no `finality` (absent or null, M7) still needs each
+    // An indexer that writes no `finality` (absent or null) still needs each
     // transaction's masterchain block.
     for (finality of ['finalized', 2, undefined, null]) {
       expect(await t.run(t.api.transactionsByMessage(hashNorm, READ))).toHaveLength(1);
@@ -538,7 +539,7 @@ describe('the toncenter API layer', () => {
     }
   });
 
-  it('reads u64 values that toncenter writes as JSON numbers exactly (A12)', async () => {
+  it('reads u64 values that toncenter writes as JSON numbers exactly', async () => {
     const t = tonNode();
     const huge = '18446744073709551615';
     t.node.intercept = (_endpoint, route) =>
@@ -564,7 +565,7 @@ describe('the toncenter API layer', () => {
     expect(header.id.shard).toBe(MASTERCHAIN_SHARD);
   });
 
-  it('caps untrusted numbers before converting them (lesson 20)', async () => {
+  it('caps untrusted numbers before converting them', async () => {
     const t = tonNode();
     let balance = '';
     let num = '';
@@ -726,7 +727,7 @@ describe('the toncenter API layer', () => {
   ];
 
   it.each(DRIFTS)(
-    'reads a transaction whose %s as malformed, never as a default (I1)',
+    'reads a transaction whose %s as malformed, never as a default',
     async (_drift, change) => {
       const t = tonNode();
       const { tx, json } = await transferJson(t);
@@ -742,7 +743,7 @@ describe('the toncenter API layer', () => {
     },
   );
 
-  it('reads what the chain writes: a skipped compute phase, a storage transaction, a bounce (I1)', async () => {
+  it('reads what the chain writes: a skipped compute phase, a storage transaction, a bounce', async () => {
     const t = tonNode();
     const { tx, json } = await transferJson(t);
     let answer = json;
@@ -769,7 +770,7 @@ describe('the toncenter API layer', () => {
     });
   });
 
-  it('keeps only what a lookup by id asked for: a dropped filter reads as "none yet" (I2)', async () => {
+  it('keeps only what a lookup by id asked for: a dropped filter reads as "none yet"', async () => {
     const t = tonNode();
     const { hashNorm, sent, tx, json } = await transferJson(t);
     const theirs = await indexerBody(t, `/transactions?account=${RECIPIENT}&limit=5`);
@@ -804,7 +805,7 @@ describe('the toncenter API layer', () => {
     ).resolves.toBeNull();
   });
 
-  it('reads amounts as unsigned coins and logical times as u64 (M1)', async () => {
+  it('reads amounts as unsigned coins and logical times as u64', async () => {
     const t = tonNode();
     const { tx, json } = await transferJson(t);
     let account = accountAnswer('0');
@@ -854,7 +855,7 @@ describe('the toncenter API layer', () => {
     ).rejects.toMatchObject(malformedAnswer);
   });
 
-  it('refuses a non-raw address before any request (M2)', async () => {
+  it('refuses a non-raw address before any request', async () => {
     const t = tonNode();
     const served = t.node.served.length;
     const calls: (() => Promise<unknown>)[] = [
@@ -871,7 +872,7 @@ describe('the toncenter API layer', () => {
     expect(t.node.served).toHaveLength(served);
   });
 
-  it('refuses more items than a lookup asked for (M3)', async () => {
+  it('refuses more items than a lookup asked for', async () => {
     const t = tonNode();
     t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'offchain' });
     const { hashNorm, tx, json } = await transferJson(t);
@@ -906,7 +907,7 @@ describe('the toncenter API layer', () => {
     }
   });
 
-  it('holds cells and jetton metadata to their limits (M4)', async () => {
+  it('holds cells and jetton metadata to their limits', async () => {
     const t = tonNode();
     let bytes = '';
     let symbol: unknown = '';
@@ -935,8 +936,8 @@ describe('the toncenter API layer', () => {
         await expect(t.run(call())).rejects.toMatchObject(malformedAnswer);
       }
     }
-    // F6-R13 M4: a symbol that is not one is the token's own data, which every endpoint
-    // agrees on: reported as unreadable (null) for the caller to judge, never retried.
+    // A symbol that is not one is the token's own data, which every endpoint agrees on:
+    // reported as unreadable (null) for the caller to judge, never retried.
     for (const unreadable of ['S'.repeat(257), 7]) {
       symbol = unreadable;
       await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toEqual({
@@ -947,7 +948,7 @@ describe('the toncenter API layer', () => {
     await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toEqual({ symbol });
   });
 
-  it("reads a malformed metadata entry as malformed, and a stranger's as none yet (M5)", async () => {
+  it("reads a malformed metadata entry as malformed, and a stranger's as none yet", async () => {
     const t = tonNode();
     let metadata: Json = {};
     t.node.intercept = (_endpoint, route) =>
@@ -964,7 +965,9 @@ describe('the toncenter API layer', () => {
     );
   });
 
-  it('pages an account on the page as served: a transaction not yet final never ends it (F6-R12)', async () => {
+  // A pager that stopped on the length of a filtered page would end early and miss the
+  // older transactions.
+  it('pages an account on the page as served: a transaction not yet final never ends it', async () => {
     const t = tonNode();
     const { wallet } = await withTransfer(t);
     for (let i = 0; i < 3; i++) {
@@ -1005,7 +1008,7 @@ describe('the toncenter API layer', () => {
     ).rejects.toMatchObject(malformedAnswer);
   });
 
-  it("reads a jetton master's content cell, and one beyond an account state's limits as oversized (lesson 20, F6-R13 M3)", async () => {
+  it("reads a jetton master's content cell, and one beyond an account state's limits as oversized", async () => {
     const t = tonNode();
     t.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
     expect(await t.run(t.api.jettonData(MASTER, READ))).toMatchObject({
@@ -1087,7 +1090,7 @@ describe('the toncenter API layer', () => {
       entry = item;
       await expect(t.run(t.api.tokenInfo(MASTER, READ))).resolves.toBeUndefined();
     }
-    // A name over its limit is left out (F6-R8); decimals may be written as a number.
+    // A name over its limit is left out; decimals may be written as a number.
     entry = {
       token_info: [
         { valid: true, symbol: 'S', name: 'N'.repeat(257), extra: { decimals: 9 } },
@@ -1097,9 +1100,9 @@ describe('the toncenter API layer', () => {
       symbol: 'S',
       decimals: '9',
     });
-    // F6-R13 M4: decimals or a symbol that are not one are the token's own data, which
-    // every endpoint agrees on: reported unreadable (null), for the caller to judge only if
-    // it needs that field; never malformed, which would retry the token forever.
+    // Decimals or a symbol that are not one are the token's own data, which every
+    // endpoint agrees on: reported unreadable (null), for the caller to judge only if it
+    // needs that field; never malformed, which would retry the token forever.
     for (const extra of [
       { decimals: '256' },
       { decimals: -1 },
@@ -1147,7 +1150,7 @@ describe('the toncenter API layer', () => {
     expect(rawOf(`0:${'a'.repeat(100_000)}`)).toBeUndefined();
   });
 
-  it('waits on no real timer (lesson 1)', async () => {
+  it('waits on no real timer', async () => {
     const spy = jest.spyOn(globalThis, 'setTimeout');
     try {
       const t = tonNode();
@@ -1160,7 +1163,10 @@ describe('the toncenter API layer', () => {
   });
 });
 
-describe('the toncenter API layer: authenticated chain reads (F6-R21)', () => {
+// "Not included" rests only on these reads: the wallet's raw liteserver transactions,
+// each hashed locally and hash-linked back from an account state bound to an attested
+// block. An indexer is a positive hint only.
+describe('the toncenter API layer: authenticated chain reads', () => {
   /** Where `match` holds, the node's own answer as `edit` makes it (read past the intercept). */
   function rewrite(
     t: ReturnType<typeof tonNode>,
@@ -1185,7 +1191,7 @@ describe('the toncenter API layer: authenticated chain reads (F6-R21)', () => {
     };
   }
 
-  it('binds a state and a get-method to the block and state they were read at (I2, I3, M7)', async () => {
+  it('binds a state and a get-method to the block and state they were read at', async () => {
     const t = tonNode();
     const { wallet } = await withTransfer(t);
     const head = await t.run(t.api.masterchainHead(MONITOR));
@@ -1222,7 +1228,7 @@ describe('the toncenter API layer: authenticated chain reads (F6-R21)', () => {
     }
   });
 
-  it('reads raw transactions with their cells, capped before decoding (lesson 20)', async () => {
+  it('reads raw transactions with their cells, capped before decoding', async () => {
     const t = tonNode();
     const { wallet } = await withTransfer(t);
     const state = await t.run(t.api.account(wallet, READ));
@@ -1233,7 +1239,7 @@ describe('the toncenter API layer: authenticated chain reads (F6-R21)', () => {
       return undefined;
     };
     const [row] = await t.run(t.api.rawTransactions(wallet, from, 4, PROOF));
-    // N2: a walk may reach old history, which only archive liteservers hold.
+    // A walk may reach old history, which only archive liteservers hold.
     expect(queries.map((q) => q.get('archival'))).toEqual(['true']);
     t.node.intercept = undefined;
     const [deploy] = t.node.transactions();
@@ -1264,7 +1270,7 @@ describe('the toncenter API layer: authenticated chain reads (F6-R21)', () => {
     );
     await refused((rows) => rows.map((r) => ({ ...r, data: 'A'.repeat(100_000) })));
     t.node.intercept = undefined;
-    // A non-raw address is refused before any request (M2).
+    // A non-raw address is refused before any request.
     const served = t.node.served.length;
     await expect(
       t.run(t.api.rawTransactions(FRIENDLY, from, 1, PROOF)),

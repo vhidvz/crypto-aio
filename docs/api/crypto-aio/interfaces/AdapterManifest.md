@@ -2,7 +2,7 @@
 
 # Interface: AdapterManifest
 
-Defined in: [src/core/driver/types.ts:389](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L389)
+Defined in: [src/core/driver/types.ts:395](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L395)
 
 Static metadata (no SDK import) plus a lazy `load()` that `require()`s the driver module.
 
@@ -14,7 +14,7 @@ Static metadata (no SDK import) plus a lazy `load()` that `require()`s the drive
 
 > `readonly` **capabilities**: readonly [`Capability`](../type-aliases/Capability.md)[]
 
-Defined in: [src/core/driver/types.ts:393](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L393)
+Defined in: [src/core/driver/types.ts:399](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L399)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/core/driver/types.ts:393](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **chains**: readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:392](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L392)
+Defined in: [src/core/driver/types.ts:398](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L398)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/core/driver/types.ts:392](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **family**: `string`
 
-Defined in: [src/core/driver/types.ts:390](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L390)
+Defined in: [src/core/driver/types.ts:396](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L396)
 
 ***
 
@@ -44,7 +44,7 @@ Defined in: [src/core/driver/types.ts:390](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **indexerCapabilities?**: readonly [`Capability`](../type-aliases/Capability.md)[]
 
-Defined in: [src/core/driver/types.ts:394](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L394)
+Defined in: [src/core/driver/types.ts:400](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L400)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [src/core/driver/types.ts:394](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **library**: `string`
 
-Defined in: [src/core/driver/types.ts:391](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L391)
+Defined in: [src/core/driver/types.ts:397](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L397)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [src/core/driver/types.ts:391](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **peerDependencies**: readonly [`PeerDependency`](PeerDependency.md)[]
 
-Defined in: [src/core/driver/types.ts:396](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L396)
+Defined in: [src/core/driver/types.ts:402](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L402)
 
 ***
 
@@ -74,7 +74,7 @@ Defined in: [src/core/driver/types.ts:396](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **requiresIndexer?**: `boolean`
 
-Defined in: [src/core/driver/types.ts:395](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L395)
+Defined in: [src/core/driver/types.ts:401](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L401)
 
 ## Methods
 
@@ -84,7 +84,7 @@ Defined in: [src/core/driver/types.ts:395](https://github.com/vhidvz/crypto-aio/
 
 > **load**(): `Promise`\<[`DriverFactory`](DriverFactory.md)\>
 
-Defined in: [src/core/driver/types.ts:397](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L397)
+Defined in: [src/core/driver/types.ts:403](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L403)
 
 #### Returns
 

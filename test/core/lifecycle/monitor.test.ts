@@ -279,7 +279,7 @@ function withHighest(transport: Transport, highest: () => bigint | undefined): T
   });
 }
 
-/** A transport with this effective `maxLagBlocks` and verified height (I2). */
+/** A transport with this effective `maxLagBlocks` and verified height. */
 function withLag(
   transport: Transport,
   maxLagBlocks: number,
@@ -339,7 +339,7 @@ function holdLease(env: FakeEnv) {
 }
 
 describe('monitor: evidence and the monotonic height guard', () => {
-  it("takes its lag tolerance from the transport's effective maxLagBlocks (I2)", async () => {
+  it("takes its lag tolerance from the transport's effective maxLagBlocks", async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
     env.chain.mine();
@@ -439,7 +439,7 @@ describe('monitor: evidence and the monotonic height guard', () => {
     expect((await stored(env, sub.operationId)).state).toBe('included');
   });
 
-  it('orphans an included transaction on a quorum, never on one endpoint serving a fork (R33)', async () => {
+  it('orphans an included transaction on a quorum, never on one endpoint serving a fork', async () => {
     const env = await createFakeEnv({ endpoints: ['liar', 'honest'] });
     const reorgs: AioEvent[] = [];
     env.aio.on('tx.reorged', (e) => reorgs.push(e));
@@ -465,7 +465,7 @@ describe('monitor: evidence and the monotonic height guard', () => {
     expect(reorgs).toEqual([expect.objectContaining({ previousBlockHash: recorded })]);
   });
 
-  it('does not follow one endpoint showing a transaction in another block without a quorum (R33)', async () => {
+  it('does not follow one endpoint showing a transaction in another block without a quorum', async () => {
     const env = await createFakeEnv();
     const reorgs: AioEvent[] = [];
     env.aio.on('tx.reorged', (e) => reorgs.push(e));
@@ -498,7 +498,7 @@ describe('monitor: evidence and the monotonic height guard', () => {
     ).toMatchObject({ state: 'included', blockHash: env.chain.block(1n)?.hash });
   });
 
-  it('never overwrites evidence another writer recorded while it was reading (R25)', async () => {
+  it('never overwrites evidence another writer recorded while it was reading', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
     const { monitor, target } = await monitorOf(env);
@@ -647,7 +647,7 @@ describe('monitor: evidence and the monotonic height guard', () => {
   });
 });
 
-describe('broadcast answers never weaken evidence (R25)', () => {
+describe('broadcast answers never weaken evidence', () => {
   it.each([[[]], [['insufficient funds']]])(
     'never fails an accepted transfer on a later rejection (earlier refusals: %j)',
     async (refusals: string[]) => {
@@ -727,7 +727,7 @@ describe('broadcast answers never weaken evidence (R25)', () => {
   );
 });
 
-describe('read-only calls never race a broadcast (R26)', () => {
+describe('read-only calls never race a broadcast', () => {
   it('lets a status call race the broadcast without failing the transfer', async () => {
     const env = await createFakeEnv();
     const { driver } = await internalsOf(env.bc).pooled();
@@ -779,7 +779,7 @@ describe('read-only calls never race a broadcast (R26)', () => {
   });
 });
 
-describe('the all-rejected verdict runs under the address lease (R26.3)', () => {
+describe('the all-rejected verdict runs under the address lease', () => {
   it('fails the operation and frees its nonce from a monitor pass', async () => {
     const { env, op } = await rejectedButLive();
     await env.run(env.bc.getTransactionStatus(op.id));
@@ -823,7 +823,7 @@ describe('the all-rejected verdict runs under the address lease (R26.3)', () => 
   });
 });
 
-describe('monitor: fix round 1 (I2, I3, M4)', () => {
+describe('monitor: ambiguous sends, unmanaged reverts, and how a deadline or signal bounds a pass', () => {
   it('keeps an ambiguous send live through a refusal, so a later rejection is not terminal', async () => {
     const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
     env.chain.configureEndpoint('main', { acceptThenFail: true });
@@ -965,7 +965,7 @@ describe('monitor: fix round 1 (I2, I3, M4)', () => {
   });
 });
 
-describe('monitor: fix round 2', () => {
+describe('monitor: a read-only pass keeps a signed Operation claimable', () => {
   it('keeps an operation a read-only pass moved out of signed claimable', async () => {
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
     const first = await createFakeEnv({ stores: { operations: faulty } });
@@ -1001,7 +1001,7 @@ describe('monitor: fix round 2', () => {
   });
 });
 
-describe('monitor: the all-rejected verdict from read-only passes (fix round 2)', () => {
+describe('monitor: the all-rejected verdict from read-only passes', () => {
   it("bounds the lease wait by the caller's deadline and signal", async () => {
     const { env, op } = await rejectedButLive();
     await holdLease(env);
@@ -1029,7 +1029,7 @@ describe('monitor: the all-rejected verdict from read-only passes (fix round 2)'
     const { log, warnings } = capturingLogger();
     const { env, op } = await rejectedButLive({ aio: { logger: log } });
     await holdLease(env);
-    // Fix round 3: a call without a signal tries the lease once instead of waiting it out.
+    // A call without a signal tries the lease once instead of waiting it out.
     const started = env.clock.now();
     expect(await env.run(env.bc.getTransactionStatus(op.id))).toMatchObject({
       state: 'rejected',
@@ -1067,7 +1067,7 @@ describe('monitor: the all-rejected verdict from read-only passes (fix round 2)'
   });
 });
 
-describe('monitor: fix round 3', () => {
+describe('monitor: an ambiguous broadcast stays possibly live when a claim races it', () => {
   it('records an ambiguous broadcast as possibly live even when a claim races its update', async () => {
     const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
     const { driver } = await internalsOf(env.bc).pooled();
@@ -1109,8 +1109,8 @@ describe('monitor: fix round 3', () => {
   });
 });
 
-describe('monitor: fix round 4', () => {
-  it('revives a refused attempt as possibly live after an ambiguous resend (R25)', async () => {
+describe('monitor: a refused Attempt resent ambiguously, and the lease on unfenced passes', () => {
+  it('revives a refused attempt as possibly live after an ambiguous resend', async () => {
     const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
     const intent = { to: env.stranger(), amount: 3n };
     env.chain.configureEndpoint('main', { refuseNext: 'insufficient funds' });
@@ -1168,7 +1168,7 @@ describe('monitor: fix round 4', () => {
   });
 });
 
-describe('failure reasons (A9, P6-2)', () => {
+describe('failure reasons', () => {
   /** The handle's driver, with a fixed reason on every failed observation and proof. */
   function withReasons(target: ReadTarget): ReadTarget {
     const { reader, proofs } = target.pooled.driver;
@@ -1226,7 +1226,7 @@ describe('failure reasons (A9, P6-2)', () => {
       state: 'failed',
       reason: 'transfer bounced',
     });
-    // A9: reasons are stored as sensitive data and never emitted.
+    // Reasons are stored as sensitive data and never emitted.
     expect(DATA_CLASSIFICATION.observation.reason).toBe('sensitive');
     const emitted = JSON.stringify(events, (_key, value: unknown) =>
       typeof value === 'bigint' ? value.toString() : value,
@@ -1252,7 +1252,7 @@ describe('failure reasons (A9, P6-2)', () => {
     expect(observation?.reason).toBeUndefined();
   });
 
-  it('clears a refusal reason once the transaction is proven final (M8)', async () => {
+  it('clears a refusal reason once the transaction is proven final', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
     env.chain.dropFromMempool(sub.attempt?.id ?? '');
@@ -1280,7 +1280,7 @@ describe('failure reasons (A9, P6-2)', () => {
     ).toBeUndefined();
   });
 
-  it('clears a refusal reason once a rebroadcast is accepted, before any monitor pass (P25-R14)', async () => {
+  it('clears a refusal reason once a rebroadcast is accepted, before any monitor pass', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
     env.chain.dropFromMempool(sub.attempt?.id ?? '');
@@ -1304,7 +1304,7 @@ describe('failure reasons (A9, P6-2)', () => {
     expect(observation?.reason).toBeUndefined();
   });
 
-  it('clears a failure reason when a reorg takes the transaction out of its block (M8)', async () => {
+  it('clears a failure reason when a reorg takes the transaction out of its block', async () => {
     const env = await createFakeEnv();
     const sub = await env.run(env.bc.transfer({ to: REVERT_ADDRESS, amount: 5n }));
     const { monitor, target } = await monitorOf(env);
@@ -1326,7 +1326,7 @@ describe('failure reasons (A9, P6-2)', () => {
     expect(after?.reason).toBeUndefined();
   });
 
-  it('clears a refusal reason once an ambiguous rebroadcast revives the Attempt (P25-R15 I1)', async () => {
+  it('clears a refusal reason once an ambiguous rebroadcast revives the Attempt', async () => {
     const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
     const sub = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
     env.chain.dropFromMempool(sub.attempt?.id ?? '');
@@ -1354,7 +1354,7 @@ describe('failure reasons (A9, P6-2)', () => {
     expect(status?.reason).toBeUndefined();
   });
 
-  it('keeps a refusal reason while the Attempt is refused, and clears it once its bytes are mined (P25-R15 M1)', async () => {
+  it('keeps a refusal reason while the Attempt is refused, and clears it once its bytes are mined', async () => {
     const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
     env.chain.configureEndpoint('main', { acceptThenFail: true });
     const intent = { to: env.stranger(), amount: 3n };
@@ -1390,7 +1390,7 @@ describe('failure reasons (A9, P6-2)', () => {
     expect(final?.reason).toBeUndefined();
   });
 
-  it('clears a refusal reason when the winner proves the Attempt replaced (P25-R15 M2)', async () => {
+  it('clears a refusal reason when the winner proves the Attempt replaced', async () => {
     const env = await createFakeEnv({ chain: { minFee: 10n } });
     await expect(
       env.run(
@@ -1439,7 +1439,7 @@ describe('failure reasons (A9, P6-2)', () => {
     expect(observation?.reason).toBeUndefined();
   });
 
-  it('reports an unmanaged transaction reason only when it failed (P25-R15 M3)', async () => {
+  it('reports an unmanaged transaction reason only when it failed', async () => {
     const env = await createFakeEnv();
     const key = secp256k1.utils.randomPrivateKey();
     const from = fakeAddress(secp256k1.getPublicKey(key, true));

@@ -68,7 +68,7 @@ function setup(version: 'v4r2' | 'v5r1' = 'v4r2', endpoints?: readonly string[])
   });
   const intent = (patch: Partial<DriverIntent> = {}): DriverIntent => ({
     asset: 'native',
-    // The codec's variant holds the bounce flag only (P25-R13).
+    // The codec's variant holds the bounce flag only.
     outputs: [{ to: FRESH, amount: GRAM, variant: { bounceable: false } }],
     from,
     fee: 'normal',
@@ -199,7 +199,7 @@ describe('the TON builder', () => {
     expect(s.h.node.balance(FRESH)).toBe(GRAM);
   });
 
-  it('refuses a wallet identity that does not derive the sender, before any I/O (lesson 5)', async () => {
+  it('refuses a wallet identity that does not derive the sender, before any I/O', async () => {
     const s = setup();
     const before = s.h.node.served.length;
     await expect(
@@ -254,7 +254,7 @@ describe('the TON builder', () => {
     expect(s.h.node.served.length).toBe(before);
   });
 
-  it('refuses a recipient variant other than { bounceable } before any I/O (P25-R13)', async () => {
+  it('refuses a recipient variant other than { bounceable } before any I/O', async () => {
     const s = setup();
     const before = s.h.node.served.length;
     for (const variant of [
@@ -305,7 +305,7 @@ describe('the TON builder', () => {
     ]);
   });
 
-  it('refuses an undeployed wallet at an allocated seqno past 0, retryably (I6)', async () => {
+  it('refuses an undeployed wallet at an allocated seqno past 0, retryably', async () => {
     const s = setup();
     s.h.node.fund(s.from, 2n * GRAM);
     const fee = await s.h.run(s.builder.estimateFee(s.intent(), s.build()));
@@ -420,7 +420,7 @@ describe('the TON builder', () => {
   });
 });
 
-describe("the TON builder: the Attempt's ordering is the signed request's own (final review M1)", () => {
+describe("the TON builder: the Attempt's ordering is the signed request's own", () => {
   it('assembles only an ordering with the signed seqno, lifetime and a well-formed recorded start', async () => {
     for (const version of ['v4r2', 'v5r1'] as const) {
       const s = setup(version);
@@ -479,7 +479,10 @@ describe("the TON builder: the Attempt's ordering is the signed request's own (f
     ).rejects.toMatchObject({ code: 'SIGNING_FAILED' });
   });
 
-  it('remembers the assembled message as not sent yet, and a repeat never clears a send (F6-R34)', async () => {
+  // The `Broadcaster` port carries only the bytes and the ref, so `assemble` records what
+  // the replay guard needs per message hash: when the lifetime began, when the message
+  // was assembled, and whether it was sent.
+  it('remembers the assembled message as not sent yet, and a repeat never clears a send', async () => {
     const s = setup();
     s.h.node.fund(s.from, GRAM);
     const { unsigned, signed } = await s.prepare(s.intent());
@@ -623,7 +626,7 @@ describe('the TON builder: the signed message is exactly the intent', () => {
           message: expect.stringContaining('does not match the intent'),
         });
       }
-      // M1: a custom payload the jetton wallet would hand to its own code.
+      // A custom payload the jetton wallet would hand to its own code.
       spy.mockImplementation((args) => {
         const message = original(args);
         const rest = message.body.beginParse();
@@ -651,7 +654,7 @@ describe('the TON builder: the signed message is exactly the intent', () => {
   });
 
   it.each(['v4r2', 'v5r1'] as const)(
-    'binds the %s send mode exactly: a request that could spend more is never handed out (M1)',
+    'binds the %s send mode exactly: a request that could spend more is never handed out',
     async (version) => {
       const s = setup(version);
       s.h.node.fund(s.from, 5n * GRAM);
@@ -685,7 +688,7 @@ describe('the TON builder: the signed message is exactly the intent', () => {
     },
   );
 
-  it('binds no extra currencies and no StateInit on the internal message (M1)', async () => {
+  it('binds no extra currencies and no StateInit on the internal message', async () => {
     const s = setup();
     s.h.node.fund(s.from, 5n * GRAM);
     const i = s.intent();
@@ -757,7 +760,7 @@ describe('the TON broadcaster', () => {
       { encoding: 'base64' as const, data: 'bm90IGEgYm9j' },
       { encoding: 'hex' as const, data: 'ab' },
       { encoding: 'base64' as const, data: notExternal },
-      // Lesson 20: refused from the header, never decoded.
+      // Refused from the header, never decoded.
       { encoding: 'base64' as const, data: `te6cc${'A'.repeat(100_000)}` },
     ]) {
       expect(
@@ -775,7 +778,9 @@ describe('the TON broadcaster', () => {
     expect(s.h.node.served.length).toBe(before);
   });
 
-  it("rethrows toncenter's HTTP 500 refusal unclassified and ambiguous (D16)", async () => {
+  // toncenter answers every refused message with HTTP 500. Such an Attempt ends
+  // `expired`, proven, once its lifetime has passed, and the caller rebuilds.
+  it("rethrows toncenter's HTTP 500 refusal unclassified and ambiguous", async () => {
     const s = setup();
     s.h.node.fund(s.from, GRAM);
     // Deployed at seqno 0: a message at seqno 5 is refused when sent (33), as HTTP 500.
@@ -784,7 +789,7 @@ describe('the TON broadcaster', () => {
       publicKey: PK,
       walletId: WALLET_IDS.v4r2.basechain,
     });
-    // The emulation runs the wallet's own checks (F6-R17): estimate at its seqno.
+    // The emulation runs the wallet's own checks: estimate at its seqno.
     const fee = await s.h.run(s.builder.estimateFee(s.intent(), s.build()));
     const signed = await s.sign(
       await s.h.run(s.builder.build(s.intent(), fee, s.build(5n))),
@@ -852,7 +857,7 @@ describe('the TON broadcaster', () => {
     expect(await s.h.run(s.broadcaster.broadcast(signed))).toEqual({
       kind: 'already-known',
     });
-    // The brief's invented texts are no answer the chain gives: a plain refusal.
+    // Plausible texts that are no answer the chain gives: a plain refusal.
     for (const text of [
       'External message was not accepted: exitcode=33',
       'duplicate external message',
@@ -866,7 +871,7 @@ describe('the TON broadcaster', () => {
     }
   });
 
-  it('rethrows a "not now" node answer as retryable and ambiguous, never a refusal (F6-R10)', async () => {
+  it('rethrows a "not now" node answer as retryable and ambiguous, never a refusal', async () => {
     const s = setup();
     s.h.node.fund(s.from, GRAM);
     const { signed } = await s.prepare(s.intent());
@@ -889,7 +894,8 @@ describe('the TON broadcaster', () => {
   it('rethrows 429, 408, 5xx and timeouts unclassified: the ambiguous path', async () => {
     type Reply = (signal: AbortSignal | undefined) => FakeReply | Promise<FakeReply>;
     const replies: readonly (readonly [Reply, Record<string, unknown>])[] = [
-      // Never processed (R16): the transport says so, and nothing is classified.
+      // Never processed (a 429 means the request was not delivered): the transport says
+      // so, and nothing is classified.
       [() => nodeError(429, 'Ratelimit exceed'), { code: 'RATE_LIMITED' }],
       [
         () => nodeError(408, 'timeout'),
@@ -915,7 +921,7 @@ describe('the TON broadcaster', () => {
     }
   }, 30_000);
 
-  it('never classifies a 4xx after an attempt that may have been delivered (D16)', async () => {
+  it('never classifies a 4xx after an attempt that may have been delivered', async () => {
     const s = setup();
     s.h.node.fund(s.from, GRAM);
     const { signed } = await s.prepare(s.intent());
@@ -937,7 +943,7 @@ describe('the TON broadcaster', () => {
     }
   });
 
-  it('logs a node that reports another message hash by code only (D12)', async () => {
+  it('logs a node that reports another message hash by code only', async () => {
     const s = setup();
     s.h.node.fund(s.from, GRAM);
     const { signed } = await s.prepare(s.intent());
@@ -959,7 +965,7 @@ describe('the TON broadcaster', () => {
 });
 
 describe('the TON builder: fees, chain time and jetton wallets', () => {
-  it("counts each forward fee once: the emulation's, or the config's when it reports less (I3)", async () => {
+  it("counts each forward fee once: the emulation's, or the config's when it reports less", async () => {
     const s = setup();
     s.h.node.fund(s.from, 3n * GRAM);
     const params: (string | undefined)[] = [];
@@ -1008,7 +1014,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     expect(params).toEqual(['25', '25']);
   });
 
-  it('prices forward fees by config param 24 when the masterchain is involved (D13)', async () => {
+  it('prices forward fees by config param 24 when the masterchain is involved', async () => {
     const s = setup();
     const params: (string | undefined)[] = [];
     const http = s.h.rpc.http.bind(s.h.rpc);
@@ -1038,7 +1044,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     const intercepts = [
       // A valid cell that holds no message prices (config param 19's).
       beginCell().storeInt(-3, 32).endCell().toBoc().toString('base64'),
-      // A header that declares more cells than a message may hold (lesson 20).
+      // A header that declares more cells than a message may hold.
       Buffer.from([0xb5, 0xee, 0x9c, 0x72, 0x02, 0x02, 0x40, 0x00]).toString('base64'),
     ];
     for (const bytes of intercepts) {
@@ -1052,7 +1058,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     }
   });
 
-  it('refuses an emulation that did not run the transfer, never an expected draft (Task 6 review)', async () => {
+  it('refuses an emulation that did not run the transfer, never an expected draft', async () => {
     const s = setup();
     s.h.node.fund(s.from, 5n * GRAM);
     // Deploying with its `StateInit`: every emulation must run the wallet and its message.
@@ -1090,7 +1096,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     });
   });
 
-  it('answers a sender that cannot pay through the funds path, never a provider fault (I1)', async () => {
+  it('answers a sender that cannot pay through the funds path, never a provider fault', async () => {
     /** tonlib buys the emulated gas with the balance: an unfunded run emulates to nothing. */
     const shortfall = async (
       s: ReturnType<typeof setup>,
@@ -1134,7 +1140,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     expect(BigInt(needs.required)).toBeGreaterThan(50_000_000n);
   });
 
-  it('keeps a zero emulation a provider fault while the balance pays the known minimum (I1)', async () => {
+  it('keeps a zero emulation a provider fault while the balance pays the known minimum', async () => {
     const cases = [
       ['native', 1_000n],
       ['jetton', 50_000_000n],
@@ -1151,8 +1157,8 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
               outputs: [{ to: FRESH, amount: 400n }],
             });
       const normal = await s.h.run(s.builder.estimateFee(i, s.build()));
-      // The config's forward fee equals the node's emulated one here; F6-R19: plus the
-      // config's flat gas price (param 21).
+      // The config's forward fee equals the node's emulated one here, plus the config's
+      // flat gas price (param 21).
       const minimum =
         value +
         (normal.details as { forwardFee: bigint }).forwardFee +
@@ -1183,7 +1189,10 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it("counts the config's flat gas price in the least a transfer needs, and holds it to the ceiling (F6-R19, F6-R20)", async () => {
+  // The gas floor is `flat_gas_price` alone (param 21 basechain, 20 masterchain):
+  // `flat_gas_limit × flat_gas_price` would overstate it about 100 times and refuse
+  // wallets that can pay.
+  it("counts the config's flat gas price in the least a transfer needs, and holds it to the ceiling", async () => {
     /** An emulation that ran nothing; config params 20/21 as `gas` gives them, else honest. */
     const answer = (s: ReturnType<typeof setup>, gas?: string) => {
       s.h.node.intercept = (_e, route, request) =>
@@ -1253,7 +1262,10 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     }
   });
 
-  it("never takes one endpoint's config forward fee above the ceiling for a shortfall (F6-R20)", async () => {
+  // One endpoint inflating config param 25 must not fail a funded wallet's Operation for
+  // good: a forward fee above the ceiling is a retryable PROVIDER_INCONSISTENT, checked
+  // before the balance.
+  it("never takes one endpoint's config forward fee above the ceiling for a shortfall", async () => {
     /** Config param 25 whose lump price is the whole forward fee of a message without body. */
     const prices = (lump: bigint) =>
       beginCell()
@@ -1288,8 +1300,8 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
         ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
       }
     }
-    // At exactly the ceiling the config's fees count (the forward fee and, F6-R19, the flat
-    // gas price): a wallet below the amount plus them is short of funds, one above is not.
+    // At exactly the ceiling the config's fees count (the forward fee and the flat gas
+    // price): a wallet below the amount plus them is short of funds, one above is not.
     const flat = NODE_FEES.flatGasPrice;
     const poor = setup();
     poor.h.node.fund(poor.from, GRAM + ceiling - 1n);
@@ -1336,7 +1348,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it("bounds a masterchain wallet by its own ceiling, and takes the network's override (M3)", async () => {
+  it("bounds a masterchain wallet by its own ceiling, and takes the network's override", async () => {
     const s = setup();
     const mc = TEST_WALLETS.v4r2.masterchain;
     s.h.node.fund(mc, 3n * GRAM);
@@ -1384,7 +1396,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     );
   });
 
-  it('refuses a chain time far from the local clock (M3)', async () => {
+  it('refuses a chain time far from the local clock', async () => {
     const s = setup();
     s.h.node.fund(s.from, GRAM);
     const fee = await s.h.run(s.builder.estimateFee(s.intent(), s.build()));
@@ -1417,7 +1429,10 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     });
   });
 
-  it("records the build's chain time with the lifetime, never later than the local clock (F6-R29)", async () => {
+  // The proofs look for the seqno's consumer from `validFrom` on, so it must be no later
+  // than the message could first run: a later start could miss an earlier run and prove
+  // "not included" falsely.
+  it("records the build's chain time with the lifetime, never later than the local clock", async () => {
     const s = setup();
     s.h.node.fund(s.from, GRAM);
     const fee = await s.h.run(s.builder.estimateFee(s.intent(), s.build()));
@@ -1443,7 +1458,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
       };
     };
     // An endpoint ahead of the clock sets the lifetime, but not when the message began:
-    // it may run as soon as it is signed (review N1).
+    // it may run as soon as it is signed.
     skewed(CHAIN_TIME_TOLERANCE - 10);
     expect(await built()).toMatchObject({
       validUntil: now + CHAIN_TIME_TOLERANCE - 10 + 60,
@@ -1477,7 +1492,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
   });
 
-  it('sends jettons to the wallet the proof quorum named (I5)', async () => {
+  it('sends jettons to the wallet the proof quorum named', async () => {
     const s = setup();
     s.h.node.fund(s.from, 2n * GRAM);
     s.h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
@@ -1500,7 +1515,7 @@ describe('the TON builder: fees, chain time and jetton wallets', () => {
     );
   });
 
-  it('decides nothing while the proof quorum disagrees on the jetton wallet (I5)', async () => {
+  it('decides nothing while the proof quorum disagrees on the jetton wallet', async () => {
     const s = setup('v4r2', ['a', 'b']);
     s.h.node.fund(s.from, 2n * GRAM);
     s.h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });

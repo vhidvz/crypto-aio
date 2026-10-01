@@ -1,8 +1,8 @@
 /**
  * TON addresses, reads, seqnos, jetton lookups and the `ext.ton` API. Every call carries the
  * tags of the `ChainDriver` contract table (`src/core/driver/types.ts`): `read` for point
- * queries, `monitor` for heights, observations and seqnos (R41). Jetton metadata, which the
- * core caches for the container's life, is a `read` under the proof quorum (M4, board).
+ * queries, `monitor` for heights, observations and seqnos. Jetton metadata, which the
+ * core caches for the container's life, is a `read` under the proof quorum.
  */
 import { Cell, Dictionary, type Transaction } from '@ton/core';
 import { createHash } from 'node:crypto';
@@ -71,9 +71,10 @@ import { requestIsOwn, resolveIdentity, walletAddress } from './wallets';
 
 /**
  * What every TON port is built from. Drivers are shared: the caches hold only immutable
- * chain data, values the proof quorum attested (I5) or transactions bound to their own hash
+ * chain data, values the proof quorum attested or transactions bound to their own hash
  * (`chainTxs`); a single `read` or `monitor` answer is used once and never cached. The one
- * record of anything else is `assembled` (F6-R34): what this driver itself built and sent.
+ * record of anything else is `assembled`, for the replay guard: what this driver itself
+ * built and sent.
  */
 export interface TonContext {
   readonly api: TonApi;
@@ -88,26 +89,28 @@ export interface TonContext {
   /** jetton wallet → its owner and master, verified under the quorum. */
   readonly verified: Map<string, VerifiedJettonWallet>;
   /**
-   * F6-R34, F5-R20: wallet transactions the chain walk authenticated, by `lt:hash`. A
+   * Wallet transactions the chain walk authenticated, by `lt:hash`. A
    * transaction is immutable and its cell hashes to its id, so a kept one is as good as one
    * fetched again; each walk fetches only what it has not seen (bounded, `CHAIN_MEMO`).
    */
   readonly chainTxs: Map<string, Transaction>;
   /**
-   * F6-R34: the external messages this driver assembled, by TEP-467 hash: the build's
-   * recorded chain time (the `Broadcaster` port carries only the bytes) and whether they
-   * were ever handed to a send (bounded, `ASSEMBLED_MEMO`).
+   * The external messages this driver assembled, by TEP-467 hash: the build's recorded
+   * chain time and whether they were ever handed to a send (bounded, `ASSEMBLED_MEMO`).
+   * Known gap: the `Broadcaster` port carries only the bytes, never the Attempt's
+   * ordering, so the replay guard keeps this memo; bytes this driver did not assemble, or
+   * has evicted, are guarded with the widest window (one day).
    */
   readonly assembled: Map<string, AssembledMessage>;
 }
 
-/** What `assemble` recorded about a message it made (F6-R34). */
+/** What `assemble` recorded about a message it made. */
 export interface AssembledMessage {
   /** `TonSeqnoOrdering.validFrom`, as the ordering bound to the signed bytes holds it. */
   readonly validFrom: number;
   /**
    * The driver's clock when `assemble` ran, in ms: a first send skips the replay guard only
-   * within `FIRST_SEND_MS` of it (final-wave re-review N1).
+   * within `FIRST_SEND_MS` of it.
    */
   readonly assembledAt: number;
   /** Set before the first send; never cleared. */
@@ -121,7 +124,7 @@ export const MEMO_TX_LENGTH = 16_384;
 /** The most assembled messages a driver remembers; an evicted one is guarded as foreign. */
 export const ASSEMBLED_MEMO = 4_096;
 
-/** Keeps `value` in a bounded memo, dropping the oldest entry beyond `size` (F5-R20). */
+/** Keeps `value` in a bounded memo, dropping the oldest entry beyond `size`. */
 export function keep<K, V>(memo: Map<K, V>, key: K, value: V, size: number): void {
   memo.set(key, value);
   if (memo.size > size) memo.delete(memo.keys().next().value as K);
@@ -156,7 +159,7 @@ const notYet = (reason: string) =>
   new ProviderError('PROVIDER_UNAVAILABLE', reason, { retryable: true });
 
 /**
- * F6-R30 (1): metadata the indexer does not have, for a token read anywhere (`jettonMetadata`):
+ * Metadata the indexer does not have, for a token read anywhere (`jettonMetadata`):
  * non-retryable, so the core reports a transfer of it unresolved instead of failing the
  * read, and not `ASSET_RESOLUTION`, so the core never caches it.
  */
@@ -164,14 +167,14 @@ const unresolvable = (reason: string) =>
   new ProviderError('PROVIDER_UNAVAILABLE', reason, { retryable: false });
 
 /**
- * M4 (the board's "token metadata under proof quorum"): the core caches a token's metadata,
+ * The core caches a token's metadata,
  * and its "no such token", for the container's life, so one lagging or buggy endpoint must
  * never decide it. Balances stay plain reads.
  */
 const METADATA: TonCallTags = { ...READ, quorum: 'proof' };
 
 /**
- * Lesson 13: a token's own failure (a missing account, a TVM exit code, content that does
+ * A token's own failure (a missing account, a TVM exit code, content that does
  * not parse) is `ASSET_RESOLUTION`; `PROVIDER_MISCONFIGURED` and already retryable errors
  * propagate unchanged; any other definitive node answer is made retryable.
  */
@@ -209,7 +212,7 @@ function namedWallet(result: RunResult): string | null {
 }
 
 /**
- * Lesson 2: what endpoints must agree on for `get_wallet_address`: the exit code and the
+ * What endpoints must agree on for `get_wallet_address`: the exit code and the
  * address it names, never the slice's serialization. It never throws: an answer that does
  * not parse is itself a fact, which the parse then refuses (retryable).
  */
@@ -224,7 +227,7 @@ function walletAddressKey(body: unknown): unknown {
 
 /**
  * The jetton wallet `master` assigns to `owner` (`get_wallet_address`), at masterchain
- * block `block` when given. Cached only when the proof quorum attested it (I5): the builder
+ * block `block` when given. Cached only when the proof quorum attested it: the builder
  * sends jettons to it and the verdict checks it, so one endpoint's answer must never stick.
  * Under a quorum the endpoints agree on the address itself (`walletAddressKey`).
  */
@@ -281,15 +284,15 @@ export async function jettonBalance(
 }
 
 /**
- * What the get-methods at masterchain block `block` say about a jetton wallet (D14):
+ * What the get-methods at masterchain block `block` say about a jetton wallet:
  * - `verified`: it names an owner and a master, and that master names it for that owner;
  * - `foreign`: it names an owner and a master that parse, and that master names another
  *   wallet for that owner: positive evidence that it is not the master's;
  * - `unknown`: no evidence either way. `get_wallet_data` exited with `exitCode` (toncenter
- *   answers -13 for an account it holds no state for at that block, I1), or named no owner
+ *   answers -13 for an account it holds no state for at that block), or named no owner
  *   or master that parses, or the master named no wallet.
  * Both get-methods run at `block`, one at which the wallet had already run a transaction
- * (lesson 17: a fact at its own height): an endpoint that lags behind it refuses
+ * (a fact at its own height): an endpoint that lags behind it refuses
  * (retryable), where a read at its own head would take a wallet it has not seen yet for a
  * fake. Cached once verified under the quorum.
  */
@@ -298,7 +301,7 @@ export type JettonWalletFacts =
   | { readonly kind: 'foreign' }
   | { readonly kind: 'unknown'; readonly exitCode?: number };
 
-/** toncenter's exit code for an account it holds no state for at the block asked (I1). */
+/** toncenter's exit code for an account it holds no state for at the block asked. */
 export const NO_STATE_EXIT = -13;
 
 export async function jettonWalletFacts(
@@ -332,9 +335,9 @@ export async function jettonWalletFacts(
 }
 
 /**
- * The lenient reading for history (D14): a wallet the master names, else `undefined` (any
+ * The lenient reading for history: a wallet the master names, else `undefined` (any
  * other contract; the transaction is then `partial`), so a fake contract never stalls a
- * page. One exception (final review I1): "no state at this block" (exit -13) for the jetton
+ * page. One exception: "no state at this block" (exit -13) for the jetton
  * wallet whose own transaction this is (`ranHere`) contradicts the chain, which shows it
  * running there, so it is unavailable data (retryable), never a silent drop of a deposit.
  */
@@ -359,20 +362,20 @@ export async function verifyJettonWallet(
 // ---- jetton metadata (TEP-64) -------------------------------------------------------------
 
 /**
- * Lesson 20: the most cells one on-chain content value is read to (at most 127 bytes each,
+ * The most cells one on-chain content value is read to (at most 127 bytes each,
  * about 8 KB), snake or chunked alike; past them it is unreadable. A symbol or name takes a
  * few cells: the bound keeps an author's long texts readable while bounding the work on
  * content anyone can deploy.
  */
 const MAX_VALUE_CELLS = 64;
-/** The longest symbol and name kept: the indexer's limits (M4, `api.ts`). */
+/** The longest symbol and name kept: the indexer's limits (`api.ts`). */
 const MAX_SYMBOL_LENGTH = 256;
 const MAX_NAME_LENGTH = 256;
 
 type Slice = ReturnType<Cell['beginParse']>;
 
 /**
- * TEP-64 snake data, read in one pass (lesson 20: `@ton/core`'s `loadStringTail` recurses
+ * TEP-64 snake data, read in one pass (`@ton/core`'s `loadStringTail` recurses
  * per cell and concatenates at each level, quadratic in the chain); undefined for a cell that
  * is not whole bytes with at most one ref, or a chain past `MAX_VALUE_CELLS`.
  */
@@ -493,9 +496,9 @@ function contentCells(): (boc: string) => Cell | undefined {
 }
 
 /**
- * M4: the facts endpoints must agree on for jetton metadata: the exit code and the content
- * cell's hash, never the rest of the answer (a total supply that moves between two reads,
- * lesson 17) nor the cell's serialization. It never throws: an answer that does not parse
+ * The facts endpoints must agree on for jetton metadata: the exit code and the content
+ * cell's hash, never the rest of the answer (a total supply that moves between two reads)
+ * nor the cell's serialization. It never throws: an answer that does not parse
  * is itself a fact, which the parse then refuses (retryable).
  */
 function jettonDataKey(cellOf: (boc: string) => Cell | undefined) {
@@ -513,27 +516,32 @@ function jettonDataKey(cellOf: (boc: string) => Cell | undefined) {
 }
 
 /**
- * D14 and lesson 13, under the proof quorum (M4). The master's content decides what it can:
+ * A jetton's metadata, under the proof quorum. The master's content decides what it can:
  * - no master, or content beyond an account state's limits (every quorum endpoint agreed
  *   on it), or a layout or value that does not read: `ASSET_RESOLUTION`;
- * - a content BOC that does not parse: the endpoint's fault, retryable (M6);
+ * - a content BOC that does not parse: the endpoint's fault, retryable;
  * - content wholly on chain: its own symbol, and its decimals or TEP-64's default of 9;
  * - otherwise the off-chain JSON fills in what the chain does not state, as the indexer
- *   fetched it, and only those fields are judged (F6-R13): one the indexer holds but is not
- *   one (agreed by the quorum) is the token's own `ASSET_RESOLUTION`. Metadata the indexer
- *   does not have (no usable entry: never indexed, not valid, an unfetchable JSON; or a JSON
- *   that states no decimals) is never a default: an index that lags or drops its filter
- *   would otherwise cache 9 decimals for the container's life (F6-R13 M1: fund safety over
- *   liveness).
+ *   fetched it, and only those fields are judged: one the indexer holds but is not one
+ *   (agreed by the quorum) is the token's own `ASSET_RESOLUTION`. Metadata the indexer
+ *   does not have (no usable entry: never indexed, not valid, an unfetchable JSON; or a
+ *   JSON that states no decimals) is never a default: an index that lags or drops its
+ *   filter would otherwise cache 9 decimals for the container's life, and a 6-decimal
+ *   token would be mis-scaled 1,000× (fund safety over liveness).
  *
- * F6-R30 (1), widened by the final review (probes P2, P3): that absence is `unresolvable`, a
- * non-retryable `PROVIDER_UNAVAILABLE`. Anyone can send a junk jetton to a deposit address,
- * and a retryable answer would fail every history page and `getTransaction` that holds it,
- * forever. Non-retryable, the core reports the transfer with its raw base-unit amount and
- * the asset unresolved (R35) and reads the rest of the page. Its code is not
- * `ASSET_RESOLUTION`, the one failure the core caches for the container's life (N6), so it
- * is never cached: once the indexer has the metadata, the next read resolves the token. A
- * transfer of such a token fails the same way, before anything is signed.
+ * That absence is `unresolvable`, a non-retryable `PROVIDER_UNAVAILABLE`. Anyone can send
+ * a junk jetton to a deposit address, and a retryable answer would fail every history
+ * page and `getTransaction` that holds it, forever. Non-retryable, the core reports the
+ * transfer with its raw base-unit amount and the asset unresolved and reads the rest of
+ * the page. Its code is not `ASSET_RESOLUTION`, the one failure the core caches for the
+ * container's life, so it is never cached: once the indexer has the metadata, the next
+ * read resolves the token. A transfer of such a token fails the same way, before anything
+ * is signed.
+ * Known gap: that refusal is not retryable, even for a jetton the indexer has simply not
+ * indexed yet; it records nothing, so the same call succeeds later. A retryable refusal
+ * needs the core to report a transfer unresolved on a retryable failure too, or the
+ * history stall comes back. A jetton whose metadata states no decimals stays unresolved:
+ * the only way to use it is to register its decimals in a plugin's `assets`.
  */
 async function jettonMetadata(ctx: TonContext, master: string): Promise<AssetMetadata> {
   const cellOf = contentCells();
@@ -604,8 +612,8 @@ export function toDriverBlock(header: BlockHeader): DriverBlock {
 
 /**
  * The transaction a lookup id names (anyone's): by message hash, then by its own hash. An
- * external message can run more than once while it does not consume its seqno (C8-1); the
- * run that consumed it is the one that took effect, so it is preferred (F6-R13 M5).
+ * external message can run more than once while it does not consume its seqno; the run
+ * that consumed it is the one that took effect, so it is preferred.
  */
 async function findTransaction(
   ctx: TonContext,
@@ -621,8 +629,8 @@ async function findTransaction(
 }
 
 /**
- * C1: our own Attempt's wallet transaction, bound by account and a locally computed hash
- * (`isOwnAttempt`, never a first-result fallback). C8-1: a run that did not consume its
+ * Our own Attempt's wallet transaction, bound by account and a locally computed hash
+ * (`isOwnAttempt`, never a first-result fallback). A run that did not consume its
  * seqno (a failed action phase, or a compute phase that failed before `commit()`) leaves the
  * same message valid, so it may run again; the run that consumed the seqno is preferred,
  * since only it decides.
@@ -642,11 +650,12 @@ export async function findOwnAttempt(
 }
 
 /**
- * I5 and the phantom-success rule: each jetton leg's wallets must be the master's own for
- * the sender and the intended recipient (the same master), as masterchain block `block`
- * (the trace's last) records them. The verdict unchanged when they are.
+ * Each jetton leg's wallets must be the master's own for the sender and the intended
+ * recipient (the same master), as masterchain block `block` (the trace's last) records
+ * them: a fake jetton wallet can "accept" a transfer that moves nothing. The verdict
+ * unchanged when they are.
  *
- * Final review I1 (lesson 18): only positive evidence decides `failed`, never a missing
+ * Only positive evidence decides `failed`, never a missing
  * answer. The sender's jetton wallet is the one the proof quorum attested at build and the
  * trace shows both wallets running, so a leg that cannot be verified (no answer, exit -13
  * "no state at this block", nothing that parses), or a sender wallet that is not ours,
@@ -697,7 +706,7 @@ export function traceBlock(root: V3Transaction, trace: V3Trace | null): number {
 }
 
 /**
- * Final review M2: what one history page reads once and uses for every transaction on it:
+ * What one history page reads once and uses for every transaction on it:
  * each masterchain block's header, and each jetton wallet's facts, read at the block of the
  * first (newest) transaction that needs them. The same answer reused, so it trusts nothing
  * more; a page reads from then on only what it has not read.
@@ -729,7 +738,7 @@ function remembered<K, V>(
 
 /**
  * A transaction decoded with its jetton wallet verified at the transaction's own block
- * (D14) and its block's hash; `memo` shares both reads across one history page.
+ * and its block's hash; `memo` shares both reads across one history page.
  */
 export async function decodeWithJettons(
   ctx: TonContext,
@@ -738,7 +747,7 @@ export async function decodeWithJettons(
   memo?: PageMemo,
 ) {
   const candidate = jettonWalletToVerify(tx);
-  // I1: the arrival's own jetton wallet ran here; a notification's sender ran earlier.
+  // The arrival's own jetton wallet ran here; a notification's sender ran earlier.
   const jetton = candidate
     ? await verifyJettonWallet(
         ctx,
@@ -770,7 +779,7 @@ export function createTonReader(ctx: TonContext): ChainReader {
       return jettonBalance(ctx, jettonMaster(ctx, asset), owner, READ);
     },
     getBlockHeight: async () => BigInt(await api.masterchainHead(MONITOR)),
-    // Every masterchain block is final once it exists (D10).
+    // Every masterchain block is final once it exists.
     getFinalizedHeight: async () => BigInt(await api.masterchainHead(MONITOR)),
     getBlock: async (ref) => {
       let seqno: number | null;
@@ -801,7 +810,7 @@ export function createTonReader(ctx: TonContext): ChainReader {
     observe: async (ref, ordering, from): Promise<DriverTxObservation> => {
       const managed = ordering !== undefined && from !== undefined;
       const wallet = managed ? ctx.codec.normalize(from).canonical : undefined;
-      // C1: a managed Attempt is only ever our own wallet transaction (`isOwnAttempt`, before
+      // A managed Attempt is only ever our own wallet transaction (`isOwnAttempt`, before
       // any verdict), never a fallback.
       const tx =
         wallet !== undefined
@@ -815,9 +824,9 @@ export function createTonReader(ctx: TonContext): ChainReader {
         blockHeight: BigInt(tx.mcSeqno),
         blockHash: header.id.rootHash,
       };
-      // Anyone's transaction: its execution status as the chain reports it (lesson 15).
+      // Anyone's transaction: its execution status as the chain reports it.
       if (wallet === undefined) return { ...seen, success: executed(tx) };
-      // Our own Attempt: the verdict path (D11, lesson 7).
+      // Our own Attempt: the verdict path.
       const trace = await api.trace(tx.hash, MONITOR);
       const verdict = await confirmLegs(
         ctx,
@@ -851,7 +860,7 @@ interface LiveSeqno {
 }
 
 /**
- * F6-R29 Q6: a get-method's answer is the one run where it was asked: at `block` (the full id
+ * A get-method's answer is the one run where it was asked: at `block` (the full id
  * when the caller has it, else the masterchain seqno), and on `state` when given, the
  * account's last transaction there. An endpoint that drops the block answers at its own
  * latest state, which decides nothing (a retryable `PROVIDER_INCONSISTENT`).
@@ -935,7 +944,7 @@ async function liveSeqno(
 /**
  * The wallet's public key at masterchain block `block` (`get_public_key`), read once and
  * only when needed; undefined when the account has none there. The answer is bound to the
- * block asked and, when given, to the account state read there (F6-R29 Q6).
+ * block asked and, when given, to the account state read there.
  */
 export function publicKeyAt(
   ctx: TonContext,
@@ -964,7 +973,7 @@ export function publicKeyAt(
 }
 
 /**
- * A23, the final review and C8-2: the wallet request `tx` proves `from` consumed its seqno,
+ * The wallet request `tx` proves `from` consumed its seqno,
  * else null. Every request must be the wallet's own, signed by its key (`requestIsOwn`): a
  * lone lying indexer can make up an external one, and anyone can post a relayed W5 body for
  * a small fee (a v5r1 wallet ignores a forged one). And it must have consumed the seqno: an
@@ -994,16 +1003,16 @@ export async function provenRequest(
   return key && requestIsOwn(from, body, key, ctx.config.globalId) ? request : null;
 }
 
-/** F6-R12: the history page the seqno floor reads, and how many pages before it gives up. */
+/** The history page the seqno floor reads, and how many pages before it gives up. */
 const FLOOR_PAGE = 64;
 const FLOOR_PAGES = 4;
 
 /**
- * I1: the seqno after the newest wallet request the indexer has. Once the previous transfer
+ * The seqno after the newest wallet request the indexer has. Once the previous transfer
  * is `included`, the core hands out the next seqno; a lagging liteserver read could still
  * show the consumed one, and a message signed for it could only end `replaced`. Only a
- * proven request counts (A23, C8-2), and only one newer than the live read: the live read
- * already covers the rest. The history is paged on the indexer's own pages (F6-R12: a page
+ * proven request counts, and only one newer than the live read: the live read
+ * already covers the rest. The history is paged on the indexer's own pages (a page
  * whose newest transactions are not final yet still leads to the older ones) until it
  * reaches the live read's block; more than `FLOOR_PAGES` pages since then decides nothing
  * (retryable) rather than guess, and so does a request dated after its own lifetime.
@@ -1032,7 +1041,7 @@ async function indexedSeqnoFloor(
       if (tx.mcSeqno <= live.state.blockSeqno) return 0n; // newest first: the rest is older still
       const request = await provenRequest(ctx, tx, address, key);
       if (!request) continue;
-      // Task 10 concern 3: a request that ran after its own lifetime is a record the chain
+      // A request that ran after its own lifetime is a record the chain
       // cannot produce (the wallet refuses it), so it decides nothing, as in the proofs.
       if (request.validUntil <= tx.now) {
         throw new ProviderError(
@@ -1067,8 +1076,8 @@ export function createTonExt(ctx: TonContext): TonExt {
     ton: {
       getSeqno: async (address) =>
         walletSeqno(ctx, ctx.codec.normalize(address).canonical, READ),
-      // F6-R13 M6: a caller sends jettons to it, so the proof quorum attests it (C8-4),
-      // and the attested answer is kept.
+      // A caller sends jettons to it, so the proof quorum attests it, and the attested
+      // answer is kept.
       jettonWallet: async (owner, master) =>
         jettonWalletAddress(
           ctx,

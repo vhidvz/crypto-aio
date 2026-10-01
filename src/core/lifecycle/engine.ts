@@ -141,7 +141,7 @@ export class OperationEngine {
     const { record, stored } = await this.open(target, intent, options);
     let current = record;
     if (current.state === 'created' || current.state === 'prepared') {
-      // R23: the policy check and its failure transition run under the address lease too,
+      // The policy check and its failure transition run under the address lease too,
       // and a repeat of a `prepared` Operation (e.g. after a lost ack) is authorized again.
       current = await this.withAddressLease(
         target,
@@ -183,7 +183,7 @@ export class OperationEngine {
 
   /**
    * Adds externally produced signatures (cold, offline, MPC); completes and broadcasts once
-   * every request is signed. Under the address lease (R23), and the `beforeSign` policy is
+   * every request is signed. Under the address lease, and the `beforeSign` policy is
    * asked again first (defence in depth): a veto fails the Operation, releases its nonce and
    * cancels its signer tickets, as a veto before signing does.
    */
@@ -253,7 +253,7 @@ export class OperationEngine {
 
   /**
    * Resends the SAME stored raw bytes of the active Attempt (never builds or signs), under
-   * the address lease (R23). N1: a refused replacement or cancel gives the active role back
+   * the address lease. A refused replacement or cancel gives the active role back
    * to the Attempt it superseded (`resendActive`).
    */
   async rebroadcast(
@@ -286,7 +286,7 @@ export class OperationEngine {
   }
 
   /**
-   * Only before any signed bytes exist. Under the address lease (R23): re-reads the
+   * Only before any signed bytes exist. Under the address lease: re-reads the
    * Operation, renews the lease (a lost lease fails before any write), marks it
    * `abandoned` and releases its reservation. Pending signer tickets are cancelled after
    * the lease is dropped, even when the release failed.
@@ -319,7 +319,7 @@ export class OperationEngine {
     }
   }
 
-  /** R22: best effort, through the signer that issued each ticket; failures log codes only. */
+  /** Best effort, through the signer that issued each ticket; failures log codes only. */
   protected async cancelTickets(
     target: OperationTarget,
     operationId: string,
@@ -348,19 +348,19 @@ export class OperationEngine {
   }
 
   /**
-   * Spec §8.6: a new Attempt paying a higher fee for the same slot (same nonce or seqno,
+   * A new Attempt paying a higher fee for the same slot (same nonce or seqno,
    * or conflicting inputs). Needs the `replace-fee` capability, the driver's
    * ReplacementPolicy and a synchronous signer; `submitted` or `stalled` only. See
    * `createConflicting`.
    *
-   * R30: idempotent per fee spec. While the active Attempt is a replacement made for the
+   * Idempotent per fee spec. While the active Attempt is a replacement made for the
    * same spec (the same `FeeSpeed` name, or a canonically equal `FeeOverride`), a repeat
    * signs nothing and returns it, resending its stored bytes when their broadcast was never
-   * recorded or was ambiguous. N1: a replacement for the same spec that was refused (the
+   * recorded or was ambiguous. A replacement for the same spec that was refused (the
    * superseded Attempt active again) is resent, never signed again; a refusal is thrown,
    * never a success. To bump again, pass another spec (e.g. a higher override).
    *
-   * M-a: while the active replacement is persisted but unsent (`signed`), another fee spec
+   * While the active replacement is persisted but unsent (`signed`), another fee spec
    * is refused with INVALID_TRANSITION; repeat the same spec (it is resent) or call
    * `rebroadcast` first.
    */
@@ -397,15 +397,15 @@ export class OperationEngine {
    * (or over the active Attempt when there is none), or `fee` when given (refused below
    * that bump). See `createConflicting`.
    *
-   * R30.1: a repeat while a cancel is the active Attempt resends its stored bytes when their
+   * A repeat while a cancel is the active Attempt resends its stored bytes when their
    * broadcast was never recorded or was ambiguous, and returns it unchanged while a node
    * holds it (`pending`, `mempool`) or once it is on chain; concurrent and retried cancels
-   * are idempotent. Only a cancel recorded `refused` or `dropped` is bumped by a repeat (N3:
-   * each bump climbs one step from the highest-fee cancel), so a cancel that cannot land
+   * are idempotent. Only a cancel recorded `refused` or `dropped` is bumped by a repeat
+   * (each bump climbs one step from the highest-fee cancel), so a cancel that cannot land
    * never leaves the nonce stuck. When the node's floor is more than one bump away, pass
    * `fee`: an explicit fee always builds a new cancel while none is on chain.
    *
-   * M-a: while the active replacement is persisted but unsent (`signed`), a cancel is refused
+   * While the active replacement is persisted but unsent (`signed`), a cancel is refused
    * with INVALID_TRANSITION; repeat that replacement's fee spec (it is resent) or call
    * `rebroadcast` first.
    */
@@ -437,7 +437,7 @@ export class OperationEngine {
    * broadcast, and a repeat resends a persisted rebuild instead of signing another. On a
    * seqno chain it takes the wallet's next seqno (SEQUENCE_BUSY while another live
    * Operation holds it), and the Operation's `reservation` is refreshed to the rebuilt
-   * Attempt's ordering in the same write as the Attempt (M1). A refusal of the rebuilt
+   * Attempt's ordering in the same write as the Attempt. A refusal of the rebuilt
    * Attempt leaves the Operation `stalled`, never `expired` again: only the monitor's proof
    * can end it.
    */
@@ -507,8 +507,9 @@ export class OperationEngine {
   }
 
   /**
-   * A6/M8: the Operation, checked to belong to this handle's chain, network and wallet
-   * before anything reads its payload (e.g. `submitSignatures` with a signed payload).
+   * The Operation, checked to belong to this handle's chain, network and wallet
+   * before anything reads its payload (e.g. `submitSignatures` with a signed payload), so
+   * another wallet's Operation never reaches the driver.
    */
   async requireOwned(
     target: OperationTarget,
@@ -603,9 +604,11 @@ export class OperationEngine {
   }
 
   /**
-   * The address lease of `op`'s own sending address (R32: keyed on the Operation, never on
+   * The address lease of `op`'s own sending address (keyed on the Operation, never on
    * the target's wallet, so a write for a stored Operation needs no signer). Any snapshot
-   * of the Operation will do: its chain, network and sender never change.
+   * of the Operation will do: its chain, network and sender never change. Every
+   * transition of an Operation that holds a reservation runs under it, and so does the
+   * release of that reservation (see `releaseReservation`).
    */
   protected withAddressLease<T>(
     target: ReadTarget,
@@ -621,7 +624,7 @@ export class OperationEngine {
   /**
    * Serializes one Operation's signing transitions: the wallet's address lease where the
    * ordering needs one, otherwise (expiry ordering) a short per-Operation lock, so two
-   * same-key repeats can never both sign it (R24). Its handle is passed down (renewed,
+   * same-key repeats can never both sign it. Its handle is passed down (renewed,
    * heartbeat) exactly like the address lease; it never guards a sequence write.
    */
   protected withOperationLease<T>(
@@ -640,7 +643,7 @@ export class OperationEngine {
     );
   }
 
-  /** R32: the sequence key of the Operation's own chain, network and sending address. */
+  /** The sequence key of the Operation's own chain, network and sending address. */
   protected sequenceKeyOf(op: Pick<OperationRecord, 'context' | 'intent'>): string {
     return sequenceKey(
       this.deps.namespace,
@@ -683,7 +686,7 @@ export class OperationEngine {
           reservation = await this.nextSeqno(driver.sequence, op);
         } else {
           const pending = await driver.sequence.pending(stored.from);
-          // M9: a quiet wallet (no worker pass, no recovery) is never stuck behind a leaked
+          // A quiet wallet (no worker pass, no recovery) is never stuck behind a leaked
           // value: the cheap check runs first, and a reclaimed value is allocated next.
           await reconcile.reclaimLeaked(
             this.reconciler(),
@@ -775,9 +778,9 @@ export class OperationEngine {
   }
 
   /**
-   * `prepare()`'s policy check. M3: bounded like signing, by `lifecycle.signTimeoutMs` and
+   * `prepare()`'s policy check. Bounded like signing, by `lifecycle.signTimeoutMs` and
    * the caller's `signal` (`signingDeadline`), but with no heartbeat: a hook that outlives
-   * the lease loses it, and its veto then writes nothing (N1). Only a veto fails the
+   * the lease loses it, and its veto then writes nothing. Only a veto fails the
    * Operation; a timeout or an abort leaves it `prepared` for a repeat to authorize again.
    */
   protected async authorizeOrFail(
@@ -800,7 +803,7 @@ export class OperationEngine {
 
   /**
    * Takes an Operation as far as one call can, all under its lease (`withOperationLease`:
-   * the address lease, R23, or a per-Operation lock on expiry chains, R24): `created`
+   * the address lease, or a per-Operation lock on expiry chains): `created`
    * is prepared, `prepared` is signed into the write-ahead Attempt, and a `signed` (or
    * ambiguously `submitted`) Operation resends its stored raw bytes; it is never signed
    * again. Any other state is returned as it is (`settle` rethrows a stored failure).
@@ -838,7 +841,7 @@ export class OperationEngine {
   /**
    * Runs the policy hook and the signer(s) over the stored unsigned payload, bounded by the
    * lease (`signingDeadline`). A veto or a mismatching signature fails the Operation before
-   * signing. A pending result is persisted as `awaiting-signature` with every ticket (R22);
+   * signing. A pending result is persisted as `awaiting-signature` with every ticket;
    * a signed one becomes the write-ahead Attempt.
    */
   protected async signStage(
@@ -865,7 +868,7 @@ export class OperationEngine {
             existing,
           );
         },
-        // R22: a pending answer after the deadline was never recorded; cancel its tickets.
+        // A pending answer after the deadline was never recorded; cancel its tickets.
         async (late) => {
           if (late.status === 'pending')
             await this.cancelTickets(target, op.id, late.tickets);
@@ -899,7 +902,7 @@ export class OperationEngine {
         ...(result.tickets.length > 0 ? { signerTickets: result.tickets } : {}),
       });
     } catch (error) {
-      // R22: a ticket that was not recorded could never be cancelled later.
+      // A ticket that was not recorded could never be cancelled later.
       await this.cancelTickets(target, op.id, result.tickets);
       throw error;
     }
@@ -908,11 +911,11 @@ export class OperationEngine {
   /**
    * Bounds a signer or policy call (they have no deadline of their own) by
    * `lifecycle.signTimeoutMs` and the caller's `signal`, and keeps the held lease alive
-   * meanwhile (R24: renewed every `leaseMs / 3`). On timeout, abort or a lost lease nothing
+   * meanwhile (renewed every `leaseMs / 3`). On timeout, abort or a lost lease nothing
    * is written: the Operation keeps its state and reservation (a late signature may still
    * appear), and a repeat asks again. A lost lease is logged by code, like
-   * `failAfterPrepare`. A result that arrives after the wait ended goes to `late` (R22:
-   * a pending answer's tickets are cancelled there); otherwise it is dropped.
+   * `failAfterPrepare`. A result that arrives after the wait ended goes to `late` (a
+   * pending answer's tickets are cancelled there); otherwise it is dropped.
    */
   protected async signingDeadline<T>(
     op: OperationRecord,
@@ -997,7 +1000,7 @@ export class OperationEngine {
   }
 
   /**
-   * Carry-forward: the persisted partial signatures that still verify. A corrupt entry is
+   * The persisted partial signatures that still verify. A corrupt entry is
    * dropped (its request is signed or submitted again) instead of making `sign()` or
    * `accept()` throw SIGNATURE_MISMATCH on every call, which would strand the Operation.
    */
@@ -1026,10 +1029,10 @@ export class OperationEngine {
 
   /**
    * Assembles and persists an immutable Attempt BEFORE any broadcast (write-ahead). `lease`
-   * is renewed right before the write (R23): signing may have outlived it, and then
+   * is renewed right before the write: signing may have outlived it, and then
    * nothing is written. When the append loses its compare-and-set to a writer that took the
-   * Operation to `signed` or beyond (or ended it), the stored Operation is returned instead
-   * (R24), and callers continue from its state; a still pre-signing one rethrows the
+   * Operation to `signed` or beyond (or ended it), the stored Operation is returned
+   * instead, and callers continue from its state; a still pre-signing one rethrows the
    * VERSION_CONFLICT, and an abandoned one is INVALID_TRANSITION. The `signed` Operation is
    * scheduled (`nextCheckAt: now`), like every engine transition after signing.
    *
@@ -1039,11 +1042,11 @@ export class OperationEngine {
    *
    * The store does not guard transitions, so appending to a terminal Operation is refused
    * here, with one explicit exception: a `rebuild` Attempt reopens an `expired` Operation
-   * (Task 27; `rebuild` re-proves every earlier Attempt dead under the lease first). It is
+   * (`rebuild` re-proves every earlier Attempt dead under the lease first). It is
    * the only way out of a terminal state; `update` refuses every other.
    *
-   * A15: an Attempt whose ref another Operation of the namespace holds is never appended
-   * (`withRefFree`); an original one fails its Operation and keeps its nonce (M6).
+   * An Attempt whose ref another Operation of the namespace holds is never appended
+   * (`withRefFree`); an original one fails its Operation and keeps its nonce.
    */
   protected async appendSigned(
     target: OperationTarget,
@@ -1075,7 +1078,7 @@ export class OperationEngine {
     };
     let next: OperationRecord;
     try {
-      // M5: the held lease is renewed inside the ref lease, right before the write.
+      // The held lease is renewed inside the ref lease, right before the write.
       next = await this.withRefFree(op, attempt.ref, lease, () =>
         this.deps.stores.operations.appendAttempt(
           this.deps.namespace,
@@ -1083,10 +1086,10 @@ export class OperationEngine {
           attempt,
           {
             state: 'signed',
-            // R26.1: scheduled from the moment signed bytes exist, so the Operation stays
+            // Scheduled from the moment signed bytes exist, so the Operation stays
             // claimable whatever moves it next (a read-only pass never schedules).
             nextCheckAt: attempt.createdAt,
-            // M1: a rebuild takes a new slot (seqno); the reservation follows it.
+            // A rebuild takes a new slot (seqno); the reservation follows it.
             ...(purpose === 'rebuild' ? { reservation: unsigned.ordering } : {}),
             clear: [
               'unsigned',
@@ -1100,17 +1103,17 @@ export class OperationEngine {
         ),
       );
     } catch (error) {
-      // A15: another Operation holds this ref. Nothing was recorded or sent. An original
+      // Another Operation holds this ref. Nothing was recorded or sent. An original
       // Attempt's Operation fails here, before any signed bytes exist on record; a
       // replacement, cancel or rebuild is dropped and its Operation keeps the active Attempt.
       if (isCryptoAioError(error) && REF_HELD.has(error)) {
         if (purpose === 'original') {
-          // M6: its nonce, if any, is kept: identical bytes of another Operation use it.
+          // Its nonce, if any, is kept: identical bytes of another Operation use it.
           await this.failAfterPrepare(target, op, error, lease, { release: false });
         }
         throw error;
       }
-      // R24: another writer changed the Operation first (e.g. appended its own Attempt).
+      // Another writer changed the Operation first (e.g. appended its own Attempt).
       // These bytes were never persisted or sent, so they are dropped; the caller goes on
       // from the stored Operation instead of surfacing the conflict. Lost-CAS contract:
       // only when that writer took it to `signed` or beyond (or ended it). A stored
@@ -1137,13 +1140,18 @@ export class OperationEngine {
   }
 
   /**
-   * A15: runs `append` only when no other Operation of this namespace holds `ref`, live or
-   * terminal (D4: a terminal holder's bytes are already on chain, so a second Operation
-   * would inherit its outcome). The check and the append run under a short lease on the
-   * ref, so two processes sharing the lock manager cannot both pass it (D5; A27: it also
-   * needs `findByRef` to see every committed append). The held `lease` is renewed inside
-   * it, right before the write (M5, R23). A ref lease still held elsewhere after
-   * `leaseMs / 3` is `SEQUENCE_BUSY` with its own fixed text (M7).
+   * Runs `append` only when no other Operation of this namespace holds `ref`, live or
+   * terminal (a terminal holder's bytes are already on chain): a second Operation
+   * recording the same bytes would inherit their outcome, reporting success for a payment
+   * that never moved. The check and the append run under a short lease on the ref, so two
+   * processes sharing the lock manager cannot both pass it; it is always the innermost
+   * lease, so it cannot deadlock with the address or Operation lease held around it. This
+   * also needs `findByRef` to be read-your-writes consistent across those processes (no
+   * read replica or eventually consistent index) and the append to finish within
+   * `leaseMs`. The held `lease` is renewed inside it, right before the write. A ref lease
+   * still held elsewhere after `leaseMs / 3`, a bound that keeps the wait within the held
+   * lease, is `SEQUENCE_BUSY` with its own fixed text (the coordinator's text names the
+   * address lease).
    */
   protected async withRefFree<T>(
     op: OperationRecord,
@@ -1192,7 +1200,7 @@ export class OperationEngine {
     return attempt;
   }
 
-  // ---- new Attempts: replace, cancel, rebuild (spec §8.6) -------------------------------
+  // ---- new Attempts: replace, cancel, rebuild ------------------------------------------
 
   /**
    * Replace and cancel, under the Operation's lease (the address lease; the op lock on
@@ -1205,7 +1213,7 @@ export class OperationEngine {
    * still live: the Operation goes back to its previous state and active Attempt
    * (`restoreAfterRefusal`) and the node's error is thrown. That refusal is never terminal.
    *
-   * R30/R30.1, a repeat of an earlier request (`fee` is the requested spec): the same
+   * A repeat of an earlier request (`fee` is the requested spec): the same
    * replacement spec is answered by that replacement (`repeatReplacement`); a cancel is
    * resent, returned, or bumped when refused or dropped (`repeatCancel`). See `replace` and
    * `cancel`.
@@ -1255,7 +1263,7 @@ export class OperationEngine {
         driver.ordering === 'inputs'
           ? reservedInputs(await this.walletOperations(op), op.id)
           : undefined;
-      // N3/R2-1: a cancel climbs from the earlier cancels of this same Attempt (`cancelBase`).
+      // A cancel climbs from the earlier cancels of this same Attempt (`cancelBase`).
       const base = purpose === 'cancel' ? cancelBase(op, previous) : previous;
       const unsigned = await build(base.unsigned, {
         from: op.intent.from,
@@ -1289,7 +1297,7 @@ export class OperationEngine {
         return await this.broadcastActive(target, signed, undefined, lease);
       } catch (error) {
         // Only the node's own answer; an ambiguous failure may have delivered the bytes.
-        // M2: back to the snapshot the append was made over, not the read before signing.
+        // Back to the snapshot the append was made over, not the read before signing.
         if (isRefusal(error)) {
           await this.restoreAfterRefusal(
             op.id,
@@ -1310,7 +1318,7 @@ export class OperationEngine {
   }
 
   /**
-   * R30/N1: the replacement a repeat of this fee spec refers to: the active one made for it,
+   * The replacement a repeat of this fee spec refers to: the active one made for it,
    * or the latest Attempt when it was made for it and, refused, gave the active role back to
    * the Attempt it superseded. `undefined`: a new request.
    */
@@ -1329,9 +1337,9 @@ export class OperationEngine {
   }
 
   /**
-   * R30/N1: a repeat of the request `prior` was made for signs nothing. Its stored bytes are
+   * A repeat of the request `prior` was made for signs nothing. Its stored bytes are
    * resent when their broadcast was never recorded, was ambiguous, or was refused or
-   * rejected (R30.2): the node's current answer decides, and a refusal restores the
+   * rejected: the node's current answer decides, and a refusal restores the
    * superseded Attempt and is thrown (`resendActive`), never reported as a success. A
    * `prior` that already gave the active role back is resent first and made active again
    * only once the node accepted it (`resendRestoredAway`). An active `prior` the node holds,
@@ -1356,7 +1364,7 @@ export class OperationEngine {
   }
 
   /**
-   * R2-2: resends the stored bytes of a replacement that gave the active role back after a
+   * Resends the stored bytes of a replacement that gave the active role back after a
    * refusal, while the Attempt it superseded stays active. Only once a node accepted them
    * (or they are already seen) is it made active again (`reactivate`) and the acceptance
    * recorded, so a crash in between leaves the superseded Attempt active and never an
@@ -1370,7 +1378,8 @@ export class OperationEngine {
     lease: LeaseHandle | undefined,
   ): Promise<OperationRecord> {
     const fanout = this.deps.lifecycle().broadcastFanout;
-    // R25: read before the send, so no store failure can follow a delivery here.
+    // Whether the bytes may be live, read before the send, so no store failure can follow
+    // a delivery here.
     const live = mayBeLive(await this.deps.stores.operations.getObservation(prior.id));
     let result: BroadcastResult;
     try {
@@ -1382,8 +1391,8 @@ export class OperationEngine {
       throw await this.recordAmbiguous(op, prior, error);
     }
     if (result.kind === 'refused' || result.kind === 'rejected') {
-      // Spec §8.2: its own ref is looked up first; seen means the node holds it after all.
-      // R31: a failed lookup is ambiguous, as on the active resend path.
+      // Its own ref is looked up first; seen means the node holds it after all.
+      // A failed lookup is ambiguous, as on the active resend path.
       let seen: boolean;
       try {
         seen = await this.seenOwnRef(target, op, prior, this.deps.clock.now());
@@ -1391,7 +1400,7 @@ export class OperationEngine {
         throw this.ambiguousAfterBroadcast(op, prior, error);
       }
       if (!seen) {
-        // R25: as on the active resend path, a rejection of bytes that may be live (a node
+        // As on the active resend path, a rejection of bytes that may be live (a node
         // once accepted them) is only a refusal.
         const rejected = result.kind === 'rejected' && !live;
         const refusedCode = result.kind === 'refused' ? result.code : 'TX_REFUSED';
@@ -1406,7 +1415,7 @@ export class OperationEngine {
     try {
       current = await this.reactivate(op, prior, lease);
     } catch (error) {
-      // R27: the node holds the bytes, so a failure to record that is ambiguous.
+      // The node holds the bytes, so a failure to record that is ambiguous.
       throw this.ambiguousAfterBroadcast(op, prior, error);
     }
     return this.applyBroadcastResult(
@@ -1444,13 +1453,13 @@ export class OperationEngine {
   }
 
   /**
-   * R30.1: a cancel while a cancel is the active Attempt. Its stored bytes are resent when
+   * A cancel while a cancel is the active Attempt. Its stored bytes are resent when
    * their broadcast was never recorded or was ambiguous; it is returned unchanged while a
    * node holds it (`pending`, `mempool`) and once it is on chain (chain evidence), so
    * concurrent and retried cancels are idempotent. `undefined` asks the caller for a new,
-   * bumped cancel: only when the cancel is recorded `refused`, `rejected` (R30.2) or
+   * bumped cancel: only when the cancel is recorded `refused`, `rejected` or
    * `dropped`, or for an explicit `fee` while it is not on chain. A refused or rejected one
-   * first gives the active role back to the Attempt it superseded (N1), so it is never
+   * first gives the active role back to the Attempt it superseded, so it is never
    * reported as a success.
    */
   protected async repeatCancel(
@@ -1496,7 +1505,7 @@ export class OperationEngine {
   /**
    * Resends the active Attempt's stored bytes (`broadcastActive`) for every resend path:
    * `rebroadcast` (and so recovery), a same-key `transfer` and a repeated replace, cancel or
-   * rebuild. I2/N1: when the node refuses a resent replacement or cancel, the Attempt it
+   * rebuild. When the node refuses a resent replacement or cancel, the Attempt it
    * superseded becomes active again (`undoRefusedResend`) and the refusal is thrown, so it is
    * never reported as a success. A refused rebuild stays `stalled` (see `rebuild`).
    */
@@ -1516,7 +1525,7 @@ export class OperationEngine {
   }
 
   /**
-   * N2: after a resend of a replacement or cancel was refused, the Attempt it superseded
+   * After a resend of a replacement or cancel was refused, the Attempt it superseded
    * becomes active again. The state it was appended over is not recorded, so it is derived
    * from the superseded Attempt's observation: when that one may still be live (`pending`,
    * `mempool`, `included`), the Operation returns to `submitted`; otherwise (e.g. the
@@ -1555,7 +1564,7 @@ export class OperationEngine {
    * Signs a new Attempt once and persists it (write-ahead) before any broadcast. The policy
    * hook and the signer are bounded by `lifecycle.signTimeoutMs`, with the lease renewed
    * meanwhile (`signingDeadline`). A pending answer is refused, since new Attempts need a
-   * synchronous signer, and its tickets are cancelled through their issuers (R22), as are
+   * synchronous signer, and its tickets are cancelled through their issuers, as are
    * those of a pending answer that arrives after the deadline. A veto, a timeout or a bad
    * signature writes nothing.
    *
@@ -1564,7 +1573,7 @@ export class OperationEngine {
    * with the same Attempts. Otherwise the VERSION_CONFLICT is rethrown and these bytes,
    * never persisted or sent, are dropped. Success is returned only when the stored
    * Operation shows the new Attempt (`appendSigned`): `signed`, together with `before`, the
-   * snapshot the successful append was made over (M2: what a refusal restores).
+   * snapshot the successful append was made over (what a refusal restores).
    */
   protected async signNewAttempt(
     target: OperationTarget,
@@ -1624,9 +1633,9 @@ export class OperationEngine {
   }
 
   /**
-   * Spec §8.6: the node refused a replacement or cancel, so the Attempt it superseded is
+   * The node refused a replacement or cancel, so the Attempt it superseded is
    * still the live one and keeps its nonce. While the refused Attempt is still the active
-   * one (M3) and the Operation is not terminal (M-b: an ended Operation is left alone),
+   * one and the Operation is not terminal (an ended Operation is left alone),
    * the superseded one becomes active again. When the Operation still shows the refusal
    * (`stalled`, or `signed` after a rejection) and `point` names a state, it also returns
    * to `point`'s state, error and ambiguity; any other state (`included`, `submitted` or
@@ -1737,7 +1746,7 @@ export class OperationEngine {
 
   /**
    * Sends the active Attempt's stored raw bytes. `lease` is the held address lease (every
-   * caller holds it, R23; leases are not reentrant): a rejection's terminal write and
+   * caller holds it; leases are not reentrant): a rejection's terminal write and
    * release run under it.
    */
   protected async broadcastActive(
@@ -1768,7 +1777,7 @@ export class OperationEngine {
    * bytes. The observation is written first and on its own, then the transition, re-derived
    * after a lost compare-and-set; a store failure is only logged: the caller must get the
    * ambiguous error.
-   * R28 (spec §13): `ambiguous: true` means the outcome is unknown and the caller retries
+   * `ambiguous: true` means the outcome is unknown and the caller retries
    * with the same idempotency key; the error keeps its code and that code's retryability.
    */
   protected async recordAmbiguous(
@@ -1783,14 +1792,14 @@ export class OperationEngine {
         operationId: op.id,
         code: errorCode(storeError),
       });
-    // First, and on its own: the observation is the may-be-live marker (R25) a later
+    // First, and on its own: the observation is the may-be-live marker a later
     // rejection must see, whatever happens to the Operation write below. As in `accept()`,
     // this send may have delivered the bytes (`pendingAfterSend`).
     await writeObservation(this.observationDeps, attempt, op.id, (current) => ({
       lastBroadcastAt: now,
       ...pendingAfterSend(current),
     })).catch(logFailure);
-    // R26.2: re-derived after a lost compare-and-set (e.g. a worker's claim mid-broadcast).
+    // Re-derived after a lost compare-and-set (e.g. a worker's claim mid-broadcast).
     await this.updateAfterBroadcast(op, (current) =>
       current.state === 'signed' || current.state === 'stalled'
         ? { state: 'submitted', ambiguous: true, nextCheckAt: now, clear: ['error'] }
@@ -1817,16 +1826,16 @@ export class OperationEngine {
   }
 
   /**
-   * Spec §8.2/§8.3. accepted / already-known → `submitted` (an `included` Operation is never
+   * Accepted / already-known → `submitted` (an `included` Operation is never
    * downgraded); the acceptance is remembered on the observation (`firstSeenAt`). refused
    * and rejected → the Attempt's own ref is looked up first (seen means it was ours all
-   * along). R24/R25: an `included` Operation, or an Attempt whose observation holds chain
+   * along). An `included` Operation, or an Attempt whose observation holds chain
    * evidence (mined, replaced or expired), is never stalled, failed or released by a later
    * answer, and a rejection of bytes a node once accepted counts only as a refusal.
    * Otherwise refused → `stalled`, keeping the nonce; rejected (proven invalid) → `failed`
    * with the nonce released, once every Attempt is rejected.
    *
-   * R26.2: the node's own refusal or rejection is thrown as it is; any other failure while
+   * The node's own refusal or rejection is thrown as it is; any other failure while
    * recording the answer (the bytes may have reached the network) is thrown `ambiguous`
    * with `operationId`, so a caller retries with the same key instead of paying again.
    */
@@ -1862,7 +1871,7 @@ export class OperationEngine {
         ...(acknowledged ? { firstSeenAt: current?.firstSeenAt ?? now } : {}),
         ...pendingAfterSend(current),
       }));
-      // R26.2: re-derived from the stored Operation after a lost compare-and-set. An
+      // Re-derived from the stored Operation after a lost compare-and-set. An
       // unscheduled one is scheduled, since a read-only pass may have moved it meanwhile.
       return this.updateAfterBroadcast(op, (current) => {
         if (isTerminal(current.state)) return undefined;
@@ -1878,12 +1887,13 @@ export class OperationEngine {
     };
     if (result.kind === 'accepted' || result.kind === 'already-known')
       return accept(true);
-    // refused or rejected: first the Attempt's own ref (spec §8.2): seen means it was ours.
+    // refused or rejected: first the Attempt's own ref, since a "nonce too low" or
+    // "already spent" answer may be about these very bytes: seen means it was ours.
     if (await this.seenOwnRef(target, op, attempt, now)) return accept(true);
-    // R24: the monitor owns included Operations; a lagging answer never downgrades them.
+    // The monitor owns included Operations; a lagging answer never downgrades them.
     if (op.state === 'included') return op;
     const context = { operationId: op.id, attemptId: attempt.id };
-    // R24/R25: compare-and-set against the current observation, so chain evidence the
+    // Compare-and-set against the current observation, so chain evidence the
     // engine already holds is never overwritten, and a rejection of bytes that may be live
     // is recorded as the refusal it is.
     const saved = await writeObservation(
@@ -1900,7 +1910,7 @@ export class OperationEngine {
           evidence: proven ? 'proven' : 'observed',
           reason: result.reason,
           lastBroadcastAt: now,
-          // I2: the `refused` state overwrites the live one, so the marker keeps a later
+          // The `refused` state overwrites the live one, so the marker keeps a later
           // rejection seeing these bytes as possibly live (e.g. after an ambiguous send).
           ...(live ? { firstSeenAt: current?.firstSeenAt ?? now } : {}),
         };
@@ -1940,7 +1950,7 @@ export class OperationEngine {
           code: error.code,
         });
       }
-      // M3: a new Attempt's refusal is always the answer, even when the Operation moved on
+      // A new Attempt's refusal is always the answer, even when the Operation moved on
       // meanwhile (e.g. the Attempt it superseded was mined): never success for its call.
       return next.state === 'stalled' || attempt.supersedes !== undefined ? error : next;
     }
@@ -1956,9 +1966,9 @@ export class OperationEngine {
   }
 
   /**
-   * R26.3: the all-rejected verdict. Once every Attempt is proven `rejected`, no valid
+   * The all-rejected verdict. Once every Attempt is proven `rejected`, no valid
    * signed bytes exist for the nonce: the Operation fails and the nonce is released in the
-   * same step, under the address lease (R23, spec §8.5), whoever reaches the verdict (the
+   * same step, under the address lease, whoever reaches the verdict (the
    * broadcast path or the monitor). Under the lease it re-reads the Operation, re-checks
    * the verdict and renews the lease before the terminal compare-and-set; a lost lease or a
    * verdict that no longer holds writes nothing and returns the stored Operation. Pass the
@@ -2082,7 +2092,7 @@ export class OperationEngine {
     return reconcile.reconcileNonces(this.reconciler(), target, op, options);
   }
 
-  /** M11: the engine's steps that `./reconcile` runs, bound to this engine. */
+  /** The engine's steps that `./reconcile` runs, bound to this engine. */
   protected reconciler(): reconcile.Reconciler {
     return {
       deps: this.deps,
@@ -2106,7 +2116,7 @@ export class OperationEngine {
   }
 
   /**
-   * R26.2: a post-broadcast Operation write. After a lost compare-and-set the Operation is
+   * A post-broadcast Operation write. After a lost compare-and-set the Operation is
    * re-read and `patchFor` re-derives the transition from it; `undefined` means the stored
    * state already reflects it (or it no longer applies), and the stored Operation is
    * returned.
@@ -2134,7 +2144,7 @@ export class OperationEngine {
   }
 
   /**
-   * R26.2/R27: a failure after the bytes may have reached the network is always an
+   * A failure after the bytes may have reached the network is always an
    * ambiguous STATE_UNRECORDED (retryable by its catalogue entry, so no other code's
    * retryability is overridden), naming the Operation and the original code.
    */
@@ -2156,7 +2166,7 @@ export class OperationEngine {
   }
 
   /**
-   * Spec §8.2: before a refusal or rejection is believed, looks the Attempt's own ref up.
+   * Before a refusal or rejection is believed, looks the Attempt's own ref up.
    * A failed lookup decides nothing: the Operation is scheduled for the monitor (as the
    * ambiguous path does) and the error names it.
    */
@@ -2191,14 +2201,15 @@ export class OperationEngine {
 
   /**
    * Terminal failure before any signed bytes exist (after signing, see `failRejected`):
-   * mark failed, then free the nonce, both under one address lease (R23). Callers already inside `withAddressLease` must pass their lease (it is not
+   * mark failed, then free the nonce, both under one address lease. Callers already inside `withAddressLease` must pass their lease (it is not
    * re-entrant); a caller without one gets it acquired first (acquire → renew → CAS →
    * release, never CAS before acquire). The lease is renewed first: when it was lost (a
    * slow policy hook or signer outlived it), nothing is written, the Operation keeps its
    * state, its next repeat retries under a fresh lease, and the original `error` is
    * rethrown. Returning means the terminal write landed; a failed release after it is only
    * logged (callers rethrow their own error either way). Logs carry codes only. With
-   * `release: false` (A15, M6) the nonce is kept: signed bytes of another Operation may use it.
+   * `release: false` (a held ref) the nonce is kept: signed bytes of another Operation
+   * may use it.
    */
   protected async failAfterPrepare(
     target: OperationTarget,
@@ -2223,12 +2234,12 @@ export class OperationEngine {
     }
     const failed = await this.update(op, {
       state: 'failed',
-      // Its callers pass a veto, a signing failure or a held ref (A15): nothing was sent.
+      // Its callers pass a veto, a signing failure or a held ref: nothing was sent.
       error: serializeError(error, 'SIGNING_FAILED'),
       clear: ['unsigned', 'partialSignatures', 'signerTickets', 'ambiguous'],
     });
     if (options.release === false) {
-      // M6: signed bytes of another Operation may use this nonce, so it is not released
+      // Signed bytes of another Operation may use this nonce, so it is not released
       // here; nonce reconciliation reclaims it if it is really unused.
       if (op.reservation?.kind === 'nonce') {
         this.deps.log.warn('reservation kept after a refused attempt', {
@@ -2253,7 +2264,7 @@ export class OperationEngine {
    * Returns the Operation's reserved nonce under the held address lease. Call at most once
    * per allocation, only after the Operation's terminal CAS made under that same lease.
    * There is no lease-less fallback: acquiring a lease only after the CAS could fail and
-   * leak the nonce (R23), so a missing lease for a nonce is a programming error.
+   * leak the nonce, so a missing lease for a nonce is a programming error.
    */
   protected async releaseReservation(
     op: OperationRecord,
@@ -2340,12 +2351,17 @@ export class OperationEngine {
   }
 }
 
-/** A15: the refusals `withRefFree` throws, recognised by identity, never by code. */
+/**
+ * The refusals `withRefFree` throws, recognised by identity, never by code: an input
+ * conflict is a `NONCE_CONFLICT` too. They stay plain `ChainError`s, since a subclass
+ * would show its own class name as the error's `name`.
+ */
 const REF_HELD = new WeakSet<object>();
 
 /**
- * A15: the signed Attempt's ref is already held by another Operation of the namespace. A
- * `NONCE_CONFLICT` (this Operation's slot is taken), with a fixed message (R24).
+ * The signed Attempt's ref is already held by another Operation of the namespace. A
+ * `NONCE_CONFLICT` (this Operation's slot is taken), with a fixed message that holds no
+ * transaction detail; the holder's id is in `details`.
  */
 function refHeld(operationId: string, heldBy: string): ChainError {
   const error = new ChainError(

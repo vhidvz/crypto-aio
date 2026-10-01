@@ -6,4 +6,4 @@
 
 Defined in: [src/adapters/solana/plugin.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/plugin.ts#L18)
 
-The SDK versions this adapter is validated against (spec §16), keyed by library.
+The SDK versions this adapter is validated against, keyed by library.

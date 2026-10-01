@@ -105,7 +105,7 @@ describe('the built-in Solana plugin', () => {
     expect(plugin.chains?.map((c) => c.id)).toEqual(['solana']);
   });
 
-  it('pins the SDK range package.json declares as an optional peer and pins for tests (R82)', () => {
+  it('pins the SDK range package.json declares as an optional peer and pins for tests', () => {
     const pkg = JSON.parse(
       readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'),
     ) as Record<'peerDependencies' | 'devDependencies', Record<string, string>> & {
@@ -136,7 +136,7 @@ describe('the built-in Solana plugin', () => {
   });
 });
 
-describe('the built-in Solana plugin registered again (A18, A25)', () => {
+describe('the built-in Solana plugin registered again', () => {
   it('builds every function once, so two calls are the same plugin', () => {
     const [a, b] = [solanaPlugin(), solanaPlugin()];
     expect(samePlugin(a, b)).toBe(true);

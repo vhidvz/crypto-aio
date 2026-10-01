@@ -2,15 +2,15 @@
 
 # Interface: DriverContext
 
-Defined in: [src/core/driver/types.ts:368](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L368)
+Defined in: [src/core/driver/types.ts:374](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L374)
 
-M12: a factory's `create()` must call `transport.setProbes(...)` exactly once, before any
+A factory's `create()` must call `transport.setProbes(...)` exactly once, before any
 other traffic, on every `Transport` it receives here — including `indexer`, when present.
 `setProbes` resets health/identity state, so calling it again later, or skipping it on one
 of the two transports, leaves that transport's health checks silently unconfigured.
 
-M10 (open; Plan 4 decides): there is no asset resolver here, and `DriverIntent` carries no
-decimals.
+There is no asset resolver here, and `DriverIntent` carries no decimals: drivers work
+in base units only.
 
 ## Properties
 
@@ -20,7 +20,7 @@ decimals.
 
 > `readonly` **chain**: [`ChainInfo`](ChainInfo.md)
 
-Defined in: [src/core/driver/types.ts:369](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L369)
+Defined in: [src/core/driver/types.ts:375](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L375)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [src/core/driver/types.ts:369](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **clock**: [`Clock`](Clock.md)
 
-Defined in: [src/core/driver/types.ts:374](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L374)
+Defined in: [src/core/driver/types.ts:380](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L380)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [src/core/driver/types.ts:374](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **indexer?**: [`Transport`](Transport.md)
 
-Defined in: [src/core/driver/types.ts:373](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L373)
+Defined in: [src/core/driver/types.ts:379](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L379)
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [src/core/driver/types.ts:373](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **library**: `string`
 
-Defined in: [src/core/driver/types.ts:371](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L371)
+Defined in: [src/core/driver/types.ts:377](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L377)
 
 ***
 
@@ -60,7 +60,7 @@ Defined in: [src/core/driver/types.ts:371](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **log**: [`Logger`](Logger.md)
 
-Defined in: [src/core/driver/types.ts:375](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L375)
+Defined in: [src/core/driver/types.ts:381](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L381)
 
 ***
 
@@ -70,7 +70,7 @@ Defined in: [src/core/driver/types.ts:375](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **network**: [`NetworkInfo`](NetworkInfo.md)
 
-Defined in: [src/core/driver/types.ts:370](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L370)
+Defined in: [src/core/driver/types.ts:376](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L376)
 
 ***
 
@@ -80,7 +80,7 @@ Defined in: [src/core/driver/types.ts:370](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **options**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/driver/types.ts:376](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L376)
+Defined in: [src/core/driver/types.ts:382](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L382)
 
 ***
 
@@ -90,4 +90,4 @@ Defined in: [src/core/driver/types.ts:376](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **transport**: [`Transport`](Transport.md)
 
-Defined in: [src/core/driver/types.ts:372](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L372)
+Defined in: [src/core/driver/types.ts:378](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L378)

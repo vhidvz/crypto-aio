@@ -1,9 +1,9 @@
 /**
- * The only module that imports `@solana/web3.js` (spec §15): program-derived addresses,
- * legacy message compilation and the `crypto-aio/native` `Connection`. It is never on a
- * driver request path (lesson 1): the driver sends every request straight to the
- * transport, and the native `Connection` reaches the same transport through
- * `transport.createFetch` (spec §11).
+ * The only module that imports `@solana/web3.js`: program-derived addresses, legacy
+ * message compilation and the `crypto-aio/native` `Connection`. It is never on a driver
+ * request path: `Connection` retries HTTP 429 on a real timer and would drop the call's
+ * tags, so the driver sends every request straight to the transport, and the native
+ * `Connection` reaches the same transport through `transport.createFetch`.
  */
 import {
   Connection,

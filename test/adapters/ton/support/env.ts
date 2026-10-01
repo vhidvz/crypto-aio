@@ -1,22 +1,22 @@
 /**
- * A container on the scripted toncenter node, for end-to-end tests. `restart()` builds a new
- * container over the same stores, node, clock and signer, like `createFakeEnv`'s (ruling
- * R71): a plain restart leaves the old container running beside the new one, and
- * `restart({ killPrevious: true })` first kills the old generation through `fenceGeneration`
- * (Plan 2 Task 11; D20, handoff R20), so every clock sleep, fetch, store and signer call it
- * makes or has in flight never settles, exactly like a dead process. The killed container is
- * never closed: `close()` would hang on its fenced stores. `aio` and `bc` stay the first
+ * A container on the scripted toncenter node, for end-to-end tests. `restart()` builds a
+ * new container over the same stores, node, clock and signer, like `createFakeEnv`'s: a
+ * plain restart leaves the old container running beside the new one, and
+ * `restart({ killPrevious: true })` first kills the old generation through
+ * `fenceGeneration`, so every clock sleep, fetch, store and signer call it makes or has
+ * in flight never settles, exactly like a dead process. The killed container is never
+ * closed: `close()` would hang on its fenced stores. `aio` and `bc` stay the first
  * container's; `clock`, `stores` and the signer's counter are the raw, unfenced objects:
  * drive time and assert on durable state through them.
  *
- * Determinism (lesson 1, R46): time is the `FakeClock`'s, the stores run on it
- * (`stores(clock)` builds any replacement on it too), the node's hashes come from counters,
- * and nothing touches the network. Operation and Attempt ids stay random (`randomBytes`),
- * but they only name things: the store orders its work by time. One source is left to the
- * suite: `CryptoAio` builds its transports itself, with no `id` or `random` option, so their
- * backoff jitter falls back to `Math.random`. A suite that uses this env pins it
- * (`jest.spyOn(Math, 'random').mockReturnValue(0.5)` in `beforeEach`, restored in
- * `afterEach`), as `e2e.test.ts` does.
+ * Determinism, since the flake budget is zero: time is the `FakeClock`'s, the stores run
+ * on it (`stores(clock)` builds any replacement on it too), the node's hashes come from
+ * counters, and nothing touches the network. Operation and Attempt ids stay random
+ * (`randomBytes`), but they only name things: the store orders its work by time. One
+ * source is left to the suite: `CryptoAio` builds its transports itself, with no `id` or
+ * `random` option, so their backoff jitter falls back to `Math.random`. A suite that uses
+ * this env pins it (`jest.spyOn(Math, 'random').mockReturnValue(0.5)` in `beforeEach`,
+ * restored in `afterEach`), as `e2e.test.ts` does.
  */
 import {
   CryptoAio,

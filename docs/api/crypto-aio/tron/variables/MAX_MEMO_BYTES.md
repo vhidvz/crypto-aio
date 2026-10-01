@@ -6,4 +6,4 @@
 
 Defined in: [src/adapters/tron/network.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L52)
 
-Memo bytes (UTF-8) accepted in `raw_data.data` (D9).
+Memo bytes (UTF-8) accepted in `raw_data.data`.

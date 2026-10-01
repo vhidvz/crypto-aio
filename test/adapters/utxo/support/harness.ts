@@ -71,7 +71,7 @@ export async function utxoHarness(options: HarnessOptions = {}) {
       events,
       log: noopLogger,
       id,
-      // Determinism (lesson 1, R46): no Math.random in backoff jitter.
+      // Determinism: no Math.random in backoff jitter.
       random: () => 0.5,
       options: {
         fetch: node.fetch.fetch,
@@ -98,7 +98,7 @@ export async function utxoHarness(options: HarnessOptions = {}) {
 
 export type Harness = Awaited<ReturnType<typeof utxoHarness>>;
 
-/** The whole driver from the factory, over the harness's two transports (Task 9). */
+/** The whole driver from the factory, over the harness's two transports. */
 export async function withDriver(h: Harness) {
   return utxoDriverFactory.create({
     chain: BITCOIN_CHAIN,

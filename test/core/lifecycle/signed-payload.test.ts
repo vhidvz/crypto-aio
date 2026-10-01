@@ -1,4 +1,4 @@
-// P3-B (ruling A6): `submitSignatures` also takes a payload signed elsewhere, whose
+// `submitSignatures` also takes a payload signed elsewhere (e.g. a signed PSBT), whose
 // signatures the driver extracts; the core verifies each one like any bundle.
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import { ValidationError } from '../../../src/core/errors/error';
@@ -58,7 +58,7 @@ async function withExtractor(env: FakeEnv, bc: FakeEnv['bc']) {
   return seen;
 }
 
-describe('submitSignatures with a signed payload (A6)', () => {
+describe('submitSignatures with a signed payload', () => {
   it('passes the stored unsigned transaction to the driver and submits what it extracts', async () => {
     const env = await createFakeEnv();
     const { cold, prepared, signatures } = await prepareCold(env);
@@ -71,7 +71,7 @@ describe('submitSignatures with a signed payload (A6)', () => {
     expect(seen[0]?.unsigned.payload).toEqual(prepared.unsigned?.payload);
   });
 
-  it('verifies every extracted signature against the stored request (R9)', async () => {
+  it('verifies every extracted signature against the stored request', async () => {
     const env = await createFakeEnv();
     const { cold, prepared, signatures } = await prepareCold(env);
     await withExtractor(env, cold);
@@ -83,7 +83,9 @@ describe('submitSignatures with a signed payload (A6)', () => {
     expect(op?.attempts).toHaveLength(0);
   });
 
-  it("refuses another transaction's genuine signatures, writing nothing (P25-R12)", async () => {
+  // A driver that does not compare the payload with the prepared transaction gets the
+  // core's SIGNATURE_MISMATCH; one that does compare refuses it with INVALID_INTENT.
+  it("refuses another transaction's genuine signatures, writing nothing", async () => {
     const env = await createFakeEnv();
     const a = await prepareCold(env);
     const b = await prepareCold(env, env.signer, 'cold-2');
@@ -100,7 +102,7 @@ describe('submitSignatures with a signed payload (A6)', () => {
     expect(op?.attempts).toHaveLength(0);
   });
 
-  it('refuses a payload once the Operation has moved on, adding no attempt (P25-R12)', async () => {
+  it('refuses a payload once the Operation has moved on, adding no attempt', async () => {
     const env = await createFakeEnv();
     const { cold, prepared, signatures } = await prepareCold(env);
     await withExtractor(env, cold);
@@ -113,7 +115,7 @@ describe('submitSignatures with a signed payload (A6)', () => {
     expect(op?.attempts).toHaveLength(1);
   });
 
-  it('refuses a payload for an Operation that never built a transaction (P25-R12)', async () => {
+  it('refuses a payload for an Operation that never built a transaction', async () => {
     const env = await createFakeEnv();
     const poor = localSigner.generate({ curves: ['secp256k1'], id: 'poor' }).signer;
     const cold = await coldOf(env, poor);
@@ -151,7 +153,7 @@ describe('submitSignatures with a signed payload (A6)', () => {
     expect(sub.state).toBe('submitted');
   });
 
-  it('refuses a payload that is not { encoding, data } (M8)', async () => {
+  it('refuses a payload that is not { encoding, data }', async () => {
     const env = await createFakeEnv();
     const { cold, prepared } = await prepareCold(env);
     const seen = await withExtractor(env, cold);
@@ -163,7 +165,7 @@ describe('submitSignatures with a signed payload (A6)', () => {
     expect(seen).toHaveLength(0);
   });
 
-  it("checks the Operation belongs to the handle's wallet before extracting (M8)", async () => {
+  it("checks the Operation belongs to the handle's wallet before extracting", async () => {
     const env = await createFakeEnv();
     const other = localSigner.generate({ curves: ['secp256k1'], id: 'other' }).signer;
     env.chain.fund(fakeAddress(await other.getPublicKey('secp256k1-ecdsa')), 1_000n);
@@ -185,7 +187,9 @@ describe('submitSignatures with a signed payload (A6)', () => {
     expect(seen).toHaveLength(0);
   });
 
-  it("turns a driver's foreign extraction error into INVALID_INTENT, echoing nothing (M10)", async () => {
+  // An SDK's error text can quote the payload, so a foreign error keeps neither its text
+  // nor its `cause`.
+  it("turns a driver's foreign extraction error into INVALID_INTENT, echoing nothing", async () => {
     const env = await createFakeEnv();
     const { cold, prepared, signatures } = await prepareCold(env);
     const { driver } = await env.run(internalsOf(cold).pooled());

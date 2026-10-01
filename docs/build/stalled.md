@@ -140,7 +140,11 @@ every refused message with HTTP 500, which the library reads as "maybe sent", so
 transfer surfaces as ambiguous; another endpoint's definitive refusal leaves it `stalled`.
 Either way the message may still land within its 60-second lifetime. The workers watch it
 until it is proven `final` or `failed`, or `expired` once its lifetime has passed, and only
-then does `bc.rebuild(id)` sign it again, at the wallet's next seqno.
+then does `bc.rebuild(id)` sign it again, at the wallet's next seqno. One exception: when more
+than 512 of the wallet's transactions follow the message (incoming deposits count), a message
+that never landed can no longer be proven `expired`. It stays undecided, and the wallet's next
+transfers fail with `SEQUENCE_BUSY` ([TON networks](../reference/networks/ton.md) explains the
+limit).
 
 ## Next steps
 

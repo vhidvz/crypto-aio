@@ -1,6 +1,6 @@
-// Frozen end-to-end vectors (spec §17, lesson 11, M9): a known key and intent give known
-// signature hashes, PSBT bytes, signed bytes and txids for every wallet type. The hashes are
-// also recomputed with an independent implementation over @noble/hashes.
+// Frozen end-to-end vectors: a known key and intent give known signature hashes, PSBT
+// bytes, signed bytes and txids for every wallet type. The hashes are also recomputed
+// with an independent implementation over @noble/hashes.
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { utf8ToBytes } from '@noble/hashes/utils';

@@ -62,6 +62,17 @@ A transfer that paid but reads as failed invites a second payment by hand, so kn
   to `signTimeoutMs` (120 s by default) fails `SEQUENCE_BUSY` after `leaseMs` (30 s); there is no
   option to wait longer. Repeat it with the same idempotency key.
 - **An EIP-7702 authorization that uses the sender's nonce** leaves the EVM verdict undecided.
+- **A refusal can hide behind `dropped`.** After an ambiguous send, a node's later refusal of the
+  same bytes shows as `dropped`, and the Operation stays `submitted`. A repeat with the same
+  key, `rebroadcast` or recovery records the refusal again.
+- **A hung signer slows a worker pass.** If a wallet's `getPublicKey` hangs, each Operation of
+  a pass that every node rejected can wait up to `signTimeoutMs` for it.
+- **Recovery cannot check an Operation whose wallet is gone.** A `signed` or ambiguous
+  Operation whose wallet no longer resolves (its configuration was removed, say) is counted
+  `failed` in the `RecoveryReport` without its check. Restore the wallet and recover again.
+- **The same key used outside crypto-aio.** While an endpoint lags, nonce reconciliation can
+  reclaim a nonce that a transaction sent from outside the library already used. The transfer
+  that reuses it fails with `TX_REPLACED`; nothing is paid twice.
 
 ### Not there yet
 
@@ -71,6 +82,8 @@ A transfer that paid but reads as failed invites a second payment by hand, so kn
 - **A gas-limit bound on EVM.** `eth_estimateGas` sets the gas limit. An inflated estimate only
   raises the reserved maximum (the funds check refuses what the wallet cannot cover), but no
   operator bound exists. The OP Stack operator fee is not in the fee report.
+- **A repeat cancel on EVM** ranks earlier cancels by their total charges, not by price, so it
+  may need an explicit `fee`.
 - **A sanity bound on Solana's fee quote** (`getFeeForMessage`). A wrong quote can mis-state an
   estimate or stall a transfer; it is never signed into one.
 - **Hardware-wallet key origins on Bitcoin.** PSBTs carry no `bip32Derivation`.

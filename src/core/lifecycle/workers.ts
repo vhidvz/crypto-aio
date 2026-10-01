@@ -13,8 +13,8 @@ import { PRE_SIGNING_STATES, errorCode } from './engine-rules';
 import type { MonitorDeps, ReadResolver, TargetResolver } from './monitor';
 
 /*
- * The monitor's background worker loop and startup recovery (M11: moved out of
- * `Monitor`, which delegates to `Workers`). They check Operations through the monitor
+ * The monitor's background worker loop and startup recovery (`Monitor` delegates to
+ * `Workers`). They check Operations through the monitor
  * (`MonitorChecks`) and write only through the engine.
  */
 
@@ -72,7 +72,7 @@ export interface MonitorChecks {
 export class Workers {
   /**
    * Per Operation, the expected nonces a `nonce.gap` was already emitted for; least
-   * recently reported first, capped at `GAP_MEMORY` Operations (M2).
+   * recently reported first, capped at `GAP_MEMORY` Operations.
    */
   readonly #gaps = new Map<string, Set<string>>();
 
@@ -83,7 +83,7 @@ export class Workers {
 
   /**
    * One worker pass: claims up to `batch` due Operations, checks each under its claim fence
-   * (a stale worker's writes fail), then releases the claim. R26: every claimed Operation
+   * (a stale worker's writes fail), then releases the claim. Every claimed Operation
    * that stays live leaves the pass scheduled a poll interval ahead, including when its
    * check threw, its view was stale or its all-rejected verdict could not run, so no worker
    * claims it again before then. A stale view also skips gap handling and reconciliation.
@@ -191,7 +191,9 @@ export class Workers {
    * a caller and are reported through `recovery.skipped` (codes and states only). Then each
    * wallet with a live Operation has its nonces reconciled under its address lease. A
    * failure is logged by code and counted, and the rest go on. `signal` stops recovery
-   * between Operations and bounds each check and lease wait.
+   * between Operations and bounds each check and lease wait. Known gap: a `signed` or
+   * ambiguous Operation whose wallet-bound target cannot be resolved is counted `failed`
+   * without its check, although the check needs no wallet.
    */
   async recover(
     options: { readonly signal?: AbortSignal } = {},
@@ -282,7 +284,7 @@ export class Workers {
 
   /**
    * `resolve` for one pass: each execution context's target is rebuilt at most once, and
-   * only when first asked for (R32: a wallet-bound one only by a write that needs it).
+   * only when first asked for (a wallet-bound one only by a write that needs it).
    */
   #passResolver<T>(
     resolve: (op: OperationRecord) => Promise<T | undefined>,
@@ -313,7 +315,7 @@ export class Workers {
   }
 
   /**
-   * R26: leaves a claimed, live Operation scheduled a poll interval ahead, unless it ended,
+   * Leaves a claimed, live Operation scheduled a poll interval ahead, unless it ended,
    * another worker took it over or a writer scheduled it meanwhile. A pre-signing Operation
    * is never scheduled (callers drive it), so it is unscheduled instead. Best effort.
    */
@@ -349,11 +351,11 @@ export class Workers {
   /**
    * `nonce.gap`, once per (Operation, expected nonce): a `submitted` Operation has waited
    * longer than `droppedGracePeriodMs` since its active Attempt was first seen or sent, and
-   * the chain's pending nonce is still below its own (spec §8.5: a lower nonce is missing
+   * the chain's pending nonce is still below its own (a lower nonce is missing
    * even from the mempool, so congestion alone is no gap). It names the live Operation
    * holding the expected nonce, when one exists. Every such pass then reconciles the wallet's nonces, trying the lease
-   * once (never a filler transaction): a leaked value goes back for the next transfer. R32:
-   * only that write resolves the wallet-bound target (`writes`).
+   * once (never a filler transaction): a leaked value goes back for the next transfer.
+   * Only that write resolves the wallet-bound target (`writes`).
    */
   async #detectNonceGap(
     target: ReadTarget,
@@ -369,7 +371,7 @@ export class Workers {
     const observation = attempt
       ? await this.deps.stores.operations.getObservation(attempt.id)
       : null;
-    // M3: not `lastBroadcastAt`, which every resend of a dropped Attempt refreshes.
+    // Not `lastBroadcastAt`, which every resend of a dropped Attempt refreshes.
     const since = observation?.firstSeenAt ?? attempt?.createdAt ?? op.createdAt;
     if (this.deps.clock.now() - since < this.deps.lifecycle().droppedGracePeriodMs)
       return;

@@ -51,7 +51,7 @@ const bare = (data: string): SignedTx => ({
 });
 /** Bitcoin Core's `MAX_MONEY`. */
 const MAX_MONEY = 2_100_000_000_000_000n;
-/** Lesson 21: a rejection the driver cannot confirm for these bytes (non-terminal). */
+/** A rejection the driver cannot confirm for these bytes (non-terminal). */
 const CLAIMED = {
   kind: 'refused',
   code: 'TX_REFUSED',
@@ -141,7 +141,7 @@ describe('build and assemble', () => {
     expect(300_000n - 250_000n - change).toBe(unsigned.fee.charges[0]?.amount);
   });
 
-  it("carries each segwit v0 input's previous transaction, unless turned off (M15)", async () => {
+  it("carries each segwit v0 input's previous transaction, unless turned off", async () => {
     const on = await funded([100_000n]);
     const psbtOf = (unsigned: UnsignedTx) =>
       bitcoin.Psbt.fromBase64(unsigned.payload.data, {
@@ -171,8 +171,8 @@ describe('build and assemble', () => {
         const unsigned = await h.run(
           builder.build(i, await h.run(builder.estimateFee(i, ctx)), ctx),
         );
-        // Every input's previous transaction is read (F3-R14). p2pkh always carries it
-        // (D12), segwit v0 while M15 is on, and p2tr never (BIP341).
+        // Every input's previous transaction is read. p2pkh always carries it, segwit v0
+        // while `nonWitnessUtxo` is on, and p2tr never (BIP341).
         expect(h.calls.some((c) => c.request.route === '/tx/:txid/hex')).toBe(true);
         const embeds = type === 'p2pkh' || (nonWitnessUtxo && type !== 'p2tr');
         expect(
@@ -235,7 +235,7 @@ describe('build and assemble', () => {
     });
     const eager = { ...h.ctx, config: { ...h.ctx.config, minInputConfirmations: 0 } };
     // Coin selection takes it under minInputConfirmations 0, but it is someone else's
-    // unconfirmed payment: it decides nothing until a block holds it (F3-R24 F1).
+    // unconfirmed payment: it decides nothing until a block holds it.
     await expect(
       make(utxoBuilder(eager, h.network), intent(150_000n)),
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
@@ -283,7 +283,7 @@ describe('build and assemble', () => {
     });
   });
 
-  it("decides nothing when the indexer's output disagrees with its previous transaction (M15)", async () => {
+  it("decides nothing when the indexer's output disagrees with its previous transaction", async () => {
     const h = await funded([100_000n]);
     const foreign = (h.node.fund(PAYEE.address, 100_000n).split(':') as [string])[0];
     type Utxo = Record<string, unknown>;
@@ -308,7 +308,8 @@ describe('build and assemble', () => {
     expect(result).toEqual({ kind: 'accepted' });
   });
 
-  it('authenticates every input against its previous transaction, p2tr and M15 off included, and embeds it only for p2pkh and M15 (F3-R14)', async () => {
+  // Also with `nonWitnessUtxo` off; while it is on, segwit v0 inputs embed theirs too.
+  it('authenticates every input against its previous transaction, p2tr included, and embeds it only for p2pkh', async () => {
     type Utxo = Record<string, unknown>;
     const cases = [
       ['p2tr', true],
@@ -344,7 +345,7 @@ describe('build and assemble', () => {
       // Read once, then kept: the bytes authenticate themselves.
       expect(h.calls.filter((c) => c.request.route === '/tx/:txid/hex')).toHaveLength(1);
       // Authenticated, not embedded: p2tr never carries one (signed-psbt.ts refuses it), and
-      // M15 off keeps its PSBTs as they were.
+      // `nonWitnessUtxo` off keeps its PSBTs as they were.
       const psbt = bitcoin.Psbt.fromBase64(unsigned.payload.data, {
         network: bitcoin.networks.regtest,
       });
@@ -353,7 +354,7 @@ describe('build and assemble', () => {
     }
   });
 
-  it('never builds on a previous transaction no chain holds, and signs nothing (F3-R24 F1)', async () => {
+  it('never builds on a previous transaction no chain holds, and signs nothing', async () => {
     type Utxo = Record<string, unknown>;
     for (const type of ['p2tr', 'p2wpkh'] as const) {
       const h = await utxoHarness();
@@ -387,7 +388,7 @@ describe('build and assemble', () => {
     }
   });
 
-  it("spends an unconfirmed output only of the wallet's own sent transaction (minInputConfirmations 0, F3-R24 F1)", async () => {
+  it("spends an unconfirmed output only of the wallet's own sent transaction (minInputConfirmations 0)", async () => {
     const h = await funded([100_000n], { options: { minInputConfirmations: 0 } });
     // Ours: sent through this client, which keeps its bytes; its change is unconfirmed.
     const first = await h.send(await h.make(intent(30_000n)));
@@ -414,7 +415,7 @@ describe('build and assemble', () => {
     });
   });
 
-  it('waits until every proof endpoint holds a new parent as deep as minInputConfirmations asks (F3-R24 F1)', async () => {
+  it('waits until every proof endpoint holds a new parent as deep as minInputConfirmations asks', async () => {
     const h = await utxoHarness({
       endpoints: ['a', 'b'],
       options: { minInputConfirmations: 2 },
@@ -437,7 +438,7 @@ describe('build and assemble', () => {
     expect((await make()).ordering.kind).toBe('inputs');
   });
 
-  it('decides nothing when the proof endpoints put a parent in a block that is not the one at its height (F3-R24 F1)', async () => {
+  it('decides nothing when the proof endpoints put a parent in a block that is not the one at its height', async () => {
     type Json = Record<string, unknown>;
     const h = await utxoHarness({ endpoints: ['a', 'b'] });
     const [txid] = h.node.fund(OWN.address, 100_000n).split(':') as [string];
@@ -469,7 +470,7 @@ describe('build and assemble', () => {
     });
   });
 
-  it('attests the parent of an input a replacement adds (F3-R24 F1)', async () => {
+  it('attests the parent of an input a replacement adds', async () => {
     type Utxo = Record<string, unknown>;
     const wallet = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST);
     const h = await utxoHarness();
@@ -508,7 +509,7 @@ describe('build and assemble', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
-  it('asks the proof quorum about each new parent once it is final, never again (F3-R24 F1)', async () => {
+  it('asks the proof quorum about each new parent once it is final, never again', async () => {
     const h = await funded([100_000n, 200_000n]);
     h.node.mine(6);
     const views = () =>
@@ -522,7 +523,7 @@ describe('build and assemble', () => {
     expect(views()).toHaveLength(0);
   });
 
-  it('never builds on an outpoint its previous transaction does not have (F3-R14 (a))', async () => {
+  it('never builds on an outpoint its previous transaction does not have', async () => {
     type Utxo = Record<string, unknown>;
     for (const type of ['p2tr', 'p2wpkh'] as const) {
       const h = await utxoHarness();
@@ -552,7 +553,7 @@ describe('build and assemble', () => {
     }
   });
 
-  it('authenticates the inputs a replacement adds; the ones it keeps come from the cache (F3-R14 (c))', async () => {
+  it('authenticates the inputs a replacement adds; the ones it keeps come from the cache', async () => {
     type Utxo = Record<string, unknown>;
     const wallet = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST);
     const h = await utxoHarness();
@@ -600,7 +601,7 @@ describe('build and assemble', () => {
     expect(reads).toEqual([`/tx/${added.split(':')[0]}/hex`]);
   });
 
-  it('reads previous transactions a few at a time, and each once per client (F3-R14 (d), M3)', async () => {
+  it('reads previous transactions a few at a time, and each once per client', async () => {
     const h = await funded(
       Array.from({ length: 12 }, () => 10_000n),
       { options: { coinSelection: 'all' } },
@@ -626,7 +627,7 @@ describe('build and assemble', () => {
     expect(reads).toHaveLength(0);
   });
 
-  it('keeps a cold-signed p2tr PSBT acceptable: its previous transactions are read, never embedded (F3-R14 (b))', async () => {
+  it('keeps a cold-signed p2tr PSBT acceptable: its previous transactions are read, never embedded', async () => {
     const h = await utxoHarness();
     const wallet = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST);
     h.node.fund(wallet.address, 60_000n);
@@ -658,7 +659,7 @@ describe('build and assemble', () => {
     });
   });
 
-  it('decides nothing on a listing worth more than every bitcoin (review M1)', async () => {
+  it('decides nothing on a listing worth more than every bitcoin', async () => {
     // Each value is in range, but together they exceed the supply: under `all`, the change
     // would be above MAX_MONEY, which is the indexer's error, not the caller's.
     const h = await funded([100_000n, 200_000n], { options: { coinSelection: 'all' } });
@@ -685,7 +686,7 @@ describe('build and assemble', () => {
     expect((await h.make(intent(50_000n))).fee.details).toMatchObject({ inputs: 2 });
   });
 
-  it("sends change to an address the wallet's key derives, or elsewhere only by opt-out (A19)", async () => {
+  it("sends change to an address the wallet's key derives, or elsewhere only by opt-out", async () => {
     const h = await funded([100_000n, 100_000n]);
     const changeOutput = (unsigned: UnsignedTx) =>
       bitcoin.address.fromOutputScript(
@@ -716,7 +717,7 @@ describe('build and assemble', () => {
       'message',
       expect.stringContaining(foreign),
     );
-    // A cancel pays the sending address (M3), but a misconfigured change address is refused
+    // A cancel pays the sending address, but a misconfigured change address is refused
     // there too, as on every other path.
     const sent = await h.make(intent(10_000n));
     await expect(
@@ -742,7 +743,7 @@ describe('build and assemble', () => {
     }
   });
 
-  it("accepts a change address on the wallet xpub's chains, within the search bound (A22)", async () => {
+  it("accepts a change address on the wallet xpub's chains, within the search bound", async () => {
     const h = await funded([100_000n, 100_000n]);
     const tpub = { private: 0x04358394, public: 0x043587cf };
     const root = HDKey.fromMasterSeed(
@@ -786,7 +787,7 @@ describe('build and assemble', () => {
       if (ok) expect(changeOf(await made)).toBe(at(path));
       else await expect(made).rejects.toMatchObject({ code: 'CONFIG_INVALID' });
     }
-    // X4 (A20): a mainnet xpub on a test network is refused, even where it derives the
+    // A mainnet xpub on a test network is refused, even where it derives the
     // address (the same seed under mainnet versions derives the same keys).
     const mainnet = HDKey.fromMasterSeed(sha256(utf8ToBytes('crypto-aio/utxo change')));
     await expect(
@@ -801,10 +802,10 @@ describe('build and assemble', () => {
       ),
     ).rejects.toMatchObject({ code: 'CONFIG_INVALID' });
     // Heavy by design (a dozen builds, each searching up to 40 keys): an explicit budget, so
-    // a loaded machine does not fail it (final review I2).
+    // a loaded machine does not fail it.
   }, 30_000);
 
-  it('parses the xpub once per search, derives each chain node once, then answers from a cache (final review I2)', async () => {
+  it('parses the xpub once per search, derives each chain node once, then answers from a cache', async () => {
     const h = await funded([100_000n, 100_000n]);
     const tpub = { private: 0x04358394, public: 0x043587cf };
     const root = HDKey.fromMasterSeed(sha256(utf8ToBytes('crypto-aio/utxo I2')), tpub);
@@ -852,7 +853,7 @@ describe('build and assemble', () => {
     const h = await funded();
     const cases: [DriverIntent, BuildContext, string][] = [
       [intent(100n), build(), 'INVALID_AMOUNT'],
-      // F3-R15: a memo reaches the driver only if a network wrongly advertises `memo`.
+      // A memo reaches the driver only if a network wrongly advertises `memo`.
       [intent(10_000n, { memo: 'invoice 7' }), build(), 'UNSUPPORTED_CAPABILITY'],
       [
         intent(10_000n, { asset: { standard: 'brc20', contract: 'ordi' } }),
@@ -876,7 +877,7 @@ describe('build and assemble', () => {
         build(),
         'INVALID_ADDRESS',
       ],
-      // M2: more outputs than limits().maxOutputs.
+      // More outputs than limits().maxOutputs.
       [
         intent(10_000n, {
           outputs: Array.from({ length: 1_001 }, () => ({
@@ -937,7 +938,7 @@ describe('build and assemble', () => {
     });
   });
 
-  it('reads the signatures of a PSBT signed elsewhere, at once and offline, and assembles from its own (A6)', async () => {
+  it('reads the signatures of a PSBT signed elsewhere, at once and offline, and assembles from its own', async () => {
     const h = await funded();
     const unsigned = await h.make(intent(250_000n));
     const psbt = bitcoin.Psbt.fromBase64(unsigned.payload.data, {
@@ -974,13 +975,13 @@ describe('build and assemble', () => {
     );
   });
 
-  it('tags every call (R41): building reads, its parents under the proof quorum, sending broadcasts', async () => {
+  it('tags every call: building reads, its parents under the proof quorum, sending broadcasts', async () => {
     const h = await funded([100_000n]);
     h.calls.length = 0;
     const unsigned = await h.make(intent(50_000n));
     expect(h.calls.length).toBeGreaterThan(0);
-    // F3-R24 F1 (the adapter's choice): a new input's parent is attested under the proof
-    // quorum, at its own height.
+    // The adapter's choice: a new input's parent is attested under the proof quorum, at
+    // its own height.
     const proof = h.calls.filter((c) => c.options.purpose === 'proof');
     // The parent's view, its depth, its block at its height, and whether it is final yet.
     expect(proof.map((c) => c.request.route).sort()).toEqual([
@@ -1086,7 +1087,7 @@ describe('broadcast', () => {
     }
   });
 
-  it('refuses a bad signature on Bitcoin Core 30 and 29 alike (F3-R8, lesson 21)', async () => {
+  it('refuses a bad signature on Bitcoin Core 30 and 29 alike', async () => {
     // v30 checks scripts once, with the policy flags: `mempool-script-verify-flag-failed`, a
     // refusal. v29 checks again with the consensus flags and claims `mandatory-…`, a
     // rejection; a script failure depends on the spent outputs, so it is never confirmed
@@ -1121,7 +1122,7 @@ describe('broadcast', () => {
   it('refuses raw bytes that cannot be a transaction before sending, and never throws on a large one', async () => {
     const h = await funded([]);
     h.calls.length = 0;
-    // Larger than any block (lesson 20), odd, empty or not hex: nothing is sent.
+    // Larger than any block, odd, empty or not hex: nothing is sent.
     for (const data of ['00'.repeat(4_000_001), '0', '', 'zz']) {
       await expect(h.run(h.broadcaster.broadcast(bare(data)))).rejects.toMatchObject({
         code: 'INVALID_INTENT',
@@ -1135,7 +1136,7 @@ describe('broadcast', () => {
     });
   });
 
-  it("refuses a node's claim that our valid bytes are invalid, whatever reason it names (lesson 21)", async () => {
+  it("refuses a node's claim that our valid bytes are invalid, whatever reason it names", async () => {
     // Every reason the classifier takes for a rejection, in both Esplora formats. An endpoint
     // that relays our bytes and then claims one must not end the Attempt: its inputs would
     // leave the reservations, and a caller's retry could pay twice.
@@ -1192,7 +1193,7 @@ describe('broadcast', () => {
     expect(h.node.confirmations(signed.ref.id)).toBe(1);
   });
 
-  it('rejects bytes the node proves invalid when the reason holds for them here (lesson 21)', async () => {
+  it('rejects bytes the node proves invalid when the reason holds for them here', async () => {
     const h = await funded([100_000n]);
     const [txid] = (h.outpoints[0] as string).split(':') as [string];
     const spent = fromHex(txid).reverse();
@@ -1253,7 +1254,7 @@ describe('broadcast', () => {
     expect(h.node.broadcasts).toHaveLength(cases.length + 1);
   });
 
-  it("checks a bare broadcast's answer against the bytes' own txid (M7)", async () => {
+  it("checks a bare broadcast's answer against the bytes' own txid", async () => {
     const h = await funded([100_000n]);
     const signed = await h.sign(await h.make(intent(50_000n)));
     h.node.intercept('a', (request, _signal, honest) => {
@@ -1318,7 +1319,7 @@ describe('replace and cancel', () => {
     }
   });
 
-  it('replaces over a superset of the inputs, only above the floor (R30)', async () => {
+  it('replaces over a superset of the inputs, only above the floor', async () => {
     const h = await pending();
     const { policy } = h;
     await expect(
@@ -1377,11 +1378,11 @@ describe('replace and cancel', () => {
     }
   });
 
-  it('replaces an original whose legacy signatures are a byte short of the estimate (M1, M5)', async () => {
+  it('replaces an original whose legacy signatures are a byte short of the estimate', async () => {
     // Two p2pkh inputs signed with 70-byte DER signatures (71 with the sighash byte, one
     // less than the estimate counts): the original is 335 vB, not 337. An input is added, so
     // rule 6 binds, and the least replacement the builder allows must still beat the
-    // original's real rate. Without the M1 slack (a vbyte per legacy input) it does not.
+    // original's real rate. Without the slack (a vbyte per legacy input) it does not.
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
     const ctx = build({ from: legacy.address });
     for (const version of [{}, { truncatedFeeRates: true }]) {
@@ -1422,7 +1423,7 @@ describe('replace and cancel', () => {
     }
   });
 
-  it('runs the absurd-fee guard on replacements and cancels too (M6)', async () => {
+  it('runs the absurd-fee guard on replacements and cancels too', async () => {
     const h = await pending([60_000n, 100_000n], { options: { maxFee: 5_000n } });
     // 600 sat/vB for the two inputs a bump needs, and 50 sat/vB for a 110 vB cancel: both
     // pay more than maxFee.
@@ -1438,7 +1439,7 @@ describe('replace and cancel', () => {
   });
 
   it('stays live through a stale spend view: a stale outspend, then a fresh one naming our own txid', async () => {
-    // Task 7 review: an index that has not caught up with the replacement names the Attempt
+    // An index that has not caught up with the replacement names the Attempt
     // it replaced, or nothing, as the input's spender. Observed evidence only, never terminal.
     const h = await pending();
     const next = await h.run(h.policy.buildReplacement!(h.original, 'fast', build()));
@@ -1462,7 +1463,7 @@ describe('replace and cancel', () => {
     expect(h.node.inMempool(signed.ref.id)).toBe(true);
   });
 
-  it('cancels to the sending address itself, never to a configured change address (M3)', async () => {
+  it('cancels to the sending address itself, never to a configured change address', async () => {
     const h = await pending([100_000n]);
     const payees = (unsigned: UnsignedTx) =>
       bitcoin.Psbt.fromBase64(unsigned.payload.data, {
@@ -1489,7 +1490,7 @@ describe('replace and cancel', () => {
     const { policy } = h;
     const cancel = await h.run(policy.buildCancel!(h.original, build()));
     expect(cancel.ordering).toEqual(h.original.ordering);
-    // Exactly the floor (R30): the replaced 282 sat (2 sat/vB, 141 vB) plus 1 sat/vB for the
+    // Exactly the floor: the replaced 282 sat (2 sat/vB, 141 vB) plus 1 sat/vB for the
     // cancel's 110 vB (rules 3 and 4; the rate rule asks only 222).
     expect(cancel.fee.charges[0]?.amount).toBe(392n);
     expect(cancel.summary.outputs).toEqual([
@@ -1511,7 +1512,7 @@ describe('replace and cancel', () => {
     expect(result).toEqual({ kind: 'accepted' });
   });
 
-  it('never reads or writes requestedFee, which the core adds to replacements (R30)', async () => {
+  it('never reads or writes requestedFee, which the core adds to replacements', async () => {
     const h = await pending();
     const recorded = (unsigned: UnsignedTx, fee: unknown): UnsignedTx => ({
       ...unsigned,

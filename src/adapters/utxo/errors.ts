@@ -4,19 +4,19 @@
  * - Blockstream electrs: `sendrawtransaction RPC error -26: min relay fee not met, 100 < 141`
  * - mempool/electrs: `sendrawtransaction RPC error: {"code":-26,"message":"min relay fee …"}`
  *
- * Lesson 3 (R63/R64): `rejected` only for exact, anchored reject reasons that make these
+ * `rejected` only for exact, anchored reject reasons that make these
  * bytes invalid by consensus on every node (bitcoind's `CheckTransaction` and consensus
  * script checks, and an undecodable transaction); everything that depends on state, policy
  * or node configuration is `refused`, which is also the default for unknown texts. A
  * `rejected` reason counts only under the code bitcoind answers it with, so a text outside
  * bitcoind's structured answer never ends an Attempt. Reasons are fixed literals: bitcoind's
- * texts carry txids, amounts and fee rates (R24).
+ * texts carry txids, amounts and fee rates, which a stored reason must never hold.
  *
- * Lesson 21 (F3-R11): a node's rejection is a claim. `nodeClaim` only parses what the node
+ * A node's rejection is a claim. `nodeClaim` only parses what the node
  * claims, and a claimed consensus failure is `invalid`, a kind no `Broadcaster` may return.
  * `classifyOwnBroadcast`, the only classifier, keeps a `rejected` only when the claimed reason
  * holds for the bytes that were sent, checked here, and makes every other one `refused`
- * (non-terminal). No export takes the node at its word (final review M4).
+ * (non-terminal). No export takes the node at its word.
  */
 import type { BroadcastResult } from '../../core/driver/types';
 import { MAX_TX_BYTES, readTxHex } from './rawtx';
@@ -27,7 +27,7 @@ export interface NodeError {
 }
 
 /**
- * Lesson 20: only a body's head is read. bitcoind's code and reject reason come first and its
+ * Only a body's head is read. bitcoind's code and reject reason come first and its
  * texts are far shorter; unbounded, the mempool/electrs pattern is quadratic in the length.
  */
 const MAX_BODY = 1_024;
@@ -140,7 +140,7 @@ const SPENT = reason(
 /**
  * What bitcoind's answer claims, parsed: it decides nothing. A claimed consensus failure is
  * `invalid`, which is no `BroadcastResult`: only `classifyOwnBroadcast` turns it into a
- * `rejected` verdict, and only for bytes its reason holds for (lesson 21).
+ * `rejected` verdict, and only for bytes its reason holds for.
  */
 export type NodeClaim =
   | Extract<BroadcastResult, { readonly kind: 'already-known' | 'refused' }>
@@ -169,7 +169,7 @@ export function nodeClaim(error: NodeError): NodeClaim {
 }
 
 /**
- * A transaction's bytes as bitcoind's byte-only checks read them (lesson 21), decoded here
+ * A transaction's bytes as bitcoind's byte-only checks read them, decoded here
  * from the hex that was sent: its outpoints, its output values as signed 64-bit integers, and
  * its size without witness data.
  */
@@ -194,7 +194,7 @@ const isCoinbase = (tx: TxBytes): boolean =>
  * as bitcoind tests it. The others (`bad-txns-in-belowout`, `-inputvalues-outofrange`,
  * `-fee-outofrange` and every script check) depend on the spent outputs, and have no rule: the
  * builder spends only outputs whose value and script their previous transaction authenticates
- * (every input, every wallet type, whatever `nonWitnessUtxo` says: F3-R14), and the core
+ * (every input, every wallet type, whatever `nonWitnessUtxo` says), and the core
  * verifies every signature, so they cannot hold for our own bytes, and a node that claims one
  * is not believed.
  */
@@ -204,7 +204,7 @@ const BYTE_RULES: Readonly<Record<string, (tx: TxBytes) => boolean>> = {
   'bad-txns-oversize': (tx) => tx.strippedSize * 4 > MAX_BLOCK_WEIGHT,
   'bad-txns-vout-negative': (tx) => tx.values.some((value) => value < 0n),
   'bad-txns-vout-toolarge': (tx) => tx.values.some((value) => value > MAX_MONEY),
-  // bitcoind's loop: each output in order, stopping at the first that fails (F3-R14 N1).
+  // bitcoind's loop: each output in order, stopping at the first that fails.
   'bad-txns-txouttotal-toolarge': (tx) => {
     let total = 0n;
     for (const value of tx.values) {
@@ -244,11 +244,11 @@ function bytesOf(sentHex: string): TxBytes | undefined {
 }
 
 /**
- * Lesson 21: the node's answer to the hex this driver sent. A terminal `rejected` frees the
+ * The node's answer to the hex this driver sent. A terminal `rejected` frees the
  * Attempt's inputs for a caller's retry, and if a lying or buggy endpoint relayed the bytes
  * before it claimed them invalid, the retry and the original can both confirm: a double
  * payment. So a rejection stands only when its claimed reason holds for those bytes, decoded
- * here (F3-R24 N2: whether they decode is always this module's own finding): an undecodable
+ * here (whether they decode is always this module's own finding): an undecodable
  * hex for `TX decode failed`, a byte rule for a `CheckTransaction` reason. Anything else is
  * `refused`.
  */

@@ -17,7 +17,7 @@ export interface Evaluation {
 const PROVEN_DEAD = new Set(['rejected', 'replaced', 'expired']);
 
 /**
- * Pure: derives the Operation state from its Attempts' observations (spec §8.2, §6.7).
+ * Pure: derives the Operation state from its Attempts' observations.
  * Every terminal verdict rests on `proven` evidence only: an executed or reverted Attempt
  * proven in finalized state, or every Attempt proven dead (rejected, replaced, expired).
  * Observed-only states (`dropped`, `refused`, absence, an unfinalized block) never end it.

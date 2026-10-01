@@ -2,7 +2,7 @@
 
 # Interface: ChainReader
 
-Defined in: [src/core/driver/types.ts:123](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L123)
+Defined in: [src/core/driver/types.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L125)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:123](https://github.com/vhidvz/crypto-aio/
 
 > **getBalance**(`address`, `asset`): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L124)
+Defined in: [src/core/driver/types.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L126)
 
 #### Parameters
 
@@ -36,7 +36,7 @@ Defined in: [src/core/driver/types.ts:124](https://github.com/vhidvz/crypto-aio/
 
 > **getBlock**(`ref`): `Promise`\<[`DriverBlock`](DriverBlock.md) \| `null`\>
 
-Defined in: [src/core/driver/types.ts:128](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L128)
+Defined in: [src/core/driver/types.ts:130](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L130)
 
 #### Parameters
 
@@ -56,7 +56,7 @@ Defined in: [src/core/driver/types.ts:128](https://github.com/vhidvz/crypto-aio/
 
 > **getBlockHeight**(): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L125)
+Defined in: [src/core/driver/types.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L127)
 
 #### Returns
 
@@ -70,7 +70,7 @@ Defined in: [src/core/driver/types.ts:125](https://github.com/vhidvz/crypto-aio/
 
 > **getFinalizedHeight**(): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L127)
+Defined in: [src/core/driver/types.ts:129](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L129)
 
 Highest block satisfying the network's finality policy.
 
@@ -86,7 +86,7 @@ Highest block satisfying the network's finality policy.
 
 > `optional` **getTokenMetadata**(`ref`): `Promise`\<[`AssetMetadata`](AssetMetadata.md)\>
 
-Defined in: [src/core/driver/types.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L139)
+Defined in: [src/core/driver/types.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L141)
 
 #### Parameters
 
@@ -112,7 +112,7 @@ Defined in: [src/core/driver/types.ts:139](https://github.com/vhidvz/crypto-aio/
 
 > **getTransaction**(`id`): `Promise`\<[`DriverTransaction`](DriverTransaction.md) \| `null`\>
 
-Defined in: [src/core/driver/types.ts:129](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L129)
+Defined in: [src/core/driver/types.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L131)
 
 #### Parameters
 
@@ -132,7 +132,7 @@ Defined in: [src/core/driver/types.ts:129](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **normalizeTokenRef**(`ref`): `object`
 
-Defined in: [src/core/driver/types.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L141)
+Defined in: [src/core/driver/types.ts:143](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L143)
 
 Canonicalizes a token contract (e.g. EIP-55); identity for asset ids.
 
@@ -168,7 +168,7 @@ Canonicalizes a token contract (e.g. EIP-55); identity for asset ids.
 
 > **observe**(`ref`, `ordering`, `from`): `Promise`\<[`DriverTxObservation`](DriverTxObservation.md)\>
 
-Defined in: [src/core/driver/types.ts:134](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L134)
+Defined in: [src/core/driver/types.ts:136](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L136)
 
 Current view of an Attempt (uses `purpose: 'monitor'` reads). `ordering` and `from` are
 `undefined` for a transaction the library does not manage (a status lookup by id).

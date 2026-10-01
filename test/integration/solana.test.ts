@@ -1,5 +1,5 @@
 /**
- * Opt-in, read-only checks against a live Solana cluster (spec §17), skipped unless
+ * Opt-in, read-only checks against a live Solana cluster, skipped unless
  * CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only, never keys:
  * - CRYPTO_AIO_IT_SOLANA_NETWORK: `mainnet`, `devnet` (default) or `testnet`;
  * - CRYPTO_AIO_IT_SOLANA_RPC_URL: an endpoint URL (default: the `public` preset), paced at
@@ -10,18 +10,18 @@
  *   URL it is skipped.
  *
  * Nothing is signed or broadcast, and no key or funded account is needed. The `public`
- * preset paces its requests, and the health probes wait for that limit too (A17), so the
+ * preset paces its requests, and the health probes wait for that limit too, so the
  * steps need no pauses. Two reads are not ordered: behind a load balancer, or with
  * sub-second finality, a finalized height read after a head height can be the higher one,
  * so no check assumes it.
  *
- * The expiry proof (F5-R9 to F5-R11) runs on live blocks. The record a build keeps for its
+ * The expiry proof runs on live blocks. The record a build keeps for its
  * blockhash (`SolanaExpiryOrdering`: the blockhash, the slot of its block and its last valid
  * height) is taken from a finalized block deep enough that its window has closed; it is
  * proven expired only once the quorum attests the blockhash's block, and a record taken from
- * `getLatestBlockhash` as a build takes it is not. The negative inclusion proof (lessons 16
- * and 17) then shows a signature that was never sent absent from every block of that closed
- * window. It reads the whole window, about 160 `getBlock` calls with signatures, so it runs
+ * `getLatestBlockhash` as a build takes it is not. The negative inclusion proof then
+ * shows a signature that was never sent absent from every block of that closed window. It
+ * reads the whole window, about 160 `getBlock` calls with signatures, so it runs
  * only with CRYPTO_AIO_IT_SOLANA_WINDOW=1, against a keyed or self-hosted endpoint that
  * serves them inside the test's timeout (about 40 s at 4 requests per second). The public
  * endpoints cannot: they answer about six `getBlock` calls per 10 s (HTTP 429 with
@@ -51,8 +51,8 @@ const provider: ProviderRef = url
 /** The System Program's address: always present, never a signer. */
 const SYSTEM = '11111111111111111111111111111111';
 /**
- * Two addresses derived from public test seeds (Plan 5 vectors). Nobody here funds them, but
- * anyone may, so no check depends on their balances.
+ * Two addresses derived from public test seeds (the unit tests' `support/vectors.ts`).
+ * Nobody here funds them, but anyone may, so no check depends on their balances.
  */
 const SENDER = '77PLe4JWFMyQgaUNhWLPA6fsGKGNoGapd2XrbpC2Jhxa';
 const RECIPIENT = '6zYdUwXJR5fhQJazDByGv4PsNrdaNhoruAR5kekA7rGs';
@@ -85,7 +85,7 @@ const withWindow = process.env.CRYPTO_AIO_IT_SOLANA_WINDOW === '1' && url ? it :
 const open = (aio: CryptoAio) => aio.blockchain({ chain: 'solana', network, provider });
 
 /**
- * `read`, tried again only on a retryable failure: a proof that decides nothing (lesson 16)
+ * `read`, tried again only on a retryable failure: a proof that decides nothing
  * answered correctly, and a lagging load-balanced backend or a 429 passes.
  */
 async function retried<T>(read: () => Promise<T>): Promise<T> {

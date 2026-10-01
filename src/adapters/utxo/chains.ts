@@ -1,7 +1,7 @@
 /**
- * The built-in Bitcoin chain and networks (spec §2). Genesis hashes, address prefixes and
- * relay-policy numbers are verified against the sources named in the Plan 3 appendix; the
- * rest is library policy:
+ * The built-in Bitcoin chain and networks. Genesis hashes and address prefixes are
+ * verified against Bitcoin Core's `src/kernel/chainparams.cpp`, and relay-policy numbers
+ * against its `src/policy/policy.h` and `policy.cpp`; the rest is library policy:
  * - `finality: 6 confirmations` on every network, `defaultConfirmations: 1`
  *   (`waitForConfirmation` waits for inclusion by default; credit deposits on `final`).
  * - `reorgWindow: 24` (four times the finality depth).
@@ -111,7 +111,7 @@ function network(spec: NetworkSpec): NetworkInfo {
   };
 }
 
-/** R56: deep-frozen, so no caller can change a network another handle uses. */
+/** Deep-frozen, so no caller can change a network another handle uses. */
 export const BITCOIN_CHAIN: ChainInfo = deepFreeze({
   id: 'bitcoin',
   family: 'utxo',

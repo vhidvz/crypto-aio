@@ -1,6 +1,6 @@
 /**
  * Test keys (never funded anywhere real) and an independent, SDK-free legacy message
- * encoder (`@noble/*`, `@scure/base`) that the codec vectors are checked against (lesson 11).
+ * encoder (`@noble/*`, `@scure/base`) that the codec vectors are checked against.
  */
 import { ed25519 } from '@noble/curves/ed25519';
 import { base58 } from '@scure/base';

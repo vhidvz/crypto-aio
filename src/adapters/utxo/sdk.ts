@@ -15,7 +15,7 @@ export type Psbt = Bitcoin.Psbt;
 export type Transaction = Bitcoin.Transaction;
 
 /**
- * Installs the `@noble/curves` backend (spec §15: no WASM, no tiny-secp256k1). bitcoinjs
+ * Installs the `@noble/curves` backend (no WASM, no tiny-secp256k1). bitcoinjs
  * verifies it against its own test vectors the first time, and skips a repeat install of
  * the same object, so calling this before every taproot use is cheap and undoes a
  * `native()` caller who swapped the library-global backend.

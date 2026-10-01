@@ -1,4 +1,4 @@
-// Lazy loading (spec §4): only a manifest's `load()` may require an SDK. Each check runs in
+// Lazy loading: only a manifest's `load()` may require an SDK. Each check runs in
 // a fresh module registry where requiring any SDK the package declares is recorded, then
 // served as usual.
 import { readFileSync } from 'node:fs';
@@ -10,9 +10,8 @@ type SolanaEntry = typeof import('../../../src/adapters/solana');
 type SolanaPlugin = typeof import('../../../src/adapters/solana/plugin');
 
 /**
- * Every SDK the package declares, other families' too (the Plan 3 merge convention), so a
- * Solana module that required another family's SDK would show: `load()` requires only its
- * own.
+ * Every SDK the package declares, other families' too, so a Solana module that required
+ * another family's SDK would show: `load()` requires only its own.
  */
 const SDKS = Object.keys(
   (

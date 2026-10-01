@@ -5,7 +5,7 @@ import type { NetworkInfo } from '../../../src/core/model/chain';
 import { PresetCatalog } from '../../../src/core/registry/providers';
 import { thrown } from '../../helpers';
 
-/** Plan 3 Appendix A: genesis hashes and address prefixes (Bitcoin Core chainparams.cpp). */
+/** Genesis hashes and address prefixes, from Bitcoin Core's `chainparams.cpp`. */
 const EXPECTED: Record<string, [string, string, number, number]> = {
   mainnet: [
     '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f',
@@ -46,7 +46,8 @@ const withNetwork = (patch: Partial<NetworkInfo>): NetworkInfo => ({
 });
 
 describe('the Bitcoin chain data', () => {
-  it('matches Appendix A for every network', () => {
+  // Every network matches `EXPECTED`, the values verified against Bitcoin Core's source.
+  it('matches for every network', () => {
     expect(Object.keys(BITCOIN_CHAIN.networks)).toEqual(Object.keys(EXPECTED));
     for (const [id, [genesis, hrp, pkh, sh]] of Object.entries(EXPECTED)) {
       const network = BITCOIN_CHAIN.networks[id] as NetworkInfo;
@@ -70,7 +71,7 @@ describe('the Bitcoin chain data', () => {
     });
   });
 
-  it('is deep-frozen (R56)', () => {
+  it('is deep-frozen', () => {
     expect(Object.isFrozen(BITCOIN_CHAIN)).toBe(true);
     expect(Object.isFrozen(mainnet)).toBe(true);
     expect(Object.isFrozen(mainnet.params)).toBe(true);
@@ -127,14 +128,14 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     expect(utxoNetworkConfig(BITCOIN_CHAIN, mainnet, options)).toMatchObject(options);
   });
 
-  it('accepts an HRP of up to 30 letters, the most a p2tr address fits in 90 (M4)', () => {
+  it('accepts an HRP of up to 30 letters, the most a p2tr address fits in 90', () => {
     const network = withNetwork({
       params: { ...mainnet.params, bech32: 'a'.repeat(30) },
     });
     expect(utxoNetworkConfig(BITCOIN_CHAIN, network).address.bech32).toBe('a'.repeat(30));
   });
 
-  it('removes network capabilities, and adds only those the driver serves (F3-R15)', () => {
+  it('removes network capabilities, and adds only those the driver serves', () => {
     const capabilitiesOf = (capabilities: unknown) =>
       utxoNetworkConfig(
         BITCOIN_CHAIN,
@@ -246,7 +247,7 @@ describe('utxoNetworkConfig (lessons 10 and 14)', () => {
     );
   });
 
-  it('never names an unknown option key, listing the accepted ones (F3-R16)', () => {
+  it('never names an unknown option key, listing the accepted ones', () => {
     const message = (key: string) =>
       (thrown(() => utxoNetworkConfig(BITCOIN_CHAIN, mainnet, { [key]: 1 })) as Error)
         .message;
@@ -307,7 +308,7 @@ describe('the Esplora presets', () => {
       ]);
     }
     expect(UTXO_PRESETS.every((p) => p.production === false)).toBe(true);
-    // R56/M13: the exported presets are frozen, each one too.
+    // The exported presets are frozen, each one too.
     expect(Object.isFrozen(UTXO_PRESETS)).toBe(true);
     expect(UTXO_PRESETS.every((p) => Object.isFrozen(p))).toBe(true);
   });

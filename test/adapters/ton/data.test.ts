@@ -24,7 +24,7 @@ function isDeepFrozen(value: unknown): boolean {
 }
 
 describe('TON chain data', () => {
-  it('registers ton with its global ids as network identities (spec §2)', () => {
+  it('registers ton with its global ids as network identities', () => {
     const chain = catalogs().chains.get('ton');
     expect(chain).toMatchObject({
       family: 'ton',
@@ -78,7 +78,7 @@ describe('TON chain data', () => {
     );
   });
 
-  it('is frozen all the way down (R56)', () => {
+  it('is frozen all the way down', () => {
     expect(isDeepFrozen(TON_CHAINS)).toBe(true);
     expect(isDeepFrozen(TON_TOKENS)).toBe(true);
     expect(isDeepFrozen(TON_PRESETS)).toBe(true);
@@ -135,7 +135,10 @@ describe('TON provider presets', () => {
     ]);
   });
 
-  it('budgets v2 and v3 within one toncenter limit: 1 rps keyless, 10 with a free key (X2, M16, F6-R3)', () => {
+  // toncenter's published limit is per network across v2 and v3, so each API gets half.
+  // The keyed presets set burst 1: with the default burst, v2 and v3 together sent about
+  // 18 requests in the first second after idle, against a limit of 10.
+  it('budgets v2 and v3 within one toncenter limit: 1 rps keyless, 10 with a free key', () => {
     const { presets } = catalogs();
     const limits = (name: string, apiKey?: string) =>
       (['rpc', 'indexer'] as const).map(

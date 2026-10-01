@@ -1,13 +1,13 @@
 /**
- * The Esplora REST API over the core transport (spec §11: "UTXO (Esplora) | direct REST via
- * transport"). Every call carries the calling driver method's tags (R41) and a `route`
- * template with no identifiers in it (R14). Answers are validated strictly: a malformed one
- * is a retryable `ProviderError('PROVIDER_UNAVAILABLE')` (lesson 6), a missing or ill-typed
+ * The Esplora REST API, sent directly over the core transport. Every call carries the
+ * calling driver method's tags and a `route` template with no identifiers in it, which
+ * events and logs show instead of the path. Answers are validated strictly: a malformed
+ * one is a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, a missing or ill-typed
  * field is malformed and never a default, an answer for another id than the one asked for is
  * refused, and a 404 is `null`. Chain data is read as the chain allows it, never bounded by
  * what this library builds (lenient readers). Chain reads use the `rpc` transport; address
- * reads use the `indexer`. Only raw transaction hex is decoded, with the codec's strict
- * decoder (bitcoinjs-lib), to bind it to its txid.
+ * reads use the `indexer`. Only raw transaction hex is decoded, by the strict linear
+ * reader (`rawtx.ts`), to bind it to its txid.
  */
 import {
   ProviderError,
@@ -32,7 +32,7 @@ type Json = Readonly<Record<string, unknown>>;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 /**
- * F3-R14: the previous transactions one client keeps, by count and by bytes without the
+ * The previous transactions one client keeps, by count and by bytes without the
  * witness (a larger one is not kept). A typical one is a few hundred bytes.
  */
 export const PREVIOUS_TX_CACHE = Object.freeze({ entries: 1_000, bytes: 8_000_000 });
@@ -239,7 +239,7 @@ export const isHash = (value: unknown): value is string =>
   typeof value === 'string' && HEX64.test(value);
 
 /**
- * I2: a URL path segment from a caller must be exactly an id or an address, so no `..`, `/`
+ * A URL path segment from a caller must be exactly an id or an address, so no `..`, `/`
  * or query can reach another route. The reader maps a malformed id to "not found" first.
  */
 function segment(value: string, kind: 'id' | 'address'): string {
@@ -255,7 +255,7 @@ function segment(value: string, kind: 'id' | 'address'): string {
   return value;
 }
 
-/** The txid of strictly decoded transaction hex, or `undefined` (lesson 20). */
+/** The txid of strictly decoded transaction hex, or `undefined`. */
 function txidOf(hex: string): { readonly txid: string } | undefined {
   try {
     return { txid: txidOfHex(hex) };
@@ -381,7 +381,7 @@ export class EsploraClient {
           tags,
         ),
       );
-      // I2: the answer must be the block asked for.
+      // The answer must be the block asked for.
       if (block.hash !== blockHash) throw malformed('block.id');
       return block;
     });
@@ -417,7 +417,7 @@ export class EsploraClient {
       const tx = parseTx(
         await this.#get(this.chain, `/tx/${segment(txid, 'id')}`, '/tx/:txid', tags),
       );
-      // I2: the answer must be the transaction asked for.
+      // The answer must be the transaction asked for.
       if (tx.txid !== txid) throw malformed('tx.txid');
       return tx;
     });
@@ -427,9 +427,9 @@ export class EsploraClient {
    * `/tx/:txid/hex`, decoded strictly once and bound to `txid`: bytes that do not decode are
    * malformed, and the bytes of another transaction are a retryable `PROVIDER_INCONSISTENT`,
    * so a garbled answer is never taken for the caller's error. The decoder's cap is the
-   * largest transaction a block can hold (lesson 20), never what this library builds. Under
+   * largest transaction a block can hold, never what this library builds. Under
    * a quorum, each endpoint's answer is keyed on the txid its bytes hash to, and the answer
-   * the quorum returns is not decoded again (F3-R9 M9).
+   * the quorum returns is not decoded again.
    */
   async #rawTx<T extends { readonly txid: string }>(
     txid: string,
@@ -481,7 +481,7 @@ export class EsploraClient {
   }
 
   /**
-   * F3-R14: an input's previous transaction, decoded once and bound to `txid` (see
+   * An input's previous transaction, decoded once and bound to `txid` (see
    * `#rawTx`). Its bytes authenticate themselves, so it is kept per txid, whatever endpoint
    * served it, in a bounded cache: a replacement's inputs are read once per client.
    */
@@ -496,7 +496,7 @@ export class EsploraClient {
   }
 
   /**
-   * F3-R24 F1: a transaction this client sent for an Attempt and a node took. Its bytes are
+   * A transaction this client sent for an Attempt and a node took. Its bytes are
    * known here, so its outputs are not an indexer's word even before a block holds it, and
    * under `minInputConfirmations: 0` they may be spent unconfirmed. Kept like the cache.
    */
@@ -536,7 +536,7 @@ export class EsploraClient {
       tags,
     );
     if (typeof answer !== 'string' || !HEX64.test(answer.trim())) {
-      // The node answered 2xx, so the bytes may have been accepted (R16).
+      // The node answered 2xx, so the bytes may have been accepted.
       throw new ProviderError(
         'PROVIDER_UNAVAILABLE',
         'malformed Esplora answer: broadcast txid',
