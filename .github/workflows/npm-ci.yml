@@ -44,9 +44,3 @@ jobs:
 
       - name: Publish to npm registry
         run: npm publish --provenance --access public
-
-      # npm logs why the OIDC token exchange failed only in its debug log; the registry's
-      # answer is a bare 404.
-      - name: Show why npm could not authenticate
-        if: failure()
-        run: grep -h "oidc" ~/.npm/_logs/*-debug-0.log || echo "npm logged nothing about OIDC"
