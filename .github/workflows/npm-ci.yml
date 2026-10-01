@@ -1,5 +1,11 @@
 name: Build, Test, and Publish
 
+# Publishes with npm's trusted publishing (OIDC): no token is stored in the repository. The
+# package must name this workflow as its trusted publisher on npmjs.com (package Settings →
+# Trusted Publisher → GitHub Actions: user vhidvz, repository crypto-aio, workflow filename
+# npm-ci.yml, no environment). Without that, npm falls back to no credentials and the
+# registry answers the publish with a 404.
+
 on:
   push:
     tags:
@@ -28,7 +34,8 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        
+
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
       - name: Upgrade npm to latest (≥11.5.2)
         run: npm install -g npm@11.5.2
 
@@ -37,5 +44,9 @@ jobs:
 
       - name: Publish to npm registry
         run: npm publish --provenance --access public
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # npm logs why the OIDC token exchange failed only in its debug log; the registry's
+      # answer is a bare 404.
+      - name: Show why npm could not authenticate
+        if: failure()
+        run: grep -h "oidc" ~/.npm/_logs/*-debug-0.log || echo "npm logged nothing about OIDC"
