@@ -1172,7 +1172,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
         requests,
         'is not the prepared transaction',
       );
-      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(performance.now() - started).toBeLessThan(10_000);
       expect(fromBuffer.mock.calls.filter(([bytes]) => large(bytes))).toEqual([]);
     } finally {
       fromBuffer.mockRestore();

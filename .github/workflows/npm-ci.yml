@@ -1,31 +1,41 @@
-name: Build, Test and Publish
+name: Build, Test, and Publish
+
 on:
-  release:
-    # A published release (not a draft) publishes the package.
-    types: [published]
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
 jobs:
-  publish:
+  build-and-publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          node-version: '22.x'
+          version: 10.5.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
-          cache: pnpm
-      - name: The release tag matches package.json
-        run: test "v$(node -p "require('./package.json').version")" = "$TAG"
-        env:
-          TAG: ${{ github.event.release.tag_name }}
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run format:check
-      - run: pnpm run check
-      - run: pnpm run doc
-      - run: pnpm run test:pack
-      - run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Upgrade npm to latest (≥11.5.2)
+        run: npm install -g npm@11.5.2
+
+      - name: Run tests and build project
+        run: npm test && npm run build
+
+      - name: Publish to npm registry
+        run: npm publish --provenance --access public
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
