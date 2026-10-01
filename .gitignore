@@ -60,7 +60,7 @@ web_modules/
 *.tgz
 
 # Coverage reports (pnpm test:coverage)
-coverage/
+# coverage/
 
 # Yarn Integrity file
 .yarn-integrity
@@ -114,19 +114,3 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
-
-# Local secrets (never commit)
-.env
-.env.*
-!.env.example
-docs/api/
-
-# Controller workspace for this run (not part of the package)
-.superpowers/
-
-# Local builds of the documentation site (docs/README.md)
-docs/_site/
-docs/.jekyll-cache/
-docs/.sass-cache/
-docs/vendor/
-docs/Gemfile.lock

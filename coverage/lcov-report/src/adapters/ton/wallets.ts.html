@@ -1,0 +1,1444 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/adapters/ton/wallets.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../prettify.css" />
+    <link rel="stylesheet" href="../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/adapters/ton</a> wallets.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">99.11% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>449/453</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">93.93% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>124/132</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>20/20</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">99.11% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>449/453</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a>
+<a name='L199'></a><a href='#L199'>199</a>
+<a name='L200'></a><a href='#L200'>200</a>
+<a name='L201'></a><a href='#L201'>201</a>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a>
+<a name='L210'></a><a href='#L210'>210</a>
+<a name='L211'></a><a href='#L211'>211</a>
+<a name='L212'></a><a href='#L212'>212</a>
+<a name='L213'></a><a href='#L213'>213</a>
+<a name='L214'></a><a href='#L214'>214</a>
+<a name='L215'></a><a href='#L215'>215</a>
+<a name='L216'></a><a href='#L216'>216</a>
+<a name='L217'></a><a href='#L217'>217</a>
+<a name='L218'></a><a href='#L218'>218</a>
+<a name='L219'></a><a href='#L219'>219</a>
+<a name='L220'></a><a href='#L220'>220</a>
+<a name='L221'></a><a href='#L221'>221</a>
+<a name='L222'></a><a href='#L222'>222</a>
+<a name='L223'></a><a href='#L223'>223</a>
+<a name='L224'></a><a href='#L224'>224</a>
+<a name='L225'></a><a href='#L225'>225</a>
+<a name='L226'></a><a href='#L226'>226</a>
+<a name='L227'></a><a href='#L227'>227</a>
+<a name='L228'></a><a href='#L228'>228</a>
+<a name='L229'></a><a href='#L229'>229</a>
+<a name='L230'></a><a href='#L230'>230</a>
+<a name='L231'></a><a href='#L231'>231</a>
+<a name='L232'></a><a href='#L232'>232</a>
+<a name='L233'></a><a href='#L233'>233</a>
+<a name='L234'></a><a href='#L234'>234</a>
+<a name='L235'></a><a href='#L235'>235</a>
+<a name='L236'></a><a href='#L236'>236</a>
+<a name='L237'></a><a href='#L237'>237</a>
+<a name='L238'></a><a href='#L238'>238</a>
+<a name='L239'></a><a href='#L239'>239</a>
+<a name='L240'></a><a href='#L240'>240</a>
+<a name='L241'></a><a href='#L241'>241</a>
+<a name='L242'></a><a href='#L242'>242</a>
+<a name='L243'></a><a href='#L243'>243</a>
+<a name='L244'></a><a href='#L244'>244</a>
+<a name='L245'></a><a href='#L245'>245</a>
+<a name='L246'></a><a href='#L246'>246</a>
+<a name='L247'></a><a href='#L247'>247</a>
+<a name='L248'></a><a href='#L248'>248</a>
+<a name='L249'></a><a href='#L249'>249</a>
+<a name='L250'></a><a href='#L250'>250</a>
+<a name='L251'></a><a href='#L251'>251</a>
+<a name='L252'></a><a href='#L252'>252</a>
+<a name='L253'></a><a href='#L253'>253</a>
+<a name='L254'></a><a href='#L254'>254</a>
+<a name='L255'></a><a href='#L255'>255</a>
+<a name='L256'></a><a href='#L256'>256</a>
+<a name='L257'></a><a href='#L257'>257</a>
+<a name='L258'></a><a href='#L258'>258</a>
+<a name='L259'></a><a href='#L259'>259</a>
+<a name='L260'></a><a href='#L260'>260</a>
+<a name='L261'></a><a href='#L261'>261</a>
+<a name='L262'></a><a href='#L262'>262</a>
+<a name='L263'></a><a href='#L263'>263</a>
+<a name='L264'></a><a href='#L264'>264</a>
+<a name='L265'></a><a href='#L265'>265</a>
+<a name='L266'></a><a href='#L266'>266</a>
+<a name='L267'></a><a href='#L267'>267</a>
+<a name='L268'></a><a href='#L268'>268</a>
+<a name='L269'></a><a href='#L269'>269</a>
+<a name='L270'></a><a href='#L270'>270</a>
+<a name='L271'></a><a href='#L271'>271</a>
+<a name='L272'></a><a href='#L272'>272</a>
+<a name='L273'></a><a href='#L273'>273</a>
+<a name='L274'></a><a href='#L274'>274</a>
+<a name='L275'></a><a href='#L275'>275</a>
+<a name='L276'></a><a href='#L276'>276</a>
+<a name='L277'></a><a href='#L277'>277</a>
+<a name='L278'></a><a href='#L278'>278</a>
+<a name='L279'></a><a href='#L279'>279</a>
+<a name='L280'></a><a href='#L280'>280</a>
+<a name='L281'></a><a href='#L281'>281</a>
+<a name='L282'></a><a href='#L282'>282</a>
+<a name='L283'></a><a href='#L283'>283</a>
+<a name='L284'></a><a href='#L284'>284</a>
+<a name='L285'></a><a href='#L285'>285</a>
+<a name='L286'></a><a href='#L286'>286</a>
+<a name='L287'></a><a href='#L287'>287</a>
+<a name='L288'></a><a href='#L288'>288</a>
+<a name='L289'></a><a href='#L289'>289</a>
+<a name='L290'></a><a href='#L290'>290</a>
+<a name='L291'></a><a href='#L291'>291</a>
+<a name='L292'></a><a href='#L292'>292</a>
+<a name='L293'></a><a href='#L293'>293</a>
+<a name='L294'></a><a href='#L294'>294</a>
+<a name='L295'></a><a href='#L295'>295</a>
+<a name='L296'></a><a href='#L296'>296</a>
+<a name='L297'></a><a href='#L297'>297</a>
+<a name='L298'></a><a href='#L298'>298</a>
+<a name='L299'></a><a href='#L299'>299</a>
+<a name='L300'></a><a href='#L300'>300</a>
+<a name='L301'></a><a href='#L301'>301</a>
+<a name='L302'></a><a href='#L302'>302</a>
+<a name='L303'></a><a href='#L303'>303</a>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a>
+<a name='L306'></a><a href='#L306'>306</a>
+<a name='L307'></a><a href='#L307'>307</a>
+<a name='L308'></a><a href='#L308'>308</a>
+<a name='L309'></a><a href='#L309'>309</a>
+<a name='L310'></a><a href='#L310'>310</a>
+<a name='L311'></a><a href='#L311'>311</a>
+<a name='L312'></a><a href='#L312'>312</a>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a>
+<a name='L318'></a><a href='#L318'>318</a>
+<a name='L319'></a><a href='#L319'>319</a>
+<a name='L320'></a><a href='#L320'>320</a>
+<a name='L321'></a><a href='#L321'>321</a>
+<a name='L322'></a><a href='#L322'>322</a>
+<a name='L323'></a><a href='#L323'>323</a>
+<a name='L324'></a><a href='#L324'>324</a>
+<a name='L325'></a><a href='#L325'>325</a>
+<a name='L326'></a><a href='#L326'>326</a>
+<a name='L327'></a><a href='#L327'>327</a>
+<a name='L328'></a><a href='#L328'>328</a>
+<a name='L329'></a><a href='#L329'>329</a>
+<a name='L330'></a><a href='#L330'>330</a>
+<a name='L331'></a><a href='#L331'>331</a>
+<a name='L332'></a><a href='#L332'>332</a>
+<a name='L333'></a><a href='#L333'>333</a>
+<a name='L334'></a><a href='#L334'>334</a>
+<a name='L335'></a><a href='#L335'>335</a>
+<a name='L336'></a><a href='#L336'>336</a>
+<a name='L337'></a><a href='#L337'>337</a>
+<a name='L338'></a><a href='#L338'>338</a>
+<a name='L339'></a><a href='#L339'>339</a>
+<a name='L340'></a><a href='#L340'>340</a>
+<a name='L341'></a><a href='#L341'>341</a>
+<a name='L342'></a><a href='#L342'>342</a>
+<a name='L343'></a><a href='#L343'>343</a>
+<a name='L344'></a><a href='#L344'>344</a>
+<a name='L345'></a><a href='#L345'>345</a>
+<a name='L346'></a><a href='#L346'>346</a>
+<a name='L347'></a><a href='#L347'>347</a>
+<a name='L348'></a><a href='#L348'>348</a>
+<a name='L349'></a><a href='#L349'>349</a>
+<a name='L350'></a><a href='#L350'>350</a>
+<a name='L351'></a><a href='#L351'>351</a>
+<a name='L352'></a><a href='#L352'>352</a>
+<a name='L353'></a><a href='#L353'>353</a>
+<a name='L354'></a><a href='#L354'>354</a>
+<a name='L355'></a><a href='#L355'>355</a>
+<a name='L356'></a><a href='#L356'>356</a>
+<a name='L357'></a><a href='#L357'>357</a>
+<a name='L358'></a><a href='#L358'>358</a>
+<a name='L359'></a><a href='#L359'>359</a>
+<a name='L360'></a><a href='#L360'>360</a>
+<a name='L361'></a><a href='#L361'>361</a>
+<a name='L362'></a><a href='#L362'>362</a>
+<a name='L363'></a><a href='#L363'>363</a>
+<a name='L364'></a><a href='#L364'>364</a>
+<a name='L365'></a><a href='#L365'>365</a>
+<a name='L366'></a><a href='#L366'>366</a>
+<a name='L367'></a><a href='#L367'>367</a>
+<a name='L368'></a><a href='#L368'>368</a>
+<a name='L369'></a><a href='#L369'>369</a>
+<a name='L370'></a><a href='#L370'>370</a>
+<a name='L371'></a><a href='#L371'>371</a>
+<a name='L372'></a><a href='#L372'>372</a>
+<a name='L373'></a><a href='#L373'>373</a>
+<a name='L374'></a><a href='#L374'>374</a>
+<a name='L375'></a><a href='#L375'>375</a>
+<a name='L376'></a><a href='#L376'>376</a>
+<a name='L377'></a><a href='#L377'>377</a>
+<a name='L378'></a><a href='#L378'>378</a>
+<a name='L379'></a><a href='#L379'>379</a>
+<a name='L380'></a><a href='#L380'>380</a>
+<a name='L381'></a><a href='#L381'>381</a>
+<a name='L382'></a><a href='#L382'>382</a>
+<a name='L383'></a><a href='#L383'>383</a>
+<a name='L384'></a><a href='#L384'>384</a>
+<a name='L385'></a><a href='#L385'>385</a>
+<a name='L386'></a><a href='#L386'>386</a>
+<a name='L387'></a><a href='#L387'>387</a>
+<a name='L388'></a><a href='#L388'>388</a>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a>
+<a name='L393'></a><a href='#L393'>393</a>
+<a name='L394'></a><a href='#L394'>394</a>
+<a name='L395'></a><a href='#L395'>395</a>
+<a name='L396'></a><a href='#L396'>396</a>
+<a name='L397'></a><a href='#L397'>397</a>
+<a name='L398'></a><a href='#L398'>398</a>
+<a name='L399'></a><a href='#L399'>399</a>
+<a name='L400'></a><a href='#L400'>400</a>
+<a name='L401'></a><a href='#L401'>401</a>
+<a name='L402'></a><a href='#L402'>402</a>
+<a name='L403'></a><a href='#L403'>403</a>
+<a name='L404'></a><a href='#L404'>404</a>
+<a name='L405'></a><a href='#L405'>405</a>
+<a name='L406'></a><a href='#L406'>406</a>
+<a name='L407'></a><a href='#L407'>407</a>
+<a name='L408'></a><a href='#L408'>408</a>
+<a name='L409'></a><a href='#L409'>409</a>
+<a name='L410'></a><a href='#L410'>410</a>
+<a name='L411'></a><a href='#L411'>411</a>
+<a name='L412'></a><a href='#L412'>412</a>
+<a name='L413'></a><a href='#L413'>413</a>
+<a name='L414'></a><a href='#L414'>414</a>
+<a name='L415'></a><a href='#L415'>415</a>
+<a name='L416'></a><a href='#L416'>416</a>
+<a name='L417'></a><a href='#L417'>417</a>
+<a name='L418'></a><a href='#L418'>418</a>
+<a name='L419'></a><a href='#L419'>419</a>
+<a name='L420'></a><a href='#L420'>420</a>
+<a name='L421'></a><a href='#L421'>421</a>
+<a name='L422'></a><a href='#L422'>422</a>
+<a name='L423'></a><a href='#L423'>423</a>
+<a name='L424'></a><a href='#L424'>424</a>
+<a name='L425'></a><a href='#L425'>425</a>
+<a name='L426'></a><a href='#L426'>426</a>
+<a name='L427'></a><a href='#L427'>427</a>
+<a name='L428'></a><a href='#L428'>428</a>
+<a name='L429'></a><a href='#L429'>429</a>
+<a name='L430'></a><a href='#L430'>430</a>
+<a name='L431'></a><a href='#L431'>431</a>
+<a name='L432'></a><a href='#L432'>432</a>
+<a name='L433'></a><a href='#L433'>433</a>
+<a name='L434'></a><a href='#L434'>434</a>
+<a name='L435'></a><a href='#L435'>435</a>
+<a name='L436'></a><a href='#L436'>436</a>
+<a name='L437'></a><a href='#L437'>437</a>
+<a name='L438'></a><a href='#L438'>438</a>
+<a name='L439'></a><a href='#L439'>439</a>
+<a name='L440'></a><a href='#L440'>440</a>
+<a name='L441'></a><a href='#L441'>441</a>
+<a name='L442'></a><a href='#L442'>442</a>
+<a name='L443'></a><a href='#L443'>443</a>
+<a name='L444'></a><a href='#L444'>444</a>
+<a name='L445'></a><a href='#L445'>445</a>
+<a name='L446'></a><a href='#L446'>446</a>
+<a name='L447'></a><a href='#L447'>447</a>
+<a name='L448'></a><a href='#L448'>448</a>
+<a name='L449'></a><a href='#L449'>449</a>
+<a name='L450'></a><a href='#L450'>450</a>
+<a name='L451'></a><a href='#L451'>451</a>
+<a name='L452'></a><a href='#L452'>452</a>
+<a name='L453'></a><a href='#L453'>453</a>
+<a name='L454'></a><a href='#L454'>454</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">30x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">1063x</span>
+<span class="cline-any cline-yes">1063x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1112x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">1112x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1051x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">768x</span>
+<span class="cline-any cline-yes">768x</span>
+<span class="cline-any cline-yes">768x</span>
+<span class="cline-any cline-yes">768x</span>
+<span class="cline-any cline-yes">766x</span>
+<span class="cline-any cline-yes">768x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">764x</span>
+<span class="cline-any cline-yes">764x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">281x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">1068x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">274x</span>
+<span class="cline-any cline-yes">274x</span>
+<span class="cline-any cline-yes">274x</span>
+<span class="cline-any cline-yes">274x</span>
+<span class="cline-any cline-yes">274x</span>
+<span class="cline-any cline-yes">274x</span>
+<span class="cline-any cline-yes">274x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1901x</span>
+<span class="cline-any cline-yes">1901x</span>
+<span class="cline-any cline-yes">1901x</span>
+<span class="cline-any cline-yes">1901x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1901x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">658x</span>
+<span class="cline-any cline-yes">658x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">657x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">1899x</span>
+<span class="cline-any cline-yes">1908x</span>
+<span class="cline-any cline-yes">1244x</span>
+<span class="cline-any cline-yes">1244x</span>
+<span class="cline-any cline-yes">1244x</span>
+<span class="cline-any cline-yes">1244x</span>
+<span class="cline-any cline-yes">1244x</span>
+<span class="cline-any cline-yes">1244x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">655x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1136x</span>
+<span class="cline-any cline-yes">1136x</span>
+<span class="cline-any cline-yes">1136x</span>
+<span class="cline-any cline-yes">1136x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">134x</span>
+<span class="cline-any cline-yes">134x</span>
+<span class="cline-any cline-yes">134x</span>
+<span class="cline-any cline-yes">134x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">118x</span>
+<span class="cline-any cline-yes">118x</span>
+<span class="cline-any cline-yes">118x</span>
+<span class="cline-any cline-yes">59x</span>
+<span class="cline-any cline-yes">59x</span>
+<span class="cline-any cline-yes">59x</span>
+<span class="cline-any cline-yes">59x</span>
+<span class="cline-any cline-yes">59x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">525x</span>
+<span class="cline-any cline-yes">525x</span>
+<span class="cline-any cline-yes">525x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">522x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">521x</span>
+<span class="cline-any cline-yes">521x</span>
+<span class="cline-any cline-yes">521x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">520x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">528x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">518x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1511x</span>
+<span class="cline-any cline-yes">1511x</span>
+<span class="cline-any cline-yes">1511x</span>
+<span class="cline-any cline-yes">1511x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1511x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1862x</span>
+<span class="cline-any cline-yes">1862x</span>
+<span class="cline-any cline-yes">1862x</span>
+<span class="cline-any cline-yes">2222x</span>
+<span class="cline-any cline-yes">1500x</span>
+<span class="cline-any cline-yes">2222x</span>
+<span class="cline-any cline-yes">1862x</span>
+<span class="cline-any cline-yes">1862x</span>
+<span class="cline-any cline-yes">1862x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">364x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">281x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">81x</span>
+<span class="cline-any cline-yes">79x</span>
+<span class="cline-any cline-yes">81x</span>
+<span class="cline-any cline-yes">79x</span>
+<span class="cline-any cline-yes">79x</span>
+<span class="cline-any cline-yes">362x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">360x</span>
+<span class="cline-any cline-yes">360x</span>
+<span class="cline-any cline-yes">360x</span>
+<span class="cline-any cline-yes">360x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">366x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1147x</span>
+<span class="cline-any cline-yes">1147x</span>
+<span class="cline-any cline-yes">1147x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1146x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">389x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">381x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">390x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">184x</span>
+<span class="cline-any cline-yes">184x</span>
+<span class="cline-any cline-yes">184x</span>
+<span class="cline-any cline-yes">184x</span>
+<span class="cline-any cline-yes">184x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">197x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">696x</span>
+<span class="cline-any cline-yes">696x</span>
+<span class="cline-any cline-yes">696x</span>
+<span class="cline-any cline-yes">696x</span>
+<span class="cline-any cline-yes">696x</span>
+<span class="cline-any cline-yes">696x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * TON wallet contracts (spec §9, §15), over `@ton/core` and `@ton/ton`: the wallet identity,
+ * its address and `StateInit`, the signing message, and the external message around it.
+ * Loaded only through the adapter manifest's `load()`.
+ *
+ * Signing flow: `build` asks the SDK for the transfer body with a zero signature and keeps
+ * the whole unsigned external message (a BOC) as the payload; the one ed25519 request signs
+ * the signing message's cell hash. `assemble` finds the 512 zero bits the signature
+ * replaces (front for v4r2, tail for v5r1) by the one position whose remainder hashes to
+ * the signed digest, so it needs no wallet version and cannot write a signature anywhere
+ * else.
+ */
+import {
+  Cell,
+  SendMode,
+  beginCell,
+  external,
+  loadMessage,
+  storeMessage,
+  type Message,
+  type MessageRelaxed,
+  type StateInit,
+} from '@ton/core';
+import { ed25519 } from '@noble/curves/ed25519';
+import { WalletContractV4, WalletContractV5R1 } from '@ton/ton';
+import type { WalletOptions } from '../../core/driver/types';
+import { ConfigError, SigningError, ValidationError } from '../../core/errors/error';
+import { rawAddress, type TonWorkchain } from './address';
+import { OP, sdkAddress } from './messages';
+import type { TonWalletVersion } from './types';
+&nbsp;
+/** Messages one external request may carry (spec §15): 4 refs per cell (v4r2), 255 (v5r1). */
+export const MAX_MESSAGES: Readonly&lt;Record&lt;TonWalletVersion, number&gt;&gt; = Object.freeze({
+  v4r2: 4,
+  v5r1: 255,
+});
+&nbsp;
+/** Pay forward fees separately and never fail the action phase (W5 requires +2). */
+export const SEND_MODE = SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS;
+&nbsp;
+/** The resolved wallet identity: every field that determines the address. */
+export type TonIdentity =
+  | {
+      readonly version: 'v4r2';
+      readonly workchain: TonWorkchain;
+      readonly subwalletId: number;
+    }
+  | {
+      readonly version: 'v5r1';
+      readonly workchain: TonWorkchain;
+      readonly subwalletNumber: number;
+      readonly networkGlobalId: number;
+    };
+&nbsp;
+const V4_KEYS = new Set(['version', 'workchain', 'subwalletId']);
+const V5_KEYS = new Set(['version', 'workchain', 'subwalletNumber', 'networkGlobalId']);
+&nbsp;
+/**
+ * `wallets.&lt;name&gt;.ton` validated against the network (lesson 5): a v5r1 wallet id made for
+ * another network is refused before any key is used. Every problem is `CONFIG_INVALID`.
+ */
+export function resolveIdentity(
+  wallet: WalletOptions | undefined,
+  globalId: number,
+): TonIdentity {
+  const fail = (reason: string): never =&gt; {
+    throw new ConfigError('CONFIG_INVALID', `TON wallet: ${reason}`);
+  };
+  const ton = wallet?.ton;
+  if (ton === undefined || ton === null || typeof ton !== 'object') {
+    return fail(`set wallets.&lt;name&gt;.ton = { version: 'v4r2' | 'v5r1' }`);
+  }
+  const config = ton as Record&lt;string, unknown&gt;;
+  const version = config.version;
+  if (version !== 'v4r2' &amp;&amp; version !== 'v5r1') {
+    return fail(`version must be 'v4r2' or 'v5r1'`);
+  }
+  const allowed = version === 'v4r2' ? V4_KEYS : V5_KEYS;
+  for (const key of Object.keys(config)) {
+    if (config[key] !== undefined &amp;&amp; !allowed.has(key)) {
+      // M3, F3-R16: the caller's key is never echoed (it could be a pasted secret).
+      fail(`a ${version} wallet takes only ${[...allowed].join(', ')}`);
+    }
+  }
+  const workchain = config.workchain ?? 0;
+  if (workchain !== 0 &amp;&amp; workchain !== -1) fail('workchain must be 0 or -1');
+  const wc = workchain as TonWorkchain;
+  if (version === 'v4r2') {
+    const subwalletId = config.subwalletId ?? 698983191 + wc;
+    if (
+      !Number.isInteger(subwalletId) ||
+      (subwalletId as number) &lt; 0 ||
+      (subwalletId as number) &gt; 0xffffffff
+    ) {
+      fail('subwalletId must be an integer in [0, 2^32 - 1]');
+    }
+    return { version, workchain: wc, subwalletId: subwalletId as number };
+  }
+  const subwalletNumber = config.subwalletNumber ?? 0;
+  if (
+    !Number.isInteger(subwalletNumber) ||
+    (subwalletNumber as number) &lt; 0 ||
+    (subwalletNumber as number) &gt; 0x7fff
+  ) {
+    fail('subwalletNumber must be an integer in [0, 32767]');
+  }
+  const networkGlobalId = config.networkGlobalId ?? globalId;
+  if (networkGlobalId !== globalId) {
+    fail(`networkGlobalId is not this network's (${globalId})`);
+  }
+  return {
+    version,
+    workchain: wc,
+    subwalletNumber: subwalletNumber as number,
+    networkGlobalId: globalId,
+  };
+}
+&nbsp;
+type WalletContract = WalletContractV4 | WalletContractV5R1;
+&nbsp;
+/** Lesson 4: a strict (RFC 8032) encoding of a point that is not of small order. */
+function canonicalKey(publicKey: Uint8Array): boolean {
+  try {
+    return !ed25519.Point.fromHex(publicKey, false).isSmallOrder();
+  } catch {
+    return false;
+  }
+}
+&nbsp;
+const isInt = (value: number, min: number, max: number): boolean =&gt;
+  Number.isInteger(value) &amp;&amp; value &gt;= min &amp;&amp; value &lt;= max;
+&nbsp;
+/**
+ * Lesson 19: every identity field fits the wire field the SDK writes it into (workchain
+ * int8, subwallet id uint32, subwallet number uint15, network id int32), so an identity
+ * not made by `resolveIdentity` is refused rather than wrapped or thrown as a bare `Error`.
+ */
+function identityFits(identity: TonIdentity): boolean {
+  if (identity.workchain !== 0 &amp;&amp; identity.workchain !== -1) return false;
+  if (identity.version === 'v4r2') return isInt(identity.subwalletId, 0, 0xffffffff);
+  return (
+    identity.version === 'v5r1' &amp;&amp;
+    isInt(identity.subwalletNumber, 0, 0x7fff) &amp;&amp;
+    isInt(identity.networkGlobalId, -0x80000000, 0x7fffffff)
+  );
+}
+&nbsp;
+function contractOf(identity: TonIdentity, publicKey: Uint8Array): WalletContract {
+  if (!identityFits(identity)) {
+    throw new ConfigError('CONFIG_INVALID', 'the TON wallet identity is out of range');
+  }
+  if (publicKey.length !== 32 || !canonicalKey(publicKey)) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'a TON wallet key must be a canonical 32-byte ed25519 public key',
+    );
+  }
+  const key = Buffer.from(publicKey);
+  if (identity.version === 'v4r2') {
+    return WalletContractV4.create({
+      workchain: identity.workchain,
+      publicKey: key,
+      walletId: identity.subwalletId,
+    });
+  }
+  // Every field explicit: the SDK's defaults are mainnet's id and workchain 0 (lesson 5).
+  return WalletContractV5R1.create({
+    publicKey: key,
+    walletId: {
+      networkGlobalId: identity.networkGlobalId,
+      context: {
+        workchain: identity.workchain,
+        walletVersion: 'v5r1',
+        subwalletNumber: identity.subwalletNumber,
+      },
+    },
+  });
+}
+&nbsp;
+/** The wallet's raw address: the hash of its `StateInit` in its workchain. */
+export function walletAddress(identity: TonIdentity, publicKey: Uint8Array): string {
+  const contract = contractOf(identity, publicKey);
+  return rawAddress(identity.workchain, contract.address.hash);
+}
+&nbsp;
+/** The code and data a first message carries to deploy the wallet. */
+export function walletStateInit(identity: TonIdentity, publicKey: Uint8Array): StateInit {
+  const { init } = contractOf(identity, publicKey);
+  return { code: init.code, data: init.data };
+}
+&nbsp;
+/** The wallet's wire wallet id (v4r2: the subwallet id; v5r1: the signed 32-bit id). */
+export function walletIdOf(identity: TonIdentity, publicKey: Uint8Array): number {
+  const contract = contractOf(identity, publicKey);
+  if (contract instanceof WalletContractV4) return contract.walletId;
+  // v5r1 data: is_signature_allowed:1 seqno:32 wallet_id:int32 public_key:256 extensions.
+  const data = contract.init.data.beginParse();
+  data.skip(1 + 32);
+  return data.loadInt(32);
+}
+&nbsp;
+export interface UnsignedRequest {
+  /** The unsigned external message: the wallet body with 512 zero bits for the signature. */
+  readonly message: Cell;
+  /** The signing message's cell hash: what the ed25519 key signs. */
+  readonly digest: Uint8Array;
+}
+&nbsp;
+/**
+ * The external request for `messages` at `seqno`, valid while chain time is before
+ * `validUntil` (seconds). `init` deploys the wallet with its first message.
+ */
+export async function unsignedRequest(
+  identity: TonIdentity,
+  publicKey: Uint8Array,
+  args: {
+    readonly seqno: number;
+    readonly validUntil: number;
+    readonly messages: readonly MessageRelaxed[];
+    readonly deploy: boolean;
+  },
+): Promise&lt;UnsignedRequest&gt; {
+  // Lesson 19: the seqno is a uint32 on the wire, never wrapped.
+  if (!Number.isSafeInteger(args.seqno) || args.seqno &lt; 0 || args.seqno &gt; 0xffffffff) {
+    throw new ValidationError('INVALID_INTENT', 'seqno must be a uint32');
+  }
+  // The SDK falls back to the wall clock for a falsy timeout; never let it.
+  if (
+    !Number.isSafeInteger(args.validUntil) ||
+    args.validUntil &lt;= 0 ||
+    args.validUntil &gt; 0xffffffff
+  ) {
+    throw new ValidationError('INVALID_INTENT', 'validUntil must be a uint32 above 0');
+  }
+  if (
+    args.messages.length === 0 ||
+    args.messages.length &gt; MAX_MESSAGES[identity.version]
+  ) {
+    throw new ValidationError(
+      'INVALID_INTENT',
+      `a ${identity.version} request carries 1 to ${MAX_MESSAGES[identity.version]} messages`,
+    );
+  }
+  const contract = contractOf(identity, publicKey);
+  let signing: Cell | undefined;
+  const transfer = {
+    seqno: args.seqno,
+    timeout: args.validUntil,
+    sendMode: SEND_MODE,
+    messages: [...args.messages],
+    signer: async (cell: Cell): Promise&lt;Buffer&gt; =&gt; {
+      signing = cell;
+      return Buffer.alloc(64);
+    },
+  };
+  let message: Cell;
+  try {
+    const body = await (contract instanceof WalletContractV4
+      ? contract.createTransfer(transfer)
+      : contract.createTransfer(transfer));
+    message = beginCell()
+      .store(
+        storeMessage(
+          external({
+            to: contract.address,
+            body,
+            ...(args.deploy
+              ? { init: { code: contract.init.code, data: contract.init.data } }
+              : {}),
+          }),
+        ),
+      )
+      .endCell();
+  } catch {
+    // M12, lesson 19: the SDK throws bare errors that may name a value; `nativeMessage` and
+    // `jettonMessage` range-check theirs, so only a hand-built message ends here.
+    throw new ValidationError('INVALID_INTENT', 'the TON request cannot be encoded');
+  }
+  if (!signing) <span class="branch-0 cbranch-no" title="branch not covered" >{</span>
+<span class="cstat-no" title="statement not covered" >    throw new SigningError('SIGNING_FAILED', 'the SDK did not produce a signing message');</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
+  return { message, digest: new Uint8Array(signing.hash()) };
+}
+&nbsp;
+/** The message in `cell`, or undefined when it holds none (the SDK throws a bare `Error`). */
+function messageOf(cell: Cell): Message | undefined {
+  try {
+    return loadMessage(cell.beginParse());
+  } catch {
+    return undefined;
+  }
+}
+&nbsp;
+/** A cell of `bits` then `refs`. */
+function cellOf(parts: readonly (Buffer | Cell['bits'])[], refs: readonly Cell[]): Cell {
+  const builder = beginCell();
+  for (const part of parts) {
+    if (Buffer.isBuffer(part)) builder.storeBuffer(part);
+    else builder.storeBits(part);
+  }
+  for (const ref of refs) builder.storeRef(ref);
+  return builder.endCell();
+}
+&nbsp;
+const ZERO_SIGNATURE = Buffer.alloc(64);
+&nbsp;
+/**
+ * The signed external message: `signature` in place of the 512 zero bits whose remainder
+ * hashes to `digest` (the front for v4r2, the tail for v5r1). Refuses (`SIGNING_FAILED`) a
+ * payload with no such position, so a signature can never land anywhere else.
+ */
+export function signedRequest(
+  unsigned: Cell,
+  digest: Uint8Array,
+  signature: Uint8Array,
+): Cell {
+  if (signature.length !== 64) {
+    throw new SigningError('SIGNING_FAILED', 'a TON signature is 64 bytes');
+  }
+  const message = messageOf(unsigned);
+  if (message?.info.type !== 'external-in') {
+    throw new SigningError(
+      'SIGNING_FAILED',
+      'the unsigned TON payload is not an external message',
+    );
+  }
+  const { body } = message;
+  const length = body.bits.length;
+  const expected = Buffer.from(digest);
+  const zero = cellOf([ZERO_SIGNATURE], []).bits;
+  const sig = Buffer.from(signature);
+  let signedBody: Cell | undefined;
+  if (length &gt;= 512) {
+    const front = body.bits.substring(0, 512);
+    const afterFront = body.bits.substring(512, length - 512);
+    const tail = body.bits.substring(length - 512, 512);
+    const beforeTail = body.bits.substring(0, length - 512);
+    if (front.equals(zero) &amp;&amp; cellOf([afterFront], body.refs).hash().equals(expected)) {
+      signedBody = cellOf([sig, afterFront], body.refs);
+    } else if (
+      tail.equals(zero) &amp;&amp;
+      cellOf([beforeTail], body.refs).hash().equals(expected)
+    ) {
+      signedBody = cellOf([beforeTail, sig], body.refs);
+    }
+  }
+  if (!signedBody) {
+    throw new SigningError(
+      'SIGNING_FAILED',
+      'the unsigned TON payload does not match its signing request',
+    );
+  }
+  return beginCell()
+    .store(
+      storeMessage({
+        info: message.info,
+        ...(message.init ? { init: message.init } : {}),
+        body: signedBody,
+      }),
+    )
+    .endCell();
+}
+&nbsp;
+/**
+ * TEP-467: the hash of the external-in message with `src` = addr_none, `import_fee` = 0,
+ * no `init`, and the body always as a reference. Stable across relays; the Attempt id.
+ */
+export function normalizedHash(externalMessage: Cell): Uint8Array {
+  const message = messageOf(externalMessage);
+  if (message?.info.type !== 'external-in') {
+    throw new ValidationError('INVALID_INTENT', 'not an external-in message');
+  }
+  const normalized = beginCell()
+    .storeUint(2, 2)
+    .storeUint(0, 2)
+    .storeAddress(message.info.dest)
+    .storeCoins(0)
+    .storeBit(false)
+    .storeBit(true)
+    .storeRef(message.body)
+    .endCell();
+  return new Uint8Array(normalized.hash());
+}
+&nbsp;
+/**
+ * A23 and the final review: whether the wallet request `body` (external, or a W5
+ * `internal_signed` request relayed in an internal message) is `from`'s own. Anyone can post
+ * a relayed body, and a lone lying indexer can make up an external one, so a request
+ * proves nothing unless its ed25519 signature verifies over the rest of the request under
+ * `publicKey`, the wallet's key (v4r2: the first 512 bits; v5r1: the last 512), and its
+ * wallet id derives `from` with that key (v4r2: the subwallet id in `from`'s workchain;
+ * v5r1: the signed wallet id). A request of another wallet sharing the key, replayed
+ * here, never counts. For a relayed request the caller also requires the transaction's
+ * compute phase to have succeeded, i.e. the wallet ran it.
+ */
+export function requestIsOwn(
+  from: string,
+  body: Cell,
+  publicKey: Uint8Array,
+  globalId: number,
+): boolean {
+  try {
+    const length = body.bits.length;
+    if (length &lt; 512 + 32 || publicKey.length !== 32) return false;
+    const op = body.beginParse().preloadUint(32);
+    const v5 = op === OP.w5SignedExternal || op === OP.w5SignedInternal;
+    const [signed, rest] = v5
+      ? [body.bits.substring(length - 512, 512), body.bits.substring(0, length - 512)]
+      : [body.bits.substring(0, 512), body.bits.substring(512, length - 512)];
+    const signing = cellOf([rest], body.refs);
+    const signature = cellOf([signed], []).beginParse().loadBuffer(64);
+    if (!ed25519.verify(signature, signing.hash(), publicKey)) return false;
+    const identity = v5
+      ? v5IdentityOf(signing.beginParse().skip(32).loadInt(32), globalId)
+      : v4IdentityOf(from, signing.beginParse().loadUint(32));
+    return identity !== undefined &amp;&amp; walletAddress(identity, publicKey) === from;
+  } <span class="branch-0 cbranch-no" title="branch not covered" >catch {</span>
+<span class="cstat-no" title="statement not covered" >    return false;</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
+}
+&nbsp;
+/** The v4r2 identity a request's subwallet id names in `from`'s workchain. */
+function v4IdentityOf(from: string, subwalletId: number): TonIdentity | undefined {
+  const workchain = Number(from.split(':')[0]);
+  if (workchain !== 0<span class="branch-0 cbranch-no" title="branch not covered" > &amp;&amp; workchain !== -1)</span> <span class="branch-0 cbranch-no" title="branch not covered" >return undefined;</span>
+  return { version: 'v4r2', workchain, subwalletId };
+}
+&nbsp;
+/** The v5r1 identity a signed wallet id names: 1 bit set, workchain int8, version 0, uint15. */
+function v5IdentityOf(walletId: number, globalId: number): TonIdentity | undefined {
+  const context = (walletId ^ globalId) | 0;
+  if (context &gt;&gt;&gt; 31 !== 1 || ((context &gt;&gt; 15) &amp; 0xff) !== 0) <span class="branch-0 cbranch-no" title="branch not covered" >return undefined;</span>
+  const byte = (context &gt;&gt; 23) &amp; 0xff;
+  const workchain = byte &gt;= 128 <span class="branch-0 cbranch-no" title="branch not covered" >? byte - 256 </span>: byte;
+  if (workchain !== 0<span class="branch-0 cbranch-no" title="branch not covered" > &amp;&amp; workchain !== -1)</span> <span class="branch-0 cbranch-no" title="branch not covered" >return undefined;</span>
+  return {
+    version: 'v5r1',
+    workchain,
+    subwalletNumber: context &amp; 0x7fff,
+    networkGlobalId: globalId,
+  };
+}
+&nbsp;
+/** The SDK's `Address` for a raw address, parsed strictly (lesson 4). */
+export { sdkAddress };
+&nbsp;
+/** The TEP-467 hash (hex) of the external message `body` to `account` would travel in. */
+export function externalHashOf(account: string, body: Cell): string {
+  const message = beginCell()
+    .store(storeMessage(external({ to: sdkAddress(account), body })))
+    .endCell();
+  return Buffer.from(normalizedHash(message)).toString('hex');
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-10-01T09:51:53.170Z
+            </div>
+        <script src="../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../sorter.js"></script>
+        <script src="../../../block-navigation.js"></script>
+    </body>
+</html>
+    

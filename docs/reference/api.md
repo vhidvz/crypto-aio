@@ -233,4 +233,4 @@ pnpm install
 pnpm doc
 ```
 
-Then open `docs/api/index.html`. It covers every entry point listed above.
+Then open [`docs/api/index.html`](https://htmlpreview.github.io/?https://github.com/vhidvz/crypto-aio/blob/main/docs/api/index.html). It covers every entry point listed above.

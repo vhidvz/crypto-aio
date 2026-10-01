@@ -3,6 +3,7 @@
 [![npm](https://img.shields.io/npm/v/crypto-aio)](https://www.npmjs.com/package/crypto-aio)
 [![CI](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml/badge.svg)](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml)
 ![npm](https://img.shields.io/npm/dm/crypto-aio)
+[![Coverage](https://raw.githubusercontent.com/vhidvz/crypto-aio/main/coverage-badge.svg)](https://htmlpreview.github.io/?https://github.com/vhidvz/crypto-aio/blob/main/coverage/lcov-report/index.html)
 [![License](https://img.shields.io/github/license/vhidvz/crypto-aio?style=flat)](LICENSE)
 [![documentation](https://img.shields.io/badge/documentation-read_the_docs-c27cf4)](https://vhidvz.github.io/crypto-aio/)
 
