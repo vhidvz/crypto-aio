@@ -194,7 +194,8 @@
     }
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.x.x <23",
+    "npm": "~10.9.2"
   },
   "publishConfig": {
     "access": "public",
