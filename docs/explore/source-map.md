@@ -19,7 +19,7 @@ src/
   adapters/           one directory per chain family; only these import SDKs, lazily
   testing/            crypto-aio/testing: the fake family, fake time, fakes and contract suites
 test/                 unit, architecture, documentation, end-to-end and integration tests
-docs/                 this site (VitePress); docs/superpowers/ holds the design records
+docs/                 this site (VitePress); docs/api/ is the generated API reference
 scripts/pack-check.mjs  loads every entry point from the packed tarball
 ```
 

@@ -6,8 +6,10 @@ description: The design specification and implementation plans behind crypto-aio
 # Design records
 
 crypto-aio 0.1.0 was designed in a written specification and built in a series of planned
-stages, each reviewed against the code. Those working documents are kept in the repository, under
-`docs/superpowers/`, for readers who want the reasoning behind a decision.
+stages, each reviewed against the code. Those working documents are no longer in the repository,
+but its history keeps them: the links below show them as they were in the last commit that held
+them (`694cf12`), for readers who want the reasoning behind a decision. Comments in the source
+that cite the specification (`spec §10`) or a plan (`P25-R22`) refer to these records.
 
 > [!NOTE]
 > These are historical records. They describe what was planned at the time, and some details
@@ -17,9 +19,9 @@ stages, each reviewed against the code. Those working documents are kept in the 
 
 | Record | What it holds |
 | --- | --- |
-| [The design specification](https://github.com/vhidvz/crypto-aio/blob/main/docs/superpowers/specs/2026-09-23-blockchain-adapter-layer-design.md) | Purpose, architecture, the public API, the domain model, the adapter contract, the transaction lifecycle, signing, observation, transport, stores, errors, testing |
-| [The implementation plans](https://github.com/vhidvz/crypto-aio/tree/main/docs/superpowers/plans) | One plan and one handoff per stage: the core, then the EVM, UTXO, Tron, Solana and TON families, and the 0.1.0 release |
-| [The backlog after 0.1.0](https://github.com/vhidvz/crypto-aio/blob/main/docs/superpowers/plans/2026-09-30-post-0.1.0-backlog.md) | Known gaps and deferred work, each with the reason it waited |
+| [The design specification](https://github.com/vhidvz/crypto-aio/blob/694cf12a864b03f42fff6489be9ab3c94c225fb1/docs/superpowers/specs/2026-09-23-blockchain-adapter-layer-design.md) | Purpose, architecture, the public API, the domain model, the adapter contract, the transaction lifecycle, signing, observation, transport, stores, errors, testing |
+| [The implementation plans](https://github.com/vhidvz/crypto-aio/tree/694cf12a864b03f42fff6489be9ab3c94c225fb1/docs/superpowers/plans) | One plan and one handoff per stage: the core, then the EVM, UTXO, Tron, Solana and TON families, and the 0.1.0 release |
+| [The backlog after 0.1.0](https://github.com/vhidvz/crypto-aio/blob/694cf12a864b03f42fff6489be9ab3c94c225fb1/docs/superpowers/plans/2026-09-30-post-0.1.0-backlog.md) | Known gaps and deferred work, each with the reason it waited |
 
 ## Where the specification's topics are now
 

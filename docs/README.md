@@ -17,7 +17,6 @@ published.
 | `explore/` | Explore | Source map, plugins, stores, design records |
 | `api/` | API | The API reference, generated from the source's doc comments by `pnpm doc`; do not edit by hand |
 | `guides/` | | Redirects from the pre-site guide URLs; do not add pages here |
-| `superpowers/` | | Design records of the 0.1.0 release; not published as pages |
 | `.vitepress/` | | The site itself: its configuration, navigation and theme |
 
 The files of the site:

@@ -22,7 +22,7 @@ const DESCRIPTION =
   'payment systems.';
 
 /** Folders and files of docs/ that are not pages of the site. */
-const NOT_PAGES = ['README.md', 'superpowers/**'];
+const NOT_PAGES = ['README.md'];
 
 /** The API reference, generated from the source's doc comments by TypeDoc (`pnpm doc`). */
 const API = 'api/';
@@ -72,9 +72,7 @@ function pages(dir = ''): string[] {
   return readdirSync(join(DOCS, dir), { withFileTypes: true }).flatMap((entry) => {
     const path = posix.join(dir, entry.name);
     if (entry.isDirectory()) {
-      return /^[._]/.test(entry.name) || ['superpowers', 'api'].includes(entry.name)
-        ? []
-        : pages(path);
+      return /^[._]/.test(entry.name) || entry.name === 'api' ? [] : pages(path);
     }
     return entry.name.endsWith('.md') && path !== 'README.md' ? [path] : [];
   });
