@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { CursorStore } from '../../core/store/types';
-import { rejectsWithCode, type ContractTestApi } from './api';
+import { rejectsWithCode, rejectsWithCodeKeepingOut, type ContractTestApi } from './api';
 
 export interface CursorHarness {
   readonly cursors: CursorStore;
@@ -29,6 +29,22 @@ export function describeCursorStoreContract(
       assert.deepEqual(await cursors.get('c'), stored);
       await rejectsWithCode(cursors.put('c', cursor, null), 'VERSION_CONFLICT');
       assert.deepEqual(await cursors.get('c'), stored);
+    });
+
+    api.it('keeps the key out of its errors (B110)', async () => {
+      // A cursor key can name a watched wallet, and error messages reach logs.
+      const { cursors } = await create();
+      const key = 'deposits:bitcoin:mainnet:bc1qcursorkeyc0ffee0000000000000000000000';
+      const cursor = { height: 1n, hash: 'h1', recent: [{ height: 1n, hash: 'h1' }] };
+      await cursors.put(key, cursor, null);
+      await rejectsWithCodeKeepingOut(
+        cursors.put(key, cursor, null),
+        'VERSION_CONFLICT',
+        [key],
+      );
+      await rejectsWithCodeKeepingOut(cursors.put(key, cursor, 9), 'VERSION_CONFLICT', [
+        key,
+      ]);
     });
   });
 }

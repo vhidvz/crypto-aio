@@ -7,7 +7,7 @@ import type {
   OperationPatch,
   OperationStore,
 } from '../../core/store/types';
-import { rejectsWithCode, type ContractTestApi } from './api';
+import { rejectsWithCode, rejectsWithCodeKeepingOut, type ContractTestApi } from './api';
 
 /**
  * Narrows a `Promise.allSettled` result to its rejected variant, so a batch of
@@ -604,6 +604,190 @@ export function describeOperationStoreContract(
           'INVALID_TRANSITION',
         );
         assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+      },
+    );
+
+    api.it(
+      'rejects a clear that is not an array, leaving the record unchanged (N7)',
+      async () => {
+        // A serialized store cannot read a number, an object or a Set as a list either;
+        // reading one as `[]` would let a malformed patch commit as if it cleared nothing.
+        const { operations } = await create();
+        const created = await operations.create(sampleOperation());
+        const snapshot = await operations.get('ns', created.record.id);
+        for (const clear of [5, {}, null, 'error', new Set(['error'])]) {
+          const patch = { state: 'prepared', clear } as unknown as OperationPatch;
+          await rejectsWithCode(
+            operations.update('ns', created.record.id, patch, 1),
+            'INVALID_TRANSITION',
+          );
+          assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+          await rejectsWithCode(
+            operations.appendAttempt(
+              'ns',
+              created.record.id,
+              sampleAttempt('n7'),
+              patch,
+              1,
+            ),
+            'INVALID_TRANSITION',
+          );
+          assert.deepEqual(await operations.get('ns', created.record.id), snapshot);
+        }
+      },
+    );
+
+    api.it(
+      'keeps the idempotency key and the wallet address out of its errors (B110)',
+      async () => {
+        // Both are `sensitive` data, and error messages reach logs.
+        const { operations } = await create();
+        const from = 'TRonWa11etAddre55C0ffee000000000000';
+        const idempotencyKey = 'withdrawal-7f3a9c-customer-4417';
+        const secrets = [from, idempotencyKey];
+        const operation = sampleOperation({
+          idempotencyKey,
+          state: 'submitted',
+          nextCheckAt: 100,
+          intent: { ...sampleOperation().intent, from },
+        });
+        const { record } = await operations.create(operation);
+        await rejectsWithCodeKeepingOut(
+          operations.create({ ...operation, idempotencyKey: 'another-key' }),
+          'INVALID_TRANSITION',
+          secrets,
+        );
+        await rejectsWithCodeKeepingOut(
+          operations.update('ns', record.id, { state: 'prepared' }, 9),
+          'VERSION_CONFLICT',
+          secrets,
+        );
+        await rejectsWithCodeKeepingOut(
+          operations.update(
+            'ns',
+            record.id,
+            { idempotencyKey: 'x' } as unknown as OperationPatch,
+            record.version,
+          ),
+          'INVALID_TRANSITION',
+          secrets,
+        );
+        const appended = await operations.appendAttempt(
+          'ns',
+          record.id,
+          sampleAttempt('k1'),
+          {},
+          record.version,
+        );
+        await rejectsWithCodeKeepingOut(
+          operations.appendAttempt(
+            'ns',
+            record.id,
+            sampleAttempt('k1'),
+            {},
+            appended.version,
+          ),
+          'INVALID_TRANSITION',
+          secrets,
+        );
+        await rejectsWithCodeKeepingOut(
+          operations.appendAttempt('ns', record.id, sampleAttempt('k2'), {}, 1),
+          'VERSION_CONFLICT',
+          secrets,
+        );
+        const [stale] = await operations.claimDue('ns', 'w1', 1_000, 500, 10);
+        await operations.claimDue('ns', 'w2', 1_600, 500, 10);
+        const current = await operations.get('ns', record.id);
+        await rejectsWithCodeKeepingOut(
+          operations.update('ns', record.id, {}, current!.version, {
+            claimToken: stale!.claim!.token,
+          }),
+          'FENCING',
+          secrets,
+        );
+      },
+    );
+
+    api.it(
+      'purges what the filter matches and nothing else, when it implements purge (B110)',
+      async () => {
+        const { operations } = await create();
+        if (operations.purge === undefined) return;
+        const done = (
+          await operations.create(sampleOperation({ namespace: 'purge', state: 'final' }))
+        ).record;
+        await operations.appendAttempt(
+          'purge',
+          done.id,
+          sampleAttempt('p1'),
+          {},
+          done.version,
+        );
+        await operations.putObservation(
+          {
+            attemptId: 'p1',
+            operationId: done.id,
+            state: 'included',
+            evidence: 'proven',
+            confirmations: 3,
+            txHash: 'purged-hash',
+          },
+          null,
+        );
+        const live = (
+          await operations.create(
+            sampleOperation({ namespace: 'purge', state: 'submitted' }),
+          )
+        ).record;
+        const elsewhere = (
+          await operations.create(sampleOperation({ namespace: 'kept', state: 'final' }))
+        ).record;
+        const liveBefore = await operations.get('purge', live.id);
+        const elsewhereBefore = await operations.get('kept', elsewhere.id);
+
+        assert.equal(
+          await operations.purge({ namespace: 'purge', states: ['final'] }),
+          1,
+        );
+        assert.equal(await operations.get('purge', done.id), null);
+        assert.equal(await operations.getByKey('purge', done.idempotencyKey), null);
+        assert.equal(await operations.findByRef('purge', 'ref-p1'), null);
+        assert.equal(await operations.findByRef('purge', 'purged-hash'), null);
+        assert.equal(await operations.getObservation('p1'), null);
+        assert.deepEqual(await operations.get('purge', live.id), liveBefore);
+        assert.deepEqual(await operations.get('kept', elsewhere.id), elsewhereBefore);
+        // The idempotency key is free again: a new Operation may take it.
+        const again = await operations.create(
+          sampleOperation({
+            namespace: 'purge',
+            idempotencyKey: done.idempotencyKey,
+            id: `${done.id}-again`,
+          }),
+        );
+        assert.equal(again.created, true);
+        assert.equal(await operations.purge({ namespace: 'empty' }), 0);
+      },
+    );
+
+    api.it(
+      'purges at most limit records, the oldest first, when it implements purge (B110)',
+      async () => {
+        const { operations } = await create();
+        if (operations.purge === undefined) return;
+        const ids: string[] = [];
+        for (let i = 0; i < 3; i += 1) {
+          const { record } = await operations.create(
+            sampleOperation({ namespace: 'purge-limit', state: 'failed' }),
+          );
+          ids.push(record.id);
+        }
+        assert.equal(await operations.purge({ namespace: 'purge-limit', limit: 2 }), 2);
+        assert.deepEqual(
+          (await operations.list({ namespace: 'purge-limit' })).map((r) => r.id),
+          [ids[2]],
+        );
+        assert.equal(await operations.purge({ namespace: 'purge-limit', limit: 0 }), 0);
+        assert.equal((await operations.list({ namespace: 'purge-limit' })).length, 1);
       },
     );
 

@@ -222,6 +222,31 @@ describe('resolveSelection', () => {
     });
   });
 
+  it('refuses a signer without a readable list of schemes (B107)', () => {
+    const broken: Record<string, unknown> = {
+      missing: { id: 'missing', getPublicKey: hot.getPublicKey, sign: hot.sign },
+      'not-strings': { id: 'not-strings', schemes: [1], sign: hot.sign },
+      throwing: {
+        id: 'throwing',
+        get schemes(): never {
+          throw new Error('https://custody.test/SECRET-TOKEN-1 is down');
+        },
+        sign: hot.sign,
+      },
+    };
+    for (const id of Object.keys(broken)) {
+      const error = thrown(() =>
+        resolve({ chain: 'testchain', provider: 'acme', signer: id }, [
+          root,
+          { signers: { [id]: broken[id] } } as unknown as ScopeOptions,
+        ]),
+      );
+      expect(error).toMatchObject({ code: 'SIGNER_UNAVAILABLE' });
+      expect(String((error as Error).message)).toContain(`signer '${id}'`);
+      expect(JSON.stringify(error)).not.toContain('SECRET-TOKEN-1');
+    }
+  });
+
   it('computes capabilities from manifest, indexer and network', () => {
     const plain = resolve({ chain: 'testchain', provider: 'acme' });
     expect([...plain.capabilities].sort()).toEqual(['memo']);
@@ -302,6 +327,39 @@ describe('merge safety', () => {
     const eff = mergeScopes([layer]);
     expect(eff.providers.evil).toBeUndefined();
     expect(Object.getPrototypeOf(eff.providers)).toBe(Object.prototype);
+  });
+});
+
+describe('reference cycles (B116)', () => {
+  const cyclic = (): Record<string, unknown> => {
+    const nested: Record<string, unknown> = { depth: 1 };
+    nested.again = { back: nested };
+    return nested;
+  };
+
+  it('refuses a cycle in merged options with CONFIG_INVALID, not a stack overflow', () => {
+    const layer: ScopeOptions = { chains: { c: { options: { nested: cyclic() } } } };
+    const error = thrown(() => mergeScopes([{}, layer, {}])) as { code?: string };
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('CONFIG_INVALID');
+    const lifecycle = { cycle: cyclic() } as unknown as ScopeOptions['lifecycle'];
+    expect((thrown(() => mergeScopes([{ lifecycle }])) as { code?: string }).code).toBe(
+      'CONFIG_INVALID',
+    );
+  });
+
+  it('still copies one object shared by two branches, twice', () => {
+    const shared = { x: 1 };
+    const layer = {
+      chains: { c: { options: { a: shared, b: [shared, shared] } } },
+    } as ScopeOptions;
+    const options = mergeScopes([layer]).chains.c?.options as {
+      a: { x: number };
+      b: { x: number }[];
+    };
+    expect(options.a).toEqual({ x: 1 });
+    expect(options.b).toEqual([{ x: 1 }, { x: 1 }]);
+    expect(options.a).not.toBe(shared);
   });
 });
 

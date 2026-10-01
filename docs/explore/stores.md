@@ -133,8 +133,11 @@ own is operational, and the `nonce.allocated` and `nonce.gap` events carry it.
 - Store plain data only: objects, arrays, strings, numbers, booleans, `bigint` and
   `Uint8Array`. `stringifyTagged` and `parseTagged` round-trip bigint and bytes through JSON.
 - Keep keys out of store error messages. Sequence keys contain wallet addresses, and error
-  messages reach logs.
+  messages reach logs. The contract suites check it for sequence and cursor keys, idempotency
+  keys and wallet addresses.
 - The core never deletes records. `OperationStore.purge?(filter)` is optional, and retention
-  is your decision.
+  is your decision. When you implement it, it removes what the filter matches, as `list`
+  reads it (at most `limit` records, the oldest first), with their observations and
+  idempotency keys.
 - Prove your stores with the contract suites from `crypto-aio/testing`. See
   [The contract suites](#the-contract-suites) above.

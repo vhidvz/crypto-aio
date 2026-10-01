@@ -7,7 +7,8 @@
  * Jetton asset ids use the master's raw address: `ton:mainnet/jetton:0:<hex>`.
  */
 import type { AssetRegistration } from '../../core/registry/assets';
-import { TON_CHAINS, deepFreeze } from './chains';
+import { deepFreeze } from '../../core/util/freeze';
+import { TON_CHAINS } from './chains';
 
 /** The alias `TON` on each network's native coin, with the chain's own metadata. */
 const NATIVE_ALIASES: readonly AssetRegistration[] = TON_CHAINS.flatMap((chain) =>

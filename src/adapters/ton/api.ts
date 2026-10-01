@@ -18,6 +18,7 @@ import {
   isCryptoAioError,
 } from '../../core/errors/error';
 import type { CallOptions, HttpRequest, Transport } from '../../core/transport/types';
+import { MAX_COINS } from './fees';
 import type { TonCallTags } from './types';
 
 export const READ: TonCallTags = { purpose: 'read', retry: 'safe' };
@@ -178,7 +179,6 @@ const big = (value: unknown): bigint | undefined =>
         ? BigInt(value)
         : undefined;
 
-const COINS_MAX = 2n ** 120n - 1n;
 const U64_MAX = 2n ** 64n - 1n;
 
 /** M1: an unsigned integer up to `max`. */
@@ -187,7 +187,7 @@ function unsigned(value: unknown, max: bigint): bigint | undefined {
   return n !== undefined && n >= 0n && n <= max ? n : undefined;
 }
 /** An amount of nanograms (`Coins`, a VarUInteger 16: below 2^120). */
-const coins = (value: unknown): bigint | undefined => unsigned(value, COINS_MAX);
+const coins = (value: unknown): bigint | undefined => unsigned(value, MAX_COINS);
 /** A logical time (u64). */
 const u64 = (value: unknown): bigint | undefined => unsigned(value, U64_MAX);
 

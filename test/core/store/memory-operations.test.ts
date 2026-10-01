@@ -59,13 +59,17 @@ describe('MemoryOperationStore patches', () => {
     const store = new MemoryOperationStore(new FakeClock());
     const { record } = await store.create(sampleOperation());
     let reads = 0;
-    // Yields an allowed field on the first read and a store-owned one after that.
-    const fickle = {
-      *[Symbol.iterator]() {
+    // An array that yields an allowed field on the first read and a store-owned one after.
+    const fickle = new Proxy(['error'], {
+      get(target, property, receiver) {
+        if (property !== Symbol.iterator) return Reflect.get(target, property, receiver);
         reads += 1;
-        yield reads === 1 ? 'error' : 'attempts';
+        const field = reads === 1 ? 'error' : 'attempts';
+        return function* () {
+          yield field;
+        };
       },
-    };
+    });
     const updated = await store.update(
       record.namespace,
       record.id,

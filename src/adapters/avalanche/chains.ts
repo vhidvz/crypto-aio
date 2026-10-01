@@ -16,6 +16,7 @@
  * memo, so its networks remove the `memo` capability.
  */
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { deepFreeze } from '../../core/util/freeze';
 import type { AvalancheVm } from './types';
 
 interface NetworkSpec {
@@ -82,15 +83,6 @@ function network(spec: NetworkSpec, vm: AvalancheVm): NetworkInfo {
       avaxAssetId: spec.avaxAssetId,
     },
   };
-}
-
-/** R56: exported data is frozen all the way down. */
-export function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    for (const item of Object.values(value)) deepFreeze(item);
-    Object.freeze(value);
-  }
-  return value;
 }
 
 function chain(id: string, vm: AvalancheVm): ChainInfo {

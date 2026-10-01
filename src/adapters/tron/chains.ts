@@ -8,16 +8,7 @@
  * - `maxLagBlocks: 20`: about 60 seconds of 3-second blocks.
  */
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
-
-/** Recursively freezes plain data (R56), so shared chain data cannot be mutated. */
-export function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const inner of Object.values(value as Record<string, unknown>))
-      deepFreeze(inner);
-  }
-  return value;
-}
+import { deepFreeze } from '../../core/util/freeze';
 
 function tronNetwork(
   id: string,

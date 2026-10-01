@@ -4,7 +4,7 @@
  * lists no Tron USDC, so there is none. The contract is the base58 form, the canonical one.
  */
 import type { AssetRegistration } from '../../core/registry/assets';
-import { deepFreeze } from './chains';
+import { deepFreeze } from '../../core/util/freeze';
 
 export const TRON_TOKENS: readonly AssetRegistration[] = deepFreeze([
   {

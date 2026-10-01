@@ -13,6 +13,7 @@
  *   mainnet, where a missing estimate fails the read instead).
  */
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { deepFreeze } from '../../core/util/freeze';
 
 interface NetworkSpec {
   readonly id: string;
@@ -108,14 +109,6 @@ function network(spec: NetworkSpec): NetworkInfo {
       ...(spec.feeFallback !== undefined ? { feeFallback: spec.feeFallback } : {}),
     },
   };
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    for (const child of Object.values(value)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
 }
 
 /** R56: deep-frozen, so no caller can change a network another handle uses. */
