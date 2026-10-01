@@ -125,8 +125,11 @@ export default defineConfig({
   cleanUrls: false,
   srcExclude: NOT_PAGES,
 
+  // The brand (docs/public/): the logo's indigo, and the icon as the favicon, in the reader's
+  // light or dark theme.
   head: [
-    ['meta', { name: 'theme-color', content: '#6f42c1' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${BASE}favicon.svg` }],
+    ['meta', { name: 'theme-color', content: '#5b5fef' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'crypto-aio' }],
   ],
@@ -210,6 +213,8 @@ export default defineConfig({
   },
 
   themeConfig: {
+    // The icon, then the site's title, so the alt text is empty.
+    logo: { light: '/crypto-aio-icon.svg', dark: '/crypto-aio-icon-dark.svg', alt: '' },
     nav: [
       { text: 'Get started', link: '/start/', activeMatch: '^/start/' },
       { text: 'Learn', link: '/learn/', activeMatch: '^/(learn|tour)/' },

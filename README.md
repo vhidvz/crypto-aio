@@ -1,11 +1,20 @@
-# crypto-aio
+<h1 align="center">
+  <a href="https://vhidvz.github.io/crypto-aio/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vhidvz/crypto-aio/main/docs/public/crypto-aio-logo-dark.svg">
+      <img alt="crypto-aio" src="https://raw.githubusercontent.com/vhidvz/crypto-aio/main/docs/public/crypto-aio-logo.svg" width="420">
+    </picture>
+  </a>
+</h1>
+
+<div align="center">
 
 [![npm](https://img.shields.io/npm/v/crypto-aio)](https://www.npmjs.com/package/crypto-aio)
 [![CI](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml/badge.svg)](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml)
 ![npm](https://img.shields.io/npm/dm/crypto-aio)
 [![Coverage](https://raw.githubusercontent.com/vhidvz/crypto-aio/main/coverage-badge.svg)](https://htmlpreview.github.io/?https://github.com/vhidvz/crypto-aio/blob/main/coverage/lcov-report/index.html)
 [![License](https://img.shields.io/github/license/vhidvz/crypto-aio?style=flat)](LICENSE)
-[![documentation](https://img.shields.io/badge/documentation-read_the_docs-c27cf4)](https://vhidvz.github.io/crypto-aio/)
+[![documentation](https://img.shields.io/badge/documentation-read_the_docs-5b5fef)](https://vhidvz.github.io/crypto-aio/)
 
 **One TypeScript API for moving money on blockchains.** Balances, transfers, confirmations
 and deposit scanning across EVM chains, Bitcoin, Tron, Solana, TON and the Avalanche X-Chain and
@@ -16,6 +25,8 @@ P-Chain, built for exchanges, wallets and payment systems.
 [Learn from zero](https://vhidvz.github.io/crypto-aio/learn/) ·
 [Examples](https://vhidvz.github.io/crypto-aio/build/examples.html) ·
 [API](https://vhidvz.github.io/crypto-aio/reference/api.html)
+
+</div>
 
 ## Why crypto-aio
 
