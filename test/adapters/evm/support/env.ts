@@ -40,6 +40,8 @@ export interface EvmEnvOptions {
   readonly signer?: Signer;
   readonly plugins?: readonly Plugin[];
   readonly lifecycle?: LifecycleOptions;
+  /** The handle's driver options (`chains.<id>.options`), such as `maxFeePerGas`. */
+  readonly options?: Readonly<Record<string, unknown>>;
 }
 
 /** A local signer holding the test key that counts its `sign` calls. */
@@ -105,6 +107,7 @@ export async function createEvmEnv(options: EvmEnvOptions) {
           library: options.library,
           provider: 'node',
           wallet: 'main',
+          ...(options.options ? { options: options.options } : {}),
         },
       },
       lifecycle: {

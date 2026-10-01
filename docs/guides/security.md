@@ -320,6 +320,7 @@ transfer resolves, and which addresses a scan filter matches.
       (change, a cancel's refund), and never use a scanned deposit address as a change
       address.
 - [ ] `await aio.close()` on shutdown.
+- [ ] EVM: `maxFeePerGas` set to your fee policy (1,000 gwei per gas by default).
 - [ ] Bitcoin: your own Esplora, with two or three independent endpoints as the `provider`;
       `lifecycle.broadcastFanout` of 2 or more; `nonWitnessUtxo` left on for hardware
       signers; and `allowExternalChangeAddress` only for a verified address.

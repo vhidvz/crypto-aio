@@ -76,7 +76,10 @@ separate `l1-data` charge, and the bound is `expected`, since that fee moves wit
 An override's `gasLimit` skips `eth_estimateGas`, the check that refuses a call that would
 fail: any call that would revert or run out of gas, such as a token transfer or a payment
 to a contract that refuses it, is then signed, broadcast, and burns its gas. The balance
-check still runs.
+check still runs. No EVM transaction signs a price per gas above the handle's `maxFeePerGas`
+option (1,000 gwei by default): a speed's prices are clamped to it, and an override, or a
+cancel's least bump, above it is refused with `INVALID_INTENT` before signing; see
+[EVM networks](./networks.md#evm-networks).
 
 On Bitcoin, `slow`, `normal` and `fast` take Esplora's estimate for 144, 6 or 2 blocks, and
 a built transaction's `network` charge is `exact`. A fee above the handle's absurd-fee
@@ -112,6 +115,14 @@ GRAM by default, the unspent part refunded), and its bound is `upper`. The only 
 wallet cannot pay; its `details.required` is then a lower bound, with only the least gas a
 wallet run can cost.
 [TON networks](./networks.md#ton-networks) covers the charges and the fee ceiling.
+
+**No endpoint can raise a fee above your bound.** Every family's prices come from a node,
+so every family bounds them by a handle option that no endpoint can change: EVM
+`maxFeePerGas`, Bitcoin `maxFeeRate`, `maxFee` and `maxEstimatedFeeRate`, Tron
+`maxFeeLimit`, Solana `maxComputeUnitPrice`, and TON `maxNetworkFee` (on the estimate; TON
+signs no fee). A node's suggestion above the bound is clamped to it or not trusted, an
+explicit fee above it is refused before signing, and the build checks it again. Set each
+bound to your fee policy; the defaults stop an absurd fee, not an expensive one.
 
 ### Cold, offline and asynchronous signing
 

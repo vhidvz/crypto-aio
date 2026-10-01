@@ -51,6 +51,14 @@ ethers and web3 clients.
   Smart Chain, Avalanche, Arbitrum and Base mainnets; `public` the networks whose chain
   documents a public endpoint (not Ethereum). The public Base, Arbitrum and OP Sepolia
   endpoints may refuse Node's `fetch` (a Cloudflare 403, seen as `PROVIDER_UNAVAILABLE`).
+- **Fee ceiling.** No transfer, replacement or cancel signs a price per gas above the
+  `maxFeePerGas` option, in wei as a bigint (`chains.<id>.options` or a handle's `options`;
+  1,000 gwei by default, `DEFAULT_MAX_FEE_PER_GAS` from `crypto-aio/evm`; a custom network
+  may set `params.maxFeePerGas`). A node's suggestion is clamped to it, and an explicit fee
+  or a cancel's least bump above it fails with `INVALID_INTENT` before signing
+  (`details.required`, `details.maxFeePerGas`). If the base fee rises above the ceiling,
+  transfers stall as `FEE_TOO_LOW` until it falls or you raise the option. Any other key in
+  the EVM options fails with `CONFIG_INVALID`.
 - **Not in this release:** address history (it needs an indexer; `history()` throws
   `UNSUPPORTED_CAPABILITY`), contract calls other than ERC-20 `transfer`, and `ext.evm`
   beyond `getNonce`.

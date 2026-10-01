@@ -34,7 +34,8 @@ export function evmDriverFactory(
 ): DriverFactory {
   return {
     async create(ctx): Promise<ChainDriver> {
-      const config = evmNetworkConfig(ctx.chain, ctx.network);
+      // Plan 7 D6: the handle's options too (`maxFeePerGas`); an unknown one is refused.
+      const config = evmNetworkConfig(ctx.chain, ctx.network, ctx.options);
       // M12: probes go on every transport this driver receives, before any traffic.
       ctx.transport.setProbes(probes(ctx.network.identity));
       ctx.indexer?.setProbes(probes(ctx.network.identity));
