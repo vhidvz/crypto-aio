@@ -102,12 +102,12 @@ describe('derivation', () => {
   });
 });
 
-/** SLIP-0132 version pairs: `{ private, public }` (Appendix A). */
+/** SLIP-0132 version pairs, `{ private, public }`, exactly as the standard registers them. */
 const TPUB = { private: 0x04358394, public: 0x043587cf };
 const ZPUB = { private: 0x04b2430c, public: 0x04b24746 };
 const VPUB = { private: 0x045f18bc, public: 0x045f1cf6 };
 
-describe('deriveXpubChild network class (A20)', () => {
+describe('deriveXpubChild network class', () => {
   const key = (versions?: { private: number; public: number }) =>
     HDKey.fromMasterSeed(SEED_1, versions).derive("m/84'/0'/0'").publicExtendedKey;
   const mainnet = { testnet: false };
@@ -140,7 +140,7 @@ describe('deriveXpubChild network class (A20)', () => {
     expect(deriveXpubChild(key(other), '0/1', other, test)).toHaveLength(33);
   });
 
-  it('refuses a private key before its network class (A26)', () => {
+  it('refuses a private key before its network class', () => {
     const tprv = HDKey.fromMasterSeed(SEED_1, TPUB).derive(
       "m/84'/1'/0'",
     ).privateExtendedKey;
@@ -154,7 +154,7 @@ describe('deriveXpubChild network class (A20)', () => {
     }
   });
 
-  it('refuses an unknown, unreadable or non-string key with a fixed text (I2, M1, M3)', () => {
+  it('refuses an unknown, unreadable or non-string key with a fixed text', () => {
     const unreadable = `${key().slice(0, 20)}0${key().slice(21)}`;
     for (const input of [`${'abandon '.repeat(11)}about`, unreadable, 42 as never]) {
       const error = thrown(() => deriveXpubChild(input, '0/1'));

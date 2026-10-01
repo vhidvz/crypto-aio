@@ -23,7 +23,7 @@ export interface Catalogs {
   readonly adapters: AdapterCatalog;
   readonly presets: PresetCatalog;
   readonly schemes: SchemeCatalog;
-  /** A18: every registered plugin by name, to tell a repeat from a different plugin. */
+  /** Every registered plugin by name, to tell a repeat from a different plugin. */
   readonly plugins: Map<string, Plugin>;
 }
 
@@ -50,7 +50,7 @@ export function cloneCatalogs(catalogs: Catalogs): Catalogs {
 }
 
 /**
- * Registers a plugin. A18: registering the same plugin again (`samePlugin`) is a no-op, so
+ * Registers a plugin. Registering the same plugin again (`samePlugin`) is a no-op, so
  * `use()` stays idempotent; a different plugin under a registered name is `CONFIG_INVALID`.
  */
 export function applyPlugin(catalogs: Catalogs, plugin: Plugin): void {
@@ -81,12 +81,12 @@ export function applyPlugin(catalogs: Catalogs, plugin: Plugin): void {
 }
 
 /**
- * A18/A25 (D6): whether two plugins are the same: the same object, or structurally equal
+ * Whether two plugins are the same: the same object, or structurally equal
  * data around the same functions. Functions and class instances match only themselves (a
  * closure over other values, or a bound function, is another function), so a factory
  * such as `evmPlugin()` keeps its functions at module level to stay idempotent. Data is
  * every own enumerable key, symbols included, and every array index: a hole matches only
- * a hole (P25-R17).
+ * a hole.
  */
 export function samePlugin(a: Plugin, b: Plugin): boolean {
   return sameShape(a, b, 0);

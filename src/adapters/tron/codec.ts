@@ -1,8 +1,8 @@
 /**
- * The tronweb strategy (spec §15): protobuf work through tronweb's own
+ * The tronweb strategy: protobuf work through tronweb's own
  * `txJsonToPb`/`txPbToRawDataHex`/`deserializeTransaction`, and the `crypto-aio/native`
- * client. No I/O here: driver requests go straight to the transport (lesson 1), so no
- * tronweb code sits on a request path. Decoding is strict (lesson 4): the decoded fields
+ * client. No I/O here: driver requests go straight to the transport, so no
+ * tronweb code sits on a request path. Decoding is strict: the decoded fields
  * must re-encode to exactly the input bytes, so bytes with fields this model does not carry
  * (a permission id, `ref_block_num`, a call value) are refused. Reading chain history
  * (`readRaw`) is lenient, and reports a call's value rather than dropping it.
@@ -21,7 +21,7 @@ const HEX = /^(?:[0-9a-f]{2})*$/;
 const ADDRESS = /^41[0-9a-f]{40}$/;
 const INT64_MAX = (1n << 63n) - 1n;
 /**
- * Lesson 20: java-tron refuses a transaction above `TRANSACTION_MAX_BYTE_SIZE` (500 × 1024
+ * java-tron refuses a transaction above `TRANSACTION_MAX_BYTE_SIZE` (500 × 1024
  * bytes, `Constant.java`, checked in `Manager`), and `raw_data` is part of it, so longer
  * hex is refused before any decoding.
  */
@@ -35,7 +35,7 @@ function refuse(reason: string): never {
 }
 
 /**
- * Lesson 19: tronweb writes these `int64` fields from JS numbers, so each must be a safe
+ * tronweb writes these `int64` fields from JS numbers, so each must be a safe
  * non-negative integer (a larger one would round). Anything else is refused with a fixed
  * text that never contains the value: `INVALID_AMOUNT` for the TRX amount, `INVALID_INTENT`
  * for the other fields.
@@ -158,7 +158,7 @@ type CallValues = Pick<
 >;
 
 /**
- * SDK-free and exact (A12; tronweb reads these `int64`s as rounded numbers): the TRX and
+ * SDK-free and exact (tronweb reads these `int64`s as rounded numbers): the TRX and
  * TRC-10 value of the single TriggerSmartContract in `Transaction.raw` bytes (fields 3, 5
  * and 6), each only when non-zero; `null` when unreadable or negative (VMActuator refuses a
  * negative value, so no block holds one).
@@ -205,9 +205,11 @@ function exact(value: unknown): value is number {
 }
 
 /**
- * Lenient on what the chain accepts (F4-R3): `readRaw` reads chain history, so client-set
- * fields java-tron leaves unbounded never make a transaction unreadable. Range checks
- * belong to what we encode (`encodeRaw`), and `decodeRaw` stays strict through it.
+ * Lenient on what the chain accepts: `readRaw` reads chain history, so client-set
+ * fields java-tron leaves unbounded never make a transaction unreadable. Refusing real
+ * chain data would stall history and scans: a mainnet transfer in block 86,615,431
+ * carries a .NET-ticks timestamp above 2^53. Range checks belong to what we encode
+ * (`encodeRaw`), and `decodeRaw` stays strict through it.
  */
 function read(hex: string): TronRawData {
   if (
@@ -218,7 +220,7 @@ function read(hex: string): TronRawData {
   ) {
     malformed();
   }
-  // tronweb reads only the first contract, so count them here, SDK-free (M1).
+  // tronweb reads only the first contract, so count them here, SDK-free.
   if (onlyContract(fromHex(hex)) === null) malformed();
   let decoded: Decoded | undefined;
   for (const type of ['TransferContract', 'TriggerSmartContract']) {
@@ -239,7 +241,7 @@ function read(hex: string): TronRawData {
           type: 'TransferContract',
           owner: hexField(value.owner_address),
           to: hexField(value.to_address),
-          // tronweb rounds an int64 above 2^53 - 1: read those exactly from the bytes (A12).
+          // tronweb rounds an int64 above 2^53 - 1: read those exactly from the bytes.
           amount: exact(amount) ? BigInt(amount) : (transferAmount(hex) ?? malformed()),
         }
       : {
@@ -247,7 +249,7 @@ function read(hex: string): TronRawData {
           owner: hexField(value.owner_address),
           contract: hexField(value.contract_address),
           data: hexField(value.data),
-          // TRX or a TRC-10 token sent with the call, never dropped (F4-R3).
+          // TRX or a TRC-10 token sent with the call, never dropped.
           ...(callValues(fromHex(hex)) ?? malformed()),
         };
   const raw: TronRawData = {
@@ -282,7 +284,7 @@ function decodeRaw(hex: string): TronRawData {
 }
 
 /**
- * spec §11: a tronweb `HttpProvider` whose `request()` goes to the transport, for the full
+ * A tronweb `HttpProvider` whose `request()` goes to the transport, for the full
  * node, the solidity node and the event server. The SDK never sees a real URL or key.
  */
 const BROADCASTS = /^\/wallet\/broadcast(?:transaction|hex)$/;
@@ -310,12 +312,12 @@ class TransportHttpProvider extends providers.HttpProvider {
     const request: HttpRequest = {
       method: post ? 'POST' : 'GET',
       path: route,
-      // R14: a route label only for paths without identifiers.
+      // A route label only for paths without identifiers: events and logs show the label.
       ...(/^\/wallet(?:solidity)?\/[a-z]+$/.test(route) ? { route } : {}),
       ...(Object.keys(query).length > 0 ? { query } : {}),
       ...(post && Object.keys(payload).length > 0 ? { body: payload } : {}),
     };
-    // Handoff §3: broadcasts are ambiguous on failure; everything else is a plain read.
+    // Broadcasts are ambiguous on failure; everything else is a plain read.
     // No exactIntegers: tronweb expects plain numbers.
     return this.#transport.http<T>(
       request,

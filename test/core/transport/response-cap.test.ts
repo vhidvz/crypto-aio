@@ -18,7 +18,9 @@ function endless(): { readonly response: Response; pulled(): number } {
   return { response: new Response(stream, { status: 200 }), pulled: () => pulled };
 }
 
-describe('HttpTransport: an answer is at most maxResponseBytes (Plan 7 D10, lesson 20)', () => {
+// Untrusted input is capped before it is decoded: one endpoint's endless answer must
+// never exhaust memory.
+describe('HttpTransport: an answer is at most maxResponseBytes', () => {
   const LIMIT = 1024 * 1024;
 
   it('cancels an endless answer at the cap and fails over to an honest endpoint', async () => {

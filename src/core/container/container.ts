@@ -55,8 +55,10 @@ import { DriverPool, type PooledDriver } from './pool';
 const NAMESPACE = /^[A-Za-z0-9._-]{1,64}$/;
 
 /**
- * N3: the signal a worker loop, pass or recovery runs under: the caller's, if any, and the
- * root's `closing`, which `close()` aborts. A closed container starts no new work.
+ * The signal a worker loop, pass or recovery runs under: the caller's, if any, and the
+ * root's `closing`, which `close()` aborts. A closed container starts no new work: it
+ * stops claiming Operations from a shared store (holding each for a lease) and no longer
+ * keeps the process alive.
  */
 function workerSignal(
   runtime: RootRuntime,
@@ -68,7 +70,7 @@ function workerSignal(
     : runtime.closing.signal;
 }
 
-/** N6: how long `close()` waits for one native client's `close` before moving on. */
+/** How long `close()` waits for one native client's `close` before moving on. */
 export const NATIVE_CLOSE_TIMEOUT_MS = 5_000;
 
 /** Runs `close`, but gives up waiting after `ms` of `clock` time (the close keeps running). */
@@ -118,7 +120,7 @@ function cloneFrozen<T>(value: T, ancestors: Set<object> = new Set()): T {
   }
 }
 
-/** M4/N7: `chains`/`providers`/`wallets`/`signers`/`hooks`/`lifecycle` are all cloned and
+/** `chains`/`providers`/`wallets`/`signers`/`hooks`/`lifecycle` are all cloned and
  * deep-frozen at construction, so mutating the caller's options object afterwards never
  * affects handles already built from this layer. For `signers`, only the map OBJECT is
  * cloned (a fresh, frozen copy so adding/replacing a key on the caller's own map can't reach
@@ -172,7 +174,7 @@ function createEngine(
 }
 
 /**
- * R32 (spec §8.7): the signer-free read target of a stored Operation, for every check,
+ * The signer-free read target of a stored Operation, for every check,
  * worker pass and recovery read: its chain, network and library over its own named
  * providers first, then the current defaults when those no longer resolve (inline configs
  * are recorded by hash only and cannot be rebuilt). No wallet or signer is selected, not
@@ -210,7 +212,7 @@ async function readTarget(
 }
 
 /**
- * R32: the wallets the monitor resolved for its writes, cached per container (one public-key
+ * The wallets the monitor resolved for its writes, cached per container (one public-key
  * read per wallet selection, not one per pass) and bounded by `lifecycle.signTimeoutMs`. A
  * failed resolution is not kept. The cache is dropped when the config changes: a container's
  * layers are frozen, so only a plugin (`use()`, new catalogs and env layer) changes it.
@@ -246,7 +248,7 @@ function walletCache(
 }
 
 /**
- * R26.3/R32: the wallet-bound target of a stored Operation, resolved lazily and only for the
+ * The wallet-bound target of a stored Operation, resolved lazily and only for the
  * writes that need one: the all-rejected verdict, nonce reconciliation and recovery's
  * resend. None of them signs, and their address lease is keyed on the Operation itself.
  * Its frozen context (chain, network, library, wallet, signer) is rebuilt against the
@@ -411,7 +413,7 @@ export class CryptoAio {
         if (runtime.closed) throw closedError();
         if (native.close) runtime.natives.add(() => native.close?.());
       },
-      // R34: a closed root refuses work even through a pooled driver this handle holds.
+      // A closed root refuses work even through a pooled driver this handle holds.
       pooled: () => {
         if (runtime.closed) return Promise.reject(closedError());
         pooled ??= runtime.pool.get(selection).catch((error: unknown) => {
@@ -524,7 +526,7 @@ export class CryptoAio {
   }
 
   /**
-   * Closes the root container (R34): runs the `close` of every native client that
+   * Closes the root container: runs the `close` of every native client that
    * `crypto-aio/native` handed out (a failing one is logged by code and skipped), then
    * closes the pooled drivers. Its handles and `native()` then fail with
    * `INVALID_TRANSITION`. A scope's `close()` does nothing; scopes share their root's pool.
@@ -534,7 +536,7 @@ export class CryptoAio {
     if (!internals.isRoot) return;
     const { runtime } = internals;
     runtime.closed = true;
-    // N3: every worker loop, pass and recovery stops at its next check, and its sleeps end.
+    // Every worker loop, pass and recovery stops at its next check, and its sleeps end.
     runtime.closing.abort();
     const natives = [...runtime.natives];
     runtime.natives.clear();

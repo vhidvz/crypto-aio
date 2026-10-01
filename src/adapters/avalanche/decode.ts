@@ -1,5 +1,5 @@
 /**
- * An Avalanche transaction as the core reads it (spec §6.6), from its signed bytes.
+ * An Avalanche transaction as the core reads it, from its signed bytes.
  * - Transfers: each plain AVAX output of the transaction's own outputs (its base outputs,
  *   on this chain) to one address, unlocked, threshold 1: `out:<index>`, the output's index
  *   in its UTXO id. The senders are the addresses the signatures recover to.

@@ -23,7 +23,8 @@ export class ChainCatalog {
   get(id: string): ChainInfo {
     const chain = this.#chains.get(id);
     if (!chain) {
-      // F6-R24: the caller's text is never repeated; the registered chains are listed.
+      // The caller's text (perhaps a pasted secret) is never repeated; the registered
+      // chains are listed.
       throw new ConfigError('CONFIG_INVALID', unknownName('chain', this.#chains.keys()));
     }
     return chain;
@@ -35,7 +36,7 @@ export class ChainCatalog {
 
   network(chainId: string, networkId: string): NetworkInfo {
     const chain = this.get(chainId);
-    // Own keys only: `toString` or `constructor` is not a network (F3-R2).
+    // Own keys only: `toString` or `constructor` is not a network.
     const network = Object.hasOwn(chain.networks, networkId)
       ? chain.networks[networkId]
       : undefined;

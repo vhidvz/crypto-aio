@@ -129,7 +129,7 @@ export class Blockchain<C extends ChainId = ChainId> {
    * it), or a provider that can't serve reads: `PROVIDER_UNAVAILABLE` when no configured
    * endpoint is usable, `PROVIDER_MISCONFIGURED` (non-retryable) when every endpoint's
    * identity mismatches the configured network. An endpoint is usable when it's 'healthy',
-   * 'lagging' or 'half-open' (N6: the breaker is willing to try it), or 'unknown' while the
+   * 'lagging' or 'half-open' (the breaker is willing to try it), or 'unknown' while the
    * transport has no health probes configured at all — nothing could ever have marked it
    * healthy/lagging in that case, so 'unknown' is simply its steady state.
    */
@@ -179,9 +179,9 @@ export class Blockchain<C extends ChainId = ChainId> {
     return toAddress(await this.mapping(), address);
   }
 
-  /** The chain's address for `publicKey`. `options.hd` is reserved (A22): the core builds it
+  /** The chain's address for `publicKey`. `options.hd` is reserved: the core builds it
    * from a wallet's `xpub`, so a caller's `hd` is dropped and never reaches the driver.
-   * N2: `null` options (from an untyped caller) are none. */
+   * `null` options (from an untyped caller) are none. */
   async addressFromPublicKey(
     publicKey: Uint8Array | string,
     options: WalletOptions = {},
@@ -192,8 +192,8 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   /** Address of the handle's own selected wallet, or of another configured `wallet` by name
-   * (spec §5.2) — resolved fresh against this handle's driver, without switching the handle.
-   * N1 (round 2): re-resolved through `resolveSelection` (not `resolveWallet` directly) so a
+   * — resolved fresh against this handle's driver, without switching the handle.
+   * Re-resolved through `resolveSelection` (not `resolveWallet` directly) so a
    * named wallet gets the same `wallet.chains` enablement check, unknown-signer validation and
    * signer-scheme compatibility check that the handle's own wallet got at construction. */
   async walletAddress(wallet?: string): Promise<Address> {
@@ -204,7 +204,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     }
     const container = containerOf(internals.container);
     const effective = container.effective();
-    // N1: an own-property check, so a wallet literally named 'constructor' (or any other
+    // An own-property check, so a wallet literally named 'constructor' (or any other
     // Object.prototype key) can never be mistaken for one that exists.
     if (!Object.hasOwn(effective.wallets, wallet)) {
       throw new ConfigError(
@@ -244,7 +244,8 @@ export class Blockchain<C extends ChainId = ChainId> {
     }
     const internals = internalsOf(this);
     const { wallets } = containerOf(internals.container).effective();
-    // Own keys only (F3-R2), and the caller's text is never repeated (F6-R24).
+    // Own keys only, so `toString` is no wallet. The caller's text is never repeated: it
+    // may be a pasted secret.
     if (!Object.hasOwn(wallets, wallet)) {
       throw new ConfigError(
         'CONFIG_INVALID',
@@ -254,9 +255,9 @@ export class Blockchain<C extends ChainId = ChainId> {
     const config = wallets[wallet];
     if (!config?.xpub)
       throw new ConfigError('CONFIG_INVALID', `wallet '${wallet}' has no xpub`);
-    // O1: a non-string xpubPath is CONFIG_INVALID, as at wallet resolution.
+    // A non-string xpubPath is CONFIG_INVALID, as at wallet resolution.
     const path = (xpubPathOf(config) ?? '0/{index}').replace('{index}', String(index));
-    // A20 (D7): a UTXO chain's extended keys carry its network class; account-model
+    // A UTXO chain's extended keys carry its network class; account-model
     // wallets (EVM, Tron) export `xpub` on every network, so theirs is not checked. A chain
     // whose wallets do the same says so (`xpubNetworkClass: false`, Avalanche X/P).
     const { chain, network } = internals.selection;
@@ -267,7 +268,7 @@ export class Blockchain<C extends ChainId = ChainId> {
       config.xpubVersions,
       classed ? { testnet: network.testnet } : undefined,
     );
-    // I1: the core's own options, with the wallet's `hd`, reach the driver directly.
+    // The core's own options, with the wallet's `hd`, reach the driver directly.
     return this.driverAddress(publicKey, walletOptionsOf(config));
   }
 
@@ -477,7 +478,7 @@ export class Blockchain<C extends ChainId = ChainId> {
       chain: this.chain,
       network: this.network,
       height,
-      // R85: two reads, possibly from different endpoints, with blocks landing between
+      // Two reads, possibly from different endpoints, with blocks landing between
       // them: where the latest block is final, the finalized height can pass the head read.
       // Every height below a final one is final, so the clamp keeps the status true.
       finalizedHeight: finalized > height ? height : finalized,
@@ -510,7 +511,7 @@ export class Blockchain<C extends ChainId = ChainId> {
 
   /**
    * Completes an Operation that awaits signatures, with signature bundles or with the whole
-   * payload signed elsewhere (A6), e.g. a signed PSBT: the driver extracts its signatures
+   * payload signed elsewhere, e.g. a signed PSBT: the driver extracts its signatures
    * (`TxBuilder.signaturesFrom`), and each is verified against the stored request exactly
    * like a bundle. `UNSUPPORTED_CAPABILITY` when the chain's driver cannot read one.
    */
@@ -536,7 +537,7 @@ export class Blockchain<C extends ChainId = ChainId> {
           `${this.chain} cannot read a signed payload; submit signature bundles`,
         );
       }
-      // M8: ownership first, so another wallet's Operation never reaches the driver.
+      // Ownership first, so another wallet's Operation never reaches the driver.
       const record = await this.engine().requireOwned(target, operationId);
       if (!record.unsigned) {
         throw new StateError(
@@ -548,7 +549,7 @@ export class Blockchain<C extends ChainId = ChainId> {
       try {
         bundles = builder.signaturesFrom(record.unsigned, signatures);
       } catch (error) {
-        // M10: a driver's own classified error passes through; a foreign one (an SDK's
+        // A driver's own classified error passes through; a foreign one (an SDK's
         // parse error, which may quote the payload) becomes a fixed text with no cause.
         if (isCryptoAioError(error)) throw error;
         throw new ValidationError(
@@ -662,7 +663,7 @@ export class Blockchain<C extends ChainId = ChainId> {
                 if (typeof method !== 'string' || method === 'then') return undefined;
                 return async (...args: unknown[]) => {
                   const { driver } = await internals.pooled();
-                  // M9: own-property checks at both levels, so a name inherited from
+                  // Own-property checks at both levels, so a name inherited from
                   // Object.prototype (`constructor`, `toString`, ...) can never be mistaken
                   // for a real family method.
                   const familyExt =
@@ -689,7 +690,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     ) as ExtOf<C>;
   }
 
-  /** @internal The driver's address for `publicKey` under options the core built (A22). */
+  /** @internal The driver's address for `publicKey` under options the core built. */
   protected async driverAddress(
     publicKey: Uint8Array,
     options: WalletOptions,
@@ -791,7 +792,7 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 }
 
-/** A6/M8: the shape of a signed payload (`RawTx`), checked at run time. */
+/** The shape of a signed payload (`RawTx`), checked at run time. */
 function isRawTx(value: unknown): value is RawTx {
   if (value === null || typeof value !== 'object') return false;
   const { encoding, data } = value as { encoding?: unknown; data?: unknown };

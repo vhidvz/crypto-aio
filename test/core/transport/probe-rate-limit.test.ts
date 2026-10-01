@@ -1,4 +1,4 @@
-// A17: health probes respect each endpoint's rate limit (found live on toncenter's keyless
+// Health probes respect each endpoint's rate limit (found live on toncenter's keyless
 // 1 request/second tier: probes bypassed the bucket, the height probe got HTTP 429, and the
 // endpoint was excluded for an unknown height).
 import type { EndpointConfig, HealthProbes } from '../../../src/core/transport/types';
@@ -46,8 +46,8 @@ const both: HealthProbes = {
 };
 
 // The three long tests drive thousands of fake-clock steps; `--detectOpenHandles` slows each
-// past Jest's 5-second default, so they carry explicit budgets (Plan 4 handoff §6).
-describe('health probes inside the rate limit (A17)', () => {
+// past Jest's 5-second default, so they carry explicit budgets.
+describe('health probes inside the rate limit', () => {
   it('keeps a 1 request/second endpoint healthy through probes and reads', async () => {
     const { fake, state } = oneRequestPerSecond();
     const { transport, clock } = setup([LIMITED], fake);
@@ -77,7 +77,8 @@ describe('health probes inside the rate limit (A17)', () => {
     expect(state.limited).toBe(0);
   });
 
-  it('keeps probes healthy behind 80 queued reads (M1: no probe starvation)', async () => {
+  // No probe starvation: a queue of reads never holds a probe past its deadline.
+  it('keeps probes healthy behind 80 queued reads', async () => {
     const { fake, state } = oneRequestPerSecond();
     const { transport, clock } = setup([LIMITED], fake);
     state.clock = clock;
@@ -95,7 +96,7 @@ describe('health probes inside the rate limit (A17)', () => {
     expect(state.limited).toBe(0);
   }, 30_000);
 
-  it('puts probes ahead of reads already waiting for tokens (M1: no probe starvation)', async () => {
+  it('puts probes ahead of reads already waiting for tokens', async () => {
     const { fake, state } = oneRequestPerSecond();
     const { transport, clock } = setup([LIMITED], fake);
     state.clock = clock;
@@ -114,7 +115,7 @@ describe('health probes inside the rate limit (A17)', () => {
     expect(state.limited).toBe(0);
   }, 30_000);
 
-  it('keeps a failed first-use identity probe as the request error, spending no token (M2)', async () => {
+  it('keeps a failed first-use identity probe as the request error, spending no token', async () => {
     const methods: string[] = [];
     const fake = new FakeFetch().route('https://a.test', (req) => {
       methods.push(method(req));
@@ -140,7 +141,7 @@ describe('health probes inside the rate limit (A17)', () => {
   // 5 000 ms is the bucket's own refill period: a refresh then starts at the very moment a
   // token refills, so the floor must leave one token beyond the probes' own for the reads.
   it.each([1_000, 5_000])(
-    'floors the failed-refresh backoff so plain reads still get tokens (P25-R6 M1, monitor every %i ms)',
+    'floors the failed-refresh backoff so plain reads still get tokens (monitor every %i ms)',
     async (cadenceMs) => {
       const methods: string[] = [];
       const fake = new FakeFetch().route('https://a.test', (req) => {

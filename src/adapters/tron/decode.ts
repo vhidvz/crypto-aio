@@ -1,19 +1,21 @@
 /**
  * Chain transactions into `DriverTransaction`s, and the verdict of our own transfers.
- * - General decoding (reads, scans, history) reports execution as the chain does (lesson
- *   15, R68): a TRX transfer is `native`, and so is the TRX a contract call sends; each
- *   TRC-20 `Transfer` log is a `token-event` (`log:<i>`); contract execution is `partial`
- *   (value may move without a log), a failed transaction moved nothing and is `complete`, and
- *   a contract type this model does not carry is `none` (D11).
- * - The verdict of our own Attempts (observe with an ordering, and the proofs; lessons 7 and
- *   15) also requires on-chain evidence that value moved: a TRC-20 `transfer(to, amount)`
- *   counts only with a `Transfer(owner, to, any positive amount)` log from the called
- *   contract.
- * - Verdict fields are read strictly (lesson 6): a missing, ill-typed or contradicting one
+ * - General decoding (reads, scans, history) reports execution as the chain does: a TRX
+ *   transfer is `native`, and so is the TRX a contract call sends; each TRC-20 `Transfer`
+ *   log is a `token-event` (`log:<i>`); contract execution is `partial` (value may move
+ *   without a log), a failed transaction moved nothing and is `complete`, and a contract
+ *   type this model does not carry is `none`.
+ * - The verdict of our own Attempts (observe with an ordering, and the proofs) also
+ *   requires on-chain evidence that value moved: a TRC-20 `transfer(to, amount)` counts
+ *   only with a `Transfer(owner, to, any positive amount)` log from the called contract.
+ *   Execution success alone proves nothing: a token can succeed and move nothing, and
+ *   USDT on Tron returns a zero word from `transfer`.
+ * - Verdict fields are read strictly: a missing, ill-typed or contradicting one
  *   is a malformed answer (retryable), which decides nothing, never a default. Decoding stays
  *   lenient on what the chain accepts: an unknown contract type, a memo of any size or bytes.
  * - `readRaw`'s `timestamp` and `feeLimit` are display only: no verdict or amount uses them.
- * Failure reasons are fixed literals (R24).
+ * Failure reasons are fixed literals: a node's text can carry addresses or amounts, and a
+ * stored reason must never hold either.
  */
 import type {
   DriverTransaction,
@@ -86,10 +88,10 @@ function executed(raw: TronRawData | null, tx: TronTxJson, info: TronTxInfo): Tx
 type Evidence = 'landed' | 'absent' | 'unreadable';
 
 /**
- * What the called token logged for a TRC-20 `transfer(to, …)` (lessons 7 and 15, the
- * controller's final wording). `landed`: a `Transfer` from the sender to that recipient of
- * any positive amount, from the called contract. `unreadable`: nothing landed, and the
- * contract logged a `Transfer` event that does not read as one (its value indexed, say).
+ * What the called token logged for a TRC-20 `transfer(to, …)`. `landed`: a `Transfer`
+ * from the sender to that recipient of any positive amount, from the called contract.
+ * `unreadable`: nothing landed, and the contract logged a `Transfer` event that does not
+ * read as one (its value indexed, say).
  * A call with a value, or with data that is not a canonical `transfer`, is `absent`.
  */
 function transferEvidence(raw: TronRawData, info: TronTxInfo): Evidence {
@@ -117,7 +119,7 @@ function transferEvidence(raw: TronRawData, info: TronTxInfo): Evidence {
 }
 
 /**
- * Lessons 7 and 15 (clarified): a TRC-20 `transfer(to, …)` counts only if the called token
+ * A TRC-20 `transfer(to, …)` counts only if the called token
  * contract logged a `Transfer` from the sender to that recipient. Any positive amount counts:
  * a fee-on-transfer token (Tron USDT has a dormant fee switch) logs less than the call's
  * amount, and requiring the exact amount would prove a transfer that moved `failed`. A call
@@ -128,7 +130,7 @@ export function transferLanded(raw: TronRawData, info: TronTxInfo): boolean {
   return transferEvidence(raw, info) === 'landed';
 }
 
-/** The chain's own view of an included transaction (no evidence check, lesson 15). */
+/** The chain's own view of an included transaction (no evidence check: not a verdict). */
 export function chainVerdict(
   codec: TronCodec,
   tx: TronTxJson,
@@ -142,23 +144,23 @@ export function chainVerdict(
  * The driver built it, so its bytes read, its call is a canonical `transfer` that sends no
  * value, a node's answer for it carries `contractRet`, and a TRX transfer in a block executed;
  * anything else contradicts the signed transaction or the chain's rules and decides nothing
- * (lesson 18, widened), as does a token `Transfer` event that does not read.
+ * (retryable), as does a token `Transfer` event that does not read.
  */
 export function verdictOf(codec: TronCodec, tx: TronTxJson, info: TronTxInfo): TxVerdict {
   const raw = codec.readRaw(tx.rawHex);
   if (raw === null) throw malformed('raw_data_hex');
   if (tx.contractRet === undefined) throw malformed('contractRet');
   if (carriesValue(raw.contract)) throw malformed('call value');
-  // M1 (F4-R10): an included TransferContract executed (java-tron never includes one that
+  // An included TransferContract executed (java-tron never includes one that
   // failed), so any other answer on our own is impossible: a false `failed` on a proof path
-  // would invite a second payment. The chain's view reports what the node says (lesson 15).
+  // would invite a second payment. The chain's view reports what the node says.
   if (
     raw.contract.type === 'TransferContract' &&
     (tx.contractRet !== 'SUCCESS' || info.failed)
   ) {
     throw malformed('contractRet');
   }
-  // M2 (F4-R10): our own TRC-20 call is a canonical `transfer(to, amount)` (the builder
+  // Our own TRC-20 call is a canonical `transfer(to, amount)` (the builder
   // writes nothing else), so other call data contradicts the signed transaction.
   if (
     raw.contract.type === 'TriggerSmartContract' &&

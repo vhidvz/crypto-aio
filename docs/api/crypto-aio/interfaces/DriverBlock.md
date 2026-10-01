@@ -2,7 +2,7 @@
 
 # Interface: DriverBlock
 
-Defined in: [src/core/driver/types.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L101)
+Defined in: [src/core/driver/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L103)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:101](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/core/driver/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L103)
+Defined in: [src/core/driver/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L105)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/driver/types.ts:103](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/core/driver/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L102)
+Defined in: [src/core/driver/types.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L104)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/driver/types.ts:102](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **parentHash**: `string`
 
-Defined in: [src/core/driver/types.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L104)
+Defined in: [src/core/driver/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L106)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/driver/types.ts:104](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **timestamp?**: `number`
 
-Defined in: [src/core/driver/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L105)
+Defined in: [src/core/driver/types.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L107)
 
 ***
 
@@ -52,4 +52,4 @@ Defined in: [src/core/driver/types.ts:105](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **transactionIds?**: readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L106)
+Defined in: [src/core/driver/types.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L108)

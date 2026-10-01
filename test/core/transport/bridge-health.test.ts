@@ -17,10 +17,9 @@ const A: EndpointConfig = { name: 'a', url: 'https://a.test/rpc' };
 const B: EndpointConfig = { name: 'b', url: 'https://b.test/rpc' };
 const method = (req: FakeRequest) => req.json<{ method: string }>().method;
 
-// Fix round 1, group C: the createFetch bridge and health-refresh concurrency
-// (controller ruling R14, task-15-fix-1.md items I1, I8, M5).
+// The createFetch bridge and health-refresh concurrency.
 describe('HttpTransport bridge', () => {
-  // I1: the bridged Response's `url` must never leak the real endpoint URL.
+  // The bridged Response's `url` must never leak the real endpoint URL.
   it('never exposes the real endpoint url through the bridged Response', async () => {
     const fake = new FakeFetch().route('https://sol.test/rpc', () => {
       const response = new Response('{"ok":true}', {
@@ -43,7 +42,7 @@ describe('HttpTransport bridge', () => {
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
-  // I1: a body that never finishes must time out, not hang forever.
+  // A body that never finishes must time out, not hang forever.
   it('times out a body read that never finishes within timeoutMs of fake time', async () => {
     const fake = new FakeFetch().route('https://sol.test/rpc', (_req, signal) => {
       const body = new ReadableStream({
@@ -72,7 +71,7 @@ describe('HttpTransport bridge', () => {
     expect(clock.now() - start).toBeLessThanOrEqual(1_000);
   });
 
-  // #1 (round 3): a bad SDK-supplied header value must be rejected before #run is even
+  // A bad SDK-supplied header value must be rejected before #run is even
   // entered — no fetch, no breaker bookkeeping, no ambiguity tagging.
   it('rejects an invalid SDK header value before touching any endpoint', async () => {
     const fake = new FakeFetch().route('https://sol.test/rpc', (req) =>
@@ -97,7 +96,7 @@ describe('HttpTransport bridge', () => {
     expect(transport.status()[0]?.failures).toBe(0);
   });
 
-  // #3 (round 4): the whole Request is built once before #run — a GET with a body (which
+  // The whole Request is built once before #run — a GET with a body (which
   // fetch itself would reject) is a local config error, never an endpoint failure.
   it('rejects a GET with a body before touching any endpoint', async () => {
     const fake = new FakeFetch().route('https://sol.test/rpc', (req) =>
@@ -122,7 +121,7 @@ describe('HttpTransport bridge', () => {
     expect(transport.status()[0]).toMatchObject({ failures: 0, state: 'unknown' });
   });
 
-  // M5: a Request input keeps its own method, headers and body.
+  // A Request input keeps its own method, headers and body.
   it('keeps a Request input method, headers and body', async () => {
     const fake = new FakeFetch().route('https://sol.test/rpc', (req) => ({
       json: {
@@ -149,7 +148,7 @@ describe('HttpTransport bridge', () => {
     });
   });
 
-  // M5: a relative or otherwise invalid URL is CONFIG_INVALID, and never echoes the input.
+  // A relative or otherwise invalid URL is CONFIG_INVALID, and never echoes the input.
   it('rejects a relative or invalid URL without leaking the input', async () => {
     const fake = new FakeFetch();
     const { transport } = setup([{ name: 's', url: 'https://sol.test/rpc' }], fake);
@@ -159,7 +158,7 @@ describe('HttpTransport bridge', () => {
     expect((error as Error).message).not.toContain('/not-absolute');
   });
 
-  // M5: a 5xx response body is never returned to the SDK; it's cancelled instead of leaked.
+  // A 5xx response body is never returned to the SDK; it's cancelled instead of leaked.
   it('cancels a 5xx response body instead of leaking the stream', async () => {
     let cancelled = false;
     const fake = new FakeFetch().route('https://sol.test/rpc', () => {
@@ -187,7 +186,7 @@ describe('HttpTransport bridge', () => {
     expect(cancelled).toBe(true);
   });
 
-  // N1: statuses 101/103/204/205/304 must never carry a body on the Response constructed
+  // Statuses 101/103/204/205/304 must never carry a body on the Response constructed
   // for the SDK — the Response constructor throws if they do.
   it('returns status 204 and 304 responses correctly after exactly 1 fetch', async () => {
     for (const status of [204, 304] as const) {
@@ -206,7 +205,7 @@ describe('HttpTransport bridge', () => {
     }
   });
 
-  // #10: content-encoding/content-length describe the original wire body, not the
+  // content-encoding/content-length describe the original wire body, not the
   // already-decoded buffer handed to the SDK — they must not be copied across.
   it('drops content-encoding and content-length from the bridged response headers', async () => {
     const fake = new FakeFetch().route(
@@ -232,7 +231,7 @@ describe('HttpTransport bridge', () => {
     expect(response.headers.get('content-type')).toBe('application/json');
   });
 
-  // #7: a rejecting response.body.cancel() must never surface as an unhandled rejection.
+  // A rejecting response.body.cancel() must never surface as an unhandled rejection.
   it('never leaves an unhandled rejection when the response body fails to cancel', async () => {
     const fake = new FakeFetch().route('https://sol.test/rpc', () => {
       const body = new ReadableStream({
@@ -267,7 +266,7 @@ describe('HttpTransport bridge', () => {
     expect(unhandled).toHaveLength(0);
   });
 
-  // M5: a 401 response body is likewise cancelled, not leaked.
+  // A 401 response body is likewise cancelled, not leaked.
   it('cancels a 401 response body instead of leaking the stream', async () => {
     let cancelled = false;
     const fake = new FakeFetch().route('https://sol.test/rpc', () => {
@@ -297,11 +296,11 @@ describe('HttpTransport bridge', () => {
 });
 
 describe('HttpTransport health refresh concurrency', () => {
-  // I8 (round 2, item 1): rewritten so the lagging endpoint sits at priority 0 and the height
-  // probe only resolves after the fake clock advances — so if a caller could slip past the
-  // shared in-flight refresh (the pre-round-1 bug), it would race ahead on stale/unset height
-  // data and route to the lagging endpoint by priority alone. Two concurrent monitor reads
-  // must both be served by the non-lagging endpoint regardless.
+  // The lagging endpoint sits at priority 0 and the height probe only resolves after the
+  // fake clock advances — so if a caller could slip past the shared in-flight refresh, it
+  // would race ahead on stale/unset height data and route to the lagging endpoint by
+  // priority alone. Two concurrent monitor reads must both be served by the non-lagging
+  // endpoint regardless.
   it('serves two concurrent monitor reads from a single health refresh', async () => {
     const heights: Record<string, string> = { a: '100', b: '90' };
     let heightCalls = 0;
@@ -340,7 +339,7 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(heightCalls).toBe(2);
   });
 
-  // R18 / item 2 (round 3): #refresh never does breaker bookkeeping — not for a throttled
+  // #refresh never does breaker bookkeeping — not for a throttled
   // identity probe it skips, and not even for a genuine (non-throttled) probe failure.
   it('never counts an identity-probe failure or throttle hit against the breaker in #refresh', async () => {
     let identityCalls = 0;
@@ -362,7 +361,7 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(transport.status()[0]?.failures).toBe(0);
   });
 
-  // #9 (round 2): a probe that ignores its own abort signal must not hang the refresh
+  // A probe that ignores its own abort signal must not hang the refresh
   // forever — it's raced against the deadline instead, so #healthRun always settles.
   it('settles the refresh within timeoutMs when a height probe never answers, and concurrent readers proceed', async () => {
     const { transport, clock } = setup([A], new FakeFetch(), { timeoutMs: 1_000 });
@@ -380,7 +379,7 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(r2.status).toBe('fulfilled');
   });
 
-  // #3 (round 3): a fully-failed refresh must not be re-attempted on every read during an
+  // A fully-failed refresh must not be re-attempted on every read during an
   // outage — it backs off to min(healthIntervalMs, 1000) instead of a probe storm.
   it('backs off outage re-probing instead of storming on every monitor read', async () => {
     let heightCallsA = 0;
@@ -416,7 +415,7 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(heightCallsB).toBeGreaterThan(beforeB);
   });
 
-  // I8 (round 2, item 1): a single transient height-probe failure must not block monitor
+  // A single transient height-probe failure must not block monitor
   // reads for a full healthIntervalMs — the next read re-probes instead of trusting a
   // fully-failed refresh as fresh.
   it('re-probes on the next read after a transient height-probe failure instead of blocking for healthIntervalMs', async () => {
@@ -435,7 +434,7 @@ describe('HttpTransport health refresh concurrency', () => {
     await expect(
       drive(clock, transport.rpc('x', [], { purpose: 'monitor' })),
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
-    // #3 (round 3): a fully-failed refresh now backs off for min(healthIntervalMs, 1000)ms
+    // A fully-failed refresh backs off for min(healthIntervalMs, 1000)ms
     // before the next re-probe (outage-storm guard), rather than re-probing on the very next
     // read; advance past that window so this still proves "not blocked for the full
     // healthIntervalMs" rather than "blocked for 0ms".
@@ -446,7 +445,7 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(heightCalls).toBe(2);
   });
 
-  // #4 (round 4): a refresh that joined a request-path identity check which its own caller
+  // A refresh that joined a request-path identity check which its own caller
   // then aborted learned nothing about the endpoint — that counts as not attempted, so it
   // must not arm the outage backoff, and the next monitor read re-probes.
   it('re-probes on the next monitor read after a caller aborts a joined identity check', async () => {
@@ -479,8 +478,8 @@ describe('HttpTransport health refresh concurrency', () => {
     expect(identityCalls).toBe(2);
   });
 
-  // I8: once a height probe is configured, proof reads exclude both a lagging endpoint and
-  // one whose height is unknown (its probe failed), the same way. A14: lag is measured
+  // Once a height probe is configured, proof reads exclude both a lagging endpoint and
+  // one whose height is unknown (its probe failed), the same way. Lag is measured
   // against the corroborated height, so it takes two endpoints at the head (a and d) for b
   // to lag; one endpoint alone never decides that.
   it('excludes both a lagging endpoint and an unknown-height endpoint from proof reads', async () => {
@@ -516,7 +515,7 @@ describe('HttpTransport health refresh concurrency', () => {
   });
 });
 
-// Fix round 4 (controller ruling R19): only identity-verified endpoints feed health heights.
+// Only identity-verified endpoints feed health heights.
 describe('HttpTransport verified-only health heights', () => {
   // A is on chain 1 at height 100 (its first `aHeightFailures` height probes return 503).
   // B serves another network at height 1,000,000, and its first chain_id is a 503, so it is
@@ -587,7 +586,7 @@ describe('HttpTransport verified-only health heights', () => {
     expect(bHeightCalls()).toBe(0);
   });
 
-  // I2: the verified high-water mark never drops below a peak an identity-verified endpoint
+  // The verified high-water mark never drops below a peak an identity-verified endpoint
   // reported, even when a later mismatch rebuilds it while that endpoint's height is unknown.
   it('keeps highestHeight at the verified peak when a mismatch rebuilds it', async () => {
     const C: EndpointConfig = { name: 'c', url: 'https://c.test/rpc' };
@@ -622,13 +621,13 @@ describe('HttpTransport verified-only health heights', () => {
     expect(transport.highestHeight()).toBe(100n);
   });
 
-  it('exposes its effective maxLagBlocks (I2)', () => {
+  it('exposes its effective maxLagBlocks', () => {
     const fake = new FakeFetch();
     expect(setup([A], fake).transport.maxLagBlocks).toBe(5);
     expect(setup([A], fake, { maxLagBlocks: 20 }).transport.maxLagBlocks).toBe(20);
   });
 
-  // R19: a height recorded before an identity probe was configured stops counting once its
+  // A height recorded before an identity probe was configured stops counting once its
   // endpoint turns out to serve another network — #highest is rebuilt from verified ones.
   it('rebuilds highestHeight from verified endpoints when an endpoint is disabled', async () => {
     const fake = new FakeFetch()

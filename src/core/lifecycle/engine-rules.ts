@@ -23,7 +23,7 @@ import { canonicalJson } from '../util/json';
 import type { ObservationPatch } from './observations';
 
 /*
- * The engine's pure rules (M11): lifecycle defaults, error serialization, and the state
+ * The engine's pure rules: lifecycle defaults, error serialization, and the state
  * sets and predicates `OperationEngine` decides with. No I/O and no engine state.
  */
 
@@ -75,7 +75,7 @@ export const DEFINITIVE_CATEGORIES = new Set([
 ]);
 
 /**
- * M8: a crypto-aio error as it is; anything else under `fallback`, the most specific
+ * A crypto-aio error as it is; anything else under `fallback`, the most specific
  * existing code for the caller's context (there is no generic code), with a sanitized message.
  */
 export function serializeError(error: unknown, fallback: ErrorCode): SerializedError {
@@ -111,7 +111,7 @@ export function isDefinitive(error: unknown): error is CryptoAioError {
 
 /**
  * Observation states backed by chain evidence: the Attempt was mined, or its slot or expiry
- * was consumed. No broadcast answer ever overwrites them (R24, R25); `replacedBy` is kept.
+ * was consumed. No broadcast answer ever overwrites them; `replacedBy` is kept.
  */
 export const CHAIN_EVIDENCE_STATES: ReadonlySet<TxState> = new Set<TxState>([
   'included',
@@ -122,10 +122,10 @@ export const CHAIN_EVIDENCE_STATES: ReadonlySet<TxState> = new Set<TxState>([
 ]);
 
 /**
- * R25: a node once accepted these bytes, or they may be live. `firstSeenAt` is the durable
+ * A node once accepted these bytes, or they may be live. `firstSeenAt` is the durable
  * marker: set when a node accepted them or the monitor saw them held, and kept by a refusal
- * that found them possibly live (I2). A `pending`, `mempool` or `dropped` observation also
- * counts: one left by an accepted or ambiguous send, and (M5) the `pending` the monitor
+ * that found them possibly live. A `pending`, `mempool` or `dropped` observation also
+ * counts: one left by an accepted or ambiguous send, and the `pending` the monitor
  * writes for a signed Attempt that was never broadcast, which errs in the safe direction
  * (a genuine rejection then stalls it and keeps its nonce instead of failing it). A later
  * rejection says nothing about bytes that may still sit in a mempool, so it is only a
@@ -144,8 +144,11 @@ export function mayBeLive(observation: AttemptObservation | null): boolean {
 /**
  * A send that may have delivered the bytes (accepted, already known or ambiguous): a
  * missing, `refused` or `dropped` observation becomes `pending`, and a refusal's reason no
- * longer applies (M8, P25-R14/R15). Stronger evidence (chain or proven states) is left
- * alone (R24). The one rule for every such send, so they cannot drift apart.
+ * longer applies. Stronger evidence (chain or proven states) is left alone. The one rule
+ * for every such send, so they cannot drift apart. Known gap: an ambiguous send clears a
+ * refusal and its reason, so the monitor then shows bytes the node still refuses as
+ * `dropped`, not `refused`; only a resend through the engine (a same-key repeat,
+ * `rebroadcast`, recovery) records the refusal again.
  */
 export function pendingAfterSend(current: AttemptObservation | null): ObservationPatch {
   return current === null || current.state === 'refused' || current.state === 'dropped'
@@ -192,8 +195,10 @@ export function isRefusal(error: unknown): boolean {
 }
 
 /**
- * R30: a replacement records the fee spec it was asked for (plain data, R11) in its fee
- * details, so a repeat of the same request is recognised instead of signed again.
+ * A replacement records the fee spec it was asked for (plain data, as every store record
+ * must be) in its fee details, so a repeat of the same request is recognised instead of
+ * signed again. The core adds it after `build`, so a driver never sets or reads it: its
+ * `assemble` reads only the fee fields it named itself.
  */
 export function withRequestedFee(
   unsigned: UnsignedTx,
@@ -211,10 +216,12 @@ export function feeOf(attempt: AttemptRecord): bigint {
 }
 
 /**
- * N3/R2-1: the cancel a new cancel is bumped from: among the earlier cancels that superseded
+ * The cancel a new cancel is bumped from: among the earlier cancels that superseded
  * the active Attempt `previous` (refused ones gave it the active role back), the one paying
  * the most, so repeated bumps climb; otherwise `previous` itself, so a cancel never starts
- * below a newer, higher replacement. Fees are compared only between cancels.
+ * below a newer, higher replacement. Fees are compared only between cancels. Known gap:
+ * they are ranked by total charges, not by a price the driver compares, so on EVM a
+ * repeat cancel may need an explicit `fee`.
  */
 export function cancelBase(op: OperationRecord, previous: AttemptRecord): AttemptRecord {
   let best: AttemptRecord | undefined;
@@ -225,7 +232,7 @@ export function cancelBase(op: OperationRecord, previous: AttemptRecord): Attemp
   return best ?? previous;
 }
 
-/** R30: the same `FeeSpeed` name, or a canonically equal `FeeOverride`. */
+/** The same `FeeSpeed` name, or a canonically equal `FeeOverride`. */
 export function sameFeeSpec(
   attempt: AttemptRecord,
   fee: FeeSpeed | FeeOverride | undefined,
@@ -250,20 +257,20 @@ export interface RestorePoint {
   readonly ambiguous?: boolean;
 }
 
-/** R30.2: a node's refusal or rejection of these bytes; both are handled alike. */
+/** A node's refusal or rejection of these bytes; both are handled alike. */
 export const NODE_REFUSED_STATES: ReadonlySet<TxState> = new Set<TxState>([
   'refused',
   'rejected',
 ]);
 
-/** N2: observations under which a superseded Attempt may still be live on the network. */
+/** Observations under which a superseded Attempt may still be live on the network. */
 export const LIVE_STATES: ReadonlySet<TxState> = new Set<TxState>([
   'pending',
   'mempool',
   'included',
 ]);
 
-/** Spec §8.6: the states in which a replacement or cancel may supersede the active Attempt. */
+/** The states in which a replacement or cancel may supersede the active Attempt. */
 export const CONFLICTABLE_STATES: ReadonlySet<OperationState> = new Set<OperationState>([
   'submitted',
   'stalled',
@@ -280,7 +287,7 @@ export const RESUMABLE_STATES: ReadonlySet<OperationState> = new Set<OperationSt
 ]);
 
 /**
- * M1: the built transaction must use exactly the slot the engine reserved: the ordering
+ * The built transaction must use exactly the slot the engine reserved: the ordering
  * kind of the driver, the allocated nonce or seqno, and no input held by another live
  * Operation. Anything else would persist a reservation nobody allocated.
  */

@@ -1,8 +1,8 @@
 /**
  * Bitcoin addresses and output scripts, SDK-free (`@scure/base`, `@noble/*`), so the codec
- * is an implementation independent of bitcoinjs-lib, which the tests cross-check it against
- * (lesson 11). Decoding is strict (lesson 4): at most 90 characters, refused before any
- * decoding (lesson 20), one network's HRP and base58 version bytes,
+ * is an implementation independent of bitcoinjs-lib, which the tests cross-check it
+ * against. Decoding is strict: at most 90 characters, refused before any decoding, one
+ * network's HRP and base58 version bytes,
  * bech32 only for witness v0 and bech32m only for v1 (BIP350), exact program lengths, no
  * mixed case, and a taproot output key must be a valid x coordinate. Every failure is
  * `ValidationError('INVALID_ADDRESS')` with a message that names no address.
@@ -26,8 +26,9 @@ export interface DecodedAddress {
 
 const base58check = createBase58check(sha256);
 /**
- * BIP173's bech32 limit, and more than any base58 address needs. Lesson 20: `@scure/base`'s
- * base58 decoding is quadratic, so an untrusted string is capped before any decoding.
+ * BIP173's bech32 limit, and more than any base58 address needs. `@scure/base`'s base58
+ * decoding is quadratic, so an untrusted string is capped before any decoding: a
+ * 10,000-character recipient once blocked the event loop for over a minute.
  */
 const ADDRESS_MAX = 90;
 const BECH32_CHARS = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/;
@@ -216,7 +217,7 @@ export function addressFromScript(
 }
 
 /**
- * R58: accepts only a 33-byte compressed key on the curve; a 32-byte x-only key only for
+ * Accepts only a 33-byte compressed key on the curve; a 32-byte x-only key only for
  * `p2tr` (a Schnorr-only signer's key). Never a private key, never an uncompressed key.
  */
 function compressedKey(publicKey: Uint8Array, type: UtxoAddressType): Uint8Array {
@@ -265,7 +266,7 @@ export interface WalletAddress {
   readonly outputKey?: Uint8Array;
 }
 
-/** The wallet address of `type` for this public key (spec §15 address types). */
+/** The wallet address of `type` for this public key. */
 export function walletAddress(
   publicKey: Uint8Array,
   type: UtxoAddressType,

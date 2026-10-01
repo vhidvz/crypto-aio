@@ -1,5 +1,5 @@
-// A14 (handoff N5, found by Plan 3): height exclusion must never shrink a quorum read, and
-// one endpoint that over-reports its head must never become the only proof endpoint.
+// Height exclusion must never shrink a quorum read, and one endpoint that over-reports
+// its head must never become the only proof endpoint.
 import type { EndpointCall, EndpointConfig } from '../../../src/core/transport/types';
 import { drive, settle } from '../../../src/testing/fake-clock';
 import {
@@ -77,7 +77,7 @@ const identity = {
 /** The default `healthIntervalMs`, which is also how long a failed identity probe throttles. */
 const HEALTH_INTERVAL_MS = 15_000;
 
-describe('proof quorum and height exclusion (A14)', () => {
+describe('proof quorum and height exclusion', () => {
   it('never lets one over-reporting endpoint become the sole proof endpoint', async () => {
     const { fake, finCalls } = network({ liar: '1000000', honest: '100' });
     const { transport, clock } = setup(
@@ -150,8 +150,8 @@ describe('proof quorum and height exclusion (A14)', () => {
     expect([finCalls('a'), finCalls('b'), finCalls('c')]).toEqual([1, 1, 0]);
   });
 
-  it("decides nothing while an honest endpoint's height is unknown, never letting the liar prove alone (A24)", async () => {
-    // The review's E2: one failed honest height probe must not shrink the quorum.
+  it("decides nothing while an honest endpoint's height is unknown, never letting the liar prove alone", async () => {
+    // One failed honest height probe must not shrink the quorum.
     const { fake, finCalls } = network(
       { liar: '1000000', honest: 'down' },
       { liar: 'forged' },
@@ -169,7 +169,7 @@ describe('proof quorum and height exclusion (A14)', () => {
     expect(finCalls('liar')).toBe(0);
   });
 
-  it('stops counting an endpoint whose height probe failed three refreshes in a row (A24)', async () => {
+  it('stops counting an endpoint whose height probe failed three refreshes in a row', async () => {
     const heights = { a: '100', b: 'down' };
     const { fake, finCalls } = network(heights);
     const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
@@ -178,7 +178,7 @@ describe('proof quorum and height exclusion (A14)', () => {
     for (let refresh = 1; refresh <= 2; refresh++) {
       await drive(clock, transport.refreshHealth());
       await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
-      // P25-R10/I2: at most one miss counts per health interval.
+      // At most one miss counts per health interval.
       await clock.advance(HEALTH_INTERVAL_MS);
     }
     // A sustained outage: after the third failed refresh in a row, b no longer counts.
@@ -192,7 +192,7 @@ describe('proof quorum and height exclusion (A14)', () => {
     expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
   });
 
-  it("measures a single proof read's lag against the corroborated height (M4)", async () => {
+  it("measures a single proof read's lag against the corroborated height", async () => {
     const { fake, finCalls } = network(
       { honest: '100', liar: '1000000' },
       { liar: 'forged' },
@@ -210,10 +210,10 @@ describe('proof quorum and height exclusion (A14)', () => {
     expect(finCalls('liar')).toBe(0);
   });
 
-  // Pre-flight N1: a refresh that joined an identity check its request's caller then aborted
-  // learned nothing about the endpoint (#4, round 4), so that refresh is no miss; only the
-  // three genuine failed height probes after it stop b from counting.
-  it('never counts a caller-aborted identity check toward the three misses (A24, N1)', async () => {
+  // A refresh that joined an identity check its request's caller then aborted learned
+  // nothing about the endpoint, so that refresh is no miss; only the three genuine failed
+  // height probes after it stop b from counting.
+  it('never counts a caller-aborted identity check toward the three misses', async () => {
     let identityCalls = 0;
     const fake = new FakeFetch();
     for (const name of ['a', 'b']) {
@@ -241,8 +241,8 @@ describe('proof quorum and height exclusion (A14)', () => {
     await expect(request).rejects.toBe(reason);
     await drive(clock, aborted);
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
-    // Two genuine failed height probes, one health interval apart (P25-R10/I2): b (identity
-    // now confirmed) still counts.
+    // Two genuine failed height probes, one health interval apart: b (identity now
+    // confirmed) still counts.
     for (let refresh = 1; refresh <= 2; refresh++) {
       await clock.advance(HEALTH_INTERVAL_MS);
       await drive(clock, transport.refreshHealth());
@@ -257,10 +257,10 @@ describe('proof quorum and height exclusion (A14)', () => {
   });
 });
 
-// P25-R8 (A24 for identities): a quorum's size counts every endpoint not proven mismatched,
+// A quorum's size counts every endpoint not proven mismatched,
 // verified or not, so one failed identity probe never leaves a verified liar alone. An
 // unverified endpoint only counts; it never answers.
-describe('proof quorum and unverified identities (A24, P25-R8)', () => {
+describe('proof quorum and unverified identities', () => {
   it("never lets an identity-verified liar prove alone after an honest endpoint's identity probe fails once", async () => {
     const { fake, finCalls } = identified(
       { liar: '1', honest: 'down' },
@@ -346,9 +346,9 @@ describe('proof quorum and unverified identities (A24, P25-R8)', () => {
     expect([finCalls('liar'), finCalls('honest')]).toEqual([1, 1]);
   });
 
-  // P25-R9: request failures that open an honest endpoint's breaker never shrink the count
+  // Request failures that open an honest endpoint's breaker never shrink the count
   // either; an open breaker only stops the endpoint answering.
-  it("never lets a verified liar prove alone while an honest endpoint's breaker is open (P25-R9)", async () => {
+  it("never lets a verified liar prove alone while an honest endpoint's breaker is open", async () => {
     const answers: Record<string, string> = { honest: 'down', liar: 'forged' };
     const { fake, finCalls } = identified(
       { honest: '1', liar: '1' },
@@ -384,11 +384,11 @@ describe('proof quorum and unverified identities (A24, P25-R8)', () => {
   });
 });
 
-// P25-R10: counting endpoints that cannot answer must never stall proofs for good (a dead
+// Counting endpoints that cannot answer must never stall proofs for good (a dead
 // endpoint leaves the count after three spaced misses, whatever probes are configured), and
 // misses are spaced in time, so frequent refreshes never turn a hiccup into exclusion.
-describe('proof quorum health misses (P25-R10)', () => {
-  it('counts at most one miss per health interval, so rapid refreshes never leave the liar alone (I2)', async () => {
+describe('proof quorum health misses', () => {
+  it('counts at most one miss per health interval, so rapid refreshes never leave the liar alone', async () => {
     const { fake, finCalls } = network(
       { liar: '1000000', honest: 'down' },
       { liar: 'forged' },
@@ -410,7 +410,7 @@ describe('proof quorum health misses (P25-R10)', () => {
     expect(finCalls('liar')).toBe(0);
   });
 
-  it('drops a dead endpoint after three spaced misses with an identity probe alone (I1)', async () => {
+  it('drops a dead endpoint after three spaced misses with an identity probe alone', async () => {
     const ids = { a: '1', b: '1' };
     const answers: Record<string, string> = {};
     const { fake, idCalls } = identified(ids, {}, answers);
@@ -431,7 +431,7 @@ describe('proof quorum health misses (P25-R10)', () => {
     expect(idCalls('b')).toBe(4);
   });
 
-  it("sizes a proof quorum read under purpose 'read' the same way (token metadata) (I3)", async () => {
+  it("sizes a proof quorum read under purpose 'read' the same way (token metadata)", async () => {
     const { fake, finCalls } = identified(
       { honest: '1', liar: '1' },
       { liar: '1000000' },
@@ -452,7 +452,7 @@ describe('proof quorum health misses (P25-R10)', () => {
     expect(finCalls('liar')).toBe(0);
   });
 
-  it("refreshes health for a proof quorum read under purpose 'read', so a dead endpoint still leaves (I3)", async () => {
+  it("refreshes health for a proof quorum read under purpose 'read', so a dead endpoint still leaves", async () => {
     const ids = { a: '1', b: '1' };
     const answers: Record<string, string> = {};
     const { fake } = identified(ids, {}, answers);
@@ -471,7 +471,7 @@ describe('proof quorum health misses (P25-R10)', () => {
     await expect(metadata()).resolves.toBe('fact');
   });
 
-  it('counts only usable endpoints when no probe is configured, so proofs never stall (I1)', async () => {
+  it('counts only usable endpoints when no probe is configured, so proofs never stall', async () => {
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
     const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
       failureThreshold: 1,
@@ -483,7 +483,7 @@ describe('proof quorum health misses (P25-R10)', () => {
     expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
   });
 
-  it('counts only usable endpoints when no refresh can see a dead endpoint (P25-R11)', async () => {
+  it('counts only usable endpoints when no refresh can see a dead endpoint', async () => {
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
     const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
       failureThreshold: 1,
@@ -537,14 +537,15 @@ describe('proof quorum health misses (P25-R10)', () => {
   });
 });
 
-// P25-R21/I1: an endpoint whose probes answer but whose requests fail (its breaker not closed,
-// or its failures in a row at the breaker's threshold) records a health miss instead of a
-// reset, so it leaves the count after three spaced misses, as a probe-dead one does (A24),
-// while a shorter open breaker still counts (P25-R9).
-describe('proof quorum and request-dead endpoints (P25-R21)', () => {
+// An endpoint whose probes answer but whose requests fail (its breaker not closed, or its
+// failures in a row at the breaker's threshold) records a health miss instead of a reset,
+// so it leaves the count after three spaced misses, as a probe-dead one does, while a
+// shorter open breaker still counts.
+describe('proof quorum and request-dead endpoints', () => {
   it('recovers proofs within about three health intervals of an endpoint failing every request', async () => {
-    // The final review's reproduction: both endpoints answer the height probe, b answers
-    // HTTP 503 to every proof read, and a proof read runs every 20 s for 20 minutes.
+    // The reproduction of a request-dead endpoint: both endpoints answer the height
+    // probe, b answers HTTP 503 to every proof read, and a proof read runs every 20 s for
+    // 20 minutes.
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
     const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
     transport.setProbes(probes);
@@ -563,7 +564,7 @@ describe('proof quorum and request-dead endpoints (P25-R21)', () => {
     expect(outcomes.slice(0, 7)).toEqual(Array(7).fill('PROVIDER_UNAVAILABLE'));
     expect(outcomes.slice(7)).toEqual(Array(53).fill('fact'));
     // a missed only the read that failed fast while b's breaker was open (100 s). b was asked
-    // until it left the count (6 times); after that, P25-R22 tries it once per half-open
+    // until it left the count (6 times); after that, a trial tries it once per half-open
     // window (every other read: each failed trial reopens its breaker for 30 s), 26 times,
     // and the failed trials never touch the verdict.
     expect([finCalls('a'), finCalls('b')]).toEqual([59, 32]);
@@ -624,8 +625,8 @@ describe('proof quorum and request-dead endpoints (P25-R21)', () => {
     }
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
     await expect(proof()).resolves.toBe('forged');
-    // honest serves again. Once its breaker is half-open it is tried alongside the liar
-    // (P25-R22): its answer blocks the liar's at once and closes its breaker…
+    // honest serves again. Once its breaker is half-open it is tried alongside the liar:
+    // its answer blocks the liar's at once and closes its breaker…
     answers.honest = 'fact';
     await clock.advance(openMs);
     await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
@@ -637,10 +638,10 @@ describe('proof quorum and request-dead endpoints (P25-R21)', () => {
   });
 });
 
-// P25-R22: an endpoint out of the count whose breaker is half-open is tried alongside the
+// An endpoint out of the count whose breaker is half-open is tried alongside the
 // counted endpoints. Its answer can only block a proof (a disagreement or a refusal decides
 // nothing); an agreeing answer closes its breaker, so it rejoins at the next refresh.
-describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
+describe('proof quorum trials of a recovering endpoint', () => {
   const OPEN_MS = 60_000;
 
   /**
@@ -694,7 +695,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     return { transport, clock, seen, proof, answers, log, bCalls };
   }
 
-  it('lets a recovered endpoint rejoin through a trial, even at equal priority (a)', async () => {
+  it('lets a recovered endpoint rejoin through a trial, even at equal priority', async () => {
     // The reproduction above, then b recovers.
     const answers: Record<string, string> = { b: 'down' };
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, answers);
@@ -728,7 +729,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     expect(await proof()).toBe('PROVIDER_INCONSISTENT');
   });
 
-  it("blocks the proof when the recovering endpoint's answer disagrees (b)", async () => {
+  it("blocks the proof when the recovering endpoint's answer disagrees", async () => {
     const { proof, bCalls, seen } = await recovering('other');
     const before = bCalls();
     await expect(proof()).rejects.toMatchObject({
@@ -739,7 +740,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     expect(seen.filter((e) => e.type === 'provider.inconsistent')).toHaveLength(1);
   });
 
-  it('blocks the proof when the recovering endpoint refuses while a answers (c)', async () => {
+  it('blocks the proof when the recovering endpoint refuses while a answers', async () => {
     const { proof, bCalls } = await recovering('refuse');
     const before = bCalls();
     await expect(proof()).rejects.toMatchObject({
@@ -749,13 +750,13 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     expect(bCalls()).toBe(before + 1);
   });
 
-  it('leaves the verdict to the counted endpoints when the trial fails in transport (d)', async () => {
+  it('leaves the verdict to the counted endpoints when the trial fails in transport', async () => {
     const { proof, bCalls, transport, clock, log } = await recovering('down');
     const before = bCalls();
     await expect(proof()).resolves.toBe('fact');
     expect(bCalls()).toBe(before + 1);
     // The failure counts against b as usual: its breaker opens again, and it stays out. A
-    // failed trial forces no refresh (P25-R23): the next read probes nothing.
+    // failed trial forces no refresh: the next read probes nothing.
     expect(transport.status().find((s) => s.id === 'b')?.state).toBe('open');
     const probed = log.length - bCalls();
     await expect(proof()).resolves.toBe('fact');
@@ -765,12 +766,12 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     expect(bCalls()).toBe(before + 1);
   });
 
-  it('skips a trial whose rate-limit token is not free, without waiting (e, P25-R23)', async () => {
+  it('skips a trial whose rate-limit token is not free, without waiting', async () => {
     const { transport, clock, answers, bCalls } = await recovering('fact', {
       rateLimit: { rps: 1, burst: 1 },
     });
     answers.a = 'forged';
-    // The reviewer's shape: a proof read with a 500 ms timeout.
+    // A proof read with a 500 ms timeout.
     const proof = () =>
       drive(clock, transport.rpc('fin', [], { quorum: 'proof', timeoutMs: 500 }));
     const before = bCalls();
@@ -786,7 +787,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     expect(bCalls()).toBe(before + 1);
   });
 
-  it("keeps a trial's veto: the next proof read refreshes health first (g, P25-R23)", async () => {
+  it("keeps a trial's veto: the next proof read refreshes health first", async () => {
     // b answers honestly while a lies; or b refuses while a answers.
     for (const [recovered, a] of [
       ['fact', 'forged'],
@@ -808,10 +809,10 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     }
   });
 
-  // P25-R25: the trial's own answer (or refusal) makes health due, whatever becomes of the
+  // The trial's own answer (or refusal) makes health due, whatever becomes of the
   // counted endpoints' read: a failure, an abort or a slow answer never reopens the gap.
-  describe('the veto holds whatever becomes of the read carrying the trial (P25-R25)', () => {
-    it('when a fails that read (S1)', async () => {
+  describe('the veto holds whatever becomes of the read carrying the trial', () => {
+    it('when a fails that read', async () => {
       const { proof, answers, bCalls } = await recovering('fact');
       const before = bCalls();
       answers.a = 'down';
@@ -821,7 +822,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
       await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
     });
 
-    it('when the caller aborts that read after the trial answered (S2)', async () => {
+    it('when the caller aborts that read after the trial answered', async () => {
       const { transport, clock, proof, answers, bCalls } = await recovering('fact');
       const before = bCalls();
       answers.a = 'hang';
@@ -839,7 +840,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
       await expect(proof()).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
     });
 
-    it('for a read that starts while a is still answering that read (S3)', async () => {
+    it('for a read that starts while a is still answering that read', async () => {
       const { transport, clock, answers, bCalls } = await recovering('fact');
       const before = bCalls();
       answers.a = 'slow:forged';
@@ -861,7 +862,7 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
     });
   });
 
-  it('tries a recovering endpoint even when no counted endpoint can answer (f)', async () => {
+  it('tries a recovering endpoint even when no counted endpoint can answer', async () => {
     const answers: Record<string, string> = { a: 'down', b: 'down' };
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, answers);
     const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
@@ -893,11 +894,11 @@ describe('proof quorum trials of a recovering endpoint (P25-R22)', () => {
   });
 });
 
-// P25-R10: under a proof quorum, one endpoint's definitive error decides only when the
-// quorum's endpoints all return an equivalent one (P25-R21/I2: the same code, HTTP status and
-// rpcCode, and for an implementation-defined rpcCode the same text); otherwise the read
-// decides nothing, and the other endpoints are still asked.
-describe('proof quorum and definitive errors (P25-R10)', () => {
+// Under a proof quorum, one endpoint's definitive error decides only when the quorum's
+// endpoints all return an equivalent one (the same code, HTTP status and rpcCode, and for
+// an implementation-defined rpcCode the same text); otherwise the read decides nothing,
+// and the other endpoints are still asked.
+describe('proof quorum and definitive errors', () => {
   const REVERT = { code: 3, message: 'execution reverted' };
   /** Endpoints at height 100 answering 'fin' with `replies`: a JSON-RPC error or a result. */
   function refusing(replies: Record<string, { code: number; message: string } | string>) {
@@ -956,7 +957,7 @@ describe('proof quorum and definitive errors (P25-R10)', () => {
     expect([finCalls('a'), finCalls('b')]).toEqual([1, 1]);
   });
 
-  // P25-R21/I2: equivalent means the same code, HTTP status and JSON-RPC code, and for an
+  // Equivalent means the same code, HTTP status and JSON-RPC code, and for an
   // implementation-defined JSON-RPC code, the same message text.
   it('tells REST refusals apart by their HTTP status', async () => {
     const rest = (statuses: Record<string, number>) => {

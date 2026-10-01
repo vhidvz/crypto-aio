@@ -213,7 +213,7 @@ export function chainReader(ctx: AvalancheContext): ChainReader {
     },
     getBlock: async (ref) => {
       if (typeof ref === 'string') {
-        // I2: a malformed id never reaches the node.
+        // A malformed id never reaches the node.
         const block = isId(ref) ? await node.blockById(ref, READ) : null;
         return block ? toDriverBlock(block) : null;
       }
@@ -222,13 +222,13 @@ export function chainReader(ctx: AvalancheContext): ChainReader {
       return block ? toDriverBlock(block) : null;
     },
     getTransaction: async (id) => {
-      if (!isId(id)) return null; // I2
+      if (!isId(id)) return null; // a malformed id never reaches the node
       const bytes = await node.txBytes(id, READ);
       if (!bytes) return null;
       const observation = await observeId(ctx, id, READ, true);
       return decodeTransaction(bytes, ctx.config, observation);
     },
-    // Lesson 18, widened: a refusal on any of these reads decides nothing (retryable).
+    // As on a proof path, a refusal on any of these reads decides nothing (retryable).
     observe: async (ref) =>
       isId(ref.id) ? proofRead(() => observeId(ctx, ref.id, MONITOR)) : { seen: 'none' },
   };
@@ -238,7 +238,7 @@ export function chainReader(ctx: AvalancheContext): ChainReader {
  * Address history from the Data API, newest first; the cursor is its page token. Each
  * transaction's bytes come from the node (they authenticate themselves by their id) and are
  * decoded here; one that pays the address nothing and that it did not sign is left out
- * (lesson 6: a server that dropped its filter never lists another address's), and
+ * (a server that dropped its filter never lists another address's), and
  * every listed transaction counts toward `limit`, so paging stays bounded. An X-Chain
  * transaction from before its linearization has no block, so it reads as not seen.
  */

@@ -78,7 +78,9 @@ describe('the built-in TON plugin', () => {
       indexer: 'nodeIndex',
     });
     expect([ton.chain, ton.network, ton.library]).toEqual(['ton', 'testnet', '@ton/ton']);
-    // F6-R15: no `batch-transfer`; the driver's limit is one output whatever the wallet.
+    // No `batch-transfer`: each TON message lands in its own transaction, so a batch can
+    // be partly delivered, and a whole re-send would pay the landed legs twice. The
+    // driver's limit is one output whatever the wallet.
     expect([...ton.capabilities].sort()).toEqual([
       'address-history',
       'expiry',
@@ -192,7 +194,8 @@ describe('the built-in TON plugin', () => {
       requiresIndexer: true,
       indexerCapabilities: ['address-history'],
     });
-    // Keyed by package (Plan 2's final shape); the one library needs all three.
+    // Keyed by package; the one library needs all three (`@ton/core` requires
+    // `@ton/crypto` at load time).
     expect(TON_PEER_DEPENDENCIES).toEqual({
       '@ton/ton': { name: '@ton/ton', range: '^16.3.0' },
       '@ton/core': { name: '@ton/core', range: '^0.63.1' },
@@ -218,7 +221,7 @@ describe('the built-in TON plugin', () => {
         false,
       ]);
     }
-    // M10: plugin.ts reaches the library module only through `load()`'s `require`, and never
+    // plugin.ts reaches the library module only through `load()`'s `require`, and never
     // names driver.ts at all (lazy.test.ts proves it at run time).
     const plugin = source('plugin');
     expect(plugin).not.toMatch(/from '\.\/(driver|native-client|builder|reader)'/);
@@ -234,7 +237,7 @@ describe('the built-in TON plugin', () => {
     expect(await tonManifest.load()).toBe(tonLibraryDriverFactory);
   });
 
-  it('pins the SDK ranges package.json declares as optional peers and pins for tests (R82)', () => {
+  it('pins the SDK ranges package.json declares as optional peers and pins for tests', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as Record<
       'peerDependencies' | 'devDependencies',
       Record<string, string>
@@ -248,7 +251,7 @@ describe('the built-in TON plugin', () => {
     }
   });
 
-  it('ships frozen data: the manifest, its lists and the peer entries (R56)', () => {
+  it('ships frozen data: the manifest, its lists and the peer entries', () => {
     const plugin = tonPlugin();
     expect(plugin).toMatchObject({ name: 'ton' });
     expect(plugin.chains).toBe(TON_CHAINS);
@@ -267,7 +270,7 @@ describe('the built-in TON plugin', () => {
     }
   });
 
-  it('ships frozen toncenter presets: a keyless rate only as toncenter publishes it, burst 1 (A28, F6-R3)', () => {
+  it('ships frozen toncenter presets: a keyless rate only as toncenter publishes it, burst 1', () => {
     const { presets } = tonPlugin();
     expect(presets?.every((preset) => Object.isFrozen(preset))).toBe(true);
     const rates = (presets ?? []).flatMap((preset) =>
@@ -282,7 +285,8 @@ describe('the built-in TON plugin', () => {
       ),
     );
     // Toncenter publishes 1 request per second keyless and 10 with a free key, per network
-    // for v2 and v3 together (X2: half each); the keyed burst is one (F6-R3).
+    // for v2 and v3 together, so each gets half. The keyed burst is one: the default let
+    // v2 and v3 together send about 18 requests in the first second after idle.
     expect(rates).toEqual(
       [
         ['public', 'rpc'],
@@ -300,7 +304,7 @@ describe('the built-in TON plugin', () => {
     );
   });
 
-  it("takes a network's maxNetworkFee from the plugin's network config into the builder (F6-R17)", async () => {
+  it("takes a network's maxNetworkFee from the plugin's network config into the builder", async () => {
     const { aio, node, run } = container({
       plugins: [
         customTon('tonlab', {
@@ -330,7 +334,7 @@ describe('the built-in TON plugin', () => {
     await aio.close();
   });
 
-  it('takes maxNetworkFee from the handle and chain options on the built-in networks (F6-R24, F6-R25)', async () => {
+  it('takes maxNetworkFee from the handle and chain options on the built-in networks', async () => {
     const { aio, node, run } = container({
       chains: {
         ton: { network: 'testnet', options: { maxNetworkFee: { basechain: 1n } } },
@@ -367,7 +371,7 @@ describe('the built-in TON plugin', () => {
   });
 
   it.each(['batch-transfer', 'block-scan', 'replace-fee'])(
-    'refuses a plugin network that adds %s, before any traffic (Task 11)',
+    'refuses a plugin network that adds %s, before any traffic',
     async (capability) => {
       const { aio, node, run } = container({
         plugins: [customTon('tonlab', { capabilities: { add: [capability] } })],
@@ -387,7 +391,7 @@ describe('the built-in TON plugin', () => {
   );
 });
 
-describe('the built-in TON plugin registered again (A18)', () => {
+describe('the built-in TON plugin registered again', () => {
   it('keeps use() idempotent for the same plugin, and refuses another named ton', async () => {
     // The composition root already registered tonPlugin(); these are fresh copies of it.
     expect(samePlugin(tonPlugin(), tonPlugin())).toBe(true);

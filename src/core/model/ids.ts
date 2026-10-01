@@ -3,7 +3,7 @@
  * `declare module 'crypto-aio' { interface ChainRegistry { ethereum: {...} } }`, and plugins
  * inside this package augment the entry module (`declare module '../index'`). Never augment
  * this file directly: an augmentation here and one through the entry are then merged in file
- * order, and a user's chains can be lost (R37).
+ * order, and a user's chains can be lost.
  */
 export interface ChainRegistry {}
 export interface FamilyRegistry {}

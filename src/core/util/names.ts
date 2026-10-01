@@ -1,5 +1,5 @@
 /**
- * F3-R16, F6-R24: how an error names something the caller typed (a chain, network,
+ * How an error names something the caller typed (a chain, network,
  * library, provider, wallet, signer, scheme, asset alias, option key or capability). What a
  * caller typed may be a pasted secret, so an error never repeats it, at any length: it lists
  * the names that would have been accepted instead, which the library or the caller's own

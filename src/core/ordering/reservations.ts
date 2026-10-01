@@ -1,6 +1,9 @@
 import { isTerminal, type OperationRecord } from '../store/types';
 
-/** Inputs held by live Operations: their reservation, unsigned payload and every Attempt (spec §8.5). */
+/**
+ * Inputs held by live Operations: their reservation, unsigned payload and every Attempt.
+ * Coin selection excludes them, so two Operations of a wallet never pick the same coin.
+ */
 export function reservedInputs(
   operations: readonly OperationRecord[],
   exceptId?: string,

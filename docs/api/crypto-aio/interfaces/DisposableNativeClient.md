@@ -2,9 +2,9 @@
 
 # Interface: DisposableNativeClient
 
-Defined in: [src/core/driver/types.ts:285](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L285)
+Defined in: [src/core/driver/types.ts:290](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L290)
 
-R34: a native SDK client for `crypto-aio/native` and how to release it. `close` frees
+A native SDK client for `crypto-aio/native` and how to release it. `close` frees
 what the client holds (sockets, timers, workers); the root container's `close()` runs it
 once, before closing its pooled drivers.
 
@@ -16,7 +16,7 @@ once, before closing its pooled drivers.
 
 > `readonly` **client**: `unknown`
 
-Defined in: [src/core/driver/types.ts:286](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L286)
+Defined in: [src/core/driver/types.ts:291](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L291)
 
 ## Methods
 
@@ -26,7 +26,7 @@ Defined in: [src/core/driver/types.ts:286](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **close**(): `void` \| `Promise`\<`void`\>
 
-Defined in: [src/core/driver/types.ts:287](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L287)
+Defined in: [src/core/driver/types.ts:292](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L292)
 
 #### Returns
 

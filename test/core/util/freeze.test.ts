@@ -1,7 +1,7 @@
 import { secret } from '../../../src/core/secret/secret';
 import { deepFreeze } from '../../../src/core/util/freeze';
 
-describe('deepFreeze (B65)', () => {
+describe('deepFreeze', () => {
   it('freezes arrays and plain objects all the way down', () => {
     const data = deepFreeze({ a: [{ b: 1 }], c: Object.create(null) as object });
     expect(Object.isFrozen(data)).toBe(true);
@@ -34,7 +34,7 @@ describe('deepFreeze (B65)', () => {
     expect(data.key).toBe(key);
   });
 
-  it('freezes a reference cycle instead of overflowing the stack (B116)', () => {
+  it('freezes a reference cycle instead of overflowing the stack', () => {
     const a: Record<string, unknown> = { name: 'a' };
     const b: Record<string, unknown> = { name: 'b', a };
     a.b = b;

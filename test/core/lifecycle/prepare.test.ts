@@ -102,7 +102,8 @@ describe('prepareTransfer', () => {
     });
   });
 
-  // Review Focus 2: the same intent in another input form is an idempotent repeat, not a conflict.
+  // The same intent in another input form (a bigint instead of a decimal string, another
+  // address casing) is an idempotent repeat, not a conflict.
   it('returns the same operation for an idempotent repeat in any input form', async () => {
     const env = await createFakeEnv();
     const recipient = env.stranger();
@@ -145,7 +146,7 @@ describe('prepareTransfer', () => {
     });
   });
 
-  // I2 (P3): abandon waits for the address lease, so it cannot slip in between a resumed
+  // Abandon waits for the address lease, so it cannot slip in between a resumed
   // prepare's allocation and its persisted reservation.
   it('never leaks the nonce when abandon races a resumed prepare', async () => {
     let onAllocate: (() => Promise<void>) | undefined;
@@ -186,7 +187,7 @@ describe('prepareTransfer', () => {
     });
   });
 
-  // N1 (P13): a veto from a hook that outlives the address lease writes nothing, so the
+  // A veto from a hook that outlives the address lease writes nothing, so the
   // nonce is never lost; the veto is retried on the next repeat under a fresh lease.
   it('keeps the nonce when a slow veto outlives the address lease', async () => {
     let lingering = true;
@@ -252,7 +253,7 @@ describe('prepareTransfer', () => {
     ]);
   });
 
-  // M3: the policy hook of prepare() is bounded by lifecycle.signTimeoutMs, like signing.
+  // The policy hook of prepare() is bounded by lifecycle.signTimeoutMs, like signing.
   it('stops waiting for a hung policy hook after signTimeoutMs and fails nothing', async () => {
     let hung = true;
     const env = await createFakeEnv({
@@ -278,7 +279,7 @@ describe('prepareTransfer', () => {
     expect(repeat.operation.state).toBe('prepared');
   });
 
-  // I2 (P4): lease contention fails abandon before any write, so a retry succeeds.
+  // Lease contention fails abandon before any write, so a retry succeeds.
   it('lets abandon be retried after it lost the address lease to contention', async () => {
     const env = await createFakeEnv();
     const prepared = await env.run(
@@ -309,8 +310,8 @@ describe('prepareTransfer', () => {
     });
   });
 
-  // R22: every issued ticket is cancelled through the signer that issued it (M4: failures
-  // and unresolvable signers are logged by code only).
+  // Every issued ticket is cancelled through the signer that issued it (failures and
+  // unresolvable signers are logged by code only).
   it('cancels each signer ticket through its issuer when abandoning', async () => {
     const cancelled: string[] = [];
     const inner = localSigner.generate({ curves: ['secp256k1'], id: 'inner' }).signer;
@@ -382,7 +383,7 @@ describe('prepareTransfer', () => {
     );
   });
 
-  // Carry-forward: the store does not guard transitions, so the engine must.
+  // The store does not guard transitions, so the engine must.
   it('never moves a terminal operation to another state', async () => {
     const env = await createFakeEnv();
     const prepared = await env.run(
@@ -399,7 +400,7 @@ describe('prepareTransfer', () => {
     expect((await engine.require(prepared.operation.id)).version).toBe(record.version);
   });
 
-  // Spec §8.1: an idempotent repeat of a terminal Operation returns it unchanged.
+  // An idempotent repeat of a terminal Operation returns it unchanged.
   it('returns an abandoned operation unchanged, without signing material, on a repeat', async () => {
     const env = await createFakeEnv();
     const intent = { to: env.stranger(), amount: 1n };
@@ -515,7 +516,7 @@ describe('prepareTransfer', () => {
     });
   });
 
-  // I1: a repeat of an Operation left `prepared` (lost ack) still runs the policy veto.
+  // A repeat of an Operation left `prepared` (lost ack) still runs the policy veto.
   it('runs the veto again when repeating an operation left prepared', async () => {
     let vetoing = true;
     const env = await createFakeEnv({
@@ -549,7 +550,7 @@ describe('prepareTransfer', () => {
     });
   });
 
-  // M2: a veto whose release fails still surfaces the veto; the release is logged by code.
+  // A veto whose release fails still surfaces the veto; the release is logged by code.
   it('surfaces the veto, not the release failure, when the nonce cannot be released', async () => {
     const { logs, logger } = captureLogs();
     const sequences = scriptedSequences((state) => {
@@ -590,7 +591,7 @@ describe('prepareTransfer', () => {
     ]);
   });
 
-  // M1: the persisted reservation must be the slot that was allocated.
+  // The persisted reservation must be the slot that was allocated.
   it('fails and releases when the built transaction uses another nonce', async () => {
     const env = await createFakeEnv();
     const { driver } = await internalsOf(env.bc).pooled();
@@ -673,7 +674,7 @@ describe('prepareTransfer', () => {
     expect(await env.run(env.bc.getOperation('op_missing'))).toBeNull();
   });
 
-  // M8: like getTransactionStatus, a handle only shows Operations of its chain and network.
+  // Like getTransactionStatus, a handle only shows Operations of its chain and network.
   it('refuses to show an operation of another chain or network', async () => {
     const env = await createFakeEnv();
     const prepared = await env.run(
@@ -688,7 +689,7 @@ describe('prepareTransfer', () => {
     expect(await env.run(other.getOperation('op_missing'))).toBeNull();
   });
 
-  // Carry-forward: IntentSummary (addresses, amounts) never reaches an event payload.
+  // IntentSummary (addresses, amounts) never reaches an event payload.
   it('emits operational events only, never addresses or amounts', async () => {
     const env = await createFakeEnv({ fund: 10n ** 12n });
     const events: AioEvent[] = [];
@@ -710,7 +711,7 @@ describe('prepareTransfer', () => {
       expect(text).not.toContain(secret);
   });
 
-  // Carry-forward (Task 22): a failed best-effort lease release is logged by code only.
+  // A failed best-effort lease release is logged by code only.
   it('logs only the error code when an address lease release fails', async () => {
     const logs: { level: LogLevel; message: string; fields?: Record<string, unknown> }[] =
       [];
@@ -741,7 +742,7 @@ describe('prepareTransfer', () => {
   });
 });
 
-// M3: invariants that already held, pinned so a regression cannot pass unnoticed.
+// Invariants that already held, pinned so a regression cannot pass unnoticed.
 describe('prepare and abandon invariants', () => {
   it('turns concurrent calls with one key into one operation and one reservation', async () => {
     const env = await createFakeEnv();
@@ -897,7 +898,7 @@ describe('prepare and abandon invariants', () => {
     const reserved = record.reservation;
     if (reserved?.kind !== 'nonce') throw new Error('unreachable');
     expect((await env.run(env.bc.abandon(operation.id))).state).toBe('abandoned');
-    // Its nonce goes back for reuse. (M9: each prepare above also reclaims the values of
+    // Its nonce goes back for reuse. (Each prepare above also reclaims the values of
     // the forced 'failed' and 'expired' Operations, which consumed nothing, so the exact
     // values depend on the loop.)
     expect((await env.stores.sequences.get(walletSequenceKey(env)))?.released).toContain(

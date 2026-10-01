@@ -43,7 +43,11 @@ const GRAM = 1_000_000_000n;
 const FRESH = `0:${'11'.repeat(32)}`;
 const PAYER = `0:${'33'.repeat(32)}`;
 const ZERO_HASH = Buffer.alloc(32).toString('base64');
-/** Earlier rows the code-never-ran rule refuses: the code ran, or no statuses (F6-R32 L1). */
+/**
+ * Earlier rows the code-never-ran rule refuses: the code ran, or no statuses. Below a
+ * chain start inside the window, an earlier incarnation whose code never ran cannot hold
+ * our transfer; any other row decides nothing.
+ */
 const CODE_RAN: readonly Record<string, unknown>[] = [
   {
     description: {
@@ -89,7 +93,7 @@ function setup(options: Parameters<typeof tonHarness>[0] = {}) {
       deploy: true,
       messages,
     });
-    // As the builder records it (F6-R29): the lifetime, and the chain time it began.
+    // As the builder records it: the lifetime, and the chain time it began.
     const ordering: TonSeqnoOrdering = {
       kind: 'seqno',
       seqno: 0n,
@@ -188,7 +192,10 @@ function v4Request(
   };
 }
 
-describe('TON proofs (lesson 17, final form)', () => {
+// Each fact is attested at its own height, with a monotone predicate or at a fixed block.
+// Only the unanchored head trails one endpoint's head by a skew, and a quorum read of
+// that block attests it.
+describe('TON proofs', () => {
   it('attests an unanchored head trailed by the skew', async () => {
     const s = setup({ endpoints: ['a', 'b'] });
     s.h.node.mine(FINALITY_SKEW + 5);
@@ -233,7 +240,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     );
     s.h.node.submit(boc);
     s.h.node.mine();
-    // I4: TON gives no separate `latest` evidence, so no observed `replaced` ever.
+    // TON gives no separate `latest` evidence, so no observed `replaced` ever.
     expect(await s.h.run(s.proofs.slotConsumed(ordering, s.from, 'latest'))).toBe(false);
     expect(await s.h.run(s.proofs.slotConsumed(ordering, s.from, 'finalized'))).toBe(
       true,
@@ -276,7 +283,9 @@ describe('TON proofs (lesson 17, final form)', () => {
     ).toMatchObject({ included: true, success: false, reason: REASONS.bounced });
   });
 
-  it('decides nothing while the indexer lags behind the consumed seqno (Review Focus 2)', async () => {
+  // The liteserver shows the seqno consumed while the indexer has not indexed the
+  // transaction yet: the Attempt stays undecided, never `replaced`.
+  it('decides nothing while the indexer lags behind the consumed seqno', async () => {
     const s = setup({ node: { indexerLag: 40 } });
     const { boc, hashNorm, ordering } = await s.pay();
     s.h.node.submit(boc);
@@ -301,7 +310,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     ]);
     s.h.node.submit(theirs.boc);
     s.h.node.mine(FINALITY_SKEW + 3);
-    // F6-R21: never while ours may still run (a reset could bring the seqno back).
+    // Never while ours may still run (a reset could bring the seqno back).
     await expect(
       s.h.run(s.proofs.includedFinal(ref(ours.hashNorm), ours.ordering, s.from)),
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
@@ -311,7 +320,8 @@ describe('TON proofs (lesson 17, final form)', () => {
     ).toEqual({ included: false });
   });
 
-  it('proves expiry only once every shard is past valid_until (Review Focus 5)', async () => {
+  // A shard block older than the masterchain's time can still include the message.
+  it('proves expiry only once every shard is past valid_until', async () => {
     const s = setup({ node: { shardLagSeconds: 30 } });
     const { boc, hashNorm, ordering } = await s.pay();
     s.h.node.submit(boc);
@@ -334,7 +344,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     });
   });
 
-  it('retries the attested head at the lag tolerance when a peer trails further (M1)', async () => {
+  it('retries the attested head at the lag tolerance when a peer trails further', async () => {
     const s = setup({
       endpoints: ['a', 'b'],
       maxLagBlocks: 150,
@@ -353,7 +363,9 @@ describe('TON proofs (lesson 17, final form)', () => {
     });
   });
 
-  it('proves expiry only once the slowest of two shards is past valid_until (D9, M11)', async () => {
+  // `expired` gets no address, so it cannot pick the wallet's own shard: it takes the
+  // oldest time of every shard top the attested block commits.
+  it('proves expiry only once the slowest of two shards is past valid_until', async () => {
     const s = setup({
       node: { shards: 2, shardLagSeconds: 1, secondShardLagSeconds: 40 },
     });
@@ -364,7 +376,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     expect(await s.h.run(s.proofs.expired(ordering))).toBe(true);
   });
 
-  it('never reads a frozen wallet as seqno 0 (I6)', async () => {
+  it('never reads a frozen wallet as seqno 0', async () => {
     const s = setup();
     const { boc, hashNorm, ordering } = await s.pay();
     s.h.node.submit(boc);
@@ -377,7 +389,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
-  it('never reads a frozen wallet as seqno 0, even once the message has expired (I6)', async () => {
+  it('never reads a frozen wallet as seqno 0, even once the message has expired', async () => {
     const s = setup();
     const { boc, hashNorm, ordering } = await s.pay();
     s.h.node.submit(boc);
@@ -390,7 +402,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
-  it("decides only once the endpoints hold the trace's last block (D10)", async () => {
+  it("decides only once the endpoints hold the trace's last block", async () => {
     const s = setup();
     const { boc, hashNorm, ordering } = await s.pay();
     s.h.node.submit(boc);
@@ -406,7 +418,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     ).toMatchObject({ included: true, success: true });
   });
 
-  it("confirms a jetton transfer's wallets under the proof quorum, at the trace's last block (Task 8 carry)", async () => {
+  it("confirms a jetton transfer's wallets under the proof quorum, at the trace's last block", async () => {
     const MASTER = `0:${'77'.repeat(32)}`;
     const h = tonHarness({ endpoints: ['a', 'b'] });
     const proofs = createTonProofs(h.ctx);
@@ -472,7 +484,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     expect(blocks.every(([, seqno]) => seqno === last)).toBe(true);
   });
 
-  describe('a lying first endpoint decides nothing (C1)', () => {
+  describe('a lying first endpoint decides nothing', () => {
     it('flips a delivered transfer into a bounce: no verdict', async () => {
       const s = setup({ endpoints: ['a', 'b'] });
       const { boc, hashNorm, ordering } = await s.pay();
@@ -632,7 +644,9 @@ describe('TON proofs (lesson 17, final form)', () => {
     });
   });
 
-  describe('a relayed W5 request consumes the seqno only when proven (A23)', () => {
+  // Anyone can post a W5 `internal_signed` body for about 0.01 GRAM: a relayed request
+  // counts only when the wallet ran it and the wallet key signed it.
+  describe('a relayed W5 request consumes the seqno only when proven', () => {
     const RELAYER = `0:${'22'.repeat(32)}`;
     /** A v5r1 test wallet, deployed by our own transfer for seqno 0. */
     async function deployed() {
@@ -719,7 +733,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     ).toBeNull();
   });
 
-  describe('our own run that did not consume its seqno moved nothing (Task 7 carry)', () => {
+  describe('our own run that did not consume its seqno moved nothing', () => {
     /** Our request for seqno 0 in mode 1, for more than the wallet holds: its action phase fails. */
     const unpayable = (s: ReturnType<typeof setup>) => {
       const validUntil = s.now() + 60;
@@ -786,7 +800,7 @@ describe('TON proofs (lesson 17, final form)', () => {
   });
 
   describe('the consumer search', () => {
-    it('pages on the page as served, past deposits the indexer does not call final (F6-R12)', async () => {
+    it('pages on the page as served, past deposits the indexer does not call final', async () => {
       const s = setup();
       const ours = await s.pay();
       s.h.node.submit(ours.boc);
@@ -824,7 +838,7 @@ describe('TON proofs (lesson 17, final form)', () => {
       expect(pages).toBe(2);
     });
 
-    it('never takes a consumer the chain could not have run: its request expired first; the chain still decides (final review M3)', async () => {
+    it('never takes a consumer the chain could not have run: its request expired first; the chain still decides', async () => {
       const s = setup();
       const ours = await s.pay();
       const theirs = await s.request([
@@ -935,7 +949,7 @@ describe('TON proofs (lesson 17, final form)', () => {
           fields: { code: 'SEQNO_CONSUMER_NOT_FOUND' },
         },
       ]);
-      // Expired: the liteserver's own chain decides, within its cap, else nothing (F6-R21).
+      // Expired: the liteserver's own chain decides, within its cap, else nothing.
       s.h.node.intercept = undefined;
       await s.tick(80);
       warnings.length = 0;
@@ -960,7 +974,7 @@ describe('TON proofs (lesson 17, final form)', () => {
     }, 20_000);
   });
 
-  describe('lookups bound to the block asked (the board: id-bound lookups)', () => {
+  describe('lookups bound to the block asked', () => {
     it('never takes the header of another block for the attested head or a block hash', async () => {
       const s = setup();
       s.h.node.mine(FINALITY_SKEW + 5);
@@ -1116,7 +1130,10 @@ describe('TON proofs (lesson 17, final form)', () => {
     });
   });
 
-  describe('the wallet state at the attested head (D9, D12, I6)', () => {
+  // The seqno at the attested head counts only from an active wallet, or from an
+  // uninitialized one for slot 0: a frozen or deleted wallet decides nothing, never
+  // "seqno 0".
+  describe('the wallet state at the attested head', () => {
     it('proves expiry exactly when valid_until reaches the block time, not a second earlier', async () => {
       const s = setup();
       const { hashNorm, ordering } = await s.pay();
@@ -1157,7 +1174,7 @@ describe('TON proofs (lesson 17, final form)', () => {
       ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
     });
 
-    it('never reads an uninitialized wallet as seqno 0 past our first slot (I6)', async () => {
+    it('never reads an uninitialized wallet as seqno 0 past our first slot', async () => {
       const s = setup();
       const next = await signedBoc('v4r2', TESTNET, {
         seqno: 1,
@@ -1212,7 +1229,12 @@ describe('TON proofs (lesson 17, final form)', () => {
   });
 });
 
-describe('"not included" rests on the chain\'s own transactions (F6-R21)', () => {
+// A false "not included" lets `rebuild` pay twice: a wallet deleted and re-deployed, a
+// lying indexer replaying our own expired request, or a seqno read bound to no block
+// could each produce one. So it rests only on the wallet's raw liteserver transactions,
+// each hashed locally and linked back to an attested account state; the indexer is a
+// positive hint only.
+describe('"not included" rests on the chain\'s own transactions', () => {
   /** A v4r2 request of the test key's wallet sending everything and deleting it (+128+32). */
   const destroy = (s: ReturnType<typeof setup>, seqno: number) =>
     v4Request(seqno, s.now() + 60, [
@@ -1280,7 +1302,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
       }),
     );
 
-  it("never takes our own earlier, expired request for the seqno for our landed transfer's consumer (I1)", async () => {
+  it("never takes our own earlier, expired request for the seqno for our landed transfer's consumer", async () => {
     const s = setup();
     // Attempt A for seqno 0 never lands and expires; its rebuild B, for seqno 0 again, lands.
     const a = await s.pay();
@@ -1342,7 +1364,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     expect(await final(s, b)).toMatchObject({ included: true, success: true });
   });
 
-  it('never proves "not included" once the wallet was deleted and re-deployed after our transfer (C1)', async () => {
+  it('never proves "not included" once the wallet was deleted and re-deployed after our transfer', async () => {
     const s = setup();
     const theirs = await transfer(s, 0, 7n);
     s.h.node.submit(theirs.boc);
@@ -1384,7 +1406,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     });
   });
 
-  it('never proves "not included" for our slot 0 on a wallet deleted after our transfer (C1, I6)', async () => {
+  it('never proves "not included" for our slot 0 on a wallet deleted after our transfer', async () => {
     const s = setup();
     const ours = await transfer(s, 0);
     s.h.node.submit(ours.boc);
@@ -1579,7 +1601,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     expect(await final(s, ours)).toEqual({ included: false });
   });
 
-  it('binds the seqno and the state to the attested block and the account state (I2, I3, M7)', async () => {
+  it('binds the seqno and the state to the attested block and the account state', async () => {
     const s = setup();
     const ours = await s.pay();
     s.h.node.submit((await transfer(s, 0, 7n)).boc);
@@ -1665,7 +1687,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
-  it('decides nothing after a reset inside the window, even when ours never ran (F6-R21 b)', async () => {
+  it('decides nothing after a reset inside the window, even when ours never ran', async () => {
     const s = setup();
     s.h.node.submit((await transfer(s, 0, 7n)).boc);
     s.h.node.mine();
@@ -1683,7 +1705,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     });
   });
 
-  it('decides nothing while the indexer has not reached the attested block (d)', async () => {
+  it('decides nothing while the indexer has not reached the attested block', async () => {
     const s = setup();
     const ours = await s.pay();
     await s.tick(80);
@@ -1696,7 +1718,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     expect(await final(s, ours)).toEqual({ included: false });
   });
 
-  it('never takes a forged relayed request the chain ran for the consumer of our seqno (A23)', async () => {
+  it('never takes a forged relayed request the chain ran for the consumer of our seqno', async () => {
     const h = tonHarness();
     const proofs = createTonProofs(h.ctx);
     const from = testWallet('v5r1', TESTNET);
@@ -1753,7 +1775,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     ).toMatchObject({ included: true, success: true });
   });
 
-  it("reads an earlier history with the ruling's never-ran rule: any run, or no statuses, decides nothing (d)", async () => {
+  it('reads an earlier history with the never-ran rule: any run, or no statuses, decides nothing', async () => {
     const s = setup();
     const ours = await s.pay(); // never sent; the wallet has no transaction at all
     await s.tick(80);
@@ -1789,7 +1811,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
           };
         },
       );
-    // An earlier deposit that never ran the code: harmless (d).
+    // An earlier deposit that never ran the code: harmless.
     history(() => [row(500n, {})]);
     expect(await final(s, ours)).toEqual({ included: false });
     // The code ran, or the indexer does not say what the account was: nothing.
@@ -1829,7 +1851,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     });
   });
 
-  it("reads an active wallet's chain start by the code-never-ran rule (c, F6-R32 L1)", async () => {
+  it("reads an active wallet's chain start by the code-never-ran rule", async () => {
     const s = setup();
     s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
     s.h.node.mine();
@@ -1852,7 +1874,10 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     }
   });
 
-  describe("the window starts at the attempt's own chain time (F6-R29, review N1)", () => {
+  // The walk starts at the Attempt's recorded `validFrom`, less the clock tolerance,
+  // never at a window from the current config: a window that starts too late misses an
+  // earlier run of ours, and a reset then proves "not included" falsely.
+  describe("the window starts at the attempt's own chain time", () => {
     /**
      * Theirs takes seqno 0; ours (seqno 1, `ordering`) lands and pays at once; software
      * sharing the key deletes the wallet, which is re-funded and re-deployed at seqno 1 again.
@@ -1880,7 +1905,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
       return ours;
     }
 
-    it('never misses a reset because validForSeconds was lowered since the build (the reviewer residual)', async () => {
+    it('never misses a reset because validForSeconds was lowered since the build', async () => {
       const s = setup();
       const builtAt = s.now();
       // Built with a lifetime of 360 s; the network's validForSeconds is 60 now.
@@ -1989,7 +2014,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
       });
     });
 
-    it("stops an uninitialized wallet's walk at the window (N4)", async () => {
+    it("stops an uninitialized wallet's walk at the window", async () => {
       const s = setup();
       for (let i = 0; i < 40; i++) {
         s.h.node.inject(PAYER, s.from, 1_000_000n, beginCell().endCell());
@@ -2011,7 +2036,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
       expect(walked).toBe(1);
     });
 
-    it('reads a chain start inside the window by the code-never-ran rule, for an uninitialized wallet too (N4, F6-R32 L1)', async () => {
+    it('reads a chain start inside the window by the code-never-ran rule, for an uninitialized wallet too', async () => {
       const s = setup();
       s.h.node.inject(PAYER, s.from, GRAM, beginCell().endCell());
       s.h.node.mine();
@@ -2030,7 +2055,9 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     });
   });
 
-  it('decides a slot-0 proof near the first funding after an earlier bounced delivery (F6-R32 L1, the saved probe)', async () => {
+  // A rule that refused every earlier history left an uninitialized wallet with one
+  // earlier bounce undecided forever.
+  it('decides a slot-0 proof near the first funding after an earlier bounced delivery', async () => {
     const h = tonHarness();
     const proofs = createTonProofs(h.ctx);
     const from = testWallet('v4r2', TESTNET);
@@ -2070,7 +2097,7 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
     );
   });
 
-  it('decides nothing for a lifetime that is no time (M9)', async () => {
+  it('decides nothing for a lifetime that is no time', async () => {
     const s = setup();
     const ours = await s.pay();
     await s.tick(80);
@@ -2086,7 +2113,12 @@ describe('"not included" rests on the chain\'s own transactions (F6-R21)', () =>
   });
 });
 
-describe('the replay guard (F6-R34)', () => {
+// Resending the same signed bytes is not idempotent on TON: after our transfer lands,
+// software sharing the key can delete the wallet, a deposit re-funds it, and a resend
+// runs the message again. So the broadcaster runs the authenticated walk before every
+// send of stored bytes: when it finds ours, the bytes count as already known; after a
+// reset, or when it cannot decide, nothing is sent.
+describe('the replay guard', () => {
   /** Our first send, never sent: what the broadcaster hands the guard. */
   const stored = async (s: ReturnType<typeof setup>) => {
     const { hashNorm, ordering } = await s.pay();
@@ -2396,7 +2428,7 @@ describe('TON address history', () => {
         return { ...json, transactions: [{ ...newest, finality: 'pending' }, ...rest] };
       },
     );
-    // F6-R12: the newest is not final yet, but the page was full, so it leads on.
+    // The newest is not final yet, but the page was full, so it leads on.
     const first = await s.h.run(history.list(FRESH, { limit: 2 }));
     expect(first.items.map((tx) => tx.transfers[0]?.amount)).toEqual([2n]);
     expect(first.next).toMatch(/^\d+$/);
@@ -2408,7 +2440,7 @@ describe('TON address history', () => {
     expect(limits).toEqual(['2', '2', '1000']);
   });
 
-  it('refuses a cursor that is no u64 logical time before any request (lessons 19, 20)', async () => {
+  it('refuses a cursor that is no u64 logical time before any request', async () => {
     const s = setup();
     const history = createTonHistory(s.h.ctx);
     for (const cursor of ['18446744073709551616', '-1', '1'.repeat(100_000), '']) {

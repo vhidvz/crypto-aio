@@ -62,7 +62,7 @@ can start below `from`.
 Defined in: [src/core/observe/scanner.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L27)
 
 `'final'` emits finalized blocks only; a rollback can then still come from a provider
-inconsistency (spec §10). `'head'` follows the tip and may roll back within the window.
+inconsistency. `'head'` follows the tip and may roll back within the window.
 Default `'head'`. The mode is not stored with the cursor: resuming a head-mode cursor in
 final mode keeps the unfinalized blocks it already delivered.
 

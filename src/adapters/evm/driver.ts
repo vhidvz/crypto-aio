@@ -1,5 +1,5 @@
 /**
- * `EvmDriver` (spec §15): all EVM logic, over the `EvmClient` strategy. One factory serves
+ * `EvmDriver`: all EVM logic, over the `EvmClient` strategy. One factory serves
  * every EVM chain and network; each network's registry data configures it.
  */
 import type { ChainDriver, DriverFactory } from '../../core/driver/types';
@@ -20,7 +20,10 @@ import type { EvmClient } from './types';
 const probe = async (call: EndpointCall, method: string): Promise<bigint> =>
   quantity(await call.rpc<unknown>(method), method);
 
-/** R19: identity is the decimal `eth_chainId`; the height is `eth_blockNumber`. */
+/**
+ * Identity is the decimal `eth_chainId`, the form of the network's registry identity; the
+ * height is `eth_blockNumber`. Only endpoints whose identity matches feed health heights.
+ */
 function probes(expectedIdentity: string | undefined): HealthProbes {
   return {
     identity: async (call) => (await probe(call, 'eth_chainId')).toString(),
@@ -34,9 +37,11 @@ export function evmDriverFactory(
 ): DriverFactory {
   return {
     async create(ctx): Promise<ChainDriver> {
-      // Plan 7 D6: the handle's options too (`maxFeePerGas`); an unknown one is refused.
+      // The handle's options too (`maxFeePerGas`); an unknown one is refused, so a
+      // misspelt key never passes silently.
       const config = evmNetworkConfig(ctx.chain, ctx.network, ctx.options);
-      // M12: probes go on every transport this driver receives, before any traffic.
+      // Probes go on every transport this driver receives, before any traffic: an
+      // endpoint without them stays unverified.
       ctx.transport.setProbes(probes(ctx.network.identity));
       ctx.indexer?.setProbes(probes(ctx.network.identity));
       const client = makeClient(ctx.transport, config.chainId);
@@ -62,7 +67,8 @@ export function evmDriverFactory(
         blocks: createEvmBlocks(evm),
         ext: { evm: { getNonce: ext.evm.getNonce } },
         limits: () => ({ maxOutputs: 1 }),
-        // R34: a fresh SDK client on every call, never the driver's own.
+        // A fresh SDK client on every call, never the driver's own: a caller may mutate
+        // it (listeners, polling) without touching other handles.
         createNativeClient: () => client.createNative(),
       };
     },

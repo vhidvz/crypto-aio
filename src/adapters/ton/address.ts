@@ -1,16 +1,16 @@
 /**
- * Strict TON addresses (spec §6.4), SDK-free. Two forms are accepted, nothing else:
+ * Strict TON addresses, SDK-free. Two forms are accepted, nothing else:
  * - raw: `0:<64 hex>` or `-1:<64 hex>` (hex in either case; canonical is lower case);
  * - user-friendly: 48 base64 characters, either all standard (`+/`) or all URL-safe
  *   (`-_`) alphabet, decoding to tag · workchain · 32-byte hash · CRC16-XMODEM.
  * `@ton/core` is laxer (an unanchored hex test, any `parseInt` workchain, mixed base64
  * alphabets, workchain bytes other than 0x00/0xff, a thrown string on a bad tag), so every
- * address reaches the SDK only in the canonical raw form produced here (lesson 4).
+ * address reaches the SDK only in the canonical raw form produced here.
  * Canonical is the raw form; `display` keeps the caller's text; `variant` keeps only the
- * flag that decides bounce behaviour (spec §6.4; a raw address is bounceable, as in
- * `@ton/core`). The variant is part of the intent hash (P25-R13), so the encoding-only
- * flags (test-only, alphabet) stay out of it: every spelling of one recipient with the same
- * bounce flag hashes the same.
+ * flag that decides bounce behaviour (a raw address is bounceable, as in `@ton/core`).
+ * The variant is part of the intent hash and carries semantic fields only, so the
+ * encoding-only flags (test-only, alphabet) stay out of it: every spelling of one
+ * recipient with the same bounce flag hashes the same.
  */
 import type { AddressCodec, WalletOptions } from '../../core/driver/types';
 import { ValidationError } from '../../core/errors/error';
@@ -39,7 +39,10 @@ const BOUNCEABLE = 0x11;
 const NON_BOUNCEABLE = 0x51;
 const TEST_ONLY = 0x80;
 const HASH_BYTES = 32;
-/** Lesson 20: the longest form, `-1:` and 64 hex digits; anything longer is not decoded. */
+/**
+ * Untrusted text is capped before decoding: the longest form is `-1:` and 64 hex digits,
+ * and anything longer is not decoded.
+ */
 const MAX_ADDRESS_LENGTH = 67;
 
 /** CRC16-XMODEM (polynomial 0x1021, initial 0), as TEP-2 specifies for the checksum. */
@@ -154,7 +157,7 @@ export function createTonAddressCodec(options: TonAddressCodecOptions): AddressC
   const normalize = (value: string): NormalizedAddress => {
     const parsed = parse(value);
     const canonical = rawAddress(parsed.workchain, parsed.hash);
-    // P25-R13: only the semantic bounce flag is hashed. A raw address carries no flags and
+    // Only the semantic bounce flag is hashed. A raw address carries no flags and
     // is bounceable, as in `@ton/core`.
     return parsed.form === 'raw'
       ? { canonical, display: canonical, variant: { bounceable: true } }

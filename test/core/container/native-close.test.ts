@@ -4,8 +4,8 @@ import { native } from '../../../src/native';
 import { createFakeEnv } from '../../../src/testing/env';
 import { fakeManifest, fakePlugin } from '../../../src/testing/fake-plugin';
 
-describe('closing native clients (N6)', () => {
-  it('leaves no timer behind when a native client closes normally (M4)', async () => {
+describe('closing native clients', () => {
+  it('leaves no timer behind when a native client closes normally', async () => {
     const logs: unknown[][] = [];
     const env = await createFakeEnv({
       aio: { logger: createLogger('n6', (...record) => logs.push(record)) },

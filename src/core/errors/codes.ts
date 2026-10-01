@@ -13,7 +13,7 @@ interface CodeDefinition {
   readonly retryable: boolean;
 }
 
-/** Frozen (M1), with every entry: the table is shared by every error and every caller. */
+/** Frozen, with every entry: the table is shared by every error and every caller. */
 export const ERROR_CODES = deepFreezeCodes({
   CONFIG_INVALID: { category: 'config', retryable: false },
   DEPENDENCY_MISSING: { category: 'config', retryable: false },
@@ -48,7 +48,7 @@ export const ERROR_CODES = deepFreezeCodes({
   INVALID_TRANSITION: { category: 'state', retryable: false },
   NOT_FOUND: { category: 'state', retryable: false },
   SEQUENCE_BUSY: { category: 'state', retryable: true },
-  /** R27: the outcome may have happened (e.g. a delivered broadcast) but was not recorded. */
+  /** The outcome may have happened (e.g. a delivered broadcast) but was not recorded. */
   STATE_UNRECORDED: { category: 'state', retryable: true },
   SCANNER_REORG_TOO_DEEP: { category: 'state', retryable: false },
   TIMEOUT: { category: 'timeout', retryable: true },

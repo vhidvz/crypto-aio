@@ -264,7 +264,7 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
         unknownName('signer', Object.keys(effective.signers)),
       );
     }
-    // B107: `Signer` is an interface, so its scheme list is read once and checked.
+    // `Signer` is an interface, so its scheme list is read once and checked.
     const schemes = signerSchemes(signerId, instance);
     if (!chain.schemes.some((scheme) => schemes.includes(scheme))) {
       throw new ConfigError(
@@ -306,7 +306,7 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
       rpc: fingerprint(providers),
       idx: fingerprint(indexers),
       options,
-      // The transport's lag tolerance depends on it (R36); omitted when unset.
+      // The transport's lag tolerance depends on it; omitted when unset.
       maxLagBlocks,
     }),
   );

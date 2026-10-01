@@ -1,7 +1,8 @@
 /**
- * EVM provider presets (spec §11). Only URL templates verified against the provider's own
- * documentation are listed (Plan 2 appendix); a preset refuses every other network with
- * `CONFIG_INVALID`. Keyed URLs are `Secret`s, so the key never reaches logs or errors.
+ * EVM provider presets. Only URL templates verified against the provider's own
+ * documentation are listed; a preset refuses every other network with `CONFIG_INVALID`.
+ * `public` has no Ethereum entry: no operator-run public endpoint is documented for it.
+ * Keyed URLs are `Secret`s, so the key never reaches logs or errors.
  */
 import { ConfigError } from '../../core/errors/error';
 import type { PresetInput, ProviderPreset } from '../../core/registry/providers';

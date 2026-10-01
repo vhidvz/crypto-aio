@@ -1,6 +1,7 @@
 /**
- * The built-in Solana chain and its clusters (spec §2). Every value is verified against the
- * source named in the Plan 5 appendix, or is a documented library policy:
+ * The built-in Solana chain and its clusters. Every value is verified against a live node
+ * (`getGenesisHash` on each cluster's public endpoint) or a published source, or is a
+ * documented library policy:
  * - `identity`: the cluster's genesis hash (`getGenesisHash`), checked on every endpoint.
  * - `finality`: the `finalized` commitment.
  * - `defaultConfirmations: 1`: `waitForConfirmation` waits for inclusion at `confirmed` by

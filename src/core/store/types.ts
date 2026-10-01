@@ -24,7 +24,7 @@ export type OperationState =
   | 'expired'
   | 'abandoned';
 
-// The exported tables in this module are frozen (M1): they are shared by every caller.
+// The exported tables in this module are frozen: they are shared by every caller.
 
 export const TERMINAL_STATES: readonly OperationState[] = Object.freeze([
   'final',
@@ -241,10 +241,10 @@ export interface CreateResult {
  * - `list` returns matches in creation order.
  * - `ClearableField` is restricted on purpose: `clear` can never remove store-owned or
  *   identity fields (`attempts`, `claim`, `version`, `id`, ...) or `state`. An
- *   implementation reads the caller's `clear` list once (M6), so the list it validates is
+ *   implementation reads the caller's `clear` list once, so the list it validates is
  *   the list it applies.
  * - A key set to `undefined`, in an observation or a patch, is never persisted as a value
- *   such as `null` (P25-R14, R15). In a patch, the stored field keeps its value. In an
+ *   such as `null`. In a patch, the stored field keeps its value. In an
  *   observation, which replaces the whole record, the field reads back `undefined` (never
  *   `null`).
  */
@@ -253,16 +253,17 @@ export interface OperationStore {
   get(namespace: string, id: string): Promise<OperationRecord | null>;
   getByKey(namespace: string, idempotencyKey: string): Promise<OperationRecord | null>;
   /**
-   * Finds by an Attempt ref id or by an observed canonical tx hash. A27: the engine's
-   * AttemptRef guard (A15) relies on this read being read-your-writes consistent across
-   * every process that shares the store: it must see any `appendAttempt` that another store
+   * Finds by an Attempt ref id or by an observed canonical tx hash. The engine's
+   * AttemptRef guard, which refuses an Attempt whose ref another Operation of the
+   * namespace holds, relies on this read being read-your-writes consistent across every
+   * process that shares the store: it must see any `appendAttempt` that another store
    * instance committed before it was called (no read replica, no eventually consistent
    * index).
    */
   findByRef(namespace: string, refOrTxHash: string): Promise<OperationRecord | null>;
   /**
    * Compare-and-set on `expectedVersion`, optionally fenced. Every successful update bumps
-   * version, even when the patch changes no field (R29: the engine fences stale writers
+   * version, even when the patch changes no field (the engine fences stale writers
    * with such a no-effect update).
    */
   update(
@@ -285,8 +286,7 @@ export interface OperationStore {
    * Stores `observation` as the whole new record, version-checked. An optional field left
    * out of it or set to `undefined` (a cleared `reason`, `blockHash` or `blockHeight`)
    * reads back `undefined` (never `null`) afterwards. A store must replace the record, never
-   * merge fields into the old one. The monitor relies on this to clear stale values (A9,
-   * M9, P25-R14).
+   * merge fields into the old one. The monitor relies on this to clear stale values.
    */
   putObservation(
     observation: Omit<AttemptObservation, 'version'>,
@@ -366,7 +366,7 @@ export type DataClass =
 /**
  * Field classification so backing stores can apply encryption and retention per field.
  *
- * M7: `operation.reservation` and `attempt.ordering` are `sensitive` because an `inputs`
+ * `operation.reservation` and `attempt.ordering` are `sensitive` because an `inputs`
  * ordering lists UTXO outpoints, which tie a wallet to its coins. A nonce or seqno value
  * on its own is an operational identifier, like an Operation id: the `nonce.allocated`
  * and `nonce.gap` events carry it, and logs may too.
@@ -387,7 +387,7 @@ export const DATA_CLASSIFICATION: {
     outcome: 'operational',
     intent: 'sensitive',
     unsigned: 'sensitive',
-    // `inputs` orderings carry UTXO outpoints; nonce and seqno values are operational (M7).
+    // `inputs` orderings carry UTXO outpoints; nonce and seqno values are operational.
     reservation: 'sensitive',
     signerTickets: 'sensitive',
     partialSignatures: 'sensitive',
@@ -405,7 +405,7 @@ export const DATA_CLASSIFICATION: {
     id: 'operational',
     ref: 'sensitive-until-broadcast',
     raw: 'sensitive-until-broadcast',
-    // As `operation.reservation` (M7).
+    // As `operation.reservation`.
     ordering: 'sensitive',
     fee: 'sensitive',
     unsigned: 'sensitive',
@@ -425,7 +425,7 @@ export const DATA_CLASSIFICATION: {
     firstSeenAt: 'operational',
     lastSeenAt: 'operational',
     lastBroadcastAt: 'operational',
-    // A node's refusal or rejection text can carry addresses or amounts (R24).
+    // A node's refusal or rejection text can carry addresses or amounts.
     reason: 'sensitive',
     replacedBy: 'operational',
     version: 'operational',

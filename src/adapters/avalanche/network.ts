@@ -1,7 +1,8 @@
 /**
  * What the Avalanche driver needs from a network's registry entry and from the handle's
  * `options`, validated once when a driver is created, so bad data fails with
- * `CONFIG_INVALID` instead of misbehaving (lessons 10 and 14: every number is checked).
+ * `CONFIG_INVALID` instead of misbehaving: every number is checked, and a confirmation
+ * count must be a safe integer of at least 1.
  * SDK-free.
  */
 import { ConfigError } from '../../core/errors/error';
@@ -12,8 +13,8 @@ import { isId } from './cb58';
 import type { AvalancheVm } from './types';
 
 /**
- * Every capability of an Avalanche network. The Data API indexer is required (spec §15's
- * shape for UTXO chains): it locates a transaction's block and serves address history.
+ * Every capability of an Avalanche network. The Data API indexer is required: it locates
+ * a transaction's block and serves address history.
  */
 export const AVALANCHE_CAPABILITIES: readonly Capability[] = Object.freeze([
   'batch-transfer',
@@ -33,7 +34,10 @@ export interface AvalancheNetworkConfig {
   /** The chain's own id (CB58), written into every transaction. */
   readonly blockchainId: string;
   readonly avaxAssetId: string;
-  /** The id of the block at height 0: the endpoint identity (spec §11). */
+  /**
+   * The id of the block at height 0: the endpoint identity. An endpoint whose identity
+   * probe reports another id serves another network or chain, and is disabled.
+   */
   readonly genesisBlockId: string;
   /** Finality depth N: a block with N confirmations is final. */
   readonly confirmations: number;
@@ -53,10 +57,11 @@ export const OPTION_DEFAULTS = Object.freeze({
 const OPTION_KEYS = new Set(Object.keys(OPTION_DEFAULTS));
 
 /**
- * F3-R15: a network's capability overrides, checked against what the driver serves. The
- * handle advertises the manifest's capabilities plus `add`, minus `remove`, and the core
- * accepts what it advertises, so each name must be one the driver serves; the error names a
- * library capability, never a caller's unknown text.
+ * A network's capability overrides, checked against what the driver serves. The handle
+ * advertises the manifest's capabilities plus `add`, minus `remove`, and the core accepts
+ * what it advertises, so each name must be one the driver serves: otherwise the core
+ * accepts a request the driver cannot serve. The error names a library capability, never
+ * a caller's unknown text.
  */
 function checkCapabilities(network: NetworkInfo, fail: (reason: string) => never): void {
   const add: unknown = network.capabilities?.add ?? [];
@@ -130,7 +135,7 @@ export function avalancheNetworkConfig(
   }
 
   for (const key of Object.keys(options)) {
-    // F3-R16: the accepted names, never the caller's key (it may be a pasted secret).
+    // The accepted names, never the caller's key (it may be a pasted secret).
     if (!OPTION_KEYS.has(key)) fail(unknownName('option', OPTION_KEYS));
   }
   const merged: Readonly<Record<string, unknown>> = { ...OPTION_DEFAULTS, ...options };

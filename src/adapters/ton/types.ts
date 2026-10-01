@@ -1,11 +1,11 @@
 /**
- * SDK-free types of the TON family: the wallet identity (spec §9), the `ext.ton` API, fee
+ * SDK-free types of the TON family: the wallet identity, the `ext.ton` API, fee
  * details and overrides, and the transport tags. Nothing here imports an SDK, so the
  * composition root can export these types.
  */
 import type { CallOptions } from '../../core/transport/types';
 
-// R37: augment the registries through the package entry, as users do with 'crypto-aio'.
+// Augment the registries through the package entry, as users do with 'crypto-aio'.
 declare module '../../index' {
   interface ChainRegistry {
     ton: { family: 'ton'; network: 'mainnet' | 'testnet' };
@@ -18,7 +18,7 @@ declare module '../../index' {
 export type TonWalletVersion = 'v4r2' | 'v5r1';
 
 /**
- * The wallet contract behind a TON address (spec §9). Every field determines the address,
+ * The wallet contract behind a TON address. Every field determines the address,
  * so it is wallet config (`wallets.<name>.ton`), never a per-call option.
  * - v4r2: `subwalletId` defaults to `698983191 + workchain`.
  * - v5r1: `subwalletNumber` defaults to 0 (15 bits); `networkGlobalId` defaults to the
@@ -37,7 +37,7 @@ export type TonWalletIdentity =
       readonly networkGlobalId?: number;
     };
 
-/** `bc.ext.ton`: the TON family extension (spec §5.5). */
+/** `bc.ext.ton`: the TON family extension. */
 export interface TonExt {
   readonly ton: {
     /** The wallet's seqno at the latest masterchain block; 0 while it is not deployed. */
@@ -61,7 +61,7 @@ export interface TonFeeDetails {
   /** The forward fees of every outgoing internal message (full `fwd_fee`), counted once. */
   readonly forwardFee: bigint;
   /**
-   * Where `forwardFee` comes from (I3): the endpoint's emulation (`fwd_fee`, which follows
+   * Where `forwardFee` comes from: the endpoint's emulation (`fwd_fee`, which follows
    * the real action list), or, when it reports none, config params 24/25.
    */
   readonly forwardFeeSource: 'emulated' | 'computed';
@@ -83,12 +83,15 @@ export interface TonFeeOverride {
 }
 
 /**
- * The seqno ordering a TON build records (F6-R29): the signed seqno and `valid_until`, and
+ * The seqno ordering a TON build records: the signed seqno and `valid_until`, and
  * `validFrom`, the chain time the build ran at (the state's `sync_utime`, and never later
  * than the local clock), in seconds. The message cannot run in a block older than that, less
  * the builder's chain-time tolerance, so a proof that it was not included walks the
  * wallet's history back to there, whatever the network's `validForSeconds` is now. It is a
- * core `seqno` ordering with one more property, which the core stores whole.
+ * core `seqno` ordering with one more property, which the core stores whole. A store that
+ * drops `validFrom` costs only liveness (the proof and the replay guard fall back to a
+ * one-day window); one that moves it later could hide a wallet reset and prove "not
+ * included" falsely, and a `rebuild` would then pay twice.
  */
 export interface TonSeqnoOrdering {
   readonly kind: 'seqno';
@@ -98,9 +101,10 @@ export interface TonSeqnoOrdering {
 }
 
 /**
- * The transport tags every TON I/O call carries (R41). A caller's `quorumKey` replaces the
- * call's default consensus key (lesson 17): proofs attest a monotone predicate, such as
- * "my seqno is above n", instead of comparing data read at a moving head.
+ * The transport tags every TON I/O call carries, as the `ChainDriver` contract table sets
+ * them. A caller's `quorumKey` replaces the call's default consensus key: proofs attest a
+ * monotone predicate, such as "my seqno is above n", instead of comparing data read at a
+ * moving head.
  */
 export type TonCallTags = Pick<
   CallOptions,

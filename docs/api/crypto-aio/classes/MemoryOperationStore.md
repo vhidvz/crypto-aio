@@ -31,10 +31,10 @@ binding on every implementation (memory, Redis, Postgres, ...):
 - `list` returns matches in creation order.
 - `ClearableField` is restricted on purpose: `clear` can never remove store-owned or
   identity fields (`attempts`, `claim`, `version`, `id`, ...) or `state`. An
-  implementation reads the caller's `clear` list once (M6), so the list it validates is
+  implementation reads the caller's `clear` list once, so the list it validates is
   the list it applies.
 - A key set to `undefined`, in an observation or a patch, is never persisted as a value
-  such as `null` (P25-R14, R15). In a patch, the stored field keeps its value. In an
+  such as `null`. In a patch, the stored field keeps its value. In an
   observation, which replaces the whole record, the field reads back `undefined` (never
   `null`).
 
@@ -182,9 +182,10 @@ Defined in: [src/core/store/memory.ts:185](https://github.com/vhidvz/crypto-aio/
 
 Defined in: [src/core/store/memory.ts:234](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L234)
 
-Finds by an Attempt ref id or by an observed canonical tx hash. A27: the engine's
-AttemptRef guard (A15) relies on this read being read-your-writes consistent across
-every process that shares the store: it must see any `appendAttempt` that another store
+Finds by an Attempt ref id or by an observed canonical tx hash. The engine's
+AttemptRef guard, which refuses an Attempt whose ref another Operation of the
+namespace holds, relies on this read being read-your-writes consistent across every
+process that shares the store: it must see any `appendAttempt` that another store
 instance committed before it was called (no read replica, no eventually consistent
 index).
 
@@ -347,8 +348,7 @@ Defined in: [src/core/store/memory.ts:301](https://github.com/vhidvz/crypto-aio/
 Stores `observation` as the whole new record, version-checked. An optional field left
 out of it or set to `undefined` (a cleared `reason`, `blockHash` or `blockHeight`)
 reads back `undefined` (never `null`) afterwards. A store must replace the record, never
-merge fields into the old one. The monitor relies on this to clear stale values (A9,
-M9, P25-R14).
+merge fields into the old one. The monitor relies on this to clear stale values.
 
 #### Parameters
 
@@ -411,7 +411,7 @@ Defined in: [src/core/store/memory.ts:356](https://github.com/vhidvz/crypto-aio/
 Defined in: [src/core/store/memory.ts:258](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L258)
 
 Compare-and-set on `expectedVersion`, optionally fenced. Every successful update bumps
-version, even when the patch changes no field (R29: the engine fences stale writers
+version, even when the patch changes no field (the engine fences stale writers
 with such a no-effect update).
 
 #### Parameters

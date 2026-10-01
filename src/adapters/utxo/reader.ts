@@ -80,7 +80,7 @@ function p2pkhKeyHash(ctx: UtxoContext, from: string): Uint8Array | undefined {
 }
 
 /**
- * C2: whether `spender` is a miner-malleated copy of our p2pkh Attempt `refId`. Its raw
+ * Whether `spender` is a miner-malleated copy of our p2pkh Attempt `refId`. Its raw
  * bytes are read under `tags` and authenticate themselves: under a quorum the client keys
  * the answers on the txid they hash to, and it refuses bytes that do not hash to `spender`
  * (a retryable `PROVIDER_INCONSISTENT`). They are then canonicalized: equality with `refId`
@@ -117,7 +117,7 @@ export function chainReader(ctx: UtxoContext): ChainReader {
   const block = async (hash: string, height?: bigint): Promise<DriverBlock | null> => {
     const found = await esplora.block(hash, READ);
     if (!found) return null;
-    // I2: the block at a height must say it is at that height. A block's height never
+    // The block at a height must say it is at that height. A block's height never
     // changes, so only a lie or a server bug trips this; it decides nothing (retryable).
     if (height !== undefined && found.height !== height) {
       throw contradiction('the block at the height asked for is at another height');
@@ -147,23 +147,23 @@ export function chainReader(ctx: UtxoContext): ChainReader {
     getBlock: async (ref) => {
       if (typeof ref === 'string') {
         const id = ref.toLowerCase();
-        return isHash(id) ? block(id) : null; // I2: a malformed id never reaches a path
+        return isHash(id) ? block(id) : null; // a malformed id never reaches a path
       }
-      // No block is below 0 or beyond what a server can parse: never sent (I2).
+      // No block is below 0 or beyond what a server can parse: never sent.
       if (ref < 0n || ref > MAX_HEIGHT) return null;
       const hash = await esplora.blockHashAt(ref, READ);
       return hash ? block(hash, ref) : null;
     },
     getTransaction: async (raw) => {
       const id = raw.toLowerCase();
-      if (!isHash(id)) return null; // I2
+      if (!isHash(id)) return null; // a malformed id never reaches a path
       const tx = await esplora.tx(id, READ);
       return tx ? decodeTransaction(tx, config.address) : null;
     },
     observe: async (ref, ordering, from) => {
       const id = ref.id.toLowerCase();
-      if (!isHash(id)) return { seen: 'none' }; // I2
-      // Lesson 18, widened: a refusal on any of these reads decides nothing (retryable).
+      if (!isHash(id)) return { seen: 'none' }; // a malformed id never reaches a path
+      // A refusal on any of these reads decides nothing (retryable).
       return proofRead(async () => {
         // `/tx/:txid/status` answers `confirmed: false` for a transaction it does not know,
         // so visibility is read from `/tx/:txid`, which is a 404 then.
@@ -177,11 +177,11 @@ export function chainReader(ctx: UtxoContext): ChainReader {
         // Unknown, and a segwit or taproot txid cannot be malleated: nothing more to learn.
         if (!tx && legacy === undefined) return { seen: 'none' };
         const input = parseOutpoint(first);
-        // F3-R8: full-mode electrs keeps serving a reorg-dropped transaction as unconfirmed,
+        // Full-mode electrs keeps serving a reorg-dropped transaction as unconfirmed,
         // and `/status` cannot tell a mempool transaction from one only in its txstore. The
         // first input's spender can: chain spends of a disconnected block are gone, then the
         // mempool's are read. Ours: in a mempool. None: in no mempool of this index (the core
-        // rebroadcasts a dropped Attempt). Another: conflicted, or our malleated copy (C2).
+        // rebroadcasts a dropped Attempt). Another: conflicted, or our malleated copy.
         // Observed evidence only: an index still syncing can briefly say otherwise.
         const spend = await esplora.outspend(input.txid, input.vout, MONITOR);
         if (!spend.spent || spend.txid === undefined) return { seen: 'none' };
@@ -189,7 +189,7 @@ export function chainReader(ctx: UtxoContext): ChainReader {
           if (tx) return observationOf(tx.txid, tx.status);
           throw contradiction('the index spends with a transaction it does not know');
         }
-        // C2: our own p2pkh Attempt, mined as a malleated copy (observed evidence only; only
+        // Our own p2pkh Attempt, mined as a malleated copy (observed evidence only; only
         // `includedFinal`'s quorum path can make it terminal).
         if (
           legacy === undefined ||
@@ -208,7 +208,7 @@ export function chainReader(ctx: UtxoContext): ChainReader {
 /**
  * Confirmed history, newest first (Esplora pages of 25; the cursor is the last txid). A full
  * page, of any size a server chooses, may have a next one. The answer is filtered to the
- * address asked for (lesson 6): a server that dropped its filter never lists another
+ * address asked for: a server that dropped its filter never lists another
  * address's transaction, and every transaction served counts toward `limit`, so paging stays
  * bounded.
  */
@@ -272,7 +272,7 @@ export async function listUnspent(
     return false;
   });
   // Each value is in range (the parser), but no address holds more than every bitcoin: under
-  // coinSelection `all`, such a listing would build change above MAX_MONEY (review M1).
+  // coinSelection `all`, such a listing would build change above MAX_MONEY.
   if (utxos.reduce((sum, u) => sum + u.value, 0n) > MAX_MONEY) {
     throw malformed('unspent outputs worth more than every bitcoin');
   }

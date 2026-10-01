@@ -1,4 +1,4 @@
-// Lesson 20: records the length of every base58check decode the address codec performs,
+// Records the length of every base58check decode the address codec performs,
 // delegating to the real implementation, so a test can prove long input never reaches it.
 const mockBase58Decodes: number[] = [];
 jest.mock('@scure/base', () => {
@@ -72,7 +72,7 @@ describe('Tron addresses (SDK-free, strict)', () => {
     });
   });
 
-  it('refuses keys tronweb would hash as they are (R58)', () => {
+  it('refuses keys tronweb would hash as they are', () => {
     const full = secp256k1.getPublicKey(KEY, false);
     const offCurve = Uint8Array.from(full);
     offCurve[64] = (offCurve[64] ?? 0) ^ 1;
@@ -127,7 +127,7 @@ describe('Tron addresses (SDK-free, strict)', () => {
     expect(isTronAddress(KEY_HEX.toUpperCase())).toBe(true);
   });
 
-  it('never base58-decodes an input longer than an address (lesson 20)', () => {
+  it('never base58-decodes an input longer than an address', () => {
     mockBase58Decodes.length = 0;
     // 43 characters first: a regression then fails fast, before the quadratic 100,000.
     for (const value of [
@@ -181,7 +181,7 @@ describe('TRC-20 ABI (SDK-free)', () => {
       ),
     ).toBe('USDT');
     expect(() => decodeString('00'.repeat(64))).toThrow(TypeError);
-    // Final review M1 (lesson 20 addendum): a linear check, so an 8M-character answer reads
+    // A linear check, so an 8M-character answer reads
     // or is refused with the function's own TypeError, never a stack overflow.
     const word = (n: number) => n.toString(16).padStart(64, '0');
     const bytes = 4_194_304;
@@ -215,7 +215,7 @@ describe('TRC-20 ABI (SDK-free)', () => {
     expect(decodeTransferLog({ ...log, topics: log.topics.slice(0, 2) })).toBeNull();
   });
 
-  it('encodes a uint256 amount up to its maximum and refuses the rest (lesson 19)', () => {
+  it('encodes a uint256 amount up to its maximum and refuses the rest', () => {
     const max = (1n << 256n) - 1n;
     expect(encodeTransfer(RECIPIENT, max).slice(72)).toBe('f'.repeat(64));
     expect(decodeTransferCall(encodeTransfer(RECIPIENT, max))?.amount).toBe(max);
@@ -230,7 +230,7 @@ describe('TRC-20 ABI (SDK-free)', () => {
     }
   });
 
-  it('refuses long inputs by their length (lesson 20)', () => {
+  it('refuses long inputs by their length', () => {
     const data = encodeTransfer(RECIPIENT, 5n);
     expect(decodeTransferCall(`${data}${'0'.repeat(100_000 - data.length)}`)).toBeNull();
     expect(() => decodeUint256('0'.repeat(100_000))).toThrow(TypeError);
@@ -309,7 +309,7 @@ describe('tronwebCodec', () => {
     ).toThrow(expect.objectContaining({ code: 'INVALID_AMOUNT' }));
   });
 
-  it('encodes every integer field up to 2^53 - 1 and refuses the rest (lesson 19)', () => {
+  it('encodes every integer field up to 2^53 - 1 and refuses the rest', () => {
     const transfer = transferVector();
     const trigger = triggerVector();
     const MAX = Number.MAX_SAFE_INTEGER;
@@ -348,7 +348,7 @@ describe('tronwebCodec', () => {
     }
   });
 
-  it('keeps the independent encoder to non-negative int64 values (lesson 19)', () => {
+  it('keeps the independent encoder to non-negative int64 values', () => {
     const transfer = transferVector();
     const amount = (value: bigint): TronRawData => ({
       ...transfer,
@@ -363,7 +363,7 @@ describe('tronwebCodec', () => {
     }
   });
 
-  it('reads a TRX amount above 2^53 exactly from the bytes, where tronweb rounds (A12)', () => {
+  it('reads a TRX amount above 2^53 exactly from the bytes, where tronweb rounds', () => {
     const raw = VECTORS[0]?.raw;
     const contract = raw?.contract;
     if (!raw || contract?.type !== 'TransferContract') throw new Error('vector');
@@ -417,7 +417,7 @@ describe('tronwebCodec', () => {
     expect(tronwebCodec.readRaw(withAuths)).toEqual(huge);
   });
 
-  it('refuses two contracts even when both amounts are exact (M1)', () => {
+  it('refuses two contracts even when both amounts are exact', () => {
     const transfer = transferVector();
     const other = { ...transfer.contract, to: KEY_HEX, amount: 7n };
     const second = encodeRawData({
@@ -437,7 +437,7 @@ describe('tronwebCodec', () => {
     expect(transferAmount(`${VECTORS[0]?.rawHex ?? ''}${second}`)).toBeNull();
   });
 
-  it("reads raw bytes up to java-tron's 500 KiB and refuses longer hex before decoding (lesson 20)", () => {
+  it("reads raw bytes up to java-tron's 500 KiB and refuses longer hex before decoding", () => {
     const transfer = transferVector();
     const withMemo = (bytes: number): TronRawData => ({
       ...transfer,
@@ -459,7 +459,7 @@ describe('tronwebCodec', () => {
     );
   });
 
-  it('decodes strictly, but reads unbounded client metadata leniently (F4-R3)', () => {
+  it('decodes strictly, but reads unbounded client metadata leniently', () => {
     const transfer = transferVector();
     const hex = VECTORS[0]?.rawHex ?? '';
     const expiration = `40${varintHex(1_790_000_060_000n)}`;
@@ -493,8 +493,9 @@ describe('tronwebCodec', () => {
     }
   });
 
-  it('reads a real mainnet transfer whose timestamp is .NET ticks (F4-R3 I1)', () => {
-    // Block 86,615,431, txid a362c1f34d02…: see MAINNET_TICKS.
+  it('reads a real mainnet transfer whose timestamp is .NET ticks', () => {
+    // Block 86,615,431, txid a362c1f34d02…: see MAINNET_TICKS. Refusing it would stall
+    // every history or scan that reaches it.
     const v = MAINNET_TICKS;
     expect(toHex(sha256(fromHex(v.rawHex)))).toBe(v.txId);
     expect(v.timestamp > BigInt(Number.MAX_SAFE_INTEGER)).toBe(true);
@@ -506,7 +507,7 @@ describe('tronwebCodec', () => {
     );
   });
 
-  it("reads a call's TRX and TRC-10 value exactly, and never encodes one (Task 6)", () => {
+  it("reads a call's TRX and TRC-10 value exactly, and never encodes one", () => {
     const raw: TronRawData = {
       refBlockBytes: '0000',
       refBlockHash: '00'.repeat(8),

@@ -2,7 +2,7 @@
 
 # Interface: SequenceSource
 
-Defined in: [src/core/driver/types.ts:228](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L228)
+Defined in: [src/core/driver/types.ts:233](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L233)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:228](https://github.com/vhidvz/crypto-aio/
 
 > **latest**(`address`): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:232](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L232)
+Defined in: [src/core/driver/types.ts:237](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L237)
 
 Next nonce/seqno per the latest block.
 
@@ -34,7 +34,7 @@ Next nonce/seqno per the latest block.
 
 > **pending**(`address`): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:230](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L230)
+Defined in: [src/core/driver/types.ts:235](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L235)
 
 Next nonce/seqno including pending transactions.
 

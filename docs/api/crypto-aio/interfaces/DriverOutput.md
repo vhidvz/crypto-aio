@@ -6,7 +6,7 @@ Defined in: [src/core/model/intent.ts:42](https://github.com/vhidvz/crypto-aio/b
 
 One output as drivers receive it. `variant` is the recipient address's chain-specific
 meaning (`Address.variant`), present only when its chain has one, e.g. TON's
-`bounceable` flag (spec §6.4: the intent's `to` variant decides bounce behaviour).
+`bounceable` flag (the intent's `to` variant decides bounce behaviour).
 
 ## Properties
 

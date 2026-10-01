@@ -5,14 +5,14 @@ import { tronNetworkConfig, MAX_EXPIRATION_MS } from '../../../src/adapters/tron
 import { explorerUrl, type NetworkInfo } from '../../../src/core/model/chain';
 import { isSecret, reveal, secret } from '../../../src/core/secret/secret';
 
-/** Plan 4 Appendix A: each value read from its cited source. */
+/** Each network's block 0 id, read from its TronGrid endpoint (`getblockbynum`). */
 const GENESIS = {
   mainnet: '00000000000000001ebf88508a03865c71d452e25f4d51194196a1d22b6653dc',
   shasta: '0000000000000000de1aa88295e1fcf982742f773e0419c5a9c134c994a9059e',
   nile: '0000000000000000d698d4192c56cb6be724a558448e2684802de4d6cd8690dc',
 };
 
-describe('Tron chain data (verified, Appendix A)', () => {
+describe('Tron chain data (verified)', () => {
   it('pins each network identity (block 0) and its explorer', () => {
     expect(Object.keys(TRON_CHAIN.networks)).toEqual(['mainnet', 'shasta', 'nile']);
     for (const [id, genesis] of Object.entries(GENESIS)) {
@@ -49,7 +49,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
     );
   });
 
-  it('is deep-frozen (R56)', () => {
+  it('is deep-frozen', () => {
     expect(Object.isFrozen(TRON_CHAIN.networks.nile?.finality)).toBe(true);
     expect(Object.isFrozen(TRON_TOKENS[0]?.ref)).toBe(true);
     expect(Object.isFrozen(TRONGRID_HOSTS)).toBe(true);
@@ -67,7 +67,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
         aliases: ['USDT'],
       },
     ]);
-    // Task 2's codec test pins its hex form, 41a614f803b6fd780986a42c78ec9c7f77e6ded13c.
+    // The codec test pins its hex form, 41a614f803b6fd780986a42c78ec9c7f77e6ded13c.
     expect(TRON_TOKENS[0]?.ref).toMatchObject({
       contract: expect.stringMatching(/^T[1-9A-HJ-NP-Za-km-z]{33}$/),
     });
@@ -166,7 +166,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
     }
   });
 
-  it('refuses an unknown option key, listing the accepted names and echoing neither the key nor its value (lesson 10, F3-R16)', () => {
+  it('refuses an unknown option key, listing the accepted names and echoing neither the key nor its value', () => {
     const nile = TRON_CHAIN.networks.nile as NetworkInfo;
     for (const [key, value] of [
       ['expirationMS', 120_000],
@@ -192,7 +192,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
     }
   });
 
-  it('bounds the fee limit by maxFeeLimit: 100 TRX by default, options › network params › default (F4-R28)', () => {
+  it('bounds the fee limit by maxFeeLimit: 100 TRX by default, options › network params › default', () => {
     const nile = TRON_CHAIN.networks.nile as NetworkInfo;
     const own = (params: Record<string, unknown>): NetworkInfo => ({ ...nile, params });
     const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
@@ -210,7 +210,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
         maxFeeLimit: 5_000_000n,
       }).maxFeeLimit,
     ).toBe(5_000_000n);
-    // Sun as a bigint, from 1 to 2^53 − 1 (what the codec writes exactly, lesson 19); the
+    // Sun as a bigint, from 1 to 2^53 − 1 (what the codec writes exactly); the
     // message names where the value came from, never the value.
     const refusal = (network: NetworkInfo, options?: Record<string, unknown>): string => {
       let caught: unknown;
@@ -247,7 +247,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
     );
   });
 
-  it('refuses a capability override the Tron driver cannot serve (F4-R2 M3)', () => {
+  it('refuses a capability override the Tron driver cannot serve', () => {
     const nile = TRON_CHAIN.networks.nile as NetworkInfo;
     const withCapabilities = (capabilities: unknown): NetworkInfo => ({
       ...nile,
@@ -288,7 +288,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
         `Tron network tron:nile: capabilities.add: the Tron driver does not have '${capability}'`,
       );
     }
-    // F3-R16: only a core capability's fixed name is shown; anything else may be pasted.
+    // Only a core capability's fixed name is shown; anything else may be pasted.
     expect(refusal(withCapabilities({ add: ['acme:custom'] }))).toBe(
       'Tron network tron:nile: capabilities.add: the Tron driver does not have an unknown capability',
     );

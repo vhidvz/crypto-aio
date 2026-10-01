@@ -41,9 +41,9 @@ export interface FakeEnvOptions {
   readonly lifecycle?: LifecycleOptions;
   readonly hooks?: Hooks;
   /** Extra container options merged last. Never `clock`, `stores` or `transport` — those are
-   * always the generation-fenced values (N3), so this type excludes them; passing any of them
+   * always the generation-fenced values, so this type excludes them; passing any of them
    * would either fail to type-check or (if forced through) be silently overridden. Its
-   * `signers` are merged by name over the default signer, and every entry is fenced (N-B). */
+   * `signers` are merged by name over the default signer, and every entry is fenced. */
   readonly aio?: Omit<AioOptions, 'clock' | 'stores' | 'transport'>;
 }
 
@@ -53,9 +53,9 @@ export interface FakeEnv {
   readonly aio: CryptoAio;
   readonly bc: Blockchain<FakeChainId>;
   /**
-   * N-D: the raw, unfenced `Signer` instance — the same object across every `restart()`
+   * The raw, unfenced `Signer` instance — the same object across every `restart()`
    * (stateless, never rebuilt). The container itself holds a fenced PROXY of it (see
-   * `generationSigner`/N-B), not this object, so an identity assertion against the
+   * `generationSigner`), not this object, so an identity assertion against the
    * container's copy (e.g. `containerOf(aio).effective().signers[id]`) must compare `.id`,
    * never `===` against this field.
    */
@@ -121,10 +121,10 @@ export async function createFakeEnv(options: FakeEnvOptions = {}): Promise<FakeE
 async function assemble(shared: Shared, generation: Generation): Promise<FakeEnv> {
   const { clock, chain, chainId, endpoints, signer, stores, options } = shared;
   // A local signer is stateless (holds no per-process state), so it is shared across
-  // generations rather than rebuilt on every restart() — only its calls are fenced (N2). N-B:
-  // every entry of the FINAL merged map (the default signer plus `options.aio.signers`, the
-  // latter winning by name) is fenced, and it's applied after `...options.aio` below so an
-  // `aio.signers` map can never bypass the fence.
+  // generations rather than rebuilt on every restart() — only its calls are fenced.
+  // Every entry of the FINAL merged map (the default signer plus `options.aio.signers`,
+  // the latter winning by name) is fenced, and it's applied after `...options.aio` below
+  // so an `aio.signers` map can never bypass the fence.
   const fenced = fenceGeneration(
     {
       clock,
@@ -153,9 +153,9 @@ async function assemble(shared: Shared, generation: Generation): Promise<FakeEnv
     },
     ...(options.hooks ? { hooks: options.hooks } : {}),
     ...options.aio,
-    // N3: applied AFTER `options.aio`, so a generation's fencing can never be shadowed by it
+    // Applied AFTER `options.aio`, so a generation's fencing can never be shadowed by it
     // (its type already excludes clock/stores/transport — see `FakeEnvOptions.aio`; `signers`
-    // is the fenced merge above, N-B). `env.stores` below reads the same `genStores` object
+    // is the fenced merge above). `env.stores` below reads the same `genStores` object
     // handed to the container here, so they're guaranteed to be the same fenced instances.
     signers: fenced.signers,
     clock: fenced.clock,

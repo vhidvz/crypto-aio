@@ -1,7 +1,7 @@
 /**
  * A container on the scripted EVM node, for end-to-end tests. `restart()` builds a new
  * container over the same stores, node and clock, with the same semantics as
- * `createFakeEnv`'s (handoff R20, ruling R71): a plain restart leaves the old container
+ * `createFakeEnv`'s: a plain restart leaves the old container
  * running beside the new one, and `restart({ killPrevious: true })` first kills the old
  * generation through `fenceGeneration`, so every clock sleep, fetch, store and signer call it
  * has in flight or issues later never settles and nothing the "crashed" process started can

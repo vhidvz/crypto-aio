@@ -115,7 +115,7 @@ describe('Tron proofs', () => {
     ).toBe(true);
   });
 
-  it('proves failure, with its reason, for OUT_OF_ENERGY and for a token transfer with no Transfer log (lesson 7)', async () => {
+  it('proves failure, with its reason, for OUT_OF_ENERGY and for a token transfer with no Transfer log', async () => {
     const h = setup();
     h.node.deployToken(RECIPIENT, { symbol: 'FAKE', decimals: 6, mode: 'no-log' });
     h.node.mintToken(RECIPIENT, KEY_ADDRESS, 100n);
@@ -163,7 +163,7 @@ describe('Tron proofs', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it('proves expiry only from a solidified block at or past the expiration (D3)', async () => {
+  it('proves expiry only from a solidified block at or past the expiration', async () => {
     const h = setup();
     const ordering: OrderingData = {
       kind: 'expiry',
@@ -179,7 +179,7 @@ describe('Tron proofs', () => {
     );
   });
 
-  it('attests each fact at its own height; only a real disagreement decides nothing (lesson 17)', async () => {
+  it('attests each fact at its own height; only a real disagreement decides nothing', async () => {
     const h = setup();
     await h.mine(8); // head 8, solidified 5 on both endpoints
     const ordering: OrderingData = {
@@ -209,7 +209,7 @@ describe('Tron proofs', () => {
     });
   });
 
-  it('answers "not included" only after expiry is final and a scan from the reference block shows the transaction absent (lesson 16)', async () => {
+  it('answers "not included" only after expiry is final and a scan from the reference block shows the transaction absent', async () => {
     const h = setup();
     await h.mine(100);
     const unknown = 'ab'.repeat(32);
@@ -239,7 +239,7 @@ describe('Tron proofs', () => {
         .every((c) => c.tags.purpose === 'proof' && c.tags.quorum === 'proof'),
     ).toBe(true);
     // Without the reference block's height or its signed hash, or with a hash that is not
-    // 8 lower-case bytes, nothing bounds the scan from below: nothing is decided (F4-R14).
+    // 8 lower-case bytes, nothing bounds the scan from below: nothing is decided.
     const { refBlockHash, ...unhashed } = expiry;
     for (const ordering of [
       { kind: 'expiry', expiresAtMs: expiry.expiresAtMs },
@@ -272,7 +272,7 @@ describe('Tron proofs', () => {
     expect(h.calls.slice(before).filter((c) => c.path === '/jsonrpc')).toHaveLength(0);
   });
 
-  it('scans from the first block at or past the expiration, across missed slots (D3)', async () => {
+  it('scans from the first block at or past the expiration, across missed slots', async () => {
     const h = setup();
     await h.mine(2);
     const reference = h.node.head;
@@ -301,7 +301,7 @@ describe('Tron proofs', () => {
     const h = setup();
     // Genesis serves timestamp 0, as on java-tron, where it is 0 for real: no block can hold
     // a present-day expiration that references it (MAXIMUM_TIME_UNTIL_EXPIRATION), and the
-    // proof rightly scans none (F4-R19). The scripted node keeps genesis's slot time for its
+    // proof rightly scans none. The scripted node keeps genesis's slot time for its
     // rules, so reference a block with a real timestamp.
     await h.mine(1);
     const id = await submit(h, 'trx');
@@ -316,7 +316,7 @@ describe('Tron proofs', () => {
     });
   });
 
-  it('lets no lying endpoint end the negative scan early (F4)', async () => {
+  it('lets no lying endpoint end the negative scan early', async () => {
     const h = setup();
     await h.mine(1); // a reference with a real timestamp, as above
     const id = await submit(h, 'trx');
@@ -331,7 +331,7 @@ describe('Tron proofs', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it('starts the negative scan at the attested reference block, whatever the build-time head and clock claimed (F4-R12)', async () => {
+  it('starts the negative scan at the attested reference block, whatever the build-time head and clock claimed', async () => {
     const h = setup();
     await h.mine(1); // genesis serves no timestamp: never a reference
     const LEAD = 360_000; // beyond MAX_EXPIRATION_MS
@@ -405,7 +405,7 @@ describe('Tron proofs', () => {
     });
   });
 
-  it('never answers "not included" when a forged head named another block at its height (F4-R14)', async () => {
+  it('never answers "not included" when a forged head named another block at its height', async () => {
     const h = setup();
     await h.mine(2);
     const H = h.node.head;
@@ -557,7 +557,7 @@ describe('Tron proofs: the scan window', () => {
     expect(chain.reads).toEqual([65_546, 65_545]);
   });
 
-  it('stops the scan at the 24 h mark when the attested reference block is older than a day (F4-R19)', async () => {
+  it('stops the scan at the 24 h mark when the attested reference block is older than a day', async () => {
     const h = setup();
     // A build head that named a real block from long before (its true id, a fresh timestamp):
     // the reference is block 10, and the expiration is block 69,990's time. Only a block whose
@@ -605,7 +605,7 @@ describe('Tron proofs: the scan window', () => {
     expect(chain.reads).toEqual([20, 19, 18, 17, 16, 15, 14, 13, 12, 11]);
   });
 
-  it('bounds the search for the first block at the expiration, whatever head one endpoint claims (M1)', async () => {
+  it('bounds the search for the first block at the expiration, whatever head one endpoint claims', async () => {
     const h = setup();
     // One endpoint claims a latest solidified block dated far in the future.
     const truth = stubChain(70_000).header(69_999);
@@ -619,7 +619,7 @@ describe('Tron proofs: the scan window', () => {
     expect(chain.solidReads.length).toBeLessThan(40);
   });
 
-  it('finds the first block at the expiration in a few reads across a long halt (M1)', async () => {
+  it('finds the first block at the expiration in a few reads across a long halt', async () => {
     const h = setup();
     // The chain halted for a day right after block 69,990: the slot estimate from the top
     // lands a day of blocks too low, and a walk up from there would read them all.
@@ -631,7 +631,7 @@ describe('Tron proofs: the scan window', () => {
     expect(chain.solidReads.length).toBeLessThan(60);
   });
 
-  it('never takes a claimed latest block for the first block at the expiration (M1)', async () => {
+  it('never takes a claimed latest block for the first block at the expiration', async () => {
     const h = setup();
     const tx = 'ef'.repeat(32);
     const expiry = stubChain(70_000).header(69_990).timestamp;
@@ -653,7 +653,7 @@ describe('Tron proofs: the scan window', () => {
   });
 });
 
-describe('Tron proofs: a stored reference height that is not the signed reference (F4-R14)', () => {
+describe('Tron proofs: a stored reference height that is not the signed reference', () => {
   // The chain's top is block 70,009; the expiration is block 70,000's time. The signed
   // reference is block 4,454, while the build-time head claimed height 69,990
   // (4,454 + 65,536: the same low 16 bits). Blocks 69,981…69,990 check TaPoS against block
@@ -746,7 +746,7 @@ describe('Tron block source and history', () => {
     expect(await h.run(blocks.header(7n))).toBeNull();
   });
 
-  it('never asks for the transactions of block 0 (F4-R7)', async () => {
+  it('never asks for the transactions of block 0', async () => {
     const h = setup(['a']);
     const blocks = createTronBlocks(h.ctx);
     const genesis = await h.run(blocks.header(0n));
@@ -783,7 +783,7 @@ describe('Tron block source and history', () => {
     });
   });
 
-  it('lists a transaction in both phases only when a contract account is called by others (final review M4)', async () => {
+  it('lists a transaction in both phases only when a contract account is called by others', async () => {
     const h = setup(['a']);
     h.node.fund(RECIPIENT, 50_000_000n);
     const reader = createTronReader(h.ctx);

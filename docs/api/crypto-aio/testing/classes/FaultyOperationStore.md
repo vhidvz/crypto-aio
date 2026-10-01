@@ -170,9 +170,10 @@ Defined in: [src/testing/faulty-store.ts:45](https://github.com/vhidvz/crypto-ai
 
 Defined in: [src/testing/faulty-store.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L57)
 
-Finds by an Attempt ref id or by an observed canonical tx hash. A27: the engine's
-AttemptRef guard (A15) relies on this read being read-your-writes consistent across
-every process that shares the store: it must see any `appendAttempt` that another store
+Finds by an Attempt ref id or by an observed canonical tx hash. The engine's
+AttemptRef guard, which refuses an Attempt whose ref another Operation of the
+namespace holds, relies on this read being read-your-writes consistent across every
+process that shares the store: it must see any `appendAttempt` that another store
 instance committed before it was called (no read replica, no eventually consistent
 index).
 
@@ -311,8 +312,7 @@ Defined in: [src/testing/faulty-store.ts:90](https://github.com/vhidvz/crypto-ai
 Stores `observation` as the whole new record, version-checked. An optional field left
 out of it or set to `undefined` (a cleared `reason`, `blockHash` or `blockHeight`)
 reads back `undefined` (never `null`) afterwards. A store must replace the record, never
-merge fields into the old one. The monitor relies on this to clear stale values (A9,
-M9, P25-R14).
+merge fields into the old one. The monitor relies on this to clear stale values.
 
 #### Parameters
 
@@ -375,7 +375,7 @@ Defined in: [src/testing/faulty-store.ts:109](https://github.com/vhidvz/crypto-a
 Defined in: [src/testing/faulty-store.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L61)
 
 Compare-and-set on `expectedVersion`, optionally fenced. Every successful update bumps
-version, even when the patch changes no field (R29: the engine fences stale writers
+version, even when the patch changes no field (the engine fences stale writers
 with such a no-effect update).
 
 #### Parameters

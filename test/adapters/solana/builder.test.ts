@@ -140,7 +140,8 @@ describe('Solana fee estimates', () => {
     });
   });
 
-  it("honours an explicit price exactly, and varies every build's limit (D10, M3)", async () => {
+  // Identical transfers on one blockhash would sign the same bytes: one payment lost.
+  it("honours an explicit price exactly, and varies every build's limit", async () => {
     const h = setup();
     const custom = await h.run(
       h.builder.estimateFee(
@@ -184,7 +185,8 @@ describe('Solana fee estimates', () => {
   });
 });
 
-describe('the price ceiling: maxComputeUnitPrice (F5-R9 (b))', () => {
+// One endpoint's price and simulation must never spend the wallet in priority fees.
+describe('the price ceiling: maxComputeUnitPrice', () => {
   const MAX = 10_000_000n;
   const LIMIT = 1_400_000n;
   /** One READ endpoint lies about both inputs: a u64-sized price and a huge simulation. */
@@ -235,7 +237,7 @@ describe('the price ceiling: maxComputeUnitPrice (F5-R9 (b))', () => {
     }
   });
 
-  it('keeps the build variant at the bound, so identical transfers still differ (D10)', async () => {
+  it('keeps the build variant at the bound, so identical transfers still differ', async () => {
     const h = setup({ fees: [2n ** 64n - 1_000n] });
     const varied: SolanaContext = { ...h.ctx, nextVariant: variantCounter(1_024 * 999) };
     const fee = await h.run(createSolanaBuilder(varied).estimateFee(intent(), h.build));
@@ -294,7 +296,7 @@ describe('the price ceiling: maxComputeUnitPrice (F5-R9 (b))', () => {
     });
   });
 
-  it('refuses at build a fee outside the bound, the limit or its own priority fee (M2)', async () => {
+  it('refuses at build a fee outside the bound, the limit or its own priority fee', async () => {
     const h = setup();
     const fee = await h.run(h.builder.estimateFee(intent(), h.build));
     const d = fee.details as unknown as SolanaFeeDetails;
@@ -339,7 +341,7 @@ describe('the price ceiling: maxComputeUnitPrice (F5-R9 (b))', () => {
   });
 });
 
-describe('mint decimals under the proof quorum (board rule; final review M3)', () => {
+describe('mint decimals under the proof quorum', () => {
   it('reads the mint under the proof quorum in the estimate and the build, so one lagging endpoint decides nothing', async () => {
     const h = solanaHarness({ endpoints: ['a', 'b'], node: { prioritizationFees: [0] } });
     h.node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -377,7 +379,7 @@ describe('mint decimals under the proof quorum (board rule; final review M3)', (
   });
 });
 
-describe('refusals before signing (Review Focus 4)', () => {
+describe('refusals before signing', () => {
   it('refuses recipients that would lose the funds', async () => {
     const h = setup();
     h.node.setAccount(RECIPIENT, {
@@ -388,7 +390,7 @@ describe('refusals before signing (Review Focus 4)', () => {
       code: 'INVALID_INTENT',
       message: 'the recipient is a program-owned account',
     });
-    // M4: SPL to a program id, whose token account nobody could ever sign for.
+    // SPL to a program id, whose token account nobody could ever sign for.
     await expect(
       h.run(
         h.builder.estimateFee(
@@ -507,7 +509,7 @@ describe('refusals before signing (Review Focus 4)', () => {
   });
 });
 
-describe('funds checks (Review Focus 4)', () => {
+describe('funds checks', () => {
   it('keeps the sender at zero or above the rent-exempt minimum', async () => {
     const h = setup({ fund: 2_000_000n });
     const fee = await h.run(
@@ -583,7 +585,7 @@ describe('building and assembling', () => {
       memo: 'order-7',
     });
     const { fee, unsigned, signed } = await signedFor(h, request);
-    // F5-R9: the height comes with the blockhash and the slot of its block.
+    // The height comes with the blockhash and the slot of its block.
     expect(unsigned.ordering).toEqual({
       kind: 'expiry',
       lastValidHeight: h.node.head.height + 150n,
@@ -715,7 +717,9 @@ describe('the Solana broadcaster', () => {
     });
   });
 
-  it('refuses a signature failure a node claims for our valid bytes (lesson 21, F5-R15)', async () => {
+  // A lone endpoint that claims a bad signature may still relay the bytes: ending the
+  // Operation on its word would let a retry pay twice.
+  it('refuses a signature failure a node claims for our valid bytes', async () => {
     const h = setup();
     const { signed } = await signedFor(h, intent());
     const text =
@@ -796,7 +800,7 @@ describe('the Solana broadcaster', () => {
   });
 });
 
-// ---- Beyond the brief: what the Task 1–6 reviews carry into the builder ----------------
+// ---- Edge cases: the recipient binding, assembly, limits, classification, signals -----
 
 const u64Hex = (value: bigint): string => {
   const out = Buffer.alloc(8);
@@ -982,7 +986,7 @@ describe('the recipient binding (the landing guard trusts it)', () => {
       ...list.slice(2),
     ]);
     await expect(build(repriced, spl)).rejects.toMatchObject(MISMATCH);
-    // Task 7 M3: the recipient binding reads only the destination and the amount; the exact
+    // The recipient binding reads only the destination and the amount; the exact
     // match closes the rest of the token instruction (its mint, discriminator, decimals).
     const token = (edit: (ix: SolanaInstruction) => SolanaInstruction) =>
       compiling(h.ctx, (list) =>
@@ -1139,7 +1143,8 @@ describe('assembling exactly what the header requires', () => {
     });
   });
 
-  it("binds the Attempt's ordering to the signed message's blockhash (final review M1)", async () => {
+  // A blockhash changed after the build would misplace the expiry proof's window.
+  it("binds the Attempt's ordering to the signed message's blockhash", async () => {
     const h = setup();
     const fee = await h.run(h.builder.estimateFee(intent(), h.build));
     const unsigned = await h.run(h.builder.build(intent(), fee, h.build));
@@ -1270,7 +1275,7 @@ describe('the packet limit: 1,232 bytes (1,644 base64 characters)', () => {
       message: 'the transaction exceeds 1232 bytes',
     });
     // 1,233 bytes still fit 1,644 characters, so the bytes decide; longer text is refused
-    // before it is decoded (lesson 20). Nothing reaches the node.
+    // before it is decoded. Nothing reaches the node.
     expect(b64(raw)).toHaveLength(1_644);
     const refused = {
       kind: 'refused',
@@ -1323,7 +1328,7 @@ describe('the packet limit: 1,232 bytes (1,644 base64 characters)', () => {
   });
 });
 
-describe('broadcast classification reads the structured error first (Task 2 A2)', () => {
+describe('broadcast classification reads the structured error first', () => {
   it("classifies a preflight failure by its data, which only narrows 'rejected'", async () => {
     const h = setup();
     const { signed } = await signedFor(h, intent());
@@ -1362,7 +1367,7 @@ describe('fees that have no u64 value', () => {
   it('refuses an explicit price whose fee does not fit, and quotes one that does', async () => {
     const h = setup();
     const max = 2n ** 64n - 1n;
-    // The handle's highest bound (F5-R9 (b)), so every u64 price reaches these checks.
+    // The handle's highest bound, so every u64 price reaches these checks.
     const unbounded = createSolanaBuilder({
       ...h.ctx,
       config: { ...h.ctx.config, maxComputeUnitPrice: max },
@@ -1423,7 +1428,7 @@ describe("the caller's signal", () => {
     expect(h.node.served).toEqual([]);
   });
 
-  it('rides on each read, not only the first: aborted at read k, no read k + 1 (Task 7 M1)', async () => {
+  it('rides on each read, not only the first: aborted at read k, no read k + 1', async () => {
     const h = setup();
     const request = intent({
       asset: SPL,

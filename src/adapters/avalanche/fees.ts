@@ -1,5 +1,5 @@
 /**
- * Fee plans (spec §6.5). The X-Chain burns a fixed fee per transaction (`txFee`, 0.001 AVAX
+ * Fee plans. The X-Chain burns a fixed fee per transaction (`txFee`, 0.001 AVAX
  * on mainnet and Fuji), read under the proof quorum so one endpoint cannot raise it, and
  * every speed pays it. Since Etna the P-Chain prices gas: a transaction's fee is its gas
  * (complexity weighed by the network's weights) times the gas price. The price an endpoint
@@ -102,7 +102,10 @@ export async function feePlanOf(
   return { model: 'dynamic', price, state, weights };
 }
 
-/** The fee plan a stored estimate fixed (`details`), checked: it is our own plain data (R11). */
+/**
+ * The fee plan a stored estimate fixed (`details`), checked: it is our own plain data,
+ * read back from the caller's store, which keeps only plain values (`bigint` included).
+ */
 export function storedPlan(
   details: Readonly<Record<string, unknown>>,
   model: 'static' | 'dynamic',

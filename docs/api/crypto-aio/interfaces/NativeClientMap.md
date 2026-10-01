@@ -12,7 +12,7 @@ Defined in: [src/core/model/ids.ts:10](https://github.com/vhidvz/crypto-aio/blob
 
 > **@avalabs/avalanchejs**: [`AvalancheNativeClient`](../avalanche/interfaces/AvalancheNativeClient.md)
 
-Defined in: [src/adapters/avalanche/index.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/index.ts#L13)
+Defined in: [src/adapters/avalanche/index.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/index.ts#L14)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/adapters/avalanche/index.ts:13](https://github.com/vhidvz/crypt
 
 > **@solana/web3.js**: `Connection`
 
-Defined in: [src/adapters/solana/index.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/index.ts#L13)
+Defined in: [src/adapters/solana/index.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/index.ts#L14)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/adapters/ton/index.ts:13](https://github.com/vhidvz/crypto-aio/
 
 > **bitcoinjs-lib**: [`UtxoNativeClient`](../utxo/interfaces/UtxoNativeClient.md)
 
-Defined in: [src/adapters/utxo/index.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/index.ts#L13)
+Defined in: [src/adapters/utxo/index.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/index.ts#L14)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/adapters/utxo/index.ts:13](https://github.com/vhidvz/crypto-aio
 
 > **ethers**: `JsonRpcApiProvider`
 
-Defined in: [src/adapters/evm/index.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/index.ts#L14)
+Defined in: [src/adapters/evm/index.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/index.ts#L15)
 
 ***
 
@@ -72,7 +72,7 @@ Defined in: [src/testing/fake-plugin.ts:19](https://github.com/vhidvz/crypto-aio
 
 > **tronweb**: `TronWeb`
 
-Defined in: [src/adapters/tron/index.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/index.ts#L13)
+Defined in: [src/adapters/tron/index.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/index.ts#L14)
 
 ***
 
@@ -82,4 +82,4 @@ Defined in: [src/adapters/tron/index.ts:13](https://github.com/vhidvz/crypto-aio
 
 > **web3**: `Web3`
 
-Defined in: [src/adapters/evm/index.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/index.ts#L15)
+Defined in: [src/adapters/evm/index.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/index.ts#L16)

@@ -41,7 +41,7 @@ export function nodeTransport(
       clock,
       events,
       log: noopLogger,
-      // Lesson 1, R46: a fixed id and jitter, or the core falls back to random ones.
+      // A fixed id and jitter, or the core falls back to random ones.
       id: 'solana-test',
       random: () => 0.5,
       options: { fetch: node.fetch.fetch, baseDelayMs: 1, maxDelayMs: 2 },
@@ -51,7 +51,7 @@ export function nodeTransport(
   return { clock, node, transport, run, seen };
 }
 
-/** Records every JSON-RPC call's method, tags and params (lesson 1), passing it through. */
+/** Records every JSON-RPC call's method, tags and params, passing it through. */
 export function recording(transport: Transport) {
   const calls: { method: string; tags: SolanaCallTags; params: unknown }[] = [];
   const rpc = (

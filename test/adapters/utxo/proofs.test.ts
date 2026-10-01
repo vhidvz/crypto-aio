@@ -60,7 +60,7 @@ describe('proofs (lessons 14, 16, 17)', () => {
     expect(await h.run(h.proofs.blockHash(99n, 'latest'))).toBeNull();
   });
 
-  it('proves inclusion only at final depth; found but not final decides nothing (C1)', async () => {
+  it('proves inclusion only at final depth; found but not final decides nothing', async () => {
     const h = await withSpend();
     // In the mempool, no conflicting final spend: retryable, never "not included".
     await expect(
@@ -79,7 +79,7 @@ describe('proofs (lessons 14, 16, 17)', () => {
     expect(txRead?.options.quorumKey).toBeDefined();
   });
 
-  it('never answers "not included" for a transaction the indexer does not know (lesson 16)', async () => {
+  it('never answers "not included" for a transaction the indexer does not know', async () => {
     const h = await utxoHarness();
     const outpoint = h.node.fund(OWN.address, 100_000n);
     h.node.mine(6);
@@ -94,7 +94,7 @@ describe('proofs (lessons 14, 16, 17)', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
   });
 
-  it('answers "not included" only for a final spend by another transaction (C1)', async () => {
+  it('answers "not included" only for a final spend by another transaction', async () => {
     const h = await withSpend();
     h.node.mine(6);
     expect(
@@ -106,11 +106,11 @@ describe('proofs (lessons 14, 16, 17)', () => {
         h.proofs.includedFinal(ref('cd'.repeat(32)), inputs(h.outpoint), OWN.address),
       ),
     ).toEqual({ included: false });
-    // A segwit sender cannot be malleated, so no spender bytes are ever read for it (C2).
+    // A segwit sender cannot be malleated, so no spender bytes are ever read for it.
     expect(h.calls.some((c) => c.request.route === '/tx/:txid/hex')).toBe(false);
   });
 
-  it('proves a final malleated copy of our p2pkh Attempt included, under its own txid (C2)', async () => {
+  it('proves a final malleated copy of our p2pkh Attempt included, under its own txid', async () => {
     const h = await utxoHarness();
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
     const outpoint = h.node.fund(legacy.address, 100_000n);
@@ -149,7 +149,9 @@ describe('proofs (lessons 14, 16, 17)', () => {
     ).toEqual({ included: false });
   });
 
-  it('proves a final malleated copy included even while the transaction view puts ours in a block not yet final (C2 before D-T9-1, F3-R12 M3)', async () => {
+  // The copy check comes first: ours in a block while another transaction's final spend
+  // of its input exists is otherwise a contradiction that decides nothing.
+  it('proves a final malleated copy included even while the transaction view puts ours in a block not yet final', async () => {
     const h = await utxoHarness();
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
     const outpoint = h.node.fund(legacy.address, 100_000n);
@@ -251,7 +253,7 @@ describe('proofs (lessons 14, 16, 17)', () => {
   });
 });
 
-describe('every error on a proof read decides nothing (lesson 18, widened)', () => {
+describe('every error on a proof read decides nothing', () => {
   it('turns a CDN or proxy 4xx on a proof read into a retryable decide-nothing', async () => {
     const h = await withSpend();
     h.node.mine(6);
@@ -324,7 +326,7 @@ describe('block source', () => {
     });
   });
 
-  it('refuses a header whose block says another height (I2)', async () => {
+  it('refuses a header whose block says another height', async () => {
     const h = await utxoHarness();
     h.node.mine(2);
     const base = 'https://esplora-a.test/api';
@@ -344,8 +346,8 @@ describe('block source', () => {
   });
 });
 
-describe('"not included" needs an attested final spend by another transaction (C1, F3-R8)', () => {
-  it('decides nothing while the spend view names our own final txid and the transaction view does not (R76)', async () => {
+describe('"not included" needs an attested final spend by another transaction', () => {
+  it('decides nothing while the spend view names our own final txid and the transaction view does not', async () => {
     const h = await withSpend();
     h.node.mine(6);
     // A backend that never indexed our transaction, then one serving it from a stale store.
@@ -372,7 +374,7 @@ describe('"not included" needs an attested final spend by another transaction (C
     ).toMatchObject({ included: true, txHash: h.spent });
   });
 
-  it('keeps a transient own spend undecided: a stale outspend, then a fresh one naming ours (F3-R9)', async () => {
+  it('keeps a transient own spend undecided: a stale outspend, then a fresh one naming ours', async () => {
     const h = await withSpend();
     const undecided = { code: 'PROVIDER_UNAVAILABLE', retryable: true };
     const slot = (level: 'latest' | 'finalized') =>
@@ -467,7 +469,7 @@ describe('"not included" needs an attested final spend by another transaction (C
     ).toEqual({ included: false });
   });
 
-  it("decides nothing when a spender's bytes are junk or another transaction's (C2)", async () => {
+  it("decides nothing when a spender's bytes are junk or another transaction's", async () => {
     const h = await utxoHarness();
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
     const outpoint = h.node.fund(legacy.address, 100_000n);
@@ -501,7 +503,7 @@ describe('"not included" needs an attested final spend by another transaction (C
     expect(await included()).toMatchObject({ included: true, txHash: txidOfHex(copy) });
   });
 
-  it('compares block hashes as parsed, so a trailing newline never splits the quorum (F3-R12 M1)', async () => {
+  it('compares block hashes as parsed, so a trailing newline never splits the quorum', async () => {
     const h = await withSpend({ endpoints: ['a', 'b'] });
     h.node.mine(8);
     const serve = (edit: (text: string) => string) =>
@@ -532,7 +534,7 @@ describe('"not included" needs an attested final spend by another transaction (C
     });
   });
 
-  it('decides nothing when two endpoints disagree on any fact of the verdict (lesson 2)', async () => {
+  it('decides nothing when two endpoints disagree on any fact of the verdict', async () => {
     const h = await withSpend({ endpoints: ['a', 'b'] });
     h.node.mine(6);
     const other = 'cd'.repeat(32);
@@ -565,7 +567,7 @@ describe('"not included" needs an attested final spend by another transaction (C
     ).toEqual({ included: false });
   });
 
-  it('never sends a height outside the chain (I2)', async () => {
+  it('never sends a height outside the chain', async () => {
     const h = await utxoHarness();
     h.calls.length = 0;
     expect(await h.run(proofSource(h.ctx).blockHash(-1n, 'latest'))).toBeNull();
@@ -593,7 +595,7 @@ async function busyBlock(payeeAt = 7) {
   return { ...h, blocks, header, first, payee };
 }
 
-describe('block source: every page bound to its block (I2, lenient readers)', () => {
+describe('block source: every page bound to its block (lenient readers)', () => {
   it('refuses pages that repeat, drop or add a transaction', async () => {
     const h = await busyBlock();
     const second = `/block/${h.header.hash}/txs/25`;
@@ -707,7 +709,7 @@ describe('block source: every page bound to its block (I2, lenient readers)', ()
       h.run(h.blocks.transactions(h.header, { assets }));
     expect(await all([])).toHaveLength(31);
     expect(await all(['native'])).toHaveLength(31);
-    // A filter naming no native asset: nothing to page (F3-R12 M2).
+    // A filter naming no native asset: nothing to page.
     h.calls.length = 0;
     expect(await all([{ standard: 'erc20', contract: 'x' }])).toEqual([]);
     expect(h.calls.map((c) => c.request.route)).not.toContain('/block/:hash/txs/:start');

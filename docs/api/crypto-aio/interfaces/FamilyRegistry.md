@@ -12,7 +12,7 @@ Defined in: [src/core/model/ids.ts:9](https://github.com/vhidvz/crypto-aio/blob/
 
 > **avalanche**: `object`
 
-Defined in: [src/adapters/avalanche/types.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L16)
+Defined in: [src/adapters/avalanche/types.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L17)
 
 #### ext
 

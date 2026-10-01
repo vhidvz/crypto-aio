@@ -15,7 +15,7 @@ import {
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
 
-/** Account data read from devnet (Plan 5 appendix): the devnet USDC mint and a holder. */
+/** Account data read from devnet: the devnet USDC mint and a holder. */
 const USDC_MINT_DATA =
   'AQAAAOuFRM+RGCd6ljLpmVBmZRu/sUCLhXPrwC5T76tavw4Lh9zMk85BBuIGAQEAAACoBjP/Bn2I36XUNXv0TibOzM8IZmiBA8a6YJ+kTBjSCA==';
 const TOKEN_ACCOUNT_DATA =
@@ -87,7 +87,7 @@ describe('Solana instructions, as devnet encodes them', () => {
     expect(hex(transfer.data)).toBe('0200000000ca9a3b00000000');
   });
 
-  it('refuses a value that does not fit its field instead of wrapping it (lesson 19)', () => {
+  it('refuses a value that does not fit its field instead of wrapping it', () => {
     const [a, b] = [SYSTEM_PROGRAM, TOKEN_PROGRAM];
     // Fixed text that never contains the value: INVALID_AMOUNT for a u64, else INVALID_INTENT.
     const refused = (bits: 8 | 32 | 64, build: () => unknown) =>

@@ -1,6 +1,6 @@
 /**
  * What the Tron driver needs from a network's registry entry and the handle's options,
- * validated once when a driver is created (M3, lesson 10): a custom network or option with
+ * validated once when a driver is created: a custom network or option with
  * inconsistent data fails with `CONFIG_INVALID` instead of misbehaving.
  */
 import { ConfigError } from '../../core/errors/error';
@@ -23,8 +23,8 @@ export const TRON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
 export const DEFAULT_EXPIRATION_MS = 60_000;
 export const MIN_EXPIRATION_MS = 10_000;
 /**
- * The longest expiration window this driver builds (D3). The negative inclusion proof does
- * not depend on it: it scans from the reference block to the signed expiration (F4-R12).
+ * The longest expiration window this driver builds. The negative inclusion proof does
+ * not depend on it: it scans from the reference block to the signed expiration.
  */
 export const MAX_EXPIRATION_MS = 300_000;
 /**
@@ -38,7 +38,7 @@ export const TAPOS_WINDOW = 65_536n;
 export const DEFAULT_ENERGY_MARGIN_PERCENT = 20;
 /**
  * The largest fee limit a TRC-20 transfer carries unless the handle's `maxFeeLimit` option
- * allows more: 100 TRX, in sun (F4-R28). The network's own maximum (`getMaxFeeLimit`, 15,000
+ * allows more: 100 TRX, in sun. The network's own maximum (`getMaxFeeLimit`, 15,000
  * TRX on mainnet), the energy price and the simulated energy all come from one endpoint's
  * answer, and a call that fails through an INVALID opcode (a Solidity `assert`) burns its
  * whole fee limit, so this operator bound is the only one no node can raise. It covers a
@@ -46,9 +46,9 @@ export const DEFAULT_ENERGY_MARGIN_PERCENT = 20;
  * included.
  */
 export const DEFAULT_MAX_FEE_LIMIT = 100_000_000n;
-/** The largest `fee_limit` the codec writes exactly (lesson 19): 2^53 − 1 sun. */
+/** The largest `fee_limit` the codec writes exactly: 2^53 − 1 sun. */
 export const MAX_ENCODABLE_FEE_LIMIT = BigInt(Number.MAX_SAFE_INTEGER);
-/** Memo bytes (UTF-8) accepted in `raw_data.data` (D9). */
+/** Memo bytes (UTF-8) accepted in `raw_data.data`. */
 export const MAX_MEMO_BYTES = 256;
 
 export interface TronNetworkConfig {
@@ -56,14 +56,14 @@ export interface TronNetworkConfig {
   readonly identity: string;
   readonly expirationMs: number;
   readonly energyMarginPercent: number;
-  /** The largest fee limit a transfer may carry, in sun: from 1 to 2^53 − 1 (F4-R28). */
+  /** The largest fee limit a transfer may carry, in sun: from 1 to 2^53 − 1. */
   readonly maxFeeLimit: bigint;
 }
 
 /**
  * The only driver options (`HandleOptions.options`) the Tron driver reads. Any other key is
  * refused, so a typo such as `expirationMS` fails loudly instead of leaving the default in
- * place (lesson 10).
+ * place.
  */
 const OPTION_KEYS: readonly string[] = Object.freeze([
   'expirationMs',
@@ -71,21 +71,22 @@ const OPTION_KEYS: readonly string[] = Object.freeze([
   'maxFeeLimit',
 ]);
 /**
- * A capability from the network entry as an error may show it (F3-R16): a core capability's
+ * A capability from the network entry as an error may show it: a core capability's
  * name is a fixed word, so it is shown; any other text could be a pasted secret, so it is not.
  */
 const named = (key: unknown): string =>
   knownName(key, KNOWN_CAPABILITIES, 'an unknown capability');
 
 /**
- * F4-R2 M3: a network's capability overrides, checked against what the Tron driver serves,
+ * A network's capability overrides, checked against what the Tron driver serves,
  * as `evmNetworkConfig` checks the EVM ones. The handle advertises the manifest's
  * capabilities plus `add`, minus `remove` (the core's order), so that set must stay within
  * the driver's own: no `replace-fee` or `cancel` (no replacement), no `fee-market-1559` (the
  * `tron` fee model), no `finality-tag` (solidified finality), no `batch-transfer`.
  * `address-history` comes with an indexer, never from the network, and `expiry` is how every
- * Tron transaction is ordered. A removal must name a Tron capability, so a typo fails instead
- * of leaving the capability advertised (lesson 10).
+ * Tron transaction is ordered: removing it would disable the proof that an Attempt
+ * expired. A removal must name a Tron capability, so a typo fails instead of leaving the
+ * capability advertised.
  */
 function checkCapabilities(network: NetworkInfo, fail: (reason: string) => never): void {
   const add: unknown = network.capabilities?.add ?? [];
@@ -131,7 +132,7 @@ function integerIn(
   return value as number;
 }
 
-/** A fee-limit bound: a bigint of sun from 1 to what the codec writes exactly (lesson 19). */
+/** A fee-limit bound: a bigint of sun from 1 to what the codec writes exactly. */
 function feeLimitBound(
   value: unknown,
   name: string,
@@ -163,14 +164,14 @@ export function tronNetworkConfig(
   if (network.feeModel !== 'tron') fail(`its fee model must be 'tron'`);
   if (network.finality.kind !== 'solidified') fail(`its finality must be 'solidified'`);
   checkCapabilities(network, fail);
-  // F3-R16: the refusal lists the accepted names and shows neither the caller's key, which
+  // The refusal lists the accepted names and shows neither the caller's key, which
   // may be a pasted secret, nor its value.
   for (const key of Object.keys(options)) {
     if (!OPTION_KEYS.includes(key)) {
       fail(unknownName('option', OPTION_KEYS));
     }
   }
-  // F4-R28: the handle's option, else the network entry's own, else 100 TRX. A network
+  // The handle's option, else the network entry's own, else 100 TRX. A network
   // value is checked even where an option overrides it, so a bad entry fails loudly.
   const ownBound = network.params?.maxFeeLimit;
   const networkBound =

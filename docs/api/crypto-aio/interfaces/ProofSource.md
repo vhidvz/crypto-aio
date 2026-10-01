@@ -2,10 +2,10 @@
 
 # Interface: ProofSource
 
-Defined in: [src/core/driver/types.ts:190](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L190)
+Defined in: [src/core/driver/types.ts:192](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L192)
 
 Finalized-state checks behind `proven` verdicts; implementations use quorum reads.
-Lesson 18: only a definitive negative proof answers "no". Every other RPC error (state or
+Only a definitive negative proof answers "no". Every other RPC error (state or
 history not available, pruned data, indexing in progress, a non-definitive error) throws
 a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, which decides nothing.
 
@@ -17,9 +17,9 @@ a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, which decides nothing.
 
 > **blockHash**(`height`, `level`): `Promise`\<`string` \| `null`\>
 
-Defined in: [src/core/driver/types.ts:225](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L225)
+Defined in: [src/core/driver/types.ts:230](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L230)
 
-R33: the hash of the block at `height` on the chain at `level`, or `null` when there is
+The hash of the block at `height` on the chain at `level`, or `null` when there is
 none yet (above the head, or above the finalized height for `'finalized'`). Confirms
 the monitor's orphan decisions and the scanner's rollback and TOO_DEEP verdicts.
 
@@ -45,7 +45,7 @@ the monitor's orphan decisions and the scanner's rollback and TOO_DEEP verdicts.
 
 > **expired**(`ordering`): `Promise`\<`boolean`\>
 
-Defined in: [src/core/driver/types.ts:219](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L219)
+Defined in: [src/core/driver/types.ts:224](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L224)
 
 Whether expiry has passed per finalized state (expiry/seqno models; false otherwise).
 
@@ -67,7 +67,7 @@ Whether expiry has passed per finalized state (expiry/seqno models; false otherw
 
 > **finalizedHead**(): `Promise`\<\{ `hash`: `string`; `height`: `bigint`; `timestamp?`: `number`; \}\>
 
-Defined in: [src/core/driver/types.ts:191](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L191)
+Defined in: [src/core/driver/types.ts:193](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L193)
 
 #### Returns
 
@@ -81,7 +81,7 @@ Defined in: [src/core/driver/types.ts:191](https://github.com/vhidvz/crypto-aio/
 
 > **includedFinal**(`ref`, `ordering`, `from`): `Promise`\<\{ `included`: `false`; \} \| \{ `blockHash`: `string`; `blockHeight`: `bigint`; `included`: `true`; `reason?`: `string`; `success`: `boolean`; `txHash`: `string`; \}\>
 
-Defined in: [src/core/driver/types.ts:196](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L196)
+Defined in: [src/core/driver/types.ts:198](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L198)
 
 #### Parameters
 
@@ -109,7 +109,7 @@ Defined in: [src/core/driver/types.ts:196](https://github.com/vhidvz/crypto-aio/
 
 > **slotConsumed**(`ordering`, `from`, `level`): `Promise`\<`boolean`\>
 
-Defined in: [src/core/driver/types.ts:213](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L213)
+Defined in: [src/core/driver/types.ts:218](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L218)
 
 Whether the ordering slot (nonce/seqno/an input) is consumed by ANY transaction at `level`.
 

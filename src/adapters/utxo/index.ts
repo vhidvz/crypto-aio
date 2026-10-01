@@ -7,7 +7,8 @@
  */
 import type { UtxoNativeClient } from './driver';
 
-// R37: through the package entry. SDK types appear only here (spec §5.6).
+// Through the package entry, as users augment 'crypto-aio'. SDK types appear only in this
+// subpath's `NativeClientMap` augmentation, never in the main entry's types.
 declare module '../../index' {
   interface NativeClientMap {
     'bitcoinjs-lib': UtxoNativeClient;

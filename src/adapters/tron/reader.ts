@@ -40,7 +40,7 @@ const TX_ID = /^[0-9a-f]{64}$/;
 /** java-tron's block heights are `long`s. */
 const INT64_MAX = 2n ** 63n - 1n;
 
-/** A lower-case transaction or block id, or `null` (lesson 20: bounded before any work). */
+/** A lower-case transaction or block id, or `null` (length checked before any work). */
 function idOf(value: string): string | null {
   if (typeof value !== 'string' || value.length !== 64) return null;
   const id = value.toLowerCase();
@@ -48,10 +48,11 @@ function idOf(value: string): string | null {
 }
 
 /**
- * Token metadata is read under the proof quorum (M4, the board's Plan 4 Task 4 note): the
- * core caches a token's decimals, symbol and "no such token" for the container's life, so one
- * lagging or buggy endpoint must not decide them. The constant call's quorum key compares the
- * verdict only (Task 4); endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`.
+ * Token metadata is read under the proof quorum: the core caches a token's decimals,
+ * symbol and "no such token" for the container's life, so one lagging or buggy endpoint
+ * must not decide them. The constant call's quorum key compares the verdict only, since
+ * honest nodes never agree on its whole answer; endpoints that disagree throw retryable
+ * `PROVIDER_INCONSISTENT`.
  */
 const METADATA: TronCallTags = { ...READ, quorum: 'proof' };
 
@@ -75,7 +76,7 @@ export function trc20Contract(ref: AssetRef): string {
 }
 
 /**
- * A constant call on a token (lesson 13, R66): a revert, a VM failure or no contract is the
+ * A constant call on a token: a revert, a VM failure or no contract is the
  * token's own permanent problem (`ASSET_RESOLUTION`, cached by the core); node refusals stay
  * retryable and every other error propagates unchanged. "No contract" is a node's text, so
  * it counts only once `/wallet/getcontract` confirms it structurally with the same tags; a
@@ -125,9 +126,9 @@ export async function trc20Balance(
 }
 
 /**
- * An included transaction's observation. `guard` applies the verdict guard (lesson 7) to our
- * own Attempts; without it (a status lookup by id, `ordering === undefined`), the chain's own
- * view is reported (lesson 15).
+ * An included transaction's observation. `guard` applies the verdict guard (on-chain
+ * evidence that value moved) to our own Attempts; without it (a status lookup by id,
+ * `ordering === undefined`), the chain's own view is reported.
  */
 export async function observeIncluded(
   ctx: TronContext,
@@ -258,7 +259,7 @@ export function createTronReader(ctx: TronContext): ChainReader {
   };
 }
 
-/** `ext.tron` (spec §5.5). */
+/** `ext.tron`, the Tron family extension. */
 export function createTronExt(ctx: TronContext): TronExt {
   return {
     tron: {

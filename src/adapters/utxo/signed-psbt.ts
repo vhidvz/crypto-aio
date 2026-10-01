@@ -1,13 +1,13 @@
 /**
- * The reader of a PSBT signed elsewhere (A6, spec §15): a cold signer's or a coordinator's
- * copy of our PSBT is untrusted input. It is capped before decoding and parsed strictly
- * (lesson 20). What could change the spend is refused: another unsigned transaction, a
- * changed previous output, redeem script or internal key, an input script path, or a
- * foreign, cross-scheme or other-sighash signature. What cannot change it is ignored: key
- * origins, the output scripts a coordinator adds for change detection, proprietary keys and
- * PSBT version 0. Only signature bytes are taken, and the core verifies them against the
- * stored requests (R9). Every refusal is `ValidationError('INVALID_INTENT')` with a fixed
- * text. Synchronous and I/O-free.
+ * The reader of a PSBT signed elsewhere: a cold signer's or a coordinator's copy of our
+ * PSBT is untrusted input. It is capped before decoding and parsed strictly. What could
+ * change the spend is refused: another unsigned transaction, a changed previous output,
+ * redeem script or internal key, an input script path, or a foreign, cross-scheme or
+ * other-sighash signature. What cannot change it is ignored: key origins, the output
+ * scripts a coordinator adds for change detection, proprietary keys and PSBT version 0.
+ * Only signature bytes are taken, and the core verifies them against the stored requests.
+ * Every refusal is `ValidationError('INVALID_INTENT')` with a fixed text. Synchronous and
+ * I/O-free.
  */
 import { ValidationError } from '../../core/errors/error';
 import { equalBytes, toHex } from '../../core/util/bytes';
@@ -43,13 +43,14 @@ const changedError = (): ValidationError =>
 const SIGNED_GROWTH_PER_MAP = 4_096;
 /**
  * Room for the previous transaction a coordinator may add to a non-taproot input of ours
- * that lacks one (M15 off): a standard transaction's largest stripped size
+ * that lacks one (`nonWitnessUtxo` off): a standard transaction's largest stripped size
  * (`MAX_STANDARD_TX_WEIGHT` / 4).
  */
 const ADDED_PREVIOUS_TX = 100_000;
 /**
- * F3-R7: what coordinators may add in all, whatever the number of inputs: one block
- * (Bitcoin Core's `MAX_BLOCK_SERIALIZED_SIZE`), so the decoding it costs stays bounded.
+ * What coordinators may add in all, whatever the number of inputs: one block (Bitcoin
+ * Core's `MAX_BLOCK_SERIALIZED_SIZE`), so the decoding it costs stays bounded. Unbounded,
+ * 160 inputs with `nonWitnessUtxo` off took 8 s of synchronous decoding.
  */
 const ADDED_PREVIOUS_TXS = 4_000_000;
 
@@ -179,7 +180,7 @@ function globalUnsignedTx(bytes: Uint8Array): Uint8Array | undefined {
 }
 
 /**
- * Canonical base64 (the standard alphabet, padded), or `undefined`. F3-R7: Node's decoder is
+ * Canonical base64 (the standard alphabet, padded), or `undefined`. Node's decoder is
  * linear and far faster than a pure-JS one (a few milliseconds for 4 million characters,
  * against about 300), but it skips what it cannot read, so the bytes count only when they
  * encode back to exactly `text`.
@@ -192,7 +193,7 @@ function canonicalBase64(text: string): Uint8Array | undefined {
 }
 
 /**
- * A PSBT signed elsewhere, parsed strictly: capped before decoding (lesson 20), ASCII
+ * A PSBT signed elsewhere, parsed strictly: capped before decoding, ASCII
  * whitespace trimmed at the ends, canonical base64 (the SDK's decoder skips junk), and no
  * bytes after its maps.
  */
@@ -215,7 +216,7 @@ export function parseSigned(
   }
   const bytes = canonicalBase64(trimAsciiSpace(text));
   if (!bytes) throw signedPsbtError('does not decode');
-  // F3-R24 F2: the unsigned transaction it carries must be ours byte for byte before bitcoinjs
+  // The unsigned transaction it carries must be ours byte for byte before bitcoinjs
   // decodes it (its decoder is quadratic in the inputs and outputs).
   const unsigned = globalUnsignedTx(bytes);
   if (!unsigned) throw signedPsbtError('does not decode');
@@ -267,11 +268,11 @@ function assertPreviousTx(
   outpoint: { readonly txid: string; readonly vout: number },
 ): void {
   if (isTaproot(stored)) throw changedError();
-  // F3-R7: our own previous transaction, byte for byte, which `buildTx` checked: no decode.
+  // Our own previous transaction, byte for byte, which `buildTx` checked: no decode.
   if (stored.nonWitnessUtxo !== undefined && equalBytes(bytes, stored.nonWitnessUtxo)) {
     return;
   }
-  // F3-R24 F2: read in one linear pass, its txid hashed from the bytes (bitcoinjs' decoder is
+  // Read in one linear pass, its txid hashed from the bytes (bitcoinjs' decoder is
   // quadratic), and capped at the million bytes without witness a chain can hold.
   const prev = readTx(bytes);
   if (!prev) throw signedPsbtError('does not decode');

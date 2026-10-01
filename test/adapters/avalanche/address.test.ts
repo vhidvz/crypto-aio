@@ -46,6 +46,7 @@ describe('Avalanche addresses', () => {
     expect(normalizeAddress(`X-${bare.toUpperCase()}`, X).canonical).toBe(canonical);
   });
 
+  // The input may be a pasted secret, so no refusal repeats it.
   it.each([
     ['the other chain', (a: string) => `P-${a.slice(2)}`, "the chain alias is not 'X'"],
     ['the C-Chain alias', (a: string) => `C-${a.slice(2)}`, "the chain alias is not 'X'"],
@@ -66,7 +67,7 @@ describe('Avalanche addresses', () => {
     ],
     ['not 20 bytes', () => `X-fuji1${'q'.repeat(10)}`, 'malformed bech32'],
     ['too long', () => `X-${'fuji1'.padEnd(100, 'q')}`, 'malformed'],
-  ])('refuses %s, naming no input (F6-R24)', (_, make, reason) => {
+  ])('refuses %s, naming no input', (_, make, reason) => {
     const address = make(formatAddress(TEST_BYTES, X));
     expect(() => decodeAddress(address, X)).toThrow(
       expect.objectContaining({

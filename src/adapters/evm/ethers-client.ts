@@ -1,8 +1,8 @@
 /**
  * `EthersClient`: the ethers v6 strategy (the EVM default). Driver I/O goes straight to the
- * core transport under each call's tags (spec §11's fallback; R46): ethers' request queue
- * drains on a real 0 ms timer that fake-clock tests cannot step deterministically, and the
- * driver needs none of it (one request per call, D1). ethers does the codec work, and
+ * core transport under each call's tags, never through ethers' provider: ethers' request
+ * queue drains on a real 0 ms timer that fake-clock tests cannot step deterministically,
+ * and the driver needs none of it (one request per call). ethers does the codec work, and
  * `TransportJsonRpcProvider` (static network, no batching, no cache, no polling, `_send` →
  * transport) is the `crypto-aio/native` client.
  */
@@ -35,7 +35,10 @@ import type { EvmAbi, EvmCallTags, EvmSignature, EvmTxFields } from './types';
 
 type Call = (method: string, params: unknown) => Promise<unknown>;
 
-/** The ethers provider bridged onto the core transport through `call`: the native client only (R46). */
+/**
+ * The ethers provider bridged onto the core transport through `call`: the native client
+ * only.
+ */
 export class TransportJsonRpcProvider extends JsonRpcApiProvider {
   readonly #call: Call;
 
@@ -134,7 +137,7 @@ export class EthersClient extends EvmClientBase {
     params: readonly unknown[],
     tags: EvmCallTags,
   ): Promise<unknown> {
-    // R46: no SDK queue, and so no real timer, between a driver call and the transport.
+    // No SDK queue, and so no real timer, between a driver call and the transport.
     return transportCall(this.#transport, method, [...params], tags);
   }
 

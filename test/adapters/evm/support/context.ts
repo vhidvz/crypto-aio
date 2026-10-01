@@ -9,7 +9,7 @@ import { makeClient, nodeTransport, type Library } from './harness';
 import type { NodeOptions } from './node';
 import { KEY, KEY_ADDRESS, KEY_PUBLIC, RECIPIENT } from './vectors';
 
-/** Wraps a client and records every I/O call's method name and tags (R41). */
+/** Wraps a client and records every I/O call's method name and tags. */
 export function recording(client: EvmClient) {
   const calls: { method: string; tags: EvmCallTags }[] = [];
   const IO = new Set([

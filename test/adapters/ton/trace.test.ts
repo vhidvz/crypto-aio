@@ -49,7 +49,7 @@ const GRAM = 1_000_000_000n;
 const FRESH = `0:${'11'.repeat(32)}`;
 const MASTER = `0:${'77'.repeat(32)}`;
 
-/** Decides nothing: a retryable contradiction (lesson 18, widened). */
+/** Decides nothing: a retryable contradiction of the chain or the signed request. */
 const inconsistent = expect.objectContaining({
   code: 'PROVIDER_INCONSISTENT',
   retryable: true,
@@ -79,7 +79,12 @@ async function verdictAfter(t: ReturnType<typeof tonNode>, hashNorm: string) {
   return { root, trace, verdict: attemptVerdict(root, trace) };
 }
 
-describe('the attempt verdict (D11)', () => {
+// An Attempt succeeded only when value moved: the wallet's compute and action phases
+// succeeded, every requested message went out, no native message bounced, and every
+// jetton hop moved a positive amount from the sender between the master's own jetton
+// wallets of the sender and the intended recipient. Anything else the chain records as a
+// failure is `failed` with a fixed reason.
+describe('the attempt verdict', () => {
   it('waits for the trace, then proves a native transfer that landed', async () => {
     const t = tonNode();
     const { hashNorm } = await send(t, () => [
@@ -94,7 +99,9 @@ describe('the attempt verdict (D11)', () => {
     });
   });
 
-  it('fails a request whose message the wallet skipped (Review Focus 1)', async () => {
+  // Send mode +2 is mandatory, so a message the balance no longer covers is skipped: the
+  // wallet transaction succeeds and consumes the seqno, yet nothing moved.
+  it('fails a request whose message the wallet skipped', async () => {
     const t = tonNode();
     const { hashNorm } = await send(
       t,
@@ -107,7 +114,7 @@ describe('the attempt verdict (D11)', () => {
     expect(verdict).toEqual({ kind: 'failed', reason: REASONS.skipped });
   });
 
-  it('decides nothing when a message is missing that the wallet did not skip (lesson 18)', async () => {
+  it('decides nothing when a message is missing that the wallet did not skip', async () => {
     const t = tonNode();
     const { hashNorm } = await send(t, () => [
       nativeMessage({ to: FRESH, value: GRAM, bounce: false }),
@@ -118,8 +125,8 @@ describe('the attempt verdict (D11)', () => {
     expect(() => attemptVerdict(dropped, trace)).toThrow(
       expect.objectContaining({ code: 'PROVIDER_INCONSISTENT', retryable: true }),
     );
-    // Only the wallet's own record of a skipped action proves the skip (M1: a skipped
-    // message is one the action phase did not create).
+    // Only the wallet's own record of a skipped action proves the skip (a skipped message
+    // is one the action phase did not create).
     const skipped = {
       ...dropped,
       action: { ...root.action!, skippedActions: 1, msgsCreated: 0 },
@@ -130,7 +137,8 @@ describe('the attempt verdict (D11)', () => {
     });
   });
 
-  it('fails a bounced native transfer (Review Focus 3)', async () => {
+  // A bounceable transfer to an uninitialized recipient comes back, minus fees.
+  it('fails a bounced native transfer', async () => {
     const t = tonNode();
     const { hashNorm } = await send(t, () => [
       nativeMessage({ to: FRESH, value: GRAM, bounce: true }),
@@ -138,7 +146,7 @@ describe('the attempt verdict (D11)', () => {
     t.node.mine(3);
     const { root, trace, verdict } = await verdictAfter(t, hashNorm);
     expect(verdict).toEqual({ kind: 'failed', reason: REASONS.bounced });
-    // I1: a bounceable message whose compute phase failed always gets a bounce phase
+    // A bounceable message whose compute phase failed always gets a bounce phase
     // (collator.cpp): a record without one lacks data, and is never a delivery.
     const unbounced = replaced(trace!, FRESH, ({ bounce: _bounce, ...tx }) => tx);
     expect(() => attemptVerdict(root, unbounced)).toThrow(inconsistent);
@@ -201,7 +209,7 @@ describe('the attempt verdict (D11)', () => {
       });
     });
 
-    it('decides nothing when the jetton wallet ran the transfer but sent nothing (lesson 18)', async () => {
+    it('decides nothing when the jetton wallet ran the transfer but sent nothing', async () => {
       const t = tonNode();
       const { hashNorm } = await jettonSend(t, 400_000n);
       t.node.mine(5);
@@ -250,7 +258,7 @@ describe('the attempt verdict (D11)', () => {
       const { trace, verdict } = await verdictAfter(t, hashNorm);
       expect(trace?.complete).toBe(true);
       expect(verdict).toEqual({ kind: 'failed', reason: REASONS.jettonBounced });
-      // M6: a verified wallet's zero credit moved nothing, so no transfer is decoded.
+      // A verified wallet's zero credit moved nothing, so no transfer is decoded.
       const recipientWallet = t.node.jettonWalletOf(MASTER, FRESH);
       const verified = { address: recipientWallet, owner: FRESH, master: MASTER };
       const arrival = trace!.transactions.find((tx) => tx.account === recipientWallet)!;
@@ -342,7 +350,9 @@ describe('the attempt verdict (D11)', () => {
   });
 });
 
-describe('only a request that consumed its seqno is decided (lessons 16–18)', () => {
+// A run that did not consume its seqno can run again until the message expires, so a
+// `failed` verdict there could be followed by the message paying after all.
+describe('only a request that consumed its seqno is decided', () => {
   it('never fails a request whose action phase failed: the same message runs again', async () => {
     const t = tonNode();
     const wallet = testWallet('v4r2', TESTNET);
@@ -428,7 +438,7 @@ describe('only a request that consumed its seqno is decided (lessons 16–18)', 
       reason: REASONS.walletFailed,
     });
     expect(executed(root)).toBe(false);
-    // M1: W5 commits an empty action list before it throws: a message it created would
+    // W5 commits an empty action list before it throws: a message it created would
     // contradict the chain's own record.
     const created: V3Message = {
       hash: 'aa'.repeat(32),
@@ -445,7 +455,7 @@ describe('only a request that consumed its seqno is decided (lessons 16–18)', 
       outMsgs: [created],
     };
     expect(() => attemptVerdict(threwAndSent, null)).toThrow(inconsistent);
-    // M4: an indexer that wrote the refusal as a failed compute phase: W5's alone, since
+    // An indexer that wrote the refusal as a failed compute phase: W5's alone, since
     // no other wallet commits its seqno and then throws 137.
     const { action: _action, ...computeOnly } = root;
     const failedCompute: V3Transaction = {
@@ -484,7 +494,7 @@ describe('only a request that consumed its seqno is decided (lessons 16–18)', 
   });
 });
 
-describe('what moved to a native recipient (M7)', () => {
+describe('what moved to a native recipient', () => {
   it('counts a dust bounce (nofunds) as delivered: the value stays', async () => {
     const t = tonNode();
     const { hashNorm } = await send(t, () => [
@@ -516,7 +526,7 @@ describe('what moved to a native recipient (M7)', () => {
       compute: { success: false },
     });
     expect(verdict).toEqual({ kind: 'success', legs: [] });
-    // I1: only a bounceable message has a bounce phase (transaction.cpp `bounce_enabled`):
+    // Only a bounceable message has a bounce phase (transaction.cpp `bounce_enabled`):
     // a bounce on this one is a record the chain never writes, never a refund.
     const bouncedBack = replaced(trace!, reverter, (tx) => ({ ...tx, bounce: 'ok' }));
     expect(() => attemptVerdict(root, bouncedBack)).toThrow(inconsistent);
@@ -564,7 +574,7 @@ describe('what moved to a native recipient (M7)', () => {
   });
 });
 
-describe('an answer that contradicts the chain or the request decides nothing (lesson 18)', () => {
+describe('an answer that contradicts the chain or the request decides nothing', () => {
   it('refuses a wallet transaction whose record contradicts itself or the request', async () => {
     const t = tonNode();
     const { hashNorm } = await send(t, () => [
@@ -593,7 +603,7 @@ describe('an answer that contradicts the chain or the request decides nothing (l
       { ...root, action: { ...root.action!, skippedActions: 1 } },
       // Not an external request.
       { ...root, inMsg: { ...root.inMsg!, source: FRESH } },
-      // I1: the message went out with another bounce flag than the one signed.
+      // The message went out with another bounce flag than the one signed.
       { ...root, outMsgs: [{ ...out, bounce: true }] },
     ];
     for (const tx of contradictions) {
@@ -601,10 +611,10 @@ describe('an answer that contradicts the chain or the request decides nothing (l
     }
     expect(() => executed({ ...root, aborted: true })).toThrow(inconsistent);
     expect(() => consumesSeqno(noAction)).toThrow(inconsistent);
-    // M3: a skipped compute phase never succeeded, and always aborts (transaction.cpp).
+    // A skipped compute phase never succeeded, and always aborts (transaction.cpp).
     const deposit = trace!.transactions.find((tx) => tx.account === FRESH)!;
     expect(deposit).toMatchObject({ aborted: true, compute: { skipped: true } });
-    // I1 in decoding: a bounce on a non-bounceable deposit would drop a credit; a failed
+    // In decoding: a bounce on a non-bounceable deposit would drop a credit; a failed
     // bounceable one without a bounce would credit value that went back.
     expect(() => executed({ ...deposit, bounce: 'ok' })).toThrow(inconsistent);
     expect(() =>
@@ -621,7 +631,7 @@ describe('an answer that contradicts the chain or the request decides nothing (l
     ).toThrow(inconsistent);
   });
 
-  it('reads a bounce message whose flag the indexer leaves out as the bounce it is (F6-R14)', async () => {
+  it('reads a bounce message whose flag the indexer leaves out as the bounce it is', async () => {
     const t = tonNode();
     const { hashNorm } = await send(t, () => [
       nativeMessage({ to: FRESH, value: GRAM, bounce: true }),
@@ -642,7 +652,7 @@ describe('an answer that contradicts the chain or the request decides nothing (l
     ).toThrow(inconsistent);
   });
 
-  it("cross-checks the chain's own counters (M1)", async () => {
+  it("cross-checks the chain's own counters", async () => {
     const t = tonNode();
     const request = nativeMessage({ to: FRESH, value: GRAM, bounce: false });
     const { hashNorm } = await send(t, () => [request, request]);
@@ -667,7 +677,7 @@ describe('an answer that contradicts the chain or the request decides nothing (l
     }
   });
 
-  it('checks every output before it decides (M2)', async () => {
+  it('checks every output before it decides', async () => {
     const t = tonNode();
     const other = `0:${'12'.repeat(32)}`;
     const { hashNorm } = await send(t, () => [
@@ -720,7 +730,7 @@ describe('an answer that contradicts the chain or the request decides nothing (l
     for (const next of traces) {
       expect(() => attemptVerdict(root, next)).toThrow(inconsistent);
     }
-    // I1: the delivery carries another bounce flag than the message the wallet signed,
+    // The delivery carries another bounce flag than the message the wallet signed,
     // decided by the signed flag although the indexer left the sent copy's out.
     const reflagged = replaced(trace!, FRESH, (tx) => ({
       ...tx,
@@ -730,7 +740,7 @@ describe('an answer that contradicts the chain or the request decides nothing (l
       inMsg: { ...tx.inMsg!, bounce: true },
     }));
     expect(() => attemptVerdict(withoutFlags(root), reflagged)).toThrow(inconsistent);
-    // I1: the message went out with another flag than signed, the delivery's left out.
+    // The message went out with another flag than signed, the delivery's left out.
     const sentOtherwise = { ...root, outMsgs: [{ ...root.outMsgs[0]!, bounce: true }] };
     const unflagged = replaced(trace!, FRESH, (tx) => ({
       ...tx,
@@ -771,7 +781,7 @@ describe('an answer that contradicts the chain or the request decides nothing (l
   });
 });
 
-describe('our own Attempt (C1)', () => {
+describe('our own Attempt', () => {
   it('is the external message to our wallet whose TEP-467 hash, computed here, is the id', async () => {
     const t = tonNode();
     const { wallet, hashNorm } = await send(t, () => [
@@ -799,7 +809,9 @@ describe('our own Attempt (C1)', () => {
   });
 });
 
-describe('transaction decoding (lesson 15)', () => {
+// Decoding reports what the chain did, for anyone's transactions: the verdict's checks
+// run on the verdict paths only.
+describe('transaction decoding', () => {
   it('decodes a wallet payment and the credited deposit on a fresh address', async () => {
     const t = tonNode();
     const { wallet, hashNorm } = await send(t, () => [

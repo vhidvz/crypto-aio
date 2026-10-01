@@ -4,7 +4,7 @@
 
 Defined in: [src/adapters/tron/types.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/types.ts#L21)
 
-An account's resources (spec §5.5 `ext.tron.getResources`), from `getaccountresource`.
+An account's resources (`ext.tron.getResources`), from `getaccountresource`.
 
 ## Properties
 

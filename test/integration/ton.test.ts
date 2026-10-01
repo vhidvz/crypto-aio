@@ -1,14 +1,13 @@
 /**
- * Opt-in, read-only checks against live toncenter (spec §17), skipped unless
- * CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only (D22):
+ * Opt-in, read-only checks against live toncenter, skipped unless
+ * CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only:
  * - CRYPTO_AIO_IT_TON_NETWORK: `mainnet` or `testnet` (default `testnet`);
  * - CRYPTO_AIO_IT_TON_RPC_URL / CRYPTO_AIO_IT_TON_INDEXER_URL: API v2 / v3 base URLs
  *   (default: the keyless `public` preset), for keyed or self-hosted endpoints. Each gets
  *   the keyless preset's client-side rate limit (0.5 requests per second): a custom
  *   endpoint has none of its own, and toncenter answers a burst with HTTP 429. A key in the
- *   URL is kept in a `Secret` and scrubbed from errors as the whole URL, but an endpoint
- *   that echoes the bare key back is not (F3-R20): prefer the `X-API-Key` header, as the
- *   presets do.
+ *   URL is kept in a `Secret`, and the transport scrubs it from errors both as the whole
+ *   URL and as the bare query value an endpoint may echo back.
  *
  * Nothing is signed or broadcast. Each read waits a courtesy pause first. A read that
  * answers a retryable "cannot decide yet" (a 429, an index or a load-balanced backend that
@@ -26,7 +25,7 @@ import type { TokenRef } from '../../src/core/model/asset';
 const enabled = process.env.CRYPTO_AIO_INTEGRATION === '1';
 const network = (process.env.CRYPTO_AIO_IT_TON_NETWORK ?? 'testnet') as
   'mainnet' | 'testnet';
-/** F6-R28 I1: a custom endpoint gets the keyless preset's rate limit (`presets.ts`). */
+/** A custom endpoint gets the keyless preset's rate limit (`presets.ts`). */
 const route = (url: string | undefined, kind: 'rpc' | 'indexer'): ProviderRef =>
   url ? { endpoints: [{ url: secret(url), kind, rateLimit: { rps: 0.5 } }] } : 'public';
 const provider = route(process.env.CRYPTO_AIO_IT_TON_RPC_URL, 'rpc');
@@ -45,8 +44,8 @@ const ATTEMPTS = 3;
 const TIMEOUT_MS = 240_000;
 const pause = (ms = 2_500) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
- * F6-R28 M3: the pause before the last attempt outlasts the transport's 15-second lockout of
- * an endpoint whose identity probe failed (a 429 on the probe counts as one).
+ * The pause before the last attempt outlasts the transport's 15-second lockout of an
+ * endpoint whose identity probe failed (a 429 on the probe counts as one).
  */
 const LAST_PAUSE_MS = 16_000;
 const suite = enabled ? describe : describe.skip;
@@ -81,14 +80,14 @@ suite(`TON integration on ton:${network}`, () => {
         const block = await read(() => ton.getBlock(height));
         expect(block?.height).toBe(height);
         expect(block?.hash).toMatch(/^[0-9a-f]{64}$/);
-        // F6-R28 M1: the same block by its hash, which the indexer (v3) resolves to its
-        // seqno and the liteserver (v2) serves: both APIs on this network's chain.
+        // The same block by its hash, which the indexer (v3) resolves to its seqno and
+        // the liteserver (v2) serves: both APIs on this network's chain.
         expect(await read(() => ton.getBlock(block?.hash ?? ''))).toEqual(block);
         const balance = await read(() => ton.getBalance(ZERO));
         expect(balance.amount.asset.id).toBe(`ton:${network}/native`);
         expect(await read(() => ton.ext.ton.getSeqno(ZERO))).toBe(0n);
-        // F6-R28 M4: the seqno get-method itself runs live, bound to the state's block
-        // (F6-R29 Q6); the elector answers it without a seqno, so it is no wallet.
+        // The seqno get-method itself runs live, bound to the state's block; the elector
+        // answers it without a seqno, so it is no wallet.
         await expect(read(() => ton.ext.ton.getSeqno(ELECTOR))).rejects.toMatchObject({
           code: 'INVALID_INTENT',
           message: 'the account is not a v4r2 or v5r1 wallet',
@@ -101,7 +100,7 @@ suite(`TON integration on ton:${network}`, () => {
   );
 
   it(
-    'proves live that a message never sent to a never used wallet did not land, once expired (F6-R26)',
+    'proves live that a message never sent to a never used wallet did not land, once expired',
     async () => {
       const aio = new CryptoAio({ env: false });
       try {

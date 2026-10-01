@@ -5,7 +5,7 @@ import { fromHex } from '../../../src/core/util/bytes';
 
 const read = (hex: string, fixed: 'opaque' | 'refuse') => wireFields(fromHex(hex), fixed);
 
-describe('the shared protobuf reader (F4-R22)', () => {
+describe('the shared protobuf reader', () => {
   it('reads varints and length-delimited fields in order, with each encoded length', () => {
     // field 1 varint 150, field 2 bytes "hi", field 5 varint 0
     const fields = read('089601' + '12026869' + '2800', 'refuse');
@@ -84,7 +84,7 @@ describe('the shared protobuf reader (F4-R22)', () => {
     expect(bytesOf(undefined)).toBeNull();
   });
 
-  it('reads large inputs in one linear pass (lesson 20)', () => {
+  it('reads large inputs in one linear pass', () => {
     // 200,000 one-byte varint fields, and one field of 1 MiB.
     expect(read('0801'.repeat(200_000), 'refuse')).toHaveLength(200_000);
     const big = read(`12808040${'61'.repeat(1_048_576)}`, 'refuse');

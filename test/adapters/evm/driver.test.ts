@@ -42,7 +42,7 @@ const notYetFinal = {
   retryable: true,
   message: 'receipt not yet final',
 };
-/** Lesson 18: an error answer to a proof read is no negative proof, so it decides nothing. */
+/** An error answer to a proof read is no negative proof, so it decides nothing. */
 const noAnswer = {
   code: 'PROVIDER_UNAVAILABLE',
   retryable: true,
@@ -50,9 +50,10 @@ const noAnswer = {
   cause: expect.objectContaining({ code: 'RPC_ERROR' }),
 };
 /**
- * P25-R10: one quorum endpoint's error answer against the other's answer is a disagreement,
- * which decides nothing too; the proof boundary's own wording (lesson 18, R85) applies when
- * every quorum endpoint returns the error alike (`failing` is `'both'`).
+ * One quorum endpoint's error answer against the other's answer is a disagreement, which
+ * decides nothing too: an error decides a proof quorum only when enough endpoints return
+ * an equivalent one. The proof boundary's own wording applies when every quorum endpoint
+ * returns the error alike (`failing` is `'both'`).
  */
 const disputed = { code: 'PROVIDER_INCONSISTENT', retryable: true };
 /** The endpoints a test makes fail: one by name, or every one (`'both'`). */
@@ -141,7 +142,7 @@ describe.each(LIBRARIES)('EVM driver factory (%s)', (library) => {
     );
   });
 
-  it('sets the probes exactly once on every transport it receives, the indexer too (M12, R19)', async () => {
+  it('sets the probes exactly once on every transport it receives, the indexer too', async () => {
     const chain = EVM_CHAINS.find((c) => c.id === 'ethereum') as ChainInfo;
     const counting = (transport: Transport) => {
       const set: HealthProbes[] = [];
@@ -239,7 +240,7 @@ describe.each(LIBRARIES)('EVM driver factory (%s)', (library) => {
     await second.close?.();
   });
 
-  it("keeps the transport's lag tolerance: a network's maxLagBlocks is only a default (R36)", async () => {
+  it("keeps the transport's lag tolerance: a network's maxLagBlocks is only a default", async () => {
     const bsc = EVM_CHAINS.find((c) => c.id === 'bsc') as ChainInfo;
     expect(bsc.networks.mainnet?.maxLagBlocks).toBe(134);
     const t = await driverFor(library, 'bsc', 'mainnet', ['a', 'b'], { maxLagBlocks: 7 });
@@ -255,7 +256,7 @@ describe.each(LIBRARIES)('EVM driver factory (%s)', (library) => {
   });
 });
 
-describe('the search for the height that consumed a nonce (R88)', () => {
+describe('the search for the height that consumed a nonce', () => {
   /** A chain whose nonce was consumed at `at`, recording every height read. */
   function chain(at: bigint) {
     const reads: bigint[] = [];
@@ -317,7 +318,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     const t = setup();
     const hash = await submit(t, 0);
     t.node.mine();
-    // R77: a receipt in a block that is not final yet decides nothing, never "not included".
+    // A receipt in a block that is not final yet decides nothing, never "not included".
     await expect(
       t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
     ).rejects.toMatchObject(notYetFinal);
@@ -343,7 +344,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       t.calls.every((c) => c.tags.purpose === 'proof' && c.tags.quorum === 'proof'),
     ).toBe(true);
     expect(new Set(t.node.served.map((s) => s.endpoint))).toEqual(new Set(['a', 'b']));
-    // R85: the nonce is read at the proposed finalized height less PEER_SKEW (block 1 here).
+    // The nonce is read at the proposed finalized height less PEER_SKEW (block 1 here).
     t.node.mine(2);
     t.calls.length = 0;
     expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
@@ -365,11 +366,11 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await t.run(t.proofs.expired(nonce(0n)))).toBe(false);
   });
 
-  it('serves block hashes by level, null above the head or the finalized block (R33)', async () => {
+  it('serves block hashes by level, null above the head or the finalized block', async () => {
     const t = setup();
     t.node.mine(4);
     t.calls.length = 0;
-    // R74: one endpoint proposes its finalized block, the proof trails it by 2 blocks, and
+    // One endpoint proposes its finalized block, the proof trails it by 2 blocks, and
     // the quorum attests that height before the block at it is read.
     expect(await t.run(t.proofs.finalizedHead())).toEqual({
       height: 0n,
@@ -428,7 +429,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     );
   });
 
-  it('proves a confirmation network (Avalanche) from the head less 2 blocks, read once (R74)', async () => {
+  it('proves a confirmation network (Avalanche) from the head less 2 blocks, read once', async () => {
     const t = setup('avalanche', 'fuji');
     t.node.mine(3);
     t.calls.length = 0;
@@ -446,7 +447,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await t.run(t.proofs.blockHash(4n, 'finalized'))).toBeNull();
   });
 
-  it('proves a token transfer that returned false as failed, never executed (R50)', async () => {
+  it('proves a token transfer that returned false as failed, never executed', async () => {
     const t = setup();
     const reader = createEvmReader(t.ctx);
     t.node.deployToken(TOKEN, { symbol: 'FLS', decimals: 6, returnsFalse: true });
@@ -477,7 +478,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect((await t.run(reader.getTransaction(hash)))?.transfers).toEqual([]);
   });
 
-  it('counts a token transfer executed only if it logged a positive amount to the recipient (R89)', async () => {
+  it('counts a token transfer executed only if it logged a positive amount to the recipient', async () => {
     const t = setup();
     const reader = createEvmReader(t.ctx);
     // [token, what its `transfer` does, the amount asked, the verdict]
@@ -496,7 +497,8 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       const data = t.client.abi.encodeTransfer(RECIPIENT, amount);
       hashes.push(await submit(t, i, { to: token, value: 0n, gasLimit: 60_000n, data }));
     }
-    // Final at the proven height (the finalized block less PEER_SKEW) for the R88 path too.
+    // Final at the proven height (the finalized block less PEER_SKEW), for the lookup by
+    // nonce too.
     t.node.mine(5);
     expect(t.node.tokenBalance(cases[2]?.[0] as string, RECIPIENT)).toBe(9n);
     for (const [i, [, , , executed]] of cases.entries()) {
@@ -513,20 +515,20 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       expect(
         await t.run(t.proofs.includedFinal(ref(hash), nonce(BigInt(i)), KEY_ADDRESS)),
       ).toMatchObject({ included: true, success: executed });
-      // R88: the same verdict when the endpoints' index lost the transaction.
+      // The same verdict when the endpoints' index lost the transaction.
       unindexed(t, [hash]);
       expect(
         await t.run(t.proofs.includedFinal(ref(hash), nonce(BigInt(i)), KEY_ADDRESS)),
       ).toMatchObject({ included: true, success: executed });
       t.node.intercept = undefined;
-      // The chain's view (R68): every transfer the token logged, whatever the verdict.
+      // The chain's view: every transfer the token logged, whatever the verdict.
       expect((await t.run(reader.getTransaction(hash)))?.observation).toMatchObject({
         success: true,
       });
     }
   });
 
-  it("reaches a proof while two endpoints' finalized heads differ by a block (R74)", async () => {
+  it("reaches a proof while two endpoints' finalized heads differ by a block", async () => {
     const t = setup();
     const hash = await submit(t, 0);
     t.node.mine(3);
@@ -544,7 +546,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       expect(
         await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
       ).toBe(true);
-      // R85: both endpoints read the nonce at the one attested height (2, or 1 when 'a'
+      // Both endpoints read the nonce at the one attested height (2, or 1 when 'a'
       // lags), where nonce 1 is not consumed yet: nothing is proven, whatever their views.
       expect(
         await t.run(t.proofs.slotConsumed(nonce(1n), KEY_ADDRESS, 'finalized')),
@@ -566,7 +568,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     }
   });
 
-  it('never lets one endpoint over-reporting its finalized height advance finality (R74)', async () => {
+  it('never lets one endpoint over-reporting its finalized height advance finality', async () => {
     const t = setup();
     const hash = await submit(t, 0);
     t.node.mine(2);
@@ -577,7 +579,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       await expect(
         t.run(t.proofs.includedFinal(ref(hash), nonce(0n), KEY_ADDRESS)),
       ).rejects.toMatchObject(inconsistent);
-      // R85: the nonce is read at the height the quorum attests (0), which the liar cannot
+      // The nonce is read at the height the quorum attests (0), which the liar cannot
       // advance: the slot is not proven consumed.
       expect(
         await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized')),
@@ -604,7 +606,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     await expect(t.run(t.proofs.finalizedHead())).rejects.toMatchObject(inconsistent);
   });
 
-  it('takes no finality from an endpoint that serves no finalized block (R74)', async () => {
+  it('takes no finality from an endpoint that serves no finalized block', async () => {
     const t = setup();
     const hash = await submit(t, 0);
     t.node.mine(3);
@@ -624,7 +626,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     }
   });
 
-  it('proves on a confirmation network while one endpoint trails the head by a block (R74)', async () => {
+  it('proves on a confirmation network while one endpoint trails the head by a block', async () => {
     const t = setup('avalanche', 'fuji');
     const hash = await submit(t, 0);
     t.node.mine(4);
@@ -679,7 +681,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     );
   });
 
-  it('lets no single endpoint decide a token verdict by dropping its Transfer log (R59)', async () => {
+  it('lets no single endpoint decide a token verdict by dropping its Transfer log', async () => {
     const t = setup();
     t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
     t.node.mintToken(TOKEN, KEY_ADDRESS, 100n);
@@ -713,13 +715,13 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ).rejects.toMatchObject(inconsistent);
   });
 
-  it("decides nothing when the quorum sees the receipt but not yet its block's finality (R77)", async () => {
+  it("decides nothing when the quorum sees the receipt but not yet its block's finality", async () => {
     // The core's whenAbsent: the slot is proven consumed at finality, then the inclusion
     // proof may reach endpoints whose finality trails the transaction's block. Answering
     // "not included" there would prove a final transfer `replaced`.
     const t = setup();
     const hash = await submit(t, 0);
-    // Block 1 is final at the proposed height less PEER_SKEW (R85).
+    // Block 1 is final at the proposed height less PEER_SKEW.
     t.node.mine(5);
     expect(await t.run(t.proofs.slotConsumed(nonce(0n), KEY_ADDRESS, 'finalized'))).toBe(
       true,
@@ -779,7 +781,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
   });
 
   /**
-   * R88: every endpoint's transaction index lost `hashes`, as geth's does past its
+   * Every endpoint's transaction index lost `hashes`, as geth's does past its
    * `TransactionHistory` window: lookups by hash answer `null`, reads by block still serve.
    */
   function unindexed(
@@ -810,8 +812,8 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       return { result: { ...real, transactions: edit(txs) } };
     };
 
-  it('proves a final transfer the index lost by its nonce, never "not included" (R88)', async () => {
-    // The final review's C1: both endpoints answer `null` for an executed, final transfer.
+  it('proves a final transfer the index lost by its nonce, never "not included"', async () => {
+    // Both endpoints answer `null` for an executed, final transfer.
     // "Not included" would let the core prove it `replaced`, and the caller pay again.
     const t = setup();
     t.node.mine(5);
@@ -849,7 +851,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(methods.slice(3, -2)).toEqual(
       Array.from({ length: 10 }, () => ['getTransactionCount', 'proof', 'proof']),
     );
-    // A token transfer the index lost gets the same verdict as one it serves (R50).
+    // A token transfer the index lost gets the same verdict as one it serves.
     t.node.deployToken(TOKEN, { symbol: 'FLS', decimals: 6, returnsFalse: true });
     const data = t.client.abi.encodeTransfer(RECIPIENT, 10n);
     const token = await submit(t, 1, { to: TOKEN, value: 0n, gasLimit: 60_000n, data });
@@ -861,7 +863,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ).toMatchObject({ included: true, success: false, blockHeight: 27n });
   });
 
-  it('proves a replacement "not included" only by the final transaction at its nonce (R88)', async () => {
+  it('proves a replacement "not included" only by the final transaction at its nonce', async () => {
     const t = setup();
     const first = await submit(t, 0);
     t.node.mine(2);
@@ -887,7 +889,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ).toMatchObject({ included: true, success: true, blockHeight: 1n });
   });
 
-  it('decides nothing without the historical state, the block or its receipts (R88)', async () => {
+  it('decides nothing without the historical state, the block or its receipts', async () => {
     const t = setup();
     t.node.mine(3);
     const hash = await submit(t, 0);
@@ -940,7 +942,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await proof()).toMatchObject({ included: true, blockHeight: 4n });
   });
 
-  it('lets no single endpoint force either answer while looking up the nonce (R88)', async () => {
+  it('lets no single endpoint force either answer while looking up the nonce', async () => {
     const t = setup();
     const replaced = await submit(t, 0);
     const winner = await submit(t, 0, {
@@ -1017,7 +1019,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await prove(executed, 1n)).toMatchObject({ included: true, success: true });
   });
 
-  it("pins each field of the consumer block's key against a lying first endpoint (R93 N1)", async () => {
+  it("pins each field of the consumer block's key against a lying first endpoint", async () => {
     // A quorum resolves with the first endpoint's whole answer, so every field the nonce
     // lookup reads from block C must be keyed, or that endpoint alone decides.
     const t = setup();
@@ -1113,7 +1115,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ]);
   });
 
-  it('compares calldata named `input` or `data`, so no first endpoint forges the token call (R94)', async () => {
+  it('compares calldata named `input` or `data`, so no first endpoint forges the token call', async () => {
     const t = setup();
     // The token pays another address than the call names: the verdict is `failed`.
     t.node.deployToken(TOKEN, { symbol: 'MIS', decimals: 6, payTo: OTHER });
@@ -1229,7 +1231,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     return reads;
   }
 
-  it('reads the nonce at an attested height, so a node that serves no state at the tag still proves it (R85)', async () => {
+  it('reads the nonce at an attested height, so a node that serves no state at the tag still proves it', async () => {
     const t = setup();
     await submit(t, 0);
     t.node.mine(5);
@@ -1263,7 +1265,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ]);
   });
 
-  it('decides nothing when a quorum endpoint does not hold the finalized state (R85)', async () => {
+  it('decides nothing when a quorum endpoint does not hold the finalized state', async () => {
     const t = setup();
     await submit(t, 0);
     t.node.mine(5);
@@ -1297,7 +1299,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
         );
       }
     }
-    // Lesson 18: any other error answer is no negative proof either, at either level. It
+    // Any other error answer is no negative proof either, at either level. It
     // decides nothing, and carries the node's own error as its cause.
     t.node.intercept = (_endpoint, method) =>
       method === 'eth_getTransactionCount'
@@ -1317,7 +1319,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     }
   });
 
-  it('decides nothing on any JSON-RPC error while proving inclusion (lesson 18)', async () => {
+  it('decides nothing on any JSON-RPC error while proving inclusion', async () => {
     const t = setup();
     const hash = await submit(t, 0);
     t.node.mine(3);
@@ -1341,7 +1343,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await proof()).toMatchObject({ included: true, success: true });
   });
 
-  it('decides nothing on any JSON-RPC error while reading a block hash (lesson 18)', async () => {
+  it('decides nothing on any JSON-RPC error while reading a block hash', async () => {
     const t = setup();
     t.node.mine(4);
     const reads: [unknown, bigint, 'finalized' | 'latest'][] = [
@@ -1361,14 +1363,14 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect(await t.run(t.proofs.blockHash(2n, 'finalized'))).toBe(t.node.block(2n)?.hash);
   });
 
-  it('decides nothing on any JSON-RPC error while proving the finalized head (lesson 18)', async () => {
+  it('decides nothing on any JSON-RPC error while proving the finalized head', async () => {
     const t = setup();
     t.node.mine(4);
     for (const failing of FAILING) {
       for (const at of ['finalized', '0x0']) {
         rpcError(t, failing, 'eth_getBlockByNumber', 'internal error', at);
         // The `finalized` tag is first one endpoint's view, a monitor read by the first
-        // endpoint (a) that only proposes (R74) and is no quorum, so its error keeps the
+        // endpoint (a) that only proposes and is no quorum, so its error keeps the
         // proof boundary's wording; the quorum's own reads dispute a lone error.
         const proposer = failing === 'a' && at === 'finalized';
         await expect(t.run(t.proofs.finalizedHead())).rejects.toMatchObject(
@@ -1380,7 +1382,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     expect((await t.run(t.proofs.finalizedHead())).height).toBe(0n);
   });
 
-  it('passes a PROVIDER_MISCONFIGURED, and every other error, through unchanged (lesson 18)', async () => {
+  it('passes a PROVIDER_MISCONFIGURED, and every other error, through unchanged', async () => {
     const t = setup();
     const hash = await submit(t, 0);
     t.node.mine(3);
@@ -1413,7 +1415,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     }
   });
 
-  it('never lets one endpoint over-reporting its finalized height advance the nonce read (R85)', async () => {
+  it('never lets one endpoint over-reporting its finalized height advance the nonce read', async () => {
     const t = setup();
     t.node.finalizedDepth = 6;
     await submit(t, 0);
@@ -1439,7 +1441,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     }
   });
 
-  it('reads the nonce at one attested height while the head moves, never a false negative (R85)', async () => {
+  it('reads the nonce at one attested height while the head moves, never a false negative', async () => {
     const t = setup();
     t.node.mine(2);
     const hash = await submit(t, 0);
@@ -1540,7 +1542,7 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     });
   });
 
-  it("scans a plain Polygon transfer as complete despite bor's system logs (R69, R70)", async () => {
+  it("scans a plain Polygon transfer as complete despite bor's system logs", async () => {
     const h = evmHarness(library, 'polygon', 'amoy');
     const blocks = createEvmBlocks(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
@@ -1575,7 +1577,9 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     ]);
   });
 
-  it('scans a token call as the chain reports it; only verdicts apply R50 (R68)', async () => {
+  // A `transfer` that returned false and logged nothing shows the chain's success in a
+  // scan; only a verdict on our own Attempt reports it failed.
+  it('scans a token call as the chain reports it; only verdicts apply', async () => {
     const h = evmHarness(library);
     const blocks = createEvmBlocks(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
@@ -1595,7 +1599,7 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     ]);
   });
 
-  it('keeps contract creations in a filtered scan: only the receipt names the recipient (R78)', async () => {
+  it('keeps contract creations in a filtered scan: only the receipt names the recipient', async () => {
     const h = evmHarness(library);
     const blocks = createEvmBlocks(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
@@ -1654,7 +1658,7 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     return { blocks, native, token, scan };
   }
 
-  it("reads each block's receipts in one call, filtered or not (R90)", async () => {
+  it("reads each block's receipts in one call, filtered or not", async () => {
     const h = evmHarness(library);
     const { native, token, scan } = await depositBlock(h);
     expect(await scan()).toEqual([native, token]);
@@ -1669,7 +1673,7 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     ]);
   });
 
-  it('finds a token deposit while the log index lags (R90)', async () => {
+  it('finds a token deposit while the log index lags', async () => {
     const h = evmHarness(library);
     const { token, scan } = await depositBlock(h);
     // Hosted providers serve eth_getLogs from an index that may not have this block yet.
@@ -1684,7 +1688,7 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     await expect(scan([OTHER])).rejects.toMatchObject(inconsistent);
   });
 
-  it('falls back to eth_getLogs, checked against the block bloom, without block receipts (R90)', async () => {
+  it('falls back to eth_getLogs, checked against the block bloom, without block receipts', async () => {
     const h = evmHarness(library);
     const { native, token, scan } = await depositBlock(h);
     let lagging = false;
@@ -1738,7 +1742,7 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     expect(methods()).toEqual([...fallback, 'getLogs']);
   });
 
-  it('falls back on any answer that says the method is missing, and only then (R93 N2)', async () => {
+  it('falls back on any answer that says the method is missing, and only then', async () => {
     const h = evmHarness(library);
     const { native, token, scan } = await depositBlock(h);
     const missing: [number, string][] = [
@@ -1769,7 +1773,7 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     await expect(scan()).rejects.toMatchObject({ code: 'RPC_ERROR' });
   });
 
-  it('reads a block bloom as web3 does (R90)', async () => {
+  it('reads a block bloom as web3 does', async () => {
     const h = evmHarness(library);
     await depositBlock(h);
     const { logsBloom } = h.node.answer('eth_getBlockByNumber', ['0x1', false]) as {

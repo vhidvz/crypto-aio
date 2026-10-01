@@ -1,8 +1,8 @@
 /**
- * Freezes plain data all the way down (R56): every array and every plain object reachable
+ * Freezes plain data all the way down: every array and every plain object reachable
  * from `value`, so data that handles share (chain tables, presets, resolved config) cannot
  * be changed through any of them. Class instances (a `Signer`, a `Secret`, a `Uint8Array`)
- * and functions keep their identity and are never frozen. B116: a reference cycle is
+ * and functions keep their identity and are never frozen. A reference cycle is
  * walked once, so it freezes instead of overflowing the stack.
  */
 export function deepFreeze<T>(value: T): T {

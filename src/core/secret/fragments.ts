@@ -1,5 +1,5 @@
 /**
- * F3-R20: the secret fragments of one endpoint's configuration, and the scrubber that
+ * The secret fragments of one endpoint's configuration, and the scrubber that
  * removes them from every text an error, a `details` field or a `cause` may carry. A
  * provider that refuses a key often echoes the bare key back ("invalid api key <KEY>"),
  * without the URL or header around it, so removing only the whole URL or header value is
@@ -19,7 +19,7 @@ import { REDACTED } from './secret';
  */
 export const MIN_FRAGMENT_LENGTH = 8;
 
-/** A whole header value shorter than this is left alone (as before this change). */
+/** A whole header value shorter than this is left alone. */
 const MIN_VALUE_LENGTH = 4;
 
 /** `Scheme token` in an `Authorization`-style value (RFC 9110 §11.4). */
@@ -96,7 +96,8 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * A text with every secret of `secrets` replaced, case-insensitively and longest first: a
  * URL form by `placeholder`, anything else by `[REDACTED]`; then any other URL redacted.
  * With `limit`, only the first `limit` characters come back, and only a bounded prefix is
- * read (lesson 20), long enough that a secret starting before the cut is removed whole.
+ * read, since a provider's text is untrusted and may be huge: long enough that a secret
+ * starting before the cut is removed whole.
  */
 export function createScrubber(
   placeholder: string,

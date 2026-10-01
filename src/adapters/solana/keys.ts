@@ -1,5 +1,5 @@
 /**
- * Strict, SDK-free decoding of Solana keys and signatures (lesson 4, R58). Only canonical
+ * Strict, SDK-free decoding of Solana keys and signatures. Only canonical
  * base58 of exactly 32 (keys) or 64 (signatures) bytes is accepted, so the driver never
  * relies on an SDK's leniency (`new PublicKey()` also takes numbers, arrays and BNs).
  */
@@ -11,7 +11,7 @@ const ALPHABET = /^[1-9A-HJ-NP-Za-km-z]+$/;
 
 /**
  * The longest base58 text of `length` bytes: 44 characters for a key, 88 for a signature.
- * base58 decoding is O(n²), so longer text is refused before it is decoded (lesson 20).
+ * base58 decoding is O(n²), so longer text is refused before it is decoded.
  */
 const maxChars = (length: number): number => Math.ceil((length * 8) / Math.log2(58));
 

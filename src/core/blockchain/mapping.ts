@@ -63,7 +63,7 @@ export async function toFeeEstimate(
 /**
  * Observation-level status (a single endpoint's view). This never returns `state: 'final'`:
  * that verdict requires `proven` evidence, produced only by the monitor's quorum-checked
- * path (Task 25's `statusOf`). A block at or below the finalized height is reported as
+ * path (`statusOf`). A block at or below the finalized height is reported as
  * `state: 'included'` with `finality: 'final'`, evidence staying `'observed'`.
  */
 export function statusFromObservation(
@@ -84,7 +84,7 @@ export function statusFromObservation(
       ...(observation.blockHash !== undefined
         ? { blockHash: observation.blockHash }
         : {}),
-      // P25-R15: as the monitor records it, a reason only with a failure.
+      // As the monitor records it, a reason only with a failure.
       ...(observation.success === false && observation.reason !== undefined
         ? { reason: observation.reason }
         : {}),
@@ -109,7 +109,7 @@ export function toBlock(block: DriverBlock): Block {
 }
 
 /**
- * R35: a transfer whose asset does not resolve becomes an `UnresolvedTransfer` marker, so
+ * A transfer whose asset does not resolve becomes an `UnresolvedTransfer` marker, so
  * one junk token never fails a whole read. Only a retryable failure propagates, and the
  * read is then retried; an error that is not a crypto-aio error is a driver bug and
  * propagates too.

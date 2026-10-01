@@ -1,6 +1,7 @@
 /**
  * Test keys and frozen vectors for the UTXO family. The BIP vectors are quoted from the
- * BIPs (Plan 3 appendix); everything else is cross-checked against bitcoinjs-lib in tests.
+ * BIPs (bitcoin/bips: BIP173, BIP350, BIP86, BIP143, BIP341); everything else is
+ * cross-checked against bitcoinjs-lib in tests.
  */
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';

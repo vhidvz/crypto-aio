@@ -222,7 +222,7 @@ describe('resolveSelection', () => {
     });
   });
 
-  it('refuses a signer without a readable list of schemes (B107)', () => {
+  it('refuses a signer without a readable list of schemes', () => {
     const broken: Record<string, unknown> = {
       missing: { id: 'missing', getPublicKey: hot.getPublicKey, sign: hot.sign },
       'not-strings': { id: 'not-strings', schemes: [1], sign: hot.sign },
@@ -330,7 +330,7 @@ describe('merge safety', () => {
   });
 });
 
-describe('reference cycles (B116)', () => {
+describe('reference cycles', () => {
   const cyclic = (): Record<string, unknown> => {
     const nested: Record<string, unknown> = { depth: 1 };
     nested.again = { back: nested };

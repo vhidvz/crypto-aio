@@ -150,6 +150,12 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   wallet transactions it has not read before; on the keyless preset allow several seconds.
   It protects only the library's own sends: after a reset under a shared key, anyone who
   saw the message can send it again while it is valid, and no client can prevent that.
+- **Busy wallets.** The proof that a message never landed, and the check before a resend,
+  walk at most 512 of the wallet's transactions, back to 5 minutes before the message's
+  build. A wallet that runs more than that in the meantime (incoming deposits count) leaves
+  a message that never landed undecided, logged as `TX_CHAIN_WALK_EXHAUSTED`: it is never
+  proven `expired`, so `rebuild` cannot follow, and the wallet's next transfer waits behind
+  it (`SEQUENCE_BUSY`). Send from wallets that do not also take a stream of deposits.
 - **Replaced.** TON never reports an observed `replaced` for your own message: masterchain
   state is final, so a transfer that landed but is not indexed yet stays `submitted` or
   `included` until the indexer catches up. A proven `replaced` (`TX_REPLACED`) means that a
@@ -229,7 +235,8 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   do not accept: leave it unresolved, and never credit it.
 - **Memos** are text comments of at most 1,024 UTF-8 bytes, public forever. A deposit's memo
   arrives as `transfer.memo`: a Gram deposit's from its message, a jetton deposit's from the
-  forward payload its arrival carries (the notification repeats it).
+  forward payload its arrival carries (the notification repeats it). An incoming comment
+  longer than 256 cells (about 32 KB) arrives with no memo.
 - **Receiving.** There is no block scanner (TON is sharded): `bc.scanner()` throws
   `UNSUPPORTED_CAPABILITY`. `bc.history(address, { cursor?, limit? })` lists the address's
   transactions from the indexer, newest first, at most 1,000 per page, and only those the

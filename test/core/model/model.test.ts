@@ -114,7 +114,7 @@ describe('intent helpers', () => {
   });
 });
 
-describe('output variants (A8, P6-1)', () => {
+describe('output variants', () => {
   const on = (chain: string): AssetInfo => ({
     id: `${chain}:mainnet/native`,
     chain,
@@ -141,7 +141,7 @@ describe('output variants (A8, P6-1)', () => {
     });
 
   it('leaves the intent hash of outputs without a variant unchanged', () => {
-    // Frozen from the code before A8: an output without a variant hashes exactly as before.
+    // Frozen before outputs carried variants: an output without one hashes as before.
     // EVM and Solana carry none; Tron's `hex` and UTXO's `type` are derived from `canonical`.
     const cases: readonly (readonly [string, string, string, string])[] = [
       [
@@ -189,7 +189,7 @@ describe('output variants (A8, P6-1)', () => {
     expect(hashes.size).toBe(3);
   });
 
-  it('treats an empty variant as none, and refuses an undefined value (P25-R13)', () => {
+  it('treats an empty variant as none, and refuses an undefined value', () => {
     const raw = `0:${'ef'.repeat(32)}`;
     const plain = stored('ton', raw, raw);
     const empty = stored('ton', raw, raw, {});
@@ -199,7 +199,7 @@ describe('output variants (A8, P6-1)', () => {
     expect(error).toMatchObject({ code: 'INVALID_ADDRESS' });
   });
 
-  it("stores a copy of the address's variant, holding plain values only (M11)", () => {
+  it("stores a copy of the address's variant, holding plain values only", () => {
     const raw = `0:${'cd'.repeat(32)}`;
     const variant = { bounceable: true, testOnly: false, urlSafe: true };
     const address = new Address('ton', { canonical: raw, display: raw, variant });

@@ -1,8 +1,10 @@
 /**
- * A scripted EVM JSON-RPC node for offline tests (test-only; see the Plan 2 decision). It
- * keeps accounts, ERC-20 balances, a mempool with geth's replacement rules, blocks with
- * receipts and logs, a `finalized` head and per-block state snapshots for reorgs. Its
- * wire format follows the Ethereum JSON-RPC spec: hex quantities, 0x-hex data.
+ * A scripted EVM JSON-RPC node for offline tests. It is test-only: it decodes and
+ * recovers raw transactions with ethers, so in `crypto-aio/testing` it would make the
+ * testing kit depend on an optional peer. It keeps accounts, ERC-20 balances, a mempool
+ * with geth's replacement rules, blocks with receipts and logs, a `finalized` head and
+ * per-block state snapshots for reorgs. Its wire format follows the Ethereum JSON-RPC
+ * spec: hex quantities, 0x-hex data.
  */
 import {
   AbiCoder,
@@ -524,8 +526,8 @@ export class ScriptedEvmNode {
     const maxFee = (legacy ? tx.gasPrice : tx.maxFeePerGas) as bigint;
     const tip = (legacy ? tx.gasPrice : tx.maxPriorityFeePerGas) as bigint;
     // These two answers are geth's execution-path texts, not its pool texts. They are kept
-    // on purpose: the address-bearing "insufficient funds" text makes the R24 redaction
-    // tests stricter.
+    // on purpose: the address-bearing "insufficient funds" text makes the tests that a
+    // stored refusal reason names no address stricter.
     if (!legacy && maxFee < this.options.baseFee)
       throw new RpcFailure(-32000, 'max fee per gas less than block base fee');
     const cost = tx.value + tx.gasLimit * maxFee + (this.options.l1Fee ?? 0n);

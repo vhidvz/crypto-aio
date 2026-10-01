@@ -19,7 +19,7 @@ function serviceWith(lookup: (ref: TokenRef) => Promise<AssetMetadata>) {
   return { service: new AssetService(() => catalogs), driver, getTokenMetadata };
 }
 
-describe('AssetService token metadata cache (N6)', () => {
+describe('AssetService token metadata cache', () => {
   it('caches a permanent failure, so a junk token is queried once', async () => {
     const { service, driver, getTokenMetadata } = serviceWith(async () => {
       throw new ValidationError('ASSET_RESOLUTION', 'no decimals');
@@ -49,7 +49,7 @@ describe('AssetService token metadata cache (N6)', () => {
     expect(getTokenMetadata).toHaveBeenCalledTimes(2);
   });
 
-  it('drops a non-retryable provider failure from the cache (R53: only ASSET_RESOLUTION is cached)', async () => {
+  it('drops a non-retryable provider failure from the cache (only ASSET_RESOLUTION is cached)', async () => {
     let calls = 0;
     const { service, driver, getTokenMetadata } = serviceWith(async () => {
       calls += 1;

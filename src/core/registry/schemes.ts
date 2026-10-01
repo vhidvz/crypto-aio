@@ -61,7 +61,7 @@ export const ed25519Scheme = Object.freeze<SignatureScheme>({
     safely(() => ed25519.verify(signature, payload, publicKey, { zip215: false })),
 });
 
-/** Frozen (M1), like each scheme in it. */
+/** Frozen, like each scheme in it. */
 export const BUILTIN_SCHEMES: readonly SignatureScheme[] = Object.freeze([
   secp256k1Ecdsa,
   secp256k1Schnorr,

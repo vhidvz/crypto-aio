@@ -2,8 +2,8 @@
  * The TON family end to end: the public API (`CryptoAio`, `Blockchain`, the operation store,
  * crash and fencing) over the scripted toncenter node. Every fund-critical path is driven to
  * its end: a proven verdict, a proven expiry, or a proof that stays undecided while the
- * chain cannot decide it (F6-R21, F6-R29: "not included" waits for the message's lifetime
- * and reads only the wallet's hash-linked liteserver chain, from the attempt's own recorded
+ * chain cannot decide it ("not included" waits for the message's lifetime and reads only
+ * the wallet's hash-linked liteserver chain, from the attempt's own recorded
  * `validFrom`). A check that claims a proof path reads what that path reads.
  */
 import { ed25519 } from '@noble/curves/ed25519';
@@ -77,7 +77,7 @@ const recordOf = async (env: Env, operationId: string) => {
   return record;
 };
 
-/** The ordering the build recorded on an Operation's Attempt (F6-R29). */
+/** The ordering the build recorded on an Operation's Attempt. */
 const orderingOf = async (env: Env, operationId: string, index = 0) =>
   (await recordOf(env, operationId)).attempts[index]?.ordering as TonSeqnoOrdering;
 
@@ -182,7 +182,7 @@ function v4Request(
 }
 
 describe('TON end to end (scripted toncenter node)', () => {
-  // Lesson 1, R46: the container builds its transports itself with the core's default
+  // Determinism: the container builds its transports itself with the core's default
   // jitter (`Math.random`), which the public options cannot fix; it is fixed here instead.
   beforeEach(() => {
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
@@ -198,7 +198,7 @@ describe('TON end to end (scripted toncenter node)', () => {
       env.bc.transfer({ to: FRESH_UQ, amount: '1.5', memo: 'invoice 7' }),
     );
     expect(sub.attempt).toMatchObject({ idKind: 'message-hash', canonical: false });
-    // F6-R29: the build records the chain time its lifetime runs from, and the Operation's
+    // The build records the chain time its lifetime runs from, and the Operation's
     // reservation follows the built ordering.
     const record = await recordOf(env, sub.operationId);
     const ordering = record.attempts[0]?.ordering as TonSeqnoOrdering;
@@ -234,7 +234,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     }
   });
 
-  it('refuses a batch before anything is signed or sent: one output per transfer (F6-R15)', async () => {
+  it('refuses a batch before anything is signed or sent: one output per transfer', async () => {
     const { signer, calls } = countingSigner();
     const env = await createTonEnv({ signer });
     expect(env.bc.supports('batch-transfer')).toBe(false);
@@ -251,7 +251,9 @@ describe('TON end to end (scripted toncenter node)', () => {
     expect([calls(), sentBocs(env)]).toEqual([0, []]);
   });
 
-  describe("the recipient's bounce flag (Review Focus 3, D7)", () => {
+  // The recipient's address decides bounce: a raw or `EQ…` address to a fresh wallet
+  // bounces the value back, and the `UQ…` form of it lands.
+  describe("the recipient's bounce flag", () => {
     it('bounces the bounceable form and lands the non-bounceable one; the two are two intents', async () => {
       const env = await createTonEnv();
       const bounced = await env.run(
@@ -268,7 +270,7 @@ describe('TON end to end (scripted toncenter node)', () => {
         reason: REASONS.bounced,
       });
       expect(env.node.balance(FRESH)).toBe(0n);
-      // The other form of the same address is another intent (D7).
+      // The other form of the same address is another intent: the bounce flag is hashed.
       await expect(
         env.run(
           env.bc.transfer({ to: FRESH_UQ, amount: GRAM }, { idempotencyKey: 'eq' }),
@@ -289,7 +291,7 @@ describe('TON end to end (scripted toncenter node)', () => {
           .then(() => 'final')
           .catch((error: { code?: string }) => error.code);
       };
-      // A raw address carries no variant: bounceable (P25-R13), so it bounces too.
+      // A raw address carries no flag and is bounceable, so it bounces too.
       expect(await pay(FRESH, GRAM)).toBe('TX_REVERTED');
       expect(env.node.balance(FRESH)).toBe(0n);
       // Below the bounce's own cost the chain keeps the value with the recipient (`nofunds`):
@@ -305,9 +307,10 @@ describe('TON end to end (scripted toncenter node)', () => {
     });
   });
 
-  describe('the funds path and the fee ceiling (F6-R17, F6-R20)', () => {
+  describe('the funds path and the fee ceiling', () => {
     it('answers a sender that cannot pay with INSUFFICIENT_FUNDS before anything is signed', async () => {
-      // Too little to buy one run's gas: the emulation runs nothing (tonlib, F6-R17).
+      // Too little to buy one run's gas: the emulation runs nothing (tonlib buys the
+      // run's gas with the balance).
       const drained = countingSigner();
       const env = await createTonEnv({ fund: 5_000n, signer: drained.signer });
       await expect(
@@ -357,7 +360,7 @@ describe('TON end to end (scripted toncenter node)', () => {
       await expect(
         env.run(env.bc.transfer(intent, { idempotencyKey: 'c' })),
       ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
-      // F6-R20: an inflated config forward fee is held to the ceiling before the balance is
+      // An inflated config forward fee is held to the ceiling before the balance is
       // compared, so with an empty emulation it is never a definitive shortfall.
       const inflated = beginCell()
         .storeUint(0xea, 8)
@@ -413,7 +416,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     });
   });
 
-  it('fails a transfer the wallet could not pay for (Review Focus 1)', async () => {
+  it('fails a transfer the wallet could not pay for', async () => {
     const env = await createTonEnv({ fund: 2n * GRAM });
     const sub = await env.run(env.bc.transfer({ to: FRESH_UQ, amount: '1.5' }));
     // Another spend drains the wallet between the funds check and the inclusion: send mode
@@ -431,7 +434,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     });
   });
 
-  it('keeps one wallet strictly serial (Review Focus 5)', async () => {
+  it('keeps one wallet strictly serial', async () => {
     const { signer, calls } = countingSigner();
     const env = await createTonEnv({ signer });
     const results = await env.run(
@@ -499,11 +502,11 @@ describe('TON end to end (scripted toncenter node)', () => {
     await expect(
       env.mineWhile(sub.wait({ finality: 'final' }), PAST_LIFETIME + 20),
     ).rejects.toMatchObject({ code: 'TX_EXPIRED' });
-    // D9: proven at an attested block whose shard is past `valid_until` too, not earlier.
+    // Proven at an attested block whose shard is past `valid_until` too, not earlier.
     const attested = env.node.block(expiredAt.attested as number);
     expect(attested?.shards[0]?.genUtime).toBeGreaterThanOrEqual(validUntil);
     expect(attested?.genUtime).toBeGreaterThanOrEqual(validUntil + 5);
-    // F6-R21: "not included" read the wallet's own chain from the liteserver, back to its
+    // "Not included" read the wallet's own chain from the liteserver, back to its
     // start (the deposit), and the anchored history before it.
     const routes = servedSince(env, served);
     expect(routes).toEqual(expect.arrayContaining(['/getShards', '/getTransactions']));
@@ -531,7 +534,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     ]).toEqual([[], 5n, 2]);
   });
 
-  it('waits out indexer lag without a false verdict, past the lifetime (Review Focus 2)', async () => {
+  it('waits out indexer lag without a false verdict, past the lifetime', async () => {
     const env = await createTonEnv({ node: { indexerLag: 200 } });
     const sub = await env.run(env.bc.transfer({ to: FRESH_UQ, amount: 7n }));
     const served = env.node.served.length;
@@ -540,7 +543,7 @@ describe('TON end to end (scripted toncenter node)', () => {
       env.node.mine();
       await env.clock.advance(1_000);
       await env.run(env.aio.monitor.runOnce({ workerId: 'w' }));
-      // I4: our own landed message is never reported `replaced`, not even as observed, nor
+      // Our own landed message is never reported `replaced`, not even as observed, nor
       // `expired` once its lifetime has passed: the chain holds it, unindexed.
       const status = await env.run(env.bc.getTransactionStatus(sub.operationId));
       expect(['pending', 'dropped']).toContain(status.state);
@@ -566,7 +569,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     expect(env.node.balance(FRESH)).toBe(7n);
   });
 
-  describe('fund-critical resets and replays (F6-R21, F6-R29)', () => {
+  describe('fund-critical resets and replays', () => {
     it("ends a transfer whose seqno another request took only once its own lifetime has passed, walking back to the attempt's recorded start", async () => {
       const { signer, calls } = countingSigner();
       const env = await createTonEnv({ fund: 0n, signer });
@@ -607,7 +610,7 @@ describe('TON end to end (scripted toncenter node)', () => {
       expect(env.node.seqno(env.address)).toBe(1);
       expect(taken?.now).toBeLessThan(validUntil);
       // The slot was consumed while ours was valid, yet "not included" waited for our
-      // lifetime (F6-R21): proven at an attested block past `valid_until`.
+      // lifetime: proven at an attested block past `valid_until`.
       const attested = env.node.block((endedAt as number) - FINALITY_SKEW);
       expect(attested?.genUtime).toBeGreaterThanOrEqual(validUntil);
       expect(await recordOf(env, sub.operationId)).toMatchObject({
@@ -617,7 +620,7 @@ describe('TON end to end (scripted toncenter node)', () => {
       expect(await env.stores.operations.getObservation(attempt?.id ?? '')).toMatchObject(
         { state: 'replaced', evidence: 'proven' },
       );
-      // F6-R29: the walk went back to the recorded start less the tolerance, and no further:
+      // The walk went back to the recorded start less the tolerance, and no further:
       // one page, not the older history (the widest window would read it all).
       expect(walk).toEqual(['/getTransactions']);
       expect(validFrom).toBe(validUntil - VALID_FOR);
@@ -642,7 +645,7 @@ describe('TON end to end (scripted toncenter node)', () => {
       // Software sharing the key sends everything and deletes the wallet (+128+32); anyone
       // re-funds it and re-deploys it from its public StateInit: its seqno starts again. The
       // reset falls between monitor passes: a resend of our still-valid message while the
-      // wallet is deleted and re-funded would run it again (Task 13's reported finding).
+      // wallet is deleted and re-funded would run it again.
       const now = () => Math.floor(env.clock.now() / 1000);
       env.node.submit(
         v4Request(1, now() + VALID_FOR, [
@@ -784,7 +787,10 @@ describe('TON end to end (scripted toncenter node)', () => {
       ]);
     });
 
-    it("never ends an Operation on a lone endpoint's refusal of bytes it relayed (lesson 21)", async () => {
+    // TON takes no `rejected` from a node's text: toncenter's refusals are unstructured,
+    // so a refusal waits for the proven expiry, and a lone liar that relayed our bytes
+    // cannot end the Operation.
+    it("never ends an Operation on a lone endpoint's refusal of bytes it relayed", async () => {
       const { signer, calls } = countingSigner();
       const env = await createTonEnv({ signer });
       // The only endpoint relays our message, then answers a refusal of it.
@@ -871,7 +877,10 @@ describe('TON end to end (scripted toncenter node)', () => {
     });
   });
 
-  describe('the replay guard before every send of stored bytes (F6-R34)', () => {
+  // Every resend path is guarded: a same-key retry, the `dropped` rebroadcast,
+  // `recover()` and `bc.rebroadcast()`. Each could run our message again after a wallet
+  // reset.
+  describe('the replay guard before every send of stored bytes', () => {
     /** The external messages sent so far, an intercepted one included. */
     const sends = (env: Env) => sentBocs(env).length;
     const intent = { to: FRESH_UQ, amount: GRAM };
@@ -921,7 +930,9 @@ describe('TON end to end (scripted toncenter node)', () => {
       env.node.mine();
     }
 
-    // The two saved Task 13 reproductions (task-13-resend-after-reset), now passing.
+    // Two double pays with one signature, each reproduced end to end: our message lands,
+    // the wallet is reset and re-funded within its lifetime, and a resend of the stored
+    // bytes would run it again.
     it('never resends, on a caller retry after an ambiguous send, a message that ran into a reset', async () => {
       const { signer, calls } = countingSigner();
       const env = await createTonEnv({
@@ -969,7 +980,7 @@ describe('TON end to end (scripted toncenter node)', () => {
 
     it('never resends a message that ran into a wallet reset and a refund within its lifetime', async () => {
       const { signer, calls } = countingSigner();
-      // The indexer has not caught up with our transfer (Review Focus 2).
+      // The indexer has not caught up with our transfer.
       const env = await createTonEnv({
         version: 'v4r2',
         signer,
@@ -1152,8 +1163,9 @@ describe('TON end to end (scripted toncenter node)', () => {
       expect(runsOf(env, ours.id)).toHaveLength(1);
     });
 
-    // Final-wave re-review N1 (probe R1): the first-send skip holds only within 2 s of
-    // `assemble`, so a first send that stalled past the address lease is guarded too.
+    // The first-send skip holds only within 2 s of `assemble`, so a first send that
+    // stalled past the address lease is guarded too: with a shared store, another
+    // container may have sent the bytes meanwhile.
     it('guards a first send that comes more than 2 s after assemble: a shared store, a lapsed lease and a reset', async () => {
       const { signer, calls } = countingSigner();
       let release = (): void => undefined;
@@ -1224,7 +1236,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     expect(env.node.jettonBalance(MASTER, env.address)).toBe(600_000n);
   });
 
-  describe('a jetton wallet that gives no answer decides nothing (final review I1)', () => {
+  describe('a jetton wallet that gives no answer decides nothing', () => {
     /** Every endpoint answers `get_wallet_data` for `wallet` with exit -13 ("no state"). */
     const noState = (env: Env, wallet: string, exitCode = -13) => {
       env.node.intercept = (_e, route, request) => {
@@ -1244,7 +1256,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     };
     const asset = { standard: 'jetton', contract: MASTER };
 
-    it('keeps a delivered jetton transfer undecided, never failed, then proves it final (probe P1)', async () => {
+    it('keeps a delivered jetton transfer undecided, never failed, then proves it final', async () => {
       for (const side of ['recipient', 'sender'] as const) {
         const { env, calls } = await jettonEnv();
         const wallet = env.node.jettonWalletOf(
@@ -1299,7 +1311,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     });
   });
 
-  describe('a junk jetton never stalls deposit history (F6-R30 (1), probes P2 and P3)', () => {
+  describe('a junk jetton never stalls deposit history', () => {
     const JUNK = `0:${'88'.repeat(32)}`;
     /** A genuine 1 GRAM deposit to FRESH, then 7 base units of a junk jetton. */
     async function junkDeposit(jetton: { readonly symbol?: string }) {
@@ -1333,8 +1345,8 @@ describe('TON end to end (scripted toncenter node)', () => {
       (await env.run(bc.history(FRESH))).items.flatMap((tx) => tx.transfers);
 
     for (const [name, jetton] of [
-      ['never indexed (P2)', {}],
-      ['indexed without decimals (P3)', { symbol: 'JUNK' }],
+      ['never indexed', {}],
+      ['indexed without decimals', { symbol: 'JUNK' }],
     ] as const) {
       it(`reads the page with the junk transfer raw and unresolved: metadata ${name}`, async () => {
         const env = await junkDeposit(jetton);
@@ -1370,7 +1382,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     }
   });
 
-  it("reports one jetton deposit twice: the jetton wallet's arrival, which is credited, and the owner's notification (final review I2, probe P4)", async () => {
+  it("reports one jetton deposit twice: the jetton wallet's arrival, which is credited, and the owner's notification", async () => {
     const env = await createTonEnv();
     env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
     env.node.mintJetton(MASTER, env.address, 1_000_000n);
@@ -1410,7 +1422,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     expect(arrival?.traceId).toBe(notification?.traceId);
   });
 
-  it('reads each block header and verifies each jetton wallet once per history page (final review M2)', async () => {
+  it('reads each block header and verifies each jetton wallet once per history page', async () => {
     const env = await createTonEnv();
     env.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
     env.node.mintJetton(MASTER, env.address, 1_000_000n);
@@ -1478,7 +1490,7 @@ describe('TON end to end (scripted toncenter node)', () => {
     expect(env.node.jettonBalance(MASTER, FRESH)).toBe(0n);
   });
 
-  describe('crash and recovery (restart({ killPrevious: true }), D20)', () => {
+  describe('crash and recovery (restart({ killPrevious: true }))', () => {
     function crashEnv() {
       const { signer, calls } = countingSigner();
       let faulty: FaultyOperationStore | undefined;

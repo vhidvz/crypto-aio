@@ -1,6 +1,6 @@
 /**
- * The clients' common path to the core transport (spec §11, R41). `EthersClient` (directly,
- * R46) and `Web3Client` (through its EIP-1193 `request` object) end here, so each JSON-RPC
+ * The clients' common path to the core transport. `EthersClient` (directly) and
+ * `Web3Client` (through its EIP-1193 `request` object) end here, so each JSON-RPC
  * call carries the purpose, retry class, quorum, fanout and signal of the driver method that
  * made it.
  */
@@ -38,8 +38,8 @@ function lowerCasedFacts(value: unknown, keys: readonly string[]): unknown {
 }
 
 /**
- * R94: a transaction's calldata as the client reads it: `input`, or `data` on older nodes,
- * lower-cased. The token verdict decodes it (R50, R89), so a key must compare it under
+ * A transaction's calldata as the client reads it: `input`, or `data` on older nodes,
+ * lower-cased. The token verdict decodes it, so a key must compare it under
  * either name, or a first endpoint answering with `data` could alter it unseen.
  */
 function calldataOf(tx: unknown): unknown {
@@ -48,7 +48,7 @@ function calldataOf(tx: unknown): unknown {
   return lowerCased(input ?? data ?? null);
 }
 
-/** A transaction's `keys`, lower-cased when `lower`, and its calldata as `input` (R94). */
+/** A transaction's `keys`, lower-cased when `lower`, and its calldata as `input`. */
 function txFacts(tx: unknown, keys: readonly string[], lower: boolean): unknown {
   if (tx === null || typeof tx !== 'object') return tx;
   const facts = (lower ? lowerCasedFacts(tx, keys) : pick(tx, keys)) as Record<
@@ -59,9 +59,10 @@ function txFacts(tx: unknown, keys: readonly string[], lower: boolean): unknown 
 }
 
 /**
- * R59: a receipt's consensus facts include its logs, since a proven token verdict (R50)
- * reads them: one endpoint that drops or alters a `Transfer` log must disagree. Hex case is
- * formatting, not consensus, so each log's facts are compared lower-cased.
+ * A receipt's consensus facts include its logs, since a proven token verdict reads them:
+ * one endpoint that drops or alters a `Transfer` log must disagree. Hex case is
+ * formatting, not consensus, so each log's facts are compared lower-cased. A provider
+ * that formats logs another way fails proofs, but only retryably.
  */
 function receiptKey(result: unknown): unknown {
   if (result === null || typeof result !== 'object') return result;
@@ -75,9 +76,9 @@ function receiptKey(result: unknown): unknown {
 const BLOCK_TX = ['hash', 'from', 'nonce', 'to'] as const;
 
 /**
- * R88: the consensus facts of a block read with its transactions to find the one that
+ * The consensus facts of a block read with its transactions to find the one that
  * consumed a nonce: the block's number and hash, and each transaction's hash, sender and
- * nonce, with the recipient and calldata that the token verdict reads (R50).
+ * nonce, with the recipient and calldata that the token verdict reads.
  */
 export function blockTransactionsKey(result: unknown): unknown {
   if (result === null || typeof result !== 'object') return result;
@@ -98,7 +99,7 @@ const NATIVE_BROADCAST: EvmCallTags = {
 
 /**
  * The tags of a `crypto-aio/native` client's request: plain reads, except a broadcast, which
- * is one (M3): a failure after the transport may have delivered it is `ambiguous`, never an
+ * is one: a failure after the transport may have delivered it is `ambiguous`, never an
  * invitation to sign again with a new nonce.
  */
 export const nativeTags = (method: string): EvmCallTags =>
@@ -148,7 +149,7 @@ export function transportCall(
  * Runs `request` (an SDK call whose bridge ends in `call`) and, when its last transport call
  * failed, rethrows the transport's own error, never an SDK wrapper of it: web3 turns an
  * "execution reverted" error into a `ContractExecutionError`, which would lose the error's
- * code and ambiguity. A failure followed by a successful call is forgotten (M2).
+ * code and ambiguity. A failure followed by a successful call is forgotten.
  */
 export async function throughSdk<T>(
   request: (call: (method: string, params: unknown) => Promise<unknown>) => Promise<T>,

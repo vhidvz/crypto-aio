@@ -66,7 +66,7 @@ Defined in: [src/core/events/types.ts:68](https://github.com/vhidvz/crypto-aio/b
 
 > **value**: `string`
 
-The nonce or seqno: an operational identifier (M7), never UTXO inputs.
+The nonce or seqno: an operational identifier, never UTXO inputs.
 
 ***
 
@@ -95,7 +95,7 @@ again after a restart, by another process, or once it was forgotten.
 
 > **expected**: `string`
 
-The chain's pending nonce: an operational identifier (M7).
+The chain's pending nonce: an operational identifier.
 
 #### namespace
 

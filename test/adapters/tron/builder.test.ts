@@ -35,7 +35,7 @@ import {
 } from './support/vectors';
 
 const TRX = 1_000_000n;
-/** Every java-tron answer the classifier reads as a definitive `rejected` (Task 5). */
+/** Every java-tron answer the classifier reads as a definitive `rejected`. */
 const CLAIMS = [
   ['SIGERROR', 'Validate signature error: Signature size is 64'],
   ['CONTRACT_VALIDATE_ERROR', 'Contract validate error : No contract!'],
@@ -230,7 +230,7 @@ describe('Tron builder: fees and funds', () => {
     expect(fee.details).toMatchObject({ feeLimit: 3_558_000n });
     const unsigned = await h.run(h.builder.build(token(10n), fee, h.build));
     expect(decodeRawData(unsigned.payload.data).feeLimit).toBe(3_558_000);
-    // Lesson 19 boundaries: 2^53 − 1 is written exactly; 2^53 goes through the codec's
+    // Boundaries: 2^53 − 1 is written exactly; 2^53 goes through the codec's
     // safe() and is refused, never rounded (a config beyond what tronNetworkConfig accepts,
     // so only the codec can refuse it).
     const limit = (feeLimit: bigint) => ({
@@ -252,7 +252,7 @@ describe('Tron builder: fees and funds', () => {
     });
   });
 
-  it('bounds the fee limit by maxFeeLimit (100 TRX by default), whatever one endpoint reports (F4-R28)', async () => {
+  it('bounds the fee limit by maxFeeLimit (100 TRX by default), whatever one endpoint reports', async () => {
     // One endpoint forges its maximum fee limit and inflates the energy price: 29,650 energy
     // at 10,000 sun is about 296 TRX, which an assert-style failure on chain would burn.
     const lying = { getMaxFeeLimit: 2n ** 60n, getEnergyFee: 10_000n };
@@ -305,7 +305,7 @@ describe('Tron builder: fees and funds', () => {
     expect(decodeRawData(unsigned.payload.data).feeLimit).toBe(300_000_000);
   });
 
-  it('refuses before signing a fee limit above maxFeeLimit, wherever the estimate came from (F4-R28)', async () => {
+  it('refuses before signing a fee limit above maxFeeLimit, wherever the estimate came from', async () => {
     const h = setup();
     const fee = await h.run(h.builder.estimateFee(token(10n), h.build));
     const limit = (feeLimit: bigint) => ({
@@ -323,7 +323,8 @@ describe('Tron builder: fees and funds', () => {
     });
   });
 
-  it('refuses a single TRX transfer above 2^53 - 1 sun before any I/O (D20, lesson 19)', async () => {
+  // tronweb's protobuf layer holds amounts as JS numbers: a larger payout must be split.
+  it('refuses a single TRX transfer above 2^53 - 1 sun before any I/O', async () => {
     const h = setup();
     const huge = trx(MAX_SAFE + 1n);
     const before = h.calls.length;
@@ -357,7 +358,7 @@ describe('Tron builder: fees and funds', () => {
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
   });
 
-  it('refuses TRX to a contract before signing only where the chain forbids it, on the quorum-confirmed getcontract (F4-R11)', async () => {
+  it('refuses TRX to a contract before signing only where the chain forbids it, on the quorum-confirmed getcontract', async () => {
     const toContract = trx(TRX, { outputs: [{ to: USDT, amount: TRX }] });
     // `getForbidTransferToContract` 1: java-tron refuses "Cannot transfer TRX to a
     // smartContract.", so the transfer is refused here, never signed to stall and expire.
@@ -489,7 +490,7 @@ describe('Tron builder: build and assemble', () => {
     });
     expect(raw.expiration).toBeLessThanOrEqual(head.timestamp + 60_000);
     expect(raw.expiration).toBeGreaterThan(head.timestamp + 59_000);
-    // F4-R12, F4-R14: the TaPoS bound of the reference block, whose height its id carries,
+    // The TaPoS bound of the reference block, whose height its id carries,
     // and the signed hash bytes of that block (`TronExpiryOrdering`).
     expect(unsigned.ordering).toEqual({
       kind: 'expiry',
@@ -505,7 +506,8 @@ describe('Tron builder: build and assemble', () => {
     expect(bandwidthOf(unsigned.payload.data.length / 2)).toBeGreaterThan(200n);
   });
 
-  it('gives two identical transfers different txIDs (D5)', async () => {
+  // Tron has no nonce: identical transfers would otherwise share one txID and one effect.
+  it('gives two identical transfers different txIDs', async () => {
     const h = setup();
     const a = await h.prepared(trx(TRX));
     const b = await h.prepared(trx(TRX));
@@ -543,7 +545,7 @@ describe('Tron builder: build and assemble', () => {
     });
   });
 
-  it('anchors the expiration at the local clock when the head is dated in the future (D3), and refuses a head more than half the window ahead (F4-R12 M2)', async () => {
+  it('anchors the expiration at the local clock when the head is dated in the future, and refuses a head more than half the window ahead', async () => {
     const h = setup();
     h.node.fund(RECIPIENT, 1n);
     const real = h.head();
@@ -594,7 +596,8 @@ describe('Tron builder: build and assemble', () => {
     await h.run(h.builder.build(trx(2n * TRX), fee, h.build));
   });
 
-  it('refuses an expiration window outside the driver bounds (D3, java-tron’s window)', async () => {
+  // The driver bounds keep the window inside java-tron's own.
+  it('refuses an expiration window outside the driver bounds', async () => {
     const h = setup();
     const fee = await h.run(h.builder.estimateFee(trx(TRX), h.build));
     const wide = createTronBuilder({
@@ -652,7 +655,7 @@ describe('Tron builder: build and assemble', () => {
       [token(10n), withDetails(tokenFee, { feeLimit: -1n }), notTron],
       [token(10n), withDetails(tokenFee, { feeLimit: 3_558_000 }), notTron],
       [trx(TRX), withDetails(trxFee, { bandwidth: undefined }), notTron],
-      // Above the handle's bound (F4-R28), before the codec's safe() (pinned above).
+      // Above the handle's bound, before the codec's safe() (pinned above).
       [
         token(10n),
         withDetails(tokenFee, { feeLimit: MAX_SAFE + 1n }),
@@ -734,7 +737,7 @@ describe('Tron builder: build and assemble', () => {
         tampered((r) => withContract(r, { data: encodeTransfer(RECIPIENT, 11n) })),
       ],
       [token(10n), tokenFee, tampered((r) => withContract(r, { contract: OTHER_HEX }))],
-      // Only canonical transfer(to, amount) call data (Task 6's verdict relies on it).
+      // Only canonical transfer(to, amount) call data (the verdict relies on it).
       [
         token(10n),
         tokenFee,
@@ -815,7 +818,7 @@ describe('Tron builder: build and assemble', () => {
     await expect(h.run(h.builder.assemble(tampered, signatures))).rejects.toMatchObject({
       code: 'SIGNING_FAILED',
     });
-    // Lesson 4: the payload's owner must be the signing key's account.
+    // The payload's owner must be the signing key's account.
     const other = secp256k1.getPublicKey('11'.repeat(32), true);
     const foreign: UnsignedTx = {
       ...unsigned,
@@ -843,7 +846,7 @@ describe('Tron builder: build and assemble', () => {
     }
   });
 
-  it('attaches only a signature that verifies against the signing key over the txID (F4-R12 M3)', async () => {
+  it('attaches only a signature that verifies against the signing key over the txID', async () => {
     const h = setup();
     const unsigned = await h.prepared(trx(TRX));
     const [good] = (await signWithKey(unsigned)) as [SignatureBundle];
@@ -882,7 +885,7 @@ describe('Tron builder: build and assemble', () => {
     });
   });
 
-  it('references the head by the height its id carries, and refuses a head whose id disagrees (F4-R12)', async () => {
+  it('references the head by the height its id carries, and refuses a head whose id disagrees', async () => {
     const h = setup();
     const intent = trx(TRX);
     const fee = await h.run(h.builder.estimateFee(intent, h.build));
@@ -937,7 +940,7 @@ describe('Tron builder: build and assemble', () => {
           expiresAtMs: (plain.ordering as { expiresAtMs: number }).expiresAtMs + 1,
         },
       },
-      // F4-R12: no reference bound, or another reference's.
+      // No reference bound, or another reference's.
       {
         ...plain,
         ordering: {
@@ -953,7 +956,7 @@ describe('Tron builder: build and assemble', () => {
             (plain.ordering as { lastValidHeight: bigint }).lastValidHeight + 1n,
         },
       },
-      // F4-R14: another block's hash bytes, or none.
+      // Another block's hash bytes, or none.
       {
         ...plain,
         ordering: {
@@ -983,7 +986,7 @@ describe('Tron builder: build and assemble', () => {
         },
       );
     }
-    // Plan 2 note: only the named fee field is read; the core may add others.
+    // Only the named fee field is read; the core may add others.
     const extra: UnsignedTx = {
       ...call,
       fee: { ...call.fee, details: { ...call.fee.details, requestedFee: 'x' } },
@@ -1039,7 +1042,7 @@ describe('Tron broadcaster', () => {
     h.node.fetch.route('https://b.tron.test/wallet/broadcasthex', (_request, signal) =>
       hang(signal),
     );
-    // Final review M3: the hang runs through the transport's timeouts and retries, so drive
+    // The hang runs through the transport's timeouts and retries, so drive
     // it in 1 s fake steps, not thousands of 10 ms ones (a real-time budget under load).
     await expect(
       drive(h.clock, h.broadcaster.broadcast(next), 1_000),
@@ -1084,7 +1087,7 @@ describe('Tron broadcaster', () => {
       { encoding: 'base64', data: signed.raw.data },
       { encoding: 'hex', data: `${signed.raw.data}0` },
       { encoding: 'hex', data: '' },
-      // Lesson 20: a huge input is checked in linear time and never sent.
+      // A huge input is checked in linear time and never sent.
       { encoding: 'hex', data: `${'ab'.repeat(2_000_000)}zz` },
     ] as const) {
       await expect(
@@ -1094,7 +1097,7 @@ describe('Tron broadcaster', () => {
     expect(callsTo(h, '/wallet/broadcasthex')).toBe(before);
   });
 
-  it('rejects hand-built bytes that java-tron refuses for a reason they carry (lesson 21)', async () => {
+  it('rejects hand-built bytes that java-tron refuses for a reason they carry', async () => {
     const h = setup();
     h.node.fund(RECIPIENT, 1n); // an existing recipient: no account creation
     const head = h.head();
@@ -1168,8 +1171,9 @@ describe('Tron broadcaster', () => {
     expect(await send(valid.hex)).toEqual({ kind: 'accepted' });
   });
 
+  // A node's rejection is a claim: it stands only if its reason holds for our own bytes.
   it.each(CLAIMS)(
-    'refuses, never rejects, a relaying node claiming %s of our valid bytes (lesson 21)',
+    'refuses, never rejects, a relaying node claiming %s of our valid bytes',
     async (code, message) => {
       const h = setup();
       const signed = await h.signed(trx(TRX));

@@ -114,7 +114,7 @@ describe('ed25519', () => {
   });
 });
 
-describe('malformed input (Task 8)', () => {
+describe('malformed input', () => {
   const key = secp256k1.utils.randomPrivateKey();
   const payload = sha256(utf8ToBytes('pay'));
   const ecdsa = secp256k1.sign(payload, key, { lowS: true });

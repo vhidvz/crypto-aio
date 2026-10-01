@@ -6,4 +6,4 @@
 
 Defined in: [src/adapters/utxo/types.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L33)
 
-Every standard output type a UTXO transfer may pay to (spec §6.4 variants).
+Every standard output type a UTXO transfer may pay to.

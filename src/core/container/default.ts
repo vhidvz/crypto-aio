@@ -15,7 +15,7 @@ function perField<T extends object>(base: T | undefined, next: T | undefined): T
 }
 
 /**
- * B105: the same rules as scopes (spec §5.4): `undefined` never overrides, and no
+ * The same rules as scopes: `undefined` never overrides, and no
  * `__proto__`, `constructor` or `prototype` key is copied into a map.
  */
 function mergeAioOptions(base: AioOptions, next: AioOptions): AioOptions {

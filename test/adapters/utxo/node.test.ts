@@ -1,4 +1,4 @@
-// The scripted Esplora node must model bitcoind's rules exactly (lesson 8): it is what the
+// The scripted Esplora node must model bitcoind's rules exactly: it is what the
 // safety tests of the driver and the core run against.
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { walletAddress } from '../../../src/adapters/utxo/address';
@@ -130,7 +130,7 @@ function lockedSpend(
 }
 
 /**
- * What the real codec assembles for a wallet type (Task 5): two funded inputs, a payment and
+ * What the real codec assembles for a wallet type: two funded inputs, a payment and
  * change, signed like the core's local signer.
  */
 function codecSpend(node: ScriptedEsploraNode, type: UtxoAddressType) {
@@ -306,7 +306,7 @@ describe('ScriptedEsploraNode', () => {
     expect(() => node.reorg(node.height + 1)).toThrow();
   });
 
-  it('shows a transaction confirmed above a lagging view as in its mempool (I1)', async () => {
+  it('shows a transaction confirmed above a lagging view as in its mempool', async () => {
     const { node, post, spend, get, txid } = setup();
     const hex = spend(90_000n);
     await post(hex);
@@ -330,7 +330,7 @@ describe('ScriptedEsploraNode', () => {
     });
   });
 
-  it("refuses non-standard p2pkh signatures into the mempool, but a miner's block takes them (M7)", async () => {
+  it("refuses non-standard p2pkh signatures into the mempool, but a miner's block takes them", async () => {
     const { node, post } = setup();
     const legacy = walletAddress(TEST_PUBKEY, 'p2pkh', REGTEST);
     const [txid] = node.fund(legacy.address, 100_000n).split(':') as [string];
@@ -362,7 +362,7 @@ describe('ScriptedEsploraNode', () => {
     expect(node.confirmations(idOf(copy))).toBe(1);
   });
 
-  it('re-adds a disconnected transaction with the fee limits bypassed (M7)', async () => {
+  it('re-adds a disconnected transaction with the fee limits bypassed', async () => {
     const { node, post, spend } = setup();
     const hex = spend(99_900n); // 100 sat: fine at the default minimum
     await post(hex);
@@ -373,7 +373,7 @@ describe('ScriptedEsploraNode', () => {
   });
 });
 
-describe('what the real codec produces (Task 5)', () => {
+describe('what the real codec produces', () => {
   it.each(['p2wpkh', 'p2sh-p2wpkh', 'p2pkh', 'p2tr'] as const)(
     '%s: accepts the assembled spend and verifies every signature',
     async (type) => {
@@ -1012,7 +1012,7 @@ describe('scripted faults', () => {
   });
 });
 
-describe('the modelled electrs: Blockstream new-index or mempool/electrs (M1)', () => {
+describe('the modelled electrs: Blockstream new-index or mempool/electrs', () => {
   it('answers as mempool/electrs does with errorFormat "mempool"', async () => {
     const { node, post, get, txid } = setup({ errorFormat: 'mempool' });
     const parent = signedSpend(TEST_KEY, [[txid, 0, 100_000n]], [[OWN.script, 99_000n]]);
@@ -1072,7 +1072,7 @@ describe('the modelled electrs: Blockstream new-index or mempool/electrs (M1)', 
   );
 });
 
-describe('paths the node does not model (M2)', () => {
+describe('paths the node does not model', () => {
   it('records one met through fetch, and fails the test that met it', async () => {
     const { node, post, spend } = setup();
     const truc = edited(spend(90_000n), (tx) => {

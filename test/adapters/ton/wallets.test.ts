@@ -63,7 +63,7 @@ const RECIPIENT = `0:${'11'.repeat(32)}`;
 const MAINNET = -239;
 const TESTNET = -3;
 
-describe('TON wallet identity (spec §9)', () => {
+describe('TON wallet identity', () => {
   it('fills the defaults of each version', () => {
     expect(resolveIdentity({ ton: { version: 'v4r2' } }, MAINNET)).toEqual({
       version: 'v4r2',
@@ -106,7 +106,7 @@ describe('TON wallet identity (spec §9)', () => {
         expect.objectContaining({ code: 'CONFIG_INVALID' }),
       );
     }
-    // Lesson 19: the ends of each range are accepted; the texts never carry the value.
+    // The ends of each range are accepted; the texts never carry the value.
     const at = (ton: object) => resolveIdentity({ ton }, MAINNET);
     expect(at({ version: 'v4r2', subwalletId: 0 })).toMatchObject({ subwalletId: 0 });
     expect(at({ version: 'v4r2', subwalletId: 2 ** 32 - 1 })).toMatchObject({
@@ -121,8 +121,8 @@ describe('TON wallet identity (spec §9)', () => {
     expect(() => at({ version: 'v5r1', subwalletNumber: 32768 })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining('32768') }),
     );
-    // M3, F3-R16: an unknown key is never echoed (it could be a pasted secret); the
-    // accepted settings are listed instead.
+    // An unknown key is never echoed (it could be a pasted secret); the accepted settings
+    // are listed instead.
     for (const [version, key, expected] of [
       [
         'v4r2',
@@ -155,7 +155,7 @@ describe('TON wallet identity (spec §9)', () => {
     }
   });
 
-  it('refuses a v5r1 wallet id of another network before any key is used (lesson 5)', () => {
+  it('refuses a v5r1 wallet id of another network before any key is used', () => {
     expect(() =>
       resolveIdentity({ ton: { version: 'v5r1', networkGlobalId: TESTNET } }, MAINNET),
     ).toThrow(
@@ -211,7 +211,7 @@ describe('TON wallet addresses', () => {
     );
   });
 
-  it('refuses a key that is not a canonical ed25519 point (lesson 4)', () => {
+  it('refuses a key that is not a canonical ed25519 point', () => {
     const identity = resolveIdentity({ ton: { version: 'v4r2' } }, MAINNET);
     const smallOrder = new Uint8Array(32);
     smallOrder[0] = 1; // the identity point
@@ -228,7 +228,7 @@ describe('TON wallet addresses', () => {
     ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
   });
 
-  it('refuses an identity outside its fields, never wrapping it (lesson 19)', () => {
+  it('refuses an identity outside its fields, never wrapping it', () => {
     const outOfRange = [
       { version: 'v4r2', workchain: 0, subwalletId: 2 ** 32 },
       { version: 'v4r2', workchain: 0, subwalletId: -1 },
@@ -247,7 +247,7 @@ describe('TON wallet addresses', () => {
         expect.objectContaining({ code: 'CONFIG_INVALID' }),
       );
     }
-    // M2: the ends of each field are wallets.
+    // The ends of each field are wallets.
     const ends: readonly TonIdentity[] = [
       { version: 'v4r2', workchain: 0, subwalletId: 2 ** 32 - 1 },
       { version: 'v4r2', workchain: -1, subwalletId: 0 },
@@ -322,7 +322,7 @@ describe('TON signing requests', () => {
         seqno: 7,
         validUntil: 1_790_000_000,
         messages: [expect.anything()],
-        // F6-R17 M1: each message's send mode, as the wallet reads it.
+        // Each message's send mode, as the wallet reads it.
         modes: [SEND_MODE],
       });
     }
@@ -351,7 +351,7 @@ describe('TON signing requests', () => {
     expect(() =>
       signedRequest(internalCell, unsigned.digest, sign(unsigned.digest)),
     ).toThrow(expect.objectContaining({ code: 'SIGNING_FAILED' }));
-    // M12: a cell that holds no message, or a signature of another size, is refused too.
+    // A cell that holds no message, or a signature of another size, is refused too.
     const signature = sign(unsigned.digest);
     for (const [payload, bytes] of [
       [commentCell('x'), signature],
@@ -405,7 +405,7 @@ describe('TON signing requests', () => {
     expect(MAX_MESSAGES).toEqual({ v4r2: 4, v5r1: 255 });
   });
 
-  it('refuses a seqno or lifetime outside uint32 with a fixed text, and takes the ends (lesson 19)', async () => {
+  it('refuses a seqno or lifetime outside uint32 with a fixed text, and takes the ends', async () => {
     const identity = resolveIdentity({ ton: { version: 'v4r2' } }, MAINNET);
     const make = (seqno: number, validUntil: number) =>
       unsignedRequest(identity, PK, {
@@ -511,7 +511,8 @@ describe('TON message bodies', () => {
     expect(decodeComment(Cell.EMPTY)).toBeUndefined();
   });
 
-  it('reads a comment chain in one bounded pass (lesson 20)', () => {
+  // `@ton/core`'s recursive snake reader is quadratic: one 1 MB comment took 3.6 s.
+  it('reads a comment chain in one bounded pass', () => {
     const chain = (cells: number): Cell => {
       let tail: Cell | undefined;
       for (let i = cells - 1; i >= 0; i -= 1) {
@@ -621,7 +622,7 @@ describe('TON message bodies', () => {
     expect(decodeWalletRequest(commentCell('x'))).toBeNull();
   });
 
-  it('refuses amounts and query ids outside their TL-B fields, never wrapping (lesson 19)', () => {
+  it('refuses amounts and query ids outside their TL-B fields, never wrapping', () => {
     const MAX_COINS = 2n ** 120n - 1n;
     const MAX_QUERY_ID = 2n ** 64n - 1n;
     const jetton = (patch: Partial<Parameters<typeof jettonMessage>[0]>) =>
@@ -678,7 +679,7 @@ describe('TON message bodies', () => {
     }
   });
 
-  it('decodes at most one message worth of body: 2^13 cells, read from the header (lesson 20)', () => {
+  it('decodes at most one message worth of body: 2^13 cells, read from the header', () => {
     expect(MAX_BODY_CELLS).toBe(2 ** 13);
     // The longest legal body BOC: 2^21 bits of data in 2^13 cells, each with its
     // descriptors, 4 two-byte refs, a rounding byte and a 3-byte index entry, plus header
@@ -716,7 +717,7 @@ describe('TON message bodies', () => {
     }
   });
 
-  it('reads only workchains 0 and -1 from untrusted bodies (M1)', () => {
+  it('reads only workchains 0 and -1 from untrusted bodies', () => {
     const foreign = new Address(5, Buffer.alloc(32, 0x33));
     const owner = sdkAddress(TEST_WALLETS.v4r2.basechain);
     const bocOf = (address: Address) =>
@@ -742,8 +743,8 @@ describe('TON message bodies', () => {
       customPayload: false,
     });
     expect(decodeJettonTransfer(transfer(foreign))).toBeNull();
-    // F6-R17 M2: the response destination (none for addr_none or a foreign workchain) and
-    // whether a custom payload rides along, read by the one decoder.
+    // The response destination (none for addr_none or a foreign workchain) and whether a
+    // custom payload rides along, read by the one decoder.
     const withPayload = (response: Address | null) =>
       beginCell()
         .storeUint(OP.jettonTransfer, 32)
@@ -792,7 +793,7 @@ describe('TON message bodies', () => {
     expect(messageFacts(internal({ to: foreign, value: 1n }))).toBeNull();
   });
 
-  it('hands the SDK only strict raw addresses (lesson 4)', () => {
+  it('hands the SDK only strict raw addresses', () => {
     const hexPart = RECIPIENT.slice(2);
     for (const lenient of [`1:${hexPart}`, `00:${hexPart}`, USDT_MASTER.bounceable, '']) {
       for (const use of [
@@ -810,8 +811,8 @@ describe('TON message bodies', () => {
   it('passes addresses to and from get-methods as one-cell slices', () => {
     expect(addressFromBoc(addressArgument(USDT_MASTER.raw))).toBe(USDT_MASTER.raw);
     expect(addressFromBoc('not a boc')).toBeNull();
-    // Lesson 20: a provider's text longer than the format allows is refused before decoding
-    // (the SDK ignores bytes after a BOC without a checksum, so padding decodes below it).
+    // A provider's text longer than the format allows is refused before decoding (the
+    // SDK ignores bytes after a BOC without a checksum, so padding decodes below it).
     const boc = beginCell()
       .storeAddress(sdkAddress(USDT_MASTER.raw))
       .endCell()
@@ -828,13 +829,13 @@ describe('TON message bodies', () => {
     );
   });
 
-  it('binds an indexed body to its keyed hash (C1), and decodes relayed W5 requests (M17)', () => {
+  it('binds an indexed body to its keyed hash, and decodes relayed W5 requests', () => {
     const body = commentCell('hi');
     const boc = body.toBoc().toString('base64');
     const bodyHash = body.hash().toString('hex');
     expect(messageBody({})).toBeNull();
     expect(messageBody({ body: boc, bodyHash })?.hash().toString('hex')).toBe(bodyHash);
-    // Lesson 20: at most the longest message BOC TON's limits allow, checked before decoding.
+    // At most the longest message BOC TON's limits allow, checked before decoding.
     const longest = boc.padEnd(MAX_BODY_BOC_LENGTH, 'A');
     expect(cellFromBoc(longest)?.hash().toString('hex')).toBe(bodyHash);
     expect(cellFromBoc(boc.padEnd(MAX_BODY_BOC_LENGTH + 4, 'A'))).toBeNull();
@@ -865,7 +866,7 @@ describe('TON message bodies', () => {
     expect(decodeWalletRequest(relayed)).toMatchObject({ auth: 'external' });
   });
 
-  it('authenticates a wallet request: the wallet key signed it, for this very wallet (A23)', async () => {
+  it('authenticates a wallet request: the wallet key signed it, for this very wallet', async () => {
     const identity = resolveIdentity({ ton: { version: 'v5r1' } }, -3);
     const from = walletAddress(identity, PK);
     const relayed = (walletId: number, seed: string): Cell => {
@@ -900,7 +901,8 @@ describe('TON message bodies', () => {
     expect(requestIsOwn(sibling, own, PK, -3)).toBe(false);
     const unsigned = beginCell().storeUint(OP.w5SignedInternal, 32).endCell();
     expect(requestIsOwn(from, unsigned, PK, -3)).toBe(false);
-    // External requests too (the final review): a made-up one fails the signature check.
+    // External requests too, since a lone lying indexer could make one up: a made-up one
+    // fails the signature check.
     for (const version of ['v4r2', 'v5r1'] as const) {
       const id = resolveIdentity({ ton: { version } }, -3);
       const request = await unsignedRequest(id, PK, {

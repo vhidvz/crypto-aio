@@ -7,7 +7,7 @@
  */
 import type { TonClient } from '@ton/ton';
 
-// R37: through the package entry. SDK types appear only here (spec §5.6).
+// Through the package entry, as users augment 'crypto-aio'. SDK types appear only here.
 declare module '../../index' {
   interface NativeClientMap {
     '@ton/ton': TonClient;

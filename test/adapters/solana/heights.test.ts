@@ -10,7 +10,7 @@ function setup() {
   return { ...t, calls, index: new HeightIndex(transport) };
 }
 
-describe('dense heights over slots (Review Focus 5)', () => {
+describe('dense heights over slots', () => {
   it('maps every height to its block, skipping empty slots', async () => {
     const { node, run, index } = setup();
     for (let i = 0; i < 12; i++) {
@@ -85,7 +85,7 @@ describe('dense heights over slots (Review Focus 5)', () => {
     });
   });
 
-  it('refuses a list that leaves out a block, and caches nothing from it (I3)', async () => {
+  it('refuses a list that leaves out a block, and caches nothing from it', async () => {
     const { node, run, index, calls } = setup();
     node.produce(6);
     // A ledger gap: slot 2 missing from the list shifts every counted height.
@@ -193,7 +193,7 @@ describe('dense heights over slots (Review Focus 5)', () => {
     expect(calls.map((c) => c.method)).toContain('getFirstAvailableBlock');
   });
 
-  it('turns any other RPC error into a retryable one that decides nothing (lesson 18, widened)', async () => {
+  it('turns any other RPC error into a retryable one that decides nothing', async () => {
     const t = nodeTransport({}, [{ name: 'bt', bigtableFailsBelow: 40n }]);
     const index = new HeightIndex(t.transport);
     t.node.produce(200);
@@ -242,7 +242,7 @@ describe('dense heights over slots (Review Focus 5)', () => {
     );
   });
 
-  it('never reads a slot the endpoint cannot show as "no block" (lesson 16)', async () => {
+  it('never reads a slot the endpoint cannot show as "no block"', async () => {
     const { node, run, index, calls } = setup();
     node.skip(2);
     node.produce(8);

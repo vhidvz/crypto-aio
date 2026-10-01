@@ -1,4 +1,4 @@
-// Plan 7: every relative link in the README, the changelog and the documentation site
+// Every relative link in the README, the changelog and the documentation site
 // resolves to a tracked file, and every `#anchor` to a heading of its target (GitHub's heading
 // ids, which the site gives its headings too: docs/.vitepress/slugify.ts). Links to the
 // published site (https://vhidvz.github.io/crypto-aio/…) must name a page of docs/ the same way.

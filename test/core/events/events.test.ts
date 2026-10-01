@@ -47,7 +47,7 @@ describe('EventBus', () => {
     expect(warnings).toEqual(['event handler threw']);
   });
 
-  // M8: the warning carries the event type and the error code, never the error itself.
+  // The warning carries the event type and the error code, never the error itself.
   it('logs a throwing handler by event type and error code only', () => {
     const warnings: unknown[] = [];
     const bus = new EventBus(new FakeClock(), {

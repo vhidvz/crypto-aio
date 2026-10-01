@@ -1,5 +1,5 @@
 /**
- * The Tron family plugin (spec §4): the chain, the USDT catalog and the TronGrid presets as
+ * The Tron family plugin: the chain, the USDT catalog and the TronGrid presets as
  * data, plus the `tronweb` manifest. SDK-free: only the manifest's `load()` requires the
  * codec module, and with it tronweb and the driver.
  */
@@ -14,14 +14,14 @@ import { TRON_CAPABILITIES, TRON_INDEXER_CAPABILITIES } from './network';
 import { TRON_PRESETS } from './presets';
 import { TRON_TOKENS } from './tokens';
 
-/** The SDK version this adapter is validated against (spec §16), keyed by library. */
+/** The SDK version this adapter is validated against, keyed by library. */
 export const TRON_PEER_DEPENDENCIES: Readonly<Record<'tronweb', PeerDependency>> =
   Object.freeze({ tronweb: Object.freeze({ name: 'tronweb', range: '^6.5.1' }) });
 
 /**
- * The `tronweb` manifest. A25/X6: built once, at module level, like the presets, so every
+ * The `tronweb` manifest. Built once, at module level, like the presets, so every
  * `tronPlugin()` carries the same `load` function and registering it again is the same
- * plugin.
+ * plugin: plugins compare their data structurally and their functions by identity.
  */
 export const tronManifest: AdapterManifest = Object.freeze({
   family: 'tron',

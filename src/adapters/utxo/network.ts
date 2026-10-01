@@ -1,7 +1,8 @@
 /**
  * What the UTXO driver needs from a network's registry entry and from the handle's
  * `options`, validated once when a driver is created, so bad data fails with
- * `CONFIG_INVALID` instead of misbehaving (lessons 10 and 14: every number is checked).
+ * `CONFIG_INVALID` instead of misbehaving (every number is checked, and the finality
+ * depth is a safe integer of at least 1).
  */
 import { ConfigError } from '../../core/errors/error';
 import { KNOWN_CAPABILITIES, type Capability } from '../../core/model/capability';
@@ -9,7 +10,7 @@ import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
 import { unknownName } from '../../core/util/names';
 import type { AddressParams } from './types';
 
-/** Every capability of a UTXO network (the indexer is required, spec §15). */
+/** Every capability of a UTXO network (the indexer is required). */
 export const UTXO_CAPABILITIES: readonly Capability[] = Object.freeze([
   'batch-transfer',
   'replace-fee',
@@ -22,7 +23,7 @@ export const UTXO_CAPABILITIES: readonly Capability[] = Object.freeze([
 export type CoinSelectionStrategy = 'accumulative' | 'all';
 
 export interface UtxoNetworkConfig {
-  /** The genesis block hash: the endpoint identity (spec §11). */
+  /** The genesis block hash: the endpoint identity. */
   readonly genesisHash: string;
   readonly address: AddressParams;
   /** Finality depth N: a block with N confirmations is final. */
@@ -36,9 +37,16 @@ export interface UtxoNetworkConfig {
   /** Absurd-fee guard: the highest fee rate (sat/kvB) and absolute fee (sat) ever built. */
   readonly maxFeeRate: bigint;
   readonly maxFee: bigint;
-  /** M3: the highest rate (sat/kvB) taken from an endpoint's estimate; above it the estimate decides nothing. */
+  /**
+   * The highest rate (sat/kvB) taken from an endpoint's estimate; above it the estimate
+   * decides nothing. One endpoint's estimate sets a speed's rate, so it has a cap of its
+   * own, lower than `maxFeeRate`, which alone bounds an explicit override.
+   */
   readonly maxEstimatedFeeRate: bigint;
-  /** D12/M15: carry each segwit v0 input's previous transaction in the PSBT (hardware wallets). */
+  /**
+   * Carry each segwit v0 input's previous transaction in the PSBT, for hardware wallets
+   * that demand it. A p2tr input never carries one.
+   */
   readonly nonWitnessUtxo: boolean;
   /** Confirmations an output needs before coin selection spends it (0 allows unconfirmed). */
   readonly minInputConfirmations: number;
@@ -48,7 +56,7 @@ export interface UtxoNetworkConfig {
   readonly capabilities: ReadonlySet<Capability>;
 }
 
-/** Library defaults for the handle `options` (Plan 3 D-decisions). */
+/** Library defaults for the handle `options`: library policy, not network facts. */
 export const OPTION_DEFAULTS = Object.freeze({
   maxFeeRate: 1_000_000n, // 1,000 sat/vB
   maxFee: 10_000_000n, // 0.1 BTC, Bitcoin Core's -maxtxfee default
@@ -70,7 +78,7 @@ const OPTION_KEYS = new Set([
 ]);
 
 /**
- * F3-R15 (as Tron's F4-R2 M3): a network's capability overrides, checked against what the
+ * A network's capability overrides, checked against what the
  * UTXO driver serves. The handle advertises the manifest's capabilities plus `add`, minus
  * `remove`, and the core accepts what it advertises: `add: ['memo']` would make it take a
  * memo the builder cannot write (no OP_RETURN). So each name, added or removed, must be one
@@ -155,7 +163,7 @@ export function utxoNetworkConfig(
     params.feeFallback === undefined ? undefined : rate(params, 'feeFallback', 'params');
 
   for (const key of Object.keys(options)) {
-    // F3-R16: the accepted names, never the caller's key (it may be a pasted secret).
+    // The accepted names, never the caller's key (it may be a pasted secret).
     if (!OPTION_KEYS.has(key)) fail(unknownName('option', OPTION_KEYS));
   }
   const merged = { ...OPTION_DEFAULTS, ...options };

@@ -20,7 +20,7 @@ export interface ScannerOptions {
   readonly from?: 'latest' | bigint;
   /**
    * `'final'` emits finalized blocks only; a rollback can then still come from a provider
-   * inconsistency (spec §10). `'head'` follows the tip and may roll back within the window.
+   * inconsistency. `'head'` follows the tip and may roll back within the window.
    * Default `'head'`. The mode is not stored with the cursor: resuming a head-mode cursor in
    * final mode keeps the unfinalized blocks it already delivered.
    */
@@ -153,7 +153,7 @@ function sameCursor(a: ScanCursor, b: ScanCursor): boolean {
 }
 
 /**
- * Reorg-aware, at-least-once block scanner (spec §10). Each event's `ack()` commits the
+ * Reorg-aware, at-least-once block scanner. Each event's `ack()` commits the
  * cursor (compare-and-set on its version, so two scanners sharing a `cursorKey` never both
  * commit the same advance); asking for the next event first throws `INVALID_TRANSITION`.
  * A view that cannot decide (stale, or missing a block) never causes a rollback: the
@@ -162,7 +162,7 @@ function sameCursor(a: ScanCursor, b: ScanCursor): boolean {
  * A cursor stopped by `SCANNER_REORG_TOO_DEEP` is reset explicitly: scan under a new
  * `cursorKey`, or `put` a checkpoint `{ height, hash, recent }` for its key through the
  * `CursorStore`. A checkpoint without `recent` is validated on its own block, and its
- * window is then refilled from the chain below that block (M4).
+ * window is then refilled from the chain below that block.
  */
 export class Scanner implements AsyncIterable<ScanEvent> {
   constructor(
@@ -209,7 +209,7 @@ export class Scanner implements AsyncIterable<ScanEvent> {
         if (cursor) {
           let verdict = validated ? 'canonical' : await this.findRollback(source, cursor);
           if (!validated && verdict === 'canonical') {
-            // M4: a short window (a reset checkpoint) is refilled from the chain below the
+            // A short window (a reset checkpoint) is refilled from the chain below the
             // validated block, so a reorg within the window still rolls back.
             const recent = await this.refill(source, windowOf(cursor));
             if (recent) cursor = { ...cursor, recent };
@@ -394,8 +394,10 @@ export class Scanner implements AsyncIterable<ScanEvent> {
    * block is, and `undefined` when this view cannot decide: it is stale, or it does not show
    * a block yet (absence is never divergence). Throws `SCANNER_REORG_TOO_DEEP` only when
    * every retained block is visible and none is canonical. The rolled-back cursor's window
-   * is refilled from the chain below the ancestor. R33: a rollback or TOO_DEEP verdict of
-   * this header walk stands only once the proof quorum confirms it.
+   * is refilled from the chain below the ancestor. A rollback or TOO_DEEP verdict of this
+   * header walk stands only once the proof quorum confirms it, so one endpoint serving a
+   * fork never rolls a cursor back. Only verdicts are confirmed: a block's transactions
+   * are still read from the one endpoint that serves them.
    */
   private async findRollback(
     source: Source,
@@ -430,7 +432,7 @@ export class Scanner implements AsyncIterable<ScanEvent> {
   }
 
   /**
-   * R33: whether the quorum-served hashes confirm a verdict: every `removed` block has been
+   * Whether the quorum-served hashes confirm a verdict: every `removed` block has been
    * replaced at its height, and `ancestor` (when given) is still canonical. No block at a
    * height decides nothing (`false`); a quorum that disagrees throws a retryable error,
    * which the scan loop also treats as "look again later".

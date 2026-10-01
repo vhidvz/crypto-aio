@@ -11,7 +11,7 @@ import { ChainError, ProviderError, ValidationError } from '../../core/errors/er
 import type { FeeOverride, FeeSpeed } from '../../core/model/fee';
 import type { UtxoNetworkConfig } from './network';
 
-/** Confirmation targets (blocks) per speed: library policy (Plan 3 D-decisions). */
+/** Confirmation targets (blocks) per speed: library policy, not a network fact. */
 export const SPEED_TARGETS: Readonly<Record<FeeSpeed, number>> = Object.freeze({
   fast: 2,
   normal: 6,
@@ -33,8 +33,9 @@ const outOfRange = (): ProviderError =>
   new ProviderError('PROVIDER_UNAVAILABLE', 'the fee estimate is out of range');
 
 /**
- * The largest sat/vB an estimate may carry before it is converted (Task 7's parser bound);
- * above about 1.8e302, `satPerKvB`'s `x × 1e6` overflows to Infinity.
+ * The largest sat/vB an estimate may carry before it is converted (the `/fee-estimates`
+ * parser's bound too); above about 1.8e302, `satPerKvB`'s `x × 1e6` overflows to
+ * Infinity.
  */
 const MAX_ESTIMATE = 1e7;
 
@@ -58,7 +59,7 @@ export function rateForSpeed(
   let rate: bigint;
   if (best !== undefined) {
     const estimate = estimates.get(best) as number;
-    // M3: one endpoint's estimate never sets an absurd rate (an explicit override may), and a
+    // One endpoint's estimate never sets an absurd rate (an explicit override may), and a
     // malformed one (negative, not finite or beyond any real rate) decides nothing either;
     // the negated range test also refuses NaN.
     if (!(estimate >= 0 && estimate <= MAX_ESTIMATE)) throw outOfRange();
@@ -128,7 +129,10 @@ export interface PaidFee {
   readonly fee: bigint;
   /** Estimated with worst-case signatures (an upper bound of the real size). */
   readonly vsize: number;
-  /** A lower bound of the real size (M1); default `vsize`. */
+  /**
+   * A lower bound of the real size: a signature can be shorter than the worst case the
+   * estimate assumes. Default `vsize`.
+   */
   readonly minVsize?: number;
 }
 
@@ -143,8 +147,9 @@ export function replacementFloor(
   incrementalRelayFee: bigint,
 ): bigint {
   const byBandwidth = previous.fee + feeAt(incrementalRelayFee, vsize);
-  // M1: the replaced rate at its smallest possible size, rounded up to sat/kvB, plus one:
-  // strictly higher both exactly (v30) and truncated to sat/kvB (v28, v29).
+  // The replaced rate at its smallest possible size (the worst-case size understates it),
+  // rounded up to sat/kvB, plus one: strictly higher both exactly (v30) and truncated to
+  // sat/kvB (v28, v29).
   const smallest = BigInt(previous.minVsize ?? previous.vsize);
   const oldRate = (previous.fee * 1_000n + smallest - 1n) / smallest;
   const byRate = ((oldRate + 1n) * BigInt(vsize) + 999n) / 1_000n;

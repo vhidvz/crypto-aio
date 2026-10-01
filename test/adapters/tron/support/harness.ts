@@ -48,7 +48,7 @@ export function recording(transport: Transport) {
 
 /**
  * A scripted node behind a real HttpTransport, with one or more endpoints. The transport has
- * a fixed id and jitter source, so nothing falls back to `Math.random` (lesson 1, R46).
+ * a fixed id and jitter source, so nothing falls back to `Math.random`.
  */
 export function nodeTransport(
   options: Partial<Omit<NodeOptions, 'clock'>> = {},

@@ -37,7 +37,7 @@ export function parseAssetId(id: string): {
   ref: AssetRef;
 } {
   const match = ASSET_ID.exec(id);
-  // F6-R24: a malformed id is the caller's text, never repeated.
+  // A malformed id is the caller's text, which may be a pasted secret: never repeated.
   if (!match) throw new ValidationError('ASSET_RESOLUTION', 'malformed asset id');
   const [, chain, network, native, standard, contract] = match;
   return {

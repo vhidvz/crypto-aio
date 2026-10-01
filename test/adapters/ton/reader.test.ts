@@ -143,7 +143,7 @@ describe('the TON reader', () => {
     });
   });
 
-  it('observes a bounced or skipped Attempt as failed with a fixed reason (P6-2)', async () => {
+  it('observes a bounced or skipped Attempt as failed with a fixed reason', async () => {
     const bounced = tonHarness();
     const b = await pay(bounced, true);
     bounced.node.mine(3);
@@ -158,7 +158,7 @@ describe('the TON reader', () => {
     ).toMatchObject({ success: false, reason: REASONS.skipped });
   });
 
-  it('reports an unmanaged lookup as the chain does (lesson 15)', async () => {
+  it('reports an unmanaged lookup as the chain does', async () => {
     const h = tonHarness();
     const { hashNorm } = await pay(h, true);
     h.node.mine(3);
@@ -175,7 +175,9 @@ describe('the TON reader', () => {
     ).toMatchObject({ seen: 'block', success: true });
   });
 
-  it('decodes a jetton deposit only from a jetton wallet its master names (D14)', async () => {
+  // Any contract can claim a master, so a deposit decodes only from the jetton wallet the
+  // master itself names for its owner.
+  it('decodes a jetton deposit only from a jetton wallet its master names', async () => {
     const h = tonHarness();
     const sender = testWallet('v4r2', TESTNET);
     h.node.fund(sender, 2n * GRAM);
@@ -236,7 +238,9 @@ describe('the TON reader', () => {
     expect(decoded.some((tx) => tx?.decoding === 'partial')).toBe(true);
   });
 
-  it('reads jetton metadata on chain, then from the indexer, per lesson 13', async () => {
+  // A missing contract or a get-method that fails is the token's own problem
+  // (ASSET_RESOLUTION); a provider's fault stays retryable.
+  it('reads jetton metadata on chain, then from the indexer', async () => {
     const h = tonHarness();
     h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
     const off = `0:${'78'.repeat(32)}`;
@@ -302,7 +306,7 @@ describe('the TON reader', () => {
     });
   });
 
-  it('tags reads as read and observations as monitor (R41)', async () => {
+  it('tags reads as read and observations as monitor', async () => {
     const h = tonHarness();
     const seen: string[] = [];
     const original = h.rpc.http.bind(h.rpc);
@@ -321,8 +325,8 @@ describe('the TON reader', () => {
   });
 });
 
-describe('the TON reader: review fixes', () => {
-  it('floors the next seqno at the indexer once the previous transfer is included (I1)', async () => {
+describe('the TON reader: the seqno floor, jetton verdicts and content errors', () => {
+  it('floors the next seqno at the indexer once the previous transfer is included', async () => {
     const h = tonHarness();
     const { hashNorm } = await pay(h, false);
     h.node.mine(3);
@@ -356,7 +360,7 @@ describe('the TON reader: review fixes', () => {
     expect(await h.run(h.sequence.pending(from))).toBe(2n);
   });
 
-  it('binds the live seqno and the public key to the block and the state they were read at (F6-R29 Q6)', async () => {
+  it('binds the live seqno and the public key to the block and the state they were read at', async () => {
     const h = tonHarness();
     const from = testWallet('v4r2', TESTNET);
     h.node.fund(from, 3n * GRAM);
@@ -456,7 +460,7 @@ describe('the TON reader: review fixes', () => {
     });
   });
 
-  it('never takes a request the chain could not have run for the seqno floor: it had expired (Task 10 concern 3)', async () => {
+  it('never takes a request the chain could not have run for the seqno floor: it had expired', async () => {
     const h = tonHarness();
     const from = testWallet('v4r2', TESTNET);
     h.node.fund(from, 3n * GRAM);
@@ -499,7 +503,7 @@ describe('the TON reader: review fixes', () => {
     });
   });
 
-  it('raises the floor only for proven requests newer than the live read (A23)', async () => {
+  it('raises the floor only for proven requests newer than the live read', async () => {
     const h = tonHarness();
     const from = testWallet('v5r1', TESTNET);
     const relayer = `0:${'22'.repeat(32)}`;
@@ -539,7 +543,7 @@ describe('the TON reader: review fixes', () => {
     expect(await h.run(h.sequence.pending(from))).toBe(2n);
   });
 
-  it('fails a jetton verdict whose recipient wallet the master does not name (I5)', async () => {
+  it('fails a jetton verdict whose recipient wallet the master does not name', async () => {
     const h = tonHarness();
     const sender = testWallet('v4r2', TESTNET);
     h.node.fund(sender, 2n * GRAM);
@@ -590,7 +594,9 @@ describe('the TON reader: review fixes', () => {
     });
   });
 
-  it('decides nothing when a jetton leg gives no answer or the sender wallet is not ours (final review I1)', async () => {
+  // A missing answer is not a negative one: a delivered transfer proven `failed` would
+  // invite a new-key retry that pays twice, so `failed` needs attested evidence.
+  it('decides nothing when a jetton leg gives no answer or the sender wallet is not ours', async () => {
     const h = tonHarness();
     const sender = testWallet('v4r2', TESTNET);
     h.node.fund(sender, 2n * GRAM);
@@ -692,7 +698,7 @@ describe('the TON reader: review fixes', () => {
     });
   });
 
-  it('reports a non-bounceable value a failing contract kept as executed (M7)', async () => {
+  it('reports a non-bounceable value a failing contract kept as executed', async () => {
     const h = tonHarness();
     const reverter = `0:${'55'.repeat(32)}`;
     h.node.deployReverter(reverter);
@@ -717,7 +723,7 @@ describe('the TON reader: review fixes', () => {
     expect(root?.observation.success).toBe(true);
   });
 
-  it("treats an unparseable jetton content BOC as the endpoint's fault (M6)", async () => {
+  it("treats an unparseable jetton content BOC as the endpoint's fault", async () => {
     const h = tonHarness();
     h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
     h.node.intercept = (_e, route) =>
@@ -744,7 +750,7 @@ describe('the TON reader: review fixes', () => {
   });
 });
 
-// ---- carries from the Task 3–7 reviews, and F6-R12 --------------------------------------
+// ---- the seqno floor, jetton checks and metadata, lookups by id -----------------------
 
 type Harness = ReturnType<typeof tonHarness>;
 type Json = Record<string, unknown>;
@@ -925,8 +931,8 @@ const metadataReply = (token: Json) => ({
   },
 });
 
-describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () => {
-  it('observes the run that consumed the seqno when a request ran twice (C8-1)', async () => {
+describe('the TON reader: the seqno floor, jetton checks and metadata, lookups by id', () => {
+  it('observes the run that consumed the seqno when a request ran twice', async () => {
     const h = tonHarness();
     const wallet = testWallet('v4r2', TESTNET);
     // Send mode 1, without +2: a message the balance cannot pay fails the action phase,
@@ -952,7 +958,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     });
   });
 
-  it('floors the seqno at an external request only when it consumed the seqno (C8-2)', async () => {
+  it('floors the seqno at an external request only when it consumed the seqno', async () => {
     const h = tonHarness();
     const { wallet } = await pay(h, false);
     h.node.mine(3);
@@ -969,7 +975,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     expect(await h.run(h.sequence.pending(wallet))).toBe(1n);
   });
 
-  it('floors the seqno at a relayed W5 request only when the wallet ran it to the end (C8-2)', async () => {
+  it('floors the seqno at a relayed W5 request only when the wallet ran it to the end', async () => {
     const h = tonHarness();
     const from = testWallet('v5r1', TESTNET);
     const relayer = `0:${'22'.repeat(32)}`;
@@ -1010,7 +1016,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     expect(await h.run(h.sequence.pending(from))).toBe(1n);
   });
 
-  it('pages the seqno floor on the page as served, past a transaction not yet final (F6-R12)', async () => {
+  it('pages the seqno floor on the page as served, past a transaction not yet final', async () => {
     const h = tonHarness();
     const { wallet } = await pay(h, false);
     h.node.mine(3);
@@ -1140,7 +1146,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     );
   });
 
-  it('reads jetton metadata under the proof quorum, keyed on the content alone (M4)', async () => {
+  it('reads jetton metadata under the proof quorum, keyed on the content alone', async () => {
     const h = tonHarness({ endpoints: ['a', 'b'] });
     h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
     const tags: unknown[] = [];
@@ -1196,7 +1202,9 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     );
   });
 
-  it("never defaults an off-chain jetton's decimals, and reads a missing index as unresolved, never cached (F6-R30 (1))", async () => {
+  // A default of 9 decimals for linked content could cache a 1,000-fold mis-scale of a
+  // 6-decimal token for the container's life.
+  it("never defaults an off-chain jetton's decimals, and reads a missing index as unresolved, never cached", async () => {
     const h = tonHarness({ node: { indexerLag: 2 } });
     h.node.mine(3);
     const off = `0:${'78'.repeat(32)}`;
@@ -1267,7 +1275,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
         message: 'the jetton has no symbol',
       },
     );
-    // Not valid (not fetched yet, or refused): unresolved, never cached (F6-R30 (1)).
+    // Not valid (not fetched yet, or refused): unresolved, never cached.
     token = { valid: false, symbol: 'X' };
     await expect(h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).rejects.toMatchObject(
       {
@@ -1277,7 +1285,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     );
   });
 
-  it("holds on-chain content to its limits: beyond them it is the token's own (lessons 13, 20)", async () => {
+  it("holds on-chain content to its limits: beyond them it is the token's own", async () => {
     const h = tonHarness();
     const refused = (message: string) =>
       expect(h.run(h.reader.getTokenMetadata!(jetton(MASTER)))).rejects.toMatchObject({
@@ -1361,7 +1369,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     });
   });
 
-  it("decides an oversized content the token's own only when the quorum agrees (F6-R13 M3)", async () => {
+  it("decides an oversized content the token's own only when the quorum agrees", async () => {
     const h = tonHarness({ endpoints: ['a', 'b'] });
     const tst = onchainContent({ decimals: snake('6'), symbol: snake('TST') });
     let served: Record<string, string> = {};
@@ -1386,7 +1394,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     );
   });
 
-  it("reads the indexer's metadata under the proof quorum too (F6-R13 M2)", async () => {
+  it("reads the indexer's metadata under the proof quorum too", async () => {
     const h = tonHarness({ endpoints: ['a', 'b'] });
     let decimals: Record<string, string> = {};
     h.node.intercept = (endpoint, route, request) =>
@@ -1409,7 +1417,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     });
   });
 
-  it("judges the indexer's metadata only by the fields it uses; a bad one is the token's own (F6-R13 M4)", async () => {
+  it("judges the indexer's metadata only by the fields it uses; a bad one is the token's own", async () => {
     const h = tonHarness();
     let content = OFFCHAIN;
     let token: Json = {};
@@ -1452,7 +1460,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     });
   });
 
-  it('looks a lookup id up as the run that consumed the seqno (F6-R13 M5)', async () => {
+  it('looks a lookup id up as the run that consumed the seqno', async () => {
     const h = tonHarness();
     const wallet = testWallet('v4r2', TESTNET);
     const { boc, hashNorm } = v4Request(h, 0, [
@@ -1475,7 +1483,7 @@ describe('the TON reader: carries from the Task 3–7 reviews and F6-R12', () =>
     });
   });
 
-  it('derives ext.ton.jettonWallet under the proof quorum, and keeps it (F6-R13 M6)', async () => {
+  it('derives ext.ton.jettonWallet under the proof quorum, and keeps it', async () => {
     const h = tonHarness({ endpoints: ['a', 'b'] });
     const owner = testWallet('v4r2', TESTNET);
     h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });

@@ -50,7 +50,7 @@ export interface TxStatus {
    * Why the transaction did not go through. Present only with `failed`, `refused` or
    * `rejected`. It is either a broadcast's refusal or rejection text, or the chain
    * driver's text for an on-chain failure. It is a short, fixed text with no addresses,
-   * amounts or node detail (R24). It is `sensitive` data, so it never appears in events
+   * amounts or node detail. It is `sensitive` data, so it never appears in events
    * or logs.
    */
   readonly reason?: string;
@@ -90,7 +90,7 @@ export interface ResolvedTransfer extends TransferBase {
 }
 
 /**
- * R35: a transfer whose asset could not be resolved, for example a token with unusable
+ * A transfer whose asset could not be resolved, for example a token with unusable
  * metadata or a failing decimals call. It has no `asset` and no `amount`: without the
  * asset's decimals there is no `Amount`. `unresolved` keeps the chain's raw data instead,
  * and the transaction's `decoding` is `'partial'`. A read never fails on such a transfer;

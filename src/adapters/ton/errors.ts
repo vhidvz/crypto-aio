@@ -1,9 +1,9 @@
 /**
- * Classifies a definitive send refusal (spec §7, §8.2, D16). toncenter answers every
- * liteserver refusal, and malformed bytes too, with HTTP 500, which the transport reports
- * as an ambiguous failure that the broadcaster rethrows unclassified. Its definitive 4xx
- * answers (422) mean the request did not parse. So this table serves the 4xx answers of
- * other v2-compatible endpoints, and it matches the chain's own texts only:
+ * Classifies a definitive send refusal. toncenter answers every liteserver refusal, and
+ * malformed bytes too, with HTTP 500, which the transport reports as an ambiguous failure
+ * that the broadcaster rethrows unclassified. Its definitive 4xx answers (422) mean the
+ * request did not parse. So this table serves the 4xx answers of other v2-compatible
+ * endpoints, and it matches the chain's own texts only:
  * - liteserver.cpp `perform_sendMessage` prefixes "cannot apply external message to current
  *   state : ", and tonlib names the liteserver's error code ("LITE_SERVER_UNKNOWN: ");
  * - external-message.cpp `run_message_on_account` prefixes "External message was not
@@ -19,13 +19,14 @@
  *   and "too many external messages to address <wc>:<HEX>" when it cannot check a message
  *   now: those are thrown as transient failures, never classified.
  *
- * Every text-based answer is a refusal or a success, never `rejected`: one endpoint's text
- * decides no verdict (lessons 3 and 16; Plan 2.5 refusal equivalence), and a refused TON
- * message still ends, proven, when it expires. Bytes that are no external message are
- * `rejected` by the broadcaster itself, before anything is sent. Reasons are fixed texts
- * (R24): a node's text carries addresses. Each pattern is linear and reads a bounded
- * prefix (lesson 20); a text anchored at both ends is matched only when that prefix is the
- * whole text, so the cut never completes one (M1). SDK-free.
+ * Every text-based answer is a refusal or a success, never `rejected`: one endpoint's
+ * text decides no verdict, and a refused TON message still ends, proven, when it expires.
+ * A `rejected` would end the Operation, and if a lying endpoint relayed the bytes anyway,
+ * a caller's retry with a new seqno would pay twice. Bytes that are no external message
+ * are `rejected` by the broadcaster itself, before anything is sent. Reasons are fixed
+ * texts: a node's text carries addresses. Each pattern is linear and reads a bounded
+ * prefix; a text anchored at both ends is matched only when that prefix is the whole
+ * text, so the cut never completes one. SDK-free.
  */
 import type { BroadcastResult } from '../../core/driver/types';
 import { ProviderError } from '../../core/errors/error';
@@ -84,9 +85,9 @@ const BAD_BOC = /^INVALID_BAG_OF_CELLS: /;
 const MALFORMED_RESULT = refused('TX_REFUSED', 'malformed message');
 
 /**
- * Success (spec §8.4): this liteserver already took these exact bytes (it forgets a send
- * that failed). Matched as strictly as a refusal (M4): the whole answer, and only after
- * every refusal pattern.
+ * Success: this liteserver already took these exact bytes (it forgets a send that
+ * failed). Matched as strictly as a refusal: the whole answer, and only after every
+ * refusal pattern.
  */
 const ALREADY_KNOWN =
   /^(?:LITE_SERVER_UNKNOWN: )?cannot send external message : duplicate message\s*$/;
@@ -98,7 +99,7 @@ const REFUSED_BY_NODE = refused('TX_REFUSED', 'refused by the node');
  * The node cannot check the message now (ext-message-pool.cpp): it is not ready or has too
  * many checks pending (`ErrorCode::notready`, which tonlib names `LITE_SERVER_NOTREADY`),
  * or it holds too many messages to this address. That says nothing about the message, and
- * another node may take it: a transient failure, never a stalling refusal (M4).
+ * another node may take it: a transient failure, never a stalling refusal.
  */
 const NOT_READY = /^LITE_SERVER_NOTREADY: /;
 const BUSY =
@@ -109,7 +110,7 @@ const BUSY =
  * answer (the message may still reach the network), as a transport failure is thrown.
  */
 export function classifyBroadcastError(message: string): BroadcastResult {
-  // Texts anchored at both ends are read only when nothing was cut (M1).
+  // Texts anchored at both ends are read only when nothing was cut.
   const whole = message.length <= MAX_TEXT;
   // A v2 body the transport cut (300 characters) stays JSON-escaped: `\n` is two characters.
   const text = message.slice(0, MAX_TEXT).replace(/\\n/g, '\n');

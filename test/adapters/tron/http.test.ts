@@ -16,7 +16,7 @@ import { signedTransaction } from './support/signing';
 import { KEY_ADDRESS, KEY_HEX, RECIPIENT_HEX, USDT, USDT_HEX } from './support/vectors';
 
 describe('TronApi', () => {
-  it('sends every request straight to the transport with the caller tags (R41)', async () => {
+  it('sends every request straight to the transport with the caller tags', async () => {
     const h = nodeTransport();
     h.node.fund(KEY_ADDRESS, 5n);
     await h.run(h.api.account(KEY_HEX, READ));
@@ -86,7 +86,7 @@ describe('TronApi', () => {
     expect(await h.run(h.api.block('full', 99n, READ))).toBeNull();
   });
 
-  it('classifies token calls: ok, failed, no contract, and other refusals (lesson 13)', async () => {
+  it('classifies token calls: ok, failed, no contract, and other refusals', async () => {
     const h = nodeTransport();
     h.node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
     h.node.deployToken(RECIPIENT_HEX, {
@@ -136,7 +136,7 @@ describe('TronApi', () => {
     expect(String((error as Error).message)).not.toMatch(/TXYZ|java/);
   });
 
-  it('decides nothing when a fixed solidified block is not solidified on every endpoint (lesson 17)', async () => {
+  it('decides nothing when a fixed solidified block is not solidified on every endpoint', async () => {
     const h = nodeTransport({ solidDepth: 2 }, ['a', 'b']);
     for (let i = 0; i < 6; i++) h.node.mine();
     h.node.lag('b', 3);
@@ -156,7 +156,7 @@ describe('TronApi', () => {
     expect(passed?.number).toBe(4n);
   });
 
-  it('compares only consensus facts under a quorum, and the logs a verdict reads (R59)', () => {
+  it('compares only consensus facts under a quorum, and the logs a verdict reads', () => {
     const key = quorumKeyFor('/walletsolidity/gettransactioninfobyid');
     const info = {
       id: 'AA',
@@ -168,12 +168,12 @@ describe('TronApi', () => {
       key?.({ ...info, fee: 9, receipt: { ...info.receipt, energy_usage: 6 } }),
     ).toEqual(key?.(info));
     expect(key?.({ ...info, log: [] })).not.toEqual(key?.(info));
-    // M2 (F4-R14): the receipt's block time is compared too, so the quorum attests it.
+    // The receipt's block time is compared too, so the quorum attests it.
     expect(key?.({ ...info, blockTimeStamp: 2 })).not.toEqual(
       key?.({ ...info, blockTimeStamp: 1 }),
     );
     expect(quorumKeyFor('/wallet/getaccount')).toBeUndefined();
-    // The negative scan stops on a block's timestamp, so the JSON-RPC key compares it (F4).
+    // The negative scan stops on a block's timestamp, so the JSON-RPC key compares it.
     const rpc = quorumKeyFor('/jsonrpc');
     const block = {
       number: '0x5',
@@ -190,7 +190,7 @@ describe('TronApi', () => {
     );
   });
 
-  it('tells an error answer from an empty one without comparing error text (lesson 18)', () => {
+  it('tells an error answer from an empty one without comparing error text', () => {
     for (const path of [
       '/walletsolidity/getblock',
       '/walletsolidity/gettransactioninfobyid',
@@ -212,7 +212,7 @@ describe('TronApi', () => {
     );
   });
 
-  it('reads amounts above 2^53 exactly (A12)', async () => {
+  it('reads amounts above 2^53 exactly', async () => {
     const h = nodeTransport();
     h.node.fund(KEY_ADDRESS, 10_000_000_000_000_000_000n);
     expect(await h.run(h.api.account(KEY_HEX, READ))).toEqual({
@@ -321,7 +321,7 @@ describe('TronApi', () => {
     await expect(h.run(h.api.block('full', 1n, READ))).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
     });
-    // Lesson 20: an oversized quantity is refused before it is converted, even when its
+    // An oversized quantity is refused before it is converted, even when its
     // value is the one asked for.
     h.node.intercept('main', '/jsonrpc', () => ({
       json: {
@@ -351,7 +351,7 @@ describe('TronApi', () => {
     });
   });
 
-  it('decides nothing on a proof path when the endpoints refuse (lesson 18); reads pass errors through', async () => {
+  it('decides nothing on a proof path when the endpoints refuse; reads pass errors through', async () => {
     const h = nodeTransport();
     const id = 'ab'.repeat(32);
     h.node.intercept('main', '/walletsolidity/gettransactioninfobyid', () => ({
@@ -375,7 +375,7 @@ describe('TronApi', () => {
       code: 'PROVIDER_MISCONFIGURED',
       retryable: false,
     });
-    // M1: 401 and 403 reach the driver as one code with no structured status, and TronGrid
+    // 401 and 403 reach the driver as one code with no structured status, and TronGrid
     // answers a rate-limit suspension with 403: on a proof path both decide nothing.
     for (const status of [401, 403]) {
       const p = nodeTransport();
@@ -430,7 +430,7 @@ describe('TronApi', () => {
       retryable: true,
       ambiguous: true,
     });
-    // M5: a message is capped at 1 KiB, decoded or not.
+    // A message is capped at 1 KiB, decoded or not.
     for (const message of ['41'.repeat(2048), 'x'.repeat(5000)]) {
       reply = { json: { result: false, code: 'OTHER_ERROR', message } };
       const answer = await h.run(h.api.broadcastHex('00', BROADCAST));
@@ -484,7 +484,7 @@ describe('TronApi', () => {
     expect(h.calls).toHaveLength(before);
   });
 
-  it('agrees on a constant call by its verdict, never on the transaction each node builds (I1)', async () => {
+  it('agrees on a constant call by its verdict, never on the transaction each node builds', async () => {
     const key = quorumKeyFor('/wallet/triggerconstantcontract');
     const honest = (txID: string, energy: number) => ({
       result: { result: true },
@@ -539,7 +539,7 @@ describe('TronApi', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it('keys an empty answer as absent and a notice as neither, and guards a caller key (M3, M4)', async () => {
+  it('keys an empty answer as absent and a notice as neither, and guards a caller key', async () => {
     for (const path of [
       '/walletsolidity/getblock',
       '/walletsolidity/gettransactioninfobyid',
@@ -553,7 +553,7 @@ describe('TronApi', () => {
     const rpc = quorumKeyFor('/jsonrpc');
     expect(rpc?.({ jsonrpc: '2.0', id: 1 })).toEqual(rpc?.({ error: { code: -32000 } }));
     expect(rpc?.({ jsonrpc: '2.0', id: 1 })).not.toEqual(rpc?.({ result: null }));
-    // M6: TronApi never reads getblockbynum, so it has no key.
+    // TronApi never reads getblockbynum, so it has no key.
     expect(quorumKeyFor('/wallet/getblockbynum')).toBeUndefined();
     // A caller's predicate never makes an Error answer agree with a real block.
     const h = nodeTransport({ solidDepth: 2 }, ['a', 'b']);
@@ -566,7 +566,7 @@ describe('TronApi', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it('reads a genesis header without number or timestamp, as java-tron prints it (M2)', async () => {
+  it('reads a genesis header without number or timestamp, as java-tron prints it', async () => {
     // Nile, POST /wallet/getblockbynum {"num":0} on 2026-09-27: raw_data holds only
     // txTrieRoot, parentHash and witness_address (proto3 JSON drops the zero fields).
     const genesis = {
@@ -594,7 +594,7 @@ describe('TronApi', () => {
     );
   });
 
-  it('caps heights at int64 and sends block numbers exactly (M5)', async () => {
+  it('caps heights at int64 and sends block numbers exactly', async () => {
     const h = nodeTransport();
     const header = (number: bigint): FakeReply => ({
       json: {
@@ -637,7 +637,7 @@ describe('TronApi', () => {
     });
   });
 
-  it('asks TronGrid for no internal entries, skips any it mixes in, and bounds cursors (I2, M5)', async () => {
+  it('asks TronGrid for no internal entries, skips any it mixes in, and bounds cursors', async () => {
     const h = nodeTransport({ solidDepth: 0 });
     h.node.fund(KEY_ADDRESS, 10_000_000n);
     const genesis = h.node.block(0) as { id: string; timestamp: number };
@@ -716,7 +716,7 @@ describe('TronApi', () => {
     expect(h.calls).toHaveLength(before);
   });
 
-  it('skips only an entry its own fields prove internal, and keeps any that carries its id (F4-R7)', async () => {
+  it('skips only an entry its own fields prove internal, and keeps any that carries its id', async () => {
     const h = nodeTransport({ solidDepth: 0 });
     const id = 'ab'.repeat(32);
     const parent = 'ef'.repeat(32);
@@ -768,7 +768,7 @@ describe('TronApi', () => {
     }
   });
 
-  it('refuses a history page longer than the limit it asked for (final review M2)', async () => {
+  it('refuses a history page longer than the limit it asked for', async () => {
     const h = nodeTransport({ solidDepth: 0 });
     const ids = ['01', '02', '03'].map((b) => b.repeat(32));
     h.node.intercept('main', `/v1/accounts/${KEY_ADDRESS}/transactions/trc20`, () => ({
@@ -784,7 +784,7 @@ describe('TronApi', () => {
     });
   });
 
-  it('never waits on a real timer on a request path (R46)', async () => {
+  it('never waits on a real timer on a request path', async () => {
     const h = nodeTransport();
     const spy = jest.spyOn(globalThis, 'setTimeout');
     try {
@@ -797,7 +797,7 @@ describe('TronApi', () => {
     expect(h.clock.pending).toBe(0);
   });
 
-  it('reads block 0 as its header alone, and never asks for its receipts (F4-R7)', async () => {
+  it('reads block 0 as its header alone, and never asks for its receipts', async () => {
     const h = nodeTransport();
     // java-tron answers `{}` there, which no receipt list reads as: a scan would retry it.
     expect(
@@ -832,7 +832,7 @@ describe('TronApi', () => {
       path: '/wallet/getcontract',
       tags: { purpose: 'read', retry: 'safe', exactIntegers: true },
     });
-    // Another contract's answer, or one that names none (M3), is malformed.
+    // Another contract's answer, or one that names none, is malformed.
     let answer: Record<string, unknown> = {};
     h.node.intercept('main', '/wallet/getcontract', () => ({ json: answer }));
     for (const shape of [
@@ -862,7 +862,7 @@ describe('TronApi', () => {
     expect(key?.({ notice: 'maintenance' })).not.toEqual(key?.({}));
   });
 
-  it('reads a constant call that ran without energy as malformed, never as 0 (F4-R9)', async () => {
+  it('reads a constant call that ran without energy as malformed, never as 0', async () => {
     const h = nodeTransport();
     h.node.deployToken(USDT, { symbol: 'USDT', decimals: 6 });
     let energy: unknown;

@@ -51,7 +51,7 @@ const LIBRARY_CELL = new Cell({
   .toString('base64');
 
 /**
- * Counts `setProbes` calls and HTTP traffic on a transport, and keeps the probes (M12).
+ * Counts `setProbes` calls and HTTP traffic on a transport, and keeps the probes.
  * Reads go through the real transport, whose private fields a Proxy cannot reach.
  */
 function counting(transport: Transport) {
@@ -122,14 +122,15 @@ function endpointCall(answers: Readonly<Record<string, unknown>>): EndpointCall 
 const malformed = { code: 'PROVIDER_UNAVAILABLE', retryable: true };
 
 describe('the TON driver factory', () => {
-  it('sets probes exactly once on both transports before any traffic (M12)', async () => {
+  it('sets probes exactly once on both transports before any traffic', async () => {
     const { t, rpc, indexer } = await driverFor('testnet');
     expect(rpc.log).toEqual(['setProbes']);
     expect(indexer.log).toEqual(['setProbes']);
     expect(t.node.served).toEqual([]);
     expect(t.rpc.hasProbes()).toBe(true);
     expect(t.indexer.hasProbes()).toBe(true);
-    // R19: both check the network's global id, parsed from the registry.
+    // Both check the network's global id, parsed from the registry: only an endpoint
+    // whose identity checks out feeds the health heights.
     expect(rpc.probes[0]?.expectedIdentity).toBe('-3');
     expect(indexer.probes[0]?.expectedIdentity).toBe('-3');
   });
@@ -155,7 +156,7 @@ describe('the TON driver factory', () => {
     expect(t.node.served).toEqual([]);
   });
 
-  it('refuses a network that adds batch-transfer or block-scan, before any probe (F6-R15)', async () => {
+  it('refuses a network that adds batch-transfer or block-scan, before any probe', async () => {
     for (const add of [
       'batch-transfer',
       'block-scan',
@@ -203,14 +204,14 @@ describe('the TON driver factory', () => {
       'getSeqno',
       'jettonWallet',
     ]);
-    // F6-R15: one output per transfer for every wallet; the core prefers this answer to
-    // its capability default.
+    // One output per transfer for every wallet, since a partly delivered batch has no
+    // safe re-send; the core prefers this answer to its capability default.
     expect(driver.limits?.({ ton: { version: 'v4r2' } })).toEqual({ maxOutputs: 1 });
     expect(driver.limits?.({ ton: { version: 'v5r1', workchain: -1 } })).toEqual({
       maxOutputs: 1,
     });
     expect(driver.limits?.({})).toEqual({ maxOutputs: 1 });
-    // M18: a malformed identity is its CONFIG_INVALID, never a silent answer.
+    // A malformed identity is its CONFIG_INVALID, never a silent answer.
     for (const ton of [
       { version: 'v9' },
       { version: 'v5r1', networkGlobalId: -239 },
@@ -234,7 +235,10 @@ describe('the TON driver factory', () => {
     expect(driver.history).toBeDefined();
   });
 
-  it("derives v5r1 wallets from the network's global id (Review Focus 4)", async () => {
+  // The SDK's default v5r1 wallet id is mainnet's: a testnet wallet must derive its
+  // address from testnet's global id (-3), and a configured id of another network is
+  // refused.
+  it("derives v5r1 wallets from the network's global id", async () => {
     const testnetDriver = (await driverFor('testnet')).driver;
     const mainnetDriver = (await driverFor('mainnet')).driver;
     const v5 = { ton: { version: 'v5r1' } };
@@ -251,7 +255,7 @@ describe('the TON driver factory', () => {
     ).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
   });
 
-  it('checks both endpoints: the global id as identity, the masterchain head as height (R19)', async () => {
+  it('checks both endpoints: the global id as identity, the masterchain head as height', async () => {
     const { t, rpc, indexer } = await driverFor('testnet');
     t.node.mine(3);
     await t.run(rpc.proxy.refreshHealth());
@@ -275,7 +279,7 @@ describe('the TON driver factory', () => {
     expect(wrong.indexer.proxy.status()[0]?.state).toBe('disabled');
   });
 
-  it('parses probe answers strictly: an identity or height is a claim (lesson 17)', async () => {
+  it('parses probe answers strictly: an identity or height is a claim', async () => {
     const { rpc, indexer } = await driverFor('testnet');
     const v2 = rpc.probes[0] as Required<HealthProbes>;
     const v3 = indexer.probes[0] as Required<HealthProbes>;
@@ -361,7 +365,9 @@ describe('the TON driver factory', () => {
     ).rejects.toBeInstanceOf(ProviderError);
   });
 
-  it("keeps the transport's lag tolerance: the network's maxLagBlocks is only a default (R36)", async () => {
+  // The lag tolerance is the chain's `maxLagBlocks` option, then the root transport's,
+  // then the network's default, then 5.
+  it("keeps the transport's lag tolerance: the network's maxLagBlocks is only a default", async () => {
     expect(testnet.maxLagBlocks).toBe(150);
     const { t, rpc } = await driverFor('testnet', {
       endpoints: ['a', 'b'],
@@ -377,7 +383,7 @@ describe('the TON driver factory', () => {
     ]);
   });
 
-  it("trails its attested head by the transport's lag tolerance, never the network's (F6-R23 M2, R36)", async () => {
+  it("trails its attested head by the transport's lag tolerance, never the network's", async () => {
     // The driver itself: with a peer 20 blocks behind, the head trailed by the skew (10) is
     // not attested, so the proofs retry at the transport's tolerance (30), never at the
     // network's `maxLagBlocks` (150).
@@ -393,7 +399,7 @@ describe('the TON driver factory', () => {
     });
   });
 
-  it('gives each native client its own TonClient over the transport (R34)', async () => {
+  it('gives each native client its own TonClient over the transport', async () => {
     const { t, driver } = await driverFor('testnet');
     const first = driver.createNativeClient!();
     const second = driver.createNativeClient!();
@@ -406,7 +412,7 @@ describe('the TON driver factory', () => {
     expect(t.node.served.at(-1)).toEqual({ endpoint: 'main', route: '/jsonRPC' });
   });
 
-  it('keeps URLs and keys in the transport, and tags a native broadcast as one (M3)', async () => {
+  it('keeps URLs and keys in the transport, and tags a native broadcast as one', async () => {
     const calls: { readonly request: HttpRequest; readonly options?: CallOptions }[] = [];
     let answer: unknown = { ok: true, result: { '@type': 'ok' } };
     const transport = {
@@ -454,7 +460,7 @@ describe('the TON driver factory', () => {
     await expect(client.getMasterchainInfo()).rejects.toBe(answer);
   });
 
-  it('takes the family shape: tonDriverFactory(makeNative), the library module supplies it (I2)', async () => {
+  it('takes the family shape: tonDriverFactory(makeNative), the library module supplies it', async () => {
     const made: Transport[] = [];
     const factory = tonDriverFactory((transport) => {
       made.push(transport);
@@ -498,7 +504,7 @@ describe('the assembled TON driver', () => {
     ordering: { kind: 'seqno', seqno, validUntil: 0 },
   });
 
-  /** estimate → check → build → sign → assemble at the wallet's live seqno (F6-R19). */
+  /** estimate → check → build → sign → assemble at the wallet's live seqno. */
   async function send(t: ReturnType<typeof tonNode>, driver: ChainDriver) {
     const seqno = await t.run(driver.sequence!.pending(from));
     const fee = await t.run(driver.builder.estimateFee(intent, buildAt(seqno)));
@@ -541,7 +547,9 @@ describe('the assembled TON driver', () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it('reads its handle options: maxNetworkFee reaches the builder, anything else is refused before any probe (F6-R24, F6-R25)', async () => {
+  // A driver that ignored its options would accept a misspelt key or a garbage value
+  // silently, so every option is read and validated.
+  it('reads its handle options: maxNetworkFee reaches the builder, anything else is refused before any probe', async () => {
     const tight = await driverFor('testnet', {
       options: { maxNetworkFee: { basechain: 1n } },
     });
@@ -581,7 +589,7 @@ describe('the assembled TON driver', () => {
     }
   });
 
-  it("takes the network's maxNetworkFee into its builder (F6-R17)", async () => {
+  it("takes the network's maxNetworkFee into its builder", async () => {
     const tight = await driverFor('testnet', {
       network: { params: { maxNetworkFee: { basechain: 1n } } },
     });

@@ -56,7 +56,7 @@ export function describeSequenceStoreContract(
       },
     );
 
-    api.it('keeps the key out of its errors (B110)', async () => {
+    api.it('keeps the key out of its errors', async () => {
       // A sequence key embeds a wallet address, and error messages reach logs.
       const { sequences } = await create();
       const address = '0x5eC0FFEE00000000000000000000000000c0FFEE';

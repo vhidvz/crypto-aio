@@ -1,8 +1,8 @@
 /**
- * The Solana driver's path to the core transport (spec §11, lesson 1). Every JSON-RPC call
+ * The Solana driver's path to the core transport. Every JSON-RPC call
  * is one direct `transport.rpc` call carrying the tags of the `ChainDriver` method that made
  * it; `@solana/web3.js` is never on a request path. Answers are validated here: a malformed
- * answer is a retryable `PROVIDER_UNAVAILABLE`, never a foreign error (lesson 6).
+ * answer is a retryable `PROVIDER_UNAVAILABLE`, never a foreign error.
  */
 import {
   ProviderError,
@@ -101,7 +101,7 @@ export const notYet = (what: string) =>
   new ProviderError('PROVIDER_UNAVAILABLE', `the endpoints cannot show ${what} yet`);
 
 /**
- * Lesson 18, widened: on a proof path only a definitive negative proof answers "no". Any
+ * On a proof path only a definitive negative proof answers "no". Any
  * other definitive RPC error (agave 4.3.0's `getBlocks` answers `-32602 "BigTable query
  * failed"` for a range below its local ledger, `-32603` on a blockstore error) decides
  * nothing: it becomes a retryable `PROVIDER_UNAVAILABLE`. Every other error (retryable
@@ -134,7 +134,7 @@ export const record = (value: unknown): Record<string, unknown> | null =>
 
 /**
  * An unsigned 64-bit JSON integer (lamports, slots, heights) as a `bigint`. Every call
- * parses with `exactIntegers` (P5-A), so a value above 2^53 − 1 arrives as a `bigint`; a
+ * parses with `exactIntegers`, so a value above 2^53 − 1 arrives as a `bigint`; a
  * number outside the safe range was rounded somewhere and is refused as malformed.
  */
 export function u64(value: unknown, what: string): bigint {
@@ -236,7 +236,7 @@ function tokenInstructions(tx: Record<string, unknown>): unknown[] {
   });
 }
 
-/** Token balances by account index (M7: providers may list them in another order). */
+/** Token balances by account index (providers may list them in another order). */
 const tokenBalances = (list: unknown): unknown =>
   Array.isArray(list)
     ? list
@@ -252,7 +252,7 @@ const tokenBalances = (list: unknown): unknown =>
     : null;
 
 /**
- * R59, lesson 2: a finalized transaction's consensus facts, as far as a verdict reads them
+ * A finalized transaction's consensus facts, as far as a verdict reads them
  * (slot, error, signatures, account keys, token balances, token transfer instructions).
  * Formatting that honest providers differ on (`uiAmount` floats, `stackHeight`, `owner` and
  * `programId` on balances, log messages, compute units, `blockTime`) is left out. The landing
@@ -281,7 +281,7 @@ function transactionKey(result: unknown): unknown {
 }
 
 /**
- * The consensus facts compared under a quorum, per method (lesson 2). A key that throws
+ * The consensus facts compared under a quorum, per method. A key that throws
  * counts as a disagreement (a retryable `PROVIDER_INCONSISTENT`).
  */
 export function quorumKeyFor(method: string): ((result: unknown) => unknown) | undefined {
@@ -298,7 +298,7 @@ export function quorumKeyFor(method: string): ((result: unknown) => unknown) | u
 /**
  * One JSON-RPC call through the transport, under the calling driver method's tags. Solana
  * sends u64 values (lamports) as JSON numbers, so every answer is parsed with
- * `exactIntegers` (P5-A): nothing above 2^53 − 1 is ever rounded.
+ * `exactIntegers`: nothing above 2^53 − 1 is ever rounded.
  */
 export function call(
   transport: Transport,

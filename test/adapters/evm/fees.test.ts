@@ -165,7 +165,7 @@ describe('EVM fee policy', () => {
     }
   });
 
-  it('requires both the fee cap and the tip to rise by the bump, strictly (R48)', () => {
+  it('requires both the fee cap and the tip to rise by the bump, strictly', () => {
     const before = {
       type: 'eip1559',
       maxFeePerGas: 100n,
@@ -277,7 +277,8 @@ describe('EVM broadcast classification', () => {
         reason: 'gas limit above the block gas limit',
       },
     ],
-    // R64: only exact texts that are permanent for these bytes on every node are rejected.
+    // Only exact texts that are permanent for these bytes on every node are rejected; an
+    // unlisted text reads refused, the safe direction.
     [
       'invalid sender: invalid chain id for signer',
       { kind: 'rejected', reason: 'wrong chain id' },
@@ -311,7 +312,7 @@ describe('EVM broadcast classification', () => {
       'signature service timed out',
       { kind: 'refused', code: 'TX_REFUSED', reason: 'refused by the node' },
     ],
-    // R63: fork gating, a moving L1 cost and node policy can change for the same bytes.
+    // Fork gating, a moving L1 cost and node policy can change for the same bytes.
     [
       'transaction type not supported',
       { kind: 'refused', code: 'TX_REFUSED', reason: 'unsupported transaction type' },

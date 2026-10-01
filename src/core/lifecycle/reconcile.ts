@@ -10,7 +10,7 @@ import type { EngineDeps, OperationTarget, ReadTarget } from './engine';
 import { CONSUMED_FAILURES, hasReclaimable, heldNonces } from './engine-rules';
 
 /*
- * Nonce reconciliation (M11: moved out of the engine as functions over its deps). The
+ * Nonce reconciliation, as functions over the engine's deps. The
  * engine hands in its deps and the few steps of its own these need (`Reconciler`).
  */
 
@@ -31,14 +31,14 @@ export interface Reconciler {
 }
 
 /**
- * Nonce reconciliation, never a filler transaction (spec). Under the address lease,
+ * Nonce reconciliation, never a filler transaction. Under the address lease,
  * returns to `released` every value in [floor, next) that no live Operation of
  * `op`'s wallet reserves, so the next allocation reuses it and the transfers waiting
  * behind the gap can land; `floor` is `consumedFloor` (never below a nonce the chain
  * consumed at finality), and the wallet's history is read only when some value is
  * reclaimable at all. It closes the leaks a release cannot: a crash between
  * allocation and the `prepared` write, a store failure inside a release after a terminal
- * write, and a failure recorded without a release. R29: every live `created` Operation
+ * write, and a failure recorded without a release. Every live `created` Operation
  * without a reservation is fenced first (`fenceStalePrepare`), so a `prepared` write
  * still in flight from a lapsed lease can never land on a released value (a legitimate
  * transfer re-reads its Operation under the lease). Returns the reclaimed values. The
@@ -75,7 +75,7 @@ export async function reconcileNonces(
 /**
  * The body of `reconcileNonces`, under the held address lease of `op`'s wallet, with the
  * chain's pending nonce already read. `preparing` is an Operation this lease is preparing
- * right now (M9, `prepareStage`): it is never fenced, since its own write follows.
+ * right now (`prepareStage`): it is never fenced, since its own write follows.
  */
 export async function reclaimLeaked(
   engine: Reconciler,
@@ -137,12 +137,14 @@ export async function consumedFloor(
 }
 
 /**
- * R29: a `created` Operation without a reservation may still have a `prepared` write in
+ * A `created` Operation without a reservation may still have a `prepared` write in
  * flight from a process whose lease lapsed (it allocated a nonce, renewed, then stalled).
  * A no-effect compare-and-set at the listed version makes that stale write lose its own
  * compare-and-set, so it can never land a reservation on a value this reconciliation
- * releases. After a lost compare-and-set the re-read Operation is returned, and any
- * reservation it now shows counts as held. Other Operations are returned as listed.
+ * releases. This relies on the store bumping `version` on every `update`, a no-op one
+ * included (the store contract pins it). After a lost compare-and-set the re-read
+ * Operation is returned, and any reservation it now shows counts as held. Other
+ * Operations are returned as listed.
  */
 export async function fenceStalePrepare(
   engine: Reconciler,

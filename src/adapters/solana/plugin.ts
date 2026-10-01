@@ -1,5 +1,5 @@
 /**
- * The Solana family plugin (spec §4): the chain, tokens and provider presets as data, plus
+ * The Solana family plugin: the chain, tokens and provider presets as data, plus
  * one adapter manifest. SDK-free: only the manifest's `load()` requires the `@solana/web3.js`
  * module, and with it the SDK.
  */
@@ -14,7 +14,7 @@ import { SOLANA_CAPABILITIES } from './network';
 import { SOLANA_PRESETS } from './presets';
 import { SOLANA_TOKENS } from './tokens';
 
-/** The SDK versions this adapter is validated against (spec §16), keyed by library. */
+/** The SDK versions this adapter is validated against, keyed by library. */
 export const SOLANA_PEER_DEPENDENCIES: Readonly<
   Record<'@solana/web3.js', PeerDependency>
 > = Object.freeze({
@@ -22,9 +22,10 @@ export const SOLANA_PEER_DEPENDENCIES: Readonly<
 });
 
 /**
- * The `@solana/web3.js` manifest. A25: built once, at module level, like the presets, so
- * every `solanaPlugin()` carries the same `load` function and registering it again is the
- * same plugin.
+ * The `@solana/web3.js` manifest, built once, at module level, like the presets. Plugins
+ * compare functions by identity, so every `solanaPlugin()` carries the same `load`
+ * function and registering it again is the same plugin, not a conflicting one
+ * (`CONFIG_INVALID`).
  */
 export const solanaManifest: AdapterManifest = Object.freeze({
   family: 'solana',
@@ -39,7 +40,7 @@ export const solanaManifest: AdapterManifest = Object.freeze({
   },
 });
 
-/** The built-in Solana family: mainnet, devnet and testnet (spec §2). */
+/** The built-in Solana family: mainnet, devnet and testnet. */
 export function solanaPlugin(): Plugin {
   return {
     name: 'solana',

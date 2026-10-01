@@ -1,18 +1,18 @@
 /**
- * Transaction decoding (spec §6.6, §15): `jsonParsed` transactions, inner instructions
+ * Transaction decoding: `jsonParsed` transactions, inner instructions
  * included, into `DriverTransaction`s. Decoded transfers are checked against the pre/post
  * lamport and token balances, per account and per mint; any movement they do not explain
  * makes the transaction `decoding: 'partial'`. Locators are `ix:<outer>` and
  * `ix:<outer>.<inner>`.
  *
  * `parseTransaction` validates an answer once. A missing or ill-typed field is a retryable
- * `PROVIDER_UNAVAILABLE`, never a default (lesson 6, sharpened): a truncated or drifted
+ * `PROVIDER_UNAVAILABLE`, never a default: a truncated or drifted
  * answer never becomes a success or a failure. Every list and text is held to the format's
- * own bound (lesson 20), and account lookups go through one index, so the work stays
+ * own bound, and account lookups go through one index, so the work stays
  * linear. Nothing here decodes bytes: unparsed instruction data and logs are never read.
  *
- * General decoding reports execution as the chain does (lesson 15). The phantom-success
- * guard (`tokenTransfersLanded`, lesson 7) is applied only on verdict paths.
+ * General decoding reports execution as the chain does. The phantom-success guard
+ * (`tokenTransfersLanded`) is applied only on verdict paths.
  */
 import type { DriverTransaction, DriverTransfer } from '../../core/driver/types';
 import { canonicalJson } from '../../core/util/json';
@@ -457,7 +457,7 @@ function lamportsReconcile(tx: ParsedTransaction, moves: readonly NativeMove[]):
 /**
  * A vote transaction: consensus traffic, moving nothing but its fee (skipped by scans). A
  * vote-program transaction that moves value, such as a vote-account withdrawal, is not one:
- * a scan must still see it (I4).
+ * a scan must still see it.
  */
 export const isVote = (tx: ParsedTransaction): boolean =>
   tx.instructions.length > 0 &&
@@ -494,7 +494,7 @@ export interface BlockPlace {
   readonly blockTime?: number;
 }
 
-/** Decodes a parsed transaction as the chain reports it (lesson 15). */
+/** Decodes a parsed transaction as the chain reports it. */
 export function decodeTransaction(
   tx: ParsedTransaction,
   place: BlockPlace,
@@ -575,15 +575,15 @@ export function decodeTransaction(
 }
 
 /**
- * The scan filter (handoff §3: "at least every transaction with a transfer from or to"
- * the addresses), a conservative superset (I4) over wallets and token accounts alike: a
- * decoded transfer names a watched address; a successful token transfer moves tokens into
- * or out of a watched token account (its decoded transfer names the owners instead, final
- * review I1); the decoding is partial and a watched address is among the account keys; a
+ * The scan filter. A scan must return at least every transaction with a transfer from or
+ * to the addresses, so this is a conservative superset over wallets and token accounts
+ * alike: a decoded transfer names a watched address; a successful token transfer moves
+ * tokens into or out of a watched token account (its decoded transfer names the owners
+ * instead); the decoding is partial and a watched address is among the account keys; a
  * watched account's lamports changed; the node reported no token balances and a token
- * program ran or was keyed (a deposit into an existing token account names no owner then,
- * R4); or a token holding changed (per account and mint) whose owner is watched or was not
- * reported (it cannot be attributed). A watched token account's holding cannot change
+ * program ran or was keyed (a deposit into an existing token account names no owner
+ * then); or a token holding changed (per account and mint) whose owner is watched or was
+ * not reported (it cannot be attributed). A watched token account's holding cannot change
  * unnoticed: a change no parsed transfer explains makes the decoding partial, and the
  * account is a key.
  */
@@ -679,7 +679,7 @@ function landed(tx: ParsedTransaction, move: TokenMove): boolean {
 }
 
 /**
- * The phantom-success guard (lessons 7 and 15; the board's final wording), for verdict
+ * The phantom-success guard, for verdict
  * paths only: a token transfer counts as executed only when the balances show a transfer
  * of a positive amount from the sender's account to the intended recipient's account, of
  * the signed mint, in accounts the classic Token program owns. The exact amount is not
@@ -689,7 +689,7 @@ function landed(tx: ParsedTransaction, move: TokenMove): boolean {
  * decides nothing (a retryable `PROVIDER_UNAVAILABLE`), and so does an answer that
  * contradicts the signed message: token instructions, none of them by the sender, where
  * the sender signed its own `transferChecked`, or balances of another mint or program
- * (lesson 18, widened; a retryable `PROVIDER_INCONSISTENT`). Seeing no transfer never
+ * (a retryable `PROVIDER_INCONSISTENT`). Seeing no transfer never
  * passes; a failed transaction never lands; a native transfer keeps the chain's status.
  * The balances must carry `programId` (current agave reports it): without it, SPL verdicts
  * through that provider never decide, which costs liveness only.

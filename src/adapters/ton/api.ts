@@ -1,16 +1,18 @@
 /**
- * The TON driver's only path to the network (spec §11, D1): toncenter API v2 (the `rpc`
- * transport: live liteserver state, get-methods at a fixed masterchain block, fee emulation,
- * sending) and API v3 (the `indexer` transport: message → transaction, traces, history,
- * jetton metadata), as REST calls through the core transports. Each call carries its
- * driver method's tags (R41) and a `route` with no identifiers in it (R14), and reads
- * integers exactly (A12: toncenter writes some u64 values as JSON numbers). Answers are
- * validated here (lesson 6): a malformed one, including a missing or ill-typed field a
- * verdict reads, is a retryable `PROVIDER_UNAVAILABLE`, never a default or a foreign error.
- * Lookups by id keep only what they asked for, so a dropped server-side filter reads as
- * "none yet"; a history that breaks its query is malformed. Numbers, cells and metadata are
- * bounded before use (lesson 20). Under a quorum, every method compares the parsed facts it
- * returns (lesson 2, M5), or the caller's predicate key (lesson 17). SDK-free.
+ * The TON driver's only path to the network: toncenter API v2 (the `rpc` transport: live
+ * liteserver state, get-methods at a fixed masterchain block, fee emulation, sending) and
+ * API v3 (the `indexer` transport: message → transaction, traces, history, jetton
+ * metadata), as REST calls through the core transports. Not JSON-RPC: toncenter's
+ * `/jsonRPC` answers carry no `id`, which `transport.rpc` refuses, and `TonClient` would
+ * put a real timer on the request path. Each call carries its driver method's tags and a
+ * `route` with no identifiers in it (events and logs show it), and reads integers exactly
+ * (toncenter writes some u64 values as JSON numbers). Answers are validated here: a
+ * malformed one, including a missing or ill-typed field a verdict reads, is a retryable
+ * `PROVIDER_UNAVAILABLE`, never a default or a foreign error. Lookups by id keep only
+ * what they asked for, so a dropped server-side filter reads as "none yet"; a history
+ * that breaks its query is malformed. Numbers, cells and metadata are bounded before use.
+ * Under a quorum, every method compares the parsed facts it returns (so honest endpoints
+ * that format a fact differently agree), or the caller's predicate key. SDK-free.
  */
 import {
   ProviderError,
@@ -36,7 +38,7 @@ export const withSignal = (tags: TonCallTags, signal?: AbortSignal): TonCallTags
 export const MASTERCHAIN_SHARD = '-9223372036854775808';
 
 /**
- * Lesson 20: the most cells a message body may hold, checked in the BOC header before the
+ * The most cells a message body may hold, checked in the BOC header before the
  * SDK parses anything. TON refuses a message of more than 2^13 cells or 2^21 bits (config
  * param 43, "account and message limits", docs.ton.org/foundations/config; the node's
  * defaults `max_msg_cells = 1 << 13` and `max_msg_bits = 1 << 21` in `SizeLimitsConfig`,
@@ -47,7 +49,7 @@ export const MASTERCHAIN_SHARD = '-9223372036854775808';
 export const MAX_BODY_CELLS = 1 << 13;
 
 /**
- * Lesson 20: the longest message body BOC text `cellFromBoc` decodes. The same limits give
+ * The longest message body BOC text `cellFromBoc` decodes. The same limits give
  * at most 2^21 / 8 bytes of data in 2^13 cells, each with 2 descriptor bytes, 4 two-byte
  * refs, a rounding byte and a 3-byte index entry, plus a header and a checksum: under
  * 377,000 bytes, about 502,500 base64 characters.
@@ -55,7 +57,7 @@ export const MAX_BODY_CELLS = 1 << 13;
 export const MAX_BODY_BOC_LENGTH = 1 << 19;
 
 /**
- * Lesson 20 and F6-R13: the most cells of a jetton master's content that `jettonData` hands
+ * The most cells of a jetton master's content that `jettonData` hands
  * on. The content is part of the master's account state, not a message, and TON caps a state
  * at 2^16 cells and 2^16 × 1023 bits (config param 43, `max_acc_state_cells` and
  * `max_acc_state_bits`, the node's defaults in `SizeLimitsConfig`, ton-blockchain/ton
@@ -64,7 +66,7 @@ export const MAX_BODY_BOC_LENGTH = 1 << 19;
 export const MAX_STATE_CELLS = 1 << 16;
 
 /**
- * Lesson 20 and F6-R13: the longest content BOC text `jettonData` hands on. The same limits
+ * The longest content BOC text `jettonData` hands on. The same limits
  * give at most 2^16 × 1023 / 8 bytes of data in 2^16 cells, each with 2 descriptor bytes, 4
  * three-byte refs, a rounding byte and a 4-byte index entry, plus a header and a checksum:
  * under 9.7 MB, about 12.9 million base64 characters. Decoding a state of that size takes
@@ -93,7 +95,7 @@ function bocCellCount(bytes: Buffer): number | undefined {
 }
 
 /**
- * Lesson 20: a base64 BOC measured against limits, by default one message's (at most
+ * A base64 BOC measured against limits, by default one message's (at most
  * `maxLength` characters, and a header, its first 16 characters, declaring at most
  * `maxCells` cells): `oversized` beyond them, `malformed` without a BOC header.
  */
@@ -109,7 +111,7 @@ function bocSize(
 }
 
 /**
- * Lesson 20: whether a base64 BOC is within one message's limits. SDK-free, so the API layer
+ * Whether a base64 BOC is within one message's limits. SDK-free, so the API layer
  * bounds the cells it hands on (config params, get-method stacks) and `cellFromBoc` the
  * bodies it decodes.
  */
@@ -118,9 +120,10 @@ export function bocWithinLimits(boc: string): boolean {
 }
 
 /**
- * M4: the longest token metadata texts read from the indexer (decimals: 0..255). A longer
- * or ill-typed `symbol` is reported unreadable (F6-R13); a `name` beyond its limit is absent
- * (F6-R8).
+ * The longest token metadata texts read from the indexer (decimals: 0..255). A longer or
+ * ill-typed `symbol` is reported unreadable; a `name` beyond its limit is absent, never
+ * an error: it is author-set text every endpoint agrees on, so a refusal would retry
+ * forever.
  */
 const CONTENT_LIMITS = { symbol: 256, name: 256 } as const;
 
@@ -145,7 +148,7 @@ function need<T>(value: T | undefined | null, route: string): T {
   return value;
 }
 
-/** An optional field: absent (undefined or null), else `read` must accept it (lesson 6). */
+/** An optional field: absent (undefined or null), else `read` must accept it. */
 function optional<T>(
   value: unknown,
   read: (value: unknown) => T | undefined,
@@ -167,8 +170,9 @@ const int = (value: unknown): number | undefined =>
       ? Number(value)
       : undefined;
 /**
- * An integer as a decimal string, a safe number or (A12) an exactly read bigint. Lesson 20:
- * at most 80 digits (the core's exact-integer cap; u256 has 78), refused before `BigInt`.
+ * An integer as a decimal string, a safe number or an exactly read bigint (the
+ * transport's `exactIntegers`). At most 80 digits (the core's exact-integer cap; u256 has
+ * 78), refused before `BigInt`.
  */
 const big = (value: unknown): bigint | undefined =>
   typeof value === 'bigint'
@@ -181,7 +185,7 @@ const big = (value: unknown): bigint | undefined =>
 
 const U64_MAX = 2n ** 64n - 1n;
 
-/** M1: an unsigned integer up to `max`. */
+/** An unsigned integer up to `max`. */
 function unsigned(value: unknown, max: bigint): bigint | undefined {
   const n = big(value);
   return n !== undefined && n >= 0n && n <= max ? n : undefined;
@@ -194,7 +198,7 @@ const u64 = (value: unknown): bigint | undefined => unsigned(value, U64_MAX);
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
-/** A shard id (a signed 64-bit integer) as canonical decimal, however it was written (M5). */
+/** A shard id (a signed 64-bit integer) as canonical decimal, however it was written. */
 function shardOf(value: unknown): string | undefined {
   const shard = big(value);
   return shard !== undefined && shard >= INT64_MIN && shard <= INT64_MAX
@@ -220,7 +224,7 @@ export function rawOf(value: unknown): string | null | undefined {
 }
 
 /**
- * M2: a lookup that filters its answer by address needs the address's raw form (the
+ * A lookup that filters its answer by address needs the address's raw form (the
  * codec's canonical form); anything else is refused before any request, never retried as a
  * provider fault.
  */
@@ -265,7 +269,7 @@ export interface AccountState {
   readonly lastHash: string;
   /** The masterchain block the state was read at. */
   readonly blockSeqno: number;
-  /** That block's full id (F6-R21 M7): a proof binds the state to the block it asked for. */
+  /** That block's full id: a proof binds the state to the block it asked for. */
   readonly block: BlockId;
   /** The state's time (seconds): the chain's `now` for the next message. */
   readonly syncUtime: number;
@@ -273,7 +277,7 @@ export interface AccountState {
 
 export type StackEntry =
   | { readonly type: 'num'; readonly value: bigint }
-  /** A cell or slice (base64 BOC), within one message's limits (lesson 20). */
+  /** A cell or slice (base64 BOC), within one message's limits. */
   | { readonly type: 'cell'; readonly boc: string }
   | { readonly type: 'other' };
 
@@ -289,7 +293,7 @@ export interface TransactionId {
 }
 
 /**
- * A get-method's result with what it was run on (F6-R21 I2): the masterchain block and the
+ * A get-method's result with what it was run on: the masterchain block and the
  * account's last transaction there, as live toncenter answers name them.
  */
 export interface BoundRunResult extends RunResult {
@@ -299,8 +303,8 @@ export interface BoundRunResult extends RunResult {
 
 /**
  * One transaction as the liteserver serves it (v2 `getTransactions`): its id and its raw
- * cell (base64 BOC, within an account state's limits, lesson 20), which a caller hashes
- * itself: only a cell whose hash is the id it expects authenticates anything (F6-R21).
+ * cell (base64 BOC, within an account state's limits), which a caller hashes itself:
+ * only a cell whose hash is the id it expects authenticates anything.
  */
 export interface RawTransaction {
   readonly lt: bigint;
@@ -363,7 +367,10 @@ export interface V3Transaction {
   };
   /** The bounce phase's type (`ok`, `nofunds`, `negfunds`), when there was one. */
   readonly bounce?: string;
-  /** The account's status before and after, when the indexer writes them (F6-R21). */
+  /**
+   * The account's status before and after, when the indexer writes them: the proof reads
+   * a wallet's earlier incarnations from them.
+   */
   readonly origStatus?: V3AccountStatus;
   readonly endStatus?: V3AccountStatus;
   readonly inMsg: V3Message | null;
@@ -382,7 +389,7 @@ export interface TransactionPage {
   /** The page's committed transactions (not yet finalized ones are left out). */
   readonly transactions: V3Transaction[];
   /**
-   * The `endLt` of the next page, when the indexer's page was full. F6-R12: counted on the
+   * The `endLt` of the next page, when the indexer's page was full. Counted on the
    * page as the indexer served it, before the transactions not yet final were left out, so
    * a pager never stops early and never skips an older final transaction.
    */
@@ -392,7 +399,7 @@ export interface TransactionPage {
 /** A jetton master's TEP-64 content cell, as `get_jetton_data` returns it (entry 3). */
 export type JettonContentCell =
   | { readonly kind: 'cell'; readonly boc: string }
-  /** Beyond one message's limits (lesson 20): never decoded. */
+  /** Beyond one message's limits: never decoded. */
   | { readonly kind: 'oversized' };
 
 export interface JettonData {
@@ -405,7 +412,7 @@ export interface JettonData {
  * A token's metadata as the indexer fetched it (for a jetton: its off-chain JSON). `null`
  * marks a field the token's metadata holds but that is not one (ill-typed, out of range or
  * over its limit): the token's own data, which every endpoint agrees on, for the caller to
- * judge only if it uses that field (F6-R13).
+ * judge only if it uses that field.
  */
 export interface TokenInfo {
   readonly symbol?: string | null;
@@ -423,10 +430,11 @@ export const sameBlock = (a: BlockId, b: BlockId): boolean =>
   a.fileHash === b.fileHash;
 
 // ---- parsers ------------------------------------------------------------------------------
-// Lesson 6, sharpened: a field a verdict reads is required, or optional and then well
-// typed; a missing or ill-typed one is malformed (retryable), never `false` or `0`. Every
-// endpoint running the same indexer would agree on a drifted answer, so a quorum does not
-// catch what the parser lets through.
+// A field a verdict reads is required, or optional and then well typed; a missing or
+// ill-typed one is malformed (retryable), never `false` or `0`. Every endpoint running
+// the same indexer would agree on a drifted answer, so a quorum does not catch what the
+// parser lets through: a truncated answer read as `false` would end a delivered transfer
+// `failed`, and a caller's retry with a new seqno would pay twice.
 
 function blockIdOf(value: unknown, route: string): BlockId {
   const v = need(record(value), route);
@@ -444,7 +452,7 @@ function v2Result(body: unknown, route: string): unknown {
   return body.result;
 }
 
-/** A cell's base64 BOC, within one message's limits (M4, lesson 20). */
+/** A cell's base64 BOC, within one message's limits. */
 function cellOf(value: unknown, route: string): string {
   const boc = need(str(value), route);
   if (!bocWithinLimits(boc)) throw malformed(route);
@@ -460,7 +468,7 @@ function stackOf(value: unknown, route: string): StackEntry[] {
       const text = need(str(data), route);
       const negative = text.startsWith('-');
       const digits = negative ? text.slice(1) : text;
-      // Lesson 20: a TVM integer has 257 bits (65 hex digits); bounded before `BigInt`.
+      // A TVM integer has 257 bits (65 hex digits); bounded before `BigInt`.
       if (!/^0x[0-9a-fA-F]{1,80}$/.test(digits)) throw malformed(route);
       const value = BigInt(digits);
       return { type: 'num', value: negative ? -value : value };
@@ -504,7 +512,7 @@ const COMPUTING: ReadonlySet<string> = new Set(['ord', 'tick_tock']);
 /** Bounce phase types (block.tlb `tr_phase_bounce_ok`, `_nofunds`, `_negfunds`). */
 const BOUNCES: ReadonlySet<string> = new Set(['ok', 'nofunds', 'negfunds']);
 
-/** I1: the compute phase; an ord or tick-tock transaction always has one. */
+/** The compute phase; an ord or tick-tock transaction always has one. */
 function computeOf(d: Json, route: string): V3Transaction['compute'] {
   const type = need(str(d.type), route);
   if (d.compute_ph === undefined || d.compute_ph === null) {
@@ -521,7 +529,7 @@ function computeOf(d: Json, route: string): V3Transaction['compute'] {
   return { skipped, success, ...(exitCode !== undefined ? { exitCode } : {}) };
 }
 
-/** I1: the action phase, when there was one, with every field a verdict reads. */
+/** The action phase, when there was one, with every field a verdict reads. */
 function actionOf(value: unknown, route: string): V3Transaction['action'] {
   const a = optional(value, record, route);
   if (!a) return undefined;
@@ -533,7 +541,7 @@ function actionOf(value: unknown, route: string): V3Transaction['action'] {
   };
 }
 
-/** M4: the bounce phase's type, one of block.tlb's three. */
+/** The bounce phase's type, one of block.tlb's three. */
 function bounceOf(value: unknown, route: string): string | undefined {
   const b = optional(value, record, route);
   if (!b) return undefined;
@@ -549,7 +557,7 @@ const V3_STATUSES: ReadonlySet<unknown> = new Set([
   'frozen',
 ]);
 
-/** A v3 account status: one of the four (lesson 6: well typed when present). */
+/** A v3 account status: one of the four (well typed when present). */
 const accountStatus = (value: unknown): V3AccountStatus | undefined =>
   V3_STATUSES.has(value) ? (value as V3AccountStatus) : undefined;
 
@@ -594,14 +602,14 @@ function finalized(f: unknown): boolean {
 /**
  * Only chain evidence counts: an emulated (pending) transaction is toncenter's guess, and
  * one not yet `finalized` (a shard block the masterchain has not committed) is not final;
- * either reads as "not yet" (lesson 16), and a trace holding one is incomplete.
+ * either reads as "not yet", and a trace holding one is incomplete.
  */
 const committed = (value: unknown): boolean =>
   !(isRecord(value) && (value.emulated === true || !finalized(value.finality)));
 
 /**
  * A v3 transaction list, emulated or not yet finalized ones dropped; more than `limit`
- * items is malformed (M3).
+ * items is malformed.
  */
 function transactionsOf(body: unknown, route: string, limit: number): V3Transaction[] {
   if (
@@ -628,8 +636,8 @@ function headerOf(result: unknown, route: string): BlockHeader {
 }
 
 /**
- * F6-R23 M1: the one parser of a masterchain block id's seqno, for the proofs' head reads and
- * the driver's health probes alike (lesson 17: a node's height is a claim): only a
+ * The one parser of a masterchain block id's seqno, for the proofs' head reads and the
+ * driver's health probes alike (a node's height is a claim): only a
  * masterchain id (workchain -1), and only within a masterchain seqno's range (u32).
  */
 function masterchainIdSeqno(value: unknown, route: string): number {
@@ -708,12 +716,12 @@ function runOf(result: unknown, route: string): RunResult {
   };
 }
 
-/** A v2 `runGetMethod` answer body, parsed; for callers' quorum predicates (lesson 17). */
+/** A v2 `runGetMethod` answer body, parsed; for callers' quorum predicates. */
 export function runResultOf(body: unknown): RunResult {
   return runOf(v2Result(body, '/runGetMethod'), '/runGetMethod');
 }
 
-/** A get-method's result with its block and the account's last transaction (I2). */
+/** A get-method's result with its block and the account's last transaction. */
 function boundRunOf(result: unknown, route: string): BoundRunResult {
   const r = need(record(result), route);
   return {
@@ -730,8 +738,8 @@ export function boundRunResultOf(body: unknown): BoundRunResult {
 
 /**
  * A v2 `getTransactions` result: at most `limit` rows, each with its id and a raw cell
- * within an account state's limits, checked in the BOC header before anyone decodes it
- * (lesson 20). What the rows are is for the caller to prove by their hashes.
+ * within an account state's limits, checked in the BOC header before anyone decodes it.
+ * What the rows are is for the caller to prove by their hashes.
  */
 function rawTransactionsOf(
   result: unknown,
@@ -753,9 +761,9 @@ function rawTransactionsOf(
  * `get_jetton_data`'s exit code and content cell (TEP-74: total supply, mintable, admin,
  * content, wallet code). Only the content is read, so no other entry (a supply, a large
  * wallet code) is held to anything. A content cell beyond an account state's limits
- * (`MAX_STATE_CELLS`, `MAX_STATE_BOC_LENGTH`) is reported `oversized`, never decoded
- * (lesson 20): no chain content is that large, and a caller that agrees on it under the
- * proof quorum takes it as the token's own (lesson 13), not as an answer to retry forever.
+ * (`MAX_STATE_CELLS`, `MAX_STATE_BOC_LENGTH`) is reported `oversized`, never decoded:
+ * no chain content is that large, and a caller that agrees on it under the proof quorum
+ * takes it as the token's own, not as an answer to retry forever.
  * A stack that is not one, or a content entry without a BOC header, is malformed.
  */
 function jettonDataFrom(result: unknown, route: string): JettonData {
@@ -784,7 +792,7 @@ function jettonDataFrom(result: unknown, route: string): JettonData {
   };
 }
 
-/** A v2 `get_jetton_data` answer body, parsed; for callers' quorum keys (lesson 2). */
+/** A v2 `get_jetton_data` answer body, parsed; for callers' quorum keys. */
 export function jettonDataOf(body: unknown): JettonData {
   return jettonDataFrom(v2Result(body, '/runGetMethod'), '/runGetMethod');
 }
@@ -825,7 +833,7 @@ function traceOf(value: unknown, route: string): V3Trace {
 }
 
 /**
- * M4, F6-R8 and F6-R13: one `/metadata` token entry, the indexer's copy of the token's
+ * One `/metadata` token entry, the indexer's copy of the token's
  * off-chain JSON. Only the fields a caller may use are read, and each as the token wrote it:
  * a symbol or decimals that are not one are `null` (the token's own data, which every
  * endpoint agrees on, so never malformed and retried forever); a name beyond its limit is
@@ -853,10 +861,10 @@ function tokenInfoOf(token: Json): TokenInfo {
   return info;
 }
 
-// ---- quorum facts (lesson 2) ---------------------------------------------------------------
-// Each method's key is its parsed value (M5, M6): honest endpoints that format a fact
+// ---- quorum facts -------------------------------------------------------------------------
+// Each method's key is its parsed value: honest endpoints that format a fact
 // differently (a number or a string, `uninit` or `uninitialized`, v2's `@extra`) agree, and
-// a key that throws is a disagreement. A key covers every field a verdict reads (C1);
+// a key that throws is a disagreement. A key covers every field a verdict reads;
 // message bodies are left out (their serialization varies) and are bound to the keyed body
 // hash where they are decoded (`messageBody`). The transport compares keys as canonical
 // JSON, bigints included.
@@ -872,7 +880,7 @@ function factsOf(tx: V3Transaction): unknown {
   return { ...facts, inMsg: message(inMsg), outMsgs: outMsgs.map(message) };
 }
 
-/** A trace's id, completeness and every transaction's facts, in trace order (C1). */
+/** A trace's id, completeness and every transaction's facts, in trace order. */
 function traceFacts(trace: V3Trace | null): unknown {
   return trace && { ...trace, transactions: trace.transactions.map(factsOf) };
 }
@@ -893,7 +901,7 @@ export class TonApi {
     private readonly indexer: Transport,
   ) {}
 
-  /** The rpc transport's lag tolerance (R36: the pool resolves it); proofs' last skew. */
+  /** The rpc transport's lag tolerance, as the pool resolved it; proofs' last skew. */
   get lagTolerance(): number {
     return this.rpc.maxLagBlocks;
   }
@@ -904,7 +912,7 @@ export class TonApi {
     tags: TonCallTags,
     quorumKey: (result: unknown) => unknown,
   ): Promise<unknown> {
-    // The caller's key (a predicate, lesson 17) replaces the call's consensus facts.
+    // The caller's key (a predicate) replaces the call's consensus facts.
     const key = tags.quorumKey ?? quorumKey;
     const options: CallOptions = {
       ...tags,
@@ -914,10 +922,10 @@ export class TonApi {
     try {
       return await transport.http<unknown>(request, options);
     } catch (error) {
-      // M2 and lesson 18 (widened): on a proof or monitor read, any definitive RPC error,
+      // On a proof or monitor read, any definitive RPC error,
       // whatever its text (a block the endpoint does not hold yet, pruned state, a provider
       // that answers 4xx rather than toncenter's 500), decides nothing. TON's negatives come
-      // only from attested state (D12), never from an error, so no error text is read here.
+      // only from attested state, never from an error, so no error text is read here.
       // A misconfigured endpoint (`PROVIDER_MISCONFIGURED`) still surfaces as the
       // configuration error it is.
       if (
@@ -936,9 +944,8 @@ export class TonApi {
   }
 
   /**
-   * One request whose answer `parse` validates (lesson 6). Under a quorum, each endpoint's
-   * answer is keyed on `facts` of its parsed value: the fields a verdict reads, never the
-   * envelope (lesson 2, M5, M6).
+   * One request whose answer `parse` validates. Under a quorum, each endpoint's answer is
+   * keyed on `facts` of its parsed value: the fields a verdict reads, never the envelope.
    */
   async #read<T>(
     transport: Transport,
@@ -1010,7 +1017,7 @@ export class TonApi {
 
   /**
    * Whether the liteserver holds masterchain block `seqno` (every masterchain block is
-   * final once it exists). Under a quorum the key is this predicate (lesson 17): endpoints
+   * final once it exists). Under a quorum the key is this predicate: endpoints
    * past `seqno` agree whatever their heads.
    */
   reachedMasterchain(seqno: number, tags: TonCallTags): Promise<boolean> {
@@ -1102,7 +1109,7 @@ export class TonApi {
 
   /**
    * A get-method at masterchain block `seqno`, with the block and the account's last
-   * transaction the answer names (F6-R21 I2): a caller binds the result to the state it
+   * transaction the answer names: a caller binds the result to the state it
    * read, since an endpoint that drops the block answers at its own latest state.
    */
   runGetMethodAt(
@@ -1121,9 +1128,9 @@ export class TonApi {
   }
 
   /**
-   * Up to `limit` of an account's transactions (a raw address, M2) from `from` back, as the
+   * Up to `limit` of an account's transactions (a raw address) from `from` back, as the
    * liteserver serves them (v2 `getTransactions`), each with its raw cell. Under a quorum
-   * the endpoints agree on the ids; the cells are the caller's to hash (F6-R21).
+   * the endpoints agree on the ids; the cells are the caller's to hash.
    */
   async rawTransactions(
     address: string,
@@ -1139,7 +1146,7 @@ export class TonApi {
         lt: from.lt.toString(),
         hash: from.hash,
         limit: String(limit),
-        // N2: a walk may reach old history, which only archive liteservers hold.
+        // A walk may reach old history, which only archive liteservers hold.
         archival: 'true',
       },
       tags,
@@ -1184,7 +1191,7 @@ export class TonApi {
       },
       tags,
       (result, route): SourceFees => {
-        // toncenter writes these fees as JSON numbers: read exactly (A12), as coins (M1).
+        // toncenter writes these fees as JSON numbers: read exactly, as coins.
         const fees = need(
           isRecord(result) ? record(result.source_fees) : undefined,
           route,
@@ -1219,7 +1226,7 @@ export class TonApi {
 
   /**
    * Whether the indexer has indexed masterchain block `seqno`. Under a quorum the key is
-   * this predicate (lesson 17): indexers past `seqno` agree whatever their heads.
+   * this predicate: indexers past `seqno` agree whatever their heads.
    */
   indexerReached(seqno: number, tags: TonCallTags): Promise<boolean> {
     return this.#v3(
@@ -1244,7 +1251,7 @@ export class TonApi {
         for (const item of body.blocks) {
           const block = need(record(item), route);
           const workchain = need(int(block.workchain), route);
-          // A lookup by id keeps only the block asked for (I2).
+          // A lookup by id keeps only the block asked for.
           if (workchain === -1 && need(hashHex(block.root_hash), route) === wanted) {
             return need(int(block.seqno), route);
           }
@@ -1256,7 +1263,7 @@ export class TonApi {
 
   /**
    * Committed transactions whose inbound message has this raw or normalized hash (hex).
-   * I2: only those; a dropped filter's strangers read as "none yet".
+   * Only those; a dropped filter's strangers read as "none yet".
    */
   transactionsByMessage(hash: string, tags: TonCallTags): Promise<V3Transaction[]> {
     const wanted = hashHex(hash);
@@ -1289,11 +1296,11 @@ export class TonApi {
   }
 
   /**
-   * One page of an account's transactions (a raw address, M2), newest first, at or below
+   * One page of an account's transactions (a raw address), newest first, at or below
    * `endLt` when given, with the next page's `endLt` when this one was full. An answer that
    * breaks the query (another account, an lt out of order or above `endLt`, more than
    * `limit`), counting the transactions not yet final, is malformed: a verdict reads it as
-   * the account's history. F6-R12: `next` comes from the page as served, so a page whose
+   * the account's history. `next` comes from the page as served, so a page whose
    * newest transactions are not yet final still leads to the older ones.
    */
   async accountTransactionsPage(
@@ -1367,7 +1374,7 @@ export class TonApi {
         }
         for (const value of body.traces) {
           const trace = traceOf(value, route);
-          // A lookup by id keeps only the trace asked for (I2).
+          // A lookup by id keeps only the trace asked for.
           if (trace.transactions.some((tx) => tx.hash === wanted)) return trace;
         }
         return null;
@@ -1377,9 +1384,9 @@ export class TonApi {
   }
 
   /**
-   * The indexer's metadata for a raw token address (M2): its first valid jetton entry
+   * The indexer's metadata for a raw token address: its first valid jetton entry
    * (`tokenInfoOf`). Undefined while the indexer has none: no entry (an unknown address, a
-   * lagging index or a dropped filter all read alike, I2), an entry not indexed yet, or no
+   * lagging index or a dropped filter all read alike), an entry not indexed yet, or no
    * valid metadata fetched (yet), so a caller never takes it for a definitive answer.
    */
   async tokenInfo(address: string, tags: TonCallTags): Promise<TokenInfo | undefined> {
@@ -1391,7 +1398,7 @@ export class TonApi {
       (body, route) => {
         if (!isRecord(body)) throw malformed(route);
         for (const [key, value] of Object.entries(body)) {
-          // The answer is keyed by address; a lookup by id reads only its own entry (I2).
+          // The answer is keyed by address; a lookup by id reads only its own entry.
           if (rawOf(key) !== wanted) continue;
           const entry = need(record(value), route);
           if (optional(entry.is_indexed, bool, route) === false) return undefined;

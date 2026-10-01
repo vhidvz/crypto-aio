@@ -1,5 +1,5 @@
 /**
- * Address history (spec §15: `getSignaturesForAddress`), newest first. The cursor is the
+ * Address history from `getSignaturesForAddress`, newest first. The cursor is the
  * last signature of a page. A token account's history holds the SPL transfers into it; an
  * owner's history holds only the transactions that name the owner itself.
  */
@@ -40,8 +40,9 @@ export function createSolanaHistory(ctx: SolanaContext): AddressHistorySource {
           READ,
         );
       } catch (error) {
-        // M2: a backend that does not hold the cursor's transaction (another backend
-        // behind a load balancer, or a pruned one) decides nothing.
+        // A backend that does not hold the cursor's transaction (another backend behind a
+        // load balancer, or a pruned one) answers -32020. That decides nothing: another
+        // backend may hold it.
         if (rpcCode(error) === RPC_CODES.FILTER_TRANSACTION_NOT_FOUND) {
           // The node's error stays reachable: its cause and where it happened.
           throw new ProviderError(
@@ -72,8 +73,8 @@ export function createSolanaHistory(ctx: SolanaContext): AddressHistorySource {
           }),
         );
       }
-      // Paged on the raw page (the board's rule): only a page shorter than asked ends the
-      // history, and one longer than asked never does.
+      // Paged on the raw page: only a page shorter than asked ends the history, and one
+      // longer than asked never does.
       const last = signatures[signatures.length - 1];
       return {
         items,

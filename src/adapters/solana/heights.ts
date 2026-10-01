@@ -1,20 +1,21 @@
 /**
- * Dense block heights over Solana's slots (handoff §3: "use block height, not slot, on
- * Solana"). Slots can be skipped; block heights count only produced blocks, so every height
- * up to the head has exactly one block. The index maps a height to its slot with
- * `getBlocks`, which lists the produced slots of a range: anchored on a known block at
- * the head, the block `k` places before it in that list is `k` heights lower.
+ * Dense block heights over Solana's slots: the core's heights must be dense, so they are
+ * block heights, never slots. Slots can be skipped; block heights count only produced
+ * blocks, so every height up to the head has exactly one block. The index maps a height
+ * to its slot with `getBlocks`, which lists the produced slots of a range: anchored on a
+ * known block at the head, the block `k` places before it in that list is `k` heights
+ * lower.
  *
  * A list can have gaps (a ledger jump to a snapshot, a long-term-storage gap, pruning), so
- * no pair is believed until a read of the list's first block confirms its height (I3). Only
- * finalized, verified pairs are cached (immutable chain data, spec §7), which makes a
- * forward scan cost one `getBlock` per height. A height the endpoint no longer holds is a
- * retryable error that decides nothing, never `null` (`null` means "not visible yet").
- * Every read is a single endpoint's view (lesson 17): verdicts quorum-read the block at the
- * resolved slot. Any other RPC error decides nothing either (lesson 18, widened): proofs
- * reach this index, and agave answers `getBlocks` below its local ledger with `-32602
- * "BigTable query failed"` when long-term storage fails. Such a page starts again at the
- * endpoint's first available block (liveness), so a height inside its ledger still
+ * no pair is believed until a read of the list's first block confirms its height. Only
+ * finalized, verified pairs are cached (immutable chain data, the only state a shared
+ * driver may keep), which makes a forward scan cost one `getBlock` per height. A height
+ * the endpoint no longer holds is a retryable error that decides nothing, never `null`
+ * (`null` means "not visible yet"). Every read is a single endpoint's view: verdicts
+ * quorum-read the block at the resolved slot. Any other RPC error decides nothing either:
+ * proofs reach this index, and agave answers `getBlocks` below its local ledger with
+ * `-32602 "BigTable query failed"` when long-term storage fails. Such a page starts again
+ * at the endpoint's first available block (liveness), so a height inside its ledger still
  * resolves.
  */
 import type { Transport } from '../../core/transport/types';
@@ -143,7 +144,7 @@ export class HeightIndex {
       }
       // A list that adds nothing below its anchor: the endpoint holds nothing older.
       if (last === 0) throw gone(`the block at height ${height}`);
-      // I3: the list's first block must sit exactly `last` heights below the anchor, or
+      // The list's first block must sit exactly `last` heights below the anchor, or
       // the list has a gap; nothing from it is believed or cached.
       const firstHeight = anchorHeight - BigInt(last);
       const first = await this.header(slots[0] as bigint, commitment, tags);
@@ -173,8 +174,8 @@ export class HeightIndex {
    * When the endpoint cannot list from `from` (a definitive RPC error with a JSON-RPC
    * code: agave answers `-32602 "BigTable query failed"` below its local ledger when
    * long-term storage fails), the page starts once more at the endpoint's first available
-   * block, when that lies inside the range (X-note, liveness only). Every other error, and
-   * a second failure, decides nothing (lesson 18, widened).
+   * block, when that lies inside the range (liveness only). Every other error, and a
+   * second failure, decides nothing.
    */
   async #page(
     from: bigint,

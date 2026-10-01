@@ -102,7 +102,7 @@ describe('Solana answers', () => {
     }
   });
 
-  it('treats only definitive "cannot show it" codes as not available, split by meaning (I3)', () => {
+  it('treats only definitive "cannot show it" codes as not available, split by meaning', () => {
     for (const code of [-32001, -32004, -32007, -32009, -32011, -32014, -32016, -32019]) {
       expect(isNotAvailable(rpcError(code, 'x'))).toBe(true);
     }
@@ -124,7 +124,7 @@ describe('Solana answers', () => {
 });
 
 describe('call()', () => {
-  it('parses every answer with exact integers and carries the caller tags (P5-A, lesson 17)', async () => {
+  it('parses every answer with exact integers and carries the caller tags', async () => {
     const seen: unknown[] = [];
     const transport = {
       rpc: (method: string, params: unknown, options: unknown) => {
@@ -168,8 +168,8 @@ describe('call()', () => {
   });
 });
 
-describe('transport helpers (F5-R3 M4)', () => {
-  it('turns an RPC error into a retryable answer that decides nothing and keeps its evidence (lesson 18)', () => {
+describe('transport helpers', () => {
+  it('turns an RPC error into a retryable answer that decides nothing and keeps its evidence', () => {
     const cause = new ProviderError(
       'RPC_ERROR',
       'getBlocks failed: BigTable query failed',
@@ -257,7 +257,7 @@ describe('transport helpers (F5-R3 M4)', () => {
   });
 });
 
-describe('quorum keys (lesson 2, Review Focus 2)', () => {
+describe('quorum keys', () => {
   const key = quorumKeyFor('getTransaction')!;
   /** A finalized transaction as two honest providers format it differently. */
   const base = (overrides: Record<string, unknown> = {}) => ({
@@ -352,7 +352,7 @@ describe('quorum keys (lesson 2, Review Focus 2)', () => {
       null;
     (other as Record<string, unknown>).blockTime = null;
     expect(canonicalJson(key(other))).toBe(canonicalJson(key(base())));
-    // M7: another implementation may list token balances in another order.
+    // Another implementation may list token balances in another order.
     const second = { accountIndex: 0, mint: 'M', uiTokenAmount: { amount: '1' } };
     const ordered = base({
       postTokenBalances: [second, ...(base().meta.postTokenBalances as object[])],
@@ -410,7 +410,7 @@ describe('the fee policy', () => {
     expect(priceForSpeed(recent, 'normal')).toBe(20n);
     expect(priceForSpeed(recent, 'fast')).toBe(40n);
     expect(priceForSpeed([], 'fast')).toBe(0n);
-    // Exact integers (P5-A): a u64 price above 2^53 − 1 arrives as a bigint. The highest
+    // Exact integers: a u64 price above 2^53 − 1 arrives as a bigint. The highest
     // accepted price leaves room for the largest price variant within the u64 range.
     const highest = priceForSpeed([{ prioritizationFee: 2n ** 64n - 1_000n }], 'fast');
     expect(highest).toBe(2n ** 64n - 1_000n);
@@ -420,8 +420,8 @@ describe('the fee policy', () => {
       [{ prioritizationFee: -1 }],
       [{ prioritizationFee: 1.5 }],
       [{}],
-      // Lesson 19: outside the u64 range is malformed, never a price to encode, and so is
-      // a price the variant would push past it (F5-R3 M1).
+      // Outside the u64 range is malformed, never a price to encode, and so is a price
+      // the variant would push past it.
       [{ prioritizationFee: 2n ** 64n - 999n }],
       [{ prioritizationFee: 2n ** 64n - 1n }],
       [{ prioritizationFee: 2n ** 64n }],
@@ -507,7 +507,7 @@ describe('the fee policy', () => {
   });
 });
 
-describe('the price ceiling (F5-R9 (b))', () => {
+describe('the price ceiling', () => {
   const MAX = 10_000_000n;
 
   it('clamps a speed below the bound less the largest variant, then adds the variant', () => {
@@ -583,7 +583,7 @@ describe('the price ceiling (F5-R9 (b))', () => {
   });
 });
 
-describe('lamports charged (F5-R3 M4)', () => {
+describe('lamports charged', () => {
   it('adds up the charges of a draft, and only its charges', () => {
     const details = {
       signatures: 1,
@@ -603,7 +603,7 @@ describe('lamports charged (F5-R3 M4)', () => {
   });
 });
 
-describe('broadcast classification (lesson 3, R24)', () => {
+describe('broadcast classification', () => {
   const pre = 'Transaction simulation failed: ';
   it.each([
     [
@@ -805,7 +805,7 @@ describe('broadcast classification (lesson 3, R24)', () => {
   });
 });
 
-describe('lesson 21: a claimed signature failure stands only for our bytes (F5-R15)', () => {
+describe('a claimed signature failure stands only for our bytes', () => {
   const pre = 'Transaction simulation failed: ';
   const data = (err: unknown) =>
     JSON.stringify({ err, logs: [], accounts: null, unitsConsumed: 0 });
@@ -902,7 +902,7 @@ describe('lesson 21: a claimed signature failure stands only for our bytes (F5-R
       // An aliased (non-canonical) signature count.
       Uint8Array.from([0x81, 0x00, ...valid.subarray(1)]),
       // Over the packet limit, never bytes we sent: refused before any signature is
-      // checked (lesson 20), even well formed with a bad signature.
+      // checked, even well formed with a bad signature.
       signedTransaction(
         [new Uint8Array(64)],
         compileLegacy(KEY_ADDRESS, MINT, [

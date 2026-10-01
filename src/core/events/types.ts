@@ -70,7 +70,7 @@ export interface AioEvents {
     chain: string;
     network: string;
     operationId: string;
-    /** The nonce or seqno: an operational identifier (M7), never UTXO inputs. */
+    /** The nonce or seqno: an operational identifier, never UTXO inputs. */
     value: string;
   };
   /**
@@ -84,7 +84,7 @@ export interface AioEvents {
     chain: string;
     network: string;
     operationId: string;
-    /** The chain's pending nonce: an operational identifier (M7). */
+    /** The chain's pending nonce: an operational identifier. */
     expected: string;
     blockingOperationId?: string;
   };

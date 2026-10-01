@@ -156,7 +156,7 @@ async function proofsOf(env: FakeEnv): Promise<ProofSource> {
 }
 
 /**
- * I4: the fake never proves a seqno transaction expired, so its expiry proof is stubbed to
+ * The fake never proves a seqno transaction expired, so its expiry proof is stubbed to
  * say so while the monitor proves the dropped transfer expired, then restored.
  */
 async function expiredSeqnoTransfer(env: FakeEnv, recipient: string) {
@@ -221,7 +221,7 @@ describe('replace, cancel and rebuild', () => {
     const final = await mineWhile(env, cancelled.wait({ finality: 'final' }));
     expect(final.operation).toMatchObject({ state: 'final', outcome: 'cancelled' });
     expect(env.chain.balance(recipient)).toBe(0n);
-    // M4: the losing original is linked to the cancel that consumed its slot.
+    // The losing original is linked to the cancel that consumed its slot.
     expect(
       await env.stores.operations.getObservation(sub.attempts[0]?.id ?? ''),
     ).toMatchObject({
@@ -246,7 +246,7 @@ describe('replace, cancel and rebuild', () => {
       env.bc.waitForConfirmation(sub.operationId, { finality: 'final' }),
     );
     expect(final.operation?.outcome).toBe('executed');
-    // M4: the refused cancel is proven replaced by the original that won.
+    // The refused cancel is proven replaced by the original that won.
     expect(
       await env.stores.operations.getObservation(op?.attempts[1]?.id ?? ''),
     ).toMatchObject({
@@ -353,7 +353,7 @@ describe('replace, cancel and rebuild', () => {
     expect(env.chain.inMempool(original)).toBe(true);
     const final = await mineWhile(env, sub.wait({ finality: 'final' }));
     expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
-    // M4: the refused replacement is proven replaced by the original that won.
+    // The refused replacement is proven replaced by the original that won.
     expect(
       await env.stores.operations.getObservation(op.attempts[1]?.id ?? ''),
     ).toMatchObject({ state: 'replaced', evidence: 'proven', replacedBy: original });
@@ -437,7 +437,7 @@ describe('replace, cancel and rebuild', () => {
     });
   });
 
-  // M4 (R22): a pending answer that arrives after the deadline still holds a live approval.
+  // A pending answer that arrives after the deadline still holds a live approval.
   it('cancels the ticket of a replacement signer that answers pending after the deadline', async () => {
     const cancelled: string[] = [];
     const late: { answer?: (result: SigningResult) => void } = {};
@@ -547,7 +547,7 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(2);
   });
 
-  // I2: a resumed Attempt the node refuses is undone like a fresh one.
+  // A resumed Attempt the node refuses is undone like a fresh one.
   it('restores the superseded attempt when a resumed replacement is refused', async () => {
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
     // The driver asks for a 10% bump; this node wants 50%.
@@ -574,7 +574,7 @@ describe('replace, cancel and rebuild', () => {
     expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(true);
   });
 
-  // M3: the refusal is reported even when the Operation moved on before it was recorded.
+  // The refusal is reported even when the Operation moved on before it was recorded.
   it('reports a refusal and restores the active attempt when the operation moved on', async () => {
     const store = new RacingStore();
     const env = await createFakeEnv({
@@ -594,7 +594,7 @@ describe('replace, cancel and rebuild', () => {
     expect(op).toMatchObject({ state: 'included', activeAttemptId: op.attempts[0]?.id });
   });
 
-  // M2: the restore returns to the snapshot the append was made over, not an older read.
+  // The restore returns to the snapshot the append was made over, not an older read.
   it('restores the state the refused attempt was appended over', async () => {
     const store = new RacingStore();
     const env = await createFakeEnv({
@@ -622,7 +622,7 @@ describe('replace, cancel and rebuild', () => {
     expect(op.error).toBeUndefined();
   });
 
-  // N1: a replacement refused on a resend (recovery) is never reported as a success.
+  // A replacement refused on a resend (recovery) is never reported as a success.
   it('restores and reports a replacement that recovery resent and the node refused', async () => {
     const { signer, calls } = countingSigner();
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
@@ -674,7 +674,7 @@ describe('replace, cancel and rebuild', () => {
     expect(op).toMatchObject({ state: 'submitted', activeAttemptId: op.attempts[0]?.id });
   });
 
-  // N2: a refused resend keeps a refused original `stalled`, with its error.
+  // A refused resend keeps a refused original `stalled`, with its error.
   it('keeps the operation stalled when the superseded original was itself refused', async () => {
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
     const env = await createFakeEnv({
@@ -707,7 +707,7 @@ describe('replace, cancel and rebuild', () => {
     });
   });
 
-  // M-b: a terminal Operation keeps its active Attempt.
+  // A terminal Operation keeps its active Attempt.
   it('leaves a terminal operation alone when a refusal arrives after it ended', async () => {
     const store = new RacingStore();
     const env = await createFakeEnv({
@@ -749,7 +749,7 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(2);
   });
 
-  // I1 / R30: a cancel that cannot land is bumped by a repeat, so the nonce never sticks.
+  // A cancel that cannot land is bumped by a repeat, so the nonce never sticks.
   it('bumps a dropped cancel on a repeat and settles on the bumped one', async () => {
     const { signer, calls } = countingSigner();
     const env = await createFakeEnv({ signer });
@@ -762,7 +762,7 @@ describe('replace, cancel and rebuild', () => {
     // The node's minimum fee rises above the cancel's, and the cancel is evicted.
     (env.chain as { minFee: bigint }).minFee = 3n;
     env.chain.dropFromMempool(first.attempt?.id ?? '');
-    // R30.1: only once the monitor has seen it dropped does a repeat bump it.
+    // Only once the monitor has seen it dropped does a repeat bump it.
     expect(
       (await env.run(env.bc.cancel(sub.operationId))).attempts.map((a) => a.purpose),
     ).toEqual(['original', 'cancel']);
@@ -808,7 +808,7 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(2);
   });
 
-  // N4 / R30.1: concurrent or retried cancels are idempotent while the cancel is pending.
+  // Concurrent or retried cancels are idempotent while the cancel is pending.
   it('creates one cancel for concurrent cancels, and a new one only at an explicit fee', async () => {
     const { signer, calls } = countingSigner();
     const env = await createFakeEnv({ signer });
@@ -832,7 +832,7 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(3);
   });
 
-  // N3: bumps climb from the highest-fee earlier cancel, never re-signing an identical one.
+  // Bumps climb from the highest-fee earlier cancel, never re-signing an identical one.
   it('bumps from the highest-fee earlier cancel after a refused one gave the active role back', async () => {
     const { signer, calls } = countingSigner();
     const env = await createFakeEnv({ signer });
@@ -860,8 +860,8 @@ describe('replace, cancel and rebuild', () => {
     expect(env.chain.balance(recipient)).toBe(0n);
   });
 
-  // N1 / R30.1: an active cancel recorded as refused gives the active role back, then is bumped.
-  // R30.2: a rejected active cancel is treated exactly like a refused one.
+  // An active cancel recorded as refused gives the active role back, then is bumped.
+  // A rejected active cancel is treated exactly like a refused one.
   it.each(['refused', 'rejected'] as const)(
     'restores the superseded attempt before bumping an active cancel recorded as %s',
     async (state) => {
@@ -879,7 +879,7 @@ describe('replace, cancel and rebuild', () => {
     },
   );
 
-  // R30.2: a rejected active replacement is resent like a refused one, never a success.
+  // A rejected active replacement is resent like a refused one, never a success.
   it('resends an active replacement recorded as rejected and reports the refusal', async () => {
     const { signer, calls } = countingSigner();
     const env = await createFakeEnv({ signer });
@@ -908,7 +908,7 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(2);
   });
 
-  // R2-1: a cancel after a newer, higher replacement is built from that replacement.
+  // A cancel after a newer, higher replacement is built from that replacement.
   it('builds a cancel from a newer replacement that pays more than an earlier cancel', async () => {
     const env = await createFakeEnv({ chain: { minFee: 10n } });
     const recipient = env.stranger();
@@ -937,7 +937,7 @@ describe('replace, cancel and rebuild', () => {
     expect(env.chain.balance(recipient)).toBe(0n);
   });
 
-  // R2-2: a refused replacement is made active again only after the node accepted it.
+  // A refused replacement is made active again only after the node accepted it.
   it('reactivates a refused replacement only after the node accepts its resend', async () => {
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
     // The driver asks for a 10% bump; this node wants 50% at first.
@@ -960,7 +960,7 @@ describe('replace, cancel and rebuild', () => {
       when: (args) =>
         (args[2] as OperationPatch | undefined)?.activeAttemptId === refused.id,
     });
-    // R3-1: the node accepted the resend, so the crash surfaces as ambiguous.
+    // The node accepted the resend, so the crash surfaces as ambiguous.
     await expect(
       env.run(env.bc.replace(sub.operationId, { fee: { fee: 12n } })),
     ).rejects.toMatchObject({ code: 'STATE_UNRECORDED', ambiguous: true });
@@ -973,7 +973,7 @@ describe('replace, cancel and rebuild', () => {
     expect(env.chain.inMempool(sub.attempt?.id ?? '')).toBe(false);
   });
 
-  // R3-1 (R27): once the node accepted a restored-away resend, a failure is ambiguous.
+  // Once the node accepted a restored-away resend, a failure is ambiguous.
   it('reports a failure after an accepted restored-away resend as STATE_UNRECORDED', async () => {
     const { signer, calls } = countingSigner();
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
@@ -1017,7 +1017,7 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(signed);
   });
 
-  // R31 (R27): a failed own-ref lookup after a restored-away refusal is ambiguous.
+  // A failed own-ref lookup after a restored-away refusal is ambiguous.
   it('reports a failed own-ref lookup after a restored-away refusal as STATE_UNRECORDED', async () => {
     // The driver asks for a 10% bump; this node wants 50%.
     const env = await createFakeEnv({
@@ -1059,7 +1059,7 @@ describe('replace, cancel and rebuild', () => {
     expect(op.attempts).toHaveLength(2);
   });
 
-  // R3-2 (R25): a rejected restored-away resend is a refusal once a node accepted the bytes.
+  // A rejected restored-away resend is a refusal once a node accepted the bytes.
   it('reports a rejected restored-away resend as refused when a node once accepted it', async () => {
     const env = await createFakeEnv({ chain: { minFee: 10n } });
     const sub = await env.run(
@@ -1097,7 +1097,7 @@ describe('replace, cancel and rebuild', () => {
     expect(op.attempts).toHaveLength(2);
   });
 
-  // R3-2: bytes no node ever accepted keep the rejection's own code.
+  // Bytes no node ever accepted keep the rejection's own code.
   it('reports a rejected restored-away resend as rejected when no node accepted it', async () => {
     // The driver asks for a 10% bump; this node wants 50%.
     const env = await createFakeEnv({
@@ -1126,7 +1126,7 @@ describe('replace, cancel and rebuild', () => {
     expect(op.activeAttemptId).toBe(op.attempts[0]?.id);
   });
 
-  // I3 / R30: replace is idempotent per fee spec; another spec is another request.
+  // Replace is idempotent per fee spec; another spec is another request.
   it('returns the existing replacement for the same fee spec after a crash', async () => {
     const { signer, calls } = countingSigner();
     const faulty = new FaultyOperationStore(new MemoryOperationStore());
@@ -1229,7 +1229,7 @@ describe('replace, cancel and rebuild', () => {
     expect(calls()).toBe(2);
   });
 
-  // I4 + M1: seqno chains.
+  // Seqno chains.
   it('rebuilds an expired seqno transfer on the same seqno and refreshes its reservation', async () => {
     const env = await createFakeEnv({
       ordering: 'seqno',

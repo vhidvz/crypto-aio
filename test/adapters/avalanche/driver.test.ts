@@ -9,7 +9,10 @@ import type {
 import { avalancheHarness, type Harness } from './support/harness';
 import { chainOf, networkOf, type Vm } from './support/vectors';
 
-/** Keeps the probes a driver sets (M12), passing every call through. */
+/**
+ * Keeps the probes a driver sets (once on each transport, before any traffic), passing
+ * every call through.
+ */
 function probing(transport: Transport) {
   const probes: HealthProbes[] = [];
   const proxy: Transport = new Proxy(transport, {

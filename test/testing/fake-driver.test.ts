@@ -221,7 +221,7 @@ describe('fake driver', () => {
     expect(await t.run(t.driver.sequence!.pending(t.from))).toBe(1n);
   });
 
-  it('serves block hashes through the proof quorum (R33)', async () => {
+  it('serves block hashes through the proof quorum', async () => {
     const t = await setupDriver('nonce', { liar: {}, honest: {} });
     t.chain.mine(4);
     const hash = (height: bigint, level: FinalityLevel) =>
@@ -323,7 +323,7 @@ describe('fake driver', () => {
     fake.route('https://ambiguous.test/rpc', (request, signal) => {
       attempts += 1;
       // Attempt 1 hangs until the transport's own deadline aborts it (an ambiguous,
-      // possibly-delivered failure, per I4). Attempt 2 answers as if a different attempt's
+      // possibly-delivered failure). Attempt 2 answers as if a different attempt's
       // send had already landed and consumed the slot ("nonce too low").
       return attempts === 1 ? hang(signal) : rpcError(request, -32000, 'nonce too low');
     });
@@ -356,7 +356,7 @@ describe('fake driver', () => {
     expect(attempts).toBe(2);
   });
 
-  it('decides nothing on a JSON-RPC error while proving, as the proof contract says (lesson 18)', async () => {
+  it('decides nothing on a JSON-RPC error while proving, as the proof contract says', async () => {
     const clock = new FakeClock();
     const info = fakePlugin().chains?.find((c) => c.id === 'fakechain');
     if (!info) throw new Error('missing chain');
@@ -461,7 +461,7 @@ describe('fake driver', () => {
 });
 
 describe('fakePlugin', () => {
-  it('builds the same plugin on every call, so registering it again is a no-op (A18, A25)', () => {
+  it('builds the same plugin on every call, so registering it again is a no-op', () => {
     expect(samePlugin(fakePlugin(), fakePlugin())).toBe(true);
   });
 });

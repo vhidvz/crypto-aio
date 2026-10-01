@@ -1,4 +1,4 @@
-// Lazy loading (spec §4): only the manifest's `load()` may require bitcoinjs-lib. Each check
+// Lazy loading: only the manifest's `load()` may require bitcoinjs-lib. Each check
 // runs in a fresh module registry where requiring an SDK is recorded, then served as usual.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -51,7 +51,7 @@ describe('lazy loading of bitcoinjs-lib', () => {
     expect(loaded).toEqual([]);
   });
 
-  it('never imports driver.ts statically: only load() requires it (M10)', async () => {
+  it('never imports driver.ts statically: only load() requires it', async () => {
     const loaded: string[] = [];
     let pending: Promise<unknown> | undefined;
     jest.isolateModules(() => {

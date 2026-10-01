@@ -27,7 +27,7 @@ export interface TransportOptions {
   /**
    * The most bytes one answer may carry (default 64 MiB). A longer answer, by its declared
    * length or as it arrives, is cancelled and fails as a retryable `PROVIDER_UNAVAILABLE`,
-   * so one endpoint can never make a call hold unbounded memory (lesson 20).
+   * so one endpoint can never make a call hold unbounded memory.
    */
   readonly maxResponseBytes?: number;
 }
@@ -61,7 +61,7 @@ export interface CallOptions {
    */
   readonly quorumKey?: (result: unknown) => unknown;
   /**
-   * A12: parse JSON answers with exact integers: an integer outside the safe range becomes a
+   * Parse JSON answers with exact integers: an integer outside the safe range becomes a
    * `bigint` instead of a rounded number (`rpc`, `rpcRaw` and `http`; health probes always
    * parse plainly). A quorum key sees the revived values.
    */
@@ -124,7 +124,7 @@ export interface Transport {
     classify?: (url: URL, init: RequestInit | undefined) => CallOptions,
   ): typeof fetch;
   setProbes(probes: HealthProbes): void;
-  /** N6: whether any health probe (`identity` and/or `height`) has ever been configured via
+  /** Whether any health probe (`identity` and/or `height`) has ever been configured via
    * `setProbes`. A transport with none configured can never mark an endpoint 'healthy' or
    * 'lagging' — its endpoints stay 'unknown' forever, which callers like `Blockchain.ready()`
    * treat as acceptable only in that case. */
@@ -133,15 +133,17 @@ export interface Transport {
   ensureFreshHealth(signal?: AbortSignal): Promise<void>;
   status(): EndpointStatus[];
   /**
-   * Highest verified block height: a monotonic high-water mark (the stale-view guard of
-   * monitors and scanners). It never drops below a peak an identity-verified endpoint
-   * reported; only a height taken before an identity probe existed stops counting once its
-   * endpoint turns out to serve another network (R19).
+   * Highest verified block height: a high-water mark (the stale-view guard of monitors
+   * and scanners). It drops in two cases only: a height taken before an identity probe
+   * existed stops counting once its endpoint turns out to serve another network, and a
+   * peak that no verified endpoint comes within `maxLagBlocks` of for three health
+   * refreshes in a row falls back to the verified best, so one forged far-future head
+   * cannot keep every view stale until restart.
    */
   highestHeight(): bigint | undefined;
   /**
-   * I2: the lag tolerance in effect (`TransportOptions.maxLagBlocks`). The driver pool
-   * resolves it per R36: the chain's `maxLagBlocks` config, else the root
+   * The lag tolerance in effect (`TransportOptions.maxLagBlocks`). The driver pool
+   * resolves it in this order: the chain's `maxLagBlocks` config, else the root
    * `transport.maxLagBlocks`, else the plugin network's own, else the built-in default.
    * An endpoint further behind is lagging, and a view further behind `highestHeight()` is
    * stale.

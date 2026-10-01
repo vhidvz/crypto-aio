@@ -191,7 +191,7 @@ describe('SigningOrchestrator', () => {
     expect(result.signatures.map((s) => s.requestId)).toEqual(['r0']);
   });
 
-  it('keeps every issued ticket with the signer that issued it (R22)', async () => {
+  it('keeps every issued ticket with the signer that issued it', async () => {
     const { orchestrator } = setup();
     const cancelled: string[] = [];
     const result = await orchestrator.sign(
@@ -218,7 +218,7 @@ describe('SigningOrchestrator', () => {
     expect(cancelled).toEqual([]);
   });
 
-  it('cancels already-issued tickets through their own signers before rethrowing (R22)', async () => {
+  it('cancels already-issued tickets through their own signers before rethrowing', async () => {
     const { orchestrator } = setup();
     const cancelled: string[] = [];
     const error = await orchestrator
@@ -243,7 +243,7 @@ describe('SigningOrchestrator', () => {
     expect(cancelled).toEqual(['hot:h-1', 'cold:c-1']);
   });
 
-  it("keeps the failure's class and stack when it adds cancelFailures (B108)", async () => {
+  it("keeps the failure's class and stack when it adds cancelFailures", async () => {
     const { orchestrator } = setup();
     class CustodyError extends SigningError {}
     const original = new CustodyError('SIGNER_UNAVAILABLE', 'custody is down');
@@ -488,7 +488,7 @@ describe('SigningOrchestrator', () => {
     ).rejects.toMatchObject({ code: 'SIGNER_UNAVAILABLE' });
   });
 
-  it('wraps an unprintable signer failure as SIGNING_FAILED (M5)', async () => {
+  it('wraps an unprintable signer failure as SIGNING_FAILED', async () => {
     const { orchestrator } = setup();
     const odd = callbackSigner({
       id: 'hot',
@@ -507,7 +507,7 @@ describe('SigningOrchestrator', () => {
     });
   });
 
-  it('guards the routing reads: signerFor and the signer scheme list (M5)', async () => {
+  it('guards the routing reads: signerFor and the signer scheme list', async () => {
     const { orchestrator } = setup();
     const unreadable = {
       id: 'hot',

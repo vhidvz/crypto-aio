@@ -2,7 +2,7 @@
 
 # Interface: AvalancheUnspent
 
-Defined in: [src/adapters/avalanche/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L55)
+Defined in: [src/adapters/avalanche/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L56)
 
 An output an address owns, as `ext.avalanche.listUnspent` reports it.
 
@@ -14,7 +14,7 @@ An output an address owns, as `ext.avalanche.listUnspent` reports it.
 
 > `readonly` **amount**: `bigint`
 
-Defined in: [src/adapters/avalanche/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L62)
+Defined in: [src/adapters/avalanche/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L63)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/avalanche/types.ts:62](https://github.com/vhidvz/crypt
 
 > `readonly` **assetId**: `string`
 
-Defined in: [src/adapters/avalanche/types.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L61)
+Defined in: [src/adapters/avalanche/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L62)
 
 The asset's id (cb58); AVAX is the network's `avaxAssetId`.
 
@@ -36,7 +36,7 @@ The asset's id (cb58); AVAX is the network's `avaxAssetId`.
 
 > `readonly` **locktime**: `bigint`
 
-Defined in: [src/adapters/avalanche/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L64)
+Defined in: [src/adapters/avalanche/types.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L65)
 
 Unix seconds before which the output cannot be spent; `0n` for none.
 
@@ -48,7 +48,7 @@ Unix seconds before which the output cannot be spent; `0n` for none.
 
 > `readonly` **outputIndex**: `number`
 
-Defined in: [src/adapters/avalanche/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L59)
+Defined in: [src/adapters/avalanche/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L60)
 
 ***
 
@@ -58,7 +58,7 @@ Defined in: [src/adapters/avalanche/types.ts:59](https://github.com/vhidvz/crypt
 
 > `readonly` **spendable**: `boolean`
 
-Defined in: [src/adapters/avalanche/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L71)
+Defined in: [src/adapters/avalanche/types.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L72)
 
 Whether a transfer from this address may spend it: AVAX in a plain transfer output,
 not locked, that this address can sign alone (threshold 1).
@@ -71,7 +71,7 @@ not locked, that this address can sign alone (threshold 1).
 
 > `readonly` **threshold**: `number`
 
-Defined in: [src/adapters/avalanche/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L66)
+Defined in: [src/adapters/avalanche/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L67)
 
 How many of the output's owners must sign.
 
@@ -83,7 +83,7 @@ How many of the output's owners must sign.
 
 > `readonly` **txId**: `string`
 
-Defined in: [src/adapters/avalanche/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L58)
+Defined in: [src/adapters/avalanche/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L59)
 
 ***
 
@@ -93,6 +93,6 @@ Defined in: [src/adapters/avalanche/types.ts:58](https://github.com/vhidvz/crypt
 
 > `readonly` **utxoId**: `string`
 
-Defined in: [src/adapters/avalanche/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L57)
+Defined in: [src/adapters/avalanche/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L58)
 
 `txID:outputIndex`, the reservation key of this output.

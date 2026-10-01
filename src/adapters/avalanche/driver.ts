@@ -1,6 +1,6 @@
 /**
  * The Avalanche driver factory: validated network config, endpoint probes on both
- * transports, and the ports (spec §7). Loaded only by the manifest's `load()`, with
+ * transports, and the ports. Loaded only by the manifest's `load()`, with
  * `@avalabs/avalanchejs`.
  */
 import type { ChainDriver, DriverContext, DriverFactory } from '../../core/driver/types';
@@ -75,7 +75,8 @@ export const avalancheDriverFactory: DriverFactory = {
         'the Avalanche driver requires an indexer provider (the Avalanche Data API)',
       );
     }
-    // M12: both transports, before any traffic.
+    // Probes on both transports, once, before any traffic: without them an endpoint's
+    // identity is never checked, and an endpoint of another network is never disabled.
     ctx.transport.setProbes(nodeProbes(config));
     ctx.indexer.setProbes(indexerProbes(config));
     const avax: AvalancheContext = {

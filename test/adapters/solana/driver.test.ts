@@ -62,7 +62,7 @@ const SOL = 1_000_000_000n;
 
 /**
  * The expiry ordering of a transaction signed against `block`'s hash, as the builder records
- * it from `getLatestBlockhash` (F5-R9): the last valid height, the blockhash and its slot.
+ * it from `getLatestBlockhash`: the last valid height, the blockhash and its slot.
  */
 const expiryAt = (block: {
   readonly hash: string;
@@ -171,7 +171,7 @@ describe('the Solana driver factory', () => {
     expect([main.node.served, idx.node.served]).toEqual([[], []]);
   });
 
-  it('bounds the price by its handle option, and refuses any other option (F5-R9 (b), M2)', async () => {
+  it('bounds the price by its handle option, and refuses any other option', async () => {
     const create = (options: Record<string, unknown>) => {
       const t = nodeTransport({ prioritizationFees: [2n ** 63n] }, ['main']);
       t.node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -279,7 +279,7 @@ describe('the Solana driver factory', () => {
     );
   });
 
-  it('never waits on a real timer on its request paths (lesson 1)', async () => {
+  it('never waits on a real timer on its request paths', async () => {
     const spy = jest.spyOn(global, 'setTimeout');
     try {
       const h = await driverFor(['main']);
@@ -357,7 +357,7 @@ describe('Solana proofs', () => {
     ).toMatchObject({ included: true, success: true, txHash: ours.id });
   });
 
-  it('agrees across formatting differences and decides nothing on a different fact (Review Focus 2)', async () => {
+  it('agrees across formatting differences and decides nothing on a different fact', async () => {
     const h = await driverFor();
     h.node.createMint(MINT, 6);
     h.node.mintTo(MINT, KEY_ADDRESS, 5_000_000n);
@@ -415,7 +415,7 @@ describe('Solana proofs', () => {
     });
   });
 
-  it('answers "not included" only past the window with the window on record (Review Focus 1)', async () => {
+  it('answers "not included" only past the window with the window on record', async () => {
     const pruned = await driverFor(['a', { name: 'b', firstAvailableHeight: 5 }]);
     const honest = await driverFor(['a', 'b']);
     for (const h of [pruned, honest]) {
@@ -434,8 +434,9 @@ describe('Solana proofs', () => {
         h.run(h.driver.proofs.includedFinal(ref(id), ordering, KEY_ADDRESS));
       if (h === pruned) {
         // Endpoint b pruned heights below 5: it cannot vouch for the blockhash's block
-        // (height 2, F5-R9) nor the window's start (height 3). One endpoint answering while
-        // the other refuses is a disagreement under the proof quorum (P25-R10).
+        // (height 2) nor the window's start (height 3). One endpoint answering while the
+        // other refuses is a disagreement under the proof quorum: a definitive error
+        // decides only when enough endpoints return the same one.
         await expect(expired).rejects.toMatchObject({
           code: 'PROVIDER_INCONSISTENT',
           retryable: true,
@@ -451,7 +452,7 @@ describe('Solana proofs', () => {
     }
   });
 
-  it('proves a transfer included at lastValidBlockHeight + 1 as included, never absent (I1)', async () => {
+  it('proves a transfer included at lastValidBlockHeight + 1 as included, never absent', async () => {
     const h = await driverFor(['main']);
     h.node.produce(2);
     const { raw, last, ordering } = heldBack(h);
@@ -465,7 +466,7 @@ describe('Solana proofs', () => {
     ).toMatchObject({ included: true, success: true, blockHeight: last + 1n });
   });
 
-  it('attests expiry with a predicate at its own height: a lagging peer decides nothing (lesson 17)', async () => {
+  it('attests expiry with a predicate at its own height: a lagging peer decides nothing', async () => {
     const h = await driverFor(['a', { name: 'b', lag: 3 }]);
     h.node.produce(2);
     const { id, ordering } = transfer(h);
@@ -480,7 +481,7 @@ describe('Solana proofs', () => {
     h.calls.length = 0;
     expect(await h.run(h.driver.proofs.expired(ordering))).toBe(true);
     // No endpoint proposed a height: one quorum read of the finalized height, and one of the
-    // blockhash's block at the slot the build recorded (F5-R9), nothing else.
+    // blockhash's block at the slot the build recorded, nothing else.
     const anchored = ordering as SolanaExpiryOrdering;
     expect(
       h.calls.map((c) => [c.method, c.tags.purpose, c.tags.quorum, c.params]),
@@ -502,7 +503,7 @@ describe('Solana proofs', () => {
     expect(h.calls.map((c) => c.method)).toEqual(['getBlockHeight']);
   });
 
-  describe('"not included" behind one URL (C1: one endpoint, quorum 1)', () => {
+  describe('"not included" behind one URL (one endpoint, quorum 1)', () => {
     it('never answers "not included" for a landed transfer when a backend lags', async () => {
       // Two of three backends lag (the rotation then reaches a lagging one for both index
       // reads of one proof, as the old composition needed to be fooled).
@@ -512,7 +513,7 @@ describe('Solana proofs', () => {
       h.node.produce(2);
       const { raw, last, ordering } = heldBack(h);
       produceTo(h, last - 3n);
-      // agave's preflight window is 6 blocks short of landing (Task 4, M2).
+      // agave's preflight window is 6 blocks short of landing.
       const id = h.node.submit(raw, { skipPreflight: true });
       h.node.produce(1);
       expect(h.node.landed(id)?.block.height).toBe(last - 2n);
@@ -536,7 +537,7 @@ describe('Solana proofs', () => {
       for (const endpoint of [
         { name: 'gapped', missingHeights: single },
         // Behind a balancer the block lists can come from the whole backend, so only the
-        // window scan sees the gap; one gapped URL is also caught by the height index (I3).
+        // window scan sees the gap; one gapped URL is also caught by the height index.
         {
           name: 'lb',
           backends: [{}, { missingHeights: balanced }, { missingHeights: balanced }],
@@ -612,7 +613,7 @@ describe('Solana proofs', () => {
     });
   });
 
-  it("reads the window as one chain of blocks from the blockhash's own (C1, F5-R9)", async () => {
+  it("reads the window as one chain of blocks from the blockhash's own", async () => {
     const h = await driverFor(['main']);
     h.node.produce(2);
     const { id, ordering } = transfer(h);
@@ -673,7 +674,7 @@ describe('Solana proofs', () => {
     ).toEqual({ included: false });
   });
 
-  it('never answers "not included" from a window list that stops short (C1)', async () => {
+  it('never answers "not included" from a window list that stops short', async () => {
     const h = await driverFor(['main']);
     h.node.produce(2);
     const { raw, last, ordering } = heldBack(h);
@@ -702,7 +703,7 @@ describe('Solana proofs', () => {
     ).toMatchObject({ included: true, blockHeight: last + 1n });
   });
 
-  describe('no RPC error is a verdict (lesson 18, widened)', () => {
+  describe('no RPC error is a verdict', () => {
     it('decides nothing when long-term storage fails below the local ledger', async () => {
       // agave 4.3.0: getBlocks from below the local ledger answers -32602 "BigTable query
       // failed", getBlock answers null, and the transaction is not found.
@@ -712,7 +713,7 @@ describe('Solana proofs', () => {
       h.node.drop(id);
       produceTo(h, 260n);
       // The blockhash's block (height 2) is below the local ledger too: long-term storage
-      // answers null for it, so neither expiry nor absence is attested (F5-R9).
+      // answers null for it, so neither expiry nor absence is attested.
       await expect(h.run(h.driver.proofs.expired(ordering))).rejects.toMatchObject({
         code: 'PROVIDER_UNAVAILABLE',
         retryable: true,
@@ -764,7 +765,7 @@ describe('Solana proofs', () => {
         (method, params) =>
           method === 'getBlocks' &&
           (params[2] as { minContextSlot?: number }).minContextSlot !== undefined,
-        // agave 4.3.0, below its local ledger (lesson 18, widened).
+        // agave 4.3.0, below its local ledger.
         {
           code: -32602,
           message: 'BigTable query failed (maybe timeout due to too large range?)',
@@ -785,7 +786,7 @@ describe('Solana proofs', () => {
       ],
       ['a block header (getBlock)', (method) => method === 'getBlock'],
       [
-        "the blockhash's block (getBlock at the recorded slot, F5-R9)",
+        "the blockhash's block (getBlock at the recorded slot)",
         (method, params) =>
           method === 'getBlock' &&
           (params[1] as { transactionDetails?: string }).transactionDetails === 'none' &&
@@ -820,7 +821,7 @@ describe('Solana proofs', () => {
     );
   });
 
-  it('serves block hashes by level, null above the head or the finalized block (R33)', async () => {
+  it('serves block hashes by level, null above the head or the finalized block', async () => {
     const h = await driverFor();
     h.node.skip(2);
     h.node.produce(5);
@@ -928,7 +929,7 @@ describe('the Solana block source', () => {
     });
   });
 
-  it('returns a transaction whose deposit it cannot attribute (I4: a superset filter)', async () => {
+  it('returns a transaction whose deposit it cannot attribute (a superset filter)', async () => {
     const h = await driverFor(['main']);
     h.node.produce(2);
     const header = await h.run(h.driver.blocks!.header(2n));
@@ -971,7 +972,7 @@ describe('the Solana block source', () => {
     ]);
   });
 
-  it('decides nothing when a backend does not know the history cursor (M2)', async () => {
+  it('decides nothing when a backend does not know the history cursor', async () => {
     const h = await driverFor(['main']);
     h.node.intercept = (_endpoint, method) =>
       method === 'getSignaturesForAddress'
@@ -981,7 +982,7 @@ describe('the Solana block source', () => {
       .run(h.driver.history!.list(RECIPIENT, { limit: 2, cursor: '1'.repeat(64) }))
       .catch((e: unknown) => e as CryptoAioError);
     expect(error).toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
-    // The node's own error stays reachable (fix round M3).
+    // The node's own error stays reachable.
     const cause = (error as CryptoAioError).cause as CryptoAioError;
     expect(cause).toMatchObject({ code: 'RPC_ERROR', details: { rpcCode: -32020 } });
     expect((error as CryptoAioError).context).toEqual(cause.context);
@@ -1026,7 +1027,9 @@ describe('the Solana block source', () => {
   });
 });
 
-describe('the expiry height, bound to its blockhash (F5-R9)', () => {
+// The height a build records is one endpoint's word: a verdict rests on the height the
+// proof quorum attests for the blockhash, or decides nothing.
+describe('the expiry height, bound to its blockhash', () => {
   const build: BuildContext = {
     from: KEY_ADDRESS,
     keys: [{ scheme: 'ed25519', publicKey: KEY_PUBLIC }],
@@ -1082,7 +1085,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     expect(message.recentBlockhash).toBe(head.hash);
   });
 
-  /** A logger that keeps every warning's text (fixed texts only, R24). */
+  /** A logger that keeps every warning's text (fixed texts only). */
   const warningsOf = (warnings: string[]): Logger => {
     const log: Logger = {
       debug: () => undefined,
@@ -1106,10 +1109,10 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
   const LIE =
     'the recorded expiry height disagrees with its blockhash; using the attested one';
 
-  // A higher recorded height is adopted through the recorded slot alone (F5-R14, below).
+  // A higher recorded height is adopted through the recorded slot alone (below).
   const heightLies: readonly [string, bigint][] = [['lower', -100n]];
   it.each(heightLies)(
-    'adopts the attested height over a %s recorded one, then proves expiry at it (F5-R10)',
+    'adopts the attested height over a %s recorded one, then proves expiry at it',
     async (_what, shift) => {
       const warnings: string[] = [];
       const h = await driverFor(['a', 'b'], undefined, warningsOf(warnings));
@@ -1176,7 +1179,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     ['a million blocks, expiry asked first', 1_000_000n, 'expired'],
   ];
   it.each(raised)(
-    'passes a recorded height raised by %s through the recorded slot alone (F5-R14)',
+    'passes a recorded height raised by %s through the recorded slot alone',
     async (_what, shift, first) => {
       const warnings: string[] = [];
       const h = await driverFor(['a', 'b'], undefined, warningsOf(warnings));
@@ -1222,7 +1225,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     },
   );
 
-  it('never falls back from the slot when the recorded height has not passed (F5-R14)', async () => {
+  it('never falls back from the slot when the recorded height has not passed', async () => {
     const h = await driverFor(['a', 'b']);
     h.node.produce(105);
     const real = h.node.head.height + 150n;
@@ -1259,7 +1262,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     expect(await h.run(h.driver.proofs.expired(honest))).toBe(false);
   });
 
-  it('asks the predicate again at the attested height when expiry is asked first (F5-R10)', async () => {
+  it('asks the predicate again at the attested height when expiry is asked first', async () => {
     const h = await driverFor();
     h.node.produce(105);
     const real = h.node.head.height + 150n;
@@ -1331,7 +1334,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     },
   );
 
-  it('decides nothing when endpoints agree on the blockhash but not on its height (F5-R10)', async () => {
+  it('decides nothing when endpoints agree on the blockhash but not on its height', async () => {
     const h = await driverFor(['a', 'b']);
     h.node.produce(2);
     const { id, ordering } = transfer(h);
@@ -1358,7 +1361,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     ).toEqual({ included: false });
   });
 
-  it('completes the window proof across passes under a public-like getBlock limit (F5-R20 C1)', async () => {
+  it('completes the window proof across passes under a public-like getBlock limit', async () => {
     const h = await driverFor(['a', 'b']);
     h.node.produce(2);
     const { ordering, id } = await built(h);
@@ -1411,7 +1414,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     expect(h.calls.map((c) => c.method)).toEqual(['getTransaction']);
   });
 
-  it('starts the window over after a chain that does not hold, never resuming on it (F5-R20 C1)', async () => {
+  it('starts the window over after a chain that does not hold, never resuming on it', async () => {
     const h = await driverFor(['a', 'b']);
     h.node.produce(2);
     const { ordering, id } = await built(h);
@@ -1474,7 +1477,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     const last = (ordering as SolanaExpiryOrdering).lastValidHeight;
     produceTo(h, last + 2n);
     // The window's last block (lastValid + 1) is not final everywhere yet. The recorded slot
-    // attests the recorded height (F5-R14), whose predicate just said no: nothing more is
+    // attests the recorded height, whose predicate just said no: nothing more is
     // read, in either order, and never a block of the window.
     h.calls.length = 0;
     expect(await verdicts(h, id, ordering, 1)).toEqual(['decides nothing']);
@@ -1528,7 +1531,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
     ],
   ];
   it.each(slotLies)(
-    'confirms a true height by the block at its own height, with %s (M1)',
+    'confirms a true height by the block at its own height, with %s',
     async (_what, alter) => {
       const h = await driverFor();
       h.node.produce(1);
@@ -1625,7 +1628,7 @@ describe('the expiry height, bound to its blockhash (F5-R9)', () => {
 });
 
 describe('Solana proofs of failure', () => {
-  it('proves a failed transfer failed, with a fixed reason (P6-2)', async () => {
+  it('proves a failed transfer failed, with a fixed reason', async () => {
     const h = await driverFor(['main']);
     h.node.produce(2);
     const before = [h.node.balance(KEY_ADDRESS), h.node.balance(RECIPIENT)];
@@ -1657,7 +1660,7 @@ describe('Solana proofs of failure', () => {
     ).toMatchObject({ success: false, reason: 'transaction failed' });
   });
 
-  it('proves a token transfer that moved nothing failed (lesson 7)', async () => {
+  it('proves a token transfer that moved nothing failed', async () => {
     const h = await driverFor(['main']);
     h.node.createMint(MINT, 6);
     h.node.mintTo(MINT, KEY_ADDRESS, 5_000_000n);
@@ -1686,7 +1689,7 @@ describe('Solana proofs of failure', () => {
 });
 
 describe('the Solana block source, when a block cannot be read whole', () => {
-  it('decides nothing: the scan retries, never skips or stops (lesson 18)', async () => {
+  it('decides nothing: the scan retries, never skips or stops', async () => {
     const h = await driverFor(['main']);
     h.node.produce(1);
     const { id } = transfer(h);

@@ -1,30 +1,30 @@
 /**
  * Proofs (finalized-state checks behind `proven` verdicts) and the block source.
  *
- * Finality is N confirmations (spec §15). Lesson 17 (final form, R75): every fact is attested
- * at its own height with a monotone predicate quorum key, and no endpoint proposes a height.
- * "Block h is final" is "every proof endpoint holds a block at h + N − 1": the quorum reads
- * the head with the key `head >= h + N − 1`, so endpoints further ahead agree, and one that
- * trails decides nothing. Only `finalizedHead` (no anchor of its own) takes one endpoint's
- * head, trails it by `PEER_SKEW`, then attests it. Lesson 14: one endpoint's head never
- * decides finality.
+ * Finality is N confirmations. Every fact is attested at its own height with a monotone
+ * predicate quorum key, and no endpoint proposes a height. "Block h is final" is "every
+ * proof endpoint holds a block at h + N − 1": the quorum reads the head with the key
+ * `head >= h + N − 1`, so endpoints further ahead agree, and one that trails decides
+ * nothing. Only `finalizedHead` (no anchor of its own) takes one endpoint's head, trails
+ * it by `PEER_SKEW`, then attests it. One endpoint's head never decides finality.
  *
- * Lesson 16 (sharpened, R77; ruling C1): `includedFinal` answers "not included" only when an
- * input of our Attempt has a quorum-attested final spender that is neither our txid nor a
- * malleated copy of it (C2). Every other case decides nothing (a retryable `ProviderError`):
- * our transaction in a mempool or in a block not yet final, an unknown spender, a lagging or
- * load-balanced backend. A stale inclusion (its block is no longer the block at its height)
- * is a retryable `PROVIDER_INCONSISTENT`, and so is a transaction view that puts ours in a
+ * `includedFinal` answers "not included" only when an input of our Attempt has a
+ * quorum-attested final spender that is neither our txid nor a malleated copy of it.
+ * Every other case decides nothing (a retryable `ProviderError`): our transaction in a
+ * mempool or in a block not yet final, an unknown spender, a lagging or load-balanced
+ * backend. A stale inclusion (its block is no longer the block at its height) is a
+ * retryable `PROVIDER_INCONSISTENT`, and so is a transaction view that puts ours in a
  * block while another transaction's spend of its input is final: both cannot hold. So
  * `includedFinal` never answers "not included" without its own attestation of a different
- * final spend, which also closes core residual R76 for Bitcoin: an endpoint-set change
- * between `slotConsumed` and `includedFinal` cannot produce a false proven `replaced`.
+ * final spend, and an endpoint-set change between the monitor's `slotConsumed` and
+ * `includedFinal` calls cannot produce a false proven `replaced`.
  *
- * The block source reads chain data leniently (Task 7's parsers) and binds every page to its
- * block: each page has exactly the transactions the block's count leaves for it, no txid
- * twice, each confirmed in that block. A reorg while paging, or a page the endpoint does not
- * have, decides nothing (retryable). Address filters match output and prevout scripts, so a
- * watched address's spend is kept even when no output of it has an address.
+ * The block source reads chain data leniently (the Esplora client's parsers) and binds
+ * every page to its block: each page has exactly the transactions the block's count
+ * leaves for it, no txid twice, each confirmed in that block. A reorg while paging, or a
+ * page the endpoint does not have, decides nothing (retryable). Address filters match
+ * output and prevout scripts, so a watched address's spend is kept even when no output of
+ * it has an address.
  */
 import type {
   BlockSource,
@@ -60,14 +60,14 @@ import {
 import { isOwnCopy } from './reader';
 import type { EsploraTx } from './types';
 
-/** Blocks `finalizedHead` trails one endpoint's head by, so peers can attest it (as Plan 2). */
+/** Blocks `finalizedHead` trails one endpoint's head by, so peers can attest it. */
 export const PEER_SKEW = 2n;
 
 /** Esplora's page of block transactions (electrs' `CHAIN_TXS_PER_PAGE`). */
 const PAGE = 25;
 /** Consensus: a block's transaction count × 4 is at most `MAX_BLOCK_WEIGHT` (4,000,000). */
 const MAX_BLOCK_TXS = 1_000_000;
-/** No height is below 0 or beyond what a server parses: such a height is never sent (I2). */
+/** No height is below 0 or beyond what a server parses: such a height is never sent. */
 const MAX_HEIGHT = BigInt(Number.MAX_SAFE_INTEGER);
 const outOfRange = (height: bigint): boolean => height < 0n || height > MAX_HEIGHT;
 
@@ -82,9 +82,10 @@ const stale = (): ProviderError =>
   contradiction('the including block is no longer the block at its height');
 
 /**
- * F3-R12 M1 (the board's "quorum on what you parse"): a block hash read under the proof
- * quorum is compared as `parseHash` reads it, so two honest endpoints that differ only by
- * whitespace agree, and the key is exactly the value the verdict uses.
+ * A block hash read under the proof quorum is compared as `parseHash` reads it, so two
+ * honest endpoints that differ only by whitespace agree, and the key is exactly the value
+ * the verdict uses. Compared as raw text, one endpoint's trailing newline would split the
+ * quorum forever.
  */
 const HASH_PROOF = { ...PROOF, quorumKey: parseHash };
 
@@ -97,9 +98,9 @@ const txViewKey = (answer: unknown): string => {
 };
 
 /**
- * The reads a proof attests under the proof quorum, each fact at its own height (lesson 17,
- * final form, R75). The proof source and the builder share them (F3-R24 F1): the builder's
- * proof-tagged reads are this module's, never a copy.
+ * The reads a proof attests under the proof quorum, each fact at its own height. The
+ * proof source and the builder share them: the builder's proof-tagged reads are this
+ * module's, never a copy.
  */
 export function attestedReads(ctx: UtxoContext, signal?: AbortSignal) {
   const { esplora } = ctx;
@@ -124,7 +125,7 @@ export function attestedReads(ctx: UtxoContext, signal?: AbortSignal) {
   return { holds, hashAt, assertCanonical, txView };
 }
 
-/** F3-R24 F1: how many parents `assertConfirmed` reads at once, and keeps once final. */
+/** How many parents `assertConfirmed` reads at once, and keeps once final. */
 const PARENT_READS = 4;
 const FINAL_PARENTS = 10_000;
 const finalParents = new WeakMap<EsploraClient, Map<string, true>>();
@@ -136,14 +137,14 @@ const notConfirmed = (): ProviderError =>
   );
 
 /**
- * F3-R24 F1: each of `txids` (the previous transactions of the inputs a build adds) is in a
+ * Each of `txids` (the previous transactions of the inputs a build adds) is in a
  * block, attested under the proof quorum at its own height: the proof endpoints agree on the
  * transaction and its block, all hold a block `confirmations − 1` above it, and have that
- * block at that height. Its bytes authenticate themselves (F3-R14), but only this proves a
+ * block at that height. Its bytes authenticate themselves, but only this proves a
  * chain holds it: an indexer's invented transaction, or one a reorg took out, would stall an
  * Attempt for good, since nothing would ever spend its outpoint. Anything short of that is a
  * retryable `PROVIDER_UNAVAILABLE` (a stale view `PROVIDER_INCONSISTENT`), and every read
- * decides nothing on failure (lesson 18). A parent found final is not read again.
+ * decides nothing on failure. A parent found final is not read again.
  */
 export async function assertConfirmed(
   ctx: UtxoContext,
@@ -250,7 +251,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
       }
       // Unknown, in a mempool, or not yet final: only a final spender of one of our inputs
       // decides. Our own txid there means the views are inconsistent (decide nothing); a
-      // malleated copy of ours (C2) is our payment; any other transaction proves ours dead,
+      // malleated copy of ours is our payment; any other transaction proves ours dead,
       // unless the quorum also puts ours in a block (the views contradict each other).
       for (const input of inputsOf(ordering)) {
         const spender = await finalSpender(input);
@@ -302,7 +303,7 @@ export function proofSource(ctx: UtxoContext): ProofSource {
     },
   };
 
-  // Lesson 18: every read of every proof decides nothing on "not available here".
+  // Every read of every proof decides nothing on "not available here".
   return {
     finalizedHead: () => proofRead(() => source.finalizedHead()),
     includedFinal: (ref, ordering, from) =>
@@ -338,7 +339,7 @@ export function blockSource(ctx: UtxoContext): BlockSource {
       if (!hash) return null;
       const block = await esplora.block(hash, MONITOR);
       if (!block) return null;
-      // I2: the block at `height` must say it is at `height`.
+      // The block at `height` must say it is at `height`.
       if (block.height !== height) {
         throw contradiction(`block ${height} changed while reading`);
       }
@@ -360,7 +361,7 @@ export function blockSource(ctx: UtxoContext): BlockSource {
         throw malformed('block.tx_count');
       }
       // `filter.assets` is a hint: a list without the native asset wants tokens only, and a
-      // Bitcoin block has none, so nothing is paged (F3-R12 M2).
+      // Bitcoin block has none, so nothing is paged.
       if (filter?.assets?.length && !filter.assets.includes('native')) return [];
       const txs: EsploraTx[] = [];
       const seen = new Set<string>();

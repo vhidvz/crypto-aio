@@ -1,6 +1,6 @@
 /**
  * What every Avalanche port is built from, the transport tags of the `ChainDriver` contract
- * table (R41), and the locator: which accepted block holds a transaction.
+ * table, and the locator: which accepted block holds a transaction.
  *
  * AvalancheGo can say a transaction is accepted, never in which block. The locator asks the
  * Data API, then checks the answer against the node's block; a transaction the indexer does
@@ -73,7 +73,7 @@ export const contradiction = (reason: string): ProviderError =>
   new ProviderError('PROVIDER_INCONSISTENT', reason, { retryable: true });
 
 /**
- * Lesson 18, widened: on a proof path only a definitive negative proof may answer "no".
+ * On a proof path only a definitive negative proof may answer "no".
  * Every other non-retryable provider error (a JSON-RPC error that is not a "not found" the
  * caller already mapped, a proxy's 4xx, a 401/403) becomes a retryable
  * `PROVIDER_UNAVAILABLE` here, so it never decides anything. Retryable errors pass as they

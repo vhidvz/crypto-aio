@@ -35,7 +35,7 @@ describe('TON addresses: accepted forms', () => {
     );
   });
 
-  it('keeps the friendly text as display and its bounce flag as the variant (spec §6.4)', () => {
+  it('keeps the friendly text as display and its bounce flag as the variant', () => {
     const cases = [
       [USDT_MASTER.bounceable, { bounceable: true }],
       [USDT_MASTER.nonBounceable, { bounceable: false }],
@@ -107,7 +107,9 @@ describe('TON addresses: accepted forms', () => {
     });
   });
 
-  it('hashes every spelling of one recipient alike: the variant is the bounce flag only (P25-R13)', () => {
+  // A codec's variant holds semantic fields only: the test-only flag and the alphabet are
+  // spelling, so they stay out of the intent hash.
+  it('hashes every spelling of one recipient alike: the variant is the bounce flag only', () => {
     const hashTo = (value: string): string => {
       const to = testnet.normalize(value);
       return intentHash('ton', 'testnet', {
@@ -138,7 +140,7 @@ describe('TON addresses: accepted forms', () => {
   });
 });
 
-describe('TON addresses: strictness (lesson 4)', () => {
+describe('TON addresses: strictness', () => {
   const hex = USDT_MASTER.raw.slice(2);
   const bytes = Buffer.from(
     USDT_MASTER.bounceable.replace(/-/g, '+').replace(/_/g, '/'),
@@ -190,7 +192,7 @@ describe('TON addresses: strictness (lesson 4)', () => {
     }
   });
 
-  it('refuses an input longer than either form before decoding it (lesson 20)', () => {
+  it('refuses an input longer than either form before decoding it', () => {
     const huge = [
       'A'.repeat(100_000),
       `0:${'a'.repeat(99_998)}`,

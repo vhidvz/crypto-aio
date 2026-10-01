@@ -44,7 +44,7 @@ Defined in: [src/core/config/types.ts:46](https://github.com/vhidvz/crypto-aio/b
 
 Defined in: [src/core/config/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L59)
 
-R36: this chain's lag tolerance, in blocks. It wins over the root
+This chain's lag tolerance, in blocks. It wins over the root
 `transport.maxLagBlocks`, which wins over the plugin network's own, which wins over
 the transport's built-in default. An endpoint further behind the best known height is
 lagging, and a monitor or scanner view further behind is stale.

@@ -20,7 +20,7 @@ export interface ObservationDeps {
 /**
  * Compare-and-set write of an Attempt observation; emits `attempt.state` on state changes.
  * A function patch sees the stored observation on every try (so a writer can refuse to
- * overwrite stronger evidence, R25) and may return `undefined` to keep a stored
+ * overwrite stronger evidence) and may return `undefined` to keep a stored
  * observation unchanged: it is then returned without a write (with none stored, the
  * default observation is created as for an empty patch).
  */

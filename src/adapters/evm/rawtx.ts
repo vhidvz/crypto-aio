@@ -1,5 +1,5 @@
 /**
- * Lesson 21 for EVM: what a node's rejection claims is checked against the bytes we sent,
+ * What a node's rejection claims is checked against the bytes we sent,
  * read here SDK-free. The reader is never stricter than geth: it calls bytes `malformed`
  * only for what geth's RLP decoder also refuses (a broken or non-canonical encoding, an
  * integer with a leading zero or over 256 bits, the wrong number of fields, a `to` that is
@@ -7,7 +7,7 @@
  */
 import { fromHex } from '../../core/util/bytes';
 
-/** The fields lesson 21 checks, of one signed legacy, EIP-2930 or EIP-1559 transaction. */
+/** The fields a rejection check reads, of one signed legacy, EIP-2930 or EIP-1559 tx. */
 export interface EvmSentTx {
   readonly type: 0 | 1 | 2;
   /** Absent for a legacy transaction signed without EIP-155 (v of 27 or 28). */
@@ -20,7 +20,10 @@ export interface EvmSentTx {
   readonly s: bigint;
 }
 
-/** Lesson 20: twice geth's 128 KiB pool limit, checked before any decoding. */
+/**
+ * Twice geth's 128 KiB pool limit, checked before any decoding: a bare broadcast may
+ * carry any bytes, and untrusted input is capped before it is decoded.
+ */
 export const MAX_SENT_BYTES = 2 * 128 * 1024;
 
 class Malformed extends Error {}
@@ -89,7 +92,7 @@ function address(value: Item | undefined): void {
 }
 
 /**
- * The sent bytes as lesson 21 reads them: the fields, `'malformed'` when geth could not
+ * The sent bytes as the checks read them: the fields, `'malformed'` when geth could not
  * decode them either, or `undefined` when they are unreadable here but may be valid (an
  * EIP-4844 or EIP-7702 transaction, or more than `MAX_SENT_BYTES`): no claim holds for those.
  */

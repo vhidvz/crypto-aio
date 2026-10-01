@@ -1,10 +1,10 @@
 /**
- * The driver's only path to the network (lesson 1, R41): one direct transport call per
+ * The driver's only path to the network: one direct transport call per
  * request, carrying the purpose, retry class, quorum, fanout and signal of the driver
  * method that made it. No SDK sits on a request path. Answers are validated here: a
  * malformed answer is a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, never a foreign
  * error, and a node `Error` answer is a retryable `RPC_ERROR` that repeats no node text.
- * On a proof path every refusal decides nothing (lesson 18); on a broadcast, an answer
+ * On a proof path every refusal decides nothing; on a broadcast, an answer
  * that cannot be read leaves the transaction possibly sent.
  */
 import { sha256 } from '@noble/hashes/sha256';
@@ -63,7 +63,7 @@ function object(value: unknown, field: string): Json {
 }
 
 /**
- * A non-negative JSON integer: a bigint under `exactIntegers` (A12) when it is outside the
+ * A non-negative JSON integer: a bigint under `exactIntegers` when it is outside the
  * safe range, else a safe number. Amounts are never rounded.
  */
 function uint(value: unknown, field: string): bigint {
@@ -78,7 +78,7 @@ function uint(value: unknown, field: string): bigint {
 const uintOr0 = (value: unknown, field: string): bigint =>
   value === undefined ? 0n : uint(value, field);
 
-/** java-tron's `long`: block heights above it are malformed (M5). */
+/** java-tron's `long`: block heights above it are malformed. */
 const INT64_MAX = 2n ** 63n - 1n;
 
 /** A block height: a non-negative int64. */
@@ -114,7 +114,7 @@ const isEmpty = (value: unknown): boolean =>
   isObject(value) && Object.keys(value).length === 0;
 
 /**
- * Lesson 20: java-tron refuses a transaction above `TRANSACTION_MAX_BYTE_SIZE` (500 KiB), so
+ * java-tron refuses a transaction above `TRANSACTION_MAX_BYTE_SIZE` (500 KiB), so
  * longer raw bytes are malformed and never hashed or decoded.
  */
 const MAX_RAW_HEX = 2 * 500 * 1024;
@@ -130,7 +130,7 @@ const lower = (value: unknown): unknown =>
 
 /**
  * java-tron's HTTP 200 failure (`{ "Error": … }`) or a JSON-RPC error, keyed as a flag: it
- * never agrees with a real or an empty answer, and its text is never compared (P25-R21).
+ * never agrees with a real or an empty answer, and its text is never compared.
  */
 const ERROR_KEY = { error: true } as const;
 /** java-tron's "not found" (`{}`); a non-empty answer without the facts never matches it. */
@@ -154,7 +154,7 @@ const headerKey = restKey((answer) => {
   const raw = header && isObject(header.raw_data) ? header.raw_data : undefined;
   return {
     id: lower(answer.blockID ?? null),
-    // proto3 JSON omits genesis's number and timestamp (M2): absent and 0 are one fact.
+    // proto3 JSON omits genesis's number and timestamp: absent and 0 are one fact.
     number: raw ? (raw.number ?? 0) : null,
     parent: lower(raw?.parentHash ?? null),
     timestamp: raw ? (raw.timestamp ?? 0) : null,
@@ -162,7 +162,7 @@ const headerKey = restKey((answer) => {
 });
 
 /**
- * Lesson 2 / R59: a proven verdict reads the receipt result and the `Transfer` logs, so the
+ * A proven verdict reads the receipt result and the `Transfer` logs, so the
  * key covers them; hex case and fields nodes format differently do not count.
  */
 const infoKey = restKey((answer) => {
@@ -171,7 +171,7 @@ const infoKey = restKey((answer) => {
   return {
     id: lower(answer.id ?? null),
     block: answer.blockNumber ?? null,
-    // M2 (F4-R14): a proof binds the receipt to its block by this time, so it is attested.
+    // A proof binds the receipt to its block by this time, so it is attested.
     time: answer.blockTimeStamp ?? null,
     result: answer.result ?? null,
     receipt: receipt.result ?? null,
@@ -202,7 +202,7 @@ function isNoContract(outcome: Json): boolean {
 }
 
 /**
- * I1: a constant call's verdict, and nothing else. Each node builds the simulated
+ * A constant call's verdict, and nothing else. Each node builds the simulated
  * transaction on its own head (reference block, expiration, txID) and meters energy on its
  * own state, so honest nodes never agree on the whole answer. The key compares the outcome
  * (ran, no contract, or any other refusal: one value whose code and text are never
@@ -227,11 +227,12 @@ const contractKey = restKey((answer) => ({
 
 function rpcBlockKey(result: unknown): unknown {
   if (!isObject(result)) return result;
-  // M3: an envelope without a result is an error, whatever else it holds.
+  // An envelope without a result is an error, whatever else it holds.
   if (isErrorAnswer(result) || !Object.hasOwn(result, 'result')) return ERROR_KEY;
   const block = result.result;
   if (!isObject(block)) return block ?? null;
-  // The negative scan stops on `timestamp` (lesson 2): it is compared too.
+  // The negative scan stops on `timestamp`, so it is compared too: one lying endpoint
+  // cannot end the scan early with an old time.
   return {
     number: lower(block.number ?? null),
     hash: lower(block.hash ?? null),
@@ -257,27 +258,27 @@ const QUORUM_KEYS: Readonly<Record<string, QuorumKey>> = {
 export const quorumKeyFor = (path: string): QuorumKey | undefined =>
   Object.hasOwn(QUORUM_KEYS, path) ? QUORUM_KEYS[path] : undefined;
 
-/** M4: a caller's key never makes an error answer agree with a real one. */
+/** A caller's key never makes an error answer agree with a real one. */
 const guarded =
   (key: QuorumKey): QuorumKey =>
   (result) =>
     isErrorAnswer(result) ? ERROR_KEY : key(result);
 
 /**
- * One tagged transport call (R41) with exact integers (A12). Under a quorum the caller's
- * `quorumKey` (lesson 17: a monotone predicate) replaces `fallback`; a key never travels
+ * One tagged transport call with exact integers. Under a quorum the caller's
+ * `quorumKey` (a monotone predicate) replaces `fallback`; a key never travels
  * without a quorum.
  *
- * Lesson 18: on a proof path a definitive refusal decides nothing, so it becomes a retryable
- * `PROVIDER_UNAVAILABLE`: a REST 4xx the quorum agreed on, and a 401 or 403 too (M1). The
+ * On a proof path a definitive refusal decides nothing, so it becomes a retryable
+ * `PROVIDER_UNAVAILABLE`: a REST 4xx the quorum agreed on, and a 401 or 403 too. The
  * transport reports both as `PROVIDER_MISCONFIGURED` with no structured status, and TronGrid
  * answers a rate-limit suspension with 403 ("Rate-limited requests usually return 429 or 403
  * and should be retried with backoff", developers.tron.network/reference/rate-limits, read
  * 2026-09-27), so a proof cannot tell a bad key from a pause. A bad key still surfaces as
  * `PROVIDER_MISCONFIGURED` through the plain reads (monitor, read), which pass it unchanged:
  * on every endpoint when every key is bad; with one bad endpoint among several, a proof retries
- * until its breaker opens, and then the core reports the quorum unreachable (F4-R7). A caller's
- * abort is never converted. Other purposes see the transport's error unchanged (lesson 13).
+ * until its breaker opens, and then the core reports the quorum unreachable. A caller's
+ * abort is never converted. Other purposes see the transport's error unchanged.
  */
 async function call(
   transport: Transport,
@@ -398,7 +399,7 @@ function parseHeader(value: unknown): TronBlockHeader | null {
   if (isEmpty(value)) return null;
   const block = object(value, 'block');
   const raw = object(object(block.block_header, 'block header').raw_data, 'block header');
-  // proto3 JSON omits zero fields: genesis has neither number nor timestamp (M2).
+  // proto3 JSON omits zero fields: genesis has neither number nor timestamp.
   return {
     number: height(raw.number ?? 0, 'block number'),
     id: hex(block.blockID, 'block id', 32),
@@ -455,7 +456,7 @@ function parseInfo(value: unknown): TronTxInfo {
   };
 }
 
-/** The longest node message kept, in characters (M5): java-tron's texts are far shorter. */
+/** The longest node message kept, in characters: java-tron's texts are far shorter. */
 const MAX_MESSAGE = 1024;
 
 /**
@@ -479,7 +480,7 @@ function rpcHash(value: unknown, field: string): string {
   return value.slice(2).toLowerCase();
 }
 
-/** A JSON-RPC quantity of at most 64 bits (lesson 20: bounded before conversion). */
+/** A JSON-RPC quantity of at most 64 bits (bounded before conversion). */
 function rpcQuantity(value: unknown, field: string): bigint {
   if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{1,16}$/.test(value)) {
     throw malformed(field);
@@ -541,7 +542,7 @@ export class TronApi {
 
   /**
    * A block with its transactions and their infos (the scanner's read). Block 0 is its
-   * header alone (F4-R7): java-tron answers `{}` to `gettransactioninfobyblocknum` there
+   * header alone: java-tron answers `{}` to `gettransactioninfobyblocknum` there
    * (`GetTransactionInfoByBlockNumServlet`, GreatVoyage-v4.8.2.2; Nile checked 2026-09-27),
    * a malformed answer the scanner would retry for ever, and genesis holds only the chain's
    * initial allocations, which are not reported.
@@ -673,7 +674,7 @@ export class TronApi {
   /**
    * A constant (simulated) contract call. `no-contract` when the address holds no contract;
    * `failed` when the call reverts or the VM fails; any other refusal is a retryable
-   * RPC_ERROR (lesson 13).
+   * RPC_ERROR.
    */
   async constantCall(
     ownerHex: string,
@@ -704,7 +705,7 @@ export class TronApi {
     }
     const out = answer.constant_result;
     if (!Array.isArray(out) || out.length !== 1) throw malformed('constant result');
-    // F4-R9: a call that ran used energy, and the fee estimate is built on it; a missing or
+    // A call that ran used energy, and the fee estimate is built on it; a missing or
     // zero `energy_used` is a malformed answer, never 0 (a 0 fee limit fails on chain).
     const energy = uint(answer.energy_used, 'energy used');
     if (energy === 0n) throw malformed('energy used');
@@ -724,7 +725,7 @@ export class TronApi {
       'contract',
     );
     if (Object.keys(answer).length === 0) return false;
-    // M3 (F4-R10): java-tron's `SmartContract` always names its address; an answer that
+    // java-tron's `SmartContract` always names its address; an answer that
     // names none, or another, is malformed.
     const address = answer.contract_address;
     if (
@@ -842,17 +843,17 @@ export class TronApi {
 
 /**
  * A base58 account address, the only form sent to TronGrid: it becomes a URL path segment,
- * so anything else is refused before any call (lesson 20: bounded).
+ * so anything else is refused before any call.
  */
 const BASE58_ACCOUNT = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 /**
- * TronGrid's page cursor, bounded in length and charset (M5). Observed on 2026-09-27: 221 to
+ * TronGrid's page cursor, bounded in length and charset. Observed on 2026-09-27: 221 to
  * 224 base58 characters; the bound leaves room for base64 forms.
  */
 const FINGERPRINT = /^[0-9A-Za-z+/=_-]{1,1024}$/;
 
-/** A 32-byte id as TronGrid writes it: 64 hex digits (lesson 20: one class, bounded). */
+/** A 32-byte id as TronGrid writes it: 64 hex digits (one class, bounded). */
 const ID_HEX = /^[0-9a-fA-F]{64}$/;
 
 /** TronGrid's documented internal-transaction entry: its own id and its parent's. */
@@ -867,12 +868,12 @@ const isInternalEntry = (entry: Json): boolean =>
  * transaction id is listed once per page: the TRC-20 stream lists a transaction once per
  * transfer it made.
  *
- * I2: internal transactions are not listed. `search_internal=false` asks TronGrid for none,
+ * Internal transactions are not listed. `search_internal=false` asks TronGrid for none,
  * and an internal entry it mixes in anyway is skipped: TronGrid documents that entry shape
  * (`internal_tx_id`, `tx_id`, `from_address`, `to_address`, `data`, `block_timestamp`; its
  * OpenAPI schema at developers.tron.network/reference/get-transaction-info-by-account-address)
  * and it has no `txID`, so one would make the whole page malformed. Only an entry without
- * an id of its own that carries both documented ids is skipped (F4-R7). Read on 2026-09-27,
+ * an id of its own that carries both documented ids is skipped. Read on 2026-09-27,
  * `GET api.trongrid.io/v1/accounts/TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR/transactions?limit=20`
  * (WTRX) gave only whole transactions (`txID`, `raw_data_hex`, …), each with the internal
  * transfers nested in `internal_transactions[]` (`internal_tx_id`, `data`, `from_address`,
@@ -914,7 +915,7 @@ export async function historyPage(
     ),
     'history page',
   );
-  // Final review M2: each listed id costs several node reads, so a page longer than asked
+  // Each listed id costs several node reads, so a page longer than asked
   // for is malformed rather than read.
   if (
     answer.success !== true ||
@@ -936,10 +937,10 @@ export async function historyPage(
   for (const item of answer.data) {
     const entry = object(item, 'history item');
     const id = kind === 'trc20' ? entry.transaction_id : entry.txID;
-    // F4-R7: skipped only when its own fields prove it TronGrid's internal entry: no id of its
-    // own, and the documented internal and parent ids. Any entry that carries its id is read
-    // whatever else it carries, and anything else is malformed (the page is read again), so a
-    // schema change never drops a deposit silently.
+    // An entry is skipped only when its own fields prove it TronGrid's internal entry:
+    // no id of its own, and the documented internal and parent ids. Any entry that
+    // carries its id is read whatever else it carries, and anything else is malformed
+    // (the page is read again), so a schema change never drops a deposit silently.
     if (id === undefined && isInternalEntry(entry)) continue;
     ids.push(hex(id, 'history id', 32));
   }

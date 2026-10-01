@@ -63,7 +63,9 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   the nearest faster target the endpoint has), never below 1 sat/vB. Without an estimate, a
   test network pays 1 sat/vB and mainnet fails with a retryable `PROVIDER_UNAVAILABLE`.
   Overrides are `{ satPerVByte: 3n }` or `{ satPerVByte: '2.5' }` (`UtxoFeeOverride`), at
-  least 1 sat/vB (`FEE_TOO_LOW` below). A built transaction's fee is `exact`
+  least 1 sat/vB (`FEE_TOO_LOW` below). That floor is Bitcoin Core's minimum relay fee
+  before v30, which relays from 0.1 sat/vB: it keeps what the library builds relayable by
+  older nodes, so no lower rate is built. A built transaction's fee is `exact`
   (`details.satPerKvB`, `details.vsize`); its size counts the largest possible signatures,
   so the real rate is never lower. `estimateFee` is `expected`, since the build selects the
   coins again. A fee above `maxFeeRate` or `maxFee` fails with `INVALID_INTENT` before
@@ -120,9 +122,10 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   once the spend that took that output is final (`TX_REPLACED`). Previous transactions are
   read four at a time, in one linear pass, and kept per txid. Each `p2pkh` input, and each segwit v0 input while `nonWitnessUtxo` is on,
   also carries its previous transaction in the PSBT, so a hardware wallet can check the fee
-  itself; keep it on for hardware signers, which the BIP143 fee attack targets. Turning it
-  off makes PSBTs smaller. A `p2tr` input never carries it: a taproot signature commits to
-  every input's amount.
+  itself; keep it on for hardware signers, which the BIP143 fee attack targets. That
+  hardware wallets accept a segwit v0 input carrying it is assumed, not tested on devices:
+  if yours refuses such a PSBT, turn the option off. Turning it off makes PSBTs smaller. A
+  `p2tr` input never carries it: a taproot signature commits to every input's amount.
 - **Broadcasts.** A node's claim that a transaction is invalid ends a transfer
   (`TX_REJECTED`) only when the driver confirms it for the bytes it sent: bytes that do not
   decode, or a consensus rule that the bytes alone break. Every other claim, and every

@@ -1,5 +1,5 @@
 /**
- * TON wallet contracts (spec §9, §15), over `@ton/core` and `@ton/ton`: the wallet identity,
+ * TON wallet contracts, over `@ton/core` and `@ton/ton`: the wallet identity,
  * its address and `StateInit`, the signing message, and the external message around it.
  * Loaded only through the adapter manifest's `load()`.
  *
@@ -29,7 +29,7 @@ import { rawAddress, type TonWorkchain } from './address';
 import { OP, sdkAddress } from './messages';
 import type { TonWalletVersion } from './types';
 
-/** Messages one external request may carry (spec §15): 4 refs per cell (v4r2), 255 (v5r1). */
+/** Messages one external request may carry: 4 refs per cell (v4r2), 255 (v5r1). */
 export const MAX_MESSAGES: Readonly<Record<TonWalletVersion, number>> = Object.freeze({
   v4r2: 4,
   v5r1: 255,
@@ -56,7 +56,7 @@ const V4_KEYS = new Set(['version', 'workchain', 'subwalletId']);
 const V5_KEYS = new Set(['version', 'workchain', 'subwalletNumber', 'networkGlobalId']);
 
 /**
- * `wallets.<name>.ton` validated against the network (lesson 5): a v5r1 wallet id made for
+ * `wallets.<name>.ton` validated against the network: a v5r1 wallet id made for
  * another network is refused before any key is used. Every problem is `CONFIG_INVALID`.
  */
 export function resolveIdentity(
@@ -78,7 +78,7 @@ export function resolveIdentity(
   const allowed = version === 'v4r2' ? V4_KEYS : V5_KEYS;
   for (const key of Object.keys(config)) {
     if (config[key] !== undefined && !allowed.has(key)) {
-      // M3, F3-R16: the caller's key is never echoed (it could be a pasted secret).
+      // The caller's key is never echoed (it could be a pasted secret).
       fail(`a ${version} wallet takes only ${[...allowed].join(', ')}`);
     }
   }
@@ -118,7 +118,7 @@ export function resolveIdentity(
 
 type WalletContract = WalletContractV4 | WalletContractV5R1;
 
-/** Lesson 4: a strict (RFC 8032) encoding of a point that is not of small order. */
+/** A strict (RFC 8032) encoding of a point that is not of small order. */
 function canonicalKey(publicKey: Uint8Array): boolean {
   try {
     return !ed25519.Point.fromHex(publicKey, false).isSmallOrder();
@@ -131,7 +131,7 @@ const isInt = (value: number, min: number, max: number): boolean =>
   Number.isInteger(value) && value >= min && value <= max;
 
 /**
- * Lesson 19: every identity field fits the wire field the SDK writes it into (workchain
+ * Every identity field fits the wire field the SDK writes it into (workchain
  * int8, subwallet id uint32, subwallet number uint15, network id int32), so an identity
  * not made by `resolveIdentity` is refused rather than wrapped or thrown as a bare `Error`.
  */
@@ -163,7 +163,7 @@ function contractOf(identity: TonIdentity, publicKey: Uint8Array): WalletContrac
       walletId: identity.subwalletId,
     });
   }
-  // Every field explicit: the SDK's defaults are mainnet's id and workchain 0 (lesson 5).
+  // Every field explicit: the SDK's defaults are mainnet's id and workchain 0.
   return WalletContractV5R1.create({
     publicKey: key,
     walletId: {
@@ -220,7 +220,7 @@ export async function unsignedRequest(
     readonly deploy: boolean;
   },
 ): Promise<UnsignedRequest> {
-  // Lesson 19: the seqno is a uint32 on the wire, never wrapped.
+  // The seqno is a uint32 on the wire, never wrapped.
   if (!Number.isSafeInteger(args.seqno) || args.seqno < 0 || args.seqno > 0xffffffff) {
     throw new ValidationError('INVALID_INTENT', 'seqno must be a uint32');
   }
@@ -272,7 +272,7 @@ export async function unsignedRequest(
       )
       .endCell();
   } catch {
-    // M12, lesson 19: the SDK throws bare errors that may name a value; `nativeMessage` and
+    // The SDK throws bare errors that may name a value; `nativeMessage` and
     // `jettonMessage` range-check theirs, so only a hand-built message ends here.
     throw new ValidationError('INVALID_INTENT', 'the TON request cannot be encoded');
   }
@@ -383,7 +383,7 @@ export function normalizedHash(externalMessage: Cell): Uint8Array {
 }
 
 /**
- * A23 and the final review: whether the wallet request `body` (external, or a W5
+ * Whether the wallet request `body` (external, or a W5
  * `internal_signed` request relayed in an internal message) is `from`'s own. Anyone can post
  * a relayed body, and a lone lying indexer can make up an external one, so a request
  * proves nothing unless its ed25519 signature verifies over the rest of the request under
@@ -441,7 +441,7 @@ function v5IdentityOf(walletId: number, globalId: number): TonIdentity | undefin
   };
 }
 
-/** The SDK's `Address` for a raw address, parsed strictly (lesson 4). */
+/** The SDK's `Address` for a raw address, parsed strictly. */
 export { sdkAddress };
 
 /** The TEP-467 hash (hex) of the external message `body` to `account` would travel in. */

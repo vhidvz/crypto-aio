@@ -1,6 +1,6 @@
 /**
  * bitcoinjs-lib's ECC interface (`isXOnlyPoint`, `xOnlyPointAddTweak`) over
- * `@noble/curves` (spec §15). SDK-free: bitcoinjs checks it against its own vectors when
+ * `@noble/curves`. SDK-free: bitcoinjs checks it against its own vectors when
  * `initEccLib` installs it.
  */
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1';

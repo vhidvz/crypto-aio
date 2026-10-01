@@ -18,7 +18,7 @@ import type { ChainId, NativeClientMap } from './core/model/ids';
  * reachable only through this function (not through the handle, `JSON` or `inspect`). The
  * library name must match the handle's (`INCOMPATIBLE_SELECTION` otherwise).
  *
- * R34: the root container's `close()` releases every client handed out here; after it,
+ * The root container's `close()` releases every client handed out here; after it,
  * `native()` fails with `INVALID_TRANSITION`, as the handle's own methods do.
  */
 export async function native<
@@ -30,7 +30,8 @@ export async function native<
   if (internals.selection.library !== library) {
     throw new ConfigError(
       'INCOMPATIBLE_SELECTION',
-      // F6-R24: the caller's text is never repeated; the handle's own library is named.
+      // The caller's text (perhaps a pasted secret) is never repeated; the handle's own
+      // library is named.
       `this handle's library is '${internals.selection.library}'; ask native() for that one`,
     );
   }

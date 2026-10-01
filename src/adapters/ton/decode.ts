@@ -1,20 +1,20 @@
 /**
- * Indexed TON transactions as `DriverTransaction`s (spec §6.6), for anyone's transactions:
- * `getTransaction` and `history` report what the chain did (lesson 15). Locators (D15):
+ * Indexed TON transactions as `DriverTransaction`s, for anyone's transactions:
+ * `getTransaction` and `history` report what the chain did. Locators:
  * `msg:in` for the inbound internal message's value, `msg:in:jetton` for the jettons it
  * brings, `msg:<i>` for outbound message `i`.
  *
  * Execution status: a wallet (external-in) transaction executed when its compute and action
  * phases succeeded and its code did not throw after committing; an internal one whenever its
- * value stayed, i.e. no bounce phase sent it back (M7): a non-bounceable deposit to a fresh
+ * value stayed, i.e. no bounce phase sent it back: a non-bounceable deposit to a fresh
  * address is `aborted` on chain yet credited, and so is a non-bounceable message to a
  * failing contract, a failed action phase without send mode +16 and a `nofunds` or
  * `negfunds` bounce. Jettons move only when the jetton wallet ran the message to the end
- * (a failed phase drops its state). Bodies are bound to their keyed hashes (C1). Jetton
+ * (a failed phase drops its state). Bodies are bound to their keyed hashes. Jetton
  * movements are decoded only for a jetton wallet the master itself names for its owner
  * (`jetton`, resolved by the reader): anyone can deploy a contract that claims a master or
  * sends a `transfer_notification`. A record whose phases contradict each other decides
- * nothing (lesson 18, widened).
+ * nothing.
  */
 import type { Cell } from '@ton/core';
 import type {
@@ -46,15 +46,14 @@ export interface VerifiedJettonWallet {
  * nothing else (transaction.cpp, collator.cpp):
  * - an action phase follows exactly a successful compute phase, and a skipped compute
  *   phase never succeeded;
- * - `aborted` is exactly "not ran" (M3: a skipped compute phase included);
+ * - `aborted` is exactly "not ran" (a skipped compute phase included);
  * - a bounce phase exists exactly for a bounceable inbound message (`bounce_enabled`, the
  *   message's own flag; never an external one or a bounce) whose phases failed, and always
- *   when its compute phase did (I1);
+ *   when its compute phase did;
  * - the outgoing messages are distinct, as many as the action phase created when it ran,
- *   and nothing but the bounce when it did not (M1).
+ *   and nothing but the bounce when it did not.
  * A record that breaks any of these contradicts the chain: a retryable
- * `PROVIDER_INCONSISTENT`, which decides nothing (lesson 18, widened), never a default
- * (lesson 6).
+ * `PROVIDER_INCONSISTENT`, which decides nothing, never a default.
  */
 export function ran(tx: V3Transaction): boolean {
   const { compute, action, inMsg, outMsgs } = tx;
@@ -70,7 +69,7 @@ export function ran(tx: V3Transaction): boolean {
     new Set(outMsgs.map((m) => m.hash)).size !== outMsgs.length ||
     (done
       ? outMsgs.length !== action?.msgsCreated
-      : // F6-R14: a flag the indexer leaves out (null) says nothing against the chain.
+      : // A flag the indexer leaves out (null) says nothing against the chain.
         outMsgs.some((m) => m.bounced === false))
   ) {
     throw new ProviderError(
@@ -186,7 +185,7 @@ function jettonTransfer(
 }
 
 /**
- * A wallet request's TEP-467 hash, computed here from its bound body (C1): the indexer's
+ * A wallet request's TEP-467 hash, computed here from its bound body: the indexer's
  * `hash_norm` is only its claim.
  */
 function requestHashOf(tx: V3Transaction): string | undefined {
@@ -222,7 +221,7 @@ export function decodeTransaction(
     if (body.cell && jettonsMoved(tx, body.kind)) {
       const jetton = jettonTransfer(tx, body.cell, options.jetton);
       if (!jetton) partial = true;
-      // M6: a zero credit moved nothing, as a zero native value does not.
+      // A zero credit moved nothing, as a zero native value does not.
       else if (jetton.amount > 0n) transfers.push(jetton);
     }
   }

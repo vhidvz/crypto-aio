@@ -1,8 +1,9 @@
-// R37: a user's `declare module 'crypto-aio'` registry augmentation must survive whatever
-// order the compiler reads files in, next to the testing kit's own fake-chain augmentation.
-// Compiles a small consumer program against the sources, with `crypto-aio` and
-// `crypto-aio/testing` mapped to the entry points, in both file orders. Last, the main
-// entry's shipped declarations must type-check with no SDK installed (spec §5.6).
+// A user's `declare module 'crypto-aio'` registry augmentation must survive whatever
+// order the compiler reads files in, next to the testing kit's own fake-chain
+// augmentation and each family's, which target the entry module too (never
+// `core/model/ids`). Compiles a small consumer program against the sources, with
+// `crypto-aio` and `crypto-aio/testing` mapped to the entry points, in both file orders.
+// Last, the main entry's shipped declarations must type-check with no SDK installed.
 import { join, relative, sep } from 'node:path';
 import * as ts from 'typescript';
 
@@ -114,7 +115,7 @@ function compile(
   return { program, errors, everywhere };
 }
 
-describe('registry augmentation through the public entry (R37)', () => {
+describe('registry augmentation through the public entry', () => {
   it('keeps a user chain and the fake chains in both file orders', () => {
     const first = compile({ 'augment.ts': AUGMENT, 'use.ts': USE });
     expect(first.errors).toEqual([]);
@@ -148,7 +149,7 @@ export async function nonce(): Promise<bigint> {
 }
 `;
 
-/** A user's own native client next to the EVM ones: lost if `crypto-aio/evm` augments `ids` (R37). */
+/** A user's own native client next to the EVM ones: lost if `crypto-aio/evm` augments `ids`. */
 const USE_ACME = `
 import { CryptoAio } from 'crypto-aio';
 import { native } from 'crypto-aio/native';
@@ -158,7 +159,7 @@ export async function hello(): Promise<string> {
 }
 `;
 
-describe('EVM registry augmentation (R37)', () => {
+describe('EVM registry augmentation', () => {
   it('types the built-in EVM chains, networks, libraries, ext and native clients, in both file orders', () => {
     const first = compile({
       'augment.ts': AUGMENT,
@@ -203,7 +204,7 @@ export async function unspent(): Promise<bigint | undefined> {
 }
 `;
 
-describe('UTXO registry augmentation (R37)', () => {
+describe('UTXO registry augmentation', () => {
   it('types the bitcoin chain, networks, library, ext and native client, in both file orders', () => {
     const first = compile({
       'augment.ts': AUGMENT,
@@ -239,7 +240,7 @@ import 'crypto-aio/solana';
 const aio = new CryptoAio({ env: false });
 export const sol = aio.blockchain({ chain: 'solana', network: 'devnet', library: '@solana/web3.js' });
 export const fee: SolanaFeeOverride = { computeUnitPrice: 5n, computeUnitLimit: 20_000n };
-// The named override type is a transfer's \`fee\` (Task 12 review M5).
+// The named override type is a transfer's \`fee\`.
 export const paid = () => sol.transfer({ to: 'x', amount: 1n, fee });
 export const priced = () => sol.estimateFee({ to: 'x', amount: 1n, fee });
 export async function height(): Promise<number> {
@@ -251,7 +252,7 @@ export async function accounts(): Promise<readonly { readonly amount: bigint }[]
 }
 `;
 
-describe('Solana registry augmentation (R37)', () => {
+describe('Solana registry augmentation', () => {
   it('types the Solana chain, networks, library, ext and native client, in both file orders', () => {
     const first = compile({
       'augment.ts': AUGMENT,
@@ -297,7 +298,7 @@ export async function height(): Promise<number> {
 }
 `;
 
-describe('TON registry augmentation (R37)', () => {
+describe('TON registry augmentation', () => {
   it('types the TON chain, networks, library, ext and native client next to EVM and a user client, in both file orders', () => {
     const first = compile({
       'augment.ts': AUGMENT,
@@ -452,7 +453,7 @@ const withoutSdks = (dts: ReadonlyMap<string, string>): Setup => ({
   files: dts,
 });
 
-describe('the main entry names no SDK (spec §5.6)', () => {
+describe('the main entry names no SDK', () => {
   let dts: ReadonlyMap<string, string>;
   beforeAll(() => {
     dts = declarations();
@@ -502,7 +503,9 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     ]);
   }, 120_000);
 
-  it('control: `crypto-aio/evm` does need the SDK types (R81), so the SDKs really are unresolvable', () => {
+  // Known gap: `crypto-aio/evm`'s typings name both ethers and web3, so a project with
+  // only one of them installed needs `skipLibCheck: true`.
+  it('control: `crypto-aio/evm` does need the SDK types, so the SDKs really are unresolvable', () => {
     const { everywhere } = compile(
       { 'main.ts': `${USE_MAIN}import 'crypto-aio/evm';\n` },
       undefined,
@@ -544,7 +547,7 @@ describe('the main entry names no SDK (spec §5.6)', () => {
     ]);
   }, 120_000);
 
-  it('control: `crypto-aio/ton` does need the SDK types (R81), so @ton/ton really is unresolvable', () => {
+  it('control: `crypto-aio/ton` does need the SDK types, so @ton/ton really is unresolvable', () => {
     const { everywhere } = compile(
       { 'main.ts': `${USE_MAIN}import 'crypto-aio/ton';\n` },
       undefined,
@@ -576,7 +579,7 @@ export async function energy(): Promise<bigint> {
 }
 `;
 
-describe('Tron registry augmentation (R37)', () => {
+describe('Tron registry augmentation', () => {
   it('types the Tron chain, networks, library, ext and native client, in both file orders', () => {
     const first = compile({
       'augment.ts': AUGMENT,
@@ -621,7 +624,7 @@ export async function networkId(): Promise<number> {
 }
 `;
 
-describe('Avalanche registry augmentation (R37)', () => {
+describe('Avalanche registry augmentation', () => {
   it('types the X-Chain and P-Chain, networks, library, ext and native client, in both file orders', () => {
     const first = compile({
       'augment.ts': AUGMENT,

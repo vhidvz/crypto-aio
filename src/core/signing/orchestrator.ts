@@ -24,7 +24,7 @@ export type OrchestratedResult =
   | { readonly status: 'signed'; readonly signatures: readonly SignatureBundle[] }
   | {
       readonly status: 'pending';
-      /** One entry per pending signer that issued a ticket (R22). */
+      /** One entry per pending signer that issued a ticket. */
       readonly tickets: readonly SignerTicket[];
       readonly signatures: readonly SignatureBundle[];
     };
@@ -238,7 +238,7 @@ export class SigningOrchestrator {
       .filter((s): s is SignatureBundle => s !== undefined);
   }
 
-  /** Picks the signer for one request; the routing reads are guarded like signer calls (M5). */
+  /** Picks the signer for a request; the routing reads are guarded like signer calls. */
   #route(
     wallet: ResolvedWallet,
     request: SigningRequest,
@@ -338,7 +338,7 @@ export class SigningOrchestrator {
   }
 
   /**
-   * R22: before a failure escapes `sign()`, cancels (best effort) every ticket issued earlier
+   * Before a failure escapes `sign()`, cancels (best effort) every ticket issued earlier
    * in the same call through the signer that issued it. A ticket that could not be cancelled
    * (no `cancelRequest`, or it threw) is counted in `details.cancelFailures`.
    */

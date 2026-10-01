@@ -93,7 +93,7 @@ describe('transfer', () => {
     },
   );
 
-  // Review Focus 3 (end to end): concurrent transfers get distinct nonces and all land.
+  // End to end: concurrent transfers get distinct nonces and all land.
   it('gives concurrent transfers from one wallet distinct nonces and lands them all', async () => {
     const env = await createFakeEnv();
     const subs = await env.run(
@@ -179,7 +179,7 @@ describe('transfer', () => {
     const error = await env
       .run(env.bc.transfer(intent, { idempotencyKey: 'amb' }))
       .catch((e: unknown) => e);
-    // R28: `ambiguous` carries the retry guidance; the code keeps its catalogue retryability.
+    // `ambiguous` carries the retry guidance; the code keeps its catalogue retryability.
     expect(error).toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
       ambiguous: true,
@@ -195,8 +195,9 @@ describe('transfer', () => {
     expect(env.chain.sendCount(ref)).toBe(2);
   });
 
-  // Carry-forward (Plans 2-6 rule, engine side): an RPC error that follows a possibly
-  // delivered attempt is ambiguous even when its message reads like a rejection.
+  // An RPC error that follows a possibly delivered attempt is ambiguous even when its
+  // message reads like a rejection: the transport marks it so, drivers classify only an
+  // unambiguous node error, and the engine must keep it ambiguous.
   it('keeps an ambiguous RPC error ambiguous instead of failing and freeing the nonce', async () => {
     const env = await createFakeEnv();
     env.chain.configureEndpoint('main', { acceptThenFail: true });
@@ -231,7 +232,7 @@ describe('transfer', () => {
     expect(retried).toMatchObject({ state: 'submitted', ambiguous: false });
   });
 
-  // Carry-forward: the transport surfaces a caller abort as the bare reason, even after a
+  // The transport surfaces a caller abort as the bare reason, even after a
   // possibly delivered attempt. The engine must still treat it as ambiguous.
   it('treats a broadcast aborted by the caller as ambiguous, monitored and still reserved', async () => {
     const { signer, calls } = countingSigner();
@@ -387,7 +388,7 @@ describe('transfer: signing under the address lease', () => {
     return { signer, answer: (result: SigningResult) => answer?.(result) };
   }
 
-  // R24 (a): the wait is bounded by lifecycle.signTimeoutMs, not by the lease.
+  // The wait is bounded by lifecycle.signTimeoutMs, not by the lease.
   it('stops waiting for a signer after lifecycle.signTimeoutMs and writes nothing', async () => {
     const { signer } = manualSigner();
     const env = await createFakeEnv({ signer, lifecycle: { signTimeoutMs: 60_000 } });
@@ -499,7 +500,7 @@ describe('transfer: signing under the address lease', () => {
     });
   });
 
-  // R24 / R22: a pending answer that arrives after the deadline still has a live ticket.
+  // A pending answer that arrives after the deadline still has a live ticket.
   it('cancels the ticket of a pending answer that arrives after the deadline', async () => {
     const cancelled: string[] = [];
     const { signer, answer } = manualSigner(cancelled);
@@ -528,7 +529,7 @@ describe('transfer: signing under the address lease', () => {
     expect(withLifecycleDefaults({}).signTimeoutMs).toBe(120_000);
   });
 
-  // M8: a failure that is not a crypto-aio error takes the caller's code, never a fixed one.
+  // A failure that is not a crypto-aio error takes the caller's code, never a fixed one.
   it("serializes a foreign error under the caller's code, and a crypto-aio error as it is", () => {
     expect(serializeError(new Error('boom'), 'TX_REJECTED')).toMatchObject({
       code: 'TX_REJECTED',
@@ -583,7 +584,7 @@ describe('transfer: signing under the address lease', () => {
     expect(await nonceOf(env, next.operation.id)).toBe(0n);
   });
 
-  // Carry-forward: a corrupt persisted partial must not make the Operation unrecoverable.
+  // A corrupt persisted partial must not make the Operation unrecoverable.
   it('drops a corrupt persisted partial signature when new signatures are submitted', async () => {
     const { inner, signer } = asyncSigner('job-4');
     const env = await createFakeEnv({ signer });
@@ -635,7 +636,7 @@ describe('transfer: signing under the address lease', () => {
   });
 });
 
-describe('transfer: broadcast answers never override stronger evidence (R24)', () => {
+describe('transfer: broadcast answers never override stronger evidence', () => {
   type Env = Awaited<ReturnType<typeof createFakeEnv>>;
 
   /** A submitted transfer that is mined; the engine holds an `included` observation of it. */
@@ -722,7 +723,7 @@ describe('transfer: broadcast answers never override stronger evidence (R24)', (
     const error = await env
       .run(env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'ol' }))
       .catch((e: unknown) => e);
-    // R27: after a broadcast, an unrecorded outcome is ambiguous STATE_UNRECORDED.
+    // After a broadcast, an unrecorded outcome is ambiguous STATE_UNRECORDED.
     expect(error).toMatchObject({
       code: 'STATE_UNRECORDED',
       ambiguous: true,
@@ -738,7 +739,7 @@ describe('transfer: broadcast answers never override stronger evidence (R24)', (
   });
 });
 
-describe('transfer: one signing per operation on expiry chains (R24)', () => {
+describe('transfer: one signing per operation on expiry chains', () => {
   it('signs once when a same-key repeat arrives while the first call is signing', async () => {
     const inner = localSigner.generate({ curves: ['secp256k1'], id: 'slow' }).signer;
     const clock: { current?: FakeClock } = {};

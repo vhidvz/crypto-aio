@@ -1,9 +1,9 @@
 /**
- * Tron addresses, SDK-free (lesson 4): `0x41` + the last 20 bytes of the keccak-256 hash of
+ * Tron addresses, SDK-free: `0x41` + the last 20 bytes of the keccak-256 hash of
  * the uncompressed public key, shown as base58check (`T…`, canonical) or as 42 hex digits
  * (the `hex` variant). Decoding is strict: base58check with the right checksum, exactly 21
  * bytes and the `0x41` prefix, or `41` + 40 hex digits. Public keys must be 33- or 65-byte
- * points on the curve (R58); tronweb's `computeAddress` would hash other lengths as is.
+ * points on the curve; tronweb's `computeAddress` would hash other lengths as is.
  */
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
@@ -28,8 +28,9 @@ function invalid(): ValidationError {
 export function addressBytes(value: string): Uint8Array {
   if (typeof value !== 'string') throw invalid();
   if (HEX_ADDRESS.test(value)) return fromHex(value);
-  // Lesson 20: base58 decoding is quadratic, so this length check is the one gate before
-  // the decoder; the alphabet check deliberately leaves the length to it.
+  // Base58 decoding is quadratic (10,000 characters block the event loop for about a
+  // minute), so this length check is the one gate before the decoder; the alphabet
+  // check deliberately leaves the length to it.
   if (value.length !== BASE58_LENGTH || !BASE58_ALPHABET.test(value)) throw invalid();
   let bytes: Uint8Array;
   try {
@@ -60,7 +61,7 @@ export function isTronAddress(value: string): boolean {
   }
 }
 
-/** R58: only a 33-byte compressed or 65-byte `0x04` point on the curve; returns 65 bytes. */
+/** Only a 33-byte compressed or 65-byte `0x04` point on the curve; returns 65 bytes. */
 export function uncompressedPublicKey(publicKey: Uint8Array): Uint8Array {
   const prefix = publicKey instanceof Uint8Array ? publicKey[0] : undefined;
   const shaped =
@@ -86,7 +87,7 @@ export function addressFromPublicKey(publicKey: Uint8Array): string {
 }
 
 /**
- * `variant.hex` is part of the intent hash (P25-R13). It is a pure function of `canonical`
+ * `variant.hex` is part of the intent hash. It is a pure function of `canonical`
  * (a JSON string), so a recipient typed in base58 or in hex hashes the same.
  */
 export function normalizeTronAddress(value: string): NormalizedAddress {

@@ -2,9 +2,9 @@
 
 # Interface: AvalancheExt
 
-Defined in: [src/adapters/avalanche/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L75)
+Defined in: [src/adapters/avalanche/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L76)
 
-`bc.ext.avalanche`: the Avalanche family extension (spec §5.5).
+`bc.ext.avalanche`: the Avalanche family extension.
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [src/adapters/avalanche/types.ts:75](https://github.com/vhidvz/crypt
 
 > `readonly` **avalanche**: `object`
 
-Defined in: [src/adapters/avalanche/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L76)
+Defined in: [src/adapters/avalanche/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/types.ts#L77)
 
 #### listUnspent()
 

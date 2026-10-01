@@ -4,7 +4,7 @@
 
 Defined in: [src/core/model/transaction.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L99)
 
-R35: a transfer whose asset could not be resolved, for example a token with unusable
+A transfer whose asset could not be resolved, for example a token with unusable
 metadata or a failing decimals call. It has no `asset` and no `amount`: without the
 asset's decimals there is no `Amount`. `unresolved` keeps the chain's raw data instead,
 and the transaction's `decoding` is `'partial'`. A read never fails on such a transfer;

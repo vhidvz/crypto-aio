@@ -4,10 +4,10 @@
 
 Defined in: [src/core/signing/wallet.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/wallet.ts#L33)
 
-A22: the wallet's extended public key as drivers receive it, `WalletOptions.hd`: plain,
-frozen data (R11), present only when the wallet configures a non-empty `xpub` (an empty
+The wallet's extended public key as drivers receive it, `WalletOptions.hd`: plain,
+frozen data, present only when the wallet configures a non-empty `xpub` (an empty
 one counts as none, as in `deriveAddress`), which must be a readable PUBLIC extended key
-(A26: `CONFIG_INVALID` otherwise, naming no key).
+(`CONFIG_INVALID` otherwise, naming no key).
 
 ## Properties
 

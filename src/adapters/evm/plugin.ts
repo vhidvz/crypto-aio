@@ -1,5 +1,5 @@
 /**
- * The EVM family plugin (spec §4): chains, tokens and provider presets as data, plus one
+ * The EVM family plugin: chains, tokens and provider presets as data, plus one
  * adapter manifest per library. SDK-free: only a manifest's `load()` requires a client
  * module, and with it the SDK. `ethers` is registered first, so it is the family default.
  */
@@ -18,7 +18,7 @@ import { EVM_CAPABILITIES, evmNetworkConfig } from './network';
 import { EVM_PRESETS } from './presets';
 import { EVM_TOKENS } from './tokens';
 
-/** The SDK versions this adapter is validated against (spec §16). */
+/** The SDK versions this adapter is validated against. */
 export const EVM_PEER_DEPENDENCIES: Readonly<Record<'ethers' | 'web3', PeerDependency>> =
   {
     ethers: { name: 'ethers', range: '^6.17.0' },
@@ -26,9 +26,11 @@ export const EVM_PEER_DEPENDENCIES: Readonly<Record<'ethers' | 'web3', PeerDepen
   };
 
 /**
- * A25: the manifests' `load` functions, shared by every `evmManifests(...)` call, so that
- * registering `evmPlugin()` or the same `evmChainPlugin(...)` again is the same plugin.
- * Each `require`s its client module, and with it the SDK, only when called.
+ * The manifests' `load` functions, shared by every `evmManifests(...)` call, so that
+ * registering `evmPlugin()` or the same `evmChainPlugin(...)` again is the same plugin:
+ * the registry compares a plugin's functions by identity, and refuses a different plugin
+ * under a registered name. Each `require`s its client module, and with it the SDK, only
+ * when called.
  */
 const loadEthers = async (): Promise<DriverFactory> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -67,7 +69,10 @@ export function evmManifests(
   ];
 }
 
-/** The built-in EVM family: the chains of spec §2. */
+/**
+ * The built-in EVM family: Ethereum, BNB Smart Chain, Polygon PoS, Avalanche C-Chain,
+ * Arbitrum One, OP Mainnet and Base, with their testnets.
+ */
 export function evmPlugin(): Plugin {
   return {
     name: 'evm',

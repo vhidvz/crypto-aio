@@ -1,8 +1,8 @@
 /**
  * A container on the scripted Esplora node (regtest), for the UTXO end-to-end suites.
  * `restart({ killPrevious: true })` kills the old generation and builds a new one over the
- * same raw clock, node, stores and signer (handoff R20, ruling A5: `fenceGeneration` from
- * `src/testing/generation.ts`, as Plan 2 Task 11 uses it), so no old-generation work can
+ * same raw clock, node, stores and signer (through `fenceGeneration` from
+ * `src/testing/generation.ts`), so no old-generation work can
  * land after the "crash". The killed container is never closed: its fenced calls never
  * settle. `env.stores` are the raw stores, readable after a kill.
  */
@@ -38,7 +38,7 @@ export interface UtxoEnvOptions {
   readonly wallet?: Partial<WalletConfig>;
   /**
    * Stores to use instead of the memory ones; a factory gets the env's FakeClock, so a
-   * store's timestamps never come from the wall clock (F3-R18, lesson 1).
+   * store's timestamps never come from the wall clock.
    */
   readonly stores?: Partial<Stores> | ((clock: Clock) => Partial<Stores>);
   readonly signer?: Signer;

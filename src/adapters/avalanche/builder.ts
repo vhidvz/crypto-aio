@@ -1,5 +1,5 @@
 /**
- * The Avalanche builder and broadcaster (spec §15's UTXO shape, `inputs` ordering).
+ * The Avalanche builder and broadcaster (a UTXO chain: the `inputs` ordering).
  * - `build` spends only plain, unlocked AVAX outputs the wallet signs alone and that no
  *   other live Operation holds (`ctx.excludeInputs`), largest first; change goes back to
  *   the sending address; the spent outputs are the `inputs` ordering. The fee is `exact`
@@ -10,7 +10,8 @@
  * - There is no replacement or cancel: AvalancheGo's mempool keeps the first of two
  *   conflicting transactions, and an accepted one is final.
  * - Broadcast answers are classified by `errors.ts`; an ambiguous transport failure is
- *   rethrown unclassified (R16/R17).
+ *   rethrown unclassified: the bytes may have reached a node, so the core monitors the
+ *   broadcast as possibly sent.
  */
 import { sha256 } from '@noble/hashes/sha256';
 import type {
@@ -382,7 +383,10 @@ export function avalancheBuilder(ctx: AvalancheContext): AvalancheBuilder {
   };
 }
 
-/** Twice the mempool's largest transaction, as hex characters (lesson 20). */
+/**
+ * Twice the mempool's largest transaction, as hex characters. The cap runs before the
+ * regex and the parser read the input, so an oversized payload costs nothing.
+ */
 const MAX_TX_HEX = 4 * MAX_TX_BYTES;
 
 export function avalancheBroadcaster(ctx: AvalancheContext): Broadcaster {
@@ -421,7 +425,8 @@ export function avalancheBroadcaster(ctx: AvalancheContext): Broadcaster {
           'the transaction is for another network or chain',
         );
       }
-      // M7: a bare broadcast (no ref) is checked against the bytes' own id.
+      // A bare broadcast has no ref (`signed.ref.id` is empty), so the bytes' own id is
+      // what the node's answer is checked against; an Attempt's ref must be that id.
       if (signed.ref.id !== '' && signed.ref.id !== parsed.id) {
         throw new ValidationError(
           'INVALID_INTENT',
@@ -447,8 +452,9 @@ export function avalancheBroadcaster(ctx: AvalancheContext): Broadcaster {
         }
         return { kind: 'accepted' };
       } catch (error) {
-        // A definitive JSON-RPC error is AvalancheGo's answer; anything else is rethrown
-        // (R16/R17). Lesson 21: its texts only ever make a refusal (errors.ts).
+        // A definitive JSON-RPC error is AvalancheGo's answer; anything else, an
+        // ambiguous error included, is rethrown. A node's text is a claim, so it only
+        // ever makes a refusal (errors.ts).
         if (
           isCryptoAioError(error, 'RPC_ERROR') &&
           !error.ambiguous &&

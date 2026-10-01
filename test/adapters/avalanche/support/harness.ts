@@ -1,7 +1,7 @@
 /**
  * An Avalanche driver context over the scripted node, behind real `HttpTransport`s (one for
  * the node's endpoints, one for the Data API). The transports have fixed ids and jitter, so
- * nothing falls back to `Math.random` (lesson 1, R46).
+ * nothing falls back to `Math.random`: every run takes the same path.
  */
 import { AvalancheNode, DataApi } from '../../../../src/adapters/avalanche/api';
 import {

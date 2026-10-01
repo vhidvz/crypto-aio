@@ -1,7 +1,7 @@
 /**
  * Proofs, the block source and TronGrid history.
  *
- * Proofs (spec §6.7, §8.5; lessons 16 and 17, final form): every read is a `proof` quorum
+ * Proofs: every read is a `proof` quorum
  * read, and each fact is attested at its own height, so no endpoint proposes a height:
  * - "my solidified block's timestamp is at or past the expiration" is a monotone predicate
  *   quorum key on the latest solidified block; honest endpoints disagree only in the moment
@@ -17,14 +17,15 @@
  * `Manager.processBlock` runs `processTransaction`, so `validateTapos` and `validateCommon`,
  * for each transaction, and only then records the block in the recent-block store and as
  * the head):
- * - expiry (D3): a transaction is invalid in a block whose parent's timestamp is at or past
+ * - expiry: a transaction is invalid in a block whose parent's timestamp is at or past
  *   its expiration, and block timestamps strictly increase, so no block after the first one
  *   at or past the expiration can hold it;
  * - TaPoS: only a block above the reference block, and at most `TAPOS_WINDOW` above it, can
  *   hold it.
  *
- * "Not included" (lesson 16; F4-R11, F4-R12, F4-R14): the solidity index (and TronGrid behind
- * a load balancer) can lag, so an empty index answer is never taken as absence.
+ * "Not included": the solidity index (and TronGrid behind a load balancer) can lag, so an
+ * empty index answer is never taken as absence: an expired verdict for a transfer the
+ * index missed would let `rebuild` pay twice.
  * `includedFinal` answers `included: false` only once expiry is attested and a scan of every
  * block that could hold the transaction shows it absent, from the attested first block at or
  * past the SIGNED expiration (`expiresAtMs`, which `assemble` binds to the signed bytes) down
@@ -44,7 +45,7 @@
  *   references. None carries the signed hash: no block can hold the transaction. One does:
  *   the blocks in its TaPoS window (and not before the 24 h mark) are scanned.
  * - Either way, a block whose parent is more than 24 h before the expiration cannot hold the
- *   transaction, so no scan goes below the first block at or past that mark (F4-R19).
+ *   transaction, so no scan goes below the first block at or past that mark.
  * - A missing or malformed stored hash decides nothing.
  * Each scanned block is read by hash under the quorum, its parent hash names the next, and the
  * walk must end on the attested block below the window. A scanned block that holds the
@@ -98,7 +99,10 @@ function contradiction(what: string): ProviderError {
 }
 
 const SLOT_MS = 3_000;
-/** How far `finalizedHead` trails one endpoint's solidified head (Plan 2 uses 2). */
+/**
+ * How far `finalizedHead` trails one endpoint's solidified head: up to 6 s behind, and no
+ * verdict reads it.
+ */
 const PEER_SKEW = 2n;
 /** java-tron's block heights are `long`s. */
 const INT64_MAX = 2n ** 63n - 1n;
@@ -129,7 +133,7 @@ interface Bounds {
 
 /**
  * Where an Attempt can be, from its `TronExpiryOrdering`; null when a field is missing or
- * out of range, which decides nothing (F4-R14).
+ * out of range, which decides nothing.
  */
 function attemptBounds(ordering: OrderingData): Bounds | null {
   if (ordering.kind !== 'expiry') return null;
@@ -155,7 +159,7 @@ function attemptBounds(ordering: OrderingData): Bounds | null {
 /** Bytes 8..16 of a block id: what a transaction's `ref_block_hash` names. */
 const hashBytes = (block: TronBlockHeader): string => block.id.slice(16, 32);
 
-/** Scanned blocks kept per driver: immutable chain data (spec §7), so a retry is cheap. */
+/** Scanned blocks kept per driver: immutable chain data, so a retry is cheap. */
 const SCAN_CACHE_SIZE = 1_024;
 
 export function createTronProofs(ctx: TronContext): ProofSource {
@@ -202,7 +206,7 @@ export function createTronProofs(ctx: TronContext): ProofSource {
   /**
    * The first solidified block at or past `time`, at or below `hi` (an attested block at or
    * past it). Block timestamps strictly increase, so "at or past `time`" is monotone in the
-   * height: a gallop down from the slot estimate, then a binary search (M1). Every probe is
+   * height: a gallop down from the slot estimate, then a binary search. Every probe is
    * an attested fixed-height read at or below `hi`, which every quorum endpoint has
    * solidified, so none can stall; the slot spacing only picks the first probe.
    */
@@ -235,9 +239,9 @@ export function createTronProofs(ctx: TronContext): ProofSource {
    * The first solidified block at or past `expiration`, or null while the quorum has not
    * solidified past it. Only the predicate is attested: the latest block's height and time
    * are one endpoint's word, so a block trailed by the peer skew is attested at its own height
-   * (a freshest endpoint then stalls nothing, lesson 17), and the search runs at or below it
+   * (a freshest endpoint then stalls nothing), and the search runs at or below it
    * or, within the skew, up to the first block at the expiration, which every endpoint has
-   * solidified (M1: bounded, whatever the endpoint claimed).
+   * solidified (bounded, whatever the endpoint claimed).
    */
   async function expiryBlock(expiration: number): Promise<TronBlockHeader | null> {
     const seen = await passedExpiry(expiration);
@@ -281,7 +285,7 @@ export function createTronProofs(ctx: TronContext): ProofSource {
   }
 
   /**
-   * Absence proven by scan (lesson 16, F4-R14); throws when anything cannot be decided. `top`
+   * Absence proven by scan; throws when anything cannot be decided. `top`
    * is the attested first block at or past the expiration: no block above it can hold `id`.
    */
   async function absent(id: string, bounds: Bounds, top: TronBlockHeader): Promise<void> {
@@ -293,7 +297,7 @@ export function createTronProofs(ctx: TronContext): ProofSource {
     if (reference < top.number) {
       const named = await solidHeader(reference);
       if (hashBytes(named) === refBlockHash) {
-        // F4-R19: a reference older than a day (a build head that named an old block) is
+        // A reference older than a day (a build head that named an old block) is
         // scanned only from the 24 h mark, as the search below does, never its whole window.
         const floor =
           named.timestamp < dayMark ? await firstAtOrAfter(dayMark, top) : named;
@@ -329,7 +333,7 @@ export function createTronProofs(ctx: TronContext): ProofSource {
     },
 
     async includedFinal(ref, ordering) {
-      // Lesson 20: bounded before any work; our own Attempt's ref is always a txID.
+      // Bounded before any work; our own Attempt's ref is always a txID.
       if (typeof ref.id !== 'string' || ref.id.length !== 64) throw undecided();
       const id = ref.id.toLowerCase();
       if (!TX_ID.test(id)) throw undecided();
@@ -345,7 +349,9 @@ export function createTronProofs(ctx: TronContext): ProofSource {
         if (info.blockTimestamp !== header.timestamp) {
           throw contradiction('a receipt does not match its solidified block');
         }
-        // `verdictOf` pairs the receipt with the transaction by id (lessons 6, 7 and 18).
+        // `verdictOf` pairs the receipt with the transaction by id, reads the verdict
+        // fields strictly and wants evidence that value moved; a contradiction decides
+        // nothing.
         const verdict = verdictOf(ctx.codec, tx, info);
         return {
           included: true,
@@ -402,7 +408,7 @@ export function createTronBlocks(ctx: TronContext): BlockSource {
         : null;
     },
     async transactions(block, filter) {
-      // F4-R7: genesis holds only the chain's initial allocations, which are not reported,
+      // Genesis holds only the chain's initial allocations, which are not reported,
       // and java-tron answers `{}` for its receipts, which a scanner would retry for ever.
       if (block.height === 0n) return [];
       const read = await ctx.api.blockWithTransactions(block.height, MONITOR);
@@ -441,14 +447,14 @@ const CURSOR = /^([tx]):(.*)$/;
 const MAX_PAGE = 200;
 
 /**
- * TronGrid history (spec §15), each entry re-read from the full node and decoded like any
+ * TronGrid history, each entry re-read from the full node and decoded like any
  * transaction; confirmed (solidified) entries only (`historyPage`). Phase `t` is
  * `/transactions`: the account's own transactions, TRX sent to it and, for a contract
  * account, other accounts' calls to it. Phase `x` is `/transactions/trc20`: every TRC-20
  * transfer from or to it (a spender's `transferFrom` out of it included), less the account's
  * own calls, which phase `t` listed. A TRC-20 transfer a wallet only received is in phase `x`
  * alone (TronGrid, read-only on Nile, 2026-09-28), but a call to a contract account that moves
- * its own tokens comes in both phases, so callers dedupe on `transfer.id` (final review M4).
+ * its own tokens comes in both phases, so callers dedupe on `transfer.id`.
  * Paging follows the raw page's fingerprint, never how many items survive the filter, and
  * an entry the node cannot serve yet decides nothing: dropping it would skip it for good.
  */

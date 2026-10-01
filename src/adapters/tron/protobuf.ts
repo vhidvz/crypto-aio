@@ -1,7 +1,7 @@
 /**
- * The protobuf wire reader the Tron family shares (F4-R22): the codec (`codec.ts`) reads
+ * The protobuf wire reader the Tron family shares: the codec (`codec.ts`) reads
  * chain transactions with it, and the broadcast classifier (`errors.ts`) the bytes it sent.
- * SDK-free, so the classifier never loads tronweb. Linear in the input (lesson 20): each
+ * SDK-free, so the classifier never loads tronweb. Linear in the input: each
  * length is checked against the bytes left before it is used, a varint stops at 64 bits,
  * and field number 0, a group or an unknown wire type makes the message unreadable (`null`),
  * as does a truncated field.

@@ -7,7 +7,8 @@
  */
 import type { AvalancheNativeClient } from './driver';
 
-// R37: through the package entry. SDK types appear only here (spec §5.6).
+// Through the package entry, as a user's own augmentation does, so the two merge in any
+// file order. SDK types appear only here, so the main entry needs no SDK to type-check.
 declare module '../../index' {
   interface NativeClientMap {
     '@avalabs/avalanchejs': AvalancheNativeClient;

@@ -63,7 +63,8 @@ describe('the built-in Avalanche plugin', () => {
     expect(AVALANCHE_X_CHAIN.networks.fuji?.capabilities).toBeUndefined();
   });
 
-  it('is the same plugin every time (A18) and registers with its peer dependency', async () => {
+  // The same plugin again is a no-op; a different one under its name is refused.
+  it('is the same plugin every time and registers with its peer dependency', async () => {
     expect(samePlugin(avalanchePlugin(), avalanchePlugin())).toBe(true);
     expect(avalancheManifest.peerDependencies).toEqual([
       AVALANCHE_PEER_DEPENDENCIES['@avalabs/avalanchejs'],

@@ -1,13 +1,13 @@
 /**
- * The built-in TON chain (spec §2): mainnet and testnet. Every value is verified against the
- * source named in the Plan 6 appendix, or is a documented library policy:
+ * The built-in TON chain: mainnet and testnet. Every value is verified, live on toncenter
+ * or against docs.ton.org and ton.org, or is a documented library policy:
  * - `identity`: the network's global id (config param 19), which the identity probe reads.
  * - The native coin is Gram (ticker GRAM, formerly Toncoin), 9 decimals; the plugin also
  *   registers the alias `TON` for it.
  * - `finality: masterchain`: a masterchain block is final once it exists (BFT).
  * - `maxLagBlocks: 150`: library policy, about 60 s of masterchain blocks (measured ~0.4 s
  *   apart).
- * - `reorgWindow: 16`: library policy, unused; TON has no block source (sharded, spec §15).
+ * - `reorgWindow: 16`: library policy, unused; TON has no block source (sharded).
  * - `params`: `validForSeconds` (a message's lifetime, from chain time), `jettonAttached`
  *   and `jettonForwardAmount` (nanograms per jetton transfer), `finalitySkewBlocks` (how far
  *   a healthy proof peer may trail the freshest endpoint), all library policy.

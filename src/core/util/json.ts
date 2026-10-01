@@ -57,7 +57,7 @@ function canonicalize(value: unknown, seen: WeakSet<object>): unknown {
 }
 
 /**
- * P25-R21/M1: deterministic JSON for comparing quorum answers, which no two different values
+ * Deterministic JSON for comparing quorum answers, which no two different values
  * share. `canonicalJson` writes a bigint as `{"$bigint":…}` and bytes as `{"$bytes":…}`, the
  * same text as a plain object with that key, so one endpoint's object could agree with
  * another's bigint; it also drops a `__proto__` key. Here every plain-object key that starts
@@ -94,11 +94,11 @@ function escapeKeys(value: unknown, seen: WeakSet<object>): unknown {
   }
 }
 
-/** P25-R4: the longest integer literal `parseJson` revives, in digits without the sign. */
+/** The longest integer literal `parseJson` revives, in digits without the sign. */
 const MAX_EXACT_DIGITS = 80;
 
 /**
- * `JSON.parse`, optionally exact for integers (A12): with `exactIntegers`, every integer
+ * `JSON.parse`, optionally exact for integers: with `exactIntegers`, every integer
  * literal outside the safe range becomes a `bigint` read from its source text (Node ≥ 22
  * `JSON.parse` source text access), so a u64 amount is never rounded. Safe integers,
  * fractions and exponents stay numbers, so answers keep their shape for ordinary values.

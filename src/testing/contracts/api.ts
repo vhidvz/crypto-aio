@@ -20,7 +20,7 @@ export async function rejectsWithCode(
 }
 
 /**
- * B110: everything an error carries as text (its message, its JSON form and its causes')
+ * Everything an error carries as text (its message, its JSON form and its causes')
  * leaves out each of `secrets`. Store keys embed wallet addresses, and error messages
  * reach logs.
  */

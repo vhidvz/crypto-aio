@@ -6,4 +6,4 @@
 
 Defined in: [src/adapters/utxo/plugin.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/plugin.ts#L16)
 
-Keyed by library name (Plan 2 Task 10's shape); each manifest lists only its own.
+Keyed by library name, as in every family; each manifest lists only its own.

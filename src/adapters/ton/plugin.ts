@@ -1,5 +1,5 @@
 /**
- * The TON family plugin (spec §4): the chain, jettons and toncenter presets as data, plus
+ * The TON family plugin: the chain, jettons and toncenter presets as data, plus
  * one adapter manifest (library `@ton/ton`). SDK-free: only the manifest's `load()` requires
  * the library module, and with it the driver, `@ton/ton`, `@ton/core` and `@ton/crypto`.
  */
@@ -16,8 +16,9 @@ import { TON_PRESETS } from './presets';
 import { TON_TOKENS } from './tokens';
 
 /**
- * The SDK versions this adapter is validated against (spec §16, D2), keyed by package name
- * (Plan 2's final family shape). The one `@ton/ton` library needs all three.
+ * The SDK versions this adapter is validated against, keyed by package name. The one
+ * `@ton/ton` library needs all three: `@ton/ton` and `@ton/core` both declare
+ * `@ton/crypto` as a peer, and `@ton/core` requires it at load time.
  */
 export const TON_PEER_DEPENDENCIES: Readonly<
   Record<'@ton/ton' | '@ton/core' | '@ton/crypto', PeerDependency>
@@ -28,10 +29,12 @@ export const TON_PEER_DEPENDENCIES: Readonly<
 });
 
 /**
- * The `@ton/ton` manifest. A25: built once, at module level, like the presets, so every
+ * The `@ton/ton` manifest, built once, at module level, like the presets, so every
  * `tonPlugin()` carries the same `load` function and registering it again is the same
- * plugin (A18). Its capabilities are exactly `TON_CAPABILITIES`: no `batch-transfer`, since a
- * TON transfer carries one output (F6-R15).
+ * plugin: the registry compares functions by identity, and a different plugin under a
+ * registered name is `CONFIG_INVALID`. Its capabilities are exactly `TON_CAPABILITIES`:
+ * no `batch-transfer`, since a TON transfer carries one output (each message lands in its
+ * own transaction, so a batch could be partly delivered).
  */
 export const tonManifest: AdapterManifest = Object.freeze({
   family: 'ton',
@@ -39,7 +42,7 @@ export const tonManifest: AdapterManifest = Object.freeze({
   chains: Object.freeze(['ton']),
   capabilities: TON_CAPABILITIES,
   indexerCapabilities: TON_INDEXER_CAPABILITIES,
-  // D3: message → transaction resolution and trace-based finality need toncenter v3.
+  // Message → transaction resolution and trace-based finality need toncenter v3.
   requiresIndexer: true,
   peerDependencies: Object.freeze([
     TON_PEER_DEPENDENCIES['@ton/ton'],
@@ -53,7 +56,7 @@ export const tonManifest: AdapterManifest = Object.freeze({
   },
 });
 
-/** The built-in TON family: chain `ton`, networks mainnet and testnet (spec §2). */
+/** The built-in TON family: chain `ton`, networks mainnet and testnet. */
 export function tonPlugin(): Plugin {
   return {
     name: 'ton',

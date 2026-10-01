@@ -1,4 +1,4 @@
-// Lazy loading (spec §4, R81): only the manifest's `load()` may require an SDK. Each check runs
+// Lazy loading: only the manifest's `load()` may require an SDK. Each check runs
 // in a module registry of its own, where requiring any SDK the package declares (every
 // family's, not only TON's) is recorded, then served as usual.
 import { readFileSync } from 'node:fs';
@@ -55,7 +55,7 @@ describe('lazy loading of the TON SDKs', () => {
     expect(loaded).toEqual([]);
   });
 
-  it('never requires native-client.ts or driver.ts before load() (M10)', async () => {
+  it('never requires native-client.ts or driver.ts before load()', async () => {
     const modules = ['native-client', 'driver'] as const;
     const loaded: string[] = [];
     let pending: Promise<unknown> | undefined;

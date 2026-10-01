@@ -7,7 +7,7 @@
 import type { DisposableNativeClient } from '../../core/driver/types';
 import type { CallOptions, Transport } from '../../core/transport/types';
 
-// R37: augment the registries through the package entry, as users do with 'crypto-aio'.
+// Augment the registries through the package entry, as users do with 'crypto-aio'.
 declare module '../../index' {
   interface ChainRegistry {
     tron: { family: 'tron'; network: 'mainnet' | 'shasta' | 'nile' };
@@ -17,7 +17,7 @@ declare module '../../index' {
   }
 }
 
-/** An account's resources (spec §5.5 `ext.tron.getResources`), from `getaccountresource`. */
+/** An account's resources (`ext.tron.getResources`), from `getaccountresource`. */
 export interface TronResources {
   /** Whether the account exists on chain (it was activated by a first TRX transfer). */
   readonly activated: boolean;
@@ -29,7 +29,7 @@ export interface TronResources {
   readonly energy: bigint;
 }
 
-/** `bc.ext.tron`: the Tron family extension (spec §5.5). */
+/** `bc.ext.tron`: the Tron family extension. */
 export interface TronExt {
   readonly tron: {
     /** The account's bandwidth and energy, as the full node reports them now. */
@@ -68,13 +68,16 @@ export interface TronFeeDetails {
 export type TronFeeOverride = { readonly feeLimit: bigint };
 
 /**
- * The expiry ordering a Tron build records (F4-R12, F4-R14, F4-R15): the signed expiration,
- * and the reference block the transaction names for TaPoS. `lastValidHeight` is the height
- * the build-time head claimed plus the TaPoS window (65,536 blocks), so only its low 16 bits
- * are signed (`ref_block_bytes`); `refBlockHash` is the signed `ref_block_hash`. A proof
- * trusts the height only when the solidified block there carries `refBlockHash`; otherwise
- * it searches the heights TaPoS can match. It is a core `expiry` ordering with one more
- * property, which the core stores whole.
+ * The expiry ordering a Tron build records: the signed expiration, and the reference
+ * block the transaction names for TaPoS. `lastValidHeight` is the height the build-time
+ * head claimed plus the TaPoS window (65,536 blocks), so only its low 16 bits are signed
+ * (`ref_block_bytes`); `refBlockHash` is the signed `ref_block_hash`. A proof trusts the
+ * height only when the solidified block there carries `refBlockHash`, because a forged
+ * head can claim a height whose low 16 bits name a block 65,536 lower; otherwise it
+ * searches the heights TaPoS can match. It is a core `expiry` ordering with one more
+ * property, which the core stores whole. A durable store must keep it exact: a changed
+ * hash or height, or a rounded-down `expiresAtMs`, can prove the transfer expired while
+ * a block holds it.
  */
 export interface TronExpiryOrdering {
   readonly kind: 'expiry';
@@ -87,9 +90,9 @@ export interface TronExpiryOrdering {
 }
 
 /**
- * The transport tags every Tron I/O call carries (R41): purpose, retry, quorum, fanout,
+ * The transport tags every Tron I/O call carries: purpose, retry, quorum, fanout,
  * signal, an optional caller `quorumKey` that replaces the path's default consensus key
- * (lesson 17: a monotone predicate attested at its own height), and `exactIntegers` (A12),
+ * (for a monotone predicate attested at its own height), and `exactIntegers`,
  * which `TronApi` always sets: java-tron answers sun and energy as JSON numbers.
  */
 export type TronCallTags = Pick<
@@ -145,7 +148,7 @@ export interface TronRawData {
 }
 
 /**
- * The SDK part of the Tron driver (spec §15): protobuf work and the native client. Codec
+ * The SDK part of the Tron driver: protobuf work and the native client. Codec
  * methods are synchronous and pure; they never perform I/O.
  */
 export interface TronCodec {
@@ -165,6 +168,6 @@ export interface TronCodec {
    * negative), and `feeLimit` (left out when a number cannot hold it exactly). Never throws.
    */
   readRaw(hex: string): TronRawData | null;
-  /** A fresh TronWeb instance whose providers send through `transport` (R34). */
+  /** A fresh TronWeb instance whose providers send through `transport`. */
   createNative(transport: Transport): DisposableNativeClient;
 }

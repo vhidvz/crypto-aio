@@ -1,12 +1,12 @@
 /**
  * SDK-free types of the Solana family: the `ext.solana` API, fee details and overrides, and
- * the narrow `SolanaCodec` that the `@solana/web3.js` module implements (spec §15). Nothing
+ * the narrow `SolanaCodec` that the `@solana/web3.js` module implements. Nothing
  * here imports an SDK, so the composition root can export these types.
  */
 import type { DisposableNativeClient } from '../../core/driver/types';
 import type { CallOptions } from '../../core/transport/types';
 
-// R37: augment the registries through the package entry, as users do with 'crypto-aio'.
+// Augment the registries through the package entry, as users do with 'crypto-aio'.
 declare module '../../index' {
   interface ChainRegistry {
     solana: { family: 'solana'; network: 'mainnet' | 'devnet' | 'testnet' };
@@ -26,7 +26,7 @@ export interface SolanaTokenAccount {
   readonly frozen: boolean;
 }
 
-/** `bc.ext.solana`: the Solana family extension (spec §5.5). */
+/** `bc.ext.solana`: the Solana family extension. */
 export interface SolanaExt {
   readonly solana: {
     /**
@@ -73,7 +73,7 @@ export type SolanaFeeOverride = {
 
 /**
  * The transport tags every Solana I/O call carries: purpose, retry, quorum, fanout, signal,
- * and optionally the caller's own `quorumKey` (lesson 17), which replaces the method's
+ * and optionally the caller's own `quorumKey`, which replaces the method's
  * default consensus key.
  */
 export type SolanaCallTags = Pick<
@@ -84,13 +84,16 @@ export type SolanaCallTags = Pick<
 export type Commitment = 'confirmed' | 'finalized';
 
 /**
- * The expiry ordering a Solana build records (F5-R9): the recent blockhash's
+ * The expiry ordering a Solana build records: the recent blockhash's
  * `lastValidBlockHeight`, the blockhash itself and the slot of its block, all from one
  * `getLatestBlockhash` answer, so one endpoint's word. A verdict rests on the height the
- * proof quorum attests for `blockhash` instead (F5-R10): the finalized block at
+ * proof quorum attests for `blockhash` instead: the finalized block at
  * `blockhashSlot`, when it carries the blockhash, gives the last valid height as its own
  * height plus 150 (agave's `MAX_PROCESSING_AGE`); otherwise the finalized block 150 below
- * `lastValidHeight` must carry it. No endpoint proposes the height (lesson 17).
+ * `lastValidHeight` must carry it. No endpoint proposes the height: trusting the recorded
+ * one would let an endpoint that reported it too low prove the transfer expired while it
+ * can still land, and `rebuild` would pay twice. For the same reason a store must keep
+ * this ordering whole and unmodified: a changed `blockhash` misplaces the window.
  */
 export interface SolanaExpiryOrdering {
   readonly kind: 'expiry';
@@ -113,9 +116,10 @@ export interface SolanaInstruction {
 }
 
 /**
- * The codec work the driver delegates to `@solana/web3.js` (spec §15): program-derived
- * addresses and legacy message compilation. Inputs are already-validated canonical base58
- * keys; outputs are plain bytes and strings, never SDK objects (R11).
+ * The codec work the driver delegates to `@solana/web3.js`: program-derived addresses and
+ * legacy message compilation. Inputs are already-validated canonical base58 keys; outputs
+ * are plain bytes and strings, never SDK objects, since store records hold plain data
+ * only.
  */
 export interface SolanaCodec {
   /** The associated token account of `owner` for `mint` (classic Token program). */
@@ -126,6 +130,6 @@ export interface SolanaCodec {
     recentBlockhash: string,
     instructions: readonly SolanaInstruction[],
   ): Uint8Array;
-  /** A fresh `Connection` on the same transport, for `crypto-aio/native` (R34). */
+  /** A fresh `Connection` on the same transport, for `crypto-aio/native`. */
   createNative(): DisposableNativeClient;
 }

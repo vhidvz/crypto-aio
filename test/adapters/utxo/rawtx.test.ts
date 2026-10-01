@@ -15,7 +15,7 @@ import {
 } from './support/tx';
 import { OTHER_KEY, TEST_KEY } from './support/vectors';
 
-describe('the linear transaction reader (F3-R24 F2)', () => {
+describe('the linear transaction reader', () => {
   it('reads ordinary transactions exactly as bitcoinjs does', () => {
     const legacy = fundingTx(new Uint8Array(22).fill(1), 50_000n, 3);
     const funding = fundingTx(

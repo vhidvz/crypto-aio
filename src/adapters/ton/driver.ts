@@ -1,8 +1,8 @@
 /**
- * The TON driver (spec §15): one factory for both built-in networks, configured by each
- * network's registry data. The family shape (Plan 2 Task 10, lesson 17 board entry):
- * `tonDriverFactory(makeNative)` lives here and imports no client module; the library's
- * module (`native-client.ts`) supplies the native client and exports the loadable factory.
+ * The TON driver: one factory for both built-in networks, configured by each network's
+ * registry data. The family shape: `tonDriverFactory(makeNative)` lives here and imports
+ * no client module; the library's module (`native-client.ts`) supplies the native client
+ * and exports the loadable factory.
  */
 import type {
   ChainDriver,
@@ -33,12 +33,13 @@ const malformedProbe = (route: string) =>
   });
 
 /**
- * F6-R23 M1: the probes read heights and the indexer's global id with `api.ts`'s own
+ * The probes read heights and the indexer's global id with `api.ts`'s own
  * parsers, the ones the proofs use, so the two never drift.
  *
- * v2 (R19): identity = config param 19, the network's global id, from a cell that holds
+ * v2: identity = config param 19, the network's global id, from a cell that holds
  * exactly one int32 (`global_id#_ global_id:int32 = ConfigParam 19`); height = the
- * liteserver's masterchain head. One call each (Plan 2.5 Task 2: each probe costs a token).
+ * liteserver's masterchain head. One call each: each probe takes a token from the
+ * endpoint's rate limit.
  */
 const rpcProbes = (expectedIdentity: string): HealthProbes => ({
   identity: async (call: EndpointCall) => {
@@ -66,7 +67,7 @@ const rpcProbes = (expectedIdentity: string): HealthProbes => ({
 });
 
 /**
- * v3 (R19): identity = the indexed head's `global_id` (an int32); height = the newest
+ * v3: identity = the indexed head's `global_id` (an int32); height = the newest
  * indexed masterchain block.
  */
 const indexerProbes = (expectedIdentity: string): HealthProbes => {
@@ -81,13 +82,14 @@ const indexerProbes = (expectedIdentity: string): HealthProbes => {
 };
 
 /**
- * F6-R15: a TON transfer carries exactly one output (a partly delivered batch has no safe
- * single verdict), whatever the wallet version. The core prefers this answer to its own
- * capability default, so it holds even for a selection that somehow lists `batch-transfer`.
+ * A TON transfer carries exactly one output (a partly delivered batch has no safe single
+ * verdict: `failed` invites a whole re-send that pays the delivered outputs twice),
+ * whatever the wallet version. The core prefers this answer to its own capability
+ * default, so it holds even for a selection that somehow lists `batch-transfer`.
  */
 const ONE_OUTPUT: DriverLimits = Object.freeze({ maxOutputs: 1 });
 
-/** The batch limit of a wallet; a malformed TON identity throws its `CONFIG_INVALID` (M18). */
+/** The batch limit of a wallet; a malformed TON identity throws its `CONFIG_INVALID`. */
 function limitsOf(wallet: WalletOptions, globalId: number): DriverLimits {
   if (wallet.ton !== undefined) resolveIdentity(wallet, globalId);
   return ONE_OUTPUT;
@@ -99,8 +101,8 @@ export const tonDriverFactory = (
 ): DriverFactory => ({
   async create(ctx): Promise<ChainDriver> {
     // First: a network that adds a capability TON lacks (`batch-transfer`, `block-scan`, …)
-    // or carries inconsistent data fails here, before any probe (F6-R15, M3).
-    // F6-R24, F6-R25: the handle's options too (`maxNetworkFee`); an unknown one is refused.
+    // or carries inconsistent data fails here, before any probe. The handle's options too
+    // (`maxNetworkFee`); an unknown one is refused.
     const config = tonNetworkConfig(ctx.chain, ctx.network, ctx.options);
     if (!ctx.indexer) {
       throw new ConfigError(
@@ -108,8 +110,8 @@ export const tonDriverFactory = (
         'TON needs an indexer provider (toncenter API v3); set chains.ton.indexer',
       );
     }
-    // M12: probes go on every transport this driver receives, before any traffic. Both
-    // expect the global id as parsed from the registry (F3-R12).
+    // Probes go on every transport this driver receives, before any traffic. Both expect
+    // the global id as parsed from the registry, so they compare values, never spellings.
     const identity = String(config.globalId);
     ctx.transport.setProbes(rpcProbes(identity));
     ctx.indexer.setProbes(indexerProbes(identity));
@@ -136,7 +138,7 @@ export const tonDriverFactory = (
       history: createTonHistory(ton),
       ext: { ton: { getSeqno: ext.ton.getSeqno, jettonWallet: ext.ton.jettonWallet } },
       limits: (wallet) => limitsOf(wallet, config.globalId),
-      // R34: a fresh SDK client on every call, over this driver's transport (D1).
+      // A fresh SDK client on every call, over this driver's transport.
       createNativeClient: () => makeNative(ctx.transport),
     };
   },

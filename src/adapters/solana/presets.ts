@@ -1,7 +1,7 @@
 /**
- * Solana provider presets (spec §11). Only URL templates verified against the provider's
- * own documentation are listed (Plan 5 appendix); a preset refuses every other cluster with
- * `CONFIG_INVALID`. Keyed URLs are `Secret`s, so the key never reaches logs or errors.
+ * Solana provider presets. Only URL templates verified against the provider's own
+ * documentation are listed; a preset refuses every other cluster with `CONFIG_INVALID`.
+ * Keyed URLs are `Secret`s, so the key never reaches logs or errors.
  */
 import { ConfigError } from '../../core/errors/error';
 import type { PresetInput, ProviderPreset } from '../../core/registry/providers';
@@ -19,13 +19,15 @@ const PUBLIC: Table = {
 };
 
 /**
- * The public RPC's published per-IP limits (A28): 100 requests per 10 s, 40 per 10 s for a
+ * The public RPC's published per-IP limits: 100 requests per 10 s, 40 per 10 s for a
  * single method, 40 concurrent connections, so 4 rps. The transport's bucket is per
  * endpoint, not per method, and the published per-method figure does not hold for
  * `getBlock`: devnet and testnet answered HTTP 429 (`Retry-After: 10`) after about 6
- * `getBlock` calls per 10 s in September 2026 (F5-R19, F5-R20). This rate does not keep a
- * block scan or a window proof under that; a scan waits out each 429 and falls behind, and
- * a window proof completes over many passes. A28 keeps the published rate here.
+ * `getBlock` calls per 10 s in September 2026. This rate does not keep a block scan or a
+ * window proof under that; a scan waits out each 429 and falls behind, and a window proof
+ * completes over many passes. The preset still keeps the published rate: a keyless preset
+ * sets only a rate its operator publishes, since a guessed one throttles for nothing or
+ * protects nothing.
  */
 const PUBLIC_RPS = 4;
 

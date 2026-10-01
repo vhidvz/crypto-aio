@@ -1,5 +1,6 @@
-// Plan 7 D10 (F4-R24, F6-R28, F4-R20 (2), F6-R22): a rate-limited probe keeps the last good
-// height and identity, and one forged far-future head no longer stales every view for good.
+// A rate-limited probe keeps the last good height and identity (keyless TronGrid and
+// toncenter answer probes HTTP 429 under load), and one forged far-future head never
+// stales every view for good.
 import { isStaleView } from '../../../src/core/transport/stale-view';
 import { drive } from '../../../src/testing/fake-clock';
 import {
@@ -37,7 +38,7 @@ const probes = {
     BigInt(await call.rpc<string>('eth_blockNumber')),
 };
 
-describe('rate-limited health probes (F4-R24, F6-R28)', () => {
+describe('rate-limited health probes', () => {
   it('keeps the last good height through a height-probe 429, so reads go on', async () => {
     const n = node(() => 100);
     const fake = new FakeFetch().route('https://a.example', n.handler);
@@ -117,7 +118,7 @@ describe('rate-limited health probes (F4-R24, F6-R28)', () => {
   });
 });
 
-describe('the height high-water mark (F4-R20 (2), F6-R22)', () => {
+describe('the height high-water mark', () => {
   function threeNodes(liar: () => number) {
     const honest = node(() => 100);
     const lying = node(liar);

@@ -256,7 +256,7 @@ describe('AdapterCatalog.load', () => {
   });
 });
 
-describe('duplicate plugin names (A18, A25)', () => {
+describe('duplicate plugin names', () => {
   // A factory that reuses its functions, as the built-in ones do: fresh objects around the
   // same function objects.
   const shared = manifest();
@@ -307,7 +307,7 @@ describe('duplicate plugin names (A18, A25)', () => {
     expect(catalogs.chains.list().map((c) => c.id)).toEqual(['testchain']);
   });
 
-  it('refuses two plugins whose closures capture different values (A25)', () => {
+  it('refuses two plugins whose closures capture different values', () => {
     const presetFor = (url: string): ProviderPreset => ({
       ...acme,
       endpoints: () => [{ url }],
@@ -324,7 +324,7 @@ describe('duplicate plugin names (A18, A25)', () => {
   const withValue = (value: unknown) =>
     ({ name: 'p', chains: [value] }) as unknown as Plugin;
 
-  it('compares data structurally, and functions and class instances by identity (A25)', () => {
+  it('compares data structurally, and functions and class instances by identity', () => {
     const same = () => 1;
     function bound(this: unknown): unknown {
       return this;
@@ -346,7 +346,7 @@ describe('duplicate plugin names (A18, A25)', () => {
     );
   });
 
-  it('sees symbol keys, non-enumerable keys and array holes, both ways (P25-R17)', () => {
+  it('sees symbol keys, non-enumerable keys and array holes, both ways', () => {
     const both = (x: unknown, y: unknown) => [
       samePlugin(withValue(x), withValue(y)),
       samePlugin(withValue(y), withValue(x)),

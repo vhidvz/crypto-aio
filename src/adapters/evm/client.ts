@@ -1,5 +1,5 @@
 /**
- * The SDK-free half of every `EvmClient`: the JSON-RPC methods of spec §15 and the
+ * The SDK-free half of every `EvmClient`: the JSON-RPC methods the driver calls and the
  * normalization of their answers into plain data. A subclass supplies the SDK half: the
  * `send` bridge (the SDK's own JSON-RPC primitive, wired to the transport) and the codec.
  *
@@ -7,7 +7,7 @@
  * issue extra calls under the wrong tags (ethers `broadcastTransaction` also reads the block
  * number; `getTransactionReceipt` may fetch the transaction), throw on not-found (web3
  * `TransactionNotFound`) or drop chain fields the fees need (OP `l1Fee`, Arbitrum
- * `gasUsedForL1`). So one driver call is exactly one tagged JSON-RPC request (R41).
+ * `gasUsedForL1`). So one driver call is exactly one tagged JSON-RPC request.
  */
 import { secp256k1 } from '@noble/curves/secp256k1';
 import type { DisposableNativeClient } from '../../core/driver/types';
@@ -32,7 +32,7 @@ import type {
 export const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 /**
- * R58: the 65-byte uncompressed form of a secp256k1 public key, accepted only as a 33-byte
+ * The 65-byte uncompressed form of a secp256k1 public key, accepted only as a 33-byte
  * compressed key (`0x02`/`0x03`) or a 65-byte `0x04` key that decodes to a point on the
  * curve. Both clients derive addresses from its result, never from the caller's bytes: an
  * SDK may read 32 bytes as a *private* key or 64 bytes as an unprefixed public key, and
@@ -176,7 +176,7 @@ export abstract class EvmClientBase implements EvmClient {
   }
 
   /**
-   * R61: a transaction for another chain is refused before any codec work. The SDKs
+   * A transaction for another chain is refused before any codec work. The SDKs
    * disagree about it: ethers commits to `tx.chainId`, web3 to the client's chain id (and
    * throws a plain `Error` for a type-2 mismatch), so without this guard the two clients
    * would produce different signing bytes for the same fields.
@@ -313,14 +313,14 @@ export abstract class EvmClientBase implements EvmClient {
       transactions: this.#list(json.transactions, 'block transactions').map((t) =>
         this.#tx(object(t, 'transaction')),
       ),
-      // Only a hint for scans (R90): a missing or malformed bloom may hold anything.
+      // Only a hint for scans: a missing or malformed bloom may hold anything.
       ...(typeof logsBloom === 'string' && BLOOM.test(logsBloom)
         ? { logsBloom: logsBloom.toLowerCase() }
         : {}),
     };
   }
 
-  /** M2: an answer about another transaction is malformed, never another's facts. */
+  /** An answer about another transaction is malformed, never another's facts. */
   async getTransaction(txHash: string, tags: EvmCallTags): Promise<EvmTx | null> {
     const result = await this.send('eth_getTransactionByHash', [txHash], tags);
     if (result === null) return null;
@@ -329,7 +329,7 @@ export abstract class EvmClientBase implements EvmClient {
     return tx;
   }
 
-  /** M2: an answer about another transaction is malformed, never another's receipt. */
+  /** An answer about another transaction is malformed, never another's receipt. */
   async getReceipt(txHash: string, tags: EvmCallTags): Promise<EvmReceipt | null> {
     const result = await this.send('eth_getTransactionReceipt', [txHash], tags);
     if (result === null) return null;
@@ -444,7 +444,7 @@ export abstract class EvmClientBase implements EvmClient {
           : this.#address(json.to, 'recipient'),
       nonce: quantity(json.nonce, 'nonce'),
       value: quantity(json.value, 'value'),
-      // M2: no calldata field is malformed, never an empty call (older nodes say `data`).
+      // No calldata field is malformed, never an empty call (older nodes say `data`).
       input: data(json.input ?? json.data, 'input'),
       type: Number(optionalQuantity(json.type, 'type') ?? 0n),
       gasLimit: quantity(json.gas, 'gas limit'),

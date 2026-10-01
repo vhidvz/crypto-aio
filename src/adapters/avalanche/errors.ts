@@ -6,15 +6,17 @@
  * `vms/components/avax`, `vms/platformvm/utxo`, `vms/secp256k1fx`). A node answers a
  * duplicate with the id, as a success; the text is still recognized here.
  *
- * Lesson 21: a node's rejection is a claim. Every transaction this driver builds is checked
- * before it is signed and its signature verified by the core, so no answer here is
- * `rejected`: each is a `refused` (state-dependent, never terminal) with a code, and the core
- * first looks up the Attempt's own id (spec §8.2). Reasons are fixed texts (R24): the node's
- * carry ids and amounts.
+ * A node's rejection is a claim: a lone endpoint can claim one and relay the bytes
+ * anyway, and a terminal `rejected` would free the inputs for a retry that pays twice.
+ * Every transaction this driver builds is checked before it is signed and its signature
+ * verified by the core, so no answer here is `rejected`: each is a `refused`
+ * (state-dependent, never terminal) with a code, and the core first looks up the
+ * Attempt's own id. Reasons are fixed texts: the node's carry ids and amounts, which a
+ * stored reason must never hold.
  */
 import type { BroadcastResult } from '../../core/driver/types';
 
-/** Lesson 20: only a message's head is read. */
+/** Only a message's head is read, so an oversized node text costs a bounded scan. */
 const MAX_MESSAGE = 1_024;
 
 const RULES: readonly (readonly [RegExp, BroadcastResult])[] = [

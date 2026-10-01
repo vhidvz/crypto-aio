@@ -45,6 +45,14 @@ decimals here (a `bigint` amount is in nAVAX), not the C-Chain's 18.
   sent again.
 - **No replace or cancel.** AvalancheGo keeps the first of two conflicting transactions,
   and an accepted one is final.
+- **Broadcasts.** A node's refusal never ends a transfer as `TX_REJECTED`: the driver checks
+  every transaction before it is signed, so each refusal is `refused` (`FEE_TOO_LOW` or
+  `TX_REFUSED`, with a fixed reason, never the node's text), and the transfer stalls with
+  its inputs held, since the node may have relayed it. So one lying endpoint cannot free
+  your outputs for a second payment. Never retry the payment as a new transfer (a new
+  idempotency key): it spends other outputs, and both can be accepted. Repeat the call with
+  the same key, or use `rebroadcast`; the transfer ends once a node accepts it, or `failed`
+  (`TX_REPLACED`) once a transaction that spent one of its inputs is final.
 - **Reading.** `getTransaction`, scans and history decode each plain AVAX output to one
   address as a transfer (`out:<index>`); the senders are the addresses the signatures
   recover to. An export, a staking or subnet transaction, a reward, an Avalanche native

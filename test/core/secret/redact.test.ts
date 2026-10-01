@@ -114,7 +114,7 @@ describe('redaction', () => {
     expect(inspect(clean)).not.toContain('SECRETKEY');
   });
 
-  it('sanitizeError is total: unprintable throwables never make it throw (M5)', () => {
+  it('sanitizeError is total: unprintable throwables never make it throw', () => {
     const hostile = {
       toString() {
         throw new Error('no');
@@ -132,7 +132,7 @@ describe('redaction', () => {
     expect(sanitizeError(Symbol('custody')).message).toBe('Symbol(custody)');
   });
 
-  it('sanitizeError redacts URLs in the error name and code (M5)', () => {
+  it('sanitizeError redacts URLs in the error name and code', () => {
     const err = new Error('boom');
     err.name = 'Fault at https://x.io/SECRETKEY1234567890abc';
     (err as Error & { code?: string }).code = 'E https://x.io/SECRETKEY1234567890abc';

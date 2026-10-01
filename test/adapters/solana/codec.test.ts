@@ -68,7 +68,8 @@ const VECTORS = [
   },
 ];
 
-describe('the @solana/web3.js codec (lesson 11)', () => {
+// Its vectors are cross-checked against an independent encoder (`support/vectors.ts`).
+describe('the @solana/web3.js codec', () => {
   // Codec work needs no transport; only `createNative` uses one.
   const codec = createWeb3Codec(undefined as never);
 
@@ -136,7 +137,7 @@ describe('the @solana/web3.js codec (lesson 11)', () => {
   });
 });
 
-describe('the wire format on out-of-range values and untrusted bytes (lessons 19, 20)', () => {
+describe('the wire format on out-of-range values and untrusted bytes', () => {
   const refused = (code: string, message: string, run: () => unknown) =>
     expect(run).toThrow(expect.objectContaining({ code, message }));
 
@@ -223,7 +224,7 @@ describe('the wire format on out-of-range values and untrusted bytes (lessons 19
     );
   });
 
-  it('reads back a signed transaction whole: one signature per required signer (F5-R15)', () => {
+  it('reads back a signed transaction whole: one signature per required signer', () => {
     const one = compileLegacy(KEY_ADDRESS, BLOCKHASH, [
       systemTransfer(KEY_ADDRESS, RECIPIENT, 1n),
     ]);
@@ -254,7 +255,7 @@ describe('the wire format on out-of-range values and untrusted bytes (lessons 19
   });
 });
 
-describe('the native Connection (R34, spec §11)', () => {
+describe('the native Connection', () => {
   it('bridges a fresh Connection per call to the transport, writes tagged as broadcasts', async () => {
     const tags: unknown[] = [];
     const transport = {

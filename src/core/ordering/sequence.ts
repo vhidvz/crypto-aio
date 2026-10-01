@@ -114,7 +114,7 @@ export class SequenceCoordinator {
   }
 
   /**
-   * B111: a release that throws, synchronously or not, is reported and absorbed, and so
+   * A release that throws, synchronously or not, is reported and absorbed, and so
    * is the observer's own failure, including an async observer's rejection.
    */
   async #release(lease: Lease): Promise<void> {

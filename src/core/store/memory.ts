@@ -144,8 +144,8 @@ function applyPatch(
   // applied, so an accessor (a getter or Proxy trap) on the patch object can't change
   // what keys are visible between validation and application.
   const entries = Object.entries(patch) as readonly (readonly [string, unknown])[];
-  // M6: the caller's `clear` list is read once too, so what is validated is what is cleared.
-  // N7: only an array is a list; a number, an object or a Set would not survive a serialized
+  // The caller's `clear` list is read once too, so what is validated is what is cleared.
+  // Only an array is a list; a number, an object or a Set would not survive a serialized
   // store as a list either, so it is refused rather than read as `[]`.
   const clear = entries.find(([key]) => key === 'clear')?.[1];
   if (clear !== undefined && !Array.isArray(clear)) {

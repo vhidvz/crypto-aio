@@ -117,7 +117,7 @@ describe('the built-in UTXO plugin', () => {
     );
   });
 
-  it('refuses a handle with a provider but no indexer where no public preset serves one (F3-R16 M1)', async () => {
+  it('refuses a handle with a provider but no indexer where no public preset serves one', async () => {
     // regtest has no public preset: the manifest's `requiresIndexer` refuses the handle
     // before any driver is made, instead of the "no provider" refusal above.
     const { aio } = container();
@@ -159,7 +159,7 @@ describe('the built-in UTXO plugin', () => {
     }
   });
 
-  it('ships frozen data: the manifest, its peer list and the peer entries (R56)', () => {
+  it('ships frozen data: the manifest, its peer list and the peer entries', () => {
     const { adapters, chains } = utxoPlugin();
     expect(adapters).toEqual([utxoManifest]);
     expect(chains).toEqual([BITCOIN_CHAIN]);
@@ -170,7 +170,9 @@ describe('the built-in UTXO plugin', () => {
     expect(Object.isFrozen(UTXO_PEER_DEPENDENCIES['bitcoinjs-lib'])).toBe(true);
   });
 
-  it('ships the frozen Esplora presets, none with a guessed rate limit (A28)', () => {
+  // A keyless preset sets a rate limit only where its operator publishes one: a guessed
+  // rate throttles for nothing or protects nothing.
+  it('ships the frozen Esplora presets, none with a guessed rate limit', () => {
     const { presets } = utxoPlugin();
     expect(presets).toBe(UTXO_PRESETS);
     expect(presets?.every((preset) => Object.isFrozen(preset))).toBe(true);
@@ -210,7 +212,7 @@ describe('the built-in UTXO plugin', () => {
   });
 });
 
-describe('the built-in UTXO plugin registered again (A18)', () => {
+describe('the built-in UTXO plugin registered again', () => {
   it('keeps use() idempotent for the same plugin, and refuses another named utxo', async () => {
     // The composition root already registered utxoPlugin(); these are fresh copies of it.
     expect(samePlugin(utxoPlugin(), utxoPlugin())).toBe(true);

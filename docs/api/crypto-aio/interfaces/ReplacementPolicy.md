@@ -2,7 +2,7 @@
 
 # Interface: ReplacementPolicy
 
-Defined in: [src/core/driver/types.ts:235](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L235)
+Defined in: [src/core/driver/types.ts:240](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L240)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:235](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **cancel**: `boolean`
 
-Defined in: [src/core/driver/types.ts:237](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L237)
+Defined in: [src/core/driver/types.ts:242](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L242)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/driver/types.ts:237](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **replace**: `boolean`
 
-Defined in: [src/core/driver/types.ts:236](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L236)
+Defined in: [src/core/driver/types.ts:241](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L241)
 
 ## Methods
 
@@ -32,12 +32,12 @@ Defined in: [src/core/driver/types.ts:236](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **buildCancel**(`previous`, `ctx`, `fee?`): `Promise`\<[`UnsignedTx`](UnsignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:249](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L249)
+Defined in: [src/core/driver/types.ts:254](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L254)
 
 A transaction for `previous`'s slot that does not execute the transfer (e.g. a
 self-transfer). Without `fee` it pays the network's minimum bump over `previous`; with
 one, that fee, refused (FEE_TOO_LOW) below the bump. `previous` may itself be a cancel
-(R30: a repeat cancel bumps a stuck one).
+(a repeat cancel bumps a stuck one).
 
 #### Parameters
 
@@ -65,7 +65,7 @@ one, that fee, refused (FEE_TOO_LOW) below the bump. `previous` may itself be a 
 
 > `optional` **buildReplacement**(`previous`, `fee`, `ctx`): `Promise`\<[`UnsignedTx`](UnsignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:238](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L238)
+Defined in: [src/core/driver/types.ts:243](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L243)
 
 #### Parameters
 

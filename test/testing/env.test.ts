@@ -111,7 +111,7 @@ describe('createFakeEnv restart()', () => {
 
   it('killPrevious fences a fetch already in flight (unresolved) so the old read never settles', async () => {
     const env = await createFakeEnv();
-    // N8: exercises the fetch wrapper directly, rather than through a whole `bc` read, so
+    // Exercises the fetch wrapper directly, rather than through a whole `bc` read, so
     // there's no doubt which fenced call is under test.
     const fetchFn = containerOf(env.aio).runtime.transport.fetch as typeof fetch;
     let settled = false;
@@ -160,7 +160,7 @@ describe('createFakeEnv restart()', () => {
 
     await env.restart({ killPrevious: true });
 
-    // N4/N2: non-body access still works and doesn't throw "Illegal invocation" — the wrapper
+    // Non-body access still works and doesn't throw "Illegal invocation" — the wrapper
     // runs the real Response's own getters with the real Response as `this`.
     expect(response.status).toBe(200);
     expect(response.ok).toBe(true);
@@ -202,7 +202,7 @@ describe('createFakeEnv restart()', () => {
     expect(settled).toBe(false);
   });
 
-  it("N-A: an old generation's async store/signer calls issued after the kill never settle and never throw", async () => {
+  it("an old generation's async store/signer calls issued after the kill never settle and never throw", async () => {
     const env = await createFakeEnv();
     const oldSigner = containerOf(env.aio).effective().signers[env.signer.id];
     if (!oldSigner) throw new Error('expected the fenced signer to be registered');
@@ -230,7 +230,7 @@ describe('createFakeEnv restart()', () => {
     expect(() => inspect(oldSigner)).not.toThrow();
   });
 
-  it('N-A: a synchronous method on a fenced store throws StateError once the generation is killed; port methods never settle', async () => {
+  it('a synchronous method on a fenced store throws StateError once the generation is killed; port methods never settle', async () => {
     const memory = createMemoryStores(new FakeClock());
     // Non-`async` arrow functions returning promises: the port allowlist, not the function
     // kind, decides that `get`/`put` are async.
@@ -256,7 +256,7 @@ describe('createFakeEnv restart()', () => {
     expect(settled).toBe(false);
   });
 
-  it('N-B: a signer supplied through options.aio.signers is fenced too, alongside the default one', async () => {
+  it('a signer supplied through options.aio.signers is fenced too, alongside the default one', async () => {
     const cold = localSigner.generate({ curves: ['secp256k1'], id: 'cold' }).signer;
     const env = await createFakeEnv({ aio: { signers: { cold } } });
     const signers = containerOf(env.aio).effective().signers;
@@ -277,7 +277,7 @@ describe('createFakeEnv restart()', () => {
     expect(settled).toBe(false);
   });
 
-  it("N-C: killPrevious fences a Response's clone(), blob() and body stream reads", async () => {
+  it("killPrevious fences a Response's clone(), blob() and body stream reads", async () => {
     const env = await createFakeEnv();
     const fetchFn = containerOf(env.aio).runtime.transport.fetch as typeof fetch;
     const post = () =>
@@ -318,7 +318,7 @@ describe('createFakeEnv restart()', () => {
     expect(settled).toEqual([]);
   });
 
-  it('env.stores is exactly the fenced store instances the container itself uses (N3)', async () => {
+  it('env.stores is exactly the fenced store instances the container itself uses', async () => {
     const env = await createFakeEnv();
     const runtimeStores = containerOf(env.aio).runtime.stores;
     expect(runtimeStores.operations).toBe(env.stores.operations);
@@ -327,7 +327,7 @@ describe('createFakeEnv restart()', () => {
     expect(runtimeStores.cursors).toBe(env.stores.cursors);
   });
 
-  it('N3: the fenced clock/stores/transport always win, even over a forced options.aio', async () => {
+  it('the fenced clock/stores/transport always win, even over a forced options.aio', async () => {
     const rogueClock: Clock = {
       now: () => 0,
       sleep: () => new Promise(() => undefined),

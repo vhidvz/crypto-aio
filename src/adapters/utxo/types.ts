@@ -1,12 +1,12 @@
 /**
  * SDK-free types of the UTXO family: the `ext.utxo` API, fee details and overrides, wallet
- * options, and the Esplora wire types the driver reads (spec §15). Nothing here imports an
+ * options, and the Esplora wire types the driver reads. Nothing here imports an
  * SDK, so the composition root can export these types.
  */
 import type { FeeSpeed } from '../../core/model/fee';
 import type { CallOptions } from '../../core/transport/types';
 
-// R37: augment the registries through the package entry, as users do with 'crypto-aio'.
+// Augment the registries through the package entry, as users do with 'crypto-aio'.
 declare module '../../index' {
   interface ChainRegistry {
     bitcoin: {
@@ -29,10 +29,10 @@ export interface AddressParams {
 /** The address (and so the input) type of a UTXO wallet; `p2wpkh` is the default. */
 export type UtxoAddressType = 'p2wpkh' | 'p2sh-p2wpkh' | 'p2pkh' | 'p2tr';
 
-/** Every standard output type a UTXO transfer may pay to (spec §6.4 variants). */
+/** Every standard output type a UTXO transfer may pay to. */
 export type UtxoOutputType = 'p2pkh' | 'p2sh' | 'p2wpkh' | 'p2wsh' | 'p2tr';
 
-/** `WalletConfig.utxo` (spec §9). */
+/** `WalletConfig.utxo`. */
 export interface UtxoWalletOptions {
   readonly addressType?: UtxoAddressType;
   /**
@@ -41,8 +41,9 @@ export interface UtxoWalletOptions {
    */
   readonly changeAddress?: string;
   /**
-   * A19: send change to a `changeAddress` the wallet's key does not derive (default `false`).
-   * An additive deviation from spec §9: without it, a valid but mistyped address is refused.
+   * Send change to a `changeAddress` the wallet's key does not derive (default `false`).
+   * Change sent to a valid but foreign address is lost, so without it a mistyped address
+   * is refused.
    */
   readonly allowExternalChangeAddress?: boolean;
 }
@@ -99,7 +100,7 @@ export interface UtxoSelectionPreview {
   readonly sufficient: boolean;
 }
 
-/** `bc.ext.utxo`: the UTXO family extension (spec §5.5). */
+/** `bc.ext.utxo`: the UTXO family extension. */
 export interface UtxoExt {
   readonly utxo: {
     /** Unspent outputs of an address (indexer), confirmed first, oldest first. */
@@ -109,7 +110,7 @@ export interface UtxoExt {
   };
 }
 
-/** The transport tags every UTXO I/O call carries (R41). */
+/** The transport tags every UTXO I/O call carries (the `ChainDriver` contract table). */
 export type UtxoCallTags = Pick<
   CallOptions,
   'purpose' | 'retry' | 'quorum' | 'quorumKey' | 'fanout' | 'signal'

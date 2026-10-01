@@ -110,7 +110,7 @@ describe('the scripted Solana node', () => {
     );
   });
 
-  it('includes a transaction up to lastValidBlockHeight + 1, never later (I1)', async () => {
+  it('includes a transaction up to lastValidBlockHeight + 1, never later', async () => {
     const { node, rpc, tx, send } = setup({ blockhashValidity: 3 });
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.produce(1);
@@ -163,7 +163,7 @@ describe('the scripted Solana node', () => {
     expect(node.sendCount(id)).toBe(3);
   });
 
-  it('verifies signatures under preflight (-32002); without it, forwards bytes that never land (M1)', async () => {
+  it('verifies signatures under preflight (-32002); without it, forwards bytes that never land', async () => {
     const { node, tx, send } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.produce(1);
@@ -380,7 +380,7 @@ describe('the scripted Solana node', () => {
     });
   });
 
-  it('fails long-term-storage reads below the local ledger as agave 4.3.0 does (R1)', async () => {
+  it('fails long-term-storage reads below the local ledger as agave 4.3.0 does', async () => {
     const node = new ScriptedSolanaNode({ clock: new FakeClock() });
     const url = node.endpoint('bt', { bigtableFailsBelow: 4n });
     node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -419,7 +419,7 @@ describe('the scripted Solana node', () => {
     expect((await call('getTransaction', [id, options])).result).toBeNull();
   });
 
-  it('answers an unknown history cursor with -32020 (M2)', async () => {
+  it('answers an unknown history cursor with -32020', async () => {
     const { node, rpc } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.produce(1);
@@ -430,7 +430,8 @@ describe('the scripted Solana node', () => {
   });
 });
 
-describe('the scripted Solana node: runtime and program rules (lesson 8)', () => {
+// A test double models the real node's rules exactly and deterministically.
+describe('the scripted Solana node: runtime and program rules', () => {
   it('applies each transaction atomically: a refusal leaves no trace, even across a fork', async () => {
     const { node, tx, send } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -485,7 +486,7 @@ describe('the scripted Solana node: runtime and program rules (lesson 8)', () =>
     ]).toEqual([undefined, 10_000_000_000n - 5_000n, undefined]);
   });
 
-  it("keeps a landed transaction's meta as it landed, whatever is scripted later (I1)", async () => {
+  it("keeps a landed transaction's meta as it landed, whatever is scripted later", async () => {
     const { node, rpc, tx, send } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.createMint(MINT, 6);
@@ -697,12 +698,12 @@ describe('the scripted Solana node: runtime and program rules (lesson 8)', () =>
   });
 });
 
-describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
+describe("the scripted Solana node: agave's RPC surface", () => {
   const TYPE = 'solana_transaction::versioned::VersionedTransaction';
 
   // CPU-bound: under 3 s alone but 6.6–8.9 s under load, so it has its own budget rather
-  // than Jest's 5 s default (final-wave re-review N2).
-  it('refuses oversized transactions before anything else, with or without preflight (M1)', async () => {
+  // than Jest's 5 s default.
+  it('refuses oversized transactions before anything else, with or without preflight', async () => {
     const { node, rpc } = setup();
     node.produce(1);
     const error = async (data: string, encoding: string, method = 'sendTransaction') =>
@@ -737,7 +738,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     });
   }, 30_000);
 
-  it("checks a blockhash's age in a simulation six blocks short, as agave forwards (M2)", async () => {
+  it("checks a blockhash's age in a simulation six blocks short, as agave forwards", async () => {
     const { node, rpc, tx, send } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.produce(1);
@@ -786,7 +787,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     expect(await fee()).toBeNull();
   });
 
-  it('refuses `processed` where agave does, and a pruned skipped slot is cleaned up (M3)', async () => {
+  it('refuses `processed` where agave does, and a pruned skipped slot is cleaned up', async () => {
     const node = new ScriptedSolanaNode({ clock: new FakeClock() });
     const main = node.endpoint('main');
     const pruned = node.endpoint('pruned', { firstAvailableHeight: 3 });
@@ -827,7 +828,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     expect(await call(main, 'getBlock', [2, header])).toMatchObject({ code: -32007 });
   });
 
-  it("honours `encoding` as agave does: base58 unless told, accounts' binary under 128 bytes (M4)", async () => {
+  it("honours `encoding` as agave does: base58 unless told, accounts' binary under 128 bytes", async () => {
     const { node, rpc, tx } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.createMint(MINT, 6);
@@ -913,7 +914,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     });
   });
 
-  it('accepts only what the codec produces (M6)', async () => {
+  it('accepts only what the codec produces', async () => {
     const { node, rpc, tx } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.produce(1);
@@ -989,7 +990,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     expect(await refused(bytes)).toBeUndefined();
   });
 
-  it("knows each mint's token program, and the ATA program's accounts (M7)", async () => {
+  it("knows each mint's token program, and the ATA program's accounts", async () => {
     const { node, rpc, tx, send } = setup();
     const MINT_2022 = DEVNET_GENESIS;
     node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -1064,7 +1065,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     }
   });
 
-  it('quotes prioritization fees as exact u64s, one per recent block (M8)', async () => {
+  it('quotes prioritization fees as exact u64s, one per recent block', async () => {
     const node = new ScriptedSolanaNode({
       clock: new FakeClock(),
       prioritizationFees: [2n ** 64n - 1_000n, 5, 7n],
@@ -1089,7 +1090,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     );
   });
 
-  it('runs a program out of compute units as agave does: builtins exceed, programs fail to complete (M5)', async () => {
+  it('runs a program out of compute units as agave does: builtins exceed, programs fail to complete', async () => {
     const { node, tx, send } = setup();
     node.fund(KEY_ADDRESS, 10_000_000_000n);
     node.createMint(MINT, 6);
@@ -1139,7 +1140,7 @@ describe("the scripted Solana node: agave's RPC surface (F5-R5)", () => {
     });
   });
 
-  it('names its first available block, and knows the native mint, as agave does (Task 6)', async () => {
+  it('names its first available block, and knows the native mint, as agave does', async () => {
     const node = new ScriptedSolanaNode({ clock: new FakeClock() });
     const urls = {
       main: node.endpoint('main'),
@@ -1327,7 +1328,7 @@ describe('the scripted Solana node behind a real transport', () => {
     });
   });
 
-  it("logs like agave, so a long failure outgrows the transport's data cut and its text decides (M10)", async () => {
+  it("logs like agave, so a long failure outgrows the transport's data cut and its text decides", async () => {
     const t = nodeTransport();
     const { node } = t;
     node.fund(KEY_ADDRESS, 10_000_000_000n);
@@ -1414,7 +1415,7 @@ describe('the scripted Solana node behind a real transport', () => {
     ]);
   });
 
-  it('builds its transport with a fixed id and fixed jitter (lesson 1, R46)', async () => {
+  it('builds its transport with a fixed id and fixed jitter', async () => {
     const random = jest.spyOn(Math, 'random');
     try {
       const t = nodeTransport({}, ['a', 'b']);

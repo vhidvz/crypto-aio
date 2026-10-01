@@ -129,7 +129,7 @@ describe('scanner', () => {
     });
   });
 
-  it('rolls back or stops on a quorum, never on one endpoint serving a fork (R33)', async () => {
+  it('rolls back or stops on a quorum, never on one endpoint serving a fork', async () => {
     const env = await createFakeEnv({
       endpoints: ['liar', 'honest'],
       chain: { finalityDepth: 20 },
@@ -431,7 +431,7 @@ describe('scanner cursor and delivery guarantees', () => {
     const event = await take(env, iterator);
     expect(event).toMatchObject({ type: 'block', block: { height: 3n } });
     await event.ack();
-    // M4: validation refills the window from the chain below the checkpoint.
+    // Validation refills the window from the chain below the checkpoint.
     expect((await env.stores.cursors.get(key))?.cursor.recent).toEqual(
       [0n, 1n, 2n, 3n].map((height) => checkpoint(env, height)),
     );
@@ -443,7 +443,7 @@ describe('scanner cursor and delivery guarantees', () => {
     });
   });
 
-  it('refills the window of a validated reset checkpoint, so an in-window reorg rolls back (M4)', async () => {
+  it('refills the window of a validated reset checkpoint, so an in-window reorg rolls back', async () => {
     const env = await createFakeEnv({ chain: { finalityDepth: 20 } });
     env.chain.mine(5);
     const key = 'default:fakechain:local:refilled';
@@ -547,7 +547,7 @@ describe('scanner cursor and delivery guarantees', () => {
 describe('scanner stale-view guard', () => {
   /**
    * A cursor at h2 whose block was reorged, over a stub transport with this lag tolerance.
-   * I2: the network's own `networkLag` contradicts it and must never be read.
+   * The network's own `networkLag` contradicts it and must never be read.
    */
   async function reorgedCursor(maxLagBlocks: number, networkLag: number) {
     const clock = new FakeClock();
@@ -614,7 +614,7 @@ describe('scanner stale-view guard', () => {
     });
   });
 
-  it("takes its lag tolerance from the transport's effective maxLagBlocks (I2)", async () => {
+  it("takes its lag tolerance from the transport's effective maxLagBlocks", async () => {
     // transport.maxLagBlocks: 20, and this view is 10 blocks behind the verified height.
     const { clock, view, iterator } = await reorgedCursor(20, 2);
     view.highest = 12n;
@@ -685,7 +685,7 @@ describe('address history', () => {
   });
 });
 
-describe('transfers of an unresolvable asset (R35)', () => {
+describe('transfers of an unresolvable asset', () => {
   const tokens = {
     empty: { standard: 'erc20', contract: 'empty' },
     broken: { standard: 'erc20', contract: 'broken' },

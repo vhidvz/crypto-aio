@@ -6,7 +6,8 @@
  */
 import type { CallOptions } from '../../core/transport/types';
 
-// R37: augment the registries through the package entry, as users do with 'crypto-aio'.
+// Augment the registries through the package entry, as users do with 'crypto-aio', so a
+// user's own augmentation and this one merge in any file order.
 declare module '../../index' {
   interface ChainRegistry {
     'avalanche-x': { family: 'avalanche'; network: 'mainnet' | 'fuji' };
@@ -71,7 +72,7 @@ export interface AvalancheUnspent {
   readonly spendable: boolean;
 }
 
-/** `bc.ext.avalanche`: the Avalanche family extension (spec §5.5). */
+/** `bc.ext.avalanche`: the Avalanche family extension. */
 export interface AvalancheExt {
   readonly avalanche: {
     /** The outputs an address owns on this chain (the node's UTXO set), largest first. */
@@ -79,7 +80,10 @@ export interface AvalancheExt {
   };
 }
 
-/** The transport tags every Avalanche I/O call carries (R41). */
+/**
+ * The transport tags every Avalanche I/O call carries: the purpose and retry class the
+ * `ChainDriver` contract table gives each method.
+ */
 export type AvalancheCallTags = Pick<
   CallOptions,
   'purpose' | 'retry' | 'quorum' | 'quorumKey' | 'fanout' | 'signal' | 'exactIntegers'

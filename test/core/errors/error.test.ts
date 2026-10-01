@@ -33,7 +33,7 @@ describe('CryptoAioError', () => {
     expect(createError('TIMEOUT', 'late').category).toBe('timeout');
   });
 
-  it('catalogues STATE_UNRECORDED as a retryable state error (R27)', () => {
+  it('catalogues STATE_UNRECORDED as a retryable state error', () => {
     const e = createError('STATE_UNRECORDED', 'not recorded');
     expect(e).toBeInstanceOf(StateError);
     expect(e).toMatchObject({ category: 'state', retryable: true, ambiguous: false });

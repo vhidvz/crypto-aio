@@ -29,7 +29,7 @@ describe('the UTXO driver factory', () => {
     expect(driver.limits?.({})).toEqual({ maxOutputs: MAX_OUTPUTS });
   });
 
-  it('probes both transports with the genesis hash and disables an endpoint of another network (M12)', async () => {
+  it('probes both transports with the genesis hash and disables an endpoint of another network', async () => {
     const good = await utxoHarness();
     await withDriver(good);
     await good.run(good.transport.refreshHealth());
@@ -48,7 +48,7 @@ describe('the UTXO driver factory', () => {
     expect(other.indexer.status().map((s) => s.state)).toEqual(['disabled']);
   });
 
-  it('sets the probes exactly once on each transport, before any traffic (M12)', async () => {
+  it('sets the probes exactly once on each transport, before any traffic', async () => {
     const h = await utxoHarness();
     const seen: string[] = [];
     const counting = (name: string, inner: Transport): Transport =>

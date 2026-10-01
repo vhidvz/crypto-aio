@@ -7,7 +7,8 @@
  */
 import type { TronWeb } from 'tronweb';
 
-// R37: through the package entry. SDK types appear only here (spec §5.6).
+// Through the package entry, as users augment it. SDK types appear only here, so every
+// other module's typings stay SDK-free.
 declare module '../../index' {
   interface NativeClientMap {
     tronweb: TronWeb;

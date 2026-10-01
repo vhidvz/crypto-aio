@@ -1,4 +1,4 @@
-// Lazy loading (spec §4): only the manifest's `load()` may require @avalabs/avalanchejs. Each
+// Lazy loading: only the manifest's `load()` may require @avalabs/avalanchejs. Each
 // check runs in a fresh module registry where requiring an SDK is recorded, then served.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

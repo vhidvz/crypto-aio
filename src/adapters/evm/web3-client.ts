@@ -1,8 +1,8 @@
 /**
  * `Web3Client`: the web3 v4 strategy. Its I/O goes through an EIP-1193 provider object whose
- * `request` hands every call to the core transport (spec §11), one request manager per call
- * so each request carries that call's tags (R41). ChainSafe sunset web3.js in 2025 (4.16.0
- * is the last release, R44); ethers stays the default.
+ * `request` hands every call to the core transport, one request manager per call so each
+ * request carries that call's tags. ChainSafe sunset web3.js in 2025 (4.16.0 is the last
+ * release); ethers stays the default.
  */
 import { Web3, core, eth, utils } from 'web3';
 import type { DisposableNativeClient } from '../../core/driver/types';
@@ -27,8 +27,9 @@ interface Eip1193Provider {
 function eip1193(
   call: (method: string, params: unknown) => Promise<unknown>,
 ): Eip1193Provider {
-  // M10: an async function, so web3 4.16 takes its EIP-1193 path (it checks the
-  // function's constructor name), not its legacy request-provider path.
+  // An async function, so web3 4.16 takes its EIP-1193 path (it checks the function's
+  // constructor name), not its legacy request-provider path. The EIP-1193 path arms no
+  // timer, so a driver request never waits on one.
   return { request: async ({ method, params }) => call(method, params) };
 }
 
@@ -111,7 +112,7 @@ export class Web3Client extends EvmClientBase {
         try {
           return await manager.send({ method, params: [...params] } as never);
         } catch (error) {
-          // R61: web3 reads an answer shaped like a JSON-RPC error as an error of its own.
+          // web3 reads an answer shaped like a JSON-RPC error as an error of its own.
           // A transport failure is put back by `throughSdk`; anything else is the answer's.
           if (isCryptoAioError(error)) throw error;
           throw new ProviderError('PROVIDER_UNAVAILABLE', 'malformed JSON-RPC answer');
@@ -134,7 +135,7 @@ export class Web3Client extends EvmClientBase {
   }
 
   addressFromPublicKey(publicKey: Uint8Array): string {
-    // R58: the shared strict decode, so both clients refuse exactly the same keys.
+    // The shared strict decode, so both clients refuse exactly the same keys.
     const digest = utils.keccak256(uncompressedPublicKey(publicKey).slice(1));
     return utils.toChecksumAddress(`0x${digest.slice(-40)}`);
   }

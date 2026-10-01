@@ -1,6 +1,7 @@
 /**
- * Built-in EVM chains and networks (spec §2). Every value is verified against the source
- * named in the Plan 2 appendix, or is a documented library policy:
+ * Built-in EVM chains and networks. Every value is verified against the chain's own
+ * documentation or its EIP, or is a documented library policy; what could not be verified
+ * (an Avalanche explorer, most testnets' block times) is left out:
  * - `defaultConfirmations: 1`: `waitForConfirmation` waits for inclusion by default;
  *   credit deposits on `final`.
  * - `reorgWindow: 128` and `fallbackConfirmations: 128`: the library's scanner window. The
@@ -136,7 +137,7 @@ export const EVM_CHAINS: readonly ChainInfo[] = deepFreeze([
     symbol: 'POL',
     name: 'POL',
     feeModel: 'evm-1559',
-    // bor, Polygon PoS's client, adds system logs to receipts (R69, R70).
+    // bor, Polygon PoS's client, adds system logs to receipts.
     params: { systemLogs: 'bor' },
     networks: [
       {

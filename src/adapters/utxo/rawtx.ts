@@ -1,5 +1,5 @@
 /**
- * A linear, SDK-free reader of untrusted transaction bytes (F3-R24 F2, lesson 20).
+ * A linear, SDK-free reader of untrusted transaction bytes.
  *
  * bitcoinjs-lib 7's `Transaction.fromBuffer` is quadratic in the number of inputs and
  * outputs: a 3.98 MB transaction with 92,500 outputs took 53 s. So bytes from a node, an
@@ -13,7 +13,8 @@
  * marks the witness (BIP144), and a witness record whose stacks are all empty, or any other
  * flag, does not decode. Sizes are canonical CompactSize values of at most `MAX_SIZE`, and
  * nothing may follow the lock time. So when this reader refuses bytes, bitcoind refuses them
- * too, which lets the broadcaster check a node's `TX decode failed` itself (lesson 21).
+ * too, which lets the broadcaster check a node's `TX decode failed` itself: a node's
+ * rejection is a claim, kept only when it holds for our own bytes.
  */
 import { sha256 } from '@noble/hashes/sha256';
 import { concatBytes, toHex } from '../../core/util/bytes';
@@ -119,8 +120,8 @@ export function readTx(
 }
 
 /**
- * Transaction hex (either case, no prefix), capped at `MAX_TX_BYTES` before it is decoded
- * (lesson 20), then read by `readTx`. Node's hex decoder is native and linear, and stops at
+ * Transaction hex (either case, no prefix), capped at `MAX_TX_BYTES` before it is
+ * decoded, then read by `readTx`. Node's hex decoder is native and linear, and stops at
  * the first pair that is not hex, so a short result means the text was not plain hex.
  */
 export function readTxHex(hex: string, options: ReadOptions = {}): ParsedTx | undefined {

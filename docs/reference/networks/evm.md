@@ -24,7 +24,11 @@ ethers and web3 clients.
 
 - **Tokens.** ERC-20 only. USDT (Ethereum, Avalanche) and USDC (every built-in mainnet but
   BNB Smart Chain) resolve by alias on mainnet, where their issuers deploy them natively. Any
-  other token resolves by contract, with its symbol and decimals read from the chain.
+  other token resolves by contract, with its symbol and decimals read from the chain under
+  the proof quorum, so one endpoint cannot mis-scale amounts. A contract whose
+  `decimals()` or `symbol()` reverts or answers nothing usable, or an address with no
+  contract yet, stays unresolvable (`ASSET_RESOLUTION`) until the container restarts; any
+  other node error stays retryable.
 - **Presets.** `alchemy` and `infura` serve every network above; `ankr` the Ethereum, BNB
   Smart Chain, Avalanche, Arbitrum and Base mainnets; `public` the networks whose chain
   documents a public endpoint (not Ethereum). The public Base, Arbitrum and OP Sepolia
@@ -37,6 +41,9 @@ ethers and web3 clients.
   (`details.required`, `details.maxFeePerGas`). If the base fee rises above the ceiling,
   transfers stall as `FEE_TOO_LOW` until it falls or you raise the option. Any other key in
   the EVM options fails with `CONFIG_INVALID`.
+- **Types.** The declarations of `crypto-aio/evm` name both ethers' and web3's types, so with
+  only one of them installed keep `skipLibCheck: true` (the `tsc --init` default), or install
+  the other too.
 - **Not in this release:** address history (it needs an indexer; `history()` throws
   `UNSUPPORTED_CAPABILITY`), contract calls other than ERC-20 `transfer`, and `ext.evm`
   beyond `getNonce`.

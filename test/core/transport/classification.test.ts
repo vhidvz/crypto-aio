@@ -13,10 +13,9 @@ const A: EndpointConfig = { name: 'a', url: 'https://a.test/rpc' };
 const B: EndpointConfig = { name: 'b', url: 'https://b.test/rpc' };
 const method = (req: FakeRequest) => req.json<{ method: string }>().method;
 
-// Fix round 1, group A: response classification, scrubbing and event route labels
-// (controller ruling R14, task-15-fix-1.md items I2, I3, I5, I6a, I6b, M10).
+// Response classification, scrubbing and event route labels.
 describe('HttpTransport response classification and scrubbing', () => {
-  // I2: rpcData is scrubbed the same way rpcMessage is.
+  // rpcData is scrubbed the same way rpcMessage is.
   it('scrubs error.data in JSON-RPC error responses', async () => {
     const fake = new FakeFetch().route('https://h.io', (req) => ({
       json: {
@@ -40,7 +39,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     }
   });
 
-  // I3: event method labels never carry the raw REST path; `route` supplies a safe template.
+  // Event method labels never carry the raw REST path; `route` supplies a safe template.
   it('keeps the raw path out of events and uses the route template as the label', async () => {
     const fake = new FakeFetch().route('https://a.test', () => ({ text: 'ok' }));
     const { transport, clock, seen } = setup([A], fake);
@@ -70,7 +69,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     ]);
   });
 
-  // I5: envelope validation order — id mismatch fails over rather than being classified.
+  // Envelope validation order — id mismatch fails over rather than being classified.
   it('fails over on an error envelope with the wrong id', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', () => ({
@@ -83,7 +82,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     expect(fake.callsTo('https://b.test')).toHaveLength(1);
   });
 
-  // I5: exactly one of result/error must be present.
+  // Exactly one of result/error must be present.
   it('fails over when both result and error are present', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', (req) => ({
@@ -101,7 +100,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     expect(fake.callsTo('https://b.test')).toHaveLength(1);
   });
 
-  // I6a: an identity-probe failure (not a confirmed mismatch) is retryable and fails over.
+  // An identity-probe failure (not a confirmed mismatch) is retryable and fails over.
   it('fails over when the identity probe itself errors', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', (req) =>
@@ -126,7 +125,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     await expect(drive(clock, transport.rpc('x'))).resolves.toBe('from-b');
   });
 
-  // I6b: an rpc-mode 4xx without a valid envelope is retryable and fails over.
+  // An rpc-mode 4xx without a valid envelope is retryable and fails over.
   it('fails over on an rpc-mode 404 with an HTML body', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', () => ({ status: 404, text: '<html>Not Found</html>' }))
@@ -135,7 +134,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     await expect(drive(clock, transport.rpc('x'))).resolves.toBe('b');
   });
 
-  // M10: malformed-response classes each become PROVIDER_UNAVAILABLE and fail over.
+  // Malformed-response classes each become PROVIDER_UNAVAILABLE and fail over.
   it('fails over on an empty JSON-RPC body', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', () => ({ text: '' }))
@@ -160,7 +159,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     await expect(drive(clock, transport.rpc('x'))).resolves.toBe('b');
   });
 
-  // R17 refinement (round 2, item 6): a REST 4xx is a definitive, non-retryable answer from
+  // A REST 4xx is a definitive, non-retryable answer from
   // the endpoint — it must not itself set mayHaveSent.
   it('a first-attempt REST 400 is not ambiguous', async () => {
     const fake = new FakeFetch().route('https://a.test', () => ({
@@ -175,7 +174,7 @@ describe('HttpTransport response classification and scrubbing', () => {
     expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: false });
   });
 
-  // R17: the same 400 still inherits ambiguity from an earlier possibly-delivered attempt.
+  // The same 400 still inherits ambiguity from an earlier possibly-delivered attempt.
   it('the same REST 400 after an earlier timeout is ambiguous', async () => {
     let calls = 0;
     const fake = new FakeFetch().route('https://a.test', (_req, signal) =>

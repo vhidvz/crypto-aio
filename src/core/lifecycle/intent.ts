@@ -11,10 +11,10 @@ import { toAddress, type MappingContext } from '../blockchain/mapping';
 
 export type HandleContext = MappingContext;
 
-/** N5: recursively rejects a JS `number` at any depth, and any non-plain value (a class
+/** Recursively rejects a JS `number` at any depth, and any non-plain value (a class
  * instance such as `Date`) anywhere inside a `FeeOverride` — only plain data is allowed:
  * strings, bigints, booleans, plain objects and arrays. An object field set to `undefined` is
- * treated as omitted (N-E). */
+ * treated as omitted. */
 function assertFeeData(value: unknown): void {
   if (typeof value === 'number') {
     throw new ValidationError(
@@ -39,17 +39,17 @@ function assertFeeData(value: unknown): void {
     if (proto !== Object.prototype && proto !== null) {
       throw new ValidationError('INVALID_INTENT', 'fee override must be plain data');
     }
-    // N-E: an `undefined` field is an omitted optional field, not a non-plain value.
+    // An `undefined` field is an omitted optional field, not a non-plain value.
     for (const v of Object.values(value)) if (v !== undefined) assertFeeData(v);
     return;
   }
   throw new ValidationError('INVALID_INTENT', 'fee override must be plain data');
 }
 
-/** M8/N5: `fee` is a known `FeeSpeed` or a plain-data `FeeOverride`, recursively — amounts
+/** `fee` is a known `FeeSpeed` or a plain-data `FeeOverride`, recursively — amounts
  * are `bigint` or a decimal string, like everywhere else in this API, never a JS `number` at
  * any depth, and never a class instance such as `Date`. Also the engine's guard for a
- * replacement fee (Task 27). */
+ * replacement fee. */
 export function validateFee(fee: TransferIntent['fee']): void {
   if (fee === undefined || isFeeSpeed(fee)) return;
   if (fee === null || typeof fee !== 'object' || Array.isArray(fee)) {

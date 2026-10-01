@@ -1,14 +1,14 @@
 /**
- * Broadcast classification (lesson 3, R24, R63/R64), pure. java-tron answers
+ * Broadcast classification, pure. java-tron answers
  * `/wallet/broadcasthex` with HTTP 200 and `{ result: false, code, message }`, so the
  * transport never sees these as errors. The codes, texts and their order are java-tron's
  * (`Wallet.broadcastTransaction`, `Manager.pushTransaction` and `processTransaction`,
- * checked against GreatVoyage-v4.8.2.2, `d5c3d1d1`; Plan 4 Task 3's verified list).
+ * checked against GreatVoyage-v4.8.2.2, `d5c3d1d1`).
  * - `rejected` only on definitive evidence: the refusal code plus an exact, anchored text
  *   that consensus also refuses for these bytes on every node at every time — a signature
  *   under 65 bytes, no contract, a transfer to self, a non-positive amount, or a size over
  *   the constant 512,000-byte limit (the signature and size rules only for bytes with one
- *   signature, F4-R23). Numbers in those texts must show the defect: a text that
+ *   signature). Numbers in those texts must show the defect: a text that
  *   contradicts itself decides nothing.
  * - Refusal codes java-tron gives before it pools the transaction are `refused`, the
  *   default for any text: account state, permissions, chain parameters and node policy
@@ -18,14 +18,14 @@
  *   also covers a failure after pooling) and any empty or unknown code are thrown as a
  *   retryable `PROVIDER_UNAVAILABLE` marked `ambiguous`: possibly sent, even for a bare
  *   `Blockchain.broadcast` caller.
- * Nothing here decides from text alone (P25-R21): the code gates every result. Reasons are
+ * Nothing here decides from text alone: the code gates every result. Reasons are
  * fixed literals: no address, amount, transaction id or node text. Every pattern is
- * anchored and linear (lesson 20), whatever the message's length.
+ * anchored and linear, whatever the message's length.
  *
- * Lesson 21 (F4-R20): a node's rejection is a claim. `classifyBroadcast` takes the node at
+ * A node's rejection is a claim. `classifyBroadcast` takes the node at
  * its word; `classifyOwnBroadcast`, which the broadcaster uses, keeps a `rejected` only when
  * the claimed reason holds for the bytes that were sent (`txBytesOf`, read with the SDK-free
- * reader the codec shares, `protobuf.ts`, F4-R22), and makes every other one `refused`, which
+ * reader the codec shares, `protobuf.ts`), and makes every other one `refused`, which
  * is not terminal. A terminal `rejected`
  * lets a caller pay again, so a lying endpoint that relayed the bytes, or keeps them to relay
  * later, would make that a second payment. Our builder refuses every byte-only defect before
@@ -57,7 +57,7 @@ const MAX_TX_BYTES = 512_000;
 const RESULT_BYTES = 128;
 
 /**
- * Our signed transaction as java-tron's byte-only checks read it (lesson 21), from the hex
+ * Our signed transaction as java-tron's byte-only checks read it, from the hex
  * that was sent.
  */
 export interface TronTxBytes {
@@ -83,13 +83,13 @@ interface Permanent {
   readonly text: RegExp;
   /** For a text with a number: whether the number shows the defect (else it decides nothing). */
   readonly shows?: (value: number) => boolean;
-  /** Lesson 21: whether the claimed reason holds for the bytes that were sent. */
+  /** Whether the claimed reason holds for the bytes that were sent. */
   readonly holds: (tx: TronTxBytes) => boolean;
   readonly result: BroadcastResult;
 }
 
 /**
- * F4-R23: the signature and size rules measure the bytes as sent, while what lands is the
+ * The signature and size rules measure the bytes as sent, while what lands is the
  * txID with any signatures. A relayer may drop a signature, and java-tron reads only a
  * signature's first 65 bytes (`checkWeight`), so it may trim padding too. So a claim holds
  * only for bytes whose txID has no smaller valid form: one signature and, for the size, one
@@ -97,7 +97,7 @@ interface Permanent {
  */
 const oneSignature = (tx: TronTxBytes): boolean => tx.signatures.length === 1;
 
-/** The size rules: java-tron measures the transaction without `ret` (lesson 21). */
+/** The size rules: java-tron measures the transaction without `ret`. */
 const oversize = (tx: TronTxBytes): boolean =>
   oneSignature(tx) && tx.signatures[0] === MIN_SIGNATURE_BYTES && tx.size > MAX_TX_BYTES;
 
@@ -243,7 +243,7 @@ const UNCONFIRMED: BroadcastResult = refused(
 );
 
 /**
- * Lesson 21: the node's answer to bytes this driver sent, `sent` being those bytes read by
+ * The node's answer to bytes this driver sent, `sent` being those bytes read by
  * `txBytesOf` (`undefined` when they do not read). A `rejected` stands only when its claimed
  * reason holds for `sent`; otherwise the answer is `refused`. Every other answer is the
  * node's, as `classifyBroadcast` reads it: acceptance, duplicates, state-dependent refusals
@@ -258,7 +258,7 @@ export function classifyOwnBroadcast(
   return sent !== undefined && rule.holds(sent) ? result : UNCONFIRMED;
 }
 
-/** Lesson 20: bytes are read only up to twice java-tron's transaction limit. */
+/** Bytes are read up to twice java-tron's transaction limit, and no further. */
 const MAX_READ_BYTES = 2 * MAX_TX_BYTES;
 const INT64_MAX = (1n << 63n) - 1n;
 const INT64_SPAN = 1n << 64n;
@@ -271,10 +271,10 @@ const bytesField = (value: WireValue | undefined): Uint8Array =>
   bytesOf(value) ?? new Uint8Array();
 
 /**
- * The bytes a broadcast sent, as the lesson 21 checks read them, SDK-free: `Transaction`
+ * The bytes a broadcast sent, as the rejection checks read them, SDK-free: `Transaction`
  * (`raw_data` once, signatures, `ret` entries left out of the size), the contracts in
  * `raw_data`, and a single TransferContract's fields. `undefined` for hex that does not read
- * strictly, or is longer than `MAX_READ_BYTES` (lesson 20); no claim holds for it.
+ * strictly, or is longer than `MAX_READ_BYTES`; no claim holds for it.
  */
 export function txBytesOf(hex: string): TronTxBytes | undefined {
   if (typeof hex !== 'string' || hex.length > 2 * MAX_READ_BYTES) return undefined;

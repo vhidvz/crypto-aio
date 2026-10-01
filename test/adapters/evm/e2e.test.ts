@@ -57,7 +57,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     });
     expect(env.node.inMempool(sub.attempt?.id ?? '')).toBe(true);
     const final = await env.mineWhile(sub.wait({ finality: 'final' }));
-    // R75: final once the finalized tag reached the transaction's block, and not before.
+    // Final once the finalized tag reached the transaction's block, and not before.
     const block = env.node.receipt(sub.attempt?.id ?? '')?.blockNumber ?? 0n;
     expect(tagReads.at(-1)).toBeGreaterThanOrEqual(block);
     expect(env.node.head - block).toBeGreaterThanOrEqual(6n);
@@ -94,7 +94,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     env.node.mine();
     await env.run(sub.wait({ confirmations: 1 }));
     const final = await env.mineWhile(sub.wait({ finality: 'final' }), 10);
-    // R75: final once the quorum holds the block that gives it 3 confirmations (h + 2).
+    // Final once the quorum holds the block that gives it 3 confirmations (h + 2).
     const block = env.node.receipt(sub.attempt?.id ?? '')?.blockNumber ?? 0n;
     expect(final.status.confirmations).toBeGreaterThanOrEqual(3);
     expect(env.node.head - block).toBeGreaterThanOrEqual(2n);
@@ -197,7 +197,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect(final.operation?.outcome).toBe('executed');
   });
 
-  it('never ends a transfer that a lone endpoint calls invalid, then relays (lesson 21)', async () => {
+  it('never ends a transfer that a lone endpoint calls invalid, then relays', async () => {
     const env = await createEvmEnv({ library });
     // A lying endpoint keeps our valid bytes, claims a bad signature, and relays them later.
     let held: string | undefined;
@@ -209,8 +209,8 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     const error = await env
       .run(env.bc.transfer({ to: RECIPIENT, amount: 7n }, { idempotencyKey: 'liar' }))
       .catch((e: unknown) => e);
-    // Before lesson 21 this was TX_REJECTED: the Operation failed and freed its nonce, so a
-    // later relay plus a retry under a new key paid twice.
+    // A refusal, never TX_REJECTED: a rejection would fail the Operation and free its
+    // nonce, so a later relay plus a retry under a new key would pay twice.
     expect(error).toMatchObject({ code: 'TX_REFUSED' });
     const operationId = String(
       (error as { context: { operationId?: string } }).context.operationId,
@@ -242,9 +242,9 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     env.node.reorg(1, [ref]);
     env.node.served.length = 0;
     expect(env.node.inMempool(ref)).toBe(false);
-    // The orphan check reads the block at the recorded height, a fixed height (lesson 17),
-    // from every endpoint of the proof quorum. While b still serves the orphaned block, the
-    // quorum disagrees, which decides nothing (R33, R77): no reorg and no resend.
+    // The orphan check reads the block at the recorded height, a fixed height, from every
+    // endpoint of the proof quorum. While b still serves the orphaned block, the quorum
+    // disagrees, which decides nothing: no reorg and no resend.
     const checks: { endpoint: string; block: 'orphaned' | 'new'; decided: boolean }[] =
       [];
     let bLags = true;
@@ -298,7 +298,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect(env.node.balance(RECIPIENT)).toBe(5n);
   });
 
-  it('keeps waiting while the node holds no finalized state for an absent transaction (R85)', async () => {
+  it('keeps waiting while the node holds no finalized state for an absent transaction', async () => {
     const env = await createEvmEnv({ library });
     const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: 5n }));
     const ref = sub.attempt?.id ?? '';
@@ -336,7 +336,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect(env.node.balance(RECIPIENT)).toBe(5n);
   });
 
-  /** R88: both endpoints' transaction index lost `hash` (geth past its history window). */
+  /** Both endpoints' transaction index lost `hash` (geth past its history window). */
   const unindexed = (env: { readonly node: ScriptedEvmNode }, hash: string) => {
     env.node.intercept = (_endpoint, method, params) =>
       (method === 'eth_getTransactionReceipt' || method === 'eth_getTransactionByHash') &&
@@ -345,8 +345,8 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
         : undefined;
   };
 
-  it('proves a final transfer the index lost executed, never replaced (R88)', async () => {
-    // The final review's C1: no pass saw the transfer land before the endpoints' index
+  it('proves a final transfer the index lost executed, never replaced', async () => {
+    // No pass saw the transfer land before the endpoints' index
     // dropped it (an outage, a restored store, or no monitor running).
     const env = await createEvmEnv({ library, endpoints: ['a', 'b'] });
     const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: 3n }));
@@ -367,7 +367,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     });
   });
 
-  it('still proves a transfer replaced from outside the library replaced (R88)', async () => {
+  it('still proves a transfer replaced from outside the library replaced', async () => {
     const env = await createEvmEnv({ library, endpoints: ['a', 'b'] });
     const sub = await env.run(
       env.bc.transfer({ to: RECIPIENT, amount: 3n, fee: 'slow' }),
@@ -467,7 +467,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       expect([sub.state, sub.attempt?.id, calls()]).toEqual(['submitted', ref, 1]);
     });
 
-    it('takes over the address lease of a process killed mid-sign, then signs once more (R91 M6)', async () => {
+    it('takes over the address lease of a process killed mid-sign, then signs once more', async () => {
       const counting = countingSigner();
       const signedAt: number[] = [];
       const signer: Signer = {
@@ -560,7 +560,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       }),
     ]);
     expect(tx?.decoding).toBe('partial');
-    // Review Focus 2: a shortfall fails before signing, with both amounts in base units,
+    // A shortfall fails before signing, with both amounts in base units,
     // not as the reverting gas estimate's opaque RPC error.
     await expect(
       env.run(env.bc.transfer({ to: RECIPIENT, amount: '9', asset })),
@@ -571,7 +571,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect([calls(), env.node.nonce(env.address)]).toEqual([1, 1n]);
   });
 
-  it('proves a token transfer that returned false failed, while the chain reports success (R50, R68)', async () => {
+  it('proves a token transfer that returned false failed, while the chain reports success', async () => {
     const env = await createEvmEnv({ library });
     env.node.deployToken(FALSE_TOKEN, { symbol: 'FLS', decimals: 6, returnsFalse: true });
     env.node.mintToken(FALSE_TOKEN, env.address, 5_000_000n);
@@ -600,12 +600,12 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
       await env.stores.operations.getObservation(op?.activeAttemptId ?? ''),
     ).toMatchObject({ state: 'failed', evidence: 'proven' });
     expect(env.node.tokenBalance(FALSE_TOKEN, RECIPIENT)).toBe(3_000_000n);
-    // The chain's view (R68): the call succeeded and moved nothing.
+    // The chain's view: the call succeeded and moved nothing.
     const tx = await env.run(env.bc.getTransaction(ref));
     expect([tx?.transfers, tx?.decoding]).toEqual([[], 'partial']);
   });
 
-  it('scans final blocks for deposits, marking a junk token unresolved instead of failing (R35)', async () => {
+  it('scans final blocks for deposits, marking a junk token unresolved instead of failing', async () => {
     const env = await createEvmEnv({ library });
     env.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
     env.node.deployToken(JUNK, { symbol: 'JUNK' });

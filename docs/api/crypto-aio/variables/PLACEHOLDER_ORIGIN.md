@@ -4,6 +4,6 @@
 
 > `const` **PLACEHOLDER\_ORIGIN**: `"https://transport.crypto-aio.invalid"` = `'https://transport.crypto-aio.invalid'`
 
-Defined in: [src/core/transport/types.ts:153](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L153)
+Defined in: [src/core/transport/types.ts:155](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L155)
 
 SDKs are configured with this origin; the transport maps it onto real endpoints.

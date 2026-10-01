@@ -96,4 +96,4 @@ Defined in: [src/core/model/chain.ts:55](https://github.com/vhidvz/crypto-aio/bl
 
 Whether the chain's extended public keys carry their network class (SLIP-0132: `xpub`
 on mainnet, `tpub` on test networks), so `deriveAddress` refuses a key of the other
-class (A20). Default: `true` for `utxo`-model chains, `false` for account-model ones.
+class. Default: `true` for `utxo`-model chains, `false` for account-model ones.

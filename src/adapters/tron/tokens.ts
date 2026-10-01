@@ -1,5 +1,5 @@
 /**
- * Well-known tokens (spec §6.2): USDT, which Tether deploys natively on Tron mainnet
+ * Well-known tokens: USDT, which Tether deploys natively on Tron mainnet
  * (Tether's supported-protocols page); decimals and symbol read from the contract. Circle
  * lists no Tron USDC, so there is none. The contract is the base58 form, the canonical one.
  */

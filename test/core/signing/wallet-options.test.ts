@@ -1,5 +1,5 @@
-// A22: drivers receive the wallet's extended public key as plain data (R11), as
-// `WalletOptions.hd`, so a family can check change addresses on the xpub chain (A19).
+// Drivers receive the wallet's extended public key as plain data, as
+// `WalletOptions.hd`, so a family can check change addresses on the xpub chain.
 import { HDKey } from '@scure/bip32';
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import type { WalletOptions } from '../../../src/core/driver/types';
@@ -13,7 +13,7 @@ const xpub = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'").publicExtendedKey;
 const ZPUB = { private: 0x04b2430c, public: 0x04b24746 };
 const zpub = HDKey.fromMasterSeed(SEED, ZPUB).derive("m/84'/0'/0'").publicExtendedKey;
 
-/** A26: a refusal repeats no part of the refused input, and chains no library error. */
+/** A refusal repeats no part of the refused input, and chains no library error. */
 function expectNoEcho(error: unknown, input: string): void {
   expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
   expect((error as Error).cause).toBeUndefined();
@@ -21,7 +21,7 @@ function expectNoEcho(error: unknown, input: string): void {
   expect(JSON.stringify(error)).not.toContain(input.slice(4, 20));
 }
 
-describe('the xpub passed to drivers (A22)', () => {
+describe('the xpub passed to drivers', () => {
   it('adds the xpub, its path and its versions as a frozen plain copy', () => {
     const versions = { ...ZPUB, label: 'zpub' };
     const options = walletOptionsOf({
@@ -31,7 +31,7 @@ describe('the xpub passed to drivers (A22)', () => {
       options: { speed: 'fast' },
       utxo: { addressType: 'p2wpkh' },
     });
-    // M5: only the two version numbers are copied.
+    // Only the two version numbers are copied.
     expect(options).toEqual({
       speed: 'fast',
       utxo: { addressType: 'p2wpkh' },
@@ -52,7 +52,7 @@ describe('the xpub passed to drivers (A22)', () => {
     });
   });
 
-  it('treats an empty xpub as none and refuses a non-string one, as deriveAddress does (M3)', async () => {
+  it('treats an empty xpub as none and refuses a non-string one, as deriveAddress does', async () => {
     for (const empty of ['', null]) {
       expect(walletOptionsOf({ xpub: empty as never })).toEqual({});
     }
@@ -96,7 +96,7 @@ describe('the xpub passed to drivers (A22)', () => {
     expect((await plain.run(internalsOf(plain.bc).wallet())).options).toEqual({});
   });
 
-  it("gives the driver the core's hd when it builds and in limits() (M4)", async () => {
+  it("gives the driver the core's hd when it builds and in limits()", async () => {
     const env = await createFakeEnv({
       wallets: { main: { signer: 'hot', xpub, options: { hd: { xpub: 'forged' } } } },
     });
@@ -131,7 +131,7 @@ describe('the xpub passed to drivers (A22)', () => {
     expect(limited).toHaveLength(1);
   });
 
-  it("keeps a caller's hd from the driver; deriveAddress passes the core's (I1)", async () => {
+  it("keeps a caller's hd from the driver; deriveAddress passes the core's", async () => {
     const env = await createFakeEnv({ wallets: { deposits: { xpub } } });
     const { driver } = await env.run(internalsOf(env.bc).pooled());
     const seen: (WalletOptions | undefined)[] = [];
@@ -154,7 +154,7 @@ describe('the xpub passed to drivers (A22)', () => {
     expect(JSON.stringify(seen.slice(0, 2))).not.toContain(xprv.slice(4, 20));
   });
 
-  it('reads explicit null options as none (N2)', async () => {
+  it('reads explicit null options as none', async () => {
     const env = await createFakeEnv({ wallets: { deposits: { xpub } } });
     const { driver } = await env.run(internalsOf(env.bc).pooled());
     const seen: (WalletOptions | undefined)[] = [];
@@ -174,7 +174,7 @@ describe('the xpub passed to drivers (A22)', () => {
     expect(seen).toEqual([{}, {}]);
   });
 
-  it('refuses a non-string xpubPath with a fixed text, at resolution and in deriveAddress (O1)', async () => {
+  it('refuses a non-string xpubPath with a fixed text, at resolution and in deriveAddress', async () => {
     const paths: Record<string, unknown> = { number: 7, object: { leak: 'secret-ish' } };
     const expectRefusal = (error: unknown) => {
       expect(error).not.toBeInstanceOf(TypeError);
@@ -206,7 +206,7 @@ describe('the xpub passed to drivers (A22)', () => {
     expect(walletOptionsOf({ xpub, xpubPath: null as never })).toEqual({ hd: { xpub } });
   });
 
-  it('checks the key against exactly the versions the driver receives (O2)', () => {
+  it('checks the key against exactly the versions the driver receives', () => {
     const XPUB = { private: 0x0488ade4, public: 0x0488b21e };
     const reads = { private: 0, public: 0 };
     // Versions that change between reads: ZPUB first, then the plain xpub pair.
@@ -225,7 +225,7 @@ describe('the xpub passed to drivers (A22)', () => {
     expect(reads).toEqual({ private: 1, public: 1 });
   });
 
-  it('refuses a private extended key, naming no key (A26)', () => {
+  it('refuses a private extended key, naming no key', () => {
     const tpub = { private: 0x04358394, public: 0x043587cf };
     const cases: readonly (readonly [string, typeof ZPUB | undefined])[] = [
       [HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'").privateExtendedKey, undefined],
@@ -245,7 +245,7 @@ describe('the xpub passed to drivers (A22)', () => {
     }
   });
 
-  it('refuses an unreadable or unknown key at resolution, echoing none of it (I2, M1, M4)', async () => {
+  it('refuses an unreadable or unknown key at resolution, echoing none of it', async () => {
     // Public test vectors (Bitcoin wiki, BIP-39): mis-pasted secrets must not be echoed.
     const inputs = {
       checksum: `${xpub.slice(0, -1)}${xpub.endsWith('A') ? 'B' : 'A'}`,
@@ -270,7 +270,7 @@ describe('the xpub passed to drivers (A22)', () => {
     }
   });
 
-  it('fails such a wallet before any driver call (A26)', async () => {
+  it('fails such a wallet before any driver call', async () => {
     const xprv = HDKey.fromMasterSeed(SEED).privateExtendedKey;
     const env = await createFakeEnv({ wallets: { hdw: { signer: 'hot', xpub: xprv } } });
     const bc = env.aio.blockchain({

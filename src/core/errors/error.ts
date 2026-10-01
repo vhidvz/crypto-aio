@@ -154,7 +154,7 @@ export function isCryptoAioError(
 
 /**
  * Returns a copy of `error` (same class, same stack) with merged context, and optional flag
- * and `details` overrides. B108: the copy keeps the stack of the error it reports.
+ * and `details` overrides. The copy keeps the stack of the error it reports.
  */
 export function withContext(
   error: CryptoAioError,

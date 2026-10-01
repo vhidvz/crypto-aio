@@ -156,7 +156,10 @@ never over a WebSocket.
 - **Finality and heights.** `final` is the `finalized` commitment. `waitForConfirmation`
   waits for inclusion at `confirmed` by default, so credit deposits on `final`. Heights are
   block heights, not slots, so skipped slots never leave a gap in scans or confirmations,
-  and `bc.getBlock()` takes a height (a hash is `UNSUPPORTED_CAPABILITY`).
+  and `bc.getBlock()` takes a height (a hash is `UNSUPPORTED_CAPABILITY`). The driver
+  finds a height's slot by counting back from the head with `getBlocks`, at most about 8
+  million slots (about five weeks) deep: an older height, in `getBlock()` or as a scan's
+  start, fails with a retryable `PROVIDER_UNAVAILABLE`.
 - **Verdicts.** A verdict reads the finalized transaction under the proof quorum. A
   transaction that failed on chain is proven `failed` (`TX_REVERTED`, with the reason
   `transaction failed`), and its fee is paid. An SPL transfer counts as executed only when
@@ -183,7 +186,9 @@ never over a WebSocket.
   indexer: `bc.history(address)` lists transactions from `confirmed` on, at most 1,000 per
   page, and reads each one back, so a page costs two requests per item (`getTransaction`,
   then a header-only `getBlock` for its height and hash). An SPL deposit into an
-  existing token account appears in that account's history, not the owner's. A handle's
+  existing token account appears in that account's history, not the owner's. Behind a
+  load-balanced URL, a backend that does not hold a page's cursor answers `-32020`, and
+  the page fails with a retryable `PROVIDER_UNAVAILABLE`: ask again. A handle's
   `indexer`, when you set one, serves history instead; any Solana RPC endpoint can be one.
 - **Tokens.** USDC (mainnet, devnet) and USDT (mainnet) are registered by alias. Any other
   classic mint resolves by address (`{ standard: 'spl', contract: '<mint>' }`), with its

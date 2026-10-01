@@ -4,7 +4,7 @@
 
 Defined in: [src/adapters/ton/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L41)
 
-`bc.ext.ton`: the TON family extension (spec §5.5).
+`bc.ext.ton`: the TON family extension.
 
 ## Properties
 

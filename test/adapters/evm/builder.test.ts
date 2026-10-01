@@ -304,7 +304,9 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     });
   });
 
-  it('replaces and cancels on the same nonce under the network bump, and ignores requestedFee (R30)', async () => {
+  // The core adds `fee.details.requestedFee` after `build`; a driver reads only its named
+  // fee fields and never writes that one.
+  it('replaces and cancels on the same nonce under the network bump, and ignores requestedFee', async () => {
     const t = setup();
     const policy = createEvmReplacement(t.ctx)!;
     expect([policy.replace, policy.cancel]).toEqual([true, true]);
@@ -360,7 +362,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     ).toBeUndefined();
   });
 
-  it('classifies estimate failures before signing, and rethrows transient ones (R72)', async () => {
+  it('classifies estimate failures before signing, and rethrows transient ones', async () => {
     const t = setup();
     t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
     t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
@@ -370,7 +372,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
       t.node.intercept = (_endpoint, method) =>
         method === 'eth_estimateGas' ? { error } : undefined;
     };
-    // R66's VM failures and an exhausted gas allowance fail like a revert.
+    // VM execution failures and an exhausted gas allowance fail like a revert.
     for (const message of [
       'invalid opcode: INVALID',
       'out of gas',
@@ -388,7 +390,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
         details: { required: '11', available: '10' },
       });
     }
-    // A token revert that says "insufficient funds" is a revert first (M2).
+    // A token revert that says "insufficient funds" is a revert first.
     estimateAnswers({ code: 3, message: 'execution reverted: insufficient funds' });
     await expect(
       t.run(t.builder.estimateFee(token(11n), t.build())),
@@ -413,7 +415,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     );
   });
 
-  it('refuses a signing digest that is not the payload digest (R72)', async () => {
+  it('refuses a signing digest that is not the payload digest', async () => {
     const t = setup();
     const unsigned = await t.prepare();
     const [request] = unsigned.signingRequests;
@@ -426,7 +428,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     ).rejects.toMatchObject({ code: 'SIGNING_FAILED' });
   });
 
-  it('uses an explicit replacement or cancel fee above the bump exactly as given (R72)', async () => {
+  it('uses an explicit replacement or cancel fee above the bump exactly as given', async () => {
     const t = setup();
     const policy = createEvmReplacement(t.ctx)!;
     const original = await t.prepare();
@@ -472,7 +474,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     });
   });
 
-  it('replaces an ERC-20 transfer through assemble, keeping its call and gas limit (R72)', async () => {
+  it('replaces an ERC-20 transfer through assemble, keeping its call and gas limit', async () => {
     const t = setup();
     t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
     t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
@@ -495,7 +497,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     expect(t.node.tokenBalance(TOKEN, RECIPIENT)).toBe(10n);
   });
 
-  it('recomputes the OP Stack L1 data fee for the bytes of a replacement and a cancel (R72)', async () => {
+  it('recomputes the OP Stack L1 data fee for the bytes of a replacement and a cancel', async () => {
     const t = setup('base', 'sepolia', { l1Fee: 777n });
     const policy = createEvmReplacement(t.ctx)!;
     const original = await t.prepare();
@@ -531,7 +533,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     ]);
   });
 
-  it('replaces and cancels on a legacy network, naming the gas price (R72)', async () => {
+  it('replaces and cancels on a legacy network, naming the gas price', async () => {
     const t = setup('bsc', 'testnet');
     const policy = createEvmReplacement(t.ctx)!;
     const original = await t.prepare();
@@ -578,7 +580,7 @@ describe('EVM broadcaster', () => {
       11_155_111n,
     );
 
-  it('sends with broadcast tags, passing fanout and signal through (R41)', async () => {
+  it('sends with broadcast tags, passing fanout and signal through', async () => {
     const seen: EvmCallTags[] = [];
     const broadcaster = stub(async (tags) => {
       seen.push(tags);
@@ -594,7 +596,7 @@ describe('EVM broadcaster', () => {
     expect(seen[1]?.signal).toBe(signal);
   });
 
-  it('classifies only a definitive RPC_ERROR and rethrows every other failure (R17)', async () => {
+  it('classifies only a definitive RPC_ERROR and rethrows every other failure', async () => {
     const rpc = (ambiguous: boolean) =>
       new ProviderError('RPC_ERROR', 'eth_sendRawTransaction failed', {
         details: { rpcCode: -32000, rpcMessage: 'nonce too low' },

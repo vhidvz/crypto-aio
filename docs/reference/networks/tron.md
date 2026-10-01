@@ -18,7 +18,8 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   sender is refused (`INVALID_INTENT`); a TRC-20 one is valid on chain and allowed. A TRX
   transfer to a contract is refused before signing only on a network whose
   `getForbidTransferToContract` parameter is 1, as java-tron would refuse it there; it is 0 on
-  mainnet, Shasta and Nile today, where such a transfer is valid.
+  mainnet, Shasta and Nile today, where such a transfer is valid. That parameter is one
+  endpoint's answer, not the proof quorum's: a wrong one can only refuse a valid transfer.
 - **Fees (`tron`).** Every charge is in TRX, and `bandwidth` and `energy` may be 0 when staked
   or free resources cover them (`activation` and `memo` are chain fees that no resource
   covers): `bandwidth` (the signed transaction's size plus 64 bytes, at the chain's price per
@@ -76,9 +77,11 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
 - **Memos** are UTF-8 text of at most 256 bytes (`MAX_MEMO_BYTES`), public forever, and each
   costs the memo fee. A deposit's memo arrives as `transfer.memo`.
 - **Scanning and history.** Blocks carry TRX transfers and TRC-20 `Transfer` events; any
-  contract call is `decoding: 'partial'`. Address history comes from TronGrid's `/v1` API:
-  name the `trongrid` or `public` preset as the handle's `indexer` (without one, `history()`
-  throws `UNSUPPORTED_CAPABILITY`). It lists solidified entries only, at most 200 per page,
+  contract call is `decoding: 'partial'`. TRX that an account receives only inside a contract
+  call (a contract paying it out) is in neither scans nor history: internal transfers are not
+  decoded. Address history comes from TronGrid's `/v1` API: name the `trongrid` or `public`
+  preset as the handle's `indexer` (without one, `history()` throws
+  `UNSUPPORTED_CAPABILITY`). It lists solidified entries only, at most 200 per page,
   and reads each one back through the handle's `provider`. It pages through TronGrid's
   `/transactions` first: the account's own transactions, TRX sent to it and, for a contract
   account, other accounts' calls to it. Then `/transactions/trc20`: every TRC-20 transfer
@@ -95,10 +98,12 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   `Retry-After`, but one that has never answered a check is never confirmed, and the handle
   then finds no healthy endpoint. TronGrid publishes no rate limit, so neither preset sets `rateLimit`; to
   pace a busy service, configure the endpoint yourself with a `rateLimit` (a 429 answer is
-  retried with backoff). An endpoint of your own must serve `/wallet`, `/walletsolidity` and
-  `/jsonrpc` under one base URL, as TronGrid does: its identity check reads block 0 from all
-  three. A bare java-tron node serves them on separate ports, so put a reverse proxy in front
-  of it. A custom `indexer` endpoint must serve TronGrid's `/v1` API, and also answer
+  retried with backoff). TronGrid can also answer a rate-limit pause with 403, so a proof
+  read retries a 401 or 403; a bad key shows as `PROVIDER_MISCONFIGURED` on ordinary reads.
+  An endpoint of your own must serve `/wallet`, `/walletsolidity` and `/jsonrpc` under one
+  base URL, as TronGrid does: its identity check reads block 0 from all three. A bare
+  java-tron node serves them on separate ports, so put a reverse proxy in front of it. A
+  custom `indexer` endpoint must serve TronGrid's `/v1` API, and also answer
   `/wallet/getblockbynum` and `/wallet/getblock` (its health checks).
 - **Proven verdicts need independent providers.** `trongrid` and `public` are one endpoint
   each, on the same TronGrid backend, so either alone gives a proof quorum of 1: a lagging

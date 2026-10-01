@@ -60,7 +60,7 @@ describe('fee rates', () => {
     expect(rateForSpeed(estimates, 'slow', POLICY)).toBe(1_000n);
   });
 
-  it('decides nothing when one endpoint estimates an absurd rate (M3)', () => {
+  it('decides nothing when one endpoint estimates an absurd rate', () => {
     expect(rateForSpeed(new Map([[6, 200]]), 'normal', POLICY)).toBe(200_000n);
     expect(() => rateForSpeed(new Map([[6, 200.001]]), 'normal', POLICY)).toThrow(
       expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE', retryable: true }),
@@ -105,7 +105,9 @@ describe('fee rates', () => {
     }
   });
 
-  it('parses { satPerVByte } strictly (Review Focus 4)', () => {
+  // A typo (a number, too many decimals, a rate meant per kvB under another key) is
+  // refused, never read as a rate.
+  it('parses { satPerVByte } strictly', () => {
     expect(rateFromOverride({ satPerVByte: 3n }, POLICY)).toBe(3_000n);
     expect(rateFromOverride({ satPerVByte: '2.5' }, POLICY)).toBe(2_500n);
     expect(rateFromOverride({ satPerVByte: '1.001' }, POLICY)).toBe(1_001n);
@@ -127,7 +129,7 @@ describe('fee rates', () => {
     );
   });
 
-  it('refuses an absurd fee before signing (Review Focus 4)', () => {
+  it('refuses an absurd fee before signing', () => {
     expect(() => assertSaneFee(feeAt(1_000_000n, 200), 200, POLICY)).not.toThrow();
     expect(() => assertSaneFee(feeAt(1_000_001n, 200), 200, POLICY)).toThrow(
       expect.objectContaining({ code: 'INVALID_INTENT' }),
@@ -142,7 +144,7 @@ describe('fee rates', () => {
     expect(replacementFloor({ fee: 1_000n, vsize: 150 }, 150, 1_000n)).toBe(1_150n);
     // A much larger replacement: the rate rule dominates (1,000/100 x 400 + 1).
     expect(replacementFloor({ fee: 1_000n, vsize: 100 }, 400, 100n)).toBe(4_001n);
-    // M1: the replaced size can be smaller than estimated (a 71-byte signature), and v28/v29
+    // The replaced size can be smaller than estimated (a 71-byte signature), and v28/v29
     // compare rates truncated to sat/kvB: the rate rule clears both.
     expect(replacementFloor({ fee: 1_410n, vsize: 141, minVsize: 140 }, 209, 100n)).toBe(
       2_106n,
@@ -162,7 +164,7 @@ describe('transaction size', () => {
     expect(vsizeOf(txWeight('p2tr', 1, two))).toBe(130);
   });
 
-  it('sizes CompactSize counts at every width boundary (lesson 19)', () => {
+  it('sizes CompactSize counts at every width boundary', () => {
     const cases: [number, number][] = [
       [0, 1],
       [0xfc, 1],
@@ -198,7 +200,7 @@ describe('selectCoins', () => {
     expect(selection.change).toBe(130_000n - 100_000n - selection.fee);
   });
 
-  it('gives change below the dust threshold to the fee (Review Focus 4)', () => {
+  it('gives change below the dust threshold to the fee', () => {
     const fee = feeAt(10_000n, vsizeOf(txWeight('p2wpkh', 1, [34])));
     const selection = selectCoins({
       ...base,
@@ -314,7 +316,7 @@ describe('selectCoins', () => {
   });
 });
 
-describe('broadcast classification (lesson 3, R24)', () => {
+describe('broadcast classification', () => {
   const blockstream = (code: number, message: string) =>
     `sendrawtransaction RPC error ${code}: ${message}`;
   const mempool = (code: number, message: string) =>
@@ -457,7 +459,7 @@ describe('broadcast classification (lesson 3, R24)', () => {
     }
   });
 
-  it("rejects only under bitcoind's own code for the reason (lesson 3)", () => {
+  it("rejects only under bitcoind's own code for the reason", () => {
     // A consensus text outside bitcoind's structured answer, or under another code,
     // decides nothing: `rejected` ends the Attempt, so any doubt falls to a refusal.
     for (const error of [
@@ -490,7 +492,7 @@ describe('broadcast classification (lesson 3, R24)', () => {
     });
   });
 
-  it('reads only the head of a 100,000-character body (lesson 20)', () => {
+  it('reads only the head of a 100,000-character body', () => {
     // Unbounded, the mempool/electrs pattern retries at every "RPC error: {" (quadratic).
     // The cap is pinned by structure, not time: an answer past the first 1,024 characters
     // is never read, so it cannot decide anything.
@@ -515,14 +517,14 @@ describe('broadcast classification (lesson 3, R24)', () => {
   });
 });
 
-describe("a node's rejection is a claim (lesson 21)", () => {
+describe("a node's rejection is a claim", () => {
   const MAX_MONEY = 2_100_000_000_000_000n;
   const A = { txid: 'aa'.repeat(32), vout: 0 };
   const B = { txid: 'bb'.repeat(32), vout: 1 };
   const NULL = { txid: '00'.repeat(32), vout: 0xffffffff };
   type Outpoint = { readonly txid: string; readonly vout: number };
   /**
-   * N2: the hex that was sent, serialized by hand (no witness): these inputs with empty
+   * The hex that was sent, serialized by hand (no witness): these inputs with empty
    * scripts, outputs of these values with empty scripts, and the first input's script padded
    * to `strippedSize` when it is given. No inputs means no outputs either: bitcoind reads an
    * empty input list's next byte as flags.
@@ -612,7 +614,7 @@ describe("a node's rejection is a claim (lesson 21)", () => {
     }
     // bitcoind checks the outputs in order and stops at the first failure: an out-of-range
     // value (`vout-negative`, `vout-toolarge`) before the total passes MAX_MONEY names that
-    // reason; a total past MAX_MONEY first names the total, whatever follows (F3-R14 N1).
+    // reason; a total past MAX_MONEY first names the total, whatever follows.
     for (const values of [
       [-1n, MAX_MONEY, 2n],
       [MAX_MONEY + 1n],
@@ -643,7 +645,7 @@ describe("a node's rejection is a claim (lesson 21)", () => {
       reason: 'the transaction does not decode',
     });
     expect(claim(message, tx(), -22)).toEqual(CLAIMED);
-    // N2: whether the bytes decode is the classifier's own finding, from the hex that was
+    // Whether the bytes decode is the classifier's own finding, from the hex that was
     // sent: truncated or trailing bytes do not decode; bytes too large for any block still
     // decode (bitcoind decodes them, then refuses them as oversize).
     const good = tx();
@@ -687,13 +689,13 @@ describe("a node's rejection is a claim (lesson 21)", () => {
     }
   });
 
-  it('exports no classifier that takes the node at its word (final review M4)', () => {
+  it('exports no classifier that takes the node at its word', () => {
     // The parser's claim of invalid bytes is not a verdict: `invalid` is no BroadcastResult
     // kind, so no Broadcaster can return it; only classifyOwnBroadcast, given the bytes that
     // were sent, makes a `rejected`.
     const claim = nodeClaim({ code: -26, message: 'bad-txns-inputs-duplicate' });
     expect(claim).toEqual({ kind: 'invalid', reason: 'invalid by consensus rules' });
-    // @ts-expect-error a node's claim is not a broadcast verdict (lesson 21)
+    // @ts-expect-error a node's claim is not a broadcast verdict
     const verdict: BroadcastResult = claim;
     expect(verdict.kind).not.toBe('rejected');
     expect(Object.keys(errors).sort()).toEqual([

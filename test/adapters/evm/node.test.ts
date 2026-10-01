@@ -94,7 +94,7 @@ describe('ScriptedEvmNode', () => {
     ).rejects.toThrow('invalid chain id');
   });
 
-  it('refuses a replacement that keeps a zero tip, like geth (R48)', async () => {
+  it('refuses a replacement that keeps a zero tip, like geth', async () => {
     const { rpc, sign } = setup();
     await rpc('eth_sendRawTransaction', [await sign(0, { maxPriorityFeePerGas: 0n })]);
     await expect(
@@ -115,7 +115,7 @@ describe('ScriptedEvmNode', () => {
     ).resolves.toMatch(/^0x/);
   });
 
-  it('answers "nonce too low", not "already known", for a mined transaction (M8)', async () => {
+  it('answers "nonce too low", not "already known", for a mined transaction', async () => {
     const { node, rpc, sign } = setup();
     const raw = await sign(0);
     await rpc('eth_sendRawTransaction', [raw]);
@@ -165,7 +165,7 @@ describe('ScriptedEvmNode', () => {
     expect(await rpc('eth_getTransactionByHash', [hash])).toBeNull();
   });
 
-  it("stops mining a sender's transactions at the first it cannot pay for (M1)", async () => {
+  it("stops mining a sender's transactions at the first it cannot pay for", async () => {
     const { node, rpc, sign } = setup();
     const send = async (nonce: number, value: bigint) =>
       rpc<string>('eth_sendRawTransaction', [await sign(nonce, { value })]);
@@ -180,7 +180,7 @@ describe('ScriptedEvmNode', () => {
     expect(node.balance(bob)).toBe(ETH / 2n);
   });
 
-  it("accepts a replacement at exactly geth's floored bump threshold (M2)", async () => {
+  it("accepts a replacement at exactly geth's floored bump threshold", async () => {
     const { rpc, sign } = setup();
     const fees = async (maxFeePerGas: bigint, maxPriorityFeePerGas: bigint) =>
       rpc<string>('eth_sendRawTransaction', [
@@ -194,7 +194,7 @@ describe('ScriptedEvmNode', () => {
     await expect(fees(1_100_000_005n, 6n)).resolves.toMatch(/^0x/);
   });
 
-  it('refuses a reorg deeper than the chain or past the finalized block (M3)', () => {
+  it('refuses a reorg deeper than the chain or past the finalized block', () => {
     const { node } = setup();
     node.mine();
     expect(() => node.reorg(2)).toThrow('deeper than the chain');
@@ -205,7 +205,7 @@ describe('ScriptedEvmNode', () => {
     expect(node.head).toBe(5n);
   });
 
-  it('never moves the finalized block backwards (M3)', async () => {
+  it('never moves the finalized block backwards', async () => {
     const { node, rpc } = setup();
     node.mine(5);
     node.reorg(2);
@@ -223,7 +223,7 @@ describe('ScriptedEvmNode', () => {
     expect(node.finalized).toBe(4n);
   });
 
-  it('runs a transaction out of gas: status 0, the whole limit paid, nothing moved (M4)', async () => {
+  it('runs a transaction out of gas: status 0, the whole limit paid, nothing moved', async () => {
     const { node, rpc, sign } = setup();
     node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
     node.mintToken(TOKEN, alice.address, 500n);

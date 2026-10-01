@@ -74,9 +74,9 @@ Defined in: [src/testing/env.ts:51](https://github.com/vhidvz/crypto-aio/blob/ma
 
 Defined in: [src/testing/env.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/env.ts#L62)
 
-N-D: the raw, unfenced `Signer` instance — the same object across every `restart()`
+The raw, unfenced `Signer` instance — the same object across every `restart()`
 (stateless, never rebuilt). The container itself holds a fenced PROXY of it (see
-`generationSigner`/N-B), not this object, so an identity assertion against the
+`generationSigner`), not this object, so an identity assertion against the
 container's copy (e.g. `containerOf(aio).effective().signers[id]`) must compare `.id`,
 never `===` against this field.
 

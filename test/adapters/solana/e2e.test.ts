@@ -54,7 +54,7 @@ interface LatestBlockhash {
   readonly value: { readonly blockhash: string; readonly lastValidBlockHeight: number };
 }
 
-/** A build-time lie (lesson 17): every endpoint alters its `getLatestBlockhash` answer. */
+/** A build-time lie: every endpoint alters its `getLatestBlockhash` answer. */
 function lieAtBuild(env: Env, alter: (answer: LatestBlockhash) => LatestBlockhash): void {
   env.node.intercept = (endpoint, method, params) =>
     method === 'getLatestBlockhash'
@@ -97,7 +97,7 @@ function onExpired(env: Env): { height?: bigint } {
 }
 
 describe('Solana end to end', () => {
-  // Lesson 1, R46: the container builds its transports itself with the core's default
+  // The container builds its transports itself with the core's default
   // jitter (`Math.random`), which the public options cannot fix; it is fixed here instead.
   beforeEach(() => {
     jest.spyOn(Math, 'random').mockReturnValue(0.5);
@@ -157,7 +157,7 @@ describe('Solana end to end', () => {
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
   });
 
-  it("pays at most the handle's maxComputeUnitPrice however the endpoint prices it (F5-R9 (b))", async () => {
+  it("pays at most the handle's maxComputeUnitPrice however the endpoint prices it", async () => {
     const env = await createSolanaEnv({
       node: { prioritizationFees: [2n ** 63n] },
       chainOptions: { maxComputeUnitPrice: 50_000n },
@@ -223,7 +223,8 @@ describe('Solana end to end', () => {
     );
     expect(finals.every((f) => f.status.state === 'final')).toBe(true);
     expect(env.node.balance(RECIPIENT)).toBe(5n * SOL + 10n);
-    // Each Operation's own signing lock (R24), never the address lease (`seq:…`).
+    // An expiry ordering holds no address lease: each Operation signs under its own lock,
+    // never the address lease (`seq:…`).
     const keys = acquire.mock.calls.map(([key]) => key);
     const own = subs.map((s) => `op:default:${s.operationId}`);
     expect(own.every((key) => keys.includes(key))).toBe(true);
@@ -278,7 +279,7 @@ describe('Solana end to end', () => {
       env.bc.transfer({ to: RECIPIENT, amount: 2n * SOL }, { idempotencyKey: 'e1' }),
     );
     const id = sub.attempt?.id ?? '';
-    // F5-R9: the ordering names the message's blockhash and its block's slot.
+    // The ordering names the message's blockhash and its block's slot.
     const stored = (await env.stores.operations.get('default', sub.operationId))
       ?.attempts[0];
     const ordering = stored?.ordering as SolanaExpiryOrdering;
@@ -307,7 +308,7 @@ describe('Solana end to end', () => {
     await refusedByStateGate(env, sub.operationId);
     // The anchor: both endpoints' finalized block at the recorded slot, which carries the
     // blockhash (so the height is the quorum's, not the build's). The monitor may attest it
-    // while the window is still open (F5-R14), so its reads count from the start.
+    // while the window is still open, so its reads count from the start.
     const anchorReads = () =>
       finalizedBlockReads(env, 'none')
         .filter((s) => Number(s.params[0]) === Number(ordering.blockhashSlot))
@@ -330,7 +331,7 @@ describe('Solana end to end', () => {
         .map((s) => Number(s.params[0]));
       expect([...new Set(read)].sort((x, y) => x - y)).toEqual(window);
     }
-    // Rebuild re-proves the Attempt dead from finalized state (spec §8.6), never from the
+    // Rebuild re-proves the Attempt dead from finalized state, never from the
     // stored `expired`: while every endpoint's finalized view is back at L, the proof path
     // (not the state gate) refuses it.
     const held = env.node.intercept;
@@ -353,7 +354,7 @@ describe('Solana end to end', () => {
     expect([env.node.balance(RECIPIENT), calls()]).toEqual([2n * SOL, 2]);
   });
 
-  it('never calls an expired-looking transfer dead while it can still land (Review Focus 1)', async () => {
+  it('never calls an expired-looking transfer dead while it can still land', async () => {
     const env = await createSolanaEnv({ endpoints: ['a', { name: 'b', lag: 4 }] });
     const sub = await env.run(
       env.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'late' }),
@@ -374,7 +375,7 @@ describe('Solana end to end', () => {
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).toBe('expired');
   });
 
-  it('never proves expiry from a lowered lastValidBlockHeight: the transfer lands after it (lesson 17, F5-R10)', async () => {
+  it('never proves expiry from a lowered lastValidBlockHeight: the transfer lands after it', async () => {
     const { signer, calls } = countingSigner();
     const env = await createSolanaEnv({ endpoints: ['a', 'b'], signer });
     const builtAt = env.node.head;
@@ -415,7 +416,7 @@ describe('Solana end to end', () => {
     ]).toEqual([SOL, 1, 1]);
   });
 
-  it('proves expiry at the attested height when the recorded one was raised far past the window (F5-R14)', async () => {
+  it('proves expiry at the attested height when the recorded one was raised far past the window', async () => {
     const { signer, calls } = countingSigner();
     const env = await createSolanaEnv({ endpoints: ['a', 'b'], signer });
     const builtAt = env.node.head;
@@ -453,7 +454,8 @@ describe('Solana end to end', () => {
     expect([env.node.balance(RECIPIENT), calls()]).toEqual([SOL, 2]);
   });
 
-  it('proves expiry at the recorded height when the recorded slot does not hold the blockhash (F5-R11 fallback)', async () => {
+  // The slot-free fallback: the block 150 below the recorded height holds the blockhash.
+  it('proves expiry at the recorded height when the recorded slot does not hold the blockhash', async () => {
     const env = await createSolanaEnv({ endpoints: ['a', 'b'] });
     const builtAt = env.node.head;
     // The build's answer names the slot of the block before the blockhash's own.
@@ -486,7 +488,9 @@ describe('Solana end to end', () => {
     expect(env.node.balance(RECIPIENT)).toBe(SOL);
   });
 
-  it('decides nothing when neither the recorded slot nor the recorded height holds the blockhash (F5-R13)', async () => {
+  // A lie in both the slot and the height leaves the Operation unresolved, never paid
+  // twice.
+  it('decides nothing when neither the recorded slot nor the recorded height holds the blockhash', async () => {
     const env = await createSolanaEnv({ endpoints: ['a', 'b'] });
     const builtAt = env.node.head;
     lieAtBuild(env, (answer) => ({
@@ -540,7 +544,7 @@ describe('Solana end to end', () => {
     expect([stored.length, calls(), env.node.landed(id)?.err]).toEqual([1, 1, null]);
   });
 
-  it('decides a fork only when both endpoints serve the new block at the height (M11)', async () => {
+  it('decides a fork only when both endpoints serve the new block at the height', async () => {
     const env = await createSolanaEnv({ endpoints: ['a', 'b'] });
     const reorgs: AioEvent[] = [];
     env.aio.on('tx.reorged', (e) => reorgs.push(e));
@@ -556,7 +560,7 @@ describe('Solana end to end', () => {
     env.node.produce(1);
     const replacement = env.node.block(orphan.height);
     expect(replacement?.hash).not.toBe(orphan.hash);
-    // The orphan check reads the block at the recorded height (lesson 17) from both
+    // The orphan check reads the block at the recorded height from both
     // endpoints. While b still serves the orphaned block there, the quorum disagrees, which
     // decides nothing: no reorg, no resend.
     let bLags = true;
@@ -600,7 +604,7 @@ describe('Solana end to end', () => {
     expect(env.node.balance(RECIPIENT)).toBe(SOL);
   });
 
-  it('ends final, never expired, when the transfer lands at lastValidBlockHeight + 1 (I1)', async () => {
+  it('ends final, never expired, when the transfer lands at lastValidBlockHeight + 1', async () => {
     const env = await createSolanaEnv();
     const sub = await env.run(
       env.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'edge' }),
@@ -630,7 +634,7 @@ describe('Solana end to end', () => {
     expect(env.node.balance(RECIPIENT)).toBe(SOL);
   });
 
-  it('never proves expiry while every index misses a transfer landed at lastValidBlockHeight + 1 (I1, lesson 16)', async () => {
+  it('never proves expiry while every index misses a transfer landed at lastValidBlockHeight + 1', async () => {
     const env = await createSolanaEnv({ endpoints: ['a', 'b'] });
     const sub = await env.run(
       env.bc.transfer({ to: RECIPIENT, amount: SOL }, { idempotencyKey: 'unindexed' }),
@@ -674,7 +678,7 @@ describe('Solana end to end', () => {
     expect(env.node.balance(RECIPIENT)).toBe(SOL);
   });
 
-  describe('crash and recovery (handoff R20: killPrevious)', () => {
+  describe('crash and recovery (killPrevious)', () => {
     async function crashEnv() {
       const { signer, calls } = countingSigner();
       const faulty = new FaultyOperationStore(new MemoryOperationStore());
@@ -712,7 +716,7 @@ describe('Solana end to end', () => {
       expect([stored?.state, env.node.sendCount(ref)]).toEqual(['signed', 0]);
       const dead = env.bc;
       const restarted = env.restart({ killPrevious: true });
-      // M11: the crashed process is dead: nothing on its handle settles any more.
+      // The crashed process is dead: nothing on its handle settles any more.
       let deadSettled = false;
       void dead.getBlockHeight().then(
         () => (deadSettled = true),
@@ -806,7 +810,7 @@ describe('Solana end to end', () => {
     });
   });
 
-  describe("a node's rejection is a claim (lesson 21, F5-R15)", () => {
+  describe("a node's rejection is a claim", () => {
     const PREFLIGHT_CLAIM = {
       error: {
         code: -32002,
@@ -918,7 +922,7 @@ describe('Solana end to end', () => {
     });
   });
 
-  it('scans final blocks for deposits: native, SPL, and an unresolved token (R35)', async () => {
+  it('scans final blocks for deposits: native, SPL, and an unresolved token', async () => {
     const env = await createSolanaEnv();
     env.node.createMint(MINT, 6);
     env.node.mintTo(MINT, env.address, 10_000_000n);
@@ -937,7 +941,7 @@ describe('Solana end to end', () => {
       ),
     );
     await env.produceWhile(Promise.all(subs.map((s) => s.wait({ finality: 'final' }))));
-    // Another wallet's token whose mint no longer parses: its deposit is unresolved (R35).
+    // Another wallet's token whose mint no longer parses: its deposit is unresolved.
     env.node.createMint(JUNK, 6);
     const source = env.node.mintTo(JUNK, env.address, 10n);
     const destination = associatedAddress(RECIPIENT, JUNK);
@@ -990,7 +994,7 @@ describe('Solana end to end', () => {
     });
   });
 
-  it('scans and lists an SPL deposit into a watched token account, crediting its owner (I1)', async () => {
+  it('scans and lists an SPL deposit into a watched token account, crediting its owner', async () => {
     const env = await createSolanaEnv();
     env.node.createMint(MINT, 6);
     env.node.mintTo(MINT, env.address, 10_000_000n);

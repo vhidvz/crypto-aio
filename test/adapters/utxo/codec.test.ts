@@ -41,7 +41,7 @@ import { OTHER_KEY, OTHER_PUBKEY, TEST_KEY, TEST_PUBKEY } from './support/vector
 import { thrown } from '../../helpers';
 import { base64 as scureBase64 } from '@scure/base';
 
-/** A previous transaction, as the Esplora client decodes it (F3-R14). */
+/** A previous transaction, as the Esplora client decodes it. */
 const previousOf = (tx: Transaction): PreviousTx =>
   previousTxOf(tx.toHex()) as PreviousTx;
 
@@ -226,7 +226,7 @@ describe('buildTx and assembleTx', () => {
       ).toThrow(expect.objectContaining({ code: 'INVALID_INTENT' }));
     }
     expect(previousTxOf('zz')).toBeUndefined();
-    // Another value, or an output the transaction does not have (F3-R14 (a)).
+    // Another value, or an output the transaction does not have.
     for (const wrong of [
       { ...input, value: 60_000n },
       { ...input, vout: 1, outpoint: `${funding.getId()}:1` },
@@ -245,7 +245,7 @@ describe('buildTx and assembleTx', () => {
     }
   });
 
-  it('carries the verified previous transaction for segwit v0 inputs (M15), never for p2tr', () => {
+  it('carries the verified previous transaction for segwit v0 inputs, never for p2tr', () => {
     for (const type of ['p2wpkh', 'p2sh-p2wpkh', 'p2tr'] as const) {
       const wallet = walletAddress(TEST_PUBKEY, type, PARAMS);
       const funding = fundingTx(wallet.script, 50_000n, 1);
@@ -294,7 +294,7 @@ describe('buildTx and assembleTx', () => {
   });
 });
 
-describe('canonicalTwinTxid (C2: a miner-malleated p2pkh copy)', () => {
+describe('canonicalTwinTxid (a miner-malleated p2pkh copy)', () => {
   const signedP2pkh = () => {
     const { built, requests, sign } = setup('p2pkh');
     return assembleTx(built.psbt, NETWORK, requests, sign());
@@ -335,7 +335,7 @@ describe('canonicalTwinTxid (C2: a miner-malleated p2pkh copy)', () => {
   });
 });
 
-describe('signaturesFromPsbt (P3-B)', () => {
+describe('signaturesFromPsbt', () => {
   it.each(['p2wpkh', 'p2sh-p2wpkh', 'p2pkh'] as const)(
     '%s: takes the partial or final signatures that verify against our requests',
     (type) => {
@@ -457,8 +457,8 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
       hashType,
     );
 
-  it('refuses an oversized PSBT before decoding it (lesson 20)', () => {
-    // p2tr: no room for a previous transaction a coordinator may add (F3-R5).
+  it('refuses an oversized PSBT before decoding it', () => {
+    // p2tr: no room for a previous transaction a coordinator may add.
     const { built, requests, psbt, wallet } = signedCopy('p2tr');
     input(psbt).tapBip32Derivation = [
       {
@@ -516,7 +516,7 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
     expect(toHex(bytes)).toContain(pair);
     expect([...bytes.slice(0, 7)]).toEqual([0x70, 0x73, 0x62, 0x74, 0xff, 0x01, 0x00]);
     expect(bytes[7]).toBeLessThan(0xfd);
-    // Node's Buffer decoder skips what it cannot read; the round trip refuses it all (F3-R7).
+    // Node's Buffer decoder skips what it cannot read; the round trip refuses it all.
     const unpadded = good.endsWith('=') ? [good.replace(/=+$/, '')] : [];
     for (const signed of [
       `${good.slice(0, 20)}\n${good.slice(20)}`,
@@ -539,7 +539,7 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
   });
 
   it('refuses unknown fields at every level, and fields a signer does not add', () => {
-    // 0xef is a key type no BIP defines (0xfc, proprietary, is allowed: M1).
+    // 0xef is a key type no BIP defines (0xfc, proprietary, is allowed).
     const unknown = { key: Uint8Array.of(0xef, 0x00), value: Uint8Array.of(0x01) };
     const tamper: ((psbt: Psbt) => void)[] = [
       (psbt) => psbt.addUnknownKeyValToGlobal(unknown),
@@ -835,7 +835,10 @@ describe('signaturesFromPsbt: a signed PSBT is untrusted', () => {
   });
 });
 
-describe('Core-coordinated signing (F3-R5)', () => {
+// A Bitcoin Core coordinator's additions (key origins, change-output fields, proprietary
+// keys, a previous transaction on a non-taproot input) are accepted: none reaches the
+// spend.
+describe('Core-coordinated signing', () => {
   const origin = {
     masterFingerprint: Uint8Array.of(1, 2, 3, 4),
     path: "m/84'/1'/0'/1/0",
@@ -1064,7 +1067,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
     refusedAs(built.psbt, added, requests, 'changes the prepared transaction');
   });
 
-  it('takes our own previous transactions byte for byte, without decoding them again (F3-R7)', () => {
+  it('takes our own previous transactions byte for byte, without decoding them again', () => {
     const { built, requests, wallet, funding } = withPrevious('p2wpkh');
     const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
     signed.signAllInputs(signerOf('p2wpkh', wallet));
@@ -1079,7 +1082,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
         fromBuffer.mock.calls.filter(([bytes]) => ours.includes(bytes.length)),
       ).toEqual([]);
       // A coordinator's other copy (with the witness) is not ours: it is read, and bound to
-      // the outpoint's txid, by the linear reader (F3-R24 F2), never by bitcoinjs.
+      // the outpoint's txid, by the linear reader, never by bitcoinjs.
       const core = reparse(signed);
       core.data.inputs[0]!.nonWitnessUtxo = funding[0]!.toBuffer();
       fromBuffer.mockClear();
@@ -1101,9 +1104,9 @@ describe('Core-coordinated signing (F3-R5)', () => {
     }
   });
 
-  it('bounds what coordinators may add, in all, to one block (F3-R7)', () => {
-    // 50 segwit inputs without their previous transactions (M15 off): 100,000 bytes of room
-    // each would be 5 MB; in all it is one block (4,000,000 bytes).
+  it('bounds what coordinators may add, in all, to one block', () => {
+    // 50 segwit inputs without their previous transactions (`nonWitnessUtxo` off):
+    // 100,000 bytes of room each would be 5 MB; in all it is one block (4,000,000 bytes).
     const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
     const inputs = Array.from({ length: 50 }, (_, index) => {
       const funding = fundingTx(wallet.script, 10_000n, 100 + index);
@@ -1128,7 +1131,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
     refusedAs(built.psbt, { toBase64: () => text } as Psbt, requests, 'is too large');
   });
 
-  it('reads what a coordinator adds, and the unsigned transaction it carries, without bitcoinjs (F3-R24 F2)', () => {
+  it('reads what a coordinator adds, and the unsigned transaction it carries, without bitcoinjs', () => {
     // 40 segwit inputs without their previous transactions: 4 MB of room in all.
     const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
     const inputs = Array.from({ length: 40 }, (_, index) => {
@@ -1209,7 +1212,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
     ).toHaveLength(1);
   });
 
-  it('accepts PSBT version 0 and proprietary keys at every level, and refuses another version (M1)', () => {
+  it('accepts PSBT version 0 and proprietary keys at every level, and refuses another version', () => {
     const { built, requests } = setup('p2wpkh');
     const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
     signed.signAllInputs(nativeSigner(TEST_KEY));
@@ -1239,7 +1242,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
     }
   });
 
-  it('trims ASCII whitespace around the base64, and only there (M2)', () => {
+  it('trims ASCII whitespace around the base64, and only there', () => {
     const { built, requests } = setup('p2wpkh');
     const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
     signed.signAllInputs(nativeSigner(TEST_KEY));
@@ -1257,7 +1260,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
     }
   });
 
-  it('p2tr: takes the key-path signatures from a finalized PSBT (M4)', () => {
+  it('p2tr: takes the key-path signatures from a finalized PSBT', () => {
     const { built, requests, wallet } = setup('p2tr');
     const signed = bitcoin.Psbt.fromBase64(built.psbt, { network: NETWORK });
     signed.signAllInputs(nativeTaprootSigner(TEST_KEY, wallet.tweak as Uint8Array));
@@ -1277,7 +1280,7 @@ describe('Core-coordinated signing (F3-R5)', () => {
   });
 });
 
-describe('buildTx range checks (lesson 19)', () => {
+describe('buildTx range checks', () => {
   const MAX_MONEY = 2_100_000_000_000_000n;
   const wallet = walletAddress(TEST_PUBKEY, 'p2wpkh', PARAMS);
   const txid = '11'.repeat(32);
@@ -1286,7 +1289,7 @@ describe('buildTx range checks (lesson 19)', () => {
   const build = (i: PlannedInput, o = output, sequence = SEQUENCE_RBF) =>
     buildTx(NETWORK, wallet, [i], [o], sequence);
 
-  it('refuses an outpoint listed twice with a fixed text (M3)', () => {
+  it('refuses an outpoint listed twice with a fixed text', () => {
     expect(() =>
       buildTx(NETWORK, wallet, [input, { ...input }], [output], SEQUENCE_RBF),
     ).toThrow(
@@ -1371,7 +1374,7 @@ describe('buildTx range checks (lesson 19)', () => {
   });
 });
 
-describe('untrusted transaction hex (lesson 20)', () => {
+describe('untrusted transaction hex', () => {
   const signed = () => {
     const { built, requests, sign } = setup('p2pkh');
     return assembleTx(built.psbt, NETWORK, requests, sign());
@@ -1418,7 +1421,7 @@ describe('untrusted transaction hex (lesson 20)', () => {
     }
   });
 
-  it('reads untrusted transaction bytes in one linear pass, never through bitcoinjs (F3-R24 F2)', () => {
+  it('reads untrusted transaction bytes in one linear pass, never through bitcoinjs', () => {
     // bitcoinjs' decoder is quadratic in the inputs and outputs: 53 s for 92,500 outputs.
     const decodable = manyOutputs(110_000, 2_900_000); // 3.9 MB, a chain's million bytes
     const tooLarge = manyOutputs(433_000); // 3.9 MB without witness: no chain holds it
