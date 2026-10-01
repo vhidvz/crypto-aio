@@ -2,7 +2,9 @@ name: Documentation
 
 # Builds the documentation site (docs/, with VitePress) on every change to it, and publishes
 # it to GitHub Pages from main. Pages must be set to deploy from "GitHub Actions"
-# (Settings → Pages → Build and deployment → Source).
+# (Settings → Pages → Build and deployment → Source). Set to deploy from a branch, GitHub also
+# builds docs/ with Jekyll on every push to main and serves that instead of this site: pages
+# without the site's styles, navigation or API reference links. The deploy job checks this.
 
 on:
   push:
@@ -78,6 +80,16 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Check that Pages deploys from GitHub Actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type) || source=unknown
+          if [ "$source" != workflow ]; then
+            echo "::error title=GitHub Pages source::Pages does not deploy from GitHub Actions (build_type: $source), so GitHub's Jekyll build of docs/ replaces this site on every push to main. Set Settings → Pages → Build and deployment → Source to \"GitHub Actions\", then re-run this workflow."
+            exit 1
+          fi
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
