@@ -148,8 +148,10 @@ if (isCryptoAioError(result)) console.log(result.code, result.retryable); // TIM
 
 ## Retry safely after an error
 
-The pattern for any payment call: decide from the error and the Operation's stored state, and
-never retry a payment that might land with a new key.
+The pattern for any payment call: decide from the error's category and the Operation's stored
+state, and when in doubt, retry with the **same** key, never a new one. Only `validation` and
+`config` errors are always raised before anything is stored; any other error may leave a
+payment in flight, even one without an `operationId` (a busy address lease, a custody timeout).
 
 ```ts
 import { isCryptoAioError } from 'crypto-aio';
@@ -162,17 +164,23 @@ async function pay(bc, withdrawal) {
     );
   } catch (error) {
     if (!isCryptoAioError(error)) throw error;
-    if (error.ambiguous) return scheduleRetry(withdrawal.id); // same key, later
+    // Refused before anything was stored: the input or the configuration is wrong.
+    if (error.category === 'validation' || error.category === 'config') {
+      return markRejected(withdrawal, error.code);
+    }
+    if (error.code === 'IDEMPOTENCY_CONFLICT') throw error; // a bug: the key names another payment
     const id = error.context.operationId;
-    const op = id ? await bc.getOperation(String(id)) : null;
+    const op = id === undefined ? null : await bc.getOperation(String(id));
     if (op?.state === 'stalled') return alertOperator(op); // rebroadcast, replace or cancel
-    if (!op || op.state === 'failed') return markFailed(withdrawal, error.code); // nothing in flight
-    throw error;
+    if (op?.state === 'failed') return reconcileFailure(withdrawal, op); // terminal; see Errors
+    // Ambiguous, retryable, or no Operation to read: the payment may be in flight.
+    return scheduleRetry(withdrawal.id); // later, with the SAME key: it resumes, never pays twice
   }
 }
 ```
 
-[Errors](../reference/errors.md#what-to-do-about-each-error) gives the safe action for every code.
+[Errors](../reference/errors.md#what-to-do-about-each-error) gives the safe action for every code,
+including when a `failed` token transfer still needs a look at the chain.
 
 ## Bump the fee of a stuck payment
 

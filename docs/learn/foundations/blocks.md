@@ -112,7 +112,7 @@ in the transaction's **receipt** (its status, and the `Transfer` event a token l
 Every status the library returns says how far along a transaction is, and how sure the
 library is of it:
 
-- `state`: for example `submitted`, `included` or `final`.
+- `state`: for example `mempool`, `included` or `final`.
 - `confirmations`: how many blocks deep it is.
 - `finality`: `none`, `probabilistic` (included, but could still be reorganized) or `final`.
 - `evidence`: `observed` (one endpoint's current view) or `proven` (finalized data, checked
@@ -142,8 +142,8 @@ const done = await env.run(sub.wait({ finality: 'final' }));
 console.log(done.status.state, done.status.evidence); // final proven
 ```
 
-`waitForConfirmation(id, { finality: 'final' })` (or `sub.wait(…)`) resolves only on a final,
-proven status; `{ confirmations: n }` waits for depth instead. For deposits, the scanner's
+For your own transfers, `waitForConfirmation(id, { finality: 'final' })` (or `sub.wait(…)`)
+resolves only on a final, proven status; `{ confirmations: n }` waits for depth instead. For deposits, the scanner's
 `mode: 'final'` delivers only finalized blocks, and in `head` mode it emits a **rollback** event
 when a reorg discards blocks it delivered ([Receive deposits](../../build/receive.md)).
 

@@ -626,7 +626,8 @@ which key sends. [Lesson 3](../learn/foundations/wallets.md).
 
 ### Watch-only
 
-A wallet with public information only: it reads and prepares, never signs.
+A wallet with public information only: it reads, and with a `publicKey` it can prepare unsigned
+transactions, but it never signs.
 [Lesson 3](../learn/foundations/wallets.md).
 
 ### Wei, satoshi, lamport, sun, nanogram

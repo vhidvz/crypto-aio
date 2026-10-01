@@ -28,17 +28,22 @@ description: How crypto-aio handles ambiguous broadcasts, refusals and crashes, 
 | Broadcast outcome **unknown** | `error.ambiguous === true`; the Operation is `submitted` and `ambiguous` | Maybe | Repeat with the **same** key, or let workers resolve it |
 | A node **refused** the signed bytes | An error with a code (`INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, …); the Operation is `stalled` | Maybe | Fix the cause, then `rebroadcast`, `replace` or `cancel`; never a new key |
 
-Every error carries `context.operationId`, so you can always read the Operation and decide from
-its state rather than from the error alone.
+An error about a stored Operation carries `context.operationId`, so you can read the Operation and
+decide from its state rather than from the error alone. A missing id does not prove that nothing
+was stored: a busy address lease (`SEQUENCE_BUSY`) or a custody timeout on a repeated call carries
+none. Only `validation` and `config` errors are always raised before an Operation exists. When in
+doubt, repeat the call with the same key: it resumes whatever exists, and never pays twice.
 
 ```mermaid
 flowchart TB
-  err["transfer() threw"] --> amb{"error.ambiguous?"}
-  amb -- yes --> same["Repeat with the SAME key<br/>(it resends the stored bytes)<br/>or wait for the workers"]
+  err["transfer() threw"] --> cat{"category validation<br/>or config?"}
+  cat -- yes --> fix["Nothing was stored:<br/>fix the input or configuration"]
+  cat -- no --> amb{"ambiguous, or<br/>no operationId?"}
+  amb -- yes --> same["Repeat with the SAME key<br/>(it resumes the Operation)<br/>or let the workers finish"]
   amb -- no --> state{"Operation state?"}
-  state -- "none stored, or failed<br/>before signing" --> fix["Fix the input or cause;<br/>a new key is safe"]
   state -- stalled --> remedy["Fix the cause, then rebroadcast,<br/>replace or cancel"]
-  state -- "failed, expired<br/>(proven)" --> reconcile["Reconcile; a new transfer is safe<br/>(check the chain for token verdicts)"]
+  state -- "failed or expired" --> reconcile["Reconcile; a new transfer is safe<br/>(check the chain for token verdicts)"]
+  state -- "anything else" --> same
 ```
 
 ## Ambiguity, inside the library
@@ -139,8 +144,8 @@ startup sequence of a service.
 | Path | What is there |
 | --- | --- |
 | `src/core/lifecycle/engine.ts` | `rebroadcast`, `replace`, `cancel`, `rebuild`, `abandon`, and the broadcast classification |
-| `src/core/lifecycle/workers.ts` | `monitor.start()`, `runOnce()`, claims |
-| `src/core/lifecycle/reconcile.ts` | `recover()` and nonce reconciliation |
+| `src/core/lifecycle/workers.ts` | `monitor.start()`, `runOnce()`, claims, and `recover()` |
+| `src/core/lifecycle/reconcile.ts` | Nonce reconciliation |
 | `src/core/lifecycle/monitor.ts` | Observation, waiting, and applying verdicts |
 | `src/testing/faulty-store.ts` | `FaultyOperationStore`: crashes on demand, for tests |
 

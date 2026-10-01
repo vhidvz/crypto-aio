@@ -147,8 +147,17 @@ Root container only: every scope and handle of a container shares its transports
 | `fetch` | global `fetch` | For tests (`FakeFetch`) |
 
 The lag tolerance comes from `chains.<id>.maxLagBlocks`, then `transport.maxLagBlocks`, then the
-network's own value (the BSC, Arbitrum, OP and Base mainnets set about 60 seconds of blocks),
-then 5.
+network's own value, then 5. Networks that set their own value, roughly a minute of blocks:
+
+| Network | `maxLagBlocks` |
+| --- | --- |
+| BSC, Arbitrum, OP and Base mainnets | 134, 240, 30 and 30 |
+| Bitcoin mainnet and signet; its testnets | 2; 6 |
+| Tron | 20 |
+| Solana, TON | 150 |
+| Avalanche X-Chain; P-Chain | 2; 6 |
+
+The other EVM networks (Ethereum, Polygon, the Avalanche C-Chain, the testnets) use the default of 5.
 
 ## Family options
 

@@ -112,8 +112,8 @@ Where the keys live decides how fast you can pay, and how much you can lose:
 - A **cold wallet** keeps keys offline: a hardware wallet, an air-gapped machine, or a custody
   service with human approval. Slow, and much safer.
 - A **watch-only wallet** has only public information (an address, a public key or an xpub).
-  It can read balances, derive deposit addresses and even prepare unsigned payments, but never
-  sign.
+  It can read balances and derive deposit addresses, and with the public key it can even prepare
+  unsigned payments for another device to sign. It never signs.
 
 ## Why a developer cares
 

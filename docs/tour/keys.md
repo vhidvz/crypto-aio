@@ -80,8 +80,9 @@ signatures with `bc.submitSignatures(operationId, signatures)`, and the Operatio
 verification step. `bc.abandon(operationId)` cancels it before anything is signed, and calls the
 signer's `cancelRequest` for each pending ticket.
 
-A wallet with no signer at all is watch-only: `prepareTransfer` builds and stores the unsigned
-transaction and returns its requests, for a hardware wallet or an offline machine
+A wallet with no signer is watch-only. Given its `publicKey`, it can still prepare: `prepareTransfer`
+builds and stores the unsigned transaction and returns its requests, for a hardware wallet or
+an offline machine
 ([Cold and asynchronous signing](../build/cold-signing.md)).
 
 `lifecycle.signTimeoutMs` (120 s) bounds the hook and the signer in every call. On timeout,

@@ -81,7 +81,8 @@ const aio = new CryptoAio({
   lifecycle: { requireIdempotencyKey: true },
 });
 
-// 1. Fail fast: the SDK loads and every endpoint serves mainnet.
+// 1. Fail fast: the SDK loads, and at least one endpoint is usable (an endpoint that serves
+//    another network is disabled and emits provider.misconfigured: alert on it).
 await aio.blockchain({ chain: 'ethereum' }).ready();
 // 2. Finish what the previous process left in flight.
 const report = await aio.operations.recover();

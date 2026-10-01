@@ -129,7 +129,7 @@ These rules turn into concrete engineering problems:
 ## In crypto-aio
 
 crypto-aio calls whatever orders a wallet's transactions its **ordering slot**: a nonce, a
-seqno, a set of inputs, or an expiry. Every handle reports its chain's ordering, and every
+seqno, a set of inputs, or an expiry. Each chain has one ordering kind, and every
 Operation reserves its slot when it is prepared; a replacement reuses the same slot. While a
 slot is being chosen and signed, the library holds a short lock on the sending address, an
 **address lease**, so concurrent transfers get distinct, consecutive nonces:

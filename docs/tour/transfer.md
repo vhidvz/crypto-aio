@@ -181,7 +181,7 @@ any process that shares the stores.
 | Path | What is there |
 | --- | --- |
 | `src/core/lifecycle/engine.ts` | `transfer`, `prepare`, `submitSignatures`, `rebroadcast`, `replace`, `cancel`, `rebuild`, `abandon` |
-| `src/core/lifecycle/intent.ts` | Normalizing an intent and computing its `intentHash` |
+| `src/core/lifecycle/intent.ts`, `src/core/model/intent.ts` | Normalizing an intent; computing its `intentHash` |
 | `src/core/lifecycle/engine-rules.ts` | Lifecycle defaults and the state predicates |
 | `src/core/lifecycle/views.ts` | `OperationView`, `AttemptView`, `Submission` |
 | `src/core/store/types.ts` | The records as stored, and `TERMINAL_STATES` |
