@@ -86,4 +86,8 @@ to the public API or its doc comments. TypeDoc's settings are in `typedoc.json`;
 `navigation.json` that becomes the API reference's sidebar.
 
 The `Documentation` workflow (`.github/workflows/docs.yml`) runs these tests and builds the site
-for every pull request that changes it, and publishes it to GitHub Pages from `main`.
+for every pull request that changes it, and publishes it to GitHub Pages from `main`. Pages must
+deploy from **GitHub Actions** (Settings → Pages → Build and deployment → Source): set to deploy
+from a branch, GitHub builds this directory with Jekyll on every push to `main` and serves that
+instead, without the site's styles and with broken links. The workflow fails its deploy job until
+the source is right.
