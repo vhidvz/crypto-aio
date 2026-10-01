@@ -7,6 +7,9 @@ hero:
   name: crypto-aio
   text: "One TypeScript API for moving money on blockchains"
   tagline: "Balances, transfers, confirmations and deposit scanning across EVM chains, Bitcoin, Tron, Solana, TON and Avalanche, built for exchanges, wallets and payment systems."
+  image:
+    light: /crypto-aio-icon.svg
+    dark: /crypto-aio-icon-dark.svg
   actions:
     - theme: brand
       text: Get started in 5 minutes

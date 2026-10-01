@@ -18,6 +18,7 @@ published.
 | `api/` | API | The API reference, generated from the source's doc comments by `pnpm doc`; do not edit by hand |
 | `guides/` | | Redirects from the pre-site guide URLs; do not add pages here |
 | `.vitepress/` | | The site itself: its configuration, navigation and theme |
+| `public/` | | Files served as they are, at the site's root: the logo, the icon and the favicon |
 
 The files of the site:
 
@@ -53,6 +54,23 @@ the order there.
   `console.log(…); // text` must print exactly that text (`…` matches anything); a `console.log` in
   a loop lists its lines after a `// Prints:` comment instead. Use the fake chain
   (`createFakeEnv`), so the block needs no network.
+
+## The brand
+
+The logo and the icon are in `public/`; the site serves them at its root, and the repository's
+README shows the logo from `main`.
+
+| File | What it is, and where it is used |
+| --- | --- |
+| `crypto-aio-logo.svg`, `crypto-aio-logo-dark.svg` | The mark and the wordmark, for light and dark backgrounds: the README's header |
+| `crypto-aio-icon.svg`, `crypto-aio-icon-dark.svg` | The mark alone: the site's top bar and the home page |
+| `favicon.svg` | The mark, in the reader's light or dark theme: the browser tab |
+
+The wordmark is Inter Display Bold, outlined into paths, so it looks the same where Inter is not
+installed: GitHub and npm show the logo as an image, without the site's fonts. The colors are ink
+`#111827` (`#F3F4F6` on dark backgrounds), indigo `#5B5FEF` and teal `#16B8C4`. The site's link
+and button colors, in `.vitepress/theme/style.css`, are shades of the indigo that keep text
+readable in both themes.
 
 ## Tests that keep the pages honest
 

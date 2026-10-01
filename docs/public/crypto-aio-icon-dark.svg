@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 -10 220 220" color="#F3F4F6" role="img" aria-labelledby="crypto-aio-title">
+  <title id="crypto-aio-title">crypto-aio</title>
+  <defs>
+    <linearGradient id="crypto-aio-mark" x1="38" y1="182" x2="192" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B5FEF"/>
+      <stop offset="1" stop-color="#16B8C4"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(10 0)">
+    <!-- hexagonal network frame -->
+    <path d="M100 2 184 51v98l-84 49-84-49V51z"
+          fill="none" stroke="currentColor" stroke-width="11" stroke-linejoin="round"/>
+    <!-- one route across every network: value moving from source to destination -->
+    <path d="M49 128 91 92 119 116 160 76"
+          fill="none" stroke="url(#crypto-aio-mark)" stroke-width="15"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- source, intermediate and destination nodes -->
+    <circle cx="49" cy="128" r="13" fill="currentColor"/>
+    <circle cx="91" cy="92" r="13" fill="currentColor"/>
+    <circle cx="119" cy="116" r="13" fill="currentColor"/>
+    <circle cx="160" cy="76" r="13" fill="currentColor"/>
+  </g>
+</svg>
