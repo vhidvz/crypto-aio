@@ -122,6 +122,10 @@
       "optional": true
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "files": [
     "dist",
     "CHANGELOG.md"
@@ -196,10 +200,6 @@
   "engines": {
     "node": ">=22.x.x <23",
     "npm": "~10.9.2"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
   },
   "packageManager": "pnpm@10.5.2"
 }
