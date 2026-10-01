@@ -261,6 +261,27 @@ describe('Blockchain handle', () => {
       code: 'CONFIG_INVALID',
     });
     await expect(env.run(utxo('main').deriveAddress('x', 0))).resolves.toBeDefined();
+    // A UTXO chain whose wallets export `xpub` everywhere opts out (Avalanche X/P).
+    env.aio.use({
+      name: 'fake-unclassed',
+      chains: [
+        {
+          ...fakechain,
+          id: 'fakeunclassed',
+          family: 'fakeunclassed',
+          model: 'utxo',
+          xpubNetworkClass: false,
+        },
+      ],
+      adapters: [{ ...fakeManifest, family: 'fakeunclassed', chains: ['fakeunclassed'] }],
+    });
+    const unclassed = env.aio.blockchain({
+      chain: 'fakeunclassed' as FakeChainId,
+      network: 'local' as never,
+      provider: 'fake',
+      wallet: 'main',
+    });
+    await expect(env.run(unclassed.deriveAddress('x', 0))).resolves.toBeDefined();
   });
 
   it('reports network status with semantic endpoint health', async () => {

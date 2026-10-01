@@ -8,7 +8,7 @@ import { native } from '../../src/native';
 import { createFakeEnv } from '../../src/testing';
 
 const ROOT = join(__dirname, '..', '..');
-const SDK = /^(ethers|web3|tronweb|bitcoinjs-lib|@solana\/|@ton\/)/;
+const SDK = /^(ethers|web3|tronweb|bitcoinjs-lib|@solana\/|@ton\/|@avalabs\/)/;
 const IMPORT = /(?:\bfrom\s+|\bimport\s+|\brequire\(\s*)['"]([^'"]+)['"]/g;
 
 function files(dir: string): string[] {

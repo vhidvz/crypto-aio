@@ -3,7 +3,15 @@ import { defineConfig } from 'eslint/config';
 import prettier from 'eslint-plugin-prettier/recommended';
 import tseslint from 'typescript-eslint';
 
-const SDKS = ['ethers', 'web3', 'tronweb', 'bitcoinjs-lib', '@solana/*', '@ton/*'];
+const SDKS = [
+  'ethers',
+  'web3',
+  'tronweb',
+  'bitcoinjs-lib',
+  '@solana/*',
+  '@ton/*',
+  '@avalabs/*',
+];
 
 export default defineConfig(
   {

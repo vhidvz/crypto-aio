@@ -9,7 +9,8 @@ All-In-One Crypto-Currency
 [![documentation](https://img.shields.io/badge/documentation-click_to_read-c27cf4)](docs/guides/index.md)
 
 One TypeScript API for balances, transfers, confirmations and deposit scanning across EVM
-chains, Bitcoin, Tron, Solana and TON, built for exchanges, wallets and payment systems.
+chains, Bitcoin, Tron, Solana, TON and the Avalanche X-Chain and P-Chain, built for
+exchanges, wallets and payment systems.
 Transfers are idempotent and crash-safe, and a signed transaction ends only on proof from
 finalized chain data, never on one endpoint's word.
 
@@ -24,6 +25,7 @@ npm install crypto-aio bitcoinjs-lib    # Bitcoin
 npm install crypto-aio tronweb          # Tron
 npm install crypto-aio @solana/web3.js  # Solana
 npm install crypto-aio @ton/ton @ton/core @ton/crypto  # TON
+npm install crypto-aio @avalabs/avalanchejs  # Avalanche X-Chain and P-Chain
 ```
 
 A handle whose SDK is missing fails with `DEPENDENCY_MISSING` and the install command.
@@ -111,8 +113,8 @@ network supports is in [Using any blockchain network](docs/guides/networks.md).
 | `@solana/web3.js` 1                               | Supported                                       | Solana mainnet, devnet, testnet                                                 |
 | `@ton/ton` 16, with `@ton/core` and `@ton/crypto` | Supported, with toncenter API v3 as the indexer | TON mainnet and testnet; the coin is Gram (formerly Toncoin)                    |
 | `@tonconnect/sdk`                                 | Replaced by `@ton/ton`                          | TonConnect links dApps to user wallets; it is not a node SDK                    |
-| `@avalabs/avalanchejs`                            | Deferred                                        | Avalanche X and P chains (the C-Chain is supported as EVM)                      |
-| `@bnb-chain/javascript-sdk`                       | Unsupported                                     | BNB Beacon Chain, sunset in 2024 (BNB Smart Chain is supported as EVM)          |
+| `@avalabs/avalanchejs` 5                          | Supported, with the Avalanche Data API as the indexer | Avalanche X-Chain and P-Chain, mainnet and Fuji (the C-Chain is supported as EVM) |
+| `@bnb-chain/javascript-sdk`                       | Unsupported                                     | BNB Beacon Chain, shut down in 2024: no node serves it (BNB Smart Chain is supported as EVM) |
 
 Only in-memory stores ship. Production needs durable stores of your own (Postgres, Redis,
 …), proven with the contract suites in `crypto-aio/testing`.

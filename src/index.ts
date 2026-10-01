@@ -4,6 +4,7 @@
  *
  * @module crypto-aio
  */
+import { avalanchePlugin } from './adapters/avalanche/plugin';
 import { evmPlugin } from './adapters/evm/plugin';
 import { solanaPlugin } from './adapters/solana/plugin';
 import { tonPlugin } from './adapters/ton/plugin';
@@ -19,6 +20,7 @@ const BUILTIN_PLUGINS: readonly Plugin[] = [
   tronPlugin(),
   solanaPlugin(),
   tonPlugin(),
+  avalanchePlugin(),
 ];
 setBuiltinPlugins(BUILTIN_PLUGINS);
 
@@ -291,8 +293,9 @@ export { createLogger, noopLogger } from './core/events/logger';
 export type { LogFields, LogLevel, LogWriter, Logger } from './core/events/logger';
 export type { Clock } from './core/util/clock';
 
-// Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/evm`,
-// `crypto-aio/solana`, `crypto-aio/ton`, `crypto-aio/tron` and `crypto-aio/utxo`.
+// Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/avalanche`,
+// `crypto-aio/evm`, `crypto-aio/solana`, `crypto-aio/ton`, `crypto-aio/tron` and
+// `crypto-aio/utxo`.
 export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './adapters/evm/types';
 export type {
   TronExpiryOrdering,
@@ -327,3 +330,10 @@ export type {
   TonWalletIdentity,
   TonWalletVersion,
 } from './adapters/ton/types';
+export type {
+  AvalancheExt,
+  AvalancheFeeDetails,
+  AvalancheFeeOverride,
+  AvalancheUnspent,
+  AvalancheVm,
+} from './adapters/avalanche/types';

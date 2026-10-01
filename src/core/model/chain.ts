@@ -47,6 +47,12 @@ export interface ChainInfo {
   readonly nativeAsset: NativeAssetInfo;
   readonly defaultNetwork: string;
   readonly networks: Readonly<Record<string, NetworkInfo>>;
+  /**
+   * Whether the chain's extended public keys carry their network class (SLIP-0132: `xpub`
+   * on mainnet, `tpub` on test networks), so `deriveAddress` refuses a key of the other
+   * class (A20). Default: `true` for `utxo`-model chains, `false` for account-model ones.
+   */
+  readonly xpubNetworkClass?: boolean;
 }
 
 export function explorerUrl(

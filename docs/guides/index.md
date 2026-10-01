@@ -29,8 +29,10 @@ C-Chain, Arbitrum, Optimism and Base, through ethers, the default, or web3), the
 family** (Bitcoin: mainnet, testnet, testnet4, signet and regtest, through bitcoinjs-lib and
 an Esplora indexer), the **Tron family** (tronweb), the **Solana family** (mainnet, devnet
 and testnet, through `@solana/web3.js`) and the **TON family** (mainnet and testnet, through
-`@ton/ton`; its coin is Gram, formerly Toncoin). The fake family from `crypto-aio/testing` is
-a deterministic, in-memory chain for learning and testing.
+`@ton/ton`; its coin is Gram, formerly Toncoin). After 0.1.0 came the **Avalanche family**
+(the X-Chain and the P-Chain, mainnet and Fuji, through `@avalabs/avalanchejs` and the
+Avalanche Data API). The fake family from `crypto-aio/testing` is a deterministic, in-memory
+chain for learning and testing.
 
 **Only in-memory stores ship.** They work in one process and lose everything on restart.
 In production you supply your own `OperationStore`, `LockManager`, `SequenceStore` and
@@ -48,6 +50,7 @@ in `crypto-aio/testing`; see [Testing an adapter or a store](./networks.md#testi
 | Tron (tronweb) | Works today; address history needs an indexer provider (`trongrid` or `public`) |
 | Solana (@solana/web3.js) | Works today: SOL, classic SPL tokens, memos, scanning and history without an indexer; needs Node.js 22.12 or later |
 | TON (@ton/ton): Gram and jettons, v4r2 and v5r1 wallets | Works today; needs an indexer (toncenter API v3); one output per transfer; no block scan (TON is sharded) |
+| Avalanche X-Chain and P-Chain (@avalabs/avalanchejs) | Works today: AVAX, batches, X-Chain memos; needs an indexer (the Avalanche Data API); no replace or cancel; no Avalanche native tokens |
 
 `Blockchain.create({ chain: 'ethereum', provider: … })` works once the SDK is installed:
 `npm install ethers`, or `npm install web3` and `library: 'web3'` on the handle, since ethers
