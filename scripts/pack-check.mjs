@@ -53,6 +53,7 @@ const CASES = [
   ['tron', 'nile', 'tronweb', {}],
   ['solana', 'devnet', '@solana/web3.js', {}],
   ['ton', 'testnet', '@ton/ton', { indexer: 'xi' }],
+  ['avalanche-x', 'fuji', '@avalabs/avalanchejs', { indexer: 'xi' }],
 ];
 async function check(expect) {
   for (const [chain, network, sdk, extra] of CASES) {

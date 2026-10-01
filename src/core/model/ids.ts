@@ -40,6 +40,7 @@ export const Library = Object.freeze({
   BITCOINJS_LIB: 'bitcoinjs-lib',
   SOLANA_WEB3_JS: '@solana/web3.js',
   TON: '@ton/ton',
+  AVALANCHEJS: '@avalabs/avalanchejs',
 } as const);
 
 export type KnownLibrary = (typeof Library)[keyof typeof Library];
