@@ -13,11 +13,6 @@ chains, Bitcoin, Tron, Solana and TON, built for exchanges, wallets and payment 
 Transfers are idempotent and crash-safe, and a signed transaction ends only on proof from
 finalized chain data, never on one endpoint's word.
 
-**crypto-aio 0.1.0** is the first release of this API: an SDK-free core, five chain families
-and a deterministic testing kit. It replaces the 0.0.x API (`caio.eth.*`) entirely; the
-[changelog](CHANGELOG.md) has the migration notes and a security advisory about credentials
-that were once committed to this repository.
-
 ## Install
 
 crypto-aio needs Node.js 22 or later (Solana: 22.12 or later). Install the package, and only
