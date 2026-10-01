@@ -71,7 +71,11 @@ async function check(expect) {
 try {
   // 1. What npm would publish.
   const [packed] = JSON.parse(
-    run('npm', ['pack', '--json', '--pack-destination', work], root),
+    run(
+      'npm',
+      ['pack', '--json', '--foreground-scripts=false', '--pack-destination', work],
+      root,
+    ),
   );
   const files = packed.files.map((file) => file.path);
   const unexpected = files.filter(
