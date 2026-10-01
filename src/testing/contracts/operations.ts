@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { OrderingData } from '../../core/model/ordering';
 import type {
   AttemptRecord,
   ClearableField,
@@ -86,6 +87,71 @@ export function sampleAttempt(
     createdAt: 1,
     ...overrides,
   };
+}
+
+/**
+ * Plan 7 D7 (F4-R15, F5-R14, the Plan 6 handoff §3): an ordering of each kind the built-in
+ * families record, with each family's own properties. A store must keep every one whole:
+ * a dropped property costs liveness, but a changed one (a `refBlockHash`, a `blockhash`, a
+ * `validFrom` moved later, a bigint narrowed to a number) can prove a transaction absent
+ * while a block holds it, and `rebuild` then pays twice. The bigints exceed 2^53.
+ */
+export const SAMPLE_ORDERINGS: readonly (readonly [string, OrderingData])[] =
+  Object.freeze([
+    ['an EVM nonce', { kind: 'nonce', nonce: 2n ** 64n - 1n }],
+    [
+      'UTXO inputs',
+      {
+        kind: 'inputs',
+        inputs: [`${'ab'.repeat(32)}:0`, `${'cd'.repeat(32)}:4294967295`],
+      },
+    ],
+    [
+      'a Tron expiry',
+      {
+        kind: 'expiry',
+        expiresAtMs: 1_790_000_000_123,
+        lastValidHeight: 2n ** 53n + 65_537n,
+        refBlockHash: '0a1b2c3d4e5f6071',
+      } as OrderingData,
+    ],
+    [
+      'a Solana expiry',
+      {
+        kind: 'expiry',
+        lastValidHeight: 2n ** 63n + 150n,
+        blockhash: 'GHtXQBsoZHVnNFa9YevAzFr17DJjgHXk3ycTKD5xD3Zi',
+        blockhashSlot: 2n ** 53n + 1n,
+      } as OrderingData,
+    ],
+    [
+      'a TON seqno',
+      {
+        kind: 'seqno',
+        seqno: 2n ** 32n - 1n,
+        validUntil: 1_790_000_060,
+        validFrom: 1_789_999_700,
+      } as OrderingData,
+    ],
+  ]);
+
+/** Every property of `expected`, and no other, with the same value and type. */
+function assertWholeOrdering(
+  actual: unknown,
+  expected: OrderingData,
+  where: string,
+): void {
+  assert.ok(actual !== null && typeof actual === 'object', `${where}: missing`);
+  const got = actual as Readonly<Record<string, unknown>>;
+  assert.deepEqual(
+    Object.keys(got).sort(),
+    Object.keys(expected).sort(),
+    `${where}: properties`,
+  );
+  for (const [key, value] of Object.entries(expected)) {
+    assert.equal(typeof got[key], typeof value, `${where}.${key}: type`);
+    assert.deepEqual(got[key], value, `${where}.${key}: value`);
+  }
 }
 
 export interface OperationHarness {
@@ -229,6 +295,52 @@ export function describeOperationStoreContract(
       const ordering = stored?.attempts[0]?.ordering;
       assert.equal(ordering?.kind === 'nonce' ? ordering.nonce : undefined, 7n);
     });
+
+    api.it(
+      'keeps every ordering whole: each property, with its value and its type (F4-R15, F5-R14)',
+      async () => {
+        const { operations } = await create();
+        for (const [name, ordering] of SAMPLE_ORDERINGS) {
+          const { record } = await operations.create(sampleOperation());
+          const sample = sampleAttempt('a1');
+          const appended = await operations.appendAttempt(
+            'ns',
+            record.id,
+            { ...sample, ordering, unsigned: { ...sample.unsigned, ordering } },
+            { state: 'signed', reservation: ordering },
+            record.version,
+          );
+          // Read back after the append, and again after a later write to the record.
+          const stored = await operations.get('ns', record.id);
+          const updated = await operations.update(
+            'ns',
+            record.id,
+            { state: 'submitted' },
+            appended.version,
+          );
+          const reread = await operations.get('ns', record.id);
+          for (const [when, read] of [
+            ['appendAttempt', appended],
+            ['get', stored],
+            ['update', updated],
+            ['get after update', reread],
+          ] as const) {
+            const where = `${name} (${when})`;
+            assertWholeOrdering(
+              read?.attempts[0]?.ordering,
+              ordering,
+              `${where} ordering`,
+            );
+            assertWholeOrdering(
+              read?.attempts[0]?.unsigned.ordering,
+              ordering,
+              `${where} unsigned.ordering`,
+            );
+            assertWholeOrdering(read?.reservation, ordering, `${where} reservation`);
+          }
+        }
+      },
+    );
 
     api.it('isolates returned records from the store', async () => {
       const { operations } = await create();

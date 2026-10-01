@@ -1175,8 +1175,10 @@ completes within `lifecycle.leaseMs`, since the ref lease is not renewed. A slow
 weakens it.
 
 Every Attempt's `ordering` must also read back whole and unchanged, whatever its kind, with
-every property the driver put in it and its type; the suites check only nonce orderings
-today. A Tron Attempt's ordering is a `TronExpiryOrdering`: the core `expiry` ordering,
+every property the driver put in it and its type, and so must an Operation's `reservation`.
+The operation-store suite checks one ordering of each built-in family, with bigints beyond
+2^53 (`SAMPLE_ORDERINGS` in `crypto-aio/testing`), after the append and after a later
+write. A Tron Attempt's ordering is a `TronExpiryOrdering`: the core `expiry` ordering,
 with `expiresAtMs` and its optional `lastValidHeight` (a bigint), which Tron always sets to
 the reference block's height plus 65,536, plus `refBlockHash`, the reference block bytes the
 transaction signs. The expiry proof reads them from the store, not from the signed bytes, to

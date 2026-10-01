@@ -44,6 +44,7 @@ export type { SequenceHarness } from './contracts/sequences';
 export { describeCursorStoreContract } from './contracts/cursors';
 export type { CursorHarness } from './contracts/cursors';
 export {
+  SAMPLE_ORDERINGS,
   describeOperationStoreContract,
   sampleAttempt,
   sampleOperation,
