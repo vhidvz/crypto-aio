@@ -1,6 +1,6 @@
 /**
- * Fees, funds, building, assembling, broadcasting, and same-nonce replace and cancel
- * (spec §7, §8.3, §8.6, §15). One output per transfer, native or ERC-20 `transfer`.
+ * Fees, funds, building, assembling, broadcasting, and same-nonce replace and cancel.
+ * One output per transfer, native or ERC-20 `transfer`.
  */
 import type {
   BroadcastResult,
@@ -127,7 +127,10 @@ function nonceOf(ordering: OrderingData | undefined): bigint {
   return ordering.nonce;
 }
 
-/** Rebuilds an unsigned transaction's fields from its ordering, summary and fee (R11). */
+/**
+ * Rebuilds an unsigned transaction's fields from its ordering, summary and fee: a stored
+ * record holds plain data only, never an SDK object.
+ */
 function unsignedFields(ctx: EvmContext, unsigned: UnsignedTx): EvmTxFields {
   const { ref } = parseAssetId(unsigned.summary.asset);
   const [output] = unsigned.summary.outputs;
@@ -192,11 +195,11 @@ async function priceFor(
   const { client, config } = ctx;
   if (typeof fee === 'object') {
     const { params, gasLimit } = parseFeeOverride(fee, config.feeModel);
-    // D6: an explicit fee above the ceiling is refused before any request.
+    // An explicit fee above the ceiling is refused before any request.
     assertWithinCeiling(params, config.maxFeePerGas);
     return { speed: 'custom', params, ...(gasLimit !== undefined ? { gasLimit } : {}) };
   }
-  // D6: a node's suggestion is clamped to the ceiling, so no endpoint can raise it.
+  // A node's suggestion is clamped to the ceiling, so no endpoint can raise it.
   if (config.feeModel === 'evm-legacy') {
     const gasPrice = await client.gasPrice(withSignal(READ, signal));
     return {
@@ -257,7 +260,7 @@ const GAS_ALLOWANCE = /^gas required exceeds allowance/i;
 
 /**
  * The node's gas estimate; a failing call or a shortfall becomes a clear pre-signing failure.
- * R72: a revert, a VM execution failure (R66) or an exhausted gas allowance is the call's own
+ * A revert, a VM execution failure or an exhausted gas allowance is the call's own
  * failure, tested first so that a token's revert text naming "insufficient funds" still gets
  * the balance check. Any other error is the provider's and is rethrown unchanged.
  */
@@ -373,7 +376,7 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
           `this network takes ${ctx.config.feeModel} fees`,
         );
       }
-      // D6: checked again, whatever produced the fee object.
+      // The ceiling is checked again, whatever produced the fee object.
       assertWithinCeiling(params, ctx.config.maxFeePerGas);
       const fields = fieldsOf(
         ctx,
@@ -410,7 +413,7 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
       } catch {
         throw mismatch();
       }
-      // R72: the signature must be over these fields' digest, or it signs other bytes.
+      // The signature must be over these fields' digest, or it signs other bytes.
       if (
         client.serializeUnsigned(fields) !== unsigned.payload.data ||
         !equalBytes(request.payload, fromHex(client.unsignedHash(fields)))
@@ -442,8 +445,8 @@ export function createEvmBroadcaster(client: EvmClient, chainId: bigint): Broadc
         });
         return { kind: 'accepted' };
       } catch (error) {
-        // R17: an ambiguous error may hide a delivered transaction; it is never classified.
-        // Lesson 21: a rejection stands only when its reason holds for the bytes we sent.
+        // An ambiguous error may hide a delivered transaction; it is never classified.
+        // A rejection stands only when its reason holds for the bytes we sent.
         if (isCryptoAioError(error, 'RPC_ERROR') && !error.ambiguous) {
           return classifyOwnBroadcast(
             String(error.details?.rpcMessage ?? error.message),
@@ -508,7 +511,7 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
           ? { speed: 'custom', params: minimumBump(before.params, bump) }
           : await priceFor(ctx, fee, build.signal);
       if (!meetsBump(before.params, price.params, bump)) throw tooLow('a cancel');
-      // D6: a cancel whose least bump would pay above the ceiling is refused.
+      // A cancel whose least bump would pay above the ceiling is refused.
       assertWithinCeiling(price.params, config.maxFeePerGas);
       const nonce = nonceOf(previous.ordering);
       const fields = fieldsOf(

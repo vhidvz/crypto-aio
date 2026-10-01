@@ -76,7 +76,8 @@ describe('EthersClient and Web3Client parity', () => {
       );
       expect(b.abi.encodeBalanceOf(address)).toBe(a.abi.encodeBalanceOf(address));
     }
-    // An OP Stack payload, built by a client on that network (R61).
+    // An OP Stack payload, built by a client on that network: a client refuses a
+    // transaction for another chain.
     const payload = clients(10n)[0].serializeUnsigned({
       type: 'eip1559',
       chainId: 10n,

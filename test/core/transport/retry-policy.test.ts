@@ -14,10 +14,9 @@ const A: EndpointConfig = { name: 'a', url: 'https://a.test/rpc' };
 const B: EndpointConfig = { name: 'b', url: 'https://b.test/rpc' };
 const method = (req: FakeRequest) => req.json<{ method: string }>().method;
 
-// Fix round 1, group B: retry loop, breaker, per-endpoint limits, validation
-// (controller ruling R14, task-15-fix-1.md items I4, I7, I9, I10, M3, M4, M12, M10).
+// Retry loop, breaker, per-endpoint limits, validation.
 describe('HttpTransport retry policy', () => {
-  // I7: an abandoned half-open probe must not lock the endpoint out.
+  // An abandoned half-open probe must not lock the endpoint out.
   it('leaves a half-open endpoint usable after the caller aborts the probe', async () => {
     let mode: 'fail' | 'hang' | 'ok' = 'fail';
     const fake = new FakeFetch().route('https://a.test', (req, signal) => {
@@ -47,7 +46,7 @@ describe('HttpTransport retry policy', () => {
     await expect(drive(clock, transport.rpc('z'))).resolves.toBe('ok');
   });
 
-  // #2 (round 4): a second concurrent request that reaches a half-open endpoint never owns
+  // A second concurrent request that reaches a half-open endpoint never owns
   // the probe slot, so its abort can't free the first request's slot and admit a third.
   it('keeps the half-open slot with the first request when a concurrent second one aborts', async () => {
     let mode: 'fail' | 'held' = 'fail';
@@ -88,7 +87,7 @@ describe('HttpTransport retry policy', () => {
     expect(transport.status()[0]?.state).not.toBe('half-open');
   });
 
-  // I9: Retry-After on one endpoint must not stall failover to a healthy one, and the
+  // Retry-After on one endpoint must not stall failover to a healthy one, and the
   // per-endpoint limit must persist across calls.
   it('fails over immediately on Retry-After and persists the limit across calls', async () => {
     let aCalls = 0;
@@ -119,7 +118,7 @@ describe('HttpTransport retry policy', () => {
     expect(aCalls).toBe(2);
   });
 
-  // I10: PROVIDER_MISCONFIGURED is only retryable internally; once every endpoint is
+  // PROVIDER_MISCONFIGURED is only retryable internally; once every endpoint is
   // exhausted the caller must see it as final.
   it('surfaces a final PROVIDER_MISCONFIGURED as non-retryable', async () => {
     const fake = new FakeFetch()
@@ -130,7 +129,7 @@ describe('HttpTransport retry policy', () => {
     expect(error).toMatchObject({ code: 'PROVIDER_MISCONFIGURED', retryable: false });
   });
 
-  // I4: a later definitive error inherits ambiguity from an earlier possibly-delivered attempt.
+  // A later definitive error inherits ambiguity from an earlier possibly-delivered attempt.
   it('marks a later definitive error ambiguous when an earlier attempt may have been delivered', async () => {
     let calls = 0;
     const fake = new FakeFetch().route('https://a.test', (req, signal) =>
@@ -145,7 +144,7 @@ describe('HttpTransport retry policy', () => {
     expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
   });
 
-  // I4: the same holds for a fanout, where the ambiguous attempt is a sibling, not a retry.
+  // The same holds for a fanout, where the ambiguous attempt is a sibling, not a retry.
   it('marks a fanout failure ambiguous when a sibling attempt may have been delivered', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', (_req, signal) => hang(signal))
@@ -163,7 +162,7 @@ describe('HttpTransport retry policy', () => {
     expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: true });
   });
 
-  // I4: a lone definitive rejection, with no possibly-delivered attempt before it, is not ambiguous.
+  // A lone definitive rejection, with no possibly-delivered attempt before it, is not ambiguous.
   it('does not mark a lone definitive rejection ambiguous', async () => {
     const fake = new FakeFetch().route('https://a.test', (req) =>
       rpcError(req, -32000, 'nonce too low'),
@@ -176,7 +175,7 @@ describe('HttpTransport retry policy', () => {
     expect(error).toMatchObject({ code: 'RPC_ERROR', ambiguous: false });
   });
 
-  // N2 (round 2, item 4): an identity-throttled endpoint is excluded from #candidates, the
+  // An identity-throttled endpoint is excluded from #candidates, the
   // same way notBefore excludes a rate-limited one — a never-auto call must not waste its
   // single attempt on an endpoint already known to be identity-unreachable.
   it('excludes an identity-throttled endpoint from a following never-auto call', async () => {
@@ -214,7 +213,7 @@ describe('HttpTransport retry policy', () => {
     expect(fake.callsTo('https://a.test')).toHaveLength(aCallsAfterFirst);
   });
 
-  // N2: a caller abort during the identity probe must not set the throttle — a
+  // A caller abort during the identity probe must not set the throttle — a
   // single-endpoint transport must still be able to serve the next call.
   it('lets a single-endpoint transport serve the next call after a caller abort during the identity probe', async () => {
     let identityCalls = 0;
@@ -239,7 +238,7 @@ describe('HttpTransport retry policy', () => {
     await expect(drive(clock, transport.rpc('y'))).resolves.toBe('from-a');
   });
 
-  // #6 (round 4): a request that joins another request's in-flight identity check races its
+  // A request that joins another request's in-flight identity check races its
   // own signal, like #join — its abort rejects only that caller, and the check runs on.
   it("rejects only the joining caller when it aborts during another request's identity check", async () => {
     let release!: () => void;
@@ -276,7 +275,7 @@ describe('HttpTransport retry policy', () => {
     expect(identityCalls).toBe(1);
   });
 
-  // #3 (round 4): http() validates its method and per-request headers before #run.
+  // http() validates its method and per-request headers before #run.
   it('rejects an invalid http() header value before touching any endpoint', async () => {
     const fake = new FakeFetch().route('https://a.test', () => ({ text: 'ok' }));
     const { transport, clock } = setup([A], fake);
@@ -300,7 +299,7 @@ describe('HttpTransport retry policy', () => {
     expect(transport.status()[0]).toMatchObject({ failures: 0, state: 'unknown' });
   });
 
-  // M3: a local serialization error never reaches an endpoint.
+  // A local serialization error never reaches an endpoint.
   it('rejects unserializable params before touching any endpoint', async () => {
     const fake = new FakeFetch().route('https://a.test', (req) => rpcResult(req, 'ok'));
     const { transport } = setup([A], fake);
@@ -311,7 +310,7 @@ describe('HttpTransport retry policy', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  // N3 (round 2, item 5): needed is sized from the full candidate set, not the
+  // `needed` is sized from the full candidate set, not the
   // rate-limit-filtered eligible set — a required endpoint being rate-limited must not
   // silently shrink the quorum to whatever's left.
   it('never resolves a proof quorum from fewer endpoints than required', async () => {
@@ -331,7 +330,7 @@ describe('HttpTransport retry policy', () => {
     ).rejects.toMatchObject({ retryable: true });
   });
 
-  // #5 (round 3): #quorum fails fast — before querying any endpoint — when fewer are
+  // #quorum fails fast — before querying any endpoint — when fewer are
   // eligible right now than needed, instead of querying what's available first.
   it('fails fast on a proof quorum without querying any endpoint when fewer are eligible than needed', async () => {
     let bCalls = 0;
@@ -356,7 +355,7 @@ describe('HttpTransport retry policy', () => {
     expect(bCalls).toBe(0);
   });
 
-  // M4: options and endpoint URLs are validated at construction, without leaking the URL.
+  // Options and endpoint URLs are validated at construction, without leaking the URL.
   it('validates transport options and endpoint URLs at construction', () => {
     const fake = new FakeFetch();
     expect(thrown(() => setup([A], fake, { maxAttempts: 0 }))).toMatchObject({
@@ -370,7 +369,7 @@ describe('HttpTransport retry policy', () => {
     expect((error as Error).message).not.toContain('ftp://a.test');
   });
 
-  // #1 (round 3): an invalid configured header value fails at construction, naming only the
+  // An invalid configured header value fails at construction, naming only the
   // endpoint id and header name.
   it('rejects an invalid configured header value at construction', () => {
     const fake = new FakeFetch();
@@ -378,7 +377,7 @@ describe('HttpTransport retry policy', () => {
     expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
   });
 
-  // M12: a fresh probe set must be re-checked, not trusted from a prior confirmation.
+  // A fresh probe set must be re-checked, not trusted from a prior confirmation.
   it('setProbes resets identity to unchecked', async () => {
     const fake = new FakeFetch().route('https://a.test', (req) =>
       method(req) === 'chain_id' ? rpcResult(req, '1') : rpcResult(req, 'ok'),
@@ -402,7 +401,7 @@ describe('HttpTransport retry policy', () => {
     expect(probed).toBe(1);
   });
 
-  // #5 (round 4): a new probe set also invalidates the health timers and stored heights, so
+  // A new probe set also invalidates the health timers and stored heights, so
   // neither an armed outage backoff nor a fresh stamp from the old probes delays the new ones.
   it('setProbes resets the health timers and stored heights', async () => {
     const { transport, clock } = setup([A], new FakeFetch(), {
@@ -433,7 +432,7 @@ describe('HttpTransport retry policy', () => {
     expect(transport.status()[0]?.height).toBe(7n);
   });
 
-  // M12: a definitive answer proves the endpoint healthy and resets its failure count.
+  // A definitive answer proves the endpoint healthy and resets its failure count.
   it('a definitive answer resets endpoint.failures', async () => {
     let mode: 'fail' | 'definitive' = 'fail';
     const fake = new FakeFetch().route('https://a.test', (req) =>
@@ -454,7 +453,7 @@ describe('HttpTransport retry policy', () => {
     expect(transport.status()[0]?.failures).toBe(0);
   });
 
-  // M10: a caller abort makes exactly one call and surfaces the abort reason.
+  // A caller abort makes exactly one call and surfaces the abort reason.
   it('a caller abort makes exactly one call and surfaces the abort reason', async () => {
     const fake = new FakeFetch().route('https://a.test', (_req, signal) => hang(signal));
     const { transport } = setup([A], fake);
@@ -467,7 +466,7 @@ describe('HttpTransport retry policy', () => {
     expect(fake.calls).toHaveLength(1);
   });
 
-  // M10: Retry-After is clamped at 60s.
+  // Retry-After is clamped at 60s.
   it('clamps Retry-After at 60s', async () => {
     let calls = 0;
     const fake = new FakeFetch().route('https://a.test', (req) =>
@@ -477,7 +476,7 @@ describe('HttpTransport retry policy', () => {
     );
     const { transport, clock } = setup([A], fake);
     const start = clock.now();
-    // #11 (round 2): #pick's wait is now bounded by the call's timeoutMs, so this call must
+    // #pick's wait is bounded by the call's timeoutMs, so this call must
     // allow enough budget for the clamped (not the raw, unclamped) Retry-After to elapse.
     await expect(
       drive(clock, transport.rpc('x', [], { timeoutMs: 65_000 }), 1_000),
@@ -486,7 +485,7 @@ describe('HttpTransport retry policy', () => {
     expect(clock.now() - start).toBeLessThan(120_000);
   });
 
-  // #11 (round 2): #pick's wait for a rate-limited endpoint is bounded by the call's
+  // #pick's wait for a rate-limited endpoint is bounded by the call's
   // timeoutMs — a persisted rate limit from an earlier call must not stall a fresh call with
   // a short timeout, and the throttled endpoint must not even be re-attempted.
   it('fails at once on a persisted rate limit whose wait exceeds a fresh call timeout', async () => {
@@ -514,7 +513,7 @@ describe('HttpTransport retry policy', () => {
     expect(calls).toBe(1); // the endpoint was never attempted again
   });
 
-  // #6 (round 3): #pick's rate-limit wait bound uses the endpoint's own timeoutMs when it
+  // #pick's rate-limit wait bound uses the endpoint's own timeoutMs when it
   // defines one, matching #attempt's own effective-timeout resolution — not just the
   // transport-wide default.
   it("bounds #pick's rate-limit wait by the endpoint's own timeoutMs when it defines one", async () => {
@@ -533,8 +532,8 @@ describe('HttpTransport retry policy', () => {
     expect(clock.now() - start).toBeGreaterThanOrEqual(3_000);
   });
 
-  // R16 (controller amendment): mayHaveSent widens beyond timeout/network-error/5xx/unparseable
-  // to every post-fetch endpoint failure except HTTP 401/403/429 — including a JSON-RPC
+  // mayHaveSent covers every post-fetch endpoint failure except HTTP 401/403/429, not
+  // only a timeout, network error, 5xx or unparseable body — including a JSON-RPC
   // envelope-validation failure (here, an id mismatch).
   it('marks ambiguous when an envelope id-mismatch precedes a definitive JSON-RPC error', async () => {
     let calls = 0;
@@ -558,7 +557,7 @@ describe('HttpTransport retry policy', () => {
     expect(calls).toBe(2);
   });
 
-  // M3/#2 (round 2): a token-bucket wait that exceeds the call's timeoutMs fails with
+  // A token-bucket wait that exceeds the call's timeoutMs fails with
   // RATE_LIMITED, retryable, untagged — no fetch was ever attempted, so the breaker (and its
   // failure counter) must stay untouched.
   it('a token-wait timeout leaves the breaker closed and gives ambiguous: false', async () => {
@@ -583,7 +582,7 @@ describe('HttpTransport retry policy', () => {
     expect(transport.status()[0]?.failures).toBe(0);
   });
 
-  // R16: HTTP 429 stays excluded from ambiguity — the server never processed the request.
+  // HTTP 429 stays excluded from ambiguity — the server never processed the request.
   it('does not mark ambiguous when only a 429 precedes a definitive error', async () => {
     let calls = 0;
     const fake = new FakeFetch().route('https://a.test', (req) =>

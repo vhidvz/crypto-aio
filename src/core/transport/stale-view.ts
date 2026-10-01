@@ -7,7 +7,7 @@ export type StaleViewSource = Pick<
 >;
 
 /**
- * I2: the one stale-view guard of the monitor and the scanner. A view whose `head` is more
+ * The one stale-view guard of the monitor and the scanner. A view whose `head` is more
  * than the transport's effective `maxLagBlocks` behind its verified high-water mark
  * (`highestHeight()`) is stale, and so is every view while health probes exist but no
  * height was verified yet. A stale view decides nothing: no reorg, drop, expiry or

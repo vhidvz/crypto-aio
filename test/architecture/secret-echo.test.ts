@@ -1,5 +1,7 @@
-// F3-R20, a release blocker: every family's keyed presets, and custom URLs, with the key
-// echoed back by the provider in every place the transport copies provider text.
+// Every family's keyed presets, and custom URLs, with the key echoed back by the provider
+// in every place the transport copies provider text. A provider often echoes the bare
+// key, without the URL or header around it, so scrubbing only whole URLs and header
+// values would leak it.
 import { inspect } from 'node:util';
 import { EVM_PRESETS } from '../../src/adapters/evm/presets';
 import { SOLANA_PRESETS } from '../../src/adapters/solana/presets';

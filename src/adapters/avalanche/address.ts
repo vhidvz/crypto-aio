@@ -40,7 +40,10 @@ export function formatAddress(bytes: Uint8Array, params: AddressParams): string 
   return `${params.alias}-${bech32.encode(params.hrp, bech32.toWords(bytes))}`;
 }
 
-/** The address bytes of `address`; throws `INVALID_ADDRESS` with a fixed text (F6-R24). */
+/**
+ * The address bytes of `address`; throws `INVALID_ADDRESS` with a fixed text that never
+ * repeats the input, which may be a pasted secret.
+ */
 export function decodeAddress(address: string, params: AddressParams): Uint8Array {
   if (typeof address !== 'string' || address.length > MAX_ADDRESS_LENGTH) {
     throw invalid('malformed');

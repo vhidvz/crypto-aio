@@ -14,7 +14,10 @@ import { AVALANCHE_CHAINS } from './chains';
 import { AVALANCHE_CAPABILITIES } from './network';
 import { AVALANCHE_PRESETS } from './presets';
 
-/** The SDK version this adapter is validated against (spec §16), keyed by package name. */
+/**
+ * The SDK version this adapter is validated against, keyed by package name: the range
+ * starts at the version the tests pin.
+ */
 export const AVALANCHE_PEER_DEPENDENCIES: Readonly<
   Record<'@avalabs/avalanchejs', PeerDependency>
 > = deepFreeze({
@@ -22,9 +25,10 @@ export const AVALANCHE_PEER_DEPENDENCIES: Readonly<
 });
 
 /**
- * The `@avalabs/avalanchejs` manifest. A25: built once, at module level, so every
- * `avalanchePlugin()` carries the same `load` function and registering it again is the same
- * plugin (A18).
+ * The `@avalabs/avalanchejs` manifest, built once, at module level, so every
+ * `avalanchePlugin()` carries the same `load` function. Registration compares a plugin's
+ * functions by identity: the same plugin again is a no-op, while one with another `load`
+ * under this name is `CONFIG_INVALID`.
  */
 export const avalancheManifest: AdapterManifest = Object.freeze({
   family: 'avalanche',

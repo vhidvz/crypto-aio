@@ -90,11 +90,13 @@ export function sampleAttempt(
 }
 
 /**
- * Plan 7 D7 (F4-R15, F5-R14, the Plan 6 handoff §3): an ordering of each kind the built-in
- * families record, with each family's own properties. A store must keep every one whole:
- * a dropped property costs liveness, but a changed one (a `refBlockHash`, a `blockhash`, a
- * `validFrom` moved later, a bigint narrowed to a number) can prove a transaction absent
- * while a block holds it, and `rebuild` then pays twice. The bigints exceed 2^53.
+ * An ordering of each kind the built-in families record, with each family's own
+ * properties. Proofs read these facts from the stored ordering, never from signed bytes,
+ * so a store must keep every one whole: a dropped property costs liveness, but a changed
+ * one (a `refBlockHash`, a `blockhash`, a `validFrom` moved later, a bigint narrowed to a
+ * number) can prove a transaction absent while a block holds it, and `rebuild` then pays
+ * twice. The bigints exceed 2^53. The core's `OrderingData` does not name these fields:
+ * each family exports its typed ordering, and this contract pins that a store keeps them.
  */
 export const SAMPLE_ORDERINGS: readonly (readonly [string, OrderingData])[] =
   Object.freeze([
@@ -252,7 +254,7 @@ export function describeOperationStoreContract(
     api.it(
       'bumps the version on every successful update, even one that changes nothing',
       async () => {
-        // R29: the engine fences a stale writer with a no-effect compare-and-set; a store
+        // The engine fences a stale writer with a no-effect compare-and-set; a store
         // that skipped writing an unchanged record would let the stale write land.
         const { operations } = await create();
         const { record } = await operations.create(sampleOperation());
@@ -297,7 +299,7 @@ export function describeOperationStoreContract(
     });
 
     api.it(
-      'keeps every ordering whole: each property, with its value and its type (F4-R15, F5-R14)',
+      'keeps every ordering whole: each property, with its value and its type',
       async () => {
         const { operations } = await create();
         for (const [name, ordering] of SAMPLE_ORDERINGS) {
@@ -387,7 +389,7 @@ export function describeOperationStoreContract(
     api.it(
       'replaces an observation whole: a key left out or set to undefined reads back undefined (never null)',
       async () => {
-        // M9, P25-R14: the core clears a stale reason or block by leaving it out or setting
+        // The core clears a stale reason or block by leaving it out or setting
         // it to undefined. A store that merged records, or kept undefined as a value such as
         // null, would return a stale or wrong field.
         const { operations } = await create();
@@ -608,7 +610,7 @@ export function describeOperationStoreContract(
     );
 
     api.it(
-      'rejects a clear that is not an array, leaving the record unchanged (N7)',
+      'rejects a clear that is not an array, leaving the record unchanged',
       async () => {
         // A serialized store cannot read a number, an object or a Set as a list either;
         // reading one as `[]` would let a malformed patch commit as if it cleared nothing.
@@ -638,7 +640,7 @@ export function describeOperationStoreContract(
     );
 
     api.it(
-      'keeps the idempotency key and the wallet address out of its errors (B110)',
+      'keeps the idempotency key and the wallet address out of its errors',
       async () => {
         // Both are `sensitive` data, and error messages reach logs.
         const { operations } = await create();
@@ -709,7 +711,7 @@ export function describeOperationStoreContract(
     );
 
     api.it(
-      'purges what the filter matches and nothing else, when it implements purge (B110)',
+      'purges what the filter matches and nothing else, when it implements purge',
       async () => {
         const { operations } = await create();
         if (operations.purge === undefined) return;
@@ -770,7 +772,7 @@ export function describeOperationStoreContract(
     );
 
     api.it(
-      'purges at most limit records, the oldest first, when it implements purge (B110)',
+      'purges at most limit records, the oldest first, when it implements purge',
       async () => {
         const { operations } = await create();
         if (operations.purge === undefined) return;

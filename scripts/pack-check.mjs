@@ -1,9 +1,10 @@
-// Plan 7 (spec §16, §19): packs crypto-aio as `npm publish` would, then checks the tarball as
+// Packs crypto-aio as `npm publish` would, then checks the tarball as
 // a user installs it. Run `pnpm build` first (`pnpm test:pack` does). It needs the npm
 // registry, for the package's dependencies and, in the last step, the chain SDKs.
 //
 // 1. The tarball holds `dist/`, `package.json`, `README.md`, `LICENSE` and `CHANGELOG.md`,
-//    and nothing else: no source, tests, docs or env files.
+//    and nothing else: no source, tests, docs or env files (a `.env` with keys was once
+//    committed to the repository).
 // 2. Installed without any SDK, every entry point loads, with `require` and with `import`,
 //    and each chain family's handle fails with `DEPENDENCY_MISSING` naming its SDK.
 // 3. With every SDK at its tested version (the `devDependencies`), each family's adapter

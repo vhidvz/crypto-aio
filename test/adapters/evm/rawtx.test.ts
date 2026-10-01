@@ -28,7 +28,8 @@ function accessListTx(): string {
   return tx.serialized;
 }
 
-describe('the SDK-free reader of sent EVM bytes (lesson 21)', () => {
+// What a node's rejection claims is checked against the bytes this reader returns.
+describe('the SDK-free reader of sent EVM bytes', () => {
   it('reads the checked fields of EIP-1559, EIP-2930 and legacy transactions', () => {
     expect(readSentTx(eip1559)).toMatchObject({
       type: 2,
@@ -80,7 +81,7 @@ describe('the SDK-free reader of sent EVM bytes (lesson 21)', () => {
   });
 });
 
-describe('a node rejection of the bytes we sent is a claim (lesson 21, F3-R11)', () => {
+describe('a node rejection of the bytes we sent is a claim', () => {
   const claims = [
     'invalid chain id for signer',
     'invalid sender',

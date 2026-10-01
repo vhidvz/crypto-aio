@@ -343,7 +343,8 @@ describe('the Avalanche broadcaster', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', ambiguous: true });
   });
 
-  it('rethrows a transport failure unclassified (R16)', async () => {
+  // The bytes may have reached the node, so the core must see the failure as ambiguous.
+  it('rethrows a transport failure unclassified', async () => {
     const h = avalancheHarnessFunded();
     const signed = await signedTx(h);
     jest

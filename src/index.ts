@@ -189,7 +189,7 @@ export type {
   PreparedOperation,
   Submission,
 } from './core/lifecycle/views';
-// M2: type only; scanners come from `bc.scanner()`.
+// Type only; scanners come from `bc.scanner()`.
 export type {
   Checkpoint,
   ScanEvent,
@@ -293,7 +293,7 @@ export { createLogger, noopLogger } from './core/events/logger';
 export type { LogFields, LogLevel, LogWriter, Logger } from './core/events/logger';
 export type { Clock } from './core/util/clock';
 
-// Chain families: SDK-free types (spec §5.6). SDK client types are in `crypto-aio/avalanche`,
+// Chain families: SDK-free types. SDK client types are in `crypto-aio/avalanche`,
 // `crypto-aio/evm`, `crypto-aio/solana`, `crypto-aio/ton`, `crypto-aio/tron` and
 // `crypto-aio/utxo`.
 export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './adapters/evm/types';

@@ -25,7 +25,7 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 }
 
 /**
- * B116: config is plain data, so a plain object or array that contains itself is a mistake;
+ * Config is plain data, so a plain object or array that contains itself is a mistake;
  * it is refused at startup instead of overflowing the stack. `ancestors` holds the path
  * being copied, so one object shared by two branches is still copied, once per branch.
  */

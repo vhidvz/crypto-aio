@@ -10,7 +10,7 @@ function dependencyError(manifest: AdapterManifest, error: unknown): unknown {
   const deps = manifest.peerDependencies.filter(
     (d) => message.includes(`'${d.name}'`) || message.includes(`"${d.name}"`),
   );
-  // R80: only a missing peer dependency is the user's to install. Any other missing module
+  // Only a missing peer dependency is the user's to install. Any other missing module
   // (the adapter's own file, a broken build) keeps its own error.
   if (deps.length === 0) return error;
   const install = deps.map((d) => `${d.name}@${d.range}`).join(' ');

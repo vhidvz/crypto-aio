@@ -37,7 +37,7 @@ export interface NormalizedIntent {
 /**
  * One output as drivers receive it. `variant` is the recipient address's chain-specific
  * meaning (`Address.variant`), present only when its chain has one, e.g. TON's
- * `bounceable` flag (spec §6.4: the intent's `to` variant decides bounce behaviour).
+ * `bounceable` flag (the intent's `to` variant decides bounce behaviour).
  */
 export interface DriverOutput {
   readonly to: string;
@@ -88,8 +88,8 @@ export function toStoredIntent(intent: NormalizedIntent): StoredIntent {
   return {
     assetId: intent.asset.id,
     asset: intent.asset.ref,
-    // P6-1: a variant is kept (and so hashed) only when the address has one, so intents of
-    // chains without variants hash exactly as before. P25-R13: an empty variant is none.
+    // A variant is kept (and so hashed) only when the address has one, so intents of
+    // chains without variants hash exactly as before. An empty variant is none.
     outputs: intent.outputs.map((o) => {
       const variant = o.to.variant ? plainVariant(o.to.variant) : undefined;
       return {
@@ -129,9 +129,9 @@ export function intentHash(chain: string, network: string, intent: StoredIntent)
 }
 
 /**
- * M11: a copy of an address variant that holds plain JSON values only (strings, finite
- * numbers, booleans, null) under string keys, so the stored intent stays plain data (R11)
- * and hashes stably. A symbol key is refused (P25-R13): the hash would not see it. The
+ * A copy of an address variant that holds plain JSON values only (strings, finite
+ * numbers, booleans, null) under string keys, so the stored intent stays plain data
+ * and hashes stably. A symbol key is refused: the hash would not see it. The
  * message names no address.
  */
 function plainVariant(

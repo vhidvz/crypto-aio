@@ -62,7 +62,7 @@ describe('SequenceCoordinator', () => {
     expect(await run((lease) => coordinator.allocate(lease, KEY, 1n))).toBe(4n);
   });
 
-  // Review Focus 3 (coordinator level): concurrent callers get distinct consecutive nonces.
+  // At the coordinator level: concurrent callers get distinct consecutive nonces.
   it('serializes concurrent allocations for one address', async () => {
     const { coordinator, clock } = setup();
     const results = await drive(
@@ -280,7 +280,7 @@ describe('SequenceCoordinator', () => {
     ).toBe('done');
   });
 
-  it("catches an async onReleaseError observer's rejection (B111)", async () => {
+  it("catches an async onReleaseError observer's rejection", async () => {
     const clock = new FakeClock();
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown): void => {
@@ -311,7 +311,7 @@ describe('SequenceCoordinator', () => {
     }
   });
 
-  it('keeps the callback outcome when release throws synchronously (B111)', async () => {
+  it('keeps the callback outcome when release throws synchronously', async () => {
     const clock = new FakeClock();
     const inner = new MemoryLockManager(clock);
     const releaseErrors: unknown[] = [];
@@ -467,7 +467,7 @@ describe('reservations', () => {
     expect(reservedInputs([live, done, attempted], 'a')).toEqual(['t4:0']);
   });
 
-  it('also counts inputs in a live unsigned payload (spec §8.5)', () => {
+  it('also counts inputs in a live unsigned payload', () => {
     const unsigned = {
       ...sampleAttempt('u').unsigned,
       ordering: { kind: 'inputs' as const, inputs: ['t5:2'] },

@@ -1,4 +1,4 @@
-// A12 (P5-A, amended): opt-in exact JSON integers on every JSON-bodied transport call.
+// Opt-in exact JSON integers on every JSON-bodied transport call.
 import type { EndpointConfig } from '../../../src/core/transport/types';
 import { parseJson } from '../../../src/core/util/json';
 import { drive } from '../../../src/testing/fake-clock';
@@ -19,7 +19,7 @@ const EXACT = {
   exp: 1e21,
   list: [9_007_199_254_740_993n],
 };
-/** An integer literal longer than the 80 digits the flag revives (P25-R4). */
+/** An integer literal longer than the 80 digits the flag revives. */
 const TOO_LONG = '9'.repeat(100);
 
 /** A JSON-RPC answer written as raw text, so its numbers are exactly what a node sends. */
@@ -33,7 +33,7 @@ const restAnswer = (text: string) => ({
   headers: { 'content-type': 'application/json' },
 });
 
-describe('exact JSON integers (A12)', () => {
+describe('exact JSON integers', () => {
   it('parseJson revives integers outside the safe range as bigints, and only them', () => {
     expect(parseJson(BODY, true)).toEqual(EXACT);
     const lossy = parseJson(BODY) as { lamports: unknown; list: unknown[] };
@@ -45,7 +45,10 @@ describe('exact JSON integers (A12)', () => {
     expect(typeof parseJson('12345678901234567890.5', true)).toBe('number');
   });
 
-  it('the fast path never skips a 16-digit literal (M3)', () => {
+  // The fast path: with the flag, a body with no run of 16 digits takes plain JSON.parse
+  // (the reviver is about 7 times slower on large bodies), since the shortest integer
+  // literal outside the safe range has 16 digits.
+  it('the fast path never skips a 16-digit literal', () => {
     expect(parseJson('[900719925474099]', true)).toEqual([900_719_925_474_099]);
     expect(parseJson('[9007199254740991]', true)).toEqual([9_007_199_254_740_991]);
     expect(parseJson('[9007199254740993]', true)).toEqual([9_007_199_254_740_993n]);
@@ -186,7 +189,7 @@ describe('exact JSON integers (A12)', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
   });
 
-  it('never lets an object pass for a revived bigint in a quorum (P25-R21/M1)', async () => {
+  it('never lets an object pass for a revived bigint in a quorum', async () => {
     // A liar's object shaped like canonicalJson's bigint tag, against an honest u64.
     const LIAR = '{"lamports":{"$bigint":"18446744073709551615"}}';
     const HONEST = '{"lamports":18446744073709551615}';
@@ -242,7 +245,7 @@ describe('exact JSON integers (A12)', () => {
   });
 });
 
-describe('exact JSON integers in JSON-RPC errors (A12)', () => {
+describe('exact JSON integers in JSON-RPC errors', () => {
   /** A definitive JSON-RPC error whose `data` is the raw JSON text given. */
   const rpcError = (data: string) =>
     new FakeFetch().route('https://a.test', (req) => ({

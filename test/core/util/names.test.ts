@@ -13,7 +13,7 @@ const thrown = (fn: () => unknown): unknown => {
   throw new Error('expected a throw');
 };
 
-describe('bounded names (F3-R16, F6-R24)', () => {
+describe('bounded names', () => {
   it('lists accepted names sorted and unique, counting beyond twelve', () => {
     expect(listNames(['b', 'a', 'b'])).toBe("'a' and 'b'");
     expect(listNames(['c', 'a', 'b'])).toBe("'a', 'b' and 'c'");

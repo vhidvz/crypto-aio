@@ -1,7 +1,8 @@
 /**
- * What the EVM driver needs from a network's registry entry (spec §2: "each network keeps
- * its own registry identity"), validated once when a driver is created, so a custom EVM
- * chain with inconsistent data fails with `CONFIG_INVALID` instead of misbehaving.
+ * What the EVM driver needs from a network's registry entry (each network keeps its own
+ * registry identity, its decimal chain id), validated once when a driver is created, so a
+ * custom EVM chain with inconsistent data fails with `CONFIG_INVALID` instead of
+ * misbehaving.
  */
 import type { Capability } from '../../core/model/capability';
 import type { ChainInfo, FinalityPolicy, NetworkInfo } from '../../core/model/chain';
@@ -40,7 +41,7 @@ export interface EvmNetworkConfig {
   readonly polygonSystemLogs: boolean;
   readonly capabilities: ReadonlySet<Capability>;
   /**
-   * Plan 7 D6: the highest price per gas (wei) a transaction signs: the handle's
+   * The highest price per gas (wei) a transaction signs: the handle's
    * `maxFeePerGas` option, else the network's `params.maxFeePerGas`, else
    * `DEFAULT_MAX_FEE_PER_GAS`.
    */
@@ -50,7 +51,7 @@ export interface EvmNetworkConfig {
 /**
  * The only driver option (`HandleOptions.options`) the EVM driver reads. Any other key is
  * refused, so a typo, or another family's option such as Tron's `maxFeeLimit`, fails loudly
- * instead of leaving the default in place (lesson 10, F6-R25).
+ * instead of leaving the default in place.
  */
 const OPTION_KEYS: readonly string[] = Object.freeze(['maxFeePerGas']);
 
@@ -72,7 +73,7 @@ function priceCeiling(
 export const GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000F';
 
 /**
- * R69: the `LogFeeTransfer(address,address,address,uint256,uint256,uint256,uint256,uint256)`
+ * The `LogFeeTransfer(address,address,address,uint256,uint256,uint256,uint256,uint256)`
  * system log that Polygon PoS's client (bor, `core/bor_fee_log.go`) adds to every
  * fee-paying transaction, emitted from the MRC20 predeploy. It says nothing about code.
  */
@@ -82,7 +83,7 @@ export const POLYGON_FEE_LOG = {
 } as const;
 
 /**
- * R70: bor's `LogTransfer(address,address,address,uint256,uint256,uint256,uint256,uint256)`
+ * bor's `LogTransfer(address,address,address,uint256,uint256,uint256,uint256,uint256)`
  * system log for a native POL value transfer (`core/evm.go` `Transfer`), from the same
  * predeploy. Its topic is not ERC-20 `Transfer`'s, so it never decodes as a token movement.
  */
@@ -97,7 +98,7 @@ function finalityOf(
 ): EvmFinality {
   if (policy.kind === 'tag') return { kind: 'tag' };
   if (policy.kind === 'confirmations') {
-    // R67: the final height is `head - confirmations + 1`, so fewer than one is the future.
+    // The final height is `head - confirmations + 1`, so fewer than one is the future.
     const confirmations: unknown = policy.confirmations;
     if (!Number.isSafeInteger(confirmations) || (confirmations as number) < 1) {
       return fail('finality confirmations must be an integer of at least 1');
@@ -137,7 +138,7 @@ export function evmNetworkConfig(
   if (capabilities.has('finality-tag') !== (finality.kind === 'tag')) {
     fail(`'finality-tag' must be present exactly on 'tag' finality networks`);
   }
-  // M3: the fee policy computes `BigInt(100 + percent)`, which throws on a fraction.
+  // The fee policy computes `BigInt(100 + percent)`, which throws on a fraction.
   const bump: unknown = network.replacement?.minBumpPercent;
   if (bump !== undefined && !(Number.isSafeInteger(bump) && (bump as number) >= 0)) {
     fail('replacement.minBumpPercent must be a non-negative integer');
@@ -150,15 +151,16 @@ export function evmNetworkConfig(
   if (params.l1DataFee !== undefined && params.l1DataFee !== 'op-stack') {
     fail(`params.l1DataFee must be 'op-stack'`);
   }
-  // M7: data, not the chain id, so a bor chain served through evmChainPlugin can opt in.
+  // Data, not the chain id, so a bor chain served through evmChainPlugin can opt in.
   if (params.systemLogs !== undefined && params.systemLogs !== 'bor') {
     fail(`params.systemLogs must be 'bor'`);
   }
-  // F3-R16: the refusal lists the accepted name, never the caller's key or its value.
+  // The refusal lists the accepted name, never the caller's key or its value: either may
+  // be a secret typed in the wrong place.
   for (const key of Object.keys(options)) {
     if (!OPTION_KEYS.includes(key)) fail(unknownName('option', OPTION_KEYS));
   }
-  // D6, F4-R28's shape: the handle's option, else the network entry's own, else the
+  // The handle's option, else the network entry's own, else the
   // default. A network value is checked even where an option overrides it.
   const own = params.maxFeePerGas;
   const networkCeiling =

@@ -1,8 +1,8 @@
 /**
- * Classifies a node's answer to `eth_sendRawTransaction` (spec §7, §8.2). The patterns are
+ * Classifies a node's answer to `eth_sendRawTransaction`. The patterns are
  * geth's texts (txpool and RPC), which the geth-derived clients of most built-in chains
  * share; an Ethereum endpoint may run any client, so a text not listed here falls to the
- * safe default, a generic refusal. The returned reasons are short, fixed texts (R24): a
+ * safe default, a generic refusal. The returned reasons are short, fixed texts: a
  * node's own text can carry addresses and amounts ("insufficient funds …: address 0x… have
  * … want …") and is never passed on. Every result is frozen, so no caller can alter a later
  * one.
@@ -17,7 +17,7 @@ const refused = (code: RefusalCode, reason: string): BroadcastResult =>
 const rejected = (reason: string): BroadcastResult =>
   Object.freeze({ kind: 'rejected', reason });
 
-/** Success (spec §8.4): the node already holds these bytes, or they are already mined. */
+/** Success: the node already holds these bytes, or they are already mined. */
 const ALREADY_KNOWN =
   /already known|known transaction|already imported|alreadyknown|already exists|already in chain/i;
 const ALREADY_KNOWN_RESULT: BroadcastResult = Object.freeze({ kind: 'already-known' });
@@ -55,7 +55,7 @@ const REFUSED: readonly (readonly [RegExp, BroadcastResult])[] = [
   [/oversized data/i, refused('TX_REFUSED', 'transaction too large')],
 ];
 
-/** A rejection and the check that confirms it for the bytes we sent (lesson 21). */
+/** A rejection and the check that confirms it for the bytes we sent. */
 interface Rejection {
   readonly pattern: RegExp;
   readonly result: BroadcastResult;
@@ -127,7 +127,7 @@ const UNCONFIRMED: BroadcastResult = refused(
 );
 
 /**
- * Lesson 21 (F3-R11, F4-R20): a node's rejection is a claim. The answer to `sentHex`, the
+ * A node's rejection is a claim. The answer to `sentHex`, the
  * bytes this driver sent on the network whose chain id is `chainId`: a `rejected` stands
  * only when its reason holds for those bytes, read SDK-free (`readSentTx`); otherwise it is a
  * refusal, so a lying endpoint that relays our bytes can never end the Operation and invite

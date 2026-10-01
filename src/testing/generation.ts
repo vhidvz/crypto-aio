@@ -1,8 +1,8 @@
 /**
- * The restart generation fence (handoff R20): `restart({ killPrevious: true })` simulates a
+ * The restart generation fence: `restart({ killPrevious: true })` simulates a
  * process that died, so nothing the old generation started may make further progress or
  * write to shared state. `createFakeEnv` uses it, and so does every family's end-to-end env
- * built on its own scripted node (ruling R71). Test-only: not part of `crypto-aio/testing`.
+ * built on its own scripted node. Test-only: not part of `crypto-aio/testing`.
  */
 import { StateError } from '../core/errors/error';
 import type { Signer } from '../core/signing/types';
@@ -22,7 +22,7 @@ import type { FakeClock } from './fake-clock';
  * proxies) checks it both when invoked and when the real call underneath settles, so a dead
  * generation can neither start nor finish any of them.
  *
- * N2: the fence only becomes complete once the microtask queue has drained past the point
+ * The fence only becomes complete once the microtask queue has drained past the point
  * where `generation.alive` was flipped. Code from the old generation that was already past a
  * *settled* fenced call (holding a plain value, not awaiting anything) keeps running
  * synchronously — nothing here can interrupt a synchronous continuation mid-expression — right
@@ -57,7 +57,7 @@ function generationClock(shared: FakeClock, generation: Generation): Clock {
   };
 }
 
-/** Body-reading methods fenced on a fetched Response (N2, N-C; `bytes` only where the runtime
+/** Body-reading methods fenced on a fetched Response (`bytes` only where the runtime
  * has it). `clone()` and `body` are fenced separately; everything else (status, ok, headers,
  * ...) passes straight through. */
 const FENCED_RESPONSE_READERS = new Set([
@@ -70,7 +70,7 @@ const FENCED_RESPONSE_READERS = new Set([
 ]);
 
 /**
- * N-C: a stand-in for `response.body` whose every chunk is pulled from the real body through
+ * A stand-in for `response.body` whose every chunk is pulled from the real body through
  * the fence, so a `read()` (via `getReader()`, async iteration, `pipeTo`, `tee`, ...) never
  * settles once the generation is dead. `highWaterMark: 0` means nothing is pulled — and the
  * real body isn't even locked — until a consumer actually reads, so merely touching `.body`
@@ -95,7 +95,7 @@ function generationBody(
 }
 
 /**
- * N2/N-C: wraps a fetched Response so reading its body is fenced too — once a generation is
+ * Wraps a fetched Response so reading its body is fenced too — once a generation is
  * dead, every body reader (`text()`, `json()`, `blob()`, ...), a read of the `body` stream,
  * and the same on any `clone()` of it (itself a fenced Response) must never settle either,
  * exactly like the fetch call that produced it (a caller may have obtained the Response while
@@ -124,7 +124,7 @@ function generationResponse(response: Response, generation: Generation): Respons
 }
 
 /** Per-generation fetch, fenced the same way as the clock; the Response it resolves with is
- * itself fenced (N2), so a body read issued on it after the kill never settles either. */
+ * itself fenced, so a body read issued on it after the kill never settles either. */
 function generationFetch(shared: typeof fetch, generation: Generation): typeof fetch {
   return ((...args: Parameters<typeof fetch>) =>
     fenced(generation, () =>
@@ -140,7 +140,7 @@ type AsyncPortMethod =
   | Exclude<keyof Signer, 'id' | 'schemes'>;
 
 /**
- * N-A: every async method of the `Stores` ports and of `Signer`. Exhaustive at compile time (a
+ * Every async method of the `Stores` ports and of `Signer`. Exhaustive at compile time (a
  * port method added later fails the build until it's listed here), and independent of how an
  * implementation spells the method — a non-`async` function returning a Promise counts too.
  */
@@ -167,7 +167,9 @@ const ASYNC_PORT_METHODS: { readonly [K in AsyncPortMethod]: true } = {
   exportKey: true,
 };
 
-/** N-A: diagnostics that must keep working on a dead proxy (`JSON.stringify`, `util.inspect`). */
+/**
+ * Diagnostics that must keep working on a dead proxy (`JSON.stringify`, `util.inspect`).
+ */
 const PASSTHROUGH = new Set<PropertyKey>([
   'toJSON',
   'inspect',
@@ -182,9 +184,9 @@ function isAsyncMethod(prop: PropertyKey, fn: unknown): boolean {
 }
 
 /**
- * N4: wraps every method of `target` so a generation's death fences it, and generalizes the
+ * Wraps every method of `target` so a generation's death fences it, and generalizes the
  * old `generationStore` to any shared object with async methods (`Stores`, `Signer`). An async
- * method (N-A: a port method named in `ASYNC_PORT_METHODS`, or a native `async` function) is
+ * method (a port method named in `ASYNC_PORT_METHODS`, or a native `async` function) is
  * fenced the way `sleep`/`fetch` are: once the generation is dead it never settles and never
  * throws, whether it was already in flight or is only called afterwards. A genuinely
  * synchronous method throws `StateError` when called on an already-dead generation — there's
@@ -214,7 +216,7 @@ function generationProxy<T extends object>(target: T, generation: Generation): T
       return descriptor ? { ...descriptor, configurable: true } : undefined;
     },
     get(_stand, prop) {
-      // N4: no receiver, so a native/data getter runs with the real target as `this`.
+      // No receiver, so a native/data getter runs with the real target as `this`.
       const value: unknown = Reflect.get(target, prop);
       if (typeof value !== 'function') return value;
       const fn = value as (...args: unknown[]) => unknown;
@@ -236,7 +238,7 @@ function generationProxy<T extends object>(target: T, generation: Generation): T
           typeof result === 'object' &&
           result !== null &&
           typeof (result as { then?: unknown }).then === 'function';
-        if (!thenable) return result; // N4: a synchronous result passes straight through.
+        if (!thenable) return result; // A synchronous result passes straight through.
         return fenced(generation, () => result as PromiseLike<unknown>);
       };
     },
@@ -252,7 +254,7 @@ function generationStores(stores: Stores, generation: Generation): Stores {
   };
 }
 
-/** N2: the shared signer (see the doc comment on `signers` in `assemble`, `env.ts` — it's
+/** The shared signer (see the doc comment on `signers` in `assemble`, `env.ts` — it's
  * stateless and never rebuilt across generations) still has its `sign`/`getPublicKey` calls
  * fenced per generation, the same as any other in-flight call; the underlying `Signer`
  * instance is unchanged, just wrapped. */

@@ -10,7 +10,7 @@ import { sanitizeError } from '../secret/redact';
 import type { Clock } from '../util/clock';
 import type { KeyRef, Signer } from './types';
 
-/** R32: how long a signer may take to hand out a public key (`lifecycle.signTimeoutMs`). */
+/** How long a signer may take to hand out a public key (`lifecycle.signTimeoutMs`). */
 export interface SignerDeadline {
   readonly clock: Clock;
   readonly timeoutMs: number;
@@ -19,7 +19,8 @@ export interface SignerDeadline {
 /*
  * Guards for every call into signer code (local, callback, KMS, HSM, MPC or user-written).
  * Custody backends put URLs and credentials in their error messages, so a failure that is
- * not already a CryptoAioError only ever surfaces as a sanitized cause (ruling R9).
+ * not already a CryptoAioError only ever surfaces as a sanitized cause. Never call a
+ * `Signer` around these guards: a direct call can leak a custodian's message.
  */
 
 /** A CryptoAioError passes through; anything else becomes `code` with a sanitized cause. */
@@ -63,8 +64,8 @@ export function signerSchemes(
 }
 
 /**
- * R9.3: the signer's public key for `scheme`, checked against `length` and copied. R32:
- * with a `deadline`, a signer that does not answer in time fails with a retryable TIMEOUT
+ * The signer's public key for `scheme`, checked against `length` and copied. With a
+ * `deadline`, a signer that does not answer in time fails with a retryable TIMEOUT
  * (its late answer is ignored), so a hung custody backend can never block its caller.
  */
 export async function signerPublicKey(

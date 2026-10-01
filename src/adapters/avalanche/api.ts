@@ -1,14 +1,15 @@
 /**
  * The two data sources of the Avalanche driver, read through the core's policy-wrapped
- * transports, and strict parsers for their answers (lesson 10: nothing an endpoint sends is
- * trusted for its shape).
+ * transports, and strict parsers for their answers: nothing an endpoint sends is trusted
+ * for its shape, and a malformed answer is a retryable `PROVIDER_UNAVAILABLE`.
  * - `AvalancheNode`: an AvalancheGo node's chain API (`avm.*` on the X-Chain, `platform.*`
  *   on the P-Chain), JSON-RPC at the endpoint's URL (`…/ext/bc/X`). Bytes come hex encoded
  *   with a 4-byte SHA-256 checksum, which is checked; transaction bytes must also hash to
  *   the id asked for, so they authenticate themselves.
  * - `DataApi`: the Avalanche Data API (the indexer). It only locates a transaction's block
  *   and lists an address's transactions; the node proves what it locates.
- * Texts never echo an endpoint's message (R24): the transport keeps that in `details`.
+ * Texts never echo an endpoint's message, which can carry addresses or amounts: the
+ * transport keeps that in `details`.
  */
 import { sha256 } from '@noble/hashes/sha256';
 import { ProviderError, isCryptoAioError } from '../../core/errors/error';
@@ -90,7 +91,10 @@ export function parseHeight(value: unknown, what = 'height'): bigint {
   return height;
 }
 
-/** A non-negative integer amount as a decimal string or an exact integer (A12). */
+/**
+ * A non-negative integer amount as a decimal string or an exact integer: node calls set
+ * `exactIntegers`, so a JSON number above 2^53 arrives as a `bigint`, never rounded.
+ */
 function parseAmount(value: unknown, what: string): bigint {
   if (typeof value === 'bigint' && value >= 0n) return value;
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)

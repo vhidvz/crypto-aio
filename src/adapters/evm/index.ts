@@ -8,7 +8,8 @@
 import type { JsonRpcApiProvider } from 'ethers';
 import type { Web3 } from 'web3';
 
-// R37: through the package entry. SDK types appear only here (spec §5.6).
+// Through the package entry, never a core module. SDK types appear only here, in the
+// adapter's entry, so the main entry's typings name no SDK.
 declare module '../../index' {
   interface NativeClientMap {
     ethers: JsonRpcApiProvider;

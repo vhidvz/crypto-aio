@@ -38,7 +38,7 @@ describe('canonicalJson', () => {
   });
 });
 
-describe('quorumJson (P25-R21/M1)', () => {
+describe('quorumJson', () => {
   it('never writes an object as a bigint or bytes tag, and keeps every key', () => {
     const pairs: (readonly [unknown, unknown])[] = [
       [{ n: 2n }, { n: { $bigint: '2' } }],

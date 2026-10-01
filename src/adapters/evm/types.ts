@@ -1,12 +1,12 @@
 /**
  * SDK-free types of the EVM family: the `ext.evm` API, fee details and overrides, and the
- * narrow `EvmClient` strategy that `EthersClient` and `Web3Client` implement (spec §15).
+ * narrow `EvmClient` strategy that `EthersClient` and `Web3Client` implement.
  * Nothing here imports an SDK, so the composition root can export these types.
  */
 import type { DisposableNativeClient } from '../../core/driver/types';
 import type { CallOptions } from '../../core/transport/types';
 
-// R37: augment the registries through the package entry, as users do with 'crypto-aio'.
+// Augment the registries through the package entry, as users do with 'crypto-aio'.
 declare module '../../index' {
   interface ChainRegistry {
     ethereum: { family: 'evm'; network: 'mainnet' | 'sepolia' | 'hoodi' };
@@ -22,7 +22,7 @@ declare module '../../index' {
   }
 }
 
-/** `bc.ext.evm`: the EVM family extension (spec §5.5). */
+/** `bc.ext.evm`: the EVM family extension. */
 export interface EvmExt {
   readonly evm: {
     /** The account nonce at `latest` (default) or including the mempool (`pending`). */
@@ -61,9 +61,9 @@ export type EvmFeeOverride =
   | { readonly gasPrice: bigint; readonly gasLimit?: bigint };
 
 /**
- * The transport tags every EVM I/O call carries (R41): purpose, retry, quorum, fanout,
+ * The transport tags every EVM I/O call carries: purpose, retry, quorum, fanout,
  * signal. Under a quorum, `quorumKey` replaces the method's consensus facts (`rpc.ts`) with
- * the caller's own projection, e.g. a proof's finality attestation (R74).
+ * the caller's own projection, e.g. a proof's finality attestation.
  */
 export type EvmCallTags = Pick<
   CallOptions,
@@ -197,9 +197,10 @@ export interface EvmAbi {
 }
 
 /**
- * The EVM strategy (spec §15): the SDK-specific part of the EVM driver. I/O methods take
- * the call's transport tags and return plain data (bigint, hex strings, plain objects),
- * never SDK objects (R11); `null` means not found. Codec methods are synchronous.
+ * The EVM strategy: the SDK-specific part of the EVM driver. I/O methods take the call's
+ * transport tags and return plain data (bigint, hex strings, plain objects), never SDK
+ * objects, so any result can go into a store record; `null` means not found. Codec
+ * methods are synchronous.
  */
 export interface EvmClient {
   readonly library: string;
@@ -256,6 +257,6 @@ export interface EvmClient {
     signature: EvmSignature,
   ): { readonly raw: string; readonly hash: string };
   readonly abi: EvmAbi;
-  /** A fresh SDK client on the same transport, for `crypto-aio/native` (R34). */
+  /** A fresh SDK client on the same transport, for `crypto-aio/native`. */
   createNative(): DisposableNativeClient;
 }

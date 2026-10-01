@@ -124,7 +124,8 @@ describe('Avalanche answer parsers', () => {
   });
 });
 
-describe('issueTx refusals (lesson 21)', () => {
+// A node's text is a claim: none makes `rejected`, which would end the Attempt.
+describe('issueTx refusals', () => {
   it.each([
     ['attempted to issue duplicate tx: 2abc', { kind: 'already-known' }],
     ['insufficient funds', { kind: 'refused', code: 'FEE_TOO_LOW' }],
@@ -155,12 +156,12 @@ describe('issueTx refusals (lesson 21)', () => {
   ])('%s', (message, expected) => {
     const result = classifyIssueError(message);
     expect(result).toMatchObject(expected);
-    // R24: fixed texts, never the node's ids or amounts.
+    // Fixed texts, never the node's ids or amounts.
     if (result.kind === 'refused')
       expect(result.reason).not.toMatch(/2abc|2x|U8iR|65536/);
   });
 
-  it('reads only the head of a long message (lesson 20)', () => {
+  it('reads only the head of a long message', () => {
     expect(classifyIssueError(`${'x'.repeat(2_000)} duplicate tx`)).toMatchObject({
       kind: 'refused',
     });

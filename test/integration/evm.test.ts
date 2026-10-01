@@ -1,11 +1,11 @@
 /**
- * Opt-in, read-only checks against a live EVM testnet (spec §17), skipped unless
+ * Opt-in, read-only checks against a live EVM testnet, skipped unless
  * CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only, never keys:
  * - CRYPTO_AIO_IT_EVM_NETWORK: `<chain>:<network>` (default `base:sepolia`);
  * - CRYPTO_AIO_IT_EVM_RPC_URL: an endpoint URL (default: the chain's `public` preset). If
  *   the URL embeds a key it stays redacted (a `Secret`), but prefer a keyless endpoint.
  *
- * The finalized-state probe (R78) reads account state at the finalized block, as the proofs
+ * The finalized-state probe reads account state at the finalized block, as the proofs
  * do before they call an Attempt replaced. On OP Stack and Arbitrum chains that block lies
  * far below the head, beyond a non-archive node's recent-state window, so the endpoint may
  * not serve it. The probe passes either way, but a failure must be a retryable crypto-aio
@@ -18,7 +18,7 @@ import {
   type ChainId,
   type ProviderRef,
 } from '../../src';
-// R78: the proofs' own finalized-state read, which the public API does not expose.
+// The proofs' own finalized-state read, which the public API does not expose.
 import { internalsOf } from '../../src/core/blockchain/internal';
 
 const enabled = process.env.CRYPTO_AIO_INTEGRATION === '1';
@@ -62,7 +62,7 @@ suite(`EVM integration on ${chain}:${network} (%s)`, (library) => {
     }
   }, 60_000);
 
-  it('reads the finalized state, or fails with a classified error (R78)', async () => {
+  it('reads the finalized state, or fails with a classified error', async () => {
     const aio = new CryptoAio({ env: false });
     try {
       const bc = open(aio, library);
@@ -85,7 +85,7 @@ suite(`EVM integration on ${chain}:${network} (%s)`, (library) => {
       }
       const { error } = outcome;
       if (!isCryptoAioError(error)) throw error;
-      // R85: a node without that state decides nothing (a retryable provider error); the
+      // A node without that state decides nothing (a retryable provider error); the
       // URL (a Secret when given) never shows.
       expect([error.category, error.retryable]).toEqual(['provider', true]);
       if (url) expect(error.message.includes(url)).toBe(false);

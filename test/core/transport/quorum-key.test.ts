@@ -13,7 +13,7 @@ const blockA = () => ({
   totalDifficulty: '0x0',
 });
 
-/** M3: fresh fixtures per test. Endpoint a serves `blockA()`, endpoint b serves `blockB`. */
+/** Fresh fixtures per test. Endpoint a serves `blockA()`, endpoint b serves `blockB`. */
 function twoNodes(blockB: unknown) {
   const fake = new FakeFetch()
     .route('https://a.test', (req: FakeRequest) => rpcResult(req, blockA()))
@@ -56,7 +56,7 @@ describe('HttpTransport quorum keys', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT' });
   });
 
-  it('treats a key that throws as a disagreement, never a foreign error (M2)', async () => {
+  it('treats a key that throws as a disagreement, never a foreign error', async () => {
     const { transport, clock, seen } = twoNodes({ number: '0x10' });
     const strict = (value: unknown) => {
       const block = value as { hash?: string };

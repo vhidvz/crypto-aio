@@ -1,10 +1,10 @@
 /**
- * Proofs and block scanning (spec §6.7, §10). Every proof read is a quorum read under
- * `PROOF` (R33), comparing only consensus facts (`rpc.ts`, R59). No proof lets one endpoint
- * choose the final height (R74): a proof attests the fact it needs at that fact's own
+ * Proofs and block scanning. Every proof read is a quorum read under `PROOF`, comparing
+ * only consensus facts (`rpc.ts`). No proof lets one endpoint choose the final height: a
+ * proof attests the fact it needs at that fact's own
  * height, so honest endpoints disagree only while it is final on one and not yet on another,
  * which decides nothing. The block source serves dense heights with native transfers and
- * ERC-20 `Transfer` logs, as the chain reports them (R68). Every error thrown here is a
+ * ERC-20 `Transfer` logs, as the chain reports them. Every error thrown here is a
  * `PROVIDER_*` code, retryable by the code table: look again later.
  */
 import { keccak_256 } from '@noble/hashes/sha3';
@@ -26,7 +26,7 @@ import { blockTransactionsKey } from './rpc';
 import type { EvmClient, EvmFullBlock, EvmLog, EvmReceipt, EvmTx } from './types';
 
 /**
- * R74: a quorum key under which every endpoint whose nonce is past `nonce` agrees. A
+ * A quorum key under which every endpoint whose nonce is past `nonce` agrees. A
  * malformed answer throws, which the transport counts as a disagreement.
  */
 const nonceAbove =
@@ -35,14 +35,14 @@ const nonceAbove =
     quantity(result, 'nonce') > nonce;
 
 /**
- * R85: node texts for state it does not hold: pruned, beyond its recent-state window, or
+ * Node texts for state it does not hold: pruned, beyond its recent-state window, or
  * not served at a tag (geth, op-geth, Nitro, BSC, Erigon, Reth, Besu wordings).
  */
 const STATE_UNAVAILABLE =
   /missing trie node|historical state .* not available|header not found|state (is )?not available|pruned/i;
 
 /**
- * R85, R86 (lesson 18): the boundary of every proof. Only a definitive negative answer may
+ * The boundary of every proof. Only a definitive negative answer may
  * say "no", and a JSON-RPC error answer is none: state the node does not hold, an index it
  * is still building (geth's "transaction indexing is in progress"), or any other error,
  * ambiguous or not. Every `RPC_ERROR` becomes a retryable `PROVIDER_UNAVAILABLE` (look again
@@ -70,7 +70,7 @@ async function undecided<T>(proof: () => Promise<T>): Promise<T> {
 const undecidable = (reason: string) => new ProviderError('PROVIDER_UNAVAILABLE', reason);
 
 /**
- * R88: at most this many nonce reads look for the height that consumed a nonce. The gallop
+ * At most this many nonce reads look for the height that consumed a nonce. The gallop
  * and the bisection take about two reads per doubling of the distance back: at worst 60
  * reads below a final height of 2^30, and 64 below 2^32, so this reaches every consumption
  * on any chain served today.
@@ -78,7 +78,7 @@ const undecidable = (reason: string) => new ProviderError('PROVIDER_UNAVAILABLE'
 const MAX_SEARCH_READS = 64;
 
 /**
- * R88: the lowest height at or below `final` where `consumed` holds, given that it holds at
+ * The lowest height at or below `final` where `consumed` holds, given that it holds at
  * `final`. A gallop back (`final` less 1, 2, 4, …) finds a height where it does not, then a
  * bisection the first where it does. `consumed` never turns false again as the height
  * grows, since an account's nonce never falls. Beyond `MAX_SEARCH_READS` reads, it decides
@@ -115,15 +115,19 @@ export async function consumptionHeight(
 type Inclusion = Awaited<ReturnType<ProofSource['includedFinal']>>;
 
 /**
- * R88 (the final review's C1): whether `txHash` is final, when no endpoint serves its
+ * Whether `txHash` is final, when no endpoint serves its
  * receipt. `null` is no proof of absence: a node answers it for every transaction outside its
  * index (geth indexes the last 2,350,000 blocks by default, and pruning nodes of other
  * clients drop theirs), so "not included" would prove a final, executed transfer `replaced`.
  * The nonce's consumer decides instead. The quorum attests the nonce consumed at a final
  * height, a search finds the block that consumed it, and the sender's transaction at that
  * nonce there answers: another one proves ours is not included; ours is included, with the
- * verdict its receipt in that block gives (R50). Anything else decides nothing, and so does
+ * verdict its receipt in that block gives. Anything else decides nothing, and so does
  * an endpoint without the historical state the search reads.
+ *
+ * Known gap: nothing caches the consumer per sender and nonce, so an undecided Attempt
+ * repeats the search on every monitor pass. A nonce that an EIP-7702 authorization
+ * consumed (no transaction from the sender) is never decided, the safe direction.
  */
 async function nonceConsumer(
   ctx: EvmContext,
@@ -188,10 +192,10 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
     includedFinal: (ref, ordering, from) =>
       undecided(async () => {
         const receipt = await client.getReceipt(ref.id, PROOF);
-        // R88: no receipt is no proof of absence; the transaction at our nonce decides.
+        // No receipt is no proof of absence; the transaction at our nonce decides.
         if (!receipt) return nonceConsumer(ctx, ref.id, ordering, from);
         const final = await finalBlockAt(ctx, receipt.blockNumber, PROOF);
-        // R77: the transaction is in a block, just not a final one on these endpoints yet.
+        // The transaction is in a block, just not a final one on these endpoints yet.
         // "Not included" would let the core prove a final transfer `replaced` (whenAbsent,
         // after the slot was proven consumed on endpoints whose finality is further along),
         // so this decides nothing.
@@ -200,7 +204,7 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
         }
         // The endpoints agree on a receipt from a block that is not the final one at its
         // height: the chain reorganized between the reads, or their receipt index lags. The
-        // transaction may be final elsewhere, so this decides nothing (R74).
+        // transaction may be final elsewhere, so this decides nothing.
         if (final.hash !== receipt.blockHash) {
           throw new ProviderError(
             'PROVIDER_INCONSISTENT',
@@ -209,9 +213,9 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
         }
         let success = receipt.status === 1;
         if (success) {
-          // R50, R89: a token transfer that logged no transfer to its recipient paid it
-          // nothing (read from the ref alone, the call's arguments from its keyed calldata).
-          // The core proves only its own Attempts, so this is always a verdict (R68).
+          // A token transfer that logged no transfer to its recipient paid it nothing
+          // (read from the ref alone, the call's arguments from its keyed calldata). The
+          // core proves only its own Attempts, so this is always a verdict.
           const tx = await client.getTransaction(ref.id, PROOF);
           if (!tx) {
             throw new ProviderError(
@@ -238,10 +242,10 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
             (await client.getTransactionCount(from, 'latest', MONITOR)) > ordering.nonce
           );
         }
-        // R85: the nonce at a height the quorum attests final (one endpoint's view proposes
+        // The nonce at a height the quorum attests final (one endpoint's view proposes
         // it, trailed by PEER_SKEW), on tag and confirmation networks alike. State at a final
         // height never changes, so honest endpoints agree however their heads move, and one
-        // that over-reports its finalized block cannot advance the height (R74). A number,
+        // that over-reports its finalized block cannot advance the height. A number,
         // not the `finalized` tag: some nodes (BSC's) serve no state at the tag.
         const { height } = await provenFinal(ctx, PROOF);
         const count = await client.getTransactionCount(from, height, {
@@ -268,7 +272,7 @@ const changed = (height: bigint) =>
   new ProviderError('PROVIDER_INCONSISTENT', `block ${height} changed while scanning`);
 
 /**
- * R90: whether a block's `logsBloom` may hold `value` (a log's address or topic), by the
+ * Whether a block's `logsBloom` may hold `value` (a log's address or topic), by the
  * yellow paper's M3:2048: three bits, each the low 11 bits of a byte pair of the value's
  * keccak-256. `false` is definitive; `true` may be a false positive. No bloom may hold
  * anything.
@@ -293,7 +297,7 @@ const METHOD_MISSING =
 /**
  * A definitive answer that the node does not serve `eth_getBlockReceipts`: JSON-RPC's
  * "method not found" (-32601), EIP-1474's "method not supported" (-32004), or a provider's
- * own code with a text that says so (R93).
+ * own code with a text that says so.
  */
 function methodMissing(error: unknown): boolean {
   if (!isCryptoAioError(error, 'RPC_ERROR') || error.ambiguous) return false;
@@ -308,7 +312,7 @@ function methodMissing(error: unknown): boolean {
 type Receipts = ReadonlyMap<string, EvmReceipt>;
 
 /**
- * R90: every receipt of `block` in one call, by transaction hash. The node reads them by
+ * Every receipt of `block` in one call, by transaction hash. The node reads them by
  * block, never through a log or transaction index that may lag. `undefined` when the node
  * does not serve `eth_getBlockReceipts`.
  */
@@ -354,7 +358,7 @@ function blockLogs(block: EvmFullBlock, receipts: Receipts): readonly EvmLog[] {
 export function createEvmBlocks(ctx: EvmContext): BlockSource {
   const { client, config } = ctx;
   /**
-   * The block's `Transfer` logs without block receipts (R90): `eth_getLogs`, which a lagging
+   * The block's `Transfer` logs without block receipts: `eth_getLogs`, which a lagging
    * log index answers empty without an error. So when it answers nothing while the header's
    * bloom may hold the topic, every transaction's receipt is read before the empty answer
    * is trusted: any call may have logged one.
@@ -381,7 +385,7 @@ export function createEvmBlocks(ctx: EvmContext): BlockSource {
     async transactions(block, filter) {
       const full = await client.getBlockWithTransactions(block.height, MONITOR);
       if (!full || full.hash !== block.hash) throw changed(block.height);
-      // R90: one call for every receipt of the block, filtered scans included.
+      // One call for every receipt of the block, filtered scans included.
       let receipts = await blockReceipts(client, full);
       let selected: readonly EvmTx[] = full.transactions;
       if (filter?.addresses?.length) {
@@ -411,8 +415,8 @@ export function createEvmBlocks(ctx: EvmContext): BlockSource {
       return selected.map((tx) => {
         const receipt = receipts.get(tx.hash);
         if (!receipt || receipt.blockHash !== block.hash) throw changed(block.height);
-        // The chain's view (R68), with the network's config so bor's system logs do not
-        // make a plain Polygon transfer `partial` (R69, R70).
+        // The chain's view, with the network's config so bor's system logs do not make a
+        // plain Polygon transfer `partial`.
         return decodeTransaction(client.abi, tx, receipt, full.timestamp, config);
       });
     },

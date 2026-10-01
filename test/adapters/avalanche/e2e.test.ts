@@ -14,7 +14,8 @@ import {
 import { CryptoAio } from '../../../src';
 import '../../../src/adapters/avalanche';
 
-// Determinism (R46): the container builds its own transports; their jitter is pinned here.
+// Determinism: the container builds its own transports with no `random` option, so their
+// jitter (`Math.random`) is pinned here.
 beforeEach(() => {
   jest.spyOn(Math, 'random').mockReturnValue(0.5);
 });

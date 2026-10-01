@@ -31,7 +31,7 @@ export function describeCursorStoreContract(
       assert.deepEqual(await cursors.get('c'), stored);
     });
 
-    api.it('keeps the key out of its errors (B110)', async () => {
+    api.it('keeps the key out of its errors', async () => {
       // A cursor key can name a watched wallet, and error messages reach logs.
       const { cursors } = await create();
       const key = 'deposits:bitcoin:mainnet:bc1qcursorkeyc0ffee0000000000000000000000';

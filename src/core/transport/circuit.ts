@@ -30,9 +30,12 @@ export class CircuitBreaker {
     return state === 'half-open' && !this.#probing;
   }
 
-  /** #4 (round 3): returns true when this call actually took the half-open probe slot, so
-   * the caller can track ownership of it (e.g. to decide whether it may later abandon it).
-   * #2 (round 4): a slot another attempt already holds is not taken again — false. */
+  /** Returns true when this call actually took the half-open probe slot, so the caller
+   * can track ownership of it (e.g. to decide whether it may later abandon it). A slot
+   * another attempt already holds is not taken again — false. Known gap: the slot is
+   * claimed here, as the request is sent, not when the endpoint is picked, so a second
+   * request picked while the slot was free still goes out; claiming it earlier would
+   * change how proof reads try a recovering endpoint. */
   onAttempt(): boolean {
     if (this.state !== 'half-open' || this.#probing) return false;
     this.#probing = true;

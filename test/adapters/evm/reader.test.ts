@@ -71,7 +71,7 @@ describe('EVM network config', () => {
     ).toBeUndefined();
   });
 
-  it('takes the chain id from the registry identity, and the minimum tip from params (R61)', () => {
+  it('takes the chain id from the registry identity, and the minimum tip from params', () => {
     for (const chain of EVM_CHAINS)
       for (const network of Object.values(chain.networks))
         expect(evmNetworkConfig(chain, network).chainId).toBe(
@@ -104,7 +104,7 @@ describe('EVM network config', () => {
     );
   });
 
-  it('accepts a non-negative integer price bump and refuses any other (M3)', () => {
+  it('accepts a non-negative integer price bump and refuses any other', () => {
     const bump = (minBumpPercent: unknown, id = 'ethereum', network = 'sepolia') =>
       evmNetworkConfig(chain(id), {
         ...chain(id).networks[network],
@@ -119,7 +119,7 @@ describe('EVM network config', () => {
     expect(() => bump(1.5, 'arbitrum', 'mainnet')).toThrow(invalid(/minBumpPercent/));
   });
 
-  it('requires a whole number of at least one confirmation (R67)', () => {
+  it('requires a whole number of at least one confirmation', () => {
     const avalanche = chain('avalanche');
     const fuji = avalanche.networks.fuji as NetworkInfo;
     const confirmations = (value: unknown) =>
@@ -140,7 +140,7 @@ describe('EVM network config', () => {
     }
   });
 
-  it("marks Polygon PoS networks, whose receipts carry bor's system logs (R69, R70)", () => {
+  it("marks Polygon PoS networks, whose receipts carry bor's system logs", () => {
     for (const chain of EVM_CHAINS)
       for (const network of Object.values(chain.networks))
         expect(evmNetworkConfig(chain, network).polygonSystemLogs).toBe(
@@ -148,7 +148,7 @@ describe('EVM network config', () => {
         );
   });
 
-  it("takes bor's system logs from network data, so a custom chain can opt in (R91 M7)", () => {
+  it("takes bor's system logs from network data, so a custom chain can opt in", () => {
     const polygon = EVM_CHAINS.find((c) => c.id === 'polygon') as ChainInfo;
     const amoy = polygon.networks.amoy as NetworkInfo;
     expect(amoy.params).toEqual({ systemLogs: 'bor' });
@@ -170,7 +170,7 @@ describe('EVM network config', () => {
 });
 
 describe('EVM call tags', () => {
-  it('tags reads, monitor reads and quorum proof reads (R41, R59)', () => {
+  it('tags reads, monitor reads and quorum proof reads', () => {
     expect(READ_TAGS).toEqual(READ);
     expect(MONITOR_TAGS).toEqual(MONITOR);
     expect(PROOF).toEqual({ purpose: 'proof', retry: 'safe', quorum: 'proof' });
@@ -197,7 +197,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     );
   });
 
-  it("derives through the client's strict public-key decode, unwrapped (R58)", () => {
+  it("derives through the client's strict public-key decode, unwrapped", () => {
     const codec = createEvmAddressCodec(evmHarness(library).client);
     expect(codec.fromPublicKey(secp256k1.getPublicKey(KEY, false)).canonical).toBe(
       KEY_ADDRESS,
@@ -236,7 +236,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     expect(h.calls.every((c) => c.tags.purpose === 'read')).toBe(true);
   });
 
-  it('reads token metadata under the proof quorum: no one endpoint scales amounts (R91 M4)', async () => {
+  it('reads token metadata under the proof quorum: no one endpoint scales amounts', async () => {
     const h = evmHarness(library, 'ethereum', 'sepolia', { endpoints: ['a', 'b'] });
     const reader = createEvmReader(h.ctx);
     h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
@@ -278,7 +278,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
-  it("never lets one endpoint's revert fail a token for good (P25-R10)", async () => {
+  it("never lets one endpoint's revert fail a token for good", async () => {
     const h = evmHarness(library, 'ethereum', 'sepolia', { endpoints: ['a', 'b'] });
     const reader = createEvmReader(h.ctx);
     h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
@@ -295,7 +295,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
-  it("never fails a token for good on one endpoint's revert against another's node error (P25-R21/I2)", async () => {
+  it("never fails a token for good on one endpoint's revert against another's node error", async () => {
     const h = evmHarness(library, 'ethereum', 'sepolia', { endpoints: ['a', 'b'] });
     const reader = createEvmReader(h.ctx);
     h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
@@ -317,7 +317,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
-  it('classifies token metadata failures: permanent for the token, retryable for the node (N6)', async () => {
+  it('classifies token metadata failures: permanent for the token, retryable for the node', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
     h.node.deployToken(JUNK, { symbol: 'JUNK' });
@@ -335,7 +335,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     ).rejects.toMatchObject({ code: 'RPC_ERROR', retryable: true });
   });
 
-  it("classifies the token's VM execution failures as permanent, other RPC errors as retryable (R66)", async () => {
+  it("classifies the token's VM execution failures as permanent, other RPC errors as retryable", async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
     h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
@@ -361,7 +361,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
-  it('keeps unreadable token data permanent and leaves other provider failures as they are (R53, R66)', async () => {
+  it('keeps unreadable token data permanent and leaves other provider failures as they are', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
     const metadata = () =>
@@ -397,7 +397,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
       code: 'PROVIDER_UNAVAILABLE',
       retryable: true,
     });
-    // A misconfigured endpoint stays final (transport I10), and is never the token's fault.
+    // A misconfigured endpoint stays final, and is never the token's fault.
     h.node.intercept = undefined;
     h.node.fetch.route('https://main.evm.test/rpc', () => ({ status: 401, text: 'no' }));
     await expect(metadata()).rejects.toMatchObject({
@@ -431,10 +431,10 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     });
   });
 
-  it('proves a confirmation height under the quorum before trusting it (R67, R74)', async () => {
+  it('proves a confirmation height under the quorum before trusting it', async () => {
     const h = evmHarness(library, 'avalanche', 'fuji', { endpoints: ['a', 'b'] });
     h.node.mine(4);
-    // R74: the quorum confirms the block 2 below one endpoint's head, which a peer a block
+    // The quorum confirms the block 2 below one endpoint's head, which a peer a block
     // or two behind still holds; with one confirmation, that block is the final one.
     expect(await h.run(provenFinal(h.ctx, PROOF))).toEqual({
       height: 2n,
@@ -580,7 +580,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     ]);
   });
 
-  it('fails a token transfer that logged no Transfer on the verdict path only (R50, R68)', async () => {
+  it('fails a token transfer that logged no Transfer on the verdict path only', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
@@ -592,7 +592,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     const other = await submit(h, 1, { ...transfer, to: OTHER, data });
     h.node.mine();
     const ref = (id: string) => ({ id, idKind: 'tx-hash' as const, canonical: true });
-    // Our own Attempt, observed with its ordering: the R50 verdict.
+    // Our own Attempt, observed with its ordering: the token verdict.
     expect(
       await h.run(reader.observe(ref(token), { kind: 'nonce', nonce: 0n }, KEY_ADDRESS)),
     ).toMatchObject({
@@ -619,7 +619,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
-  it('counts a transfer call whose arguments do not decode as not landed (R93 N1)', async () => {
+  it('counts a transfer call whose arguments do not decode as not landed', async () => {
     const h = evmHarness(library);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
     h.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
@@ -658,7 +658,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     ]);
   });
 
-  it('observes an Attempt with monitor reads, from its ref alone (R32)', async () => {
+  it('observes an Attempt with monitor reads, from its ref alone', async () => {
     const h = evmHarness(library);
     const reader = createEvmReader(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);
@@ -699,7 +699,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     expect(h.calls[2]?.tags).toEqual(READ);
   });
 
-  it("builds every transaction from the network config's chain id (R61)", async () => {
+  it("builds every transaction from the network config's chain id", async () => {
     const h = evmHarness(library, 'bsc', 'testnet');
     const vector = VECTORS[1] as (typeof VECTORS)[number];
     const fields = { ...vector.fields, chainId: h.ctx.config.chainId };
@@ -742,7 +742,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     }
   });
 
-  it('counts only execution gas: an Arbitrum transfer with L1 gas is complete (D14)', () => {
+  it('counts only execution gas: an Arbitrum transfer with L1 gas is complete', () => {
     const { abi } = evmHarness(library, 'arbitrum', 'sepolia').client;
     const hash = `0x${'cd'.repeat(32)}`;
     const blockHash = `0x${'ef'.repeat(32)}`;
@@ -785,7 +785,7 @@ describe.each(LIBRARIES)('EVM reader (%s)', (library) => {
     );
   });
 
-  it("ignores exactly bor's system logs on a plain Polygon transfer (R69, R70)", async () => {
+  it("ignores exactly bor's system logs on a plain Polygon transfer", async () => {
     const h = evmHarness(library, 'polygon', 'amoy');
     const reader = createEvmReader(h.ctx);
     h.node.fund(KEY_ADDRESS, 10n ** 18n);

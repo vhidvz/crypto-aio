@@ -1,5 +1,5 @@
 /**
- * Opt-in, read-only checks against a live Avalanche network (spec §17), skipped unless
+ * Opt-in, read-only checks against a live Avalanche network, skipped unless
  * CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only:
  * - CRYPTO_AIO_IT_AVALANCHE_NETWORK: `mainnet` or `fuji` (default `fuji`);
  * - CRYPTO_AIO_IT_AVALANCHE_X_RPC_URL / CRYPTO_AIO_IT_AVALANCHE_P_RPC_URL: a node's chain

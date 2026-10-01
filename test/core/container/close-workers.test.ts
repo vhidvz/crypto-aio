@@ -1,4 +1,4 @@
-// N3 (Plan 1 handoff §4): a closed container stops its worker loops and refuses new ones, so
+// A closed container stops its worker loops and refuses new ones, so
 // it never claims another Operation from a shared store and never keeps the process alive.
 import { MemoryOperationStore } from '../../../src/core/store/memory';
 import { createFakeEnv } from '../../../src/testing';
@@ -16,7 +16,7 @@ class CountingStore extends MemoryOperationStore {
   }
 }
 
-describe('close() stops the workers (N3)', () => {
+describe('close() stops the workers', () => {
   it('ends a running monitor loop and claims nothing after close', async () => {
     const operations = new CountingStore();
     const env = await createFakeEnv({ stores: { operations } });

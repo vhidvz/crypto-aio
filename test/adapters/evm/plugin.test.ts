@@ -138,7 +138,7 @@ describe('the built-in EVM plugin', () => {
   });
 });
 
-describe('the built-in EVM plugin registered again (A18)', () => {
+describe('the built-in EVM plugin registered again', () => {
   it('keeps use() idempotent for the same plugin, built-ins included', async () => {
     // The composition root already registered evmPlugin(); these are fresh copies of it.
     expect(samePlugin(evmPlugin(), evmPlugin())).toBe(true);
@@ -171,7 +171,7 @@ describe('evmChainPlugin', () => {
     expect(evmChainPlugin({ name: 'acme', chains: [acme] }).name).toBe('evm:acme');
   });
 
-  it('registers the same custom chain plugin twice as a no-op, and refuses another under its name (A18)', async () => {
+  it('registers the same custom chain plugin twice as a no-op, and refuses another under its name', async () => {
     const { aio } = container(777n);
     aio.use(evmChainPlugin({ name: 'acme', chains: [acme] }));
     expect(() => aio.use(evmChainPlugin({ name: 'acme', chains: [acme] }))).not.toThrow();

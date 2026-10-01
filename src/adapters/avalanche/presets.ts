@@ -1,5 +1,5 @@
 /**
- * Avalanche provider presets (spec §11), verified on 2026-10-01:
+ * Avalanche provider presets, verified on 2026-10-01:
  * - `public` (`rpc`): Ava Labs' public API, `https://api.avax.network/ext/bc/{X,P}` on
  *   mainnet and `https://api.avax-test.network/ext/bc/{X,P}` on Fuji. Each chain's JSON-RPC
  *   endpoint is its own URL.
@@ -62,7 +62,10 @@ function apiKeyOf(input: PresetInput): string {
   return key;
 }
 
-/** Built once at module level, so the plugin's functions keep their identity (A25). */
+/**
+ * Built once at module level, so the plugin's functions keep their identity: registration
+ * compares functions by identity, and rebuilt ones would make the same plugin a new one.
+ */
 export const AVALANCHE_PRESETS: readonly ProviderPreset[] = deepFreeze([
   {
     name: 'public',

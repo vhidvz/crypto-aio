@@ -1,5 +1,5 @@
 /**
- * Well-known tokens (spec §6.2): USDT and USDC where their issuers deploy them natively on
+ * Well-known tokens: USDT and USDC where their issuers deploy them natively on
  * a built-in mainnet (Tether's supported-protocols page, Circle's USDC addresses page).
  * Addresses are EIP-55 checksummed; decimals are verified on each chain's explorer.
  */

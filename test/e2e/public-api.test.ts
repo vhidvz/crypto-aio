@@ -123,11 +123,11 @@ describe('public API', () => {
       expect(typeof suite).toBe('function');
     }
     expect(fakePlugin().name).toBe('fake');
-    // M2: a scanner comes from bc.scanner(); the class is exported as a type only.
+    // A scanner comes from bc.scanner(); the class is exported as a type only.
     expect(Object.keys(publicApi)).not.toContain('Scanner');
   });
 
-  it('freezes every exported table, deeply (M1)', () => {
+  it('freezes every exported table, deeply', () => {
     const tables: Record<string, object> = {
       ERROR_CODES,
       NON_TERMINAL_STATES,
@@ -194,7 +194,7 @@ describe('public API', () => {
     expect(balance.amount.format()).toBe('0.00001 FAKE');
   });
 
-  it('registers the same plugin again as a no-op, so use() is safe to repeat (A18)', async () => {
+  it('registers the same plugin again as a no-op, so use() is safe to repeat', async () => {
     const aio = new CryptoAio({
       env: false,
       logger: noopLogger,
@@ -217,7 +217,7 @@ describe('public API', () => {
     );
   });
 
-  // Review Focus 2: an idempotent retry expressed differently is the same Operation.
+  // An idempotent retry expressed differently is the same Operation.
   it('returns the same Operation for a retry in another input form, and nothing else', async () => {
     const { signer, calls } = countingSigner();
     const env = await createFakeEnv({ signer });
@@ -241,7 +241,7 @@ describe('public API', () => {
     ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
   });
 
-  // Review Focus 3: concurrent transfers from one address get distinct consecutive nonces.
+  // Concurrent transfers from one address get distinct consecutive nonces.
   it('lands five concurrent transfers from one address on consecutive nonces', async () => {
     const env = await createFakeEnv();
     const subs = await env.run(
@@ -273,7 +273,7 @@ describe('public API', () => {
     expect(env.chain.nonce(env.address)).toBe(5n);
   });
 
-  // Review Focus 4: a secret in a provider URL never leaks through errors, events or logs.
+  // A secret in a provider URL never leaks through errors, events or logs.
   it('never leaks a provider secret through errors, events, logs or the handle', async () => {
     const clock = new FakeClock();
     // The health probes pass, so the read itself reaches the node and fails with a cause
@@ -286,7 +286,7 @@ describe('public API', () => {
         cause: new Error('connect ECONNREFUSED https://node.test/v1/sk_live_E2ESECRET'),
       });
     });
-    // M5: a second endpoint serves another network, so the transport logs its disabling.
+    // A second endpoint serves another network, so the transport logs its disabling.
     fake.route('https://stray.test', (request) =>
       rpcResult(
         request,
@@ -318,7 +318,7 @@ describe('public API', () => {
     });
     const events: unknown[] = [];
     aio.onAny((event) => events.push(event));
-    // M5: a throwing handler is logged too; its error carries the secret URL.
+    // A throwing handler is logged too; its error carries the secret URL.
     aio.on('rpc.error', () => {
       throw new Error('handler saw https://node.test/v1/sk_live_E2ESECRET');
     });
@@ -438,7 +438,7 @@ describe('public API', () => {
     });
   });
 
-  it('closes every native client once with its root, then refuses handle and native() work (R34)', async () => {
+  it('closes every native client once with its root, then refuses handle and native() work', async () => {
     const env = await createFakeEnv();
     const scoped = env.aio.scope({}).blockchain({ chain: env.chainId });
     const mine = await env.run(native(env.bc, 'fake-sdk'));
@@ -463,7 +463,7 @@ describe('public API', () => {
     }
   });
 
-  it('logs a native client that fails to close by code only, and closes the rest (R34)', async () => {
+  it('logs a native client that fails to close by code only, and closes the rest', async () => {
     const closed: number[] = [];
     let built = 0;
     const failing: AdapterManifest = {

@@ -1,5 +1,5 @@
 /**
- * The EVM fee policy (spec §6.5, §15): `evm-1559` or `evm-legacy` per network, an `upper`
+ * The EVM fee policy: `evm-1559` or `evm-legacy` per network, an `upper`
  * bound with the `expected` cost in the details, overrides, and replacement bumps. Pure
  * functions over plain data; the driver does the I/O.
  */
@@ -98,9 +98,11 @@ export function gasLimitFrom(estimate: bigint): bigint {
 const invalid = (reason: string) => new ValidationError('INVALID_INTENT', reason);
 
 /**
- * Plan 7 D6 (F4-R28's shape): the default `maxFeePerGas`, the highest price per gas an EVM
- * transaction signs, 1,000 gwei. It bounds a plain transfer at 0.021 and a 65,000-gas token
- * transfer at 0.065 of the native coin, however an endpoint prices the fee.
+ * The default `maxFeePerGas`, the highest price per gas an EVM transaction signs, 1,000
+ * gwei. It bounds a plain transfer at 0.021 and a 65,000-gas token transfer at 0.065 of
+ * the native coin, however an endpoint prices the fee. A network whose base fee rises
+ * above the ceiling stalls its transfers as `FEE_TOO_LOW` until the fee falls or the
+ * option is raised.
  */
 export const DEFAULT_MAX_FEE_PER_GAS = 1_000_000_000_000n;
 
@@ -110,7 +112,7 @@ export function priceCap(params: EvmFeeParams): bigint {
 }
 
 /**
- * A node's suggestion within the ceiling (D6): the fee cap or gas price at most `ceiling`,
+ * A node's suggestion within the ceiling: the fee cap or gas price at most `ceiling`,
  * and the tip at most the fee cap. No endpoint can raise what a transfer signs.
  */
 export function capPrice(params: EvmFeeParams, ceiling: bigint): EvmFeeParams {

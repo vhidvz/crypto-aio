@@ -94,7 +94,7 @@ describe.each(LIBRARIES)('EvmClient codec (%s)', (library) => {
     },
   );
 
-  it('refuses a transaction for another chain, of either type (R61)', () => {
+  it('refuses a transaction for another chain, of either type', () => {
     for (const vector of VECTORS) {
       const { chainId } = vector.fields;
       const local = makeClient(library, nodeTransport({ chainId }).transport, chainId);
@@ -143,7 +143,7 @@ describe.each(LIBRARIES)('EvmClient codec (%s)', (library) => {
     );
   });
 
-  it('derives addresses only from 33- or 65-byte on-curve public keys (R58)', () => {
+  it('derives addresses only from 33- or 65-byte on-curve public keys', () => {
     const uncompressed = secp256k1.getPublicKey(KEY, false);
     expect(client.addressFromPublicKey(KEY_PUBLIC)).toBe(KEY_ADDRESS);
     expect(client.addressFromPublicKey(uncompressed)).toBe(KEY_ADDRESS);
@@ -444,7 +444,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     });
   });
 
-  it("lets a caller's own quorum key replace the method's, only under a quorum (R74)", async () => {
+  it("lets a caller's own quorum key replace the method's, only under a quorum", async () => {
     const { transport, calls } = recording({ eth_getBlockByNumber: null });
     const client = makeClient(library, transport, 1n);
     const atLeastTwo = (result: unknown) =>
@@ -457,7 +457,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     expect(read).not.toHaveProperty('quorumKey');
   });
 
-  it('proves a receipt only when the endpoints agree on its logs (R59)', async () => {
+  it('proves a receipt only when the endpoints agree on its logs', async () => {
     const t = setup(['a', 'b']);
     t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
     t.node.mintToken(TOKEN, t.wallet.address, 100n);
@@ -529,7 +529,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     });
   });
 
-  it('refuses an answer about another transaction, or one without its calldata (R91 M2)', async () => {
+  it('refuses an answer about another transaction, or one without its calldata', async () => {
     const t = setup();
     const broadcast = { purpose: 'broadcast' } as const;
     const first = await t.run(t.client.sendRawTransaction(await t.sign(0), broadcast));
@@ -580,7 +580,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     });
   });
 
-  it('reaches the transport with no real timer and no fake time (R46)', async () => {
+  it('reaches the transport with no real timer and no fake time', async () => {
     const t = setup();
     const timers = jest.spyOn(global, 'setTimeout');
     try {
@@ -631,7 +631,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     });
   });
 
-  it("classifies a JSON-RPC-shaped error answer as malformed, not as the node's error (R61)", async () => {
+  it("classifies a JSON-RPC-shaped error answer as malformed, not as the node's error", async () => {
     const t = setup();
     t.node.intercept = (_e, method) =>
       method === 'eth_call'
@@ -674,7 +674,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
     await second.close?.();
   });
 
-  it('tags a native broadcast as one, so a failure after delivery is ambiguous (R91 M3)', async () => {
+  it('tags a native broadcast as one, so a failure after delivery is ambiguous', async () => {
     const { transport, calls } = recording({
       eth_sendRawTransaction: `0x${'11'.repeat(32)}`,
       eth_blockNumber: '0x5',
@@ -695,7 +695,7 @@ describe.each(LIBRARIES)('EvmClient I/O over the transport (%s)', (library) => {
 });
 
 describe('Web3Client', () => {
-  it("takes web3's EIP-1193 path: its provider's request is an async function (M10)", async () => {
+  it("takes web3's EIP-1193 path: its provider's request is an async function", async () => {
     // web3 4.16 sends a non-async `request` down its legacy request-provider path instead.
     const send = jest.spyOn(core.Web3RequestManager.prototype, 'send');
     try {

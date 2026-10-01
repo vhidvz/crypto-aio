@@ -80,7 +80,7 @@ describe('HttpTransport requests', () => {
     expect(clock.now() - start).toBeGreaterThanOrEqual(2_000);
   });
 
-  // Review Focus 5: an HTML maintenance page must not crash the client.
+  // An HTML maintenance page must not crash the client.
   it('fails over when a provider answers 200 with an HTML page', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', () => ({
@@ -104,7 +104,7 @@ describe('HttpTransport requests', () => {
     });
   });
 
-  // Review Focus 4: secrets in provider URLs never leak through error causes or events.
+  // Secrets in provider URLs never leak through error causes or events.
   it('never leaks endpoint secrets through errors or events', async () => {
     const fake = new FakeFetch().route('https://node.test', () => {
       throw new TypeError('fetch failed', {
@@ -134,7 +134,7 @@ describe('HttpTransport requests', () => {
     }
   });
 
-  // M10 (fix round 1, group C): a secret in the endpoint URL's query string never leaks.
+  // A secret in the endpoint URL's query string never leaks.
   it('never leaks a secret embedded in the endpoint URL query string', async () => {
     const fake = new FakeFetch().route('https://node.test', () => {
       throw new TypeError('fetch failed', {
@@ -159,7 +159,7 @@ describe('HttpTransport requests', () => {
     }
   });
 
-  // M10: a secret in the endpoint URL's userinfo never leaks.
+  // A secret in the endpoint URL's userinfo never leaks.
   it('never leaks a secret embedded in the endpoint URL userinfo', async () => {
     const fake = new FakeFetch().route('https://node.test', () => {
       throw new TypeError('fetch failed', {
@@ -184,7 +184,7 @@ describe('HttpTransport requests', () => {
     }
   });
 
-  // M10: a capture logger (not noopLogger) never records the secret either. The identity
+  // A capture logger (not noopLogger) never records the secret either. The identity
   // probe's mismatch warning is the transport's only log call site, so a mismatch scenario is
   // used to prove the assertion isn't vacuous.
   it('never logs a secret through a capture logger', async () => {

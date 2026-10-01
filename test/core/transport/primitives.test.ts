@@ -79,7 +79,8 @@ describe('TokenBucket', () => {
     expect(taken).toBe(true);
   });
 
-  it('gives the next token to a priority taker ahead of waiting ordinary takers (A17)', async () => {
+  // A priority taker is a health probe: probes share an endpoint's bucket with requests.
+  it('gives the next token to a priority taker ahead of waiting ordinary takers', async () => {
     const clock = new FakeClock();
     const bucket = new TokenBucket(1, 1, clock);
     expect(bucket.tryTake()).toBe(true);
@@ -96,7 +97,7 @@ describe('TokenBucket', () => {
     expect(order).toEqual(['probe', 'first']);
   });
 
-  it('lets ordinary takers go again once a priority taker gives up (A17)', async () => {
+  it('lets ordinary takers go again once a priority taker gives up', async () => {
     const clock = new FakeClock();
     const bucket = new TokenBucket(1, 1, clock);
     expect(bucket.tryTake()).toBe(true);
@@ -130,7 +131,7 @@ describe('CircuitBreaker', () => {
     await clock.advance(1_000);
     expect(breaker.state).toBe('half-open');
     expect(breaker.canRequest()).toBe(true);
-    // #4 (round 3): onAttempt() returns true when it took the half-open probe slot.
+    // onAttempt() returns true when it took the half-open probe slot.
     expect(breaker.onAttempt()).toBe(true);
     expect(breaker.canRequest()).toBe(false);
     breaker.onFailure();
@@ -142,7 +143,7 @@ describe('CircuitBreaker', () => {
     expect(breaker.canRequest()).toBe(true);
   });
 
-  // #4 (round 3): onAttempt() returns false when there's no half-open slot to take.
+  // onAttempt() returns false when there's no half-open slot to take.
   it('onAttempt returns false when the breaker is closed', () => {
     const clock = new FakeClock();
     const breaker = new CircuitBreaker({ failureThreshold: 2, openMs: 1_000 }, clock);
@@ -151,7 +152,7 @@ describe('CircuitBreaker', () => {
     expect(breaker.canRequest()).toBe(true);
   });
 
-  // #2 (round 4): only the attempt that actually takes the half-open slot owns it.
+  // Only the attempt that actually takes the half-open slot owns it.
   it('a second onAttempt() while probing returns false', async () => {
     const clock = new FakeClock();
     const breaker = new CircuitBreaker({ failureThreshold: 1, openMs: 1_000 }, clock);
@@ -162,7 +163,7 @@ describe('CircuitBreaker', () => {
     expect(breaker.canRequest()).toBe(false);
   });
 
-  // I7: an abandoned half-open probe (e.g. the caller aborted) must not lock the endpoint out.
+  // An abandoned half-open probe (e.g. the caller aborted) must not lock the endpoint out.
   it('onAbandon clears a half-open probe without changing state', async () => {
     const clock = new FakeClock();
     const breaker = new CircuitBreaker({ failureThreshold: 1, openMs: 1_000 }, clock);

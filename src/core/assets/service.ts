@@ -19,7 +19,7 @@ import type { Catalogs } from '../registry/plugin';
 
 /**
  * Resolves asset inputs strictly within one chain/network. Token metadata is cached per
- * container, and so is a token's own permanent failure (N6, R53: only a non-retryable
+ * container, and so is a token's own permanent failure (only a non-retryable
  * crypto-aio `ASSET_RESOLUTION` error, e.g. for a contract with no usable `decimals`), so a
  * junk token seen in every scanned block is queried once. Every other failure (a retryable
  * one of any code, any other provider error, or a foreign error) is dropped from the cache,

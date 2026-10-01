@@ -28,7 +28,7 @@ const thrown = (fn: () => unknown): unknown => {
   throw new Error('expected a throw');
 };
 
-describe('the EVM fee ceiling, maxFeePerGas (Plan 7 D6, F4-R28 shape)', () => {
+describe('the EVM fee ceiling, maxFeePerGas', () => {
   it('takes the handle option, else the network params, else 1,000 gwei', () => {
     expect(DEFAULT_MAX_FEE_PER_GAS).toBe(1_000n * GWEI);
     expect(evmNetworkConfig(ethereum, sepolia).maxFeePerGas).toBe(1_000n * GWEI);

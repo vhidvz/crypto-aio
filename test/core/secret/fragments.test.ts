@@ -6,7 +6,7 @@ import {
 
 const KEY = 'Zk8sQ2xVw9LmN4pR7tY1uE3iO6aS5dF0';
 
-describe('endpoint secret fragments (F3-R20)', () => {
+describe('endpoint secret fragments', () => {
   it('derives each path segment, query value, userinfo part and header token', () => {
     const { urls, fragments } = endpointSecrets(
       `https://user:pa55word-long@node.example/v2/${KEY}?api_key=q%2Bvalue%2Fx&flag=1`,

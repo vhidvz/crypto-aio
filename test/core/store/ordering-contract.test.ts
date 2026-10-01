@@ -72,7 +72,7 @@ const FAULTS: readonly (readonly [string, Fault])[] = [
   ],
 ];
 
-describe('the operation-store contract keeps orderings whole (Plan 7 D7)', () => {
+describe('the operation-store contract keeps orderings whole', () => {
   it('passes the memory store', async () => {
     await orderingTest(() => ({
       operations: new MemoryOperationStore(new FakeClock()),

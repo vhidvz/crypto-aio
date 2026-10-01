@@ -2,7 +2,7 @@
  * EVM addresses, reads, nonces, finality and the `ext.evm` API. Every call carries the tags
  * of the `ChainDriver` contract table (`src/core/driver/types.ts`): `read` for point
  * queries, `monitor` for heights, observations and nonces, and `proof` for the finality
- * that proofs attest (R74).
+ * that proofs attest.
  */
 import type {
   AddressCodec,
@@ -58,7 +58,7 @@ export function isRevert(error: unknown): boolean {
 }
 
 /**
- * R74: how many blocks a proof's final height trails the one endpoint that proposed it, so
+ * How many blocks a proof's final height trails the one endpoint that proposed it, so
  * a quorum peer up to this far behind that endpoint still attests it.
  */
 export const PEER_SKEW = 2n;
@@ -68,7 +68,7 @@ const below = (height: bigint, depth: bigint): bigint =>
   height > depth ? height - depth : 0n;
 
 /**
- * R74: a quorum key under which every endpoint whose block is at or past `height` agrees,
+ * A quorum key under which every endpoint whose block is at or past `height` agrees,
  * so honest endpoints at different heights agree, and one that is not there disagrees.
  * A malformed answer throws, which the transport counts as a disagreement.
  */
@@ -78,7 +78,7 @@ const atOrPast =
     result !== null &&
     quantity((result as { readonly number?: unknown }).number, 'block number') >= height;
 
-/** Whether every quorum endpoint's `finalized` block is at or past `height` (R74). */
+/** Whether every quorum endpoint's `finalized` block is at or past `height`. */
 async function finalizedAtOrPast(
   ctx: EvmContext,
   height: bigint,
@@ -121,9 +121,9 @@ export async function finalizedHeight(
  * block at it when the proof read that block anyway. One endpoint's view (a `monitor` read)
  * only proposes: the height trails it by `PEER_SKEW` blocks, and the quorum attests it. On
  * tag networks every quorum endpoint's `finalized` block must be at or past it; on
- * confirmation networks every one must hold the block that confirms it (R67). So an
+ * confirmation networks every one must hold the block that confirms it. So an
  * endpoint that over-reports cannot advance finality, and a peer that trails the proposer
- * by up to `PEER_SKEW` blocks still agrees (R74).
+ * by up to `PEER_SKEW` blocks still agrees.
  */
 export async function provenFinal(
   ctx: EvmContext,
@@ -157,7 +157,7 @@ export async function provenFinal(
  * The quorum's block at `height` when `height` is final on every endpoint of the proof
  * quorum (`tags`), else `null`. Anchored at `height` itself, not at any endpoint's view:
  * honest endpoints disagree only while `height` is final on one and not yet on another, and
- * that decides nothing (a retryable `PROVIDER_INCONSISTENT`) (R74).
+ * that decides nothing (a retryable `PROVIDER_INCONSISTENT`).
  */
 export async function finalBlockAt(
   ctx: EvmContext,
@@ -188,7 +188,7 @@ export function createEvmAddressCodec(client: EvmClient): AddressCodec {
       return { canonical, display: canonical };
     },
     fromPublicKey: (publicKey) => {
-      // R58: the client's strict decode already throws a specific `INVALID_ADDRESS`.
+      // The client's strict decode already throws a specific `INVALID_ADDRESS`.
       const canonical = client.addressFromPublicKey(publicKey);
       return { canonical, display: canonical };
     },
@@ -246,7 +246,7 @@ function symbolText(client: EvmClient, data: string): string {
 }
 
 /**
- * M4: token metadata is read under the proof quorum, stricter than the contract table's
+ * Token metadata is read under the proof quorum, stricter than the contract table's
  * minimum. The core caches it for the container's life, and one endpoint's wrong `decimals`
  * (a lagging, misrouted or buggy backend) would mis-scale every amount by orders of
  * magnitude until restart. `decimals` never changes, so honest endpoints always agree.
@@ -256,10 +256,11 @@ const METADATA: EvmCallTags = { ...READ, quorum: 'proof' };
 export function createEvmReader(ctx: EvmContext): ChainReader {
   const { client } = ctx;
   /**
-   * N6, R53, R66: a revert or a VM execution failure is the token's own permanent problem
-   * (`ASSET_RESOLUTION`, which the core caches). Any other JSON-RPC error is the node's, so
-   * it is rethrown retryable. Everything else propagates unchanged: a misconfigured
-   * endpoint stays final (transport I10), and a retryable failure is already retryable.
+   * A revert or a VM execution failure is the token's own permanent problem
+   * (`ASSET_RESOLUTION`, which the core caches until restart, even if the call would
+   * later run). Any other JSON-RPC error is the node's, so it is rethrown retryable: a
+   * provider fault never pins a token. Everything else propagates unchanged: a
+   * misconfigured endpoint stays final, and a retryable failure is already retryable.
    */
   const tokenCall = async (contract: string, data: string): Promise<string> => {
     try {
@@ -292,9 +293,10 @@ export function createEvmReader(ctx: EvmContext): ChainReader {
       return decodeTransaction(client.abi, tx, receipt, undefined, ctx.config);
     },
     /**
-     * With an ordering, the R50 verdict on one of our own Attempts. Without one (a status
-     * lookup by id, for a transaction the library does not manage) the chain's view, so a
-     * third party's call that shares the `transfer` selector is not reported failed (R68).
+     * With an ordering, the token verdict on one of our own Attempts. Without one (a
+     * status lookup by id, for a transaction the library does not manage) the chain's
+     * view, so a third party's call that shares the `transfer` selector is not reported
+     * failed.
      */
     observe: async (ref, ordering) => {
       const tx = await client.getTransaction(ref.id, MONITOR);

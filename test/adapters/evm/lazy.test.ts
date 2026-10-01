@@ -1,4 +1,4 @@
-// Lazy loading (spec §4): only a manifest's `load()` may require an SDK. Each check runs in
+// Lazy loading: only a manifest's `load()` may require an SDK. Each check runs in
 // a fresh module registry where requiring `ethers` or `web3` is recorded, then served as usual.
 import { evmPlugin } from '../../../src/adapters/evm/plugin';
 

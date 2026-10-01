@@ -22,7 +22,7 @@ const KNOWN_VERSIONS: Readonly<Record<string, ExtendedKeyVersions>> = {
 };
 
 /**
- * A20 (SLIP-0132): whether each registered Bitcoin extended PUBLIC key version belongs to a
+ * SLIP-0132: whether each registered Bitcoin extended PUBLIC key version belongs to a
  * test network (`tpub`, `upub`, `vpub`, `Upub`, `Vpub`) or to mainnet (`xpub`, `ypub`,
  * `zpub`, `Ypub`, `Zpub`).
  */
@@ -115,7 +115,7 @@ export function deriveEd25519(seed: Uint8Array, path: string): Uint8Array {
   return key;
 }
 
-/** A26 (SLIP-0132): the prefixes of extended PRIVATE keys. */
+/** SLIP-0132: the prefixes of extended PRIVATE keys. */
 const PRIVATE_PREFIXES: ReadonlySet<string> = new Set([
   'xprv',
   'yprv',
@@ -130,7 +130,7 @@ const PRIVATE_PREFIXES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * A26: reads an extended PUBLIC key with `versions` (default: by its `xpub`/`tpub` prefix).
+ * Reads an extended PUBLIC key with `versions` (default: by its `xpub`/`tpub` prefix).
  * A private key (by its SLIP-0132 prefix, or by its key data), an unreadable or non-string
  * one, or one of an unknown format is `CONFIG_INVALID` with a fixed text: no message or
  * `cause` repeats any part of the input, which may be a mis-pasted secret (a mnemonic, a WIF
@@ -162,7 +162,7 @@ export function parseExtendedPublicKey(
   try {
     node = HDKey.fromExtendedKey(xpub, selected);
   } catch {
-    // M1: the library's error can name a character of the input, so it is not kept.
+    // The library's error can name a character of the input, so it is not kept.
     throw new ConfigError('CONFIG_INVALID', 'invalid extended public key');
   }
   if (node.privateKey) throw privateKey();
@@ -170,7 +170,7 @@ export function parseExtendedPublicKey(
 }
 
 /**
- * Non-hardened child public key (33-byte compressed) from an extended PUBLIC key. A20: with
+ * Non-hardened child public key (33-byte compressed) from an extended PUBLIC key. With
  * `network`, a key whose SLIP-0132 version belongs to the other network class (a mainnet
  * `xpub`/`zpub` on a test network, a `tpub`/`vpub` on mainnet) is `CONFIG_INVALID`; a
  * version outside the Bitcoin SLIP-0132 table has no known class and is not checked. Pass

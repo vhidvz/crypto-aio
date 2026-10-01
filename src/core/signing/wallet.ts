@@ -25,10 +25,10 @@ export interface ResolvedWallet {
 }
 
 /**
- * A22: the wallet's extended public key as drivers receive it, `WalletOptions.hd`: plain,
- * frozen data (R11), present only when the wallet configures a non-empty `xpub` (an empty
+ * The wallet's extended public key as drivers receive it, `WalletOptions.hd`: plain,
+ * frozen data, present only when the wallet configures a non-empty `xpub` (an empty
  * one counts as none, as in `deriveAddress`), which must be a readable PUBLIC extended key
- * (A26: `CONFIG_INVALID` otherwise, naming no key).
+ * (`CONFIG_INVALID` otherwise, naming no key).
  */
 export interface WalletHdOptions {
   readonly xpub: string;
@@ -38,19 +38,20 @@ export interface WalletHdOptions {
 }
 
 export function walletOptionsOf(config: WalletConfig): WalletOptions {
-  // A22: `hd` is the core's own key: the wallet's xpub or nothing, never a user option.
+  // `hd` is the core's own key: the wallet's xpub or nothing, never a user option, since
+  // a driver trusts it to validate change addresses.
   const { hd: _ignored, ...options } = config.options ?? {};
   return {
     ...options,
     ...(config.utxo ? { utxo: config.utxo } : {}),
     ...(config.ton ? { ton: config.ton } : {}),
-    // M3: a falsy `xpub` ('', null) is no xpub, as `deriveAddress` reads it.
+    // A falsy `xpub` ('', null) is no xpub, as `deriveAddress` reads it.
     ...(config.xpub ? { hd: hdOptionsOf(config) } : {}),
   };
 }
 
 /**
- * O1: the wallet's `xpubPath`, `undefined` when absent (`undefined` or `null`, as
+ * The wallet's `xpubPath`, `undefined` when absent (`undefined` or `null`, as
  * `deriveAddress` reads it). One that is present but not a string is `CONFIG_INVALID` with a
  * fixed text. Wallet resolution and `deriveAddress` share this check.
  */
@@ -66,12 +67,12 @@ export function xpubPathOf(config: WalletConfig): string | undefined {
 function hdOptionsOf(config: WalletConfig): WalletHdOptions {
   const xpubPath = xpubPathOf(config);
   const versions = config.xpubVersions;
-  // O2: the frozen copy comes first, reading each field once, and the key is read against
+  // The frozen copy comes first, reading each field once, and the key is read against
   // it, so it is checked against exactly the versions a driver receives.
   const hd: WalletHdOptions = Object.freeze({
     xpub: config.xpub as string,
     ...(xpubPath !== undefined ? { xpubPath } : {}),
-    // M5: the version pair only, never other keys of the caller's object.
+    // The version pair only, never other keys of the caller's object.
     ...(versions
       ? {
           xpubVersions: Object.freeze({
@@ -81,13 +82,13 @@ function hdOptionsOf(config: WalletConfig): WalletHdOptions {
         }
       : {}),
   });
-  // A26: only a readable, PUBLIC extended key ever reaches a driver.
+  // Only a readable, PUBLIC extended key ever reaches a driver.
   parseExtendedPublicKey(hd.xpub, hd.xpubVersions);
   return hd;
 }
 
 /**
- * B109: a watch-only wallet's `publicKey` is checked as a signer's key is (R9.3): hex of
+ * A watch-only wallet's `publicKey` is checked as a signer's key is: hex of
  * exactly the length its scheme defines. Any other key fails here, never later: an
  * uncompressed secp256k1 key derives an address but never verifies a signature.
  */
@@ -117,7 +118,7 @@ export async function resolveWallet(
   driver: ChainDriver,
   signers: Readonly<Record<string, Signer>>,
   schemes: SchemeCatalog,
-  /** R32: bounds each public-key read (`lifecycle.signTimeoutMs`). */
+  /** Bounds each public-key read (`lifecycle.signTimeoutMs`). */
   deadline?: SignerDeadline,
 ): Promise<ResolvedWallet> {
   const wallet = selection.wallet;
@@ -132,7 +133,7 @@ export async function resolveWallet(
   const keyRef = config.keyRef;
   const keys: WalletKey[] = [];
   if (selection.signer) {
-    // R9.3: the signer is user-supplied code; its scheme list and keys are guarded.
+    // The signer is user-supplied code; its scheme list and keys are guarded.
     const { id, instance } = selection.signer;
     const supported = signerSchemes(id, instance);
     for (const scheme of selection.chain.schemes) {
@@ -190,7 +191,7 @@ export async function resolveWallet(
     watchOnly: !primary,
     ...(config.tier !== undefined ? { tier: config.tier } : {}),
     signerFor: (ref) => {
-      // Own keys only (F3-R2): a key ref named `toString` routes nowhere.
+      // Own keys only: a key ref named `toString` routes nowhere.
       const routes = config.signers ?? {};
       const routed =
         ref?.id !== undefined && Object.hasOwn(routes, ref.id)

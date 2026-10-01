@@ -1,6 +1,6 @@
 /**
  * Avalanche bytes through avalanchejs: unspent outputs, signed transactions, BaseTx
- * building and credential assembly (spec §15's shape for a UTXO chain).
+ * building and credential assembly.
  * - Every parse is a round trip: bytes that do not re-encode to themselves are not taken.
  * - A transaction signs one digest, the SHA-256 of its unsigned bytes; every input's
  *   credential carries the same 65-byte recoverable signature (r, s, recovery id).

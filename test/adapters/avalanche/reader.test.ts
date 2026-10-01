@@ -249,7 +249,7 @@ describe('address history', () => {
     ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
   });
 
-  it('drops an entry the server lists for another address (lesson 6)', async () => {
+  it('drops an entry the server lists for another address', async () => {
     const h = avalancheHarness();
     const other = h.node.fund(OTHER_BYTES, 3_000n);
     jest.spyOn(h.ctx.dataApi, 'history').mockResolvedValue({

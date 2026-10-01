@@ -21,8 +21,9 @@ import type { Clock } from '../util/clock';
 
 /**
  * Family-specific wallet settings (e.g. `utxo.addressType`, TON wallet identity). The `hd`
- * key is reserved and core-built (A22): the core sets it to the wallet's `WalletHdOptions`
- * when the wallet has an `xpub`, and a user's or caller's `hd` never reaches a driver.
+ * key is reserved and core-built: the core sets it to the wallet's `WalletHdOptions` when
+ * the wallet has an `xpub`, and a user's or caller's `hd` never reaches a driver, since a
+ * driver trusts `hd` to validate change addresses.
  */
 export type WalletOptions = Readonly<Record<string, unknown>>;
 
@@ -70,8 +71,9 @@ export interface DriverTxObservation {
   /** For included transactions: false when execution failed or reverted. */
   readonly success?: boolean;
   /**
-   * P6-2: with `success: false`, why, as a short fixed text (R24: no addresses, amounts or
-   * node text). The monitor records it on the observation (`TxStatus.reason`).
+   * With `success: false`, why, as a short fixed text: no addresses, amounts or node
+   * text, which can carry either. The monitor records it on the observation
+   * (`TxStatus.reason`).
    */
   readonly reason?: string;
 }
@@ -158,11 +160,11 @@ export interface TxBuilder {
     signatures: readonly SignatureBundle[],
   ): Promise<SignedTx>;
   /**
-   * P3-B (A6): the signatures a payload signed elsewhere carries for `unsigned`'s requests,
+   * The signatures a payload signed elsewhere carries for `unsigned`'s requests,
    * e.g. a PSBT a cold signer returned. No I/O. Throws `ValidationError('INVALID_INTENT')`
    * when `signed` is not the prepared transaction; one it does not tell apart still fails
    * the core's check with `SIGNATURE_MISMATCH`. Only signature bytes are taken from it: the
-   * core verifies each one against its stored request (R9), as for any bundle. A request
+   * core verifies each one against its stored request, as for any bundle. A request
    * without a signature in `signed` is left out (a partial set).
    */
   signaturesFrom?(unsigned: UnsignedTx, signed: RawTx): readonly SignatureBundle[];
@@ -183,7 +185,7 @@ export type FinalityLevel = 'latest' | 'finalized';
 
 /**
  * Finalized-state checks behind `proven` verdicts; implementations use quorum reads.
- * Lesson 18: only a definitive negative proof answers "no". Every other RPC error (state or
+ * Only a definitive negative proof answers "no". Every other RPC error (state or
  * history not available, pruned data, indexing in progress, a non-definitive error) throws
  * a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, which decides nothing.
  */
@@ -205,7 +207,10 @@ export interface ProofSource {
         readonly blockHeight: bigint;
         readonly blockHash: string;
         readonly txHash: string;
-        /** P6-2: with `success: false`, a short fixed text (R24), recorded as proven. */
+        /**
+         * With `success: false`, a short fixed text, never node text. It is recorded as
+         * proven.
+         */
         readonly reason?: string;
       }
   >;
@@ -218,7 +223,7 @@ export interface ProofSource {
   /** Whether expiry has passed per finalized state (expiry/seqno models; false otherwise). */
   expired(ordering: OrderingData): Promise<boolean>;
   /**
-   * R33: the hash of the block at `height` on the chain at `level`, or `null` when there is
+   * The hash of the block at `height` on the chain at `level`, or `null` when there is
    * none yet (above the head, or above the finalized height for `'finalized'`). Confirms
    * the monitor's orphan decisions and the scanner's rollback and TOO_DEEP verdicts.
    */
@@ -244,7 +249,7 @@ export interface ReplacementPolicy {
    * A transaction for `previous`'s slot that does not execute the transfer (e.g. a
    * self-transfer). Without `fee` it pays the network's minimum bump over `previous`; with
    * one, that fee, refused (FEE_TOO_LOW) below the bump. `previous` may itself be a cancel
-   * (R30: a repeat cancel bumps a stuck one).
+   * (a repeat cancel bumps a stuck one).
    */
   buildCancel?(
     previous: UnsignedTx,
@@ -278,7 +283,7 @@ export interface DriverLimits {
 }
 
 /**
- * R34: a native SDK client for `crypto-aio/native` and how to release it. `close` frees
+ * A native SDK client for `crypto-aio/native` and how to release it. `close` frees
  * what the client holds (sockets, timers, workers); the root container's `close()` runs it
  * once, before closing its pooled drivers.
  */
@@ -288,7 +293,7 @@ export interface DisposableNativeClient {
 }
 
 /**
- * The driver port. I4: every method's contract, as the core relies on it. Purpose, retry
+ * The driver port: every method's contract, as the core relies on it. Purpose, retry
  * class and quorum are the `CallOptions` a driver passes to its `Transport` (defaults:
  * purpose `read`, retry `safe`, no quorum). A `monitor` or `proof` read only goes to
  * endpoints that are not lagging.
@@ -296,11 +301,11 @@ export interface DisposableNativeClient {
  * | Method | Purpose | Retry | Quorum | Returns / throws |
  * | --- | --- | --- | --- | --- |
  * | `reader.getBalance`, `getBlock`, `getTransaction` | `read` | `safe` | none | `null` when not found; provider errors propagate |
- * | `reader.getTokenMetadata` | `read` | `safe` | none (a driver may use a quorum) | N6: a token's own unusable metadata (no contract, a reverting or malformed `decimals`/`symbol`) throws `ValidationError('ASSET_RESOLUTION')`, which the core caches per container (R53: only a non-retryable `ASSET_RESOLUTION` is cached); every other failure, e.g. a transient provider failure (propagated retryable) or any other provider error, is not cached and the next lookup queries again. Stricter than this minimum, the EVM driver reads `decimals()` and `symbol()` under `quorum: 'proof'` (M4): the metadata is cached for the container's life, and one endpoint's wrong `decimals` would mis-scale every amount; endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, which is not cached |
+ * | `reader.getTokenMetadata` | `read` | `safe` | none (a driver may use a quorum) | A token's own unusable metadata (no contract, a reverting or malformed `decimals`/`symbol`) throws `ValidationError('ASSET_RESOLUTION')`, which the core caches per container (only a non-retryable `ASSET_RESOLUTION` is cached); every other failure, e.g. a transient provider failure (propagated retryable) or any other provider error, is not cached and the next lookup queries again. Stricter than this minimum, the EVM driver reads `decimals()` and `symbol()` under `quorum: 'proof'`: the metadata is cached for the container's life, and one endpoint's wrong `decimals` would mis-scale every amount; endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, which is not cached |
  * | `reader.getBlockHeight`, `getFinalizedHeight` | `monitor` | `safe` | none | propagate; they feed the stale-view guards and confirmation depths |
  * | `reader.observe(ref, ordering, from)` | `monitor` | `safe` | none | `{ seen: 'none' }` when not visible; `ordering` and `from` are `undefined` for a transaction the library does not manage |
  * | `sequence.pending`, `sequence.latest` | `monitor` | `safe` | none | propagate |
- * | `proofs.*` (`finalizedHead`, `includedFinal`, `slotConsumed`, `expired`, `blockHash`) | `proof` | `safe` | `'proof'` | endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, and the core then decides nothing. Lesson 18: only a definitive negative proof answers "no"; every other RPC error throws retryable `PROVIDER_UNAVAILABLE`, which decides nothing (see below). Only `slotConsumed(…, 'latest')` may be a single `monitor` read: the core records it as observed evidence |
+ * | `proofs.*` (`finalizedHead`, `includedFinal`, `slotConsumed`, `expired`, `blockHash`) | `proof` | `safe` | `'proof'` | endpoints that disagree throw retryable `PROVIDER_INCONSISTENT`, and the core then decides nothing. Only a definitive negative proof answers "no"; every other RPC error throws retryable `PROVIDER_UNAVAILABLE`, which decides nothing (see below). Only `slotConsumed(…, 'latest')` may be a single `monitor` read: the core records it as observed evidence |
  * | `broadcaster.broadcast` | `broadcast` | `ambiguous-on-failure` | none (passes `fanout` and `signal` through) | classifies a definitive `RPC_ERROR` into a `BroadcastResult`; rethrows an ambiguous one (`error.ambiguous`) and every other failure unclassified |
  * | `builder.estimateFee`, `checkFunds`, `build` | `read` | `safe` | none | `ValidationError` / `UnsupportedCapabilityError` for an intent it cannot build |
  * | `builder.assemble` | no I/O | – | – | `SigningError('SIGNING_FAILED')` when a signature is missing |
@@ -312,7 +317,7 @@ export interface DisposableNativeClient {
  * | `createNativeClient` | no I/O | – | – | a fresh SDK instance on every call, never the pooled one |
  *
  * Further rules:
- * - Lesson 18, widened: on a proof path (`proofs.*`), only a definitive negative proof may
+ * - On a proof path (`proofs.*`), only a definitive negative proof may
  *   answer "no" (`included: false`, a slot not consumed, a `null` block hash). Every other
  *   RPC error, including state or history not available, pruned data, an index still being
  *   built ("transaction indexing is in progress"), or an endpoint's non-definitive error,
@@ -327,9 +332,10 @@ export interface DisposableNativeClient {
  *   from or to one of them; empty (`[]`) or absent means no filter. `ScanFilter.assets` is a
  *   hint only: a driver may narrow by it or ignore it, and the core does not filter again.
  * - `fee.details.requestedFee` is reserved. On replacements the core records the requested
- *   fee spec there (R30), so a driver never sets or reads it.
- * - M10 (open; Plan 4 decides): `DriverContext` has no asset resolver and `DriverIntent`
- *   carries no decimals. Amounts reach drivers in base units only.
+ *   fee spec there, so a driver never sets or reads it.
+ * - `DriverContext` has no asset resolver and `DriverIntent` carries no decimals. Amounts
+ *   reach drivers in base units only; a driver that needs a token's decimals (Solana's
+ *   `transferChecked`) reads them from the chain itself.
  */
 export interface ChainDriver {
   readonly ordering: OrderingKind;
@@ -357,13 +363,13 @@ export interface ChainDriver {
 }
 
 /**
- * M12: a factory's `create()` must call `transport.setProbes(...)` exactly once, before any
+ * A factory's `create()` must call `transport.setProbes(...)` exactly once, before any
  * other traffic, on every `Transport` it receives here — including `indexer`, when present.
  * `setProbes` resets health/identity state, so calling it again later, or skipping it on one
  * of the two transports, leaves that transport's health checks silently unconfigured.
  *
- * M10 (open; Plan 4 decides): there is no asset resolver here, and `DriverIntent` carries no
- * decimals.
+ * There is no asset resolver here, and `DriverIntent` carries no decimals: drivers work
+ * in base units only.
  */
 export interface DriverContext {
   readonly chain: ChainInfo;

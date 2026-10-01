@@ -181,7 +181,7 @@ describe('Blockchain handle', () => {
 
   it('walletAddress(name) applies the same per-chain checks resolveSelection would', async () => {
     const env = await createFakeEnv();
-    // N1: a wallet restricted to a DIFFERENT chain must fail the same `wallet.chains`
+    // A wallet restricted to a DIFFERENT chain must fail the same `wallet.chains`
     // enablement check a directly-selected wallet would get, not silently resolve.
     const scoped = env.aio.scope({
       wallets: { restricted: { signer: 'hot', chains: ['fakeexpiry'] } },
@@ -191,7 +191,7 @@ describe('Blockchain handle', () => {
       code: 'CONFIG_INVALID',
       message: expect.stringMatching(/not enabled for chain 'fakechain'/),
     });
-    // N1: an own-property lookup — a wallet literally named 'constructor' is unknown, not
+    // An own-property lookup — a wallet literally named 'constructor' is unknown, not
     // `Object.prototype.constructor`.
     await expect(env.run(bc.walletAddress('constructor'))).rejects.toMatchObject({
       code: 'CONFIG_INVALID',
@@ -217,7 +217,7 @@ describe('Blockchain handle', () => {
     });
   });
 
-  it('checks the extended key network class on UTXO chains only (A20)', async () => {
+  it('checks the extended key network class on UTXO chains only', async () => {
     const seed = fromHex('000102030405060708090a0b0c0d0e0f');
     const tpubVersions = { private: 0x04358394, public: 0x043587cf };
     const xpub = HDKey.fromMasterSeed(seed).derive("m/44'/0'/0'").publicExtendedKey;
@@ -298,7 +298,7 @@ describe('Blockchain handle', () => {
     ]);
   });
 
-  it('never reports a finalized height above the head it reports (R85)', async () => {
+  it('never reports a finalized height above the head it reports', async () => {
     const env = await createFakeEnv();
     env.chain.mine(10);
     const { driver } = await env.run(internalsOf(env.bc).pooled());
@@ -349,7 +349,7 @@ describe('Blockchain handle', () => {
         from,
       ),
     ).resolves.toMatchObject({ fee: { fee: 1_000n }, memo: 'ok' });
-    // N-E: an omitted optional field (`undefined`) inside an override is not "non-plain data",
+    // An omitted optional field (`undefined`) inside an override is not "non-plain data",
     // and a top-level `fee: undefined` simply means "no fee override".
     await expect(
       normalizeIntent(
@@ -385,11 +385,11 @@ describe('Blockchain handle', () => {
           from,
         ),
       ).rejects.toMatchObject({ code: 'INVALID_INTENT' });
-    // N5 pinned cases.
+    // At the top level.
     await reject({ gwei: 5 });
     await reject(new Date());
     await reject('lots');
-    // N5: "at any depth" — a number or a class instance nested inside an otherwise-plain
+    // At any depth: a number or a class instance nested inside an otherwise-plain
     // override must be rejected too, not just at the top level.
     await reject({ tip: { gwei: 5 } });
     await reject({ tip: [{ at: new Date() }] });
@@ -480,7 +480,7 @@ describe('statusFromObservation', () => {
 });
 
 describe('DriverPool', () => {
-  it('closes and rejects further use with StateError, also through a handle pooled beforehand (R34)', async () => {
+  it('closes and rejects further use with StateError, also through a handle pooled beforehand', async () => {
     const env = await createFakeEnv();
     await env.run(internalsOf(env.bc).pooled());
     await env.aio.close();
@@ -554,7 +554,7 @@ describe('DriverPool', () => {
     expect(attempts).toBe(2);
   });
 
-  it('resolves the lag tolerance: per-chain config, then root transport, then the plugin network (R36)', async () => {
+  it('resolves the lag tolerance: per-chain config, then root transport, then the plugin network', async () => {
     // Endpoint b is 10 blocks behind a; the fake plugin's network declares maxLagBlocks 2.
     const endpoints = ['a', { name: 'b', lag: 10 }];
     const stateOfB = async (env: FakeEnv, bc: Blockchain<FakeChainId>) => {
@@ -628,7 +628,7 @@ describe('ready()', () => {
 
   it('treats an unknown endpoint as usable when the transport has no health probes configured', async () => {
     const env = await createFakeEnv();
-    // N6: a factory that never calls transport.setProbes leaves the REAL pooled transport's
+    // A factory that never calls transport.setProbes leaves the REAL pooled transport's
     // probes empty — done here by handing the fake driver factory a stand-in transport whose
     // setProbes is a no-op, so the pool's own transport (what ready() inspects) is untouched.
     const noProbes: AdapterManifest = {
@@ -698,7 +698,7 @@ describe('containers', () => {
     expect(await env.run(after.getBlockHeight())).toBe(0n);
   });
 
-  it('refuses a reference cycle in its options with CONFIG_INVALID, not a stack overflow (B116)', () => {
+  it('refuses a reference cycle in its options with CONFIG_INVALID, not a stack overflow', () => {
     const nested: Record<string, unknown> = { depth: 1 };
     nested.again = [{ back: nested }];
     const options = { options: { nested } };
@@ -716,7 +716,7 @@ describe('containers', () => {
     }
   });
 
-  it('configure() never lets undefined override, nor __proto__ reach a map (B105)', () => {
+  it('configure() never lets undefined override, nor __proto__ reach a map', () => {
     const hot = localSigner({ id: 'hot', secp256k1: secret(new Uint8Array(32).fill(1)) });
     configure({
       env: false,
@@ -788,7 +788,7 @@ describe('containers', () => {
       wallets,
       chains,
     });
-    // N7: mutate every one of the caller's own objects AFTER construction.
+    // Mutate every one of the caller's own objects AFTER construction.
     chains.fakechain = { provider: 'fake', wallet: 'main', confirmations: 99 };
     providers.fake = { endpoints: [{ url: env.chain.endpoint('m4-rogue') }] };
     wallets.main = { signer: 'rogue' };
@@ -821,7 +821,7 @@ describe('containers', () => {
     expect(Object.isFrozen(layer.wallets?.main)).toBe(true);
     expect(layer.wallets?.main).toEqual({ signer: 'hot' });
 
-    // N7: the signers MAP is a fresh, frozen copy; the Signer INSTANCE it holds is the same
+    // The signers MAP is a fresh, frozen copy; the Signer INSTANCE it holds is the same
     // object (referenced, not cloned).
     expect(Object.isFrozen(layer.signers)).toBe(true);
     expect(layer.signers).not.toBe(signers);

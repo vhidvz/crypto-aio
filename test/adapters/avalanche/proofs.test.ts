@@ -141,7 +141,8 @@ describe('proof details', () => {
     ).rejects.toThrow('not located yet');
   });
 
-  it('turns an endpoint refusal into "nothing decided" (lesson 18)', async () => {
+  // On a proof path only a definitive negative answers "no".
+  it('turns an endpoint refusal into "nothing decided"', async () => {
     const h = quorum();
     h.node.intercept('a', (method) =>
       method === 'avm.getHeight' ? { rpcError: 'internal error' } : undefined,

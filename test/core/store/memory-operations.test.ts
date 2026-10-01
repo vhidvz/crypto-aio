@@ -55,7 +55,7 @@ describe('createMemoryStores', () => {
 });
 
 describe('MemoryOperationStore patches', () => {
-  it("reads a caller's clear list once, so what is validated is what is cleared (M6)", async () => {
+  it("reads a caller's clear list once, so what is validated is what is cleared", async () => {
     const store = new MemoryOperationStore(new FakeClock());
     const { record } = await store.create(sampleOperation());
     let reads = 0;

@@ -28,15 +28,17 @@ export interface RootRuntime {
   readonly transport: TransportOptions;
   /** Owner id used for leases and claims taken by this process. */
   readonly owner: string;
-  /** R34: set by the root's `close()`; a closed container refuses handle and `native()` work. */
+  /**
+   * Set by the root's `close()`; a closed container refuses handle and `native()` work.
+   */
   closed: boolean;
-  /** N3: aborted by the root's `close()`, which stops every worker loop and recovery. */
+  /** Aborted by the root's `close()`, which stops every worker loop and recovery. */
   readonly closing: AbortController;
-  /** R34: the `close` of every native SDK client handed out; the root's `close()` runs them. */
+  /** The `close` of every native SDK client handed out, run by the root's `close()`. */
   readonly natives: Set<() => void | Promise<void>>;
 }
 
-/** R34: what a closed container's handles and `native()` fail with. */
+/** What a closed container's handles and `native()` fail with. */
 export function closedError(): StateError {
   return new StateError('INVALID_TRANSITION', 'this crypto-aio container is closed');
 }
@@ -50,7 +52,7 @@ export interface ContainerInternals {
   engine(): OperationEngine;
   /** Lazily created per container, on top of its engine. */
   monitor(): Monitor;
-  /** R32: the bound on a signer's public-key read (this container's `signTimeoutMs`). */
+  /** The bound on a signer's public-key read (this container's `signTimeoutMs`). */
   signerDeadline(): SignerDeadline;
 }
 

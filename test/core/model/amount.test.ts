@@ -41,7 +41,7 @@ describe('Amount', () => {
     });
   });
 
-  // Review Focus 1: malformed decimal strings are rejected, never coerced.
+  // Malformed decimal strings are rejected, never coerced.
   it.each([
     '1.',
     '.5',

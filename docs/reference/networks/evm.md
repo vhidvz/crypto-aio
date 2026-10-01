@@ -24,7 +24,11 @@ ethers and web3 clients.
 
 - **Tokens.** ERC-20 only. USDT (Ethereum, Avalanche) and USDC (every built-in mainnet but
   BNB Smart Chain) resolve by alias on mainnet, where their issuers deploy them natively. Any
-  other token resolves by contract, with its symbol and decimals read from the chain.
+  other token resolves by contract, with its symbol and decimals read from the chain under
+  the proof quorum, so one endpoint cannot mis-scale amounts. A contract whose
+  `decimals()` or `symbol()` reverts or answers nothing usable, or an address with no
+  contract yet, stays unresolvable (`ASSET_RESOLUTION`) until the container restarts; any
+  other node error stays retryable.
 - **Presets.** `alchemy` and `infura` serve every network above; `ankr` the Ethereum, BNB
   Smart Chain, Avalanche, Arbitrum and Base mainnets; `public` the networks whose chain
   documents a public endpoint (not Ethereum). The public Base, Arbitrum and OP Sepolia

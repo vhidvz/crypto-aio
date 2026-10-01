@@ -72,7 +72,7 @@ describe('resolveWallet', () => {
     ).catch((error: unknown) => error);
   }
 
-  it('R9.3: turns a failing getPublicKey into SIGNER_UNAVAILABLE without leaking its URL', async () => {
+  it('turns a failing getPublicKey into SIGNER_UNAVAILABLE without leaking its URL', async () => {
     const error = await resolveWith(
       custody(async () => {
         throw new Error('HSM at https://hsm.io/SECRETKEY1234567890abc refused');
@@ -83,7 +83,7 @@ describe('resolveWallet', () => {
     expect(JSON.stringify(error)).not.toContain('SECRETKEY1234567890abc');
   });
 
-  it('R9.3: lets a CryptoAioError from getPublicKey through unchanged', async () => {
+  it('lets a CryptoAioError from getPublicKey through unchanged', async () => {
     const original = new ProviderError('PROVIDER_UNAVAILABLE', 'kms down');
     const error = await resolveWith(
       custody(async () => {
@@ -100,13 +100,13 @@ describe('resolveWallet', () => {
     ],
     ['a wrong-length public key', new Uint8Array(32).fill(2)],
     ['no public key', undefined],
-  ])('R9.3: rejects %s with SIGNER_UNAVAILABLE', async (_label, key) => {
+  ])('rejects %s with SIGNER_UNAVAILABLE', async (_label, key) => {
     const error = await resolveWith(custody(async () => key));
     expect(error).toMatchObject({ code: 'SIGNER_UNAVAILABLE' });
     expect(error).not.toBeInstanceOf(TypeError);
   });
 
-  it('R9.3: keeps its own copy of the public key', async () => {
+  it('keeps its own copy of the public key', async () => {
     const key = secp256k1.getPublicKey(secp256k1.utils.randomPrivateKey(), true);
     const original = key.slice();
     const wallet = await resolveWallet(
@@ -129,7 +129,7 @@ describe('resolveWallet', () => {
     ['not hex', 'zz'.repeat(33)],
     ['not a string', 7],
   ])(
-    'B109: refuses a watch-only publicKey that is %s with CONFIG_INVALID',
+    'refuses a watch-only publicKey that is %s with CONFIG_INVALID',
     async (_label, publicKey) => {
       const watchOnly = {
         chain: { id: 'c', schemes: ['secp256k1-ecdsa'] },
@@ -145,7 +145,7 @@ describe('resolveWallet', () => {
     },
   );
 
-  it('B109: takes a watch-only publicKey of the right length, with or without 0x', async () => {
+  it('takes a watch-only publicKey of the right length, with or without 0x', async () => {
     const key = secp256k1.getPublicKey(secp256k1.utils.randomPrivateKey(), true);
     for (const publicKey of [toHex(key), toHex(key, true)]) {
       const watchOnly = {
@@ -158,7 +158,7 @@ describe('resolveWallet', () => {
     }
   });
 
-  it('R9.3: guards reading the signer scheme list', async () => {
+  it('guards reading the signer scheme list', async () => {
     const unreadable = {
       id: 'odd',
       get schemes(): never {

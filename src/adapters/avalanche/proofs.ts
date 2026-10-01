@@ -2,9 +2,10 @@
  * Proofs (the finalized-state checks behind `proven` verdicts) and the block source.
  *
  * Snowman never reverts an accepted block, so with the default policy (1 confirmation) an
- * accepted transaction is final. Every fact is read under the proof quorum (lesson 14: one
- * endpoint's word never decides), each at its own height (lesson 17): "block h is final" is
- * "every proof endpoint holds a block at h + N − 1".
+ * accepted transaction is final. Every fact is read under the proof quorum (one
+ * endpoint's word never decides), each at its own height with a monotone key, and no
+ * endpoint proposes the height: "block h is final" is "every proof endpoint holds a block
+ * at h + N − 1".
  *
  * - `includedFinal` answers "included" only when the proof endpoints agree the transaction
  *   is accepted and the block at its located height is the located block and holds it. It
@@ -79,7 +80,8 @@ function keysOfPage(answer: unknown): string[] {
 }
 
 /**
- * The reads a proof attests under the proof quorum, each fact at its own height (lesson 17).
+ * The reads a proof attests under the proof quorum, each fact at its own height, which no
+ * endpoint proposes.
  */
 export function attestedReads(ctx: AvalancheContext) {
   const { node, config } = ctx;
@@ -230,7 +232,8 @@ export function proofSource(ctx: AvalancheContext): ProofSource {
     },
   };
 
-  // Lesson 18: every read of every proof decides nothing on "not available here".
+  // Every read of every proof decides nothing on "not available here": only a definitive
+  // negative may answer "no" (`proofRead`).
   return {
     finalizedHead: () => proofRead(() => source.finalizedHead()),
     includedFinal: (ref, ordering, from) =>

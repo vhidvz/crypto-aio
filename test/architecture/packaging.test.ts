@@ -1,5 +1,5 @@
-// The package's entry points, for every family at once (F5-R12 M2, the board's merge
-// convention): each family adds a subpath, so the order rule lives here, not in one family.
+// The package's entry points, for every family at once: each family adds a subpath, so
+// the order rule lives here, not in one family.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 

@@ -4,7 +4,7 @@ import type { Clock } from '../util/clock';
 export class TokenBucket {
   #tokens: number;
   #updatedAt: number;
-  /** Priority takers waiting now (A17). */
+  /** Priority takers (health probes) waiting now. */
   #priorityWaiting = 0;
 
   constructor(
@@ -28,7 +28,10 @@ export class TokenBucket {
     return false;
   }
 
-  /** P25-R23: takes a token only if one is free now and no priority taker is waiting. */
+  /**
+   * Takes a token only if one is free now and no priority taker is waiting. A recovering
+   * endpoint's proof trial uses it: the trial is skipped, never waited for.
+   */
   tryTakeNow(): boolean {
     return this.#priorityWaiting === 0 && this.tryTake();
   }
@@ -39,7 +42,7 @@ export class TokenBucket {
   }
 
   /**
-   * Waits for a token. A17: a `priority` taker (a health probe) goes ahead of every waiting
+   * Waits for a token. A `priority` taker (a health probe) goes ahead of every waiting
    * ordinary taker, which leaves the next token to it, so a queue of requests never starves
    * a probe past its deadline. Every token is still taken here: priority only reorders.
    * Takers of the same kind (priority or ordinary) are served in wake order, not in a queue.
@@ -55,7 +58,10 @@ export class TokenBucket {
     }
   }
 
-  /** How long the bucket takes to refill `tokens` tokens (P25-R6/M1). */
+  /**
+   * How long the bucket takes to refill `tokens` tokens. The transport floors a failed
+   * health refresh's backoff with it, so failing probes never take every token.
+   */
   refillMs(tokens: number): number {
     return Math.ceil((tokens * 1_000) / this.rps);
   }

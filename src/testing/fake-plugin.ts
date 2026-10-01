@@ -3,7 +3,7 @@ import type { ChainInfo, NetworkInfo } from '../core/model/chain';
 import type { Plugin } from '../core/registry/plugin';
 import type { FakeExt, FakeNativeClient } from './fake-driver';
 
-// R37: augment the registries through the public entry module, as users do with
+// Augment the registries through the public entry module, as users do with
 // 'crypto-aio'. Augmenting core/model/ids directly makes a user's own augmentation depend on
 // the order in which the compiler reads files.
 declare module '../index' {

@@ -24,7 +24,7 @@ async function surfaces(run: () => Promise<unknown>, seen: readonly unknown[]) {
 const expectNoKey = (text: string, key = KEY) =>
   expect(text.toLowerCase()).not.toContain(key.toLowerCase());
 
-describe('HttpTransport: a secret echoed back by a provider never leaves (F3-R20)', () => {
+describe('HttpTransport: a secret echoed back by a provider never leaves', () => {
   const pathKeyed: EndpointConfig = {
     name: 'keyed',
     url: secret(`https://node.example/v2/${KEY}`),

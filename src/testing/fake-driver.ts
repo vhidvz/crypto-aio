@@ -54,7 +54,7 @@ export interface FakeExt {
 export interface FakeNativeClient {
   readonly id: number;
   readonly settings: Record<string, unknown>;
-  /** How many times the driver's `close` for this client ran (R34). */
+  /** How many times the driver's `close` for this client ran. */
   readonly closes: number;
   rpc<T = unknown>(method: string, params?: unknown[]): Promise<T>;
 }
@@ -122,7 +122,7 @@ function toDriverTx(wire: FakeWireTx): DriverTransaction {
 }
 
 /**
- * Lesson 18, the proof contract (`ProofSource`): a JSON-RPC error answer is no negative
+ * The proof contract (`ProofSource`): a JSON-RPC error answer is no negative
  * proof. Every `RPC_ERROR` on a proof path becomes a retryable `PROVIDER_UNAVAILABLE` that
  * carries it as its cause, so the core decides nothing and looks again later; every other
  * error passes unchanged. The EVM driver's proofs keep the same boundary.
@@ -338,7 +338,7 @@ export const fakeDriverFactory: DriverFactory = {
           });
           return { kind: 'accepted' };
         } catch (error) {
-          // R17/I4: the transport tags a definitive RPC_ERROR as ambiguous when an earlier
+          // The transport tags a definitive RPC_ERROR as ambiguous when an earlier
           // attempt for this same call may already have reached the node (e.g. it timed out
           // after being delivered, and the retry then sees "nonce too low"). Classifying that
           // as a normal refusal would let a caller release or reuse a nonce/seqno slot whose

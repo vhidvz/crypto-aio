@@ -12,9 +12,9 @@ export interface HandleInternals {
   wallet(): Promise<ResolvedWallet>;
   /** Per-handle native SDK clients for `crypto-aio/native` (never shared). */
   readonly nativeClients: Map<string, unknown>;
-  /** R34: throws `StateError('INVALID_TRANSITION')` once the root container is closed. */
+  /** Throws `StateError('INVALID_TRANSITION')` once the root container is closed. */
   assertOpen(): void;
-  /** R34: the root's `close()` will run this client's `close` (throws once it is closed). */
+  /** The root's `close()` will run this client's `close` (throws once it is closed). */
   registerNative(native: DisposableNativeClient): void;
 }
 

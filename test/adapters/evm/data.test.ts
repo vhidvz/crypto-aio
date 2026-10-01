@@ -18,7 +18,7 @@ function catalogs() {
   return all;
 }
 
-/** Spec §2, verified against each chain's documentation (Plan 2 appendix). */
+/** Every built-in network's chain id, verified against each chain's documentation. */
 const CHAIN_IDS: Record<string, Record<string, string>> = {
   ethereum: { mainnet: '1', sepolia: '11155111', hoodi: '560048' },
   bsc: { mainnet: '56', testnet: '97' },
@@ -30,7 +30,7 @@ const CHAIN_IDS: Record<string, Record<string, string>> = {
 };
 
 describe('EVM chain data', () => {
-  it('registers every chain of spec §2 with its chain id as the network identity', () => {
+  it('registers every chain with its chain id as the network identity', () => {
     const { chains } = catalogs();
     for (const [chainId, networks] of Object.entries(CHAIN_IDS)) {
       const chain = chains.get(chainId);
@@ -107,7 +107,7 @@ describe('EVM chain data', () => {
     expect(EVM_TOKENS).toHaveLength(8);
   });
 
-  /** Plan 2 Appendix A: Tether's supported-protocols page, Circle's USDC addresses page. */
+  /** From Tether's supported-protocols page and Circle's USDC addresses page. */
   const TOKENS: readonly (readonly [string, 'USDT' | 'USDC', string])[] = [
     ['ethereum', 'USDT', '0xdAC17F958D2ee523a2206206994597C13D831ec7'],
     ['avalanche', 'USDT', '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'],
