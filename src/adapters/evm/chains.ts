@@ -10,6 +10,7 @@
  */
 import type { KnownCapability } from '../../core/model/capability';
 import type { ChainInfo, FinalityPolicy, NetworkInfo } from '../../core/model/chain';
+import { deepFreeze } from '../../core/util/freeze';
 
 const FINALIZED_TAG: FinalityPolicy = {
   kind: 'tag',
@@ -79,20 +80,12 @@ function evmChain(spec: ChainSpec): ChainInfo {
   };
 }
 
-/**
- * Freezes plain data all the way down, as `BUILTIN_SCHEMES` is frozen: networks share
- * `FINALIZED_TAG`, and a chain's networks share its `remove` list, so no caller may change them.
- */
-function deepFreeze<T>(value: T): T {
-  if (typeof value === 'object' && value !== null) {
-    for (const item of Object.values(value)) deepFreeze(item);
-    Object.freeze(value);
-  }
-  return value;
-}
-
 const OP_STACK = { l1DataFee: 'op-stack' } as const;
 
+/**
+ * Frozen all the way down, as `BUILTIN_SCHEMES` is: networks share `FINALIZED_TAG`, and a
+ * chain's networks share its `remove` list, so no caller may change them.
+ */
 export const EVM_CHAINS: readonly ChainInfo[] = deepFreeze([
   evmChain({
     id: 'ethereum',

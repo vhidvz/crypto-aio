@@ -2,7 +2,7 @@ import { AssetService } from '../assets/service';
 import { Blockchain } from '../blockchain/handle';
 import { internalsOf, type HandleInternals } from '../blockchain/internal';
 import { readEnvChains } from '../config/env';
-import { isPlainObject, mergeScopes } from '../config/merge';
+import { assertNoCycle, isPlainObject, mergeScopes } from '../config/merge';
 import { resolveSelection } from '../config/resolve';
 import type {
   AioOptions,
@@ -100,16 +100,22 @@ interface ScopeInit {
  * own input can never reach a layer already captured by a container. Class instances
  * (Signer, Secret, ...) are referenced, not cloned — they're already immutable.
  */
-function cloneFrozen<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return Object.freeze(value.map((item: unknown) => cloneFrozen(item))) as T;
-  }
-  if (isPlainObject(value)) {
+function cloneFrozen<T>(value: T, ancestors: Set<object> = new Set()): T {
+  if (!Array.isArray(value) && !isPlainObject(value)) return value;
+  assertNoCycle(value, ancestors);
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return Object.freeze(
+        value.map((item: unknown) => cloneFrozen(item, ancestors)),
+      ) as T;
+    }
     const out: Record<string, unknown> = {};
-    for (const [key, v] of Object.entries(value)) out[key] = cloneFrozen(v);
+    for (const [key, v] of Object.entries(value)) out[key] = cloneFrozen(v, ancestors);
     return Object.freeze(out) as T;
+  } finally {
+    ancestors.delete(value);
   }
-  return value;
 }
 
 /** M4/N7: `chains`/`providers`/`wallets`/`signers`/`hooks`/`lifecycle` are all cloned and

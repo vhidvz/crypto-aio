@@ -9,6 +9,7 @@ import { BUILTIN_SCHEMES, SchemeCatalog } from '../../../src/core/registry/schem
 import { secret } from '../../../src/core/secret/secret';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
+import { SigningError } from '../../../src/core/errors/error';
 import { SigningOrchestrator } from '../../../src/core/signing/orchestrator';
 import type {
   Signer,
@@ -240,6 +241,35 @@ describe('SigningOrchestrator', () => {
       details: { cancelFailures: 0 },
     });
     expect(cancelled).toEqual(['hot:h-1', 'cold:c-1']);
+  });
+
+  it("keeps the failure's class and stack when it adds cancelFailures (B108)", async () => {
+    const { orchestrator } = setup();
+    class CustodyError extends SigningError {}
+    const original = new CustodyError('SIGNER_UNAVAILABLE', 'custody is down');
+    const failing = callbackSigner({
+      id: 'failing',
+      schemes: ['secp256k1-ecdsa'],
+      getPublicKey: async () => new Uint8Array(33),
+      sign: async () => {
+        throw original;
+      },
+    });
+    const error = await orchestrator
+      .sign(
+        wallet({ hot: pendingSigner('hot', 'h-1', []), failing }),
+        [request('r0', keyA), request('r1', keyB, { id: 'failing' })],
+        ctx,
+      )
+      .catch((e: unknown) => e);
+    expect(error).not.toBe(original);
+    expect(error).toBeInstanceOf(CustodyError);
+    expect(error).toMatchObject({
+      code: 'SIGNER_UNAVAILABLE',
+      message: 'custody is down',
+      details: { cancelFailures: 0 },
+    });
+    expect((error as Error).stack).toBe(original.stack);
   });
 
   it('counts failed or impossible cancellations and still rethrows the original error', async () => {

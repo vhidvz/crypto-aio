@@ -9,7 +9,8 @@ import type {
   PeerDependency,
 } from '../../core/driver/types';
 import type { Plugin } from '../../core/registry/plugin';
-import { TON_CHAINS, deepFreeze } from './chains';
+import { deepFreeze } from '../../core/util/freeze';
+import { TON_CHAINS } from './chains';
 import { TON_CAPABILITIES, TON_INDEXER_CAPABILITIES } from './network';
 import { TON_PRESETS } from './presets';
 import { TON_TOKENS } from './tokens';

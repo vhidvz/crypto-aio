@@ -1,5 +1,5 @@
 import { setDefaultBlockchainFactory } from '../blockchain/default-ref';
-import { mergeChainDefaults } from '../config/merge';
+import { byReference, isUnsafeKey, mergeChainDefaults } from '../config/merge';
 import type { AioOptions, ChainDefaults, HandleOptions } from '../config/types';
 import type { Stores } from '../store/types';
 import { CryptoAio } from './container';
@@ -8,10 +8,24 @@ import { containerOf } from './internals';
 let instance: CryptoAio | undefined;
 let accumulated: AioOptions = {};
 
+/** Merges an options object field by field, by the same rules as a named map. */
+function perField<T extends object>(base: T | undefined, next: T | undefined): T {
+  type Fields = Readonly<Record<string, unknown>>;
+  return byReference(base as Fields | undefined, next as Fields | undefined) as T;
+}
+
+/**
+ * B105: the same rules as scopes (spec §5.4): `undefined` never overrides, and no
+ * `__proto__`, `constructor` or `prototype` key is copied into a map.
+ */
 function mergeAioOptions(base: AioOptions, next: AioOptions): AioOptions {
-  const chains: Record<string, ChainDefaults> = { ...base.chains };
+  const chains: Record<string, ChainDefaults> = byReference(base.chains, undefined);
   for (const [id, defaults] of Object.entries(next.chains ?? {})) {
-    chains[id] = mergeChainDefaults(chains[id], defaults);
+    if (defaults === undefined || isUnsafeKey(id)) continue;
+    chains[id] = mergeChainDefaults(
+      Object.hasOwn(chains, id) ? chains[id] : undefined,
+      defaults,
+    );
   }
   const defined = Object.fromEntries(
     Object.entries(next).filter(([, value]) => value !== undefined),
@@ -20,12 +34,12 @@ function mergeAioOptions(base: AioOptions, next: AioOptions): AioOptions {
     ...base,
     ...defined,
     chains,
-    providers: { ...base.providers, ...next.providers },
-    signers: { ...base.signers, ...next.signers },
-    wallets: { ...base.wallets, ...next.wallets },
-    hooks: { ...base.hooks, ...next.hooks },
-    lifecycle: { ...base.lifecycle, ...next.lifecycle },
-    transport: { ...base.transport, ...next.transport },
+    providers: byReference(base.providers, next.providers),
+    signers: byReference(base.signers, next.signers),
+    wallets: byReference(base.wallets, next.wallets),
+    hooks: perField(base.hooks, next.hooks),
+    lifecycle: perField(base.lifecycle, next.lifecycle),
+    transport: perField(base.transport, next.transport),
     plugins: [...(base.plugins ?? []), ...(next.plugins ?? [])],
   };
 }

@@ -152,18 +152,34 @@ export function isCryptoAioError(
   return value instanceof CryptoAioError && (code === undefined || value.code === code);
 }
 
-/** Returns a copy of `error` (same class) with merged context and optional flag overrides. */
+/**
+ * Returns a copy of `error` (same class, same stack) with merged context, and optional flag
+ * and `details` overrides. B108: the copy keeps the stack of the error it reports.
+ */
 export function withContext(
   error: CryptoAioError,
   context: ErrorContext,
-  overrides: { readonly ambiguous?: boolean; readonly retryable?: boolean } = {},
+  overrides: {
+    readonly ambiguous?: boolean;
+    readonly retryable?: boolean;
+    readonly details?: Readonly<Record<string, unknown>>;
+  } = {},
 ): CryptoAioError {
   const Ctor = error.constructor as AnyErrorConstructor;
-  return new Ctor(error.code, error.message, {
+  const details = overrides.details ?? error.details;
+  const copy = new Ctor(error.code, error.message, {
     cause: error.cause,
     context: { ...error.context, ...context },
-    ...(error.details ? { details: error.details } : {}),
+    ...(details ? { details } : {}),
     retryable: overrides.retryable ?? error.retryable,
     ambiguous: overrides.ambiguous ?? error.ambiguous,
   });
+  if (error.stack !== undefined) {
+    Object.defineProperty(copy, 'stack', {
+      value: error.stack,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return copy;
 }

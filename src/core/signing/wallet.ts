@@ -86,6 +86,32 @@ function hdOptionsOf(config: WalletConfig): WalletHdOptions {
   return hd;
 }
 
+/**
+ * B109: a watch-only wallet's `publicKey` is checked as a signer's key is (R9.3): hex of
+ * exactly the length its scheme defines. Any other key fails here, never later: an
+ * uncompressed secp256k1 key derives an address but never verifies a signature.
+ */
+function watchOnlyKey(
+  name: string,
+  hex: unknown,
+  scheme: string,
+  length: number,
+): Uint8Array {
+  let key: Uint8Array | undefined;
+  try {
+    key = typeof hex === 'string' ? fromHex(hex) : undefined;
+  } catch {
+    key = undefined;
+  }
+  if (key === undefined || key.length !== length) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `wallet '${name}': publicKey must be ${length} bytes of hex for ${scheme}`,
+    );
+  }
+  return key;
+}
+
 export async function resolveWallet(
   selection: ResolvedSelection,
   driver: ChainDriver,
@@ -126,7 +152,12 @@ export async function resolveWallet(
     const scheme = selection.chain.schemes[0] as string;
     keys.push({
       scheme,
-      publicKey: fromHex(config.publicKey),
+      publicKey: watchOnlyKey(
+        wallet.name,
+        config.publicKey,
+        scheme,
+        schemes.get(scheme).publicKeyLength,
+      ),
       ...(keyRef ? { keyRef } : {}),
     });
   }

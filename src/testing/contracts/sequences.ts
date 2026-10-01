@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { SequenceStore } from '../../core/store/types';
-import { rejectsWithCode, type ContractTestApi } from './api';
+import { rejectsWithCode, rejectsWithCodeKeepingOut, type ContractTestApi } from './api';
 
 export interface SequenceHarness {
   readonly sequences: SequenceStore;
@@ -55,6 +55,25 @@ export function describeSequenceStoreContract(
         assert.deepEqual(await sequences.get('k'), stored);
       },
     );
+
+    api.it('keeps the key out of its errors (B110)', async () => {
+      // A sequence key embeds a wallet address, and error messages reach logs.
+      const { sequences } = await create();
+      const address = '0x5eC0FFEE00000000000000000000000000c0FFEE';
+      const key = `ns:evm:mainnet:${address}`;
+      await sequences.put(key, { next: 1n, released: [], fence: 2n }, null);
+      for (const [state, expected, code] of [
+        [{ next: 2n, released: [], fence: 2n }, null, 'VERSION_CONFLICT'],
+        [{ next: 2n, released: [], fence: 2n }, 7, 'VERSION_CONFLICT'],
+        [{ next: 2n, released: [], fence: 1n }, 1, 'FENCING'],
+      ] as const) {
+        await rejectsWithCodeKeepingOut(sequences.put(key, state, expected), code, [
+          key,
+          address,
+          address.toLowerCase(),
+        ]);
+      }
+    });
 
     api.it('round-trips large bigints exactly and isolates returned values', async () => {
       const { sequences } = await create();

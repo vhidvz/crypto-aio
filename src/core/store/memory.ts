@@ -145,9 +145,13 @@ function applyPatch(
   // what keys are visible between validation and application.
   const entries = Object.entries(patch) as readonly (readonly [string, unknown])[];
   // M6: the caller's `clear` list is read once too, so what is validated is what is cleared.
+  // N7: only an array is a list; a number, an object or a Set would not survive a serialized
+  // store as a list either, so it is refused rather than read as `[]`.
   const clear = entries.find(([key]) => key === 'clear')?.[1];
-  const clearList: readonly string[] =
-    clear === undefined ? [] : Array.from(clear as Iterable<string>);
+  if (clear !== undefined && !Array.isArray(clear)) {
+    throw new StateError('INVALID_TRANSITION', "unsupported patch field 'clear'");
+  }
+  const clearList: readonly string[] = clear === undefined ? [] : Array.from(clear);
   assertValidPatch(entries, clearList);
   const next: Record<string, unknown> = { ...current };
   for (const [key, value] of entries) {
@@ -370,10 +374,15 @@ export class MemoryOperationStore implements OperationStore {
   }
 
   async purge(filter: OperationFilter): Promise<number> {
+    // As `list` does: the oldest matches first, and at most `limit` of them.
+    const found = [...this.#records.values()]
+      .filter((r) => matches(r, filter))
+      .sort((a, b) => a.createdAt - b.createdAt);
     let removed = 0;
-    for (const [key, record] of this.#records) {
-      if (!matches(record, filter)) continue;
-      this.#records.delete(key);
+    for (const record of filter.limit === undefined
+      ? found
+      : found.slice(0, filter.limit)) {
+      this.#records.delete(compositeKey(record.namespace, record.id));
       this.#keys.delete(compositeKey(record.namespace, record.idempotencyKey));
       for (const attempt of record.attempts) this.#observations.delete(attempt.id);
       removed += 1;
