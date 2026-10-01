@@ -2331,7 +2331,7 @@ describe.each(LIBRARIES)('the EVM fee ceiling end to end (%s)', (library) => {
 - [ ] **Step 3: Run it to see it fail**
 
 Run: `pnpm exec jest test/adapters/evm/ceiling.test.ts`
-Expected: FAIL: the suite does not compile (`Module '"../../../src/adapters/evm/fees"' has no exported member 'DEFAULT_MAX_FEE_PER_GAS'`). With only the exports of Step 4 in place and nothing wired, the end-to-end cases fail: the signed `maxFeePerGas` is about 100,002 gwei, not 1,000, and the over-ceiling fee, replacement and cancel are signed.
+Expected: FAIL, 11 of 11. ts-jest compiles each file alone, without type checks (`isolatedModules` in `tsconfig.json`), so the missing exports fail at run time: `(0 , fees_1.capPrice) is not a function`, and the ceiling reads `undefined` where `1000000000000n` is expected. With only the exports of Step 4 in place and nothing wired, the end-to-end cases fail: the signed `maxFeePerGas` is about 100,002 gwei, not 1,000, and the over-ceiling fee, replacement and cancel are signed.
 
 - [ ] **Step 4: Add the ceiling to the fee policy**
 
@@ -3113,7 +3113,7 @@ and replace `this.#emitResponse(endpoint, label, started, new TextEncoder().enco
 - [ ] **Step 5: Run the transport suites to see them pass**
 
 Run: `pnpm exec jest test/core/transport`
-Expected: PASS, 168 tests (`response-cap.test.ts` 6; every existing transport test unchanged, the SDK bridge's included).
+Expected: PASS, 174 tests (`response-cap.test.ts` 6; every existing transport test unchanged, the SDK bridge's included).
 
 - [ ] **Step 6: Document it**
 
@@ -5400,7 +5400,7 @@ Every code block of Tasks 1–13 was applied in order to a detached worktree of 
 | 3 | 2,777 | 134 of 139 | the lone-liar e2e test fails for both libraries (`TX_REJECTED` where `TX_REFUSED` is expected) | EVM e2e and builder suites green 30 runs in a row |
 | 4 | 2,788 | 135 of 140 | the e2e cases sign about 100,002 gwei, and the over-ceiling fee, replacement and cancel are signed | the three guards of the review points each mutated out: each mutation fails its pinned test |
 | 5 | 2,796 | 136 of 141 | every test throws "the contract has no ordering test" | six faulty stores fail the new assertion; the memory store passes |
-| 6 | 2,802 | 137 of 142 | the option test fails (the endless-answer tests are not run on the old code: they exhaust the process's memory, which is the defect) | transport suites 168 tests |
+| 6 | 2,802 | 137 of 142 | the option test fails (the endless-answer tests are not run on the old code: they exhaust the process's memory, which is the defect) | transport suites 174 tests |
 | 7 | 2,808 | 138 of 143 | 5 of 6 fail (the peak-within-lag test pins unchanged behaviour) | transport suites green 30 runs in a row (180 tests) |
 | 8 | 2,811 | 139 of 144 | 3 of 3 fail | the M8 tests compare the pass signal by effect |
 | 9 | 2,820 | 140 of 145 | — (docs) | link check fails on an appended broken link and anchor, then passes restored |
