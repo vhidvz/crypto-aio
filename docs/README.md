@@ -80,5 +80,5 @@ pnpm docs:preview   # serves that build at http://localhost:4173/crypto-aio/
 
 The `Documentation` workflow (`.github/workflows/docs.yml`) runs these tests and builds the site
 for every pull request that changes it, and publishes it to GitHub Pages from `main`. The
-type-level API reference is separate: `pnpm doc` generates it into `docs/api/`, which is not
-committed.
+type-level API reference is separate: `pnpm doc` generates it into `docs/api/`, which the site
+does not publish.

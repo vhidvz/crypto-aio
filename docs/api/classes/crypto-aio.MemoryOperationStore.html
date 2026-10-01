@@ -1,0 +1,328 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>MemoryOperationStore | crypto-aio</title><meta name="description" content="Documentation for crypto-aio"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">crypto-aio</a>
+<div id="tsd-toolbar-links"><a href="https://vhidvz.github.io/crypto-aio/">Documentation</a><a href="https://github.com/vhidvz/crypto-aio">GitHub</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<ul class="tsd-breadcrumb" aria-label="Breadcrumb">
+<li><a href="../modules/crypto-aio.html">crypto-aio</a></li>
+<li><a href="" aria-current="page">MemoryOperationStore</a></li></ul>
+<h1>Class MemoryOperationStore</h1></div>
+<section class="tsd-panel tsd-comment">
+<div class="tsd-comment tsd-typography"><p>Durable Operation storage. Required guarantees (verified by the contract suite),
+binding on every implementation (memory, Redis, Postgres, ...):</p>
+<ul>
+<li><code>create</code> is create-if-absent on <code>(namespace, idempotencyKey)</code>: a second <code>create</code>
+for an existing key returns the stored record unchanged, regardless of
+<code>intentHash</code> — this store never performs the idempotency-conflict check itself;
+the calling engine does.</li>
+<li><code>update</code>/<code>appendAttempt</code> are version-checked (compare-and-set on
+<code>expectedVersion</code>) and optionally fenced by a claim token. Both are restricted to
+the same runtime patch whitelist (<code>OPERATION_PATCH_KEYS</code>), and <code>clear</code> may only
+name <code>CLEARABLE_FIELDS</code>; any other key anywhere in the patch rejects the whole
+call with <code>INVALID_TRANSITION</code> before any mutation. An explicit <code>undefined</code> value
+for a writable field is a no-op (the stored value survives); only <code>clear</code> removes
+a field.</li>
+<li><code>appendAttempt</code> is atomic with its accompanying patch, never rewrites a
+previously stored <code>AttemptRecord</code>, and rejects a duplicate attempt id. Attempt ids
+are globally unique across every Operation and namespace (observations are keyed
+by attempt id alone).</li>
+<li><code>claimDue</code> and <code>list</code> are scoped by namespace: they never return a record of another
+namespace, even one with the same id.</li>
+<li><code>claimDue</code> returns only non-terminal operations with <code>nextCheckAt</code> set and <code>&lt;= now</code>, ordered by <code>(nextCheckAt, createdAt)</code> with a stable tie-break for equal
+values, and returns <code>[]</code> for <code>limit &lt;= 0</code>. A claimed Operation is excluded until
+its <code>claim.until &lt;= now</code>; then another worker may take it over. Claim tokens are
+strictly increasing per store; fenced writes are rejected after a takeover.</li>
+<li><code>list</code> returns matches in creation order.</li>
+<li><code>ClearableField</code> is restricted on purpose: <code>clear</code> can never remove store-owned or
+identity fields (<code>attempts</code>, <code>claim</code>, <code>version</code>, <code>id</code>, ...) or <code>state</code>. An
+implementation reads the caller's <code>clear</code> list once (M6), so the list it validates is
+the list it applies.</li>
+<li>A key set to <code>undefined</code>, in an observation or a patch, is never persisted as a value
+such as <code>null</code> (P25-R14, R15). In a patch, the stored field keeps its value. In an
+observation, which replaces the whole record, the field reads back <code>undefined</code> (never
+<code>null</code>).</li>
+</ul>
+</div></section>
+<section class="tsd-panel">
+<h4>Implements</h4>
+<ul class="tsd-hierarchy">
+<li><a href="../interfaces/crypto-aio.OperationStore.html" class="tsd-signature-type tsd-kind-interface">OperationStore</a></li></ul></section><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L177">src/core/store/memory.ts:177</a></li></ul></aside>
+<section class="tsd-panel-group tsd-index-group">
+<section class="tsd-panel tsd-index-panel">
+<details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h5 class="tsd-index-heading uppercase">Index</h5></summary>
+<div class="tsd-accordion-details">
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="constructors">Constructors<a href="#constructors" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#constructor" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Constructor"><use href="../assets/icons.svg#icon-512"></use></svg><span>constructor</span></a>
+</div></section>
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="methods">Methods<a href="#methods" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#appendattempt" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>append<wbr/>Attempt</span></a>
+<a href="#claimdue" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>claim<wbr/>Due</span></a>
+<a href="#create" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>create</span></a>
+<a href="#findbyref" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>find<wbr/>By<wbr/>Ref</span></a>
+<a href="#get" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get</span></a>
+<a href="#getbykey" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>By<wbr/>Key</span></a>
+<a href="#getobservation" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Observation</span></a>
+<a href="#list" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>list</span></a>
+<a href="#purge" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>purge</span></a>
+<a href="#putobservation" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>put<wbr/>Observation</span></a>
+<a href="#releaseclaim" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>release<wbr/>Claim</span></a>
+<a href="#update" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>update</span></a>
+</div></section></div></details></section></section>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Constructors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="constructors-1">Constructors<a href="#constructors-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="constructor"><span>constructor</span><a href="#constructor" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="constructormemoryoperationstore"><span class="tsd-signature-keyword">new</span> <span class="tsd-kind-constructor-signature">MemoryOperationStore</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">clock</span><span class="tsd-signature-symbol">?:</span> <a href="../interfaces/crypto-aio.Clock.html" class="tsd-signature-type tsd-kind-interface">Clock</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <a href="" class="tsd-signature-type tsd-kind-class">MemoryOperationStore</a><a href="#constructormemoryoperationstore" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">clock</span>: <a href="../interfaces/crypto-aio.Clock.html" class="tsd-signature-type tsd-kind-interface">Clock</a><span class="tsd-signature-symbol"> = systemClock</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <a href="" class="tsd-signature-type tsd-kind-class">MemoryOperationStore</a></h4><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L183">src/core/store/memory.ts:183</a></li></ul></aside></div></li></ul></section></section></details>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="methods-1">Methods<a href="#methods-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="appendattempt"><span>append<wbr/>Attempt</span><a href="#appendattempt" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="appendattempt-1"><span class="tsd-kind-call-signature">appendAttempt</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">namespace</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">id</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">attempt</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/crypto-aio.AttemptRecord.html" class="tsd-signature-type tsd-kind-interface">AttemptRecord</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">patch</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/crypto-aio.OperationPatch.html" class="tsd-signature-type tsd-kind-interface">OperationPatch</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">expectedVersion</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">fence</span><span class="tsd-signature-symbol">?:</span> <a href="../interfaces/crypto-aio.Fence.html" class="tsd-signature-type tsd-kind-interface">Fence</a><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">&gt;</span><a href="#appendattempt-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">namespace</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">id</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">attempt</span>: <a href="../interfaces/crypto-aio.AttemptRecord.html" class="tsd-signature-type tsd-kind-interface">AttemptRecord</a></span></li>
+<li><span><span class="tsd-kind-parameter">patch</span>: <a href="../interfaces/crypto-aio.OperationPatch.html" class="tsd-signature-type tsd-kind-interface">OperationPatch</a></span></li>
+<li><span><span class="tsd-kind-parameter">expectedVersion</span>: <span class="tsd-signature-type">number</span></span></li>
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">fence</span>: <a href="../interfaces/crypto-aio.Fence.html" class="tsd-signature-type tsd-kind-interface">Fence</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#appendattempt">appendAttempt</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L271">src/core/store/memory.ts:271</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="claimdue"><span>claim<wbr/>Due</span><a href="#claimdue" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="claimdue-1"><span class="tsd-kind-call-signature">claimDue</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">namespace</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">workerId</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">now</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">leaseMs</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">limit</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">&gt;</span><a href="#claimdue-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Claims non-terminal operations whose <code>nextCheckAt</code> is set and &lt;= now (unscheduled ones are never due).</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">namespace</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">workerId</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">now</span>: <span class="tsd-signature-type">number</span></span></li>
+<li><span><span class="tsd-kind-parameter">leaseMs</span>: <span class="tsd-signature-type">number</span></span></li>
+<li><span><span class="tsd-kind-parameter">limit</span>: <span class="tsd-signature-type">number</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#claimdue">claimDue</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L320">src/core/store/memory.ts:320</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="create"><span>create</span><a href="#create" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="create-1"><span class="tsd-kind-call-signature">create</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">operation</span><span class="tsd-signature-symbol">:</span> <a href="../types/crypto-aio.NewOperation.html" class="tsd-signature-type tsd-kind-type-alias">NewOperation</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.CreateResult.html" class="tsd-signature-type tsd-kind-interface">CreateResult</a><span class="tsd-signature-symbol">&gt;</span><a href="#create-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">operation</span>: <a href="../types/crypto-aio.NewOperation.html" class="tsd-signature-type tsd-kind-type-alias">NewOperation</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.CreateResult.html" class="tsd-signature-type tsd-kind-interface">CreateResult</a><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#create">create</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L185">src/core/store/memory.ts:185</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="findbyref"><span>find<wbr/>By<wbr/>Ref</span><a href="#findbyref" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="findbyref-1"><span class="tsd-kind-call-signature">findByRef</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">namespace</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">refOrTxHash</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span><a href="#findbyref-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Finds by an Attempt ref id or by an observed canonical tx hash. A27: the engine's
+AttemptRef guard (A15) relies on this read being read-your-writes consistent across
+every process that shares the store: it must see any <code>appendAttempt</code> that another store
+instance committed before it was called (no read replica, no eventually consistent
+index).</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">namespace</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">refOrTxHash</span>: <span class="tsd-signature-type">string</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#findbyref">findByRef</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L234">src/core/store/memory.ts:234</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="get"><span>get</span><a href="#get" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="get-1"><span class="tsd-kind-call-signature">get</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">namespace</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-kind-parameter">id</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span><a href="#get-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">namespace</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">id</span>: <span class="tsd-signature-type">string</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#get">get</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L221">src/core/store/memory.ts:221</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="getbykey"><span>get<wbr/>By<wbr/>Key</span><a href="#getbykey" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="getbykey-1"><span class="tsd-kind-call-signature">getByKey</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">namespace</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">idempotencyKey</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span><a href="#getbykey-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">namespace</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">idempotencyKey</span>: <span class="tsd-signature-type">string</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#getbykey">getByKey</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L226">src/core/store/memory.ts:226</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="getobservation"><span>get<wbr/>Observation</span><a href="#getobservation" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="getobservation-1"><span class="tsd-kind-call-signature">getObservation</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">attemptId</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.AttemptObservation.html" class="tsd-signature-type tsd-kind-interface">AttemptObservation</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span><a href="#getobservation-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">attemptId</span>: <span class="tsd-signature-type">string</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.AttemptObservation.html" class="tsd-signature-type tsd-kind-interface">AttemptObservation</a> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#getobservation">getObservation</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L296">src/core/store/memory.ts:296</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="list"><span>list</span><a href="#list" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="list-1"><span class="tsd-kind-call-signature">list</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">filter</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/crypto-aio.OperationFilter.html" class="tsd-signature-type tsd-kind-interface">OperationFilter</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">&gt;</span><a href="#list-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">filter</span>: <a href="../interfaces/crypto-aio.OperationFilter.html" class="tsd-signature-type tsd-kind-interface">OperationFilter</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#list">list</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L369">src/core/store/memory.ts:369</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="purge"><span>purge</span><a href="#purge" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="purge-1"><span class="tsd-kind-call-signature">purge</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">filter</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/crypto-aio.OperationFilter.html" class="tsd-signature-type tsd-kind-interface">OperationFilter</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">&gt;</span><a href="#purge-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">filter</span>: <a href="../interfaces/crypto-aio.OperationFilter.html" class="tsd-signature-type tsd-kind-interface">OperationFilter</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#purge">purge</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L376">src/core/store/memory.ts:376</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="putobservation"><span>put<wbr/>Observation</span><a href="#putobservation" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="putobservation-1"><span class="tsd-kind-call-signature">putObservation</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">observation</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Omit</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.AttemptObservation.html" class="tsd-signature-type tsd-kind-interface">AttemptObservation</a><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">&quot;version&quot;</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">expectedVersion</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.AttemptObservation.html" class="tsd-signature-type tsd-kind-interface">AttemptObservation</a><span class="tsd-signature-symbol">&gt;</span><a href="#putobservation-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Stores <code>observation</code> as the whole new record, version-checked. An optional field left
+out of it or set to <code>undefined</code> (a cleared <code>reason</code>, <code>blockHash</code> or <code>blockHeight</code>)
+reads back <code>undefined</code> (never <code>null</code>) afterwards. A store must replace the record, never
+merge fields into the old one. The monitor relies on this to clear stale values (A9,
+M9, P25-R14).</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">observation</span>: <span class="tsd-signature-type">Omit</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.AttemptObservation.html" class="tsd-signature-type tsd-kind-interface">AttemptObservation</a><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">&quot;version&quot;</span><span class="tsd-signature-symbol">&gt;</span></span></li>
+<li><span><span class="tsd-kind-parameter">expectedVersion</span>: <span class="tsd-signature-type">number</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.AttemptObservation.html" class="tsd-signature-type tsd-kind-interface">AttemptObservation</a><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#putobservation">putObservation</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L301">src/core/store/memory.ts:301</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="releaseclaim"><span>release<wbr/>Claim</span><a href="#releaseclaim" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="releaseclaim-1"><span class="tsd-kind-call-signature">releaseClaim</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">namespace</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-kind-parameter">id</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-kind-parameter">fence</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/crypto-aio.Fence.html" class="tsd-signature-type tsd-kind-interface">Fence</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span><a href="#releaseclaim-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">namespace</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">id</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">fence</span>: <a href="../interfaces/crypto-aio.Fence.html" class="tsd-signature-type tsd-kind-interface">Fence</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#releaseclaim">releaseClaim</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L356">src/core/store/memory.ts:356</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="update"><span>update</span><a href="#update" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="update-1"><span class="tsd-kind-call-signature">update</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">namespace</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">id</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">patch</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/crypto-aio.OperationPatch.html" class="tsd-signature-type tsd-kind-interface">OperationPatch</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">expectedVersion</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">fence</span><span class="tsd-signature-symbol">?:</span> <a href="../interfaces/crypto-aio.Fence.html" class="tsd-signature-type tsd-kind-interface">Fence</a><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">&gt;</span><a href="#update-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Compare-and-set on <code>expectedVersion</code>, optionally fenced. Every successful update bumps
+version, even when the patch changes no field (R29: the engine fences stale writers
+with such a no-effect update).</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">namespace</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">id</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">patch</span>: <a href="../interfaces/crypto-aio.OperationPatch.html" class="tsd-signature-type tsd-kind-interface">OperationPatch</a></span></li>
+<li><span><span class="tsd-kind-parameter">expectedVersion</span>: <span class="tsd-signature-type">number</span></span></li>
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">fence</span>: <a href="../interfaces/crypto-aio.Fence.html" class="tsd-signature-type tsd-kind-interface">Fence</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/crypto-aio.OperationRecord.html" class="tsd-signature-type tsd-kind-interface">OperationRecord</a><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Implementation of <a href="../interfaces/crypto-aio.OperationStore.html">OperationStore</a>.<a href="../interfaces/crypto-aio.OperationStore.html#update">update</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/vhidvz/crypto-aio/blob/b3c802754b6a2b6b7cf3f714ea8808ac48de1ea3/src/core/store/memory.ts#L258">src/core/store/memory.ts:258</a></li></ul></aside></div></li></ul></section></section></details></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-external" name="external"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>External</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details">
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Constructors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Constructors</summary>
+<div><a href="#constructor"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Constructor"><use href="../assets/icons.svg#icon-512"></use></svg><span>constructor</span></a></div></details>
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Methods</summary>
+<div><a href="#appendattempt"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>append<wbr/>Attempt</span></a><a href="#claimdue"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>claim<wbr/>Due</span></a><a href="#create"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>create</span></a><a href="#findbyref"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>find<wbr/>By<wbr/>Ref</span></a><a href="#get"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get</span></a><a href="#getbykey"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>By<wbr/>Key</span></a><a href="#getobservation"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Observation</span></a><a href="#list"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>list</span></a><a href="#purge"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>purge</span></a><a href="#putobservation"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>put<wbr/>Observation</span></a><a href="#releaseclaim"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>release<wbr/>Claim</span></a><a href="#update"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>update</span></a></div></details></div></details></div>
+<div class="site-menu">
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://vhidvz.github.io/crypto-aio/" class="tsd-nav-link">Documentation</a><a href="https://github.com/vhidvz/crypto-aio" class="tsd-nav-link">GitHub</a></nav>
+<nav class="tsd-navigation"><a href="../index.html">crypto-aio</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
+<div class="overlay"></div></body></html>

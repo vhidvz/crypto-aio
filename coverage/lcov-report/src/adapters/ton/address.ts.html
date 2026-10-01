@@ -1,0 +1,709 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/adapters/ton/address.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../prettify.css" />
+    <link rel="stylesheet" href="../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/adapters/ton</a> address.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>208/208</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">96.1% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>74/77</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>14/14</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>208/208</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a>
+<a name='L199'></a><a href='#L199'>199</a>
+<a name='L200'></a><a href='#L200'>200</a>
+<a name='L201'></a><a href='#L201'>201</a>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">170x</span>
+<span class="cline-any cline-yes">170x</span>
+<span class="cline-any cline-yes">170x</span>
+<span class="cline-any cline-yes">5755x</span>
+<span class="cline-any cline-yes">5755x</span>
+<span class="cline-any cline-yes">46040x</span>
+<span class="cline-any cline-yes">46040x</span>
+<span class="cline-any cline-yes">5755x</span>
+<span class="cline-any cline-yes">170x</span>
+<span class="cline-any cline-yes">170x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">5069x</span>
+<span class="cline-any cline-yes">5069x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">5069x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">4998x</span>
+<span class="cline-any cline-yes">4998x</span>
+<span class="cline-any cline-yes">4998x</span>
+<span class="cline-any cline-yes">4998x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">71x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">107x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">107x</span>
+<span class="cline-any cline-yes">107x</span>
+<span class="cline-any cline-yes">107x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">104x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">100x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">97x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">4736x</span>
+<span class="cline-any cline-yes">4736x</span>
+<span class="cline-any cline-yes">4726x</span>
+<span class="cline-any cline-yes">4736x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">4562x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">164x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">2780x</span>
+<span class="cline-any cline-yes">2780x</span>
+<span class="cline-any cline-yes">2780x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2738x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">2707x</span>
+<span class="cline-any cline-yes">2707x</span>
+<span class="cline-any cline-yes">2707x</span>
+<span class="cline-any cline-yes">2707x</span>
+<span class="cline-any cline-yes">2707x</span>
+<span class="cline-any cline-yes">2707x</span>
+<span class="cline-any cline-yes">2707x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">23x</span>
+<span class="cline-any cline-yes">23x</span>
+<span class="cline-any cline-yes">23x</span>
+<span class="cline-any cline-yes">23x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">53x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-yes">250x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * Strict TON addresses (spec §6.4), SDK-free. Two forms are accepted, nothing else:
+ * - raw: `0:&lt;64 hex&gt;` or `-1:&lt;64 hex&gt;` (hex in either case; canonical is lower case);
+ * - user-friendly: 48 base64 characters, either all standard (`+/`) or all URL-safe
+ *   (`-_`) alphabet, decoding to tag · workchain · 32-byte hash · CRC16-XMODEM.
+ * `@ton/core` is laxer (an unanchored hex test, any `parseInt` workchain, mixed base64
+ * alphabets, workchain bytes other than 0x00/0xff, a thrown string on a bad tag), so every
+ * address reaches the SDK only in the canonical raw form produced here (lesson 4).
+ * Canonical is the raw form; `display` keeps the caller's text; `variant` keeps only the
+ * flag that decides bounce behaviour (spec §6.4; a raw address is bounceable, as in
+ * `@ton/core`). The variant is part of the intent hash (P25-R13), so the encoding-only
+ * flags (test-only, alphabet) stay out of it: every spelling of one recipient with the same
+ * bounce flag hashes the same.
+ */
+import type { AddressCodec, WalletOptions } from '../../core/driver/types';
+import { ValidationError } from '../../core/errors/error';
+import type { NormalizedAddress } from '../../core/model/address';
+&nbsp;
+export type TonWorkchain = 0 | -1;
+&nbsp;
+/** The flags a user-friendly TON address carries (TEP-2). */
+export type TonAddressVariant = {
+  readonly bounceable: boolean;
+  readonly testOnly: boolean;
+  readonly urlSafe: boolean;
+};
+&nbsp;
+export type ParsedTonAddress = TonAddressVariant &amp; {
+  readonly workchain: TonWorkchain;
+  /** 32 bytes. */
+  readonly hash: Uint8Array;
+  readonly form: 'raw' | 'friendly';
+};
+&nbsp;
+const RAW = /^(0|-1):([0-9a-fA-F]{64})$/;
+const FRIENDLY_STANDARD = /^[A-Za-z0-9+/]{48}$/;
+const FRIENDLY_URL_SAFE = /^[A-Za-z0-9_-]{48}$/;
+const BOUNCEABLE = 0x11;
+const NON_BOUNCEABLE = 0x51;
+const TEST_ONLY = 0x80;
+const HASH_BYTES = 32;
+/** Lesson 20: the longest form, `-1:` and 64 hex digits; anything longer is not decoded. */
+const MAX_ADDRESS_LENGTH = 67;
+&nbsp;
+/** CRC16-XMODEM (polynomial 0x1021, initial 0), as TEP-2 specifies for the checksum. */
+export function crc16(data: Uint8Array): number {
+  let crc = 0;
+  for (const byte of data) {
+    crc ^= byte &lt;&lt; 8;
+    for (let bit = 0; bit &lt; 8; bit++) {
+      crc = crc &amp; 0x8000 ? ((crc &lt;&lt; 1) ^ 0x1021) &amp; 0xffff : (crc &lt;&lt; 1) &amp; 0xffff;
+    }
+  }
+  return crc;
+}
+&nbsp;
+const toHex = (bytes: Uint8Array): string =&gt; Buffer.from(bytes).toString('hex');
+&nbsp;
+/** An account id is exactly 32 bytes: never padded or truncated into another address. */
+function assertHash(hash: Uint8Array): void {
+  if (hash.length !== HASH_BYTES) {
+    throw new ValidationError('INVALID_ADDRESS', 'a TON address hash is 32 bytes');
+  }
+}
+&nbsp;
+/** `0:&lt;hex&gt;` / `-1:&lt;hex&gt;`, lower case: the canonical form. */
+export function rawAddress(workchain: TonWorkchain, hash: Uint8Array): string {
+  assertHash(hash);
+  return `${workchain}:${toHex(hash)}`;
+}
+&nbsp;
+/** The user-friendly form (TEP-2) with the given flags. */
+export function friendlyAddress(
+  workchain: TonWorkchain,
+  hash: Uint8Array,
+  flags: TonAddressVariant,
+): string {
+  assertHash(hash);
+  const bytes = new Uint8Array(36);
+  bytes[0] =
+    (flags.bounceable ? BOUNCEABLE : NON_BOUNCEABLE) | (flags.testOnly ? TEST_ONLY : 0);
+  bytes[1] = workchain === -1 ? 0xff : 0x00;
+  bytes.set(hash, 2);
+  const crc = crc16(bytes.subarray(0, 34));
+  bytes[34] = crc &gt;&gt; 8;
+  bytes[35] = crc &amp; 0xff;
+  const text = Buffer.from(bytes).toString('base64');
+  return flags.urlSafe ? text.replace(/\+/g, '-').replace(/\//g, '_') : text;
+}
+&nbsp;
+function parseFriendly(value: string): ParsedTonAddress | null {
+  const urlSafe = FRIENDLY_URL_SAFE.test(value);
+  if (!urlSafe &amp;&amp; !FRIENDLY_STANDARD.test(value)) return null;
+  const bytes = Buffer.from(
+    urlSafe ? value.replace(/-/g, '+').replace(/_/g, '/') : value,
+    'base64',
+  );
+  if (bytes.length !== 36) <span class="branch-0 cbranch-no" title="branch not covered" >return null;</span>
+  const tag = bytes[0] as number;
+  const testOnly = (tag &amp; TEST_ONLY) !== 0;
+  const flag = tag &amp; ~TEST_ONLY;
+  if (flag !== BOUNCEABLE &amp;&amp; flag !== NON_BOUNCEABLE) return null;
+  const wc = bytes[1];
+  if (wc !== 0x00 &amp;&amp; wc !== 0xff) return null;
+  const crc = crc16(bytes.subarray(0, 34));
+  if (bytes[34] !== crc &gt;&gt; 8 || bytes[35] !== (crc &amp; 0xff)) return null;
+  return {
+    workchain: wc === 0xff ? -1 : 0,
+    hash: new Uint8Array(bytes.subarray(2, 34)),
+    form: 'friendly',
+    bounceable: flag === BOUNCEABLE,
+    testOnly,
+    // A 48-character text in the shared alphabet (no `+/-_`) is both; call it URL-safe.
+    urlSafe: urlSafe,
+  };
+}
+&nbsp;
+/** Parses either form strictly; `null` for anything else. */
+export function parseTonAddress(value: string): ParsedTonAddress | null {
+  if (typeof value !== 'string' || value.length &gt; MAX_ADDRESS_LENGTH) return null;
+  const raw = RAW.exec(value);
+  if (raw) {
+    return {
+      workchain: raw[1] === '-1' ? -1 : 0,
+      hash: new Uint8Array(Buffer.from(raw[2] as string, 'hex')),
+      form: 'raw',
+      bounceable: true,
+      testOnly: false,
+      urlSafe: true,
+    };
+  }
+  return parseFriendly(value);
+}
+&nbsp;
+export interface TonAddressCodecOptions {
+  /** Mainnet refuses testnet-only addresses (TEP-2); testnet accepts both flags. */
+  readonly testnet: boolean;
+  /** The wallet address for a public key and wallet identity (needs the SDK). */
+  readonly fromPublicKey: (publicKey: Uint8Array, wallet?: WalletOptions) =&gt; string;
+}
+&nbsp;
+export function createTonAddressCodec(options: TonAddressCodecOptions): AddressCodec {
+  const parse = (value: string): ParsedTonAddress =&gt; {
+    const parsed = parseTonAddress(value);
+    if (!parsed) throw new ValidationError('INVALID_ADDRESS', 'not a TON address');
+    if (parsed.testOnly &amp;&amp; !options.testnet) {
+      throw new ValidationError(
+        'INVALID_ADDRESS',
+        'a testnet-only TON address cannot be used on mainnet',
+      );
+    }
+    return parsed;
+  };
+  const normalize = (value: string): NormalizedAddress =&gt; {
+    const parsed = parse(value);
+    const canonical = rawAddress(parsed.workchain, parsed.hash);
+    // P25-R13: only the semantic bounce flag is hashed. A raw address carries no flags and
+    // is bounceable, as in `@ton/core`.
+    return parsed.form === 'raw'
+      ? { canonical, display: canonical, variant: { bounceable: true } }
+      : { canonical, display: value, variant: { bounceable: parsed.bounceable } };
+  };
+  return {
+    validate: (value) =&gt; {
+      try {
+        parse(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    normalize,
+    fromPublicKey: (publicKey, wallet) =&gt; {
+      const parsed = parse(options.fromPublicKey(publicKey, wallet));
+      // A wallet address as wallets show it: non-bounceable, flagged on testnet.
+      const flags = { bounceable: false, testOnly: options.testnet, urlSafe: true };
+      return {
+        canonical: rawAddress(parsed.workchain, parsed.hash),
+        display: friendlyAddress(parsed.workchain, parsed.hash, flags),
+        variant: { bounceable: false },
+      };
+    },
+    format: (address, formatOptions) =&gt; {
+      const parsed = parseTonAddress(address.canonical);
+      if (!parsed) <span class="branch-0 cbranch-no" title="branch not covered" >return address.display;</span>
+      if (formatOptions?.raw === true) return address.canonical;
+      if (formatOptions === undefined || Object.keys(formatOptions).length === 0) {
+        return address.display;
+      }
+      // The variant holds the bounce flag only; the caller's own text keeps the others.
+      const shown = parseTonAddress(address.display);
+      const spelled = shown?.form === 'friendly' ? shown : undefined;
+      const pick = (key: keyof TonAddressVariant, fallback: boolean): boolean =&gt; {
+        const value = formatOptions[key];
+        return typeof value === 'boolean' ? value : fallback;
+      };
+      const bounceable = address.variant?.bounceable;
+      return friendlyAddress(parsed.workchain, parsed.hash, {
+        bounceable: pick(
+          'bounceable',
+          typeof bounceable === 'boolean' ? bounceable <span class="branch-0 cbranch-no" title="branch not covered" >: true,</span>
+        ),
+        testOnly: pick('testOnly', spelled?.testOnly ?? options.testnet),
+        urlSafe: pick('urlSafe', spelled?.urlSafe ?? true),
+      });
+    },
+  };
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-10-01T09:51:53.170Z
+            </div>
+        <script src="../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../sorter.js"></script>
+        <script src="../../../block-navigation.js"></script>
+    </body>
+</html>
+    
