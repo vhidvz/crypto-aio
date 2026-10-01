@@ -72,9 +72,6 @@ importers:
       jest:
         specifier: ^30.5.2
         version: 30.5.2(@types/node@22.20.4)
-      make-coverage-badge:
-        specifier: ^1.2.0
-        version: 1.2.0
       prettier:
         specifier: ^3.9.8
         version: 3.9.8
@@ -1883,11 +1880,6 @@ packages:
   lunr@2.3.9:
     resolution: {integrity: sha512-zTU3DaZaF3Rt9rhN3uBMGQD3dD2/vFQqnvZCDv4dl5iOzq2IZQqTxu90r4E5J+nP70J3ilqVCrbho2eWaeW8Ow==}
 
-  make-coverage-badge@1.2.0:
-    resolution: {integrity: sha512-nA1eQZJ9vcY2UoQLVIdzqyRoNtAZHWlXJfrHkaMB/pQgTYBPmbImkykfxWeAtUQuLJXzb6eAhbR7nEgrt+S7FA==}
-    engines: {node: '>=6.11', npm: '>=5.3'}
-    hasBin: true
-
   make-dir@4.0.0:
     resolution: {integrity: sha512-hXdUTZYIVOt1Ex//jAQi+wTZZpUpwBj/0QsOzqegb3rGMMeJiSEu5xLHnYfBrRV4RH2+OCSOO95Is/7x1WJ4bw==}
     engines: {node: '>=10'}
@@ -1938,10 +1930,6 @@ packages:
   minipass@7.1.3:
     resolution: {integrity: sha512-tEBHqDnIoM/1rXME1zgka9g6Q2lcoCkxHLuc7ODJ5BxbP5d4c2Z5cGgtXAku59200Cx7diuHTOYfSBD8n6mm8A==}
     engines: {node: '>=16 || 14 >=14.17'}
-
-  mri@1.1.4:
-    resolution: {integrity: sha512-6y7IjGPm8AzlvoUrwAaw1tLnUBudaS3752vcd8JtrpGGQn+rXIe63LFVHm/YMwtqAuh+LJPCFdlLYPWM1nYn6w==}
-    engines: {node: '>=4'}
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -4714,10 +4702,6 @@ snapshots:
 
   lunr@2.3.9: {}
 
-  make-coverage-badge@1.2.0:
-    dependencies:
-      mri: 1.1.4
-
   make-dir@4.0.0:
     dependencies:
       semver: 7.8.5
@@ -4762,8 +4746,6 @@ snapshots:
   minimist@1.2.8: {}
 
   minipass@7.1.3: {}
-
-  mri@1.1.4: {}
 
   ms@2.1.3: {}
 

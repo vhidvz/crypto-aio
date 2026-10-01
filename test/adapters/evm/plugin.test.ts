@@ -81,7 +81,8 @@ describe('the built-in EVM plugin', () => {
     ).toThrow(
       expect.objectContaining({
         code: 'INCOMPATIBLE_SELECTION',
-        message: expect.stringContaining('supported: ethers, web3'),
+        message:
+          "unknown library for chain 'ethereum'; the accepted names are 'ethers' and 'web3'",
       }),
     );
     await aio.close();

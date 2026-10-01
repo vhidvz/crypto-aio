@@ -104,7 +104,9 @@ describe('plugins', () => {
       ),
     ).toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown signature scheme 'bls'/),
+      message: expect.stringMatching(
+        /^unknown signature scheme; the accepted names are /,
+      ),
     });
     const catalogs = createCatalogs();
     applyPlugin(catalogs, { name: 'a', chains: [chain], adapters: [manifest()] });
@@ -162,7 +164,7 @@ describe('PresetCatalog', () => {
         ),
       ),
     ).toMatchObject({
-      message: expect.stringMatching(/unknown indexer provider preset 'acme'/),
+      message: 'unknown indexer provider preset; none is configured',
     });
   });
 });

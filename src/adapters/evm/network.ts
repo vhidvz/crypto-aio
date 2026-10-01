@@ -6,7 +6,8 @@
 import type { Capability } from '../../core/model/capability';
 import type { ChainInfo, FinalityPolicy, NetworkInfo } from '../../core/model/chain';
 import { ConfigError } from '../../core/errors/error';
-import type { EvmFeeModel } from './fees';
+import { unknownName } from '../../core/util/names';
+import { DEFAULT_MAX_FEE_PER_GAS, type EvmFeeModel } from './fees';
 
 /** Every capability an EVM network can have; a network removes what it lacks. */
 export const EVM_CAPABILITIES: readonly Capability[] = [
@@ -38,6 +39,33 @@ export interface EvmNetworkConfig {
    */
   readonly polygonSystemLogs: boolean;
   readonly capabilities: ReadonlySet<Capability>;
+  /**
+   * Plan 7 D6: the highest price per gas (wei) a transaction signs: the handle's
+   * `maxFeePerGas` option, else the network's `params.maxFeePerGas`, else
+   * `DEFAULT_MAX_FEE_PER_GAS`.
+   */
+  readonly maxFeePerGas: bigint;
+}
+
+/**
+ * The only driver option (`HandleOptions.options`) the EVM driver reads. Any other key is
+ * refused, so a typo, or another family's option such as Tron's `maxFeeLimit`, fails loudly
+ * instead of leaving the default in place (lesson 10, F6-R25).
+ */
+const OPTION_KEYS: readonly string[] = Object.freeze(['maxFeePerGas']);
+
+const MAX_UINT256 = 2n ** 256n - 1n;
+
+/** A price ceiling: a bigint of wei per gas that an EVM transaction can carry. */
+function priceCeiling(
+  value: unknown,
+  name: string,
+  fail: (reason: string) => never,
+): bigint {
+  if (typeof value !== 'bigint' || value < 1n || value > MAX_UINT256) {
+    fail(`${name} must be a bigint of wei per gas from 1 to 2^256 − 1`);
+  }
+  return value as bigint;
 }
 
 /** The OP Stack `GasPriceOracle` predeploy. */
@@ -84,6 +112,7 @@ function finalityOf(
 export function evmNetworkConfig(
   chain: ChainInfo,
   network: NetworkInfo,
+  options: Readonly<Record<string, unknown>> = {},
 ): EvmNetworkConfig {
   const fail = (reason: string): never => {
     throw new ConfigError(
@@ -125,6 +154,19 @@ export function evmNetworkConfig(
   if (params.systemLogs !== undefined && params.systemLogs !== 'bor') {
     fail(`params.systemLogs must be 'bor'`);
   }
+  // F3-R16: the refusal lists the accepted name, never the caller's key or its value.
+  for (const key of Object.keys(options)) {
+    if (!OPTION_KEYS.includes(key)) fail(unknownName('option', OPTION_KEYS));
+  }
+  // D6, F4-R28's shape: the handle's option, else the network entry's own, else the
+  // default. A network value is checked even where an option overrides it.
+  const own = params.maxFeePerGas;
+  const networkCeiling =
+    own === undefined ? undefined : priceCeiling(own, 'params.maxFeePerGas', fail);
+  const maxFeePerGas =
+    options.maxFeePerGas !== undefined
+      ? priceCeiling(options.maxFeePerGas, 'maxFeePerGas', fail)
+      : (networkCeiling ?? DEFAULT_MAX_FEE_PER_GAS);
   const replaces = capabilities.has('replace-fee') || capabilities.has('cancel');
   return {
     chainId: BigInt(network.identity as string),
@@ -135,5 +177,6 @@ export function evmNetworkConfig(
     l1DataFee: params.l1DataFee === 'op-stack',
     polygonSystemLogs: params.systemLogs === 'bor',
     capabilities,
+    maxFeePerGas,
   };
 }

@@ -732,7 +732,10 @@ describe('resends carry the pass signal (M8)', () => {
       await env.run(env.aio.monitor.runOnce({ workerId: 'w', signal: ctl.signal })),
     ).toBe(1);
     expect(signals).toHaveLength(1);
-    expect(signals[0]).toBe(ctl.signal);
+    // N3: the pass runs under the caller's signal combined with the container's `closing`.
+    expect(signals[0]?.aborted).toBe(false);
+    ctl.abort();
+    expect(signals[0]?.aborted).toBe(true);
   });
 
   it("passes recovery's signal to the resend of a signed operation", async () => {
@@ -749,7 +752,9 @@ describe('resends carry the pass signal (M8)', () => {
       await restarted.run(restarted.aio.operations.recover({ signal: ctl.signal })),
     ).toMatchObject({ rebroadcast: 1, failed: 0 });
     expect(signals).toHaveLength(1);
-    expect(signals[0]).toBe(ctl.signal);
+    expect(signals[0]?.aborted).toBe(false);
+    ctl.abort();
+    expect(signals[0]?.aborted).toBe(true);
   });
 });
 

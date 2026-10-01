@@ -50,11 +50,19 @@ A **provider** is a named set of endpoints, or a preset name plus an API key. A 
 list several providers for failover. The **transport** is the core-owned HTTP layer under
 every driver. It applies timeouts, retries by retry class, rate limits, a circuit breaker per
 endpoint, health and identity checks, and quorum reads for proofs. SDKs never see real URLs.
+One answer is at most `transport.maxResponseBytes` (64 MiB by default); a longer one is cut
+off and retried elsewhere, so one endpoint cannot exhaust the process's memory.
 An endpoint more than `maxLagBlocks` behind the best known height is lagging, and the
 monitor and scanner never decide anything from a view that far behind. The tolerance comes
 from `chains.<id>.maxLagBlocks`, then the root `transport.maxLagBlocks`, then the network's
 own value, then the built-in default of 5. The BSC, Arbitrum, OP and Base mainnets set about
 60 s of blocks (134, 240, 30 and 30); set your own for fast testnets with several endpoints.
+A health check that an endpoint answers with HTTP 429 learns nothing: the endpoint keeps
+its last good height and identity, and is checked again after its `Retry-After`. The
+highest height a verified endpoint reported is the mark every view must stay within
+`maxLagBlocks` of; a mark that no verified endpoint comes that close to for three health
+refreshes in a row is dropped, so one endpoint that once reported a far-future head cannot
+leave every view stale.
 
 A proof read needs `proofQuorum` endpoints (2 by default) to agree. The quorum's size counts
 every endpoint not proven to serve another network, including lagging ones, ones whose
@@ -239,8 +247,10 @@ Every status carries its **evidence**:
   Absence is never proof: `dropped` and `refused` are never terminal. A reorg verdict also
   needs the proof quorum to serve a different block hash.
 
-`finality` is `none`, `probabilistic` (included) or `final`. Credit deposits and complete
-withdrawals only on `final` with `proven` evidence.
+`finality` is `none`, `probabilistic` (included) or `final`. Complete a withdrawal (your own
+Operation) only on `final` with `proven` evidence. A deposit is read, not proven: every
+family's scanner, `history` and `getTransaction` report it with `observed` evidence, so
+credit it as [Crediting deposits](./transactions.md#crediting-deposits) says.
 
 ```ts
 const { status } = await bc.waitForConfirmation(operationId, { finality: 'final' });

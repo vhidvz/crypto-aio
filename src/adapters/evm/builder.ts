@@ -25,11 +25,13 @@ import type { DriverIntent, IntentSummary } from '../../core/model/intent';
 import type { OrderingData } from '../../core/model/ordering';
 import type { UnsignedTx } from '../../core/model/transaction';
 import { equalBytes, fromHex, toHex } from '../../core/util/bytes';
-import { classifyBroadcastError } from './errors';
+import { classifyOwnBroadcast } from './errors';
 import {
   FEE_HISTORY_BLOCKS,
   FEE_PERCENTILES,
   TRANSFER_GAS,
+  assertWithinCeiling,
+  capPrice,
   feeDraft,
   feeOf,
   feesFromHistory,
@@ -190,12 +192,16 @@ async function priceFor(
   const { client, config } = ctx;
   if (typeof fee === 'object') {
     const { params, gasLimit } = parseFeeOverride(fee, config.feeModel);
+    // D6: an explicit fee above the ceiling is refused before any request.
+    assertWithinCeiling(params, config.maxFeePerGas);
     return { speed: 'custom', params, ...(gasLimit !== undefined ? { gasLimit } : {}) };
   }
+  // D6: a node's suggestion is clamped to the ceiling, so no endpoint can raise it.
   if (config.feeModel === 'evm-legacy') {
+    const gasPrice = await client.gasPrice(withSignal(READ, signal));
     return {
       speed: fee,
-      params: legacyPrice(await client.gasPrice(withSignal(READ, signal)), fee),
+      params: capPrice(legacyPrice(gasPrice, fee), config.maxFeePerGas),
     };
   }
   const history = await client.feeHistory(
@@ -209,7 +215,7 @@ async function priceFor(
     fee,
     config.minPriorityFeePerGas,
   );
-  return { speed: fee, params, baseFeePerGas };
+  return { speed: fee, params: capPrice(params, config.maxFeePerGas), baseFeePerGas };
 }
 
 /** OP Stack: the oracle's L1 data fee for these exact unsigned bytes. */
@@ -367,6 +373,8 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
           `this network takes ${ctx.config.feeModel} fees`,
         );
       }
+      // D6: checked again, whatever produced the fee object.
+      assertWithinCeiling(params, ctx.config.maxFeePerGas);
       const fields = fieldsOf(
         ctx,
         callOf(client, transfer),
@@ -422,7 +430,7 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
   };
 }
 
-export function createEvmBroadcaster(client: EvmClient): Broadcaster {
+export function createEvmBroadcaster(client: EvmClient, chainId: bigint): Broadcaster {
   return {
     async broadcast(signed, options = {}): Promise<BroadcastResult> {
       try {
@@ -435,9 +443,12 @@ export function createEvmBroadcaster(client: EvmClient): Broadcaster {
         return { kind: 'accepted' };
       } catch (error) {
         // R17: an ambiguous error may hide a delivered transaction; it is never classified.
+        // Lesson 21: a rejection stands only when its reason holds for the bytes we sent.
         if (isCryptoAioError(error, 'RPC_ERROR') && !error.ambiguous) {
-          return classifyBroadcastError(
+          return classifyOwnBroadcast(
             String(error.details?.rpcMessage ?? error.message),
+            signed.raw.data,
+            chainId,
           );
         }
         throw error;
@@ -497,6 +508,8 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
           ? { speed: 'custom', params: minimumBump(before.params, bump) }
           : await priceFor(ctx, fee, build.signal);
       if (!meetsBump(before.params, price.params, bump)) throw tooLow('a cancel');
+      // D6: a cancel whose least bump would pay above the ceiling is refused.
+      assertWithinCeiling(price.params, config.maxFeePerGas);
       const nonce = nonceOf(previous.ordering);
       const fields = fieldsOf(
         ctx,

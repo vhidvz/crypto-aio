@@ -8,6 +8,7 @@
  * one.
  */
 import type { BroadcastResult } from '../../core/driver/types';
+import { readSentTx, signatureValuesValid, type EvmSentTx } from './rawtx';
 
 type RefusalCode = Extract<BroadcastResult, { kind: 'refused' }>['code'];
 
@@ -54,22 +55,43 @@ const REFUSED: readonly (readonly [RegExp, BroadcastResult])[] = [
   [/oversized data/i, refused('TX_REFUSED', 'transaction too large')],
 ];
 
+/** A rejection and the check that confirms it for the bytes we sent (lesson 21). */
+interface Rejection {
+  readonly pattern: RegExp;
+  readonly result: BroadcastResult;
+  readonly holds: (sent: EvmSentTx | 'malformed', chainId: bigint) => boolean;
+}
+
 /**
  * Invalid by construction: these bytes can never be included on any node. Exact texts only,
  * so a state-dependent cause that merely shares a word is never taken for one of these.
  * `invalid chain id` comes first: geth wraps it as "invalid sender: invalid chain id …".
  */
-const REJECTED: readonly (readonly [RegExp, BroadcastResult])[] = [
-  [/invalid chain id/i, rejected('wrong chain id')],
-  [
-    /invalid sender|invalid signature|invalid transaction v, r, s values/i,
-    rejected('invalid signature'),
-  ],
-  [/\brlp:|typed transaction too short/i, rejected('malformed transaction')],
-  [
-    /max priority fee per gas higher than max fee per gas|tip above fee cap/i,
-    rejected('priority fee above the fee cap'),
-  ],
+const REJECTED: readonly Rejection[] = [
+  {
+    pattern: /invalid chain id/i,
+    result: rejected('wrong chain id'),
+    holds: (sent, chainId) =>
+      sent !== 'malformed' && sent.chainId !== undefined && sent.chainId !== chainId,
+  },
+  {
+    pattern: /invalid sender|invalid signature|invalid transaction v, r, s values/i,
+    result: rejected('invalid signature'),
+    holds: (sent) => sent !== 'malformed' && !signatureValuesValid(sent),
+  },
+  {
+    pattern: /\brlp:|typed transaction too short/i,
+    result: rejected('malformed transaction'),
+    holds: (sent) => sent === 'malformed',
+  },
+  {
+    pattern: /max priority fee per gas higher than max fee per gas|tip above fee cap/i,
+    result: rejected('priority fee above the fee cap'),
+    holds: (sent) =>
+      sent !== 'malformed' &&
+      sent.type === 2 &&
+      (sent.maxPriorityFeePerGas as bigint) > (sent.maxFeePerGas as bigint),
+  },
 ];
 
 const REFUSED_BY_NODE = refused('TX_REFUSED', 'refused by the node');
@@ -79,13 +101,45 @@ const REFUSED_BY_NODE = refused('TX_REFUSED', 'refused by the node');
  * refusal patterns are checked first ("invalid sender: transaction type not supported" is a
  * refusal), and an unlisted text is a refusal.
  */
-export function classifyBroadcastError(message: string): BroadcastResult {
-  if (ALREADY_KNOWN.test(message)) return ALREADY_KNOWN_RESULT;
+function classified(message: string): {
+  readonly result: BroadcastResult;
+  readonly rejection?: Rejection;
+} {
+  if (ALREADY_KNOWN.test(message)) return { result: ALREADY_KNOWN_RESULT };
   for (const [pattern, result] of REFUSED) {
-    if (pattern.test(message)) return result;
+    if (pattern.test(message)) return { result };
   }
-  for (const [pattern, result] of REJECTED) {
-    if (pattern.test(message)) return result;
-  }
-  return REFUSED_BY_NODE;
+  const rejection = REJECTED.find((entry) => entry.pattern.test(message));
+  return rejection
+    ? { result: rejection.result, rejection }
+    : { result: REFUSED_BY_NODE };
+}
+
+/** The node's answer at its word (see `classifyOwnBroadcast` for the bytes we sent). */
+export function classifyBroadcastError(message: string): BroadcastResult {
+  return classified(message).result;
+}
+
+/** A rejection this driver cannot confirm for the bytes it sent: observed, never terminal. */
+const UNCONFIRMED: BroadcastResult = refused(
+  'TX_REFUSED',
+  'the node claimed the transaction is invalid',
+);
+
+/**
+ * Lesson 21 (F3-R11, F4-R20): a node's rejection is a claim. The answer to `sentHex`, the
+ * bytes this driver sent on the network whose chain id is `chainId`: a `rejected` stands
+ * only when its reason holds for those bytes, read SDK-free (`readSentTx`); otherwise it is a
+ * refusal, so a lying endpoint that relays our bytes can never end the Operation and invite
+ * a second payment. Every other answer is the node's, as `classifyBroadcastError` reads it.
+ */
+export function classifyOwnBroadcast(
+  message: string,
+  sentHex: string,
+  chainId: bigint,
+): BroadcastResult {
+  const { result, rejection } = classified(message);
+  if (!rejection) return result;
+  const sent = readSentTx(sentHex);
+  return sent !== undefined && rejection.holds(sent, chainId) ? result : UNCONFIRMED;
 }

@@ -692,7 +692,7 @@ describe('containers', () => {
       ),
     ).toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown wallet 'main'/),
+      message: 'unknown wallet; none is configured',
     });
   });
 
@@ -807,7 +807,7 @@ describe('containers', () => {
     ).toMatchObject({
       name: 'ConfigError',
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown wallet 'constructor'/),
+      message: expect.stringMatching(/^unknown wallet; /),
     });
   });
 

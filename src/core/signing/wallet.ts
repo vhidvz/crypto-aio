@@ -159,10 +159,20 @@ export async function resolveWallet(
     watchOnly: !primary,
     ...(config.tier !== undefined ? { tier: config.tier } : {}),
     signerFor: (ref) => {
-      const routed = ref?.id !== undefined ? config.signers?.[ref.id] : undefined;
+      // Own keys only (F3-R2): a key ref named `toString` routes nowhere.
+      const routes = config.signers ?? {};
+      const routed =
+        ref?.id !== undefined && Object.hasOwn(routes, ref.id)
+          ? routes[ref.id]
+          : undefined;
       const id = routed ?? primary?.id;
       if (id === undefined) return undefined;
-      const signer = id === primary?.id ? primary.instance : signers[id];
+      const signer =
+        id === primary?.id
+          ? primary.instance
+          : Object.hasOwn(signers, id)
+            ? signers[id]
+            : undefined;
       return signer ? { id, signer } : undefined;
     },
     signerById: (id) => {

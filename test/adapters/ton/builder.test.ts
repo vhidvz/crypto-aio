@@ -883,6 +883,9 @@ describe('the TON broadcaster', () => {
     }
   });
 
+  // Four fresh transports and a timeout on the fake clock: `--detectOpenHandles` slows it
+  // past Jest's 5-second default, so it carries an explicit budget (as
+  // probe-rate-limit.test.ts does).
   it('rethrows 429, 408, 5xx and timeouts unclassified: the ambiguous path', async () => {
     type Reply = (signal: AbortSignal | undefined) => FakeReply | Promise<FakeReply>;
     const replies: readonly (readonly [Reply, Record<string, unknown>])[] = [
@@ -910,7 +913,7 @@ describe('the TON broadcaster', () => {
       );
       expect(s.h.node.served.some((r) => r.route === '/sendBocReturnHash')).toBe(true);
     }
-  });
+  }, 30_000);
 
   it('never classifies a 4xx after an attempt that may have been delivered (D16)', async () => {
     const s = setup();

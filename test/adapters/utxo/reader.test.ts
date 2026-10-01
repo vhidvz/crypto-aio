@@ -63,7 +63,7 @@ describe('the address codec', () => {
         expect.objectContaining({
           code: 'CONFIG_INVALID',
           message:
-            'wallet.utxo has an unknown option; the options are addressType, changeAddress, allowExternalChangeAddress',
+            "wallet.utxo has an unknown option; the accepted names are 'addressType', 'allowExternalChangeAddress' and 'changeAddress'",
         }),
       );
     }

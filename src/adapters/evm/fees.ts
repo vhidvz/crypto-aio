@@ -97,6 +97,48 @@ export function gasLimitFrom(estimate: bigint): bigint {
 
 const invalid = (reason: string) => new ValidationError('INVALID_INTENT', reason);
 
+/**
+ * Plan 7 D6 (F4-R28's shape): the default `maxFeePerGas`, the highest price per gas an EVM
+ * transaction signs, 1,000 gwei. It bounds a plain transfer at 0.021 and a 65,000-gas token
+ * transfer at 0.065 of the native coin, however an endpoint prices the fee.
+ */
+export const DEFAULT_MAX_FEE_PER_GAS = 1_000_000_000_000n;
+
+/** The highest price per gas `params` may pay: the fee cap, or the legacy gas price. */
+export function priceCap(params: EvmFeeParams): bigint {
+  return params.type === 'eip1559' ? params.maxFeePerGas : params.gasPrice;
+}
+
+/**
+ * A node's suggestion within the ceiling (D6): the fee cap or gas price at most `ceiling`,
+ * and the tip at most the fee cap. No endpoint can raise what a transfer signs.
+ */
+export function capPrice(params: EvmFeeParams, ceiling: bigint): EvmFeeParams {
+  if (params.type === 'legacy')
+    return { type: 'legacy', gasPrice: min(params.gasPrice, ceiling) };
+  const maxFeePerGas = min(params.maxFeePerGas, ceiling);
+  return {
+    type: 'eip1559',
+    maxFeePerGas,
+    maxPriorityFeePerGas: min(params.maxPriorityFeePerGas, maxFeePerGas),
+  };
+}
+
+/**
+ * Refuses, before anything is signed, a fee whose price per gas is above `ceiling` (the
+ * handle's `maxFeePerGas`), whatever produced it: an explicit override, a stored fee, or a
+ * cancel's least bump. The details carry the price and the bound as decimal strings.
+ */
+export function assertWithinCeiling(params: EvmFeeParams, ceiling: bigint): void {
+  const price = priceCap(params);
+  if (price <= ceiling) return;
+  throw new ValidationError(
+    'INVALID_INTENT',
+    'the fee is above maxFeePerGas, the EVM handle option that bounds it (wei per gas)',
+    { details: { required: price.toString(), maxFeePerGas: ceiling.toString() } },
+  );
+}
+
 /** Validates an `EvmFeeOverride` against the network's fee model. */
 export function parseFeeOverride(
   override: FeeOverride,

@@ -3,6 +3,7 @@ import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
 import { ConfigError } from '../errors/error';
 import type { SigningParams } from '../signing/types';
 import { equalBytes } from '../util/bytes';
+import { unknownName } from '../util/names';
 
 export interface VerifyInput {
   readonly publicKey: Uint8Array;
@@ -90,8 +91,12 @@ export class SchemeCatalog {
 
   get(id: string): SignatureScheme {
     const scheme = this.#schemes.get(id);
-    if (!scheme)
-      throw new ConfigError('CONFIG_INVALID', `unknown signature scheme '${id}'`);
+    if (!scheme) {
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        unknownName('signature scheme', this.#schemes.keys()),
+      );
+    }
     return scheme;
   }
 

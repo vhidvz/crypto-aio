@@ -24,6 +24,12 @@ export interface TransportOptions {
   readonly failureThreshold?: number;
   readonly openMs?: number;
   readonly healthIntervalMs?: number;
+  /**
+   * The most bytes one answer may carry (default 64 MiB). A longer answer, by its declared
+   * length or as it arrives, is cancelled and fails as a retryable `PROVIDER_UNAVAILABLE`,
+   * so one endpoint can never make a call hold unbounded memory (lesson 20).
+   */
+  readonly maxResponseBytes?: number;
 }
 
 export interface CallOptions {

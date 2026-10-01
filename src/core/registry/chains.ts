@@ -1,5 +1,6 @@
 import { ConfigError } from '../errors/error';
 import type { ChainInfo, NetworkInfo } from '../model/chain';
+import { unknownName } from '../util/names';
 
 export class ChainCatalog {
   readonly #chains = new Map<string, ChainInfo>();
@@ -22,11 +23,8 @@ export class ChainCatalog {
   get(id: string): ChainInfo {
     const chain = this.#chains.get(id);
     if (!chain) {
-      const known = [...this.#chains.keys()].join(', ') || 'none';
-      throw new ConfigError(
-        'CONFIG_INVALID',
-        `unknown chain '${id}' (registered: ${known})`,
-      );
+      // F6-R24: the caller's text is never repeated; the registered chains are listed.
+      throw new ConfigError('CONFIG_INVALID', unknownName('chain', this.#chains.keys()));
     }
     return chain;
   }
@@ -37,12 +35,14 @@ export class ChainCatalog {
 
   network(chainId: string, networkId: string): NetworkInfo {
     const chain = this.get(chainId);
-    const network = chain.networks[networkId];
+    // Own keys only: `toString` or `constructor` is not a network (F3-R2).
+    const network = Object.hasOwn(chain.networks, networkId)
+      ? chain.networks[networkId]
+      : undefined;
     if (!network) {
-      const supported = Object.keys(chain.networks).join(', ');
       throw new ConfigError(
         'CONFIG_INVALID',
-        `unknown network '${networkId}' for chain '${chainId}' (supported: ${supported})`,
+        unknownName(`network for chain '${chain.id}'`, Object.keys(chain.networks)),
       );
     }
     return network;

@@ -6,6 +6,7 @@
 import { ConfigError } from '../../core/errors/error';
 import { KNOWN_CAPABILITIES, type Capability } from '../../core/model/capability';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { unknownName } from '../../core/util/names';
 import type { AddressParams } from './types';
 
 /** Every capability of a UTXO network (the indexer is required, spec §15). */
@@ -67,14 +68,6 @@ const OPTION_KEYS = new Set([
   'coinSelection',
   'rbf',
 ]);
-
-/**
- * A name from the configuration (an option key) as an error may show it: a short plain
- * identifier only, so a pasted value never reaches a message or a log.
- */
-function named(key: string): string {
-  return /^[A-Za-z0-9_.:-]{1,40}$/.test(key) ? `'${key}'` : '(name not shown)';
-}
 
 /**
  * F3-R15 (as Tron's F4-R2 M3): a network's capability overrides, checked against what the
@@ -162,7 +155,8 @@ export function utxoNetworkConfig(
     params.feeFallback === undefined ? undefined : rate(params, 'feeFallback', 'params');
 
   for (const key of Object.keys(options)) {
-    if (!OPTION_KEYS.has(key)) fail(`unknown option ${named(key)}`);
+    // F3-R16: the accepted names, never the caller's key (it may be a pasted secret).
+    if (!OPTION_KEYS.has(key)) fail(unknownName('option', OPTION_KEYS));
   }
   const merged = { ...OPTION_DEFAULTS, ...options };
   const maxFeeRate = rate(merged, 'maxFeeRate', 'options');

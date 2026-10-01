@@ -9,8 +9,8 @@ import {
 } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
-import { redactText } from '../secret/redact';
-import { REDACTED, reveal } from '../secret/secret';
+import { createScrubber, endpointSecrets } from '../secret/fragments';
+import { reveal } from '../secret/secret';
 import { randomId } from '../util/bytes';
 import type { Clock } from '../util/clock';
 import { parseJson, quorumJson } from '../util/json';
@@ -42,6 +42,8 @@ const DEFAULTS = {
   failureThreshold: 5,
   openMs: 30_000,
   healthIntervalMs: 15_000,
+  /** Plan 7 D10: an answer's byte cap; a full Solana block in `jsonParsed` stays far below. */
+  maxResponseBytes: 64 * 1024 * 1024,
 };
 
 type ResolvedOptions = typeof DEFAULTS & { fetch?: typeof fetch };
@@ -62,6 +64,18 @@ const MAX_RETRY_AFTER_MS = 60_000;
  * sustained outage, not a hiccup). */
 const HEALTH_MISS_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
+/**
+ * Plan 7 D10 (F4-R24, F6-R28): whether a probe failed only because the endpoint rate-limited
+ * it, directly or as the cause of a failed identity check. Such a probe learned nothing
+ * about the endpoint's health, which keeps its last good height and identity.
+ */
+function rateLimited(error: unknown): boolean {
+  return (
+    isCryptoAioError(error, 'RATE_LIMITED') ||
+    (error instanceof Error && isCryptoAioError(error.cause, 'RATE_LIMITED'))
+  );
+}
+
 /** N1: statuses that must never carry a body on the Response passed back to the SDK. */
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
@@ -84,7 +98,9 @@ interface Endpoint {
   readonly kind: 'rpc' | 'indexer';
   readonly url: string;
   readonly headers: Readonly<Record<string, string>>;
-  readonly secrets: readonly string[];
+  /** F3-R20: removes this endpoint's URL, header values and every secret fragment of them
+   * from a text; with `limit`, reads and returns at most that many characters. */
+  readonly scrub: (text: string, limit?: number) => string;
   readonly priority: number;
   readonly timeoutMs?: number;
   readonly breaker: CircuitBreaker;
@@ -136,6 +152,10 @@ function validateOptions(options: TransportOptions): void {
     if (value !== undefined && !(Number.isFinite(value) && value > 0)) {
       throw new ConfigError('CONFIG_INVALID', `${key} must be a finite number > 0`);
     }
+  }
+  const cap = options.maxResponseBytes;
+  if (cap !== undefined && !(Number.isSafeInteger(cap) && cap > 0)) {
+    throw new ConfigError('CONFIG_INVALID', 'maxResponseBytes must be an integer > 0');
   }
 }
 
@@ -252,8 +272,11 @@ export class HttpTransport implements Transport {
   #probes: HealthProbes = {};
   #best: bigint | undefined;
   #highest: bigint | undefined;
-  /** I2: the highest height ever verified by an identity-checked endpoint; never lowered. */
+  /** I2: the highest height verified by an identity-checked endpoint; lowered only by
+   * `#decayPeak`. */
   #verifiedPeak: bigint | undefined;
+  /** Plan 7 D10: completed refreshes in a row whose verified best stayed below the peak. */
+  #peakMisses = 0;
   #lastHealthAt = Number.NEGATIVE_INFINITY;
   /** #3 (round 3): set after a refresh where every probe failed, so ensureFreshHealth backs
    * off instead of storming the same down endpoints on every read during an outage. */
@@ -311,20 +334,12 @@ export class HttpTransport implements Transport {
         }
         headers[name] = revealed;
       }
-      const pathAndQuery = `${parsed.pathname}${parsed.search}`;
-      const secrets = [
-        url,
-        parsed.href,
-        ...(pathAndQuery.length > 1 ? [pathAndQuery] : []),
-      ];
-      for (const value of Object.values(headers))
-        if (value.length >= 4) secrets.push(value);
       return {
         id,
         kind: config.kind ?? 'rpc',
         url,
         headers,
-        secrets: secrets.sort((a, b) => b.length - a.length),
+        scrub: createScrubber(`<${id}>`, endpointSecrets(url, headers)),
         priority: config.priority ?? 0,
         ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
         breaker: new CircuitBreaker(
@@ -495,7 +510,7 @@ export class HttpTransport implements Transport {
           // I1: buffer the whole body here, while the deadline and the caller's signal are
           // still attached, and hand the SDK a fresh Response whose `url` is always '' — the
           // real endpoint URL (and any secret it carries) never reaches the SDK.
-          const buffer = await response.arrayBuffer();
+          const buffer = await this.#body(endpoint, response);
           this.#emitResponse(endpoint, label, started, buffer.byteLength);
           // N1: the Response constructor throws if a body is given alongside a status that
           // must never carry one.
@@ -1336,9 +1351,9 @@ export class HttpTransport implements Transport {
       },
       signal,
       mode,
-      // Error message text keeps the real path (unchanged, existing behaviour); only the
-      // event label above is route-based to avoid leaking identifiers into events.
-      `${request.method} ${request.path}`,
+      // F3-R20 (Plan 7 D2): error texts name the route template, as events do, never the
+      // concrete path, which carries addresses and transaction ids.
+      routeLabel(request.method, request.route),
       exactIntegers,
     );
     return (mode === 'text' ? text : json) as T;
@@ -1401,7 +1416,8 @@ export class HttpTransport implements Transport {
       signal,
       redirect: 'error',
     });
-    const text = await response.text();
+    const bytes = await this.#body(endpoint, response);
+    const text = new TextDecoder().decode(bytes);
     this.#throwForStatus(endpoint, response);
     const context = this.#context(endpoint);
     let json: unknown;
@@ -1449,14 +1465,57 @@ export class HttpTransport implements Transport {
             context,
             details: {
               status: response.status,
-              body: this.#scrub(endpoint, text).slice(0, 300),
+              body: endpoint.scrub(text, 300),
             },
           },
         );
       }
     }
-    this.#emitResponse(endpoint, label, started, new TextEncoder().encode(text).length);
+    this.#emitResponse(endpoint, label, started, bytes.byteLength);
     return { text, json };
+  }
+
+  /**
+   * Plan 7 D10 (lesson 20): an answer's body, at most `maxResponseBytes`. A longer one, by
+   * its declared length or as it streams, is cancelled and fails as a retryable
+   * `PROVIDER_UNAVAILABLE`, tagged as possibly delivered, since the server did answer (R16).
+   */
+  async #body(endpoint: Endpoint, response: Response): Promise<Uint8Array> {
+    const limit = this.#opts.maxResponseBytes;
+    const tooLarge = () =>
+      this.#markSent(
+        new ProviderError(
+          'PROVIDER_UNAVAILABLE',
+          `endpoint answered more than ${limit} bytes`,
+          { context: this.#context(endpoint) },
+        ),
+      );
+    const declared = Number(response.headers.get('content-length') ?? Number.NaN);
+    if (declared > limit) {
+      void response.body?.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    if (!response.body) return new Uint8Array(0);
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        void reader.cancel().catch(() => undefined);
+        throw tooLarge();
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(size);
+    let at = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, at);
+      at += chunk.byteLength;
+    }
+    return out;
   }
 
   /** M9: the `rpc.response` event is emitted identically from `#exchange` and the SDK bridge. */
@@ -1565,18 +1624,18 @@ export class HttpTransport implements Transport {
     if (hasError) {
       const err = body.error as { code?: unknown; message?: unknown; data?: unknown };
       const code = typeof err.code === 'number' ? err.code : undefined;
-      const message = this.#scrub(
-        endpoint,
+      const message = endpoint.scrub(
         typeof err.message === 'string' ? err.message : 'unknown error',
-      ).slice(0, 300);
+        300,
+      );
       const rawData = err.data;
       const data =
         rawData === undefined
           ? undefined
-          : this.#scrub(
-              endpoint,
+          : endpoint.scrub(
               typeof rawData === 'string' ? rawData : stringifyData(rawData),
-            ).slice(0, 512);
+              512,
+            );
       const details = {
         rpcCode: code,
         rpcMessage: message,
@@ -1709,7 +1768,11 @@ export class HttpTransport implements Transport {
       // throttle, or a single-endpoint transport could be locked out entirely.
       const callerAborted = signal.aborted && signal.reason !== TIMEOUT;
       if (!callerAborted) {
-        endpoint.identityRetryAt = this.#clock.now() + this.#opts.healthIntervalMs;
+        // Plan 7 D10: a rate-limited probe waits out the endpoint's own delay (its
+        // Retry-After, or backoff), not a whole health interval.
+        endpoint.identityRetryAt = rateLimited(error)
+          ? endpoint.notBefore
+          : this.#clock.now() + this.#opts.healthIntervalMs;
       }
       const failure = this.#identityProbeFailed(endpoint, error, signal);
       if (callerAborted) this.#abandonedChecks.add(failure);
@@ -1760,7 +1823,8 @@ export class HttpTransport implements Transport {
       transportId: this.id,
       endpointId: endpoint.id,
       expected: sanitizeIdentityField(expected),
-      actual: sanitizeIdentityField(String(actual)),
+      // F3-R20: an endpoint could answer its identity probe with our own key.
+      actual: sanitizeIdentityField(endpoint.scrub(String(actual), 256)),
     });
     this.#log.warn('endpoint serves a different network; disabled', {
       endpointId: endpoint.id,
@@ -1811,6 +1875,10 @@ export class HttpTransport implements Transport {
     let anyAbandoned = false;
     await Promise.all(
       targets.map(async (endpoint) => {
+        // Plan 7 D10: an endpoint that asked us to wait (a 429's Retry-After, or backoff) is
+        // not probed until then, and keeps its last height and identity meanwhile: neither
+        // a miss nor a success.
+        if (endpoint.notBefore > this.#clock.now()) return;
         // I8: the shared run is never bound to any single caller's signal; each probe only
         // ever times out against its own deadline.
         const { signal: deadline, cancel } = this.#deadline(
@@ -1860,6 +1928,9 @@ export class HttpTransport implements Transport {
           }
           anySucceeded = true;
         } catch (error) {
+          // Plan 7 D10 (F4-R24, F6-R28): a rate-limited probe learned nothing, so the
+          // endpoint keeps its last good height and identity and records no miss.
+          if (rateLimited(error)) return;
           // I8 round 2 / R19: a failed identity or height probe clears the stored height
           // instead of leaving it stale, so the endpoint counts as unknown.
           endpoint.height = undefined;
@@ -1889,6 +1960,7 @@ export class HttpTransport implements Transport {
       // I2: with an identity probe, `best` came from identity-verified endpoints only.
       if (this.#identityProbed())
         this.#verifiedPeak = maxHeight(this.#verifiedPeak, best);
+      this.#decayPeak(best);
     }
     for (const status of this.status()) {
       // 'half-open' has no matching value in the provider.health event payload; 'unknown'
@@ -1931,24 +2003,30 @@ export class HttpTransport implements Transport {
     }
   }
 
+  /**
+   * Plan 7 D10 (F4-R20 (2), F6-R22): the high-water mark only rose, so one probe that saw a
+   * forged far-future head made every view stale until restart. A peak that no verified
+   * endpoint comes within `maxLagBlocks` of, for three completed refreshes in a row (A24's
+   * count), falls back to the refresh's verified best. Liveness only: a stale view decides
+   * nothing, and proofs never read this mark.
+   */
+  #decayPeak(best: bigint): void {
+    const peak = this.#highest;
+    if (peak === undefined || best + BigInt(this.#opts.maxLagBlocks) >= peak) {
+      this.#peakMisses = 0;
+      return;
+    }
+    this.#peakMisses += 1;
+    if (this.#peakMisses < HEALTH_MISS_LIMIT) return;
+    this.#peakMisses = 0;
+    this.#highest = best;
+    this.#verifiedPeak = best;
+  }
+
   // ---- errors ----------------------------------------------------------------------
 
   #context(endpoint: Endpoint): { transportId: string; endpointId: string } {
     return { transportId: this.id, endpointId: endpoint.id };
-  }
-
-  /** Replaces the endpoint URL and header values with placeholders, then redacts URLs. */
-  #scrub(endpoint: Endpoint, text: string): string {
-    let out = text;
-    for (const value of endpoint.secrets)
-      out = out
-        .split(value)
-        .join(
-          value === endpoint.url || value.startsWith('http')
-            ? `<${endpoint.id}>`
-            : REDACTED,
-        );
-    return redactText(out);
   }
 
   #classify(error: unknown, endpoint: Endpoint, signal: AbortSignal): CryptoAioError {
@@ -1965,7 +2043,7 @@ export class HttpTransport implements Transport {
     const inner =
       error instanceof Error && error.cause instanceof Error ? error.cause : error;
     const clean = new Error(
-      this.#scrub(endpoint, inner instanceof Error ? inner.message : String(inner)),
+      endpoint.scrub(inner instanceof Error ? inner.message : String(inner), 1_000),
     );
     clean.name = inner instanceof Error ? inner.name : 'Error';
     clean.stack = `${clean.name}: ${clean.message}`;

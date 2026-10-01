@@ -48,6 +48,7 @@ import { resolveWallet, walletOptionsOf, xpubPathOf } from '../signing/wallet';
 import type { OperationRecord } from '../store/types';
 import type { EndpointState, EndpointStatus } from '../transport/types';
 import { fromHex } from '../util/bytes';
+import { unknownName } from '../util/names';
 import { defaultBlockchain } from './default-ref';
 import { bindInternals, internalsOf, type HandleInternals } from './internal';
 import {
@@ -206,7 +207,10 @@ export class Blockchain<C extends ChainId = ChainId> {
     // N1: an own-property check, so a wallet literally named 'constructor' (or any other
     // Object.prototype key) can never be mistaken for one that exists.
     if (!Object.hasOwn(effective.wallets, wallet)) {
-      throw new ConfigError('CONFIG_INVALID', `unknown wallet '${wallet}'`);
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        unknownName('wallet', Object.keys(effective.wallets)),
+      );
     }
     const { driver } = await internals.pooled();
     const resolved = resolveSelection({
@@ -239,7 +243,15 @@ export class Blockchain<C extends ChainId = ChainId> {
       );
     }
     const internals = internalsOf(this);
-    const config = containerOf(internals.container).effective().wallets[wallet];
+    const { wallets } = containerOf(internals.container).effective();
+    // Own keys only (F3-R2), and the caller's text is never repeated (F6-R24).
+    if (!Object.hasOwn(wallets, wallet)) {
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        unknownName('wallet', Object.keys(wallets)),
+      );
+    }
+    const config = wallets[wallet];
     if (!config?.xpub)
       throw new ConfigError('CONFIG_INVALID', `wallet '${wallet}' has no xpub`);
     // O1: a non-string xpubPath is CONFIG_INVALID, as at wallet resolution.

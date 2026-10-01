@@ -62,7 +62,8 @@ describe('the built-in Solana plugin', () => {
     ).toThrow(
       expect.objectContaining({
         code: 'INCOMPATIBLE_SELECTION',
-        message: expect.stringContaining('supported: @solana/web3.js'),
+        message:
+          "unknown library for chain 'solana'; the only accepted name is '@solana/web3.js'",
       }),
     );
     await aio.close();

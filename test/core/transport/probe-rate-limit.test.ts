@@ -45,6 +45,8 @@ const both: HealthProbes = {
   height: async (call) => BigInt(await call.rpc<string>('height')),
 };
 
+// The three long tests drive thousands of fake-clock steps; `--detectOpenHandles` slows each
+// past Jest's 5-second default, so they carry explicit budgets (Plan 4 handoff §6).
 describe('health probes inside the rate limit (A17)', () => {
   it('keeps a 1 request/second endpoint healthy through probes and reads', async () => {
     const { fake, state } = oneRequestPerSecond();
@@ -91,7 +93,7 @@ describe('health probes inside the rate limit (A17)', () => {
     ).resolves.toBe('ok');
     await drive(clock, Promise.allSettled(reads));
     expect(state.limited).toBe(0);
-  });
+  }, 30_000);
 
   it('puts probes ahead of reads already waiting for tokens (M1: no probe starvation)', async () => {
     const { fake, state } = oneRequestPerSecond();
@@ -110,7 +112,7 @@ describe('health probes inside the rate limit (A17)', () => {
     expect(transport.status()[0]).toMatchObject({ state: 'healthy', height: 100n });
     await drive(clock, Promise.allSettled(reads));
     expect(state.limited).toBe(0);
-  });
+  }, 30_000);
 
   it('keeps a failed first-use identity probe as the request error, spending no token (M2)', async () => {
     const methods: string[] = [];
@@ -168,5 +170,6 @@ describe('health probes inside the rate limit (A17)', () => {
       );
       expect(methods.filter((name) => name === 'height').length).toBeGreaterThan(1);
     },
+    30_000,
   );
 });

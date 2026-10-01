@@ -151,7 +151,7 @@ private key in a `Secret`. Redaction happens in these places:
 | --- | --- |
 | Provider URLs | A `Secret` URL shows as `https://host/[REDACTED]`. In a plain URL, user info, query values and key-like path segments (16 or more characters) are redacted |
 | Headers | `Secret` values, and headers named like `authorization`, `api-key`, `token`, `secret` or `cookie` |
-| Errors | Transport errors name the endpoint (`<provider/endpoint>`), never its URL. A REST error's text may carry the request path, such as an address or a txid, but never the host or a credential. Signer failures carry a sanitized cause |
+| Errors | Transport errors name the endpoint (`<provider/endpoint>`), never its URL. Every part of an endpoint's configuration a provider may echo back is removed from error messages, `details` and causes, in any letter case: a key in a path segment, a query value, a header value or the token after an auth scheme (as `[REDACTED]`, for parts of 8 characters or more, and whole URLs and header values of any length). A REST error names the route template, such as `GET /address/:address/txs`, never the path with its address or txid. Signer failures carry a sanitized cause |
 | `bc.config` | A frozen, redacted snapshot of the resolved configuration |
 | Events | Operational data only: no URLs, addresses, amounts, raw transactions or signatures |
 | Logs | `createLogger` redacts URLs in messages, and fields named like `key`, `secret`, `token`, `password`, `passphrase`, `mnemonic`, `private`, `seed`, `authorization` or `cookie` |
@@ -159,6 +159,11 @@ private key in a `Secret`. Redaction happens in these places:
 
 `redactUrl(url)` and `redactDeep(value)` are exported for your own logging. Log a library
 error by its `code`, or by `error.toJSON()`, which leaves out the cause chain.
+
+An error never repeats a name you typed that the library does not know: a chain, network,
+library, provider, wallet, signer, signature scheme, asset alias, option key or capability.
+It lists the names it accepts instead (`unknown wallet; the accepted names are 'cold' and
+'hot'`), so a secret pasted into the wrong field never reaches a message or a log.
 
 ## Data classification (for store implementers)
 
@@ -214,6 +219,9 @@ const client = await native(env.bc, 'fake-sdk'); // native(eth, 'ethers'), nativ
   Import `crypto-aio/ton` once to type it. Its `send*` methods are broadcasts: a send that
   fails may still have been delivered, so treat it as sent until the chain shows otherwise.
   Errors that `@ton/ton` raises itself may carry the node's whole answer.
+- **An SDK's own errors are not scrubbed.** The client never sees the real URL or key, but
+  an error the SDK raises itself may quote the provider's answer, and a provider may echo
+  your key in it. Log a native client's errors by type or code, not by message.
 - The root container's `close()` closes every native client handed out, once, then the
   driver pool. A client that fails to close is logged by error code only. After that,
   `native()` and the handle's methods throw `INVALID_TRANSITION`.
@@ -299,19 +307,24 @@ transfer resolves, and which addresses a scan filter matches.
 - [ ] Custody signers (`callbackSigner`) for significant balances. No `exportable` keys. No
       keys in config files or source control. Every credential in a `Secret`.
 - [ ] An idempotent, short `beforeSign` hook in front of your own policy engine.
-- [ ] At least two independent providers per network, so proofs are cross-checked. No
-      `public` preset in production.
+- [ ] Two or three independent providers per network, so proofs are cross-checked: with
+      two, an outage of one leaves the other deciding alone, so use three for production
+      proofs. No `public` preset in production.
 - [ ] Tron: memos are public forever and cost a fee; never put personal data in one. Use the
       `trongrid` preset with a key on mainnet (keyless TronGrid fails there), next to a
       second, independent provider.
 - [ ] `await bc.ready()` at startup, to fail fast on a missing SDK or a misconfigured provider.
 - [ ] `aio.operations.recover()` at startup, then `aio.monitor.start()` workers. Alerts on
       `operation.stalled`, `nonce.gap`, `recovery.skipped` and `provider.misconfigured`.
-- [ ] Credit and complete only on `final` with `proven` evidence. Dedupe deposits on the
+- [ ] Complete withdrawals only on `final` with `proven` evidence. Credit deposits, which
+      are `observed` in every family, only once read `final`, and automatically (or above
+      your risk threshold) only once an independent provider reads the same transfer final
+      ([Crediting deposits](./transactions.md#crediting-deposits)). Dedupe deposits on the
       transfer id. On Bitcoin, skip a transfer whose `to` is among its `from` addresses
       (change, a cancel's refund), and never use a scanned deposit address as a change
       address.
 - [ ] `await aio.close()` on shutdown.
+- [ ] EVM: `maxFeePerGas` set to your fee policy (1,000 gwei per gas by default).
 - [ ] Bitcoin: your own Esplora, with two or three independent endpoints as the `provider`;
       `lifecycle.broadcastFanout` of 2 or more; `nonWitnessUtxo` left on for hardware
       signers; and `allowExternalChangeAddress` only for a verified address.
@@ -325,6 +338,5 @@ transfer resolves, and which addresses a scan filter matches.
       (`TonSeqnoOrdering`, `validFrom` included) exactly; a server clock in sync (builds
       refused for chain-time skew mean fix the clock); and jetton deposits credited only
       from the arrival in the owner's jetton wallet's history, never from the owner's
-      notification, deduped on that transfer id, not on the trace id. TON deposits are
-      `observed` only, an exception to "credit only on `proven`" above: credit one only
-      once an independent provider and indexer pair has read it final and agrees on it.
+      notification, deduped on that transfer id, not on the trace id; the independent read
+      that confirms a TON deposit uses another provider **and** indexer pair.

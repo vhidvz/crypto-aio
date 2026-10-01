@@ -23,14 +23,14 @@ valid (`TX_REJECTED`): such bytes can never land, so that verdict needs no chain
 
 ## Status
 
-The library ships in roadmap milestones called plans. Plan 1, the core, and Plan 2, the
-**EVM family**, are complete: Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain,
-Arbitrum, Optimism and Base, through ethers (the default) or web3. The fake family from
-`crypto-aio/testing` is a deterministic, in-memory chain for learning and testing. Plan 3,
-the **UTXO family**, Plan 4, the **Tron family**, Plan 5, the **Solana family**, and Plan 6,
-the **TON family**, are complete too: Bitcoin (mainnet, testnet, testnet4, signet, regtest)
-through bitcoinjs-lib and an Esplora indexer, Tron through tronweb, Solana (mainnet, devnet
-and testnet) through `@solana/web3.js`, and TON (mainnet and testnet) through `@ton/ton`.
+These guides describe crypto-aio 0.1.0, the first release of this API. It ships the core and
+five chain families: the **EVM family** (Ethereum, BNB Smart Chain, Polygon, Avalanche
+C-Chain, Arbitrum, Optimism and Base, through ethers, the default, or web3), the **UTXO
+family** (Bitcoin: mainnet, testnet, testnet4, signet and regtest, through bitcoinjs-lib and
+an Esplora indexer), the **Tron family** (tronweb), the **Solana family** (mainnet, devnet
+and testnet, through `@solana/web3.js`) and the **TON family** (mainnet and testnet, through
+`@ton/ton`; its coin is Gram, formerly Toncoin). The fake family from `crypto-aio/testing` is
+a deterministic, in-memory chain for learning and testing.
 
 **Only in-memory stores ship.** They work in one process and lose everything on restart.
 In production you supply your own `OperationStore`, `LockManager`, `SequenceStore` and
@@ -76,6 +76,19 @@ installed (`npm install @ton/ton @ton/core @ton/crypto`), with toncenter's API v
 | [Sending and receiving](./transactions.md) | Build withdrawals and deposit scanning, and handle errors |
 | [Keys, signers and secrets](./security.md) | Choose a signer, add a policy hook, protect secrets, go to production |
 | [Using any blockchain network](./networks.md) | See what each EVM, Bitcoin, Tron, Solana and TON network supports, add your own, or write a chain family plugin |
+
+The design spec plans seven guides under `docs/guide/`; their topics live in the six guides
+above:
+
+| Spec guide | Where it is |
+| --- | --- |
+| `architecture.md` | [Core concepts](./concepts.md#the-layers) |
+| `configuration.md` | [Core concepts](./concepts.md#configuration-precedence) and [Keys, signers and secrets](./security.md#secrets-and-redaction) |
+| `transactions.md` | [Sending and receiving](./transactions.md#sending) |
+| `exchange-operations.md` | [Receiving](./transactions.md#receiving), [Crediting deposits](./transactions.md#crediting-deposits), [Background workers](./transactions.md#background-workers-and-startup-recovery) and the [production checklist](./security.md#production-checklist) |
+| `stores.md` | [Stores](./concepts.md#stores) and [Testing an adapter or a store](./networks.md#testing-an-adapter-or-a-store) |
+| `writing-adapters.md` | [A new family: the plugin API](./networks.md#3-a-new-family-the-plugin-api) |
+| `security.md` | [Keys, signers and secrets](./security.md) |
 
 ## API reference
 

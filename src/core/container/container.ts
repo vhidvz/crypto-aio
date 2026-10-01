@@ -54,6 +54,20 @@ import { DriverPool, type PooledDriver } from './pool';
 
 const NAMESPACE = /^[A-Za-z0-9._-]{1,64}$/;
 
+/**
+ * N3: the signal a worker loop, pass or recovery runs under: the caller's, if any, and the
+ * root's `closing`, which `close()` aborts. A closed container starts no new work.
+ */
+function workerSignal(
+  runtime: RootRuntime,
+  signal: AbortSignal | undefined,
+): AbortSignal {
+  if (runtime.closed) throw closedError();
+  return signal
+    ? AbortSignal.any([signal, runtime.closing.signal])
+    : runtime.closing.signal;
+}
+
 /** N6: how long `close()` waits for one native client's `close` before moving on. */
 export const NATIVE_CLOSE_TIMEOUT_MS = 5_000;
 
@@ -307,7 +321,10 @@ export class CryptoAio {
     }
     const namespace = options.namespace ?? 'default';
     if (!NAMESPACE.test(namespace))
-      throw new ConfigError('CONFIG_INVALID', `invalid namespace '${namespace}'`);
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        'invalid namespace: use 1 to 64 letters, digits, dots, underscores or hyphens',
+      );
     const clock = options.clock ?? systemClock;
     const log = options.logger ?? createLogger();
     const catalogs = createCatalogs();
@@ -350,6 +367,7 @@ export class CryptoAio {
       transport: options.transport ?? {},
       owner: randomId('aio'),
       closed: false,
+      closing: new AbortController(),
       natives: new Set(),
     };
     this.namespace = namespace;
@@ -473,7 +491,11 @@ export class CryptoAio {
             })
           ).map(view),
         ),
-      recover: (options) => internals.monitor().recover(options),
+      recover: async (options = {}) =>
+        internals.monitor().recover({
+          ...options,
+          signal: workerSignal(internals.runtime, options.signal),
+        }),
     };
   }
 
@@ -481,12 +503,16 @@ export class CryptoAio {
   get monitor(): MonitorApi {
     const internals = containerOf(this);
     return {
-      start: (options) => internals.monitor().start(options),
-      runOnce: (options = {}) =>
+      start: async (options = {}) =>
+        internals.monitor().start({
+          ...options,
+          signal: workerSignal(internals.runtime, options.signal),
+        }),
+      runOnce: async (options = {}) =>
         internals.monitor().runOnce({
           workerId: options.workerId ?? internals.runtime.owner,
           ...(options.batch !== undefined ? { batch: options.batch } : {}),
-          ...(options.signal ? { signal: options.signal } : {}),
+          signal: workerSignal(internals.runtime, options.signal),
         }),
     };
   }
@@ -502,6 +528,8 @@ export class CryptoAio {
     if (!internals.isRoot) return;
     const { runtime } = internals;
     runtime.closed = true;
+    // N3: every worker loop, pass and recovery stops at its next check, and its sleeps end.
+    runtime.closing.abort();
     const natives = [...runtime.natives];
     runtime.natives.clear();
     await Promise.all(

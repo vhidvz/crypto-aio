@@ -184,7 +184,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
       expect(caught).toMatchObject({
         code: 'CONFIG_INVALID',
         message:
-          "Tron network tron:nile: unknown option; the Tron driver's options are 'expirationMs', 'energyMarginPercent' and 'maxFeeLimit'",
+          "Tron network tron:nile: unknown option; the accepted names are 'energyMarginPercent', 'expirationMs' and 'maxFeeLimit'",
       });
       const { message } = caught as Error;
       expect(message).not.toContain(key);
@@ -283,12 +283,15 @@ describe('Tron chain data (verified, Appendix A)', () => {
       'finality-tag',
       'batch-transfer',
       'contract-read',
-      'acme:custom',
     ]) {
       expect(refusal(withCapabilities({ add: [capability] }))).toBe(
         `Tron network tron:nile: capabilities.add: the Tron driver does not have '${capability}'`,
       );
     }
+    // F3-R16: only a core capability's fixed name is shown; anything else may be pasted.
+    expect(refusal(withCapabilities({ add: ['acme:custom'] }))).toBe(
+      'Tron network tron:nile: capabilities.add: the Tron driver does not have an unknown capability',
+    );
     expect(refusal(withCapabilities({ add: ['address-history'] }))).toBe(
       "Tron network tron:nile: capabilities.add: 'address-history' comes with an indexer, never from the network",
     );
@@ -297,12 +300,12 @@ describe('Tron chain data (verified, Appendix A)', () => {
     );
     // A removal names a Tron capability, so a typo fails instead of leaving it advertised.
     expect(refusal(withCapabilities({ remove: ['memos'] }))).toBe(
-      "Tron network tron:nile: capabilities.remove: the Tron driver does not have 'memos'",
+      'Tron network tron:nile: capabilities.remove: the Tron driver does not have an unknown capability',
     );
     expect(refusal(withCapabilities({ add: 'memo' }))).toBe(
       'Tron network tron:nile: capabilities.add and capabilities.remove must be lists',
     );
-    // A name is shown only when short and plain, so a pasted value never reaches a message.
+    // A name that is not a core capability is never shown, so a pasted value never is.
     const long = 'x'.repeat(100_000);
     for (const network of [
       withCapabilities({ add: [long] }),
@@ -310,7 +313,7 @@ describe('Tron chain data (verified, Appendix A)', () => {
       withCapabilities({ add: ['memo\nsecret-value'] }),
     ]) {
       const message = refusal(network);
-      expect(message).toContain('(name not shown)');
+      expect(message).toContain('an unknown capability');
       expect(message.length).toBeLessThan(200);
       expect(message).not.toContain('secret-value');
     }

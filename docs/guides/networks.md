@@ -51,6 +51,14 @@ ethers and web3 clients.
   Smart Chain, Avalanche, Arbitrum and Base mainnets; `public` the networks whose chain
   documents a public endpoint (not Ethereum). The public Base, Arbitrum and OP Sepolia
   endpoints may refuse Node's `fetch` (a Cloudflare 403, seen as `PROVIDER_UNAVAILABLE`).
+- **Fee ceiling.** No transfer, replacement or cancel signs a price per gas above the
+  `maxFeePerGas` option, in wei as a bigint (`chains.<id>.options` or a handle's `options`;
+  1,000 gwei by default, `DEFAULT_MAX_FEE_PER_GAS` from `crypto-aio/evm`; a custom network
+  may set `params.maxFeePerGas`). A node's suggestion is clamped to it, and an explicit fee
+  or a cancel's least bump above it fails with `INVALID_INTENT` before signing
+  (`details.required`, `details.maxFeePerGas`). If the base fee rises above the ceiling,
+  transfers stall as `FEE_TOO_LOW` until it falls or you raise the option. Any other key in
+  the EVM options fails with `CONFIG_INVALID`.
 - **Not in this release:** address history (it needs an indexer; `history()` throws
   `UNSUPPORTED_CAPABILITY`), contract calls other than ERC-20 `transfer`, and `ext.evm`
   beyond `getNonce`.
@@ -327,8 +335,10 @@ optional memo. [Sending and receiving](./transactions.md) covers what else diffe
   `TRON-PRO-API-KEY` header, as a `Secret`. `public` is TronGrid without a key, for trying
   things out on Shasta and Nile, not for production; a `tron` handle with no provider falls
   back to it, with a logged warning. **Mainnet needs `trongrid` with a key, or another
-  provider:** keyless TronGrid answers mainnet with HTTP 429, and the handle then finds no
-  healthy endpoint. TronGrid publishes no rate limit, so neither preset sets `rateLimit`; to
+  provider:** keyless TronGrid answers most mainnet requests with HTTP 429. An endpoint
+  that rate-limits a health check keeps its last good height and is checked again after its
+  `Retry-After`, but one that has never answered a check is never confirmed, and the handle
+  then finds no healthy endpoint. TronGrid publishes no rate limit, so neither preset sets `rateLimit`; to
   pace a busy service, configure the endpoint yourself with a `rateLimit` (a 429 answer is
   retried with backoff). An endpoint of your own must serve `/wallet`, `/walletsolidity` and
   `/jsonrpc` under one base URL, as TronGrid does: its identity check reads block 0 from all
@@ -862,10 +872,9 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   external request) may carry several genuine transfers to the same owner, so a trace id
   is not a dedupe key; dedupe on the arrival's transfer id.
 - **Crediting deposits.** History entries are reads of one provider and one indexer, so
-  their evidence is `observed` (with `finality: 'final'`), never `proven`. This release has
-  no proven deposit read: TON deposits are an explicit exception to "credit only on `final`
-  with `proven` evidence", and a jetton deposit's genuineness also rests on the provider's
-  get-methods. So before you credit any deposit automatically (or any above your risk
+  their evidence is `observed` (with `finality: 'final'`), never `proven`, as every family's
+  deposits are ([Crediting deposits](./transactions.md#crediting-deposits)), and a jetton
+  deposit's genuineness also rests on the provider's get-methods. So before you credit any deposit automatically (or any above your risk
   threshold), read it again through an independent provider **and** indexer pair, for
   example `bc.with({ provider: 'own-v2', indexer: 'own-v3' }).getTransaction(tx.id)`, and
   credit it only when both reads are final and agree on the transaction hash, the
@@ -1167,8 +1176,10 @@ completes within `lifecycle.leaseMs`, since the ref lease is not renewed. A slow
 weakens it.
 
 Every Attempt's `ordering` must also read back whole and unchanged, whatever its kind, with
-every property the driver put in it and its type; the suites check only nonce orderings
-today. A Tron Attempt's ordering is a `TronExpiryOrdering`: the core `expiry` ordering,
+every property the driver put in it and its type, and so must an Operation's `reservation`.
+The operation-store suite checks one ordering of each built-in family, with bigints beyond
+2^53 (`SAMPLE_ORDERINGS` in `crypto-aio/testing`), after the append and after a later
+write. A Tron Attempt's ordering is a `TronExpiryOrdering`: the core `expiry` ordering,
 with `expiresAtMs` and its optional `lastValidHeight` (a bigint), which Tron always sets to
 the reference block's height plus 65,536, plus `refBlockHash`, the reference block bytes the
 transaction signs. The expiry proof reads them from the store, not from the signed bytes, to

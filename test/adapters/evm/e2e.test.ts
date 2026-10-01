@@ -197,6 +197,35 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect(final.operation?.outcome).toBe('executed');
   });
 
+  it('never ends a transfer that a lone endpoint calls invalid, then relays (lesson 21)', async () => {
+    const env = await createEvmEnv({ library });
+    // A lying endpoint keeps our valid bytes, claims a bad signature, and relays them later.
+    let held: string | undefined;
+    env.node.intercept = (_endpoint, method, params) => {
+      if (method !== 'eth_sendRawTransaction' || held !== undefined) return undefined;
+      held = params[0] as string;
+      return { error: { code: -32000, message: 'invalid sender' } };
+    };
+    const error = await env
+      .run(env.bc.transfer({ to: RECIPIENT, amount: 7n }, { idempotencyKey: 'liar' }))
+      .catch((e: unknown) => e);
+    // Before lesson 21 this was TX_REJECTED: the Operation failed and freed its nonce, so a
+    // later relay plus a retry under a new key paid twice.
+    expect(error).toMatchObject({ code: 'TX_REFUSED' });
+    const operationId = String(
+      (error as { context: { operationId?: string } }).context.operationId,
+    );
+    expect((await env.stores.operations.get('default', operationId))?.state).toBe(
+      'stalled',
+    );
+    env.node.submit(held as string);
+    const final = await env.mineWhile(
+      env.bc.waitForConfirmation(operationId, { finality: 'final' }),
+    );
+    expect(final.operation).toMatchObject({ state: 'final', outcome: 'executed' });
+    expect(env.node.balance(RECIPIENT)).toBe(7n);
+  });
+
   it('survives a reorg that drops the transaction, with the orphan check read from both endpoints', async () => {
     const env = await createEvmEnv({ library, endpoints: ['a', 'b'] });
     const reorgs: AioEvent[] = [];

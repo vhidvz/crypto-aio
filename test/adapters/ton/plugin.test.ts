@@ -126,7 +126,7 @@ describe('the built-in TON plugin', () => {
     ).toThrow(
       expect.objectContaining({
         code: 'INCOMPATIBLE_SELECTION',
-        message: expect.stringContaining('supported: @ton/ton'),
+        message: "unknown library for chain 'ton'; the only accepted name is '@ton/ton'",
       }),
     );
     await aio.close();
@@ -359,7 +359,9 @@ describe('the built-in TON plugin', () => {
       run(handle({ maxNetworkFe: { basechain: GRAM } }).estimateFee(intent)),
     ).rejects.toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringContaining("the TON driver's only option is 'maxNetworkFee'"),
+      message: expect.stringContaining(
+        "unknown option; the only accepted name is 'maxNetworkFee'",
+      ),
     });
     await aio.close();
   });

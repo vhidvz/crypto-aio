@@ -8,6 +8,7 @@ import { redactDeep, redactHeaders, redactUrl } from '../secret/redact';
 import { reveal } from '../secret/secret';
 import type { EndpointConfig } from '../transport/types';
 import { canonicalJson, sha256Hex } from '../util/json';
+import { unknownName } from '../util/names';
 import { isPlainObject, mergeChainDefaults } from './merge';
 import type {
   EffectiveOptions,
@@ -81,7 +82,15 @@ function resolveProviders(
       const configured = own(effective.providers, ref);
       if (configured) config = configured;
       else if (catalogs.presets.has(ref, kind)) config = { preset: ref };
-      else throw new ConfigError('CONFIG_INVALID', `unknown provider '${ref}'`);
+      else {
+        throw new ConfigError(
+          'CONFIG_INVALID',
+          unknownName(`${kind} provider`, [
+            ...Object.keys(effective.providers),
+            ...catalogs.presets.names(kind),
+          ]),
+        );
+      }
     } else {
       name = inlineName(ref);
       config = ref;
@@ -189,7 +198,10 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
   if (!manifest) {
     throw new ConfigError(
       'INCOMPATIBLE_SELECTION',
-      `library '${library}' does not support chain '${chain.id}' (supported: ${manifests.map((m) => m.library).join(', ')})`,
+      unknownName(
+        `library for chain '${chain.id}'`,
+        manifests.map((m) => m.library),
+      ),
     );
   }
 
@@ -230,8 +242,12 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
   let wallet: ResolvedSelection['wallet'];
   if (merged.wallet !== undefined) {
     const config = own(effective.wallets, merged.wallet);
-    if (!config)
-      throw new ConfigError('CONFIG_INVALID', `unknown wallet '${merged.wallet}'`);
+    if (!config) {
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        unknownName('wallet', Object.keys(effective.wallets)),
+      );
+    }
     if (config.chains && !config.chains.includes(chain.id)) {
       throw new ConfigError(
         'CONFIG_INVALID',
@@ -239,8 +255,12 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
       );
     }
     for (const signerId of Object.values(config.signers ?? {})) {
-      if (!own(effective.signers, signerId))
-        throw new ConfigError('CONFIG_INVALID', `unknown signer '${signerId}'`);
+      if (!own(effective.signers, signerId)) {
+        throw new ConfigError(
+          'CONFIG_INVALID',
+          unknownName('signer', Object.keys(effective.signers)),
+        );
+      }
     }
     wallet = { name: merged.wallet, config };
   }
@@ -249,8 +269,12 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
   const signerId = merged.signer ?? wallet?.config.signer;
   if (signerId !== undefined) {
     const instance = own(effective.signers, signerId);
-    if (!instance)
-      throw new ConfigError('CONFIG_INVALID', `unknown signer '${signerId}'`);
+    if (!instance) {
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        unknownName('signer', Object.keys(effective.signers)),
+      );
+    }
     if (!chain.schemes.some((scheme) => instance.schemes.includes(scheme))) {
       throw new ConfigError(
         'CONFIG_INVALID',

@@ -55,10 +55,11 @@ describe('ChainCatalog', () => {
     });
     expect(thrown(() => catalog.get('nope'))).toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringMatching(/unknown chain 'nope' \(registered: testchain\)/),
+      message: "unknown chain; the only accepted name is 'testchain'",
     });
     expect(thrown(() => catalog.network('testchain', 'main'))).toMatchObject({
-      message: expect.stringMatching(/supported: local, other/),
+      message:
+        "unknown network for chain 'testchain'; the accepted names are 'local' and 'other'",
     });
   });
 

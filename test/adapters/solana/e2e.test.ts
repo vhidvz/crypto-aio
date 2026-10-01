@@ -199,7 +199,7 @@ describe('Solana end to end', () => {
     const typo = await createSolanaEnv({ chainOptions: { maxComputePrice: 1n } });
     await expect(typo.run(typo.bc.ready())).rejects.toMatchObject({
       code: 'CONFIG_INVALID',
-      message: expect.stringContaining("only option is 'maxComputeUnitPrice'"),
+      message: expect.stringContaining("the only accepted name is 'maxComputeUnitPrice'"),
     });
   });
 

@@ -1,6 +1,7 @@
 import { ConfigError } from '../errors/error';
 import type { Secret } from '../secret/secret';
 import type { EndpointConfig } from '../transport/types';
+import { unknownName } from '../util/names';
 
 export interface PresetInput {
   readonly chain: string;
@@ -36,6 +37,11 @@ export class PresetCatalog {
     );
   }
 
+  /** The registered preset names, of one kind or of both. */
+  names(kind?: 'rpc' | 'indexer'): string[] {
+    return [...this.#presets.keys()].filter((name) => this.has(name, kind));
+  }
+
   resolve(
     name: string,
     input: PresetInput,
@@ -45,7 +51,7 @@ export class PresetCatalog {
     if (candidates.length === 0) {
       throw new ConfigError(
         'CONFIG_INVALID',
-        `unknown ${kind} provider preset '${name}'`,
+        unknownName(`${kind} provider preset`, this.names(kind)),
       );
     }
     const preset = candidates.find((p) => p.supports(input.chain, input.network));

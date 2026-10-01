@@ -7,8 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - Unreleased
+
+crypto-aio 0.1.0 is the first release of the blockchain abstraction layer: one API over EVM
+chains, Bitcoin, Tron, Solana and TON, with an SDK-free core, optional SDK peers and a
+deterministic testing kit. It replaces the 0.0.x API entirely; see "Migrating from 0.0.x"
+below.
+
+### Security
+
+- Until this release, the repository tracked a `.env` file containing testnet private keys,
+  mnemonics and RPC provider tokens. These credentials remain in the git history and must be
+  treated as compromised. The file is no longer tracked, and CI now refuses tracked env files
+  and scans for secrets.
+- The published npm package was not affected: `files: ["/dist"]` never shipped `.env`. The
+  0.0.1, 0.0.2 and 0.0.3 tarballs on the registry were checked: each holds only `dist/`,
+  `package.json`, `README.md` and `LICENSE`.
+- Owner actions outside this codebase: rotate the provider tokens, move any funds held by
+  those keys, and decide whether to rewrite git history.
+- An API key that a provider echoes back is removed from every error message, `details`
+  field, `cause` and event, in any letter case, from a URL path segment, a query value, a
+  header value or the token after an auth scheme, not only as the whole URL or header
+  value. Parts of fewer than 8 characters are removed only as part of the whole URL or
+  header value.
+- An error never repeats a name the caller typed that the library does not know (a chain,
+  network, library, provider or preset, wallet, signer, signature scheme, asset alias,
+  option key or capability): it lists the accepted names instead, so a secret pasted into
+  the wrong field never reaches a message. A malformed asset id, an invalid namespace and a
+  `native()` library name are no longer quoted either.
+
 ### Added
 
+- A chain-agnostic blockchain abstraction layer: the `CryptoAio` container with scopes, the
+  immutable `Blockchain` handle, and layered configuration (call > handle > scope > root >
+  environment routing > built-ins).
+- Operations and Attempts with idempotency keys, crash-safe signing ("never signed twice"),
+  observed vs proven evidence, background workers, recovery, replace, cancel and rebuild.
+- Signing through `localSigner` or `callbackSigner` (HSM, KMS, MPC), with a `beforeSign`
+  policy hook; `Secret` values and redaction keep keys and credentials out of errors, events
+  and logs.
+- A multi-endpoint HTTP transport with health checks, quorum reads for proofs, and circuit
+  breakers; a block scanner with cursors, acknowledgements and reorg rollback.
+- A plugin API for chain families, and the `crypto-aio/native` escape hatch.
+- The `crypto-aio/testing` kit: a deterministic fake chain family, `FakeFetch`, `FakeClock`,
+  `FaultyOperationStore` and the store contract suites.
+- Developer guides and a tested tutorial in `docs/guides/`, rendered with the API reference
+  by `pnpm doc`.
 - The EVM family, built in: Ethereum (mainnet, Sepolia, Hoodi), BNB Smart Chain, Polygon,
   Avalanche C-Chain, Arbitrum, Optimism and Base, with ethers 6 (the default) or web3 4 as
   optional peer dependencies. A missing SDK fails with `DEPENDENCY_MISSING` and the install
@@ -125,6 +169,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `observe` and `ProofSource.includedFinal`.
 - `WalletHdOptions`, and an `hd` entry in `WalletOptions`: drivers receive the wallet's
   extended public key.
+- The EVM handle option `maxFeePerGas` (wei per gas, a bigint; 1,000 gwei by default,
+  exported as `DEFAULT_MAX_FEE_PER_GAS` from `crypto-aio/evm`; a network may set
+  `params.maxFeePerGas`): no EVM transaction signs a higher price per gas. A node's
+  suggestion is clamped to it, and an explicit fee, or a cancel's least bump, above it fails
+  with `INVALID_INTENT` before signing (`details.required`, `details.maxFeePerGas`); the
+  build checks it again. Every family now bounds a node's fee by an operator setting.
+- `transport.maxResponseBytes` (64 MiB by default): a longer answer is cancelled and fails
+  as a retryable `PROVIDER_UNAVAILABLE`, so one endpoint cannot exhaust the process's memory.
+- `SAMPLE_ORDERINGS` in `crypto-aio/testing`: one Attempt ordering of each built-in family,
+  as the operation-store contract suite checks them.
 
 ### Changed
 
@@ -221,45 +275,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `hd` in `WalletOptions` is reserved: neither a wallet's own `options.hd` nor the
   `options` passed to `Blockchain.addressFromPublicKey` bring an `hd` to a driver.
   `addressFromPublicKey` reads `null` options as none.
+- A REST error's message names the route template, as in
+  `GET /address/:address/txs refused (HTTP 400)`, no longer the request path with its
+  address or transaction id; without a route, only the method.
+- Refusals of unknown names read `unknown <what>; the accepted names are 'a' and 'b'`; the
+  TON, Solana, Tron, UTXO and EVM option refusals and the core's selection errors use this
+  one form.
+- The EVM driver reads its handle options: any key but `maxFeePerGas` fails with
+  `CONFIG_INVALID` (other keys were ignored).
+- The `OperationStore` contract suite checks that an Attempt's `ordering`, its
+  `unsigned.ordering` and the Operation's `reservation` read back whole, every property
+  with its value and type, for one ordering of each built-in family, after the append and
+  after a later write. A store that drops, retypes or changes a property fails it.
+- A health check that an endpoint rate-limits (HTTP 429), or that would come before the
+  `Retry-After` of an earlier 429, keeps the endpoint's last good height and identity and is
+  no health miss; a rate-limited identity check retries after the endpoint's `Retry-After`
+  instead of 15 seconds.
+- The height high-water mark that a view must stay within `maxLagBlocks` of falls back to
+  the verified best height after three health refreshes in a row in which no verified
+  endpoint comes that close to it, so one endpoint that once reported a far-future head no
+  longer leaves every view stale until restart.
+- The root container's `close()` also stops every `monitor.start()` loop, and a running
+  `runOnce()` or `operations.recover()` at its next check; starting one on a closed
+  container throws `INVALID_TRANSITION`.
+- The guides no longer promise `proven` evidence for deposits: every family's deposit reads
+  (`scanner`, `history`, `getTransaction`) are `observed`, and the new "Crediting deposits"
+  section says how to credit them, with a second read through an independent provider.
+- The package also ships `CHANGELOG.md`.
 
-## [0.1.0] - Unreleased
+### Fixed
 
-### Security
-
-- Until this release, the repository tracked a `.env` file containing testnet private keys,
-  mnemonics and RPC provider tokens. These credentials remain in the git history and must be
-  treated as compromised. The file is no longer tracked, and CI now refuses tracked env files
-  and scans for secrets.
-- The published npm package was not affected: `files: ["/dist"]` never shipped `.env`.
-- Owner actions outside this codebase: rotate the provider tokens, move any funds held by
-  those keys, and decide whether to rewrite git history.
-
-### Added
-
-- A chain-agnostic blockchain abstraction layer: the `CryptoAio` container with scopes, the
-  immutable `Blockchain` handle, and layered configuration (call > handle > scope > root >
-  environment routing > built-ins).
-- Operations and Attempts with idempotency keys, crash-safe signing ("never signed twice"),
-  observed vs proven evidence, background workers, recovery, replace, cancel and rebuild.
-- Signing through `localSigner` or `callbackSigner` (HSM, KMS, MPC), with a `beforeSign`
-  policy hook; `Secret` values and redaction keep keys and credentials out of errors, events
-  and logs.
-- A multi-endpoint HTTP transport with health checks, quorum reads for proofs, and circuit
-  breakers; a block scanner with cursors, acknowledgements and reorg rollback.
-- A plugin API for chain families, and the `crypto-aio/native` escape hatch.
-- The `crypto-aio/testing` kit: a deterministic fake chain family, `FakeFetch`, `FakeClock`,
-  `FaultyOperationStore` and the store contract suites.
-- Developer guides and a tested tutorial in `docs/guides/`, rendered with the API reference
-  by `pnpm doc`.
-
-Only the fake chain family ships in this release. EVM, Bitcoin, Tron, Solana and TON
-adapters are planned.
+- EVM: a node's rejection of a broadcast ("invalid sender", "invalid chain id", "rlp: …",
+  "tip above fee cap") ends an Operation only when the library's own reading of the signed
+  bytes confirms it; otherwise it is a refusal (`TX_REFUSED`), and the Operation stalls
+  instead of failing, so a lying endpoint that relays the bytes later can no longer make a
+  retry pay twice. The UTXO, Tron, Solana and TON drivers already worked this way.
+- A network, wallet or signer route named like an `Object.prototype` member (`toString`,
+  `constructor`) is an unknown name, never an inherited value.
 
 ### Removed
 
 - The 0.0.x API: the `CryptoAio` chain getters, `Ethereum`, `Tronix`, `*Account`,
-  `*Contract` and `*Transact`. The library was rebuilt; migration notes follow with the
-  release.
+  `*Contract` and `*Transact`. The library was rebuilt; see "Migrating from 0.0.x" below.
+- The 0.0.x documentation site and coverage report under `docs/`. The API reference is
+  built with `pnpm doc` into `docs/api/`, and coverage runs in CI.
 
-[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/v0.0.2...HEAD
-[0.1.0]: https://github.com/vhidvz/crypto-aio/compare/v0.0.2...HEAD
+### Migrating from 0.0.x
+
+The 0.0.x API had no stored transfers, no proofs and few working write paths, so there is
+no mechanical upgrade; the new API maps onto the old ideas as follows.
+
+- `new CryptoAio()` with `caio.eth` (`Ethereum`) and the `Tronix` class becomes a container
+  and one handle per chain: `new CryptoAio({ providers, signers, wallets, chains })` and
+  `aio.blockchain({ chain: 'ethereum' })`, or `configure(…)` and
+  `Blockchain.create({ chain: 'tron' })`. Install the SDK of each chain you use (`ethers` or
+  `web3`, `tronweb`, …); they are optional peer dependencies.
+- `EthereumOptions.lib` (`'web3' | 'ethers'`) becomes the handle's `library`; a `client`
+  you built yourself becomes a provider (`{ endpoints: [{ name, url }] }` or a preset with
+  an `apiKey`), and the SDK client is reachable only through `crypto-aio/native`.
+- `caio.eth.account.getBalance(address)` becomes `bc.getBalance(address, asset?)`, which
+  returns an exact `Amount`; `caio.eth.getGasPrice()` becomes `bc.estimateFee(intent)`.
+- `caio.eth.createAccount()` and `account.create()`, which emitted private keys through the
+  event emitter, are gone: keys exist only inside signers. Use
+  `localSigner.generate({ curves: ['secp256k1'] })` for its public keys and
+  `bc.addressFromPublicKey(publicKey)`, or import a key with
+  `localSigner({ secp256k1: secret(hex) })`.
+- `transact.transfer` and `contract.estimateGas` become
+  `bc.transfer({ to, amount, asset? }, { idempotencyKey })`, with ERC-20 and TRC-20 tokens
+  as an `asset` (an alias such as `'USDT'`, or `{ standard: 'erc20', contract }`) and
+  offline signing through `prepareTransfer` and `submitSignatures`.
+- The `CRYPTO_AIO_[<ENV>_]<ETH|TRX>_<URL|ADDRESS|PRIVATE|PHRASES|CONTRACT|ABI>` variables
+  are gone. The environment now carries routing only,
+  `CRYPTO_AIO_[<PROFILE>_]<CHAIN>_{NETWORK|LIBRARY|PROVIDER|RPC_URL|INDEXER_URL}` with
+  `CRYPTO_AIO_ENV` naming the profile, and never a key, a mnemonic or an address.
+- The `emitter` option becomes typed events (`aio.on(type, handler)`) that carry ids,
+  states, codes and timings only; `debug` logging stays (`DEBUG=crypto-aio:*`), or pass
+  `createLogger(namespace, writer)`.
+
+### Notes for builds of `main` before 0.1.0
+
+Code built from `main` during 0.1 development saw these changes before the release:
+
+- `Transfer` is `ResolvedTransfer | UnresolvedTransfer`: a transfer whose asset cannot be
+  resolved arrives with `unresolved: { asset, amount, code }` and its transaction
+  `decoding: 'partial'`.
+- `TERMINAL_STATES` is a frozen array, not a `Set`, and every exported table is
+  deep-frozen. `Scanner` is exported as a type only (get one from `bc.scanner()`), and
+  `ScanEventBody` is exported.
+- `createNativeClient` returns `{ client, close? }` (`DisposableNativeClient`); after the
+  root's `close()`, handle work and `native()` fail with `INVALID_TRANSITION`.
+- `Transport` gained the `maxLagBlocks` accessor and `hasProbes()`; `ProofSource` gained
+  `blockHash(height, level)`; `HttpRequest` gained `route`; `chains.<id>.maxLagBlocks` and
+  `lifecycle.signTimeoutMs` (120 s) are new.
+- The `STATE_UNRECORDED` error code (category `state`, retryable) reports a step that may
+  have happened but was not recorded, with the original code in `details.causeCode`; an
+  ambiguous error keeps its own code and retryability and adds `ambiguous: true` and the
+  `operationId`.
+- A pending signing result is stored as `signerTickets` (one per signer); `cancel` and
+  `buildCancel` take an optional `fee`.
+- The testing kit gained `restart({ killPrevious })`, `forkAbove` and `fake_getBlockHash`.
+
+### For store implementers
+
+The four contract suites in `crypto-aio/testing` define what a durable store must do; run
+them against yours. Beyond the suites, which test one store instance:
+
+- `findByRef` must be read-your-writes consistent across every process that shares the
+  store, and `appendAttempt` must complete within `lifecycle.leaseMs` (see "Changed").
+- Keep each Attempt's `ordering` whole, and store a patch key set to `undefined` as absent,
+  never as `null` (the suites check both).
+- `DATA_CLASSIFICATION` names each field's class for encryption and retention.
+
+[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/vhidvz/crypto-aio/compare/v0.0.2...v0.1.0

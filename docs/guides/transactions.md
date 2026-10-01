@@ -76,7 +76,10 @@ separate `l1-data` charge, and the bound is `expected`, since that fee moves wit
 An override's `gasLimit` skips `eth_estimateGas`, the check that refuses a call that would
 fail: any call that would revert or run out of gas, such as a token transfer or a payment
 to a contract that refuses it, is then signed, broadcast, and burns its gas. The balance
-check still runs.
+check still runs. No EVM transaction signs a price per gas above the handle's `maxFeePerGas`
+option (1,000 gwei by default): a speed's prices are clamped to it, and an override, or a
+cancel's least bump, above it is refused with `INVALID_INTENT` before signing; see
+[EVM networks](./networks.md#evm-networks).
 
 On Bitcoin, `slow`, `normal` and `fast` take Esplora's estimate for 144, 6 or 2 blocks, and
 a built transaction's `network` charge is `exact`. A fee above the handle's absurd-fee
@@ -112,6 +115,14 @@ GRAM by default, the unspent part refunded), and its bound is `upper`. The only 
 wallet cannot pay; its `details.required` is then a lower bound, with only the least gas a
 wallet run can cost.
 [TON networks](./networks.md#ton-networks) covers the charges and the fee ceiling.
+
+**No endpoint can raise a fee above your bound.** Every family's prices come from a node,
+so every family bounds them by a handle option that no endpoint can change: EVM
+`maxFeePerGas`, Bitcoin `maxFeeRate`, `maxFee` and `maxEstimatedFeeRate`, Tron
+`maxFeeLimit`, Solana `maxComputeUnitPrice`, and TON `maxNetworkFee` (on the estimate; TON
+signs no fee). A node's suggestion above the bound is clamped to it or not trusted, an
+explicit fee above it is refused before signing, and the build checks it again. Set each
+bound to your fee policy; the defaults stop an absurd fee, not an expensive one.
 
 ### Cold, offline and asynchronous signing
 
@@ -204,6 +215,14 @@ throws `FEE_TOO_LOW`. A speed re-estimates the fee, which on a quiet network is 
 an explicit override that raises each price by at least 10%. A cancel is a zero-value
 transfer to yourself, at the smallest valid bump unless you pass `fee`. Arbitrum has no
 mempool, so it supports neither (`UNSUPPORTED_CAPABILITY`).
+
+A node's rejection is a claim, and every family checks it against the bytes it sent before
+it ends anything: on EVM networks, "invalid sender", "invalid chain id", "rlp: …" and "tip
+above fee cap" stand only when the signed bytes, read by the library itself, really carry a
+bad signature, another chain id, a broken encoding or a tip above the cap. Otherwise the
+answer is a refusal ("the node claimed the transaction is invalid"): the Operation stalls
+instead of failing, so an endpoint that lies and relays the bytes later can never make you
+pay twice. Retry a stalled transfer only with `rebroadcast` or the same idempotency key.
 
 On Bitcoin, a replacement or cancel (BIP125) spends every input of the transaction it
 replaces, and must pay the old fee plus 1 sat/vB of its own size, at a higher rate, or it
@@ -405,7 +424,10 @@ await aio.close(); // closes native clients and pooled drivers
 - `aio.monitor.runOnce({ workerId, batch })` runs one pass and returns how many Operations it
   claimed. Use it from a scheduler.
 - Call `close()` on the root container; a scope's `close()` does nothing. After it, handle
-  methods and `native()` throw `StateError` (`INVALID_TRANSITION`).
+  methods and `native()` throw `StateError` (`INVALID_TRANSITION`). It also stops every
+  `monitor.start()` loop, and a running `runOnce()` or `recover()` at its next check, so
+  the closed container claims no more Operations; starting one afterwards throws
+  `INVALID_TRANSITION` too.
 - Tune timing with `lifecycle`: `pollIntervalMs`, `droppedGracePeriodMs`,
   `rebroadcastIntervalMs`, `leaseMs`, `claimLeaseMs`, `waitTimeoutMs` and `signTimeoutMs`.
 
@@ -533,6 +555,42 @@ token accounts. History ends at the provider's retention
 TON reads it from its indexer (toncenter API v3); [TON networks](./networks.md#ton-networks)
 shows how its deposits appear there and how to credit them.
 
+### Crediting deposits
+
+A deposit is a transfer that none of your Operations made, so no proof backs it: every read
+that returns one (`bc.scanner()`, `bc.history()` and `bc.getTransaction()`) reads one
+endpoint, and its status carries `evidence: 'observed'` in every family. Its `finality` is
+`'final'` once that endpoint reports the block at or below its finalized height. The library
+has no proven deposit read yet, so credit a deposit this way:
+
+1. Take it from a `final` read: a scanner in `mode: 'final'`, or a transaction whose
+   `status.finality` is `'final'`.
+2. Credit only transfers to your own deposit addresses, and dedupe on `transfer.id`: scans
+   and history deliver at least once, and a history can list one transaction twice.
+3. Before you credit automatically, or above your risk threshold, read the transaction again
+   through an independent provider (and indexer, where the family reads one), for example
+   `bc.with({ provider: 'second' }).getTransaction(tx.id)`, and credit it only when both
+   reads are final and agree on the transaction hash, the recipient, the asset, the amount
+   and the memo.
+4. Leave a transfer whose asset did not resolve (`transfer.unresolved`) for review.
+
+| Family | Deposit reads | What one read rests on |
+| --- | --- | --- |
+| EVM | `scanner()`: native transfers and ERC-20 `Transfer` logs from each block's receipts; no `history()` | the block and receipts one endpoint serves |
+| Bitcoin | `scanner()`, and `history()` (confirmed only) | one Esplora endpoint's block pages or address history |
+| Tron | `scanner()`, and `history()` from TronGrid, each entry read back from the `provider` | one endpoint's block, or one indexer's listing read back from one endpoint |
+| Solana | `scanner()`, and `history()` from `getSignaturesForAddress`, each item read back | one endpoint's block or signature list |
+| TON | `history()` only, from the indexer, with the provider's get-methods for jettons | one indexer endpoint and one provider endpoint |
+
+Each family's own rules still apply: on Bitcoin skip a transfer whose `to` is among its
+`from` addresses (change and cancel refunds); on Solana credit SPL deposits by the owner
+wallet (`transfer.to`); on TON credit a jetton deposit only from its arrival in the owner's
+jetton wallet ([TON networks](./networks.md#ton-networks)). A scanner in `final` mode emits
+a block only once the network's finality policy holds, and it decides a rollback only when
+the proof quorum serves a different block hash, but the transfers in a block are what the one
+endpoint that served it reported: a lying endpoint could add a transfer to a real block. The
+second read through an independent provider catches that.
+
 ## Error handling
 
 Find the Operation with `error.context.operationId`, then read its state with
@@ -545,6 +603,7 @@ land.**
 | `INVALID_AMOUNT`, `INVALID_ADDRESS`, `INVALID_INTENT`, `ASSET_RESOLUTION` | Input refused; nothing stored | Fix the input |
 | `IDEMPOTENCY_CONFLICT` | Key reused for a different intent | Treat it as a bug; inspect the existing Operation |
 | `INSUFFICIENT_FUNDS`, `POLICY_REJECTED` with state `failed` | Failed before signing; nonce released | Fix the cause; retry with a **new** key |
+| `POLICY_REJECTED` with state `prepared` | The `beforeSign` hook vetoed after the address lease was lost (a `prepareTransfer` hook that outlasted `lifecycle.leaseMs`), so nothing was written | Repeat with the **same** key; the hook runs again |
 | `INSUFFICIENT_FUNDS`, `FEE_TOO_LOW`, `NONCE_TOO_HIGH`, `TX_REFUSED` with state `stalled` | Node refused signed bytes | `rebroadcast` after the fix, `replace` or `cancel`; never a new key |
 | `NONCE_CONFLICT` | A cancel or replacement lost: the original is already mined | Wait for the original |
 | `NONCE_CONFLICT` with `details.heldBy` | The signed transaction is identical to another Operation's, so it would pay once for both; nothing was sent. From `transfer` or `submitSignatures` the Operation is `failed`, or, if it is still `prepared` or `awaiting-signature` (a renew or version conflict), repeat with the **same** key (for `submitSignatures`, resubmit the signatures) so it is refused and failed. From `replace`, `cancel` or `rebuild` it is unchanged | `failed`: retry with a **new** key. `replace` or `cancel`: use another fee spec. `rebuild`: rebuild later. A later build (a new block, or the driver's build variant) gives different bytes |

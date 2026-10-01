@@ -10,20 +10,14 @@ on the fake chain, and configure a real EVM network.
 ## Install
 
 crypto-aio needs Node.js 22 or later, and Solana needs Node.js 22.12 or later
-([why](./networks.md#solana-networks)). The API in these guides is version 0.1, which is
-**not on npm yet**. The 0.0.x releases on npm are an older, unrelated API. Until 0.1.0 is
-published, you can build a package from source, but only once the 0.1 work is merged to the
-repository's `main` branch:
+([why](./networks.md#solana-networks)). These guides describe version 0.1.0, the first
+release of this API; the 0.0.x releases on npm are an older, unrelated API.
 
 ```sh
-git clone https://github.com/vhidvz/crypto-aio.git
-cd crypto-aio && pnpm install && pnpm build && pnpm pack # writes crypto-aio-<version>.tgz
-npm install /path/to/crypto-aio/crypto-aio-*.tgz # in your project
+npm install crypto-aio
 ```
 
-Once 0.1.0 is published, `npm install crypto-aio` is enough. The EVM, UTXO, Tron, Solana and
-TON families are on `main` and in the next release. Install only the SDK you use next to the
-package: for EVM chains `npm install ethers`, or `npm install web3` and `library: 'web3'` on
+Install only the SDK you use next to the package: for EVM chains `npm install ethers`, or `npm install web3` and `library: 'web3'` on
 the handle, since ethers is the default; for Bitcoin `npm install bitcoinjs-lib`; for Tron
 `npm install tronweb`; for Solana `npm install @solana/web3.js` (Node.js 22.12 or later); for
 TON `npm install @ton/ton @ton/core @ton/crypto`. A missing SDK fails with

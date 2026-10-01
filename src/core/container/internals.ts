@@ -30,6 +30,8 @@ export interface RootRuntime {
   readonly owner: string;
   /** R34: set by the root's `close()`; a closed container refuses handle and `native()` work. */
   closed: boolean;
+  /** N3: aborted by the root's `close()`, which stops every worker loop and recovery. */
+  readonly closing: AbortController;
   /** R34: the `close` of every native SDK client handed out; the root's `close()` runs them. */
   readonly natives: Set<() => void | Promise<void>>;
 }

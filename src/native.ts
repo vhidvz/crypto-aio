@@ -30,7 +30,8 @@ export async function native<
   if (internals.selection.library !== library) {
     throw new ConfigError(
       'INCOMPATIBLE_SELECTION',
-      `this handle uses '${internals.selection.library}', not '${library}'`,
+      // F6-R24: the caller's text is never repeated; the handle's own library is named.
+      `this handle's library is '${internals.selection.library}'; ask native() for that one`,
     );
   }
   const cached = internals.nativeClients.get(library);

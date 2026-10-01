@@ -4,8 +4,9 @@
  * inconsistent data fails with `CONFIG_INVALID` instead of misbehaving.
  */
 import { ConfigError } from '../../core/errors/error';
-import type { Capability } from '../../core/model/capability';
+import { KNOWN_CAPABILITIES, type Capability } from '../../core/model/capability';
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { knownName, unknownName } from '../../core/util/names';
 
 /** Every capability of the Tron driver; `address-history` comes with an indexer. */
 export const TRON_CAPABILITIES: readonly Capability[] = Object.freeze([
@@ -69,21 +70,12 @@ const OPTION_KEYS: readonly string[] = Object.freeze([
   'energyMarginPercent',
   'maxFeeLimit',
 ]);
-/** The accepted option names, as a refusal lists them. */
-const OPTION_NAMES = `${OPTION_KEYS.slice(0, -1)
-  .map((key) => `'${key}'`)
-  .join(', ')} and '${OPTION_KEYS.at(-1) as string}'`;
-
 /**
- * A capability name from the network entry as an error may show it: a short plain
- * identifier only, so a pasted value never reaches a message or a log. Option keys are never
- * shown (F3-R16).
+ * A capability from the network entry as an error may show it (F3-R16): a core capability's
+ * name is a fixed word, so it is shown; any other text could be a pasted secret, so it is not.
  */
-function named(key: unknown): string {
-  return typeof key === 'string' && /^[A-Za-z0-9_.:-]{1,40}$/.test(key)
-    ? `'${key}'`
-    : '(name not shown)';
-}
+const named = (key: unknown): string =>
+  knownName(key, KNOWN_CAPABILITIES, 'an unknown capability');
 
 /**
  * F4-R2 M3: a network's capability overrides, checked against what the Tron driver serves,
@@ -175,7 +167,7 @@ export function tronNetworkConfig(
   // may be a pasted secret, nor its value.
   for (const key of Object.keys(options)) {
     if (!OPTION_KEYS.includes(key)) {
-      fail(`unknown option; the Tron driver's options are ${OPTION_NAMES}`);
+      fail(unknownName('option', OPTION_KEYS));
     }
   }
   // F4-R28: the handle's option, else the network entry's own, else 100 TRX. A network

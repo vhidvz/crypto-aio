@@ -1,7 +1,8 @@
 name: Build, Test and Publish
 on:
   release:
-    types: [created]
+    # A published release (not a draft) publishes the package.
+    types: [published]
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -16,9 +17,15 @@ jobs:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
           cache: pnpm
+      - name: The release tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$TAG"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run format:check
       - run: pnpm run check
-      - run: pnpm run build
+      - run: pnpm run doc
+      - run: pnpm run test:pack
       - run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

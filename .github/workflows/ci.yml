@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -17,11 +19,31 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run format:check
       - run: pnpm run lint
       - run: pnpm run typecheck
-      - run: pnpm test
+      # Unit tests make no network calls; the coverage run enforces jest.config.js's thresholds.
+      - run: pnpm run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: matrix.node == '22.x'
+        with:
+          name: coverage
+          path: coverage/
       - run: pnpm run build
       - run: pnpm run doc
+  package:
+    # Packs the package as npm publishes it and loads every entry point from the tarball
+    # (scripts/pack-check.mjs); it installs dependencies and the chain SDKs from npm.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:pack
   secrets:
     runs-on: ubuntu-latest
     steps:
@@ -31,5 +53,7 @@ jobs:
           if git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$'; then
             echo "::error::.env files must never be committed"; exit 1
           fi
+      # The rules and the allowed test vectors are in .gitleaks.toml; the version is pinned,
+      # so a new release's rules cannot turn CI red on an unchanged tree.
       - name: Scan the working tree for secrets
-        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest dir /repo --no-banner --redact
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 dir /repo --no-banner --redact
