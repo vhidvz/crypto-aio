@@ -247,8 +247,10 @@ Every status carries its **evidence**:
   Absence is never proof: `dropped` and `refused` are never terminal. A reorg verdict also
   needs the proof quorum to serve a different block hash.
 
-`finality` is `none`, `probabilistic` (included) or `final`. Credit deposits and complete
-withdrawals only on `final` with `proven` evidence.
+`finality` is `none`, `probabilistic` (included) or `final`. Complete a withdrawal (your own
+Operation) only on `final` with `proven` evidence. A deposit is read, not proven: every
+family's scanner, `history` and `getTransaction` report it with `observed` evidence, so
+credit it as [Crediting deposits](./transactions.md#crediting-deposits) says.
 
 ```ts
 const { status } = await bc.waitForConfirmation(operationId, { finality: 'final' });

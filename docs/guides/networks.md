@@ -872,10 +872,9 @@ name it. A transfer moves Gram or one jetton to one recipient, with an optional 
   external request) may carry several genuine transfers to the same owner, so a trace id
   is not a dedupe key; dedupe on the arrival's transfer id.
 - **Crediting deposits.** History entries are reads of one provider and one indexer, so
-  their evidence is `observed` (with `finality: 'final'`), never `proven`. This release has
-  no proven deposit read: TON deposits are an explicit exception to "credit only on `final`
-  with `proven` evidence", and a jetton deposit's genuineness also rests on the provider's
-  get-methods. So before you credit any deposit automatically (or any above your risk
+  their evidence is `observed` (with `finality: 'final'`), never `proven`, as every family's
+  deposits are ([Crediting deposits](./transactions.md#crediting-deposits)), and a jetton
+  deposit's genuineness also rests on the provider's get-methods. So before you credit any deposit automatically (or any above your risk
   threshold), read it again through an independent provider **and** indexer pair, for
   example `bc.with({ provider: 'own-v2', indexer: 'own-v3' }).getTransaction(tx.id)`, and
   credit it only when both reads are final and agree on the transaction hash, the

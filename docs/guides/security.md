@@ -307,15 +307,19 @@ transfer resolves, and which addresses a scan filter matches.
 - [ ] Custody signers (`callbackSigner`) for significant balances. No `exportable` keys. No
       keys in config files or source control. Every credential in a `Secret`.
 - [ ] An idempotent, short `beforeSign` hook in front of your own policy engine.
-- [ ] At least two independent providers per network, so proofs are cross-checked. No
-      `public` preset in production.
+- [ ] Two or three independent providers per network, so proofs are cross-checked: with
+      two, an outage of one leaves the other deciding alone, so use three for production
+      proofs. No `public` preset in production.
 - [ ] Tron: memos are public forever and cost a fee; never put personal data in one. Use the
       `trongrid` preset with a key on mainnet (keyless TronGrid fails there), next to a
       second, independent provider.
 - [ ] `await bc.ready()` at startup, to fail fast on a missing SDK or a misconfigured provider.
 - [ ] `aio.operations.recover()` at startup, then `aio.monitor.start()` workers. Alerts on
       `operation.stalled`, `nonce.gap`, `recovery.skipped` and `provider.misconfigured`.
-- [ ] Credit and complete only on `final` with `proven` evidence. Dedupe deposits on the
+- [ ] Complete withdrawals only on `final` with `proven` evidence. Credit deposits, which
+      are `observed` in every family, only once read `final`, and automatically (or above
+      your risk threshold) only once an independent provider reads the same transfer final
+      ([Crediting deposits](./transactions.md#crediting-deposits)). Dedupe deposits on the
       transfer id. On Bitcoin, skip a transfer whose `to` is among its `from` addresses
       (change, a cancel's refund), and never use a scanned deposit address as a change
       address.
@@ -334,6 +338,5 @@ transfer resolves, and which addresses a scan filter matches.
       (`TonSeqnoOrdering`, `validFrom` included) exactly; a server clock in sync (builds
       refused for chain-time skew mean fix the clock); and jetton deposits credited only
       from the arrival in the owner's jetton wallet's history, never from the owner's
-      notification, deduped on that transfer id, not on the trace id. TON deposits are
-      `observed` only, an exception to "credit only on `proven`" above: credit one only
-      once an independent provider and indexer pair has read it final and agrees on it.
+      notification, deduped on that transfer id, not on the trace id; the independent read
+      that confirms a TON deposit uses another provider **and** indexer pair.
