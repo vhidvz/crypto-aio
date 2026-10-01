@@ -1,7 +1,8 @@
 /**
- * The built-in Tron chain (spec §2): mainnet, Shasta and Nile. Every value is verified
- * against the source named in the Plan 4 appendix, or is a documented library policy:
+ * The built-in Tron chain: mainnet, Shasta and Nile. Every value is verified against a
+ * named source, or is a documented library policy:
  * - `identity`: the id of block 0, read from each network's TronGrid endpoint.
+ * - `explorer`: Tronscan's transaction and address routes (tronscan-frontend).
  * - `defaultConfirmations: 1`: `waitForConfirmation` waits for inclusion by default;
  *   credit deposits on `final` (the solidified block).
  * - `reorgWindow: 64`: the scanner's window, about three times the solidification depth.

@@ -1,9 +1,11 @@
 /**
- * The Tron driver factory (spec §7), for any `TronCodec`: validates the network and options,
+ * The Tron driver factory, for any `TronCodec`: validates the network and options,
  * configures the identity (block 0's id) and height probes exactly once on every transport it
- * receives, before any traffic (M12, R19), and assembles the ports. `address-history` needs
- * an indexer transport (TronGrid's `/v1`). This module imports no SDK: the codec module
- * exports the library's factory (`tronwebDriverFactory`), so there is no import cycle.
+ * receives, before any traffic, and assembles the ports. Without probes an endpoint is
+ * never identity-verified, and only verified endpoints feed health heights.
+ * `address-history` needs an indexer transport (TronGrid's `/v1`). This module imports no
+ * SDK: the codec module exports the library's factory (`tronwebDriverFactory`), so there
+ * is no import cycle.
  */
 import type { ChainDriver, DriverFactory } from '../../core/driver/types';
 import type { Capability } from '../../core/model/capability';
@@ -51,8 +53,10 @@ export function tronDriverFactory(codec: TronCodec): DriverFactory {
       const config = tronNetworkConfig(ctx.chain, ctx.network, ctx.options);
       const height = async (call: EndpointCall) =>
         (await blockField(call, '/wallet/getblock', { detail: false })).number;
-      // D2: the rpc endpoint must serve the full node, the solidity node and JSON-RPC for one
+      // The rpc endpoint must serve the full node, the solidity node and JSON-RPC for one
       // network; a partial endpoint fails its identity check loudly instead of stalling proofs.
+      // java-tron serves the three from separate HTTP services, so a self-hosted node
+      // needs a reverse proxy that maps all three paths under one URL, as TronGrid does.
       ctx.transport.setProbes({
         identity: async (call) => {
           const full = (await blockField(call, '/wallet/getblockbynum', { num: 0 })).id;

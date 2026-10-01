@@ -41,6 +41,9 @@ ethers and web3 clients.
   (`details.required`, `details.maxFeePerGas`). If the base fee rises above the ceiling,
   transfers stall as `FEE_TOO_LOW` until it falls or you raise the option. Any other key in
   the EVM options fails with `CONFIG_INVALID`.
+- **Types.** The declarations of `crypto-aio/evm` name both ethers' and web3's types, so with
+  only one of them installed keep `skipLibCheck: true` (the `tsc --init` default), or install
+  the other too.
 - **Not in this release:** address history (it needs an indexer; `history()` throws
   `UNSUPPORTED_CAPABILITY`), contract calls other than ERC-20 `transfer`, and `ext.evm`
   beyond `getNonce`.

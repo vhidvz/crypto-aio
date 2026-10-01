@@ -1,8 +1,8 @@
 /**
- * The `tron` fee kind (spec §15), pure: bandwidth, energy, account creation and the memo
+ * The `tron` fee kind, pure: bandwidth, energy, account creation and the memo
  * fee, from the chain's own parameters and the sender's resources. Every charge is in TRX
  * (bigint sun, never a `Number`) and may be 0 (staked or free resources). The rules are
- * java-tron's (Plan 4 appendix; checked against GreatVoyage-v4.8.2.2, `d5c3d1d1`):
+ * java-tron's (checked against GreatVoyage-v4.8.2.2, `d5c3d1d1`):
  * - bandwidth (`BandwidthProcessor.consume`): the signed size + 64 bytes, from staked
  *   bandwidth, else free bandwidth, else burned at `getTransactionFee` per byte; a transfer
  *   that creates the recipient's account uses staked bandwidth ×
@@ -44,8 +44,8 @@ export interface TronFeeInput {
    */
   readonly marginPercent: number;
   /**
-   * The handle's fee-limit bound in sun (`TronNetworkConfig.maxFeeLimit`, F4-R28): from 1 to
-   * 2^53 − 1, the largest `fee_limit` the codec writes exactly (lesson 19).
+   * The handle's fee-limit bound in sun (`TronNetworkConfig.maxFeeLimit`): from 1 to
+   * 2^53 − 1, the largest `fee_limit` the codec writes exactly.
    */
   readonly maxFeeLimit: bigint;
 }
@@ -62,8 +62,8 @@ function invalid(message: string): ValidationError {
 }
 
 /**
- * The largest fee limit a TRC-20 transfer may carry (F4-R28; one function for the estimate and
- * its size bound, F4-R12 M4): the network's `getMaxFeeLimit` (VMActuator refuses more) and the
+ * The largest fee limit a TRC-20 transfer may carry (one function for the estimate and
+ * its size bound): the network's `getMaxFeeLimit` (VMActuator refuses more) and the
  * handle's `maxFeeLimit`. The node reports its maximum, as it reports the energy price and the
  * simulated energy, so only the handle's bound is the operator's own. That bound is at most
  * 2^53 − 1, so the ceiling is always encodable; on a tie the network is named, since raising
@@ -142,11 +142,11 @@ export function tronFee(input: TronFeeInput): FeeEstimateDraft {
       'energyMarginPercent must be a non-negative integer',
     );
   }
-  // F4-R9: every transaction consumes bandwidth, and a TRC-20 call energy; a zero or negative
+  // Every transaction consumes bandwidth, and a TRC-20 call energy; a zero or negative
   // one would give a fee limit of 0, which fails on chain (out of energy) and still pays.
-  // F4-R10 M4: the bandwidth is the driver's own measure of the bytes it built (at least 133
+  // The bandwidth is the driver's own measure of the bytes it built (at least 133
   // bytes, `bandwidthOf`), so a non-positive one is a driver bug: an internal, non-retryable
-  // CryptoAioError that fails the transfer before signing, never a foreign error (lesson 6).
+  // CryptoAioError that fails the transfer before signing, never a foreign error.
   // The energy is the node's simulation, so a non-positive one is a malformed answer
   // (retryable).
   if (bandwidth <= 0n) {
@@ -175,7 +175,7 @@ export function tronFee(input: TronFeeInput): FeeEstimateDraft {
   let energyDetails: Pick<TronFeeDetails, 'energy' | 'energyPrice' | 'feeLimit'> = {};
   if (input.energy !== undefined) {
     const need = ceilDiv(input.energy * BigInt(100 + marginPercent), 100n);
-    // F4-R28: fee limit = min(estimate × margin, network maximum, maxFeeLimit). The ceiling
+    // Fee limit = min(estimate × margin, network maximum, maxFeeLimit). The ceiling
     // caps the margin, never the simulated energy itself: a fee limit below that fails on
     // chain (out of energy) and still pays, so a need above the ceiling is refused before
     // anything is signed.

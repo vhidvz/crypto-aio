@@ -147,8 +147,8 @@ describe('ScriptedTronNode', () => {
 
   it('refuses what java-tron refuses, with its codes and texts', async () => {
     const { node, send, trx, ref } = setup();
-    // Fix round 1: BandwidthProcessor.consume refuses a missing owner before
-    // TransferActuator.validate (whose "no OwnerAccount" the brief expected here).
+    // BandwidthProcessor.consume refuses a missing owner before
+    // TransferActuator.validate, so its "no OwnerAccount" never comes first.
     expect(await send(trx(1n))).toMatchObject({
       code: 'CONTRACT_VALIDATE_ERROR',
       message: `Contract validate error : account [${KEY_ADDRESS}] does not exist`,
@@ -284,8 +284,8 @@ describe('ScriptedTronNode', () => {
     expect(node.exists(KEY_ADDRESS)).toBe(false);
     node.fund(KEY_ADDRESS, 10n * TRX);
     const head = node.block(node.head) as { id: string; timestamp: number };
-    // Fix round 1: Wallet.broadcastTransaction checks the expiration against the next slot
-    // before admission, so the brief's head + 1 s is refused here.
+    // Wallet.broadcastTransaction checks the expiration against the next slot
+    // before admission, so an expiration less than a slot past the head is refused here.
     expect(await send(trx(TRX, { expiration: head.timestamp + 2_999 }))).toMatchObject({
       code: 'TRANSACTION_EXPIRATION_ERROR',
       message: 'Transaction expired',
@@ -487,7 +487,7 @@ describe('ScriptedTronNode', () => {
     for (const block of genesis) {
       expect(block.blockID).toBe(GENESIS.nile);
       const header = block.block_header as { raw_data: Record<string, unknown> };
-      // Fix round 2: proto3 JSON drops block 0's zero timestamp too (the brief kept it).
+      // proto3 JSON drops block 0's zero timestamp too.
       for (const key of ['number', 'timestamp', 'version']) {
         expect(header.raw_data).not.toHaveProperty(key);
       }
@@ -968,7 +968,8 @@ describe('ScriptedTronNode', () => {
     });
   });
 
-  it('refuses two contracts, and checks the next slot before the signature (texts Task 5 matches)', async () => {
+  // The texts the broadcast classifier matches.
+  it('refuses two contracts, and checks the next slot before the signature', async () => {
     const { node, trx, ref, broadcast } = setup();
     node.fund(KEY_ADDRESS, 10n * TRX);
     node.fund(RECIPIENT, 1n);

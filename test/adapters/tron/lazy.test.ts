@@ -1,5 +1,7 @@
-// Lazy loading (spec §4, R81): only a manifest's `load()` may require an SDK. Each check runs
+// Lazy loading: only a manifest's `load()` may require an SDK. Each check runs
 // in a module registry of its own, where requiring tronweb is recorded, then served as usual.
+// Known gap: only tronweb is watched, so a Tron module that required another family's SDK
+// would still pass; no test yet checks that an adapter loads only its own SDK.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AdapterManifest } from '../../../src';

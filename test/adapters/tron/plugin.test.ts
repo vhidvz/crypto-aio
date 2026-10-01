@@ -114,7 +114,7 @@ describe('the built-in Tron plugin', () => {
     expect(Object.isFrozen(plugin.chains?.[0]?.networks.mainnet)).toBe(true);
   });
 
-  it('ships the deep-frozen presets, the keyless one with no rate limit (A28)', () => {
+  it('ships the deep-frozen presets, the keyless one with no rate limit', () => {
     const { presets } = tronPlugin();
     expect(presets).toBe(TRON_PRESETS);
     expect(presets?.every((preset) => Object.isFrozen(preset))).toBe(true);
@@ -128,7 +128,7 @@ describe('the built-in Tron plugin', () => {
   });
 });
 
-describe('the built-in Tron plugin registered again (A18, X6)', () => {
+describe('the built-in Tron plugin registered again', () => {
   it('keeps use() idempotent for the same plugin, and refuses another named tron', async () => {
     // The composition root already registered tronPlugin(); these are fresh copies of it.
     expect(samePlugin(tronPlugin(), tronPlugin())).toBe(true);

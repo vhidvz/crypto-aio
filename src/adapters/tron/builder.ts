@@ -1,9 +1,9 @@
 /**
  * The Tron `TxBuilder` and `Broadcaster`. One output (TRX or TRC-20), an optional memo in
  * `raw_data.data`, `expiry` ordering (`expiresAtMs`), one `secp256k1-ecdsa` digest request
- * over the txID, and the txID as the Attempt ref, known before signing (spec §15).
+ * over the txID, and the txID as the Attempt ref, known before signing.
  *
- * Reference block and expiration (D3, D4): the reference is the head block (TaPoS), and the
+ * Reference block and expiration: the reference is the head block (TaPoS), and the
  * transaction expires `expirationMs` after the earlier of the head's time and the local
  * clock, as tronweb does from the head. A head older than half the window is refused
  * (retryable) instead of producing a transaction that is born nearly expired, and so is a
@@ -12,12 +12,13 @@
  * the expiration beyond the window from now. The ordering records the signed expiration and
  * the reference block's TaPoS bound (`lastValidHeight`: its height, read from its id, plus
  * `TAPOS_WINDOW`), so the negative inclusion proof scans from the attested reference block
- * up to the expiration, whatever the head or the clock claimed (F4-R12). The expiration
- * stays inside java-tron's own window (at least the next slot, at most 24 h past its head).
+ * up to the expiration, whatever the head or the clock claimed: a floor derived from the
+ * clock could sit above the block that holds the transaction. The expiration stays inside
+ * java-tron's own window (at least the next slot, at most 24 h past its head).
  *
- * Uniqueness (D5): Tron has no nonce, so two identical transfers built on the same head in
+ * Uniqueness: Tron has no nonce, so two identical transfers built on the same head in
  * the same millisecond would share one txID and one on-chain effect. The core refuses an
- * Attempt whose ref another Operation holds (A15); as defense in depth, each build takes a
+ * Attempt whose ref another Operation holds; as defense in depth, each build takes a
  * `timestamp` strictly above the previous one from this driver, plus crypto-random offsets
  * on `timestamp` (up to +999 ms) and `expiration` (up to −999 ms); java-tron never
  * validates `raw_data.timestamp`.
@@ -30,7 +31,7 @@
  *
  * Broadcasts are classified here (`classifyOwnBroadcast`), never under a quorum: a transport
  * failure, an unreadable reply or a node answer that may follow pooling is thrown ambiguous
- * (possibly sent). A node's rejection is a claim (lesson 21): it stands only when its reason
+ * (possibly sent). A node's rejection is a claim: it stands only when its reason
  * holds for the bytes that were sent, read back from them; otherwise it is a refusal. A
  * `TX_EXPIRED` refusal is the node's view at its own head, a hint and not proof: Tron has no
  * nonce, so a second Attempt could land beside the first. The broadcaster never re-sends or
@@ -85,11 +86,11 @@ import type {
   TronRawData,
 } from './types';
 
-/** The largest `int64` the codec writes from a JS number (lesson 19). */
+/** The largest `int64` the codec writes from a JS number. */
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 /** A positive base-unit amount in a stored summary: at most a `uint256` (78 digits). */
 const SUMMARY_AMOUNT = /^[1-9][0-9]{0,77}$/;
-/** Linear on any input (lesson 20): one character class, no repeated group. */
+/** Linear on any input: one character class, no repeated group. */
 const HEX_DIGITS = /^[0-9a-fA-F]+$/;
 
 /** What the signed bytes must carry; addresses are lower-case `41…` hex. */
@@ -114,7 +115,7 @@ function invalid(message: string): ValidationError {
 }
 
 /**
- * Whether an address holds a contract, read under the proof quorum (F4-R11): a node's word
+ * Whether an address holds a contract, read under the proof quorum: a node's word
  * alone must not refuse a valid transfer, and endpoints that disagree decide nothing.
  */
 const CONFIRMED: TronCallTags = { ...READ, quorum: 'proof' };
@@ -134,9 +135,10 @@ function memoHex(memo: string | undefined): string | undefined {
 
 /**
  * The validated transfer, before any I/O: one output, a positive amount, TRX or TRC-20,
- * valid addresses, a memo within bounds, amounts the encoders can write exactly (lesson 19,
- * D20), and TRX never to the sender (java-tron: "Cannot transfer TRX to yourself.", for the
- * bytes alone). A TRC-20 transfer to the sender is valid on chain and is allowed.
+ * valid addresses, a memo within bounds, amounts the encoders can write exactly (a TRX
+ * transfer above 2^53 − 1 sun must be split), and TRX never to the sender (java-tron:
+ * "Cannot transfer TRX to yourself.", for the bytes alone). A TRC-20 transfer to the
+ * sender is valid on chain and is allowed.
  */
 function prepare(intent: DriverIntent): Prepared {
   const output = intent.outputs[0];
@@ -179,7 +181,7 @@ function prepare(intent: DriverIntent): Prepared {
 /**
  * Whether decoded raw data carries exactly `t`. A TRC-20 call must be the canonical
  * `transfer(to, amount)` (selector, zero-padded recipient, one amount word, nothing more)
- * with no TRX or TRC-10 value: the verdict (Task 6) reads only that shape.
+ * with no TRX or TRC-10 value: the verdict reads only that shape.
  */
 function carries(raw: TronRawData, t: Transfer): boolean {
   const c = raw.contract;
@@ -234,8 +236,8 @@ function summaryTransfer(
 /**
  * The fee fields a build writes, from this transfer's own `tron` estimate: the bandwidth
  * the estimate covers and, for TRC-20 only, a positive fee limit within the handle's
- * `maxFeeLimit` (F4-R28), wherever the estimate came from. The limit is handed to the codec
- * as a number and its `safe()` refuses one it cannot hold exactly (lesson 19): it is never
+ * `maxFeeLimit`, wherever the estimate came from. The limit is handed to the codec
+ * as a number and its `safe()` refuses one it cannot hold exactly: it is never
  * rounded into the bytes.
  */
 function feeFields(
@@ -325,7 +327,7 @@ const expiresAt = (ordering: OrderingData): number | undefined =>
   ordering.kind === 'expiry' ? ordering.expiresAtMs : undefined;
 
 /**
- * Whether an ordering names the signed reference block (F4-R12, F4-R14): a reference height
+ * Whether an ordering names the signed reference block: a reference height
  * (`lastValidHeight − TAPOS_WINDOW`) whose bytes 6..8 are the signed `ref_block_bytes`, and
  * the signed `ref_block_hash` itself. The proofs trust the height only with the hash.
  */
@@ -402,8 +404,12 @@ export function createTronBuilder(ctx: TronContext): {
         p.token === undefined ? api.account(p.recipient, tags) : undefined,
         p.token === undefined ? undefined : tokenEnergy(p, build.signal),
       ]);
-      // F4-R11: where the chain forbids TRX to a contract, such a transfer is refused before
-      // signing (it would only be refused, stall and expire). Elsewhere it is valid on chain.
+      // Where the chain forbids TRX to a contract, such a transfer is refused before
+      // signing (it would only be refused, stall and expire). Elsewhere it is valid on
+      // chain: the flag is 0 on mainnet, Nile and Shasta.
+      // Known gap: the flag is one endpoint's word, read without a quorum, so a false 1
+      // refuses a valid transfer before signing and a false 0 lets the chain refuse it;
+      // liveness only, never a wrong payment.
       if (
         p.token === undefined &&
         params.forbidTransferToContract &&
@@ -414,7 +420,7 @@ export function createTronBuilder(ctx: TronContext): {
         );
       }
       // An upper bound of the built size: no expiration jitter, a later timestamp, and the
-      // largest fee limit a build can carry (the ceiling `tronFee` applies, F4-R12 M4).
+      // largest fee limit a build can carry (the ceiling `tronFee` applies).
       const now = ctx.clock.now();
       const ceiling = feeLimitCeiling(params, config.maxFeeLimit).value;
       const provisional = codec.encodeRaw({
@@ -467,7 +473,7 @@ export function createTronBuilder(ctx: TronContext): {
           'the head block is too old to reference; try again',
         );
       }
-      // F4-R12 M2: a head dated more than half the window ahead means a local clock behind
+      // A head dated more than half the window ahead means a local clock behind
       // the chain, whose every build would be born expired (and cost a signature per
       // rebuild), or a lying endpoint. Either way nothing is built on it.
       if (block.timestamp - now > config.expirationMs / 2) {
@@ -476,14 +482,14 @@ export function createTronBuilder(ctx: TronContext): {
           'the head block is dated ahead of the local clock; check the clock or try again',
         );
       }
-      // F4-R12: the reference block's height, from its id (java-tron's block id is the
+      // The reference block's height, from its id (java-tron's block id is the
       // height's 8 bytes followed by 24 bytes of the header hash, `generateBlockId`): the
       // same bytes TaPoS reads. A head whose id and number disagree is not a block.
       const reference = BigInt(`0x${block.id.slice(0, 16)}`);
       if (reference !== block.number) throw malformed('head block id');
       const anchor = Math.min(block.timestamp, now);
       const expiration = anchor + config.expirationMs - jitter();
-      // D3: the window stays within MAX_EXPIRATION_MS, and java-tron wants at least the next
+      // The window stays within MAX_EXPIRATION_MS, and java-tron wants at least the next
       // slot. The network config bounds the window; this holds it.
       if (expiration - anchor > MAX_EXPIRATION_MS) {
         throw new ConfigError(
@@ -528,7 +534,8 @@ export function createTronBuilder(ctx: TronContext): {
       }
       const txId = toHex(sha256(fromHex(payload)));
       // The negative proof scans from the reference block to the signed expiration; the
-      // height is the head's claim, so the signed hash bytes go with it (F4-R14).
+      // height is the head's claim, so the signed hash bytes go with it, and the proof
+      // trusts the height only where the attested block carries them.
       const ordering: TronExpiryOrdering = {
         kind: 'expiry',
         expiresAtMs: expiration,
@@ -584,7 +591,7 @@ export function createTronBuilder(ctx: TronContext): {
       if (txId !== toHex(request.payload) || txId !== unsigned.expectedRef?.id) {
         throw mismatch();
       }
-      // Lesson 4: the stored bytes decode strictly, and their owner is the signing key's
+      // The stored bytes decode strictly, and their owner is the signing key's
       // account, so a signature never authorizes another account's transaction.
       let decoded: TronRawData;
       try {
@@ -601,7 +608,7 @@ export function createTronBuilder(ctx: TronContext): {
       if (decoded.contract.owner !== signer) {
         throw fail("the payload's owner is not the signing key's account");
       }
-      // F4-R12 M3: only a signature the node will take for the owner's goes out, low s and
+      // Only a signature the node will take for the owner's goes out, low s and
       // recovery bit included, as the core's scheme checks it; a signer fault is a signing
       // failure here, never a refusal on chain.
       if (
@@ -665,7 +672,7 @@ export function createTronBuilder(ctx: TronContext): {
         ...(options.signal ? { signal: options.signal } : {}),
       });
       // Inside the broadcaster, so a possibly-sent throw reaches the engine's recordAmbiguous.
-      // Lesson 21: a rejection stands only when its reason holds for these bytes.
+      // A rejection stands only when its reason holds for these bytes.
       return classifyOwnBroadcast(answer, txBytesOf(hex));
     },
   };

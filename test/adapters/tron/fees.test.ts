@@ -204,13 +204,14 @@ describe('tronFee', () => {
     });
   });
 
-  it('range-checks the fee limit at its boundaries, and never names the value (lesson 19)', () => {
+  it('range-checks the fee limit at its boundaries, and never names the value', () => {
     // 125,000,000 energy + 20% is exactly the network's maximum fee limit.
     expect(tronFee(input({ energy: 125_000_000n })).details).toMatchObject({
       feeLimit: 15_000_000_000n,
     });
-    // F4-R28: min(estimate × margin, network maximum, maxFeeLimit). The ceiling caps the
-    // margin; only a simulated need above it is refused (a lower fee limit fails on chain).
+    // The fee limit is min(estimate × margin, network maximum, maxFeeLimit). The
+    // ceiling caps the margin; only a simulated need above it is refused (a lower fee
+    // limit fails on chain).
     expect(tronFee(input({ energy: 125_000_001n })).details).toMatchObject({
       feeLimit: 15_000_000_000n,
     });
@@ -234,7 +235,7 @@ describe('tronFee', () => {
     expect(error).toEqual(invalidIntent(/maximum fee limit/));
     expect(String((error as Error).message)).not.toContain('15000000001');
     // A network maximum above what a transaction can carry: the handle's bound, at most
-    // 2^53 − 1 (the codec's), binds, and the refusal names it, not the network (F4-R9 M2).
+    // 2^53 − 1 (the codec's), binds, and the refusal names it, not the network.
     const huge = { ...PARAMS, maxFeeLimit: 2n ** 64n };
     expect(at(2n ** 53n - 1n, huge).details).toMatchObject({ feeLimit: 2n ** 53n - 1n });
     const optionBound = invalidIntent(/^feeLimit is above maxFeeLimit, /);
@@ -244,7 +245,7 @@ describe('tronFee', () => {
     ).toThrow(invalidIntent(/^the transfer needs more energy than maxFeeLimit allows/));
   });
 
-  it('bounds the fee limit by the handle option maxFeeLimit, whatever the node reports (F4-R28)', () => {
+  it('bounds the fee limit by the handle option maxFeeLimit, whatever the node reports', () => {
     // 100 TRX, the default: a node that inflates the simulated energy, the energy price or its
     // maximum fee limit cannot set a larger fee limit, which an assert-style failure burns.
     const bound = 100_000_000n;
@@ -348,8 +349,8 @@ describe('tronFee', () => {
     }
   });
 
-  it('refuses a TRC-20 estimate without positive energy, and any without positive bandwidth (F4-R9)', () => {
-    // M4 (F4-R10): the energy is the node's simulation, so a non-positive one is a malformed
+  it('refuses a TRC-20 estimate without positive energy, and any without positive bandwidth', () => {
+    // The energy is the node's simulation, so a non-positive one is a malformed
     // answer (retryable), never the caller's intent.
     for (const energy of [0n, -1n]) {
       for (const fee of ['normal', { feeLimit: 1_000_000n }] as const) {
@@ -363,8 +364,8 @@ describe('tronFee', () => {
       }
     }
     // The bandwidth is the driver's own measure of the bytes it built: a non-positive one is a
-    // driver bug, never a node's answer. F4-R10: an internal CryptoAioError, never a foreign
-    // RangeError (lesson 6), and not retryable, so the Operation fails before signing.
+    // driver bug, never a node's answer: an internal CryptoAioError, never a foreign
+    // RangeError, and not retryable, so the Operation fails before signing.
     for (const bandwidth of [0n, -1n]) {
       for (const energy of [undefined, 30_000n]) {
         let caught: unknown;
@@ -719,7 +720,7 @@ describe('classifyBroadcast', () => {
     }
   });
 
-  it('never repeats node text (R24): no address, amount or id in any result', () => {
+  it('never repeats node text: no address, amount or id in any result', () => {
     for (const a of [
       answer(
         'CONTRACT_VALIDATE_ERROR',
@@ -742,7 +743,8 @@ describe('classifyBroadcast', () => {
     }
   });
 
-  it('reads long adversarial messages as refusals (lesson 20: anchored, linear patterns)', () => {
+  // Every pattern is anchored and linear, so a long message costs one pass.
+  it('reads long adversarial messages as refusals', () => {
     const long = 100_000;
     for (const [code, message] of [
       [
@@ -909,7 +911,7 @@ describe('classifyBroadcast on java-tron answers (scripted node)', () => {
   });
 });
 
-/** Every java-tron answer the classifier reads as a definitive `rejected` (Task 5). */
+/** Every java-tron answer the classifier reads as a definitive `rejected`. */
 const CLAIMS = {
   signature: answer('SIGERROR', 'Validate signature error: Signature size is 64'),
   noContract: answer('CONTRACT_VALIDATE_ERROR', 'Contract validate error : No contract!'),
@@ -999,7 +1001,8 @@ function ownOutcome(a: BroadcastAnswer, hex: string): unknown {
   }
 }
 
-describe('txBytesOf (lesson 21)', () => {
+// The bytes a broadcast sent, as the checks of a claimed rejection read them.
+describe('txBytesOf', () => {
   it('reads what the byte-only checks need from the signed bytes, SDK-free', () => {
     expect(txBytesOf(OURS)).toEqual({
       size: OURS.length / 2,
@@ -1076,7 +1079,7 @@ describe('txBytesOf (lesson 21)', () => {
     }
   });
 
-  it('never throws on any truncation or byte flip of signed bytes, and never overstates a size (F4-R23 review)', () => {
+  it('never throws on any truncation or byte flip of signed bytes, and never overstates a size', () => {
     for (const hex of [OURS, TRIGGER, signedHex({ data: '68656c6c6f' })]) {
       let read = 0;
       for (let n = 0; n <= hex.length; n += 2) {
@@ -1097,14 +1100,15 @@ describe('txBytesOf (lesson 21)', () => {
     }
   });
 
-  it('reads no input longer than twice java-tron’s transaction limit (lesson 20)', () => {
+  it('reads no input longer than twice java-tron’s transaction limit', () => {
     const memo = (bytes: number) => signedHex({ data: '61'.repeat(bytes) });
     expect(txBytesOf(memo(520_000))?.size).toBeGreaterThan(512_000);
     expect(txBytesOf(memo(1_100_000))).toBeUndefined();
   });
 });
 
-describe('classifyOwnBroadcast (lesson 21: a rejection is a claim)', () => {
+// A node's rejection is a claim: it stands only when its reason holds for our own bytes.
+describe('classifyOwnBroadcast', () => {
   it.each([
     ['signature', encodeTransaction(encodeRawData(BASE), ['ab'.repeat(64)])],
     ['noContract', encodeTransaction(NO_CONTRACT_RAW, ['ab'.repeat(65)])],
@@ -1121,7 +1125,7 @@ describe('classifyOwnBroadcast (lesson 21: a rejection is a claim)', () => {
     expect(ownOutcome(CLAIMS[claim], hex)).toEqual(expected);
   });
 
-  it('judges the signature and size claims only on bytes with one signature, whose txID has no smaller valid form (F4-R23)', () => {
+  it('judges the signature and size claims only on bytes with one signature, whose txID has no smaller valid form', () => {
     const [signature] = decodeTransaction(OURS).signatures as [string];
     const short = 'ab'.repeat(64);
     const raw = encodeRawData(BASE);
@@ -1152,7 +1156,7 @@ describe('classifyOwnBroadcast (lesson 21: a rejection is a claim)', () => {
         rejected('transaction too large'),
       );
     }
-    // One short signature: no form of this txID is signed (lesson 21 unchanged).
+    // One short signature: no form of this txID is signed, so the claim holds.
     expect(ownOutcome(CLAIMS.signature, encodeTransaction(raw, [short]))).toEqual(
       rejected('malformed signature'),
     );

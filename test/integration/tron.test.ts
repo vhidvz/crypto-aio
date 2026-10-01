@@ -1,5 +1,5 @@
 /**
- * Opt-in, read-only checks against a live Tron network (spec §17), skipped unless
+ * Opt-in, read-only checks against a live Tron network, skipped unless
  * CRYPTO_AIO_INTEGRATION=1. Environment variables carry flags and routing only, never keys:
  * - CRYPTO_AIO_IT_TRON_NETWORK: `mainnet`, `shasta` or `nile` (default `nile`);
  * - CRYPTO_AIO_IT_TRON_URL: an endpoint base URL serving `/wallet`, `/walletsolidity` and
@@ -8,7 +8,7 @@
  * Nothing is signed or broadcast. The builder refuses a head older than half the expiration
  * window, and a clock lagging the network by nearly a window makes every build expire at
  * birth, so one check reads the head's age by the local clock as the builder does. The
- * negative inclusion proof (F4-R12, F4-R14) runs on live blocks: a transaction id that was
+ * negative inclusion proof runs on live blocks: a transaction id that was
  * never built, with a `TronExpiryOrdering` naming a solidified block as its reference, is
  * proven absent from every block above the attested reference block, up to the first block
  * at or past its expiration.
@@ -21,7 +21,7 @@ import {
   type TronExpiryOrdering,
 } from '../../src/adapters/tron';
 import { TAPOS_WINDOW } from '../../src/adapters/tron/network';
-// The proofs' own read, which the public API does not expose (as the EVM suite's R78 probe).
+// The proofs' own read, which the public API does not expose (as the EVM suite's probe).
 import { internalsOf } from '../../src/core/blockchain/internal';
 
 const enabled = process.env.CRYPTO_AIO_INTEGRATION === '1';
@@ -45,7 +45,7 @@ const suite = enabled ? describe : describe.skip;
 const open = (aio: CryptoAio) => aio.blockchain({ chain: 'tron', network, provider });
 
 /**
- * `read`, tried again only on a retryable failure: a proof that decides nothing (lesson 16)
+ * `read`, tried again only on a retryable failure: a proof that decides nothing
  * answered correctly, and a lagging load-balanced backend or a 429 passes.
  */
 async function retried<T>(read: () => Promise<T>): Promise<T> {

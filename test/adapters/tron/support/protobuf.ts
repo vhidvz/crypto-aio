@@ -2,7 +2,7 @@
  * An independent, test-only protobuf codec for the Tron messages the driver builds
  * (`Transaction`, `Transaction.raw`, TransferContract, TriggerSmartContract), written from
  * Tron's `core/Tron.proto` and `core/contract/*.proto`. It cross-checks tronweb's bytes
- * (lesson 11) and powers the scripted node, so the node never decodes with the code under
+ * and powers the scripted node, so the node never decodes with the code under
  * test. Unknown fields are refused, which is stricter than java-tron and fine for a fake.
  */
 import { fromHex, toHex, utf8ToBytes } from '../../../../src/core/util/bytes';
@@ -12,7 +12,7 @@ import type { TronContract, TronRawData } from '../../../../src/adapters/tron/ty
 const INT64_MAX = (1n << 63n) - 1n;
 
 function varint(value: bigint): number[] {
-  // Lesson 19: refuse, never wrap. The text never contains the value.
+  // Refuse, never wrap. The text never contains the value.
   if (value < 0n || value > INT64_MAX) throw new TypeError('varint out of range');
   const out: number[] = [];
   let v = value;

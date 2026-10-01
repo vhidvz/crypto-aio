@@ -157,6 +157,19 @@ network's own value, then 5. Networks that set their own value, roughly a minute
 
 The other EVM networks (Ethereum, Polygon, the Avalanche C-Chain, the testnets) use the default of 5.
 
+Sizing endpoints for proofs:
+
+- **Give proof reads three or more endpoints.** With two, neither is ever excluded as lagging,
+  and once one fails its probes or requests for about three health intervals the other proves
+  alone. Proofs also decide nothing at startup, while an honest endpoint's breaker is open (at
+  least `openMs`), and for about three health intervals after an endpoint dies: the safe
+  direction, since a transfer waits rather than settles on one word.
+- **Health probes share each endpoint's `rateLimit`.** A probe takes its token ahead of queued
+  requests, so on a low tier keep `rps × healthIntervalMs` well above the calls one refresh makes,
+  and give proof endpoints a `burst` of 2 or more: with a burst of 1, the probe a proof read runs
+  first can spend the only token and keep a recovering endpoint out. A probe the endpoint
+  rate-limits keeps its last good height and identity, rather than counting as a failure.
+
 ## Family options
 
 Set in `chains.<id>.options` or a handle's `options`. Each family refuses keys it does not know.

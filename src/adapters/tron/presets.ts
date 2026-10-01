@@ -1,5 +1,5 @@
 /**
- * Tron provider presets (spec §11): TronGrid, the hosted service Tron's own documentation
+ * Tron provider presets: TronGrid, the hosted service Tron's own documentation
  * lists for every network. `trongrid` sends the API key in the `TRON-PRO-API-KEY` header as
  * a `Secret`; `public` is the same hosts without a key (rate limited, not for production).
  * Each preset serves both kinds: `rpc` (the full node, solidity node and JSON-RPC paths) and
@@ -68,7 +68,7 @@ function presets(kind: 'rpc' | 'indexer'): ProviderPreset[] {
   ];
 }
 
-/** Frozen with each preset (R56); built once, so `use(tronPlugin())` stays idempotent (X6). */
+/** Frozen with each preset; built once, so `use(tronPlugin())` stays idempotent. */
 export const TRON_PRESETS: readonly ProviderPreset[] = deepFreeze([
   ...presets('rpc'),
   ...presets('indexer'),

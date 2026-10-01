@@ -28,7 +28,7 @@ function addressWord(address: string): string {
   return toHexAddress(address).slice(2).padStart(64, '0');
 }
 
-/** Lesson 19: an amount outside `uint256` is refused with a fixed text, never wrapped. */
+/** An amount outside `uint256` is refused with a fixed text, never wrapped. */
 export function encodeTransfer(to: string, amount: bigint): string {
   if (amount < 0n || amount > UINT256_MAX) {
     throw new ValidationError('INVALID_AMOUNT', 'amount does not fit in a uint256');
@@ -47,7 +47,8 @@ export function encodeBalanceOf(owner: string): string {
 export function decodeTransferCall(
   data: string,
 ): { readonly to: string; readonly amount: bigint } | null {
-  // Lesson 20: a fixed length (selector + two words), checked before any other work.
+  // A fixed length (selector + two words), checked before any other work, so a long
+  // untrusted input costs one length check.
   if (data.length !== 136) return null;
   const hex = data.toLowerCase();
   if (!/^a9059cbb[0-9a-f]{128}$/.test(hex)) return null;
@@ -62,13 +63,13 @@ export function decodeUint256(data: string): bigint {
   return BigInt(`0x${data}`);
 }
 
-/** One character class, no repeated group: linear on any input (lesson 20). */
+/** One character class, no repeated group: linear on any input. */
 const HEX_DIGITS = /^[0-9a-fA-F]+$/;
 
 /**
  * Throws on data that is not an ABI `string` (offset 32, length, padded UTF-8). The shape is
- * checked by length and one character class (final review M1): a repeated-group regex
- * overflows V8's stack on a few million characters (lesson 20, Plan 5 Task 6 addendum).
+ * checked by length and one character class: a repeated-group regex overflows V8's stack
+ * on a few million characters.
  */
 export function decodeString(data: string): string {
   if (

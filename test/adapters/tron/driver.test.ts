@@ -56,7 +56,7 @@ describe('tronwebDriverFactory', () => {
     expect(indexed.driver.history).toBeDefined();
   });
 
-  it('sets the probes exactly once on the transport and the indexer, before any traffic (M12)', async () => {
+  it('sets the probes exactly once on the transport and the indexer, before any traffic', async () => {
     const t = nodeTransport({ solidDepth: 2 });
     const log: string[] = [];
     const counting = (name: string): Transport =>
@@ -90,7 +90,7 @@ describe('tronwebDriverFactory', () => {
     expect(log.slice(0, 2)).toEqual(['rpc.setProbes', 'indexer.setProbes']);
   });
 
-  it('checks every endpoint against the network identity: block 0 (spec §11)', async () => {
+  it('checks every endpoint against the network identity: block 0', async () => {
     const good = await driverOn();
     await good.run(good.transport.refreshHealth());
     expect(good.transport.status().map((s) => s.state)).toEqual(['healthy', 'healthy']);
@@ -120,7 +120,7 @@ describe('tronwebDriverFactory', () => {
     ).resolves.toBeDefined();
   });
 
-  it('serves ext.tron and a fresh native TronWeb client on the same transport (R34)', async () => {
+  it('serves ext.tron and a fresh native TronWeb client on the same transport', async () => {
     const { driver, node, run, calls } = await driverOn();
     node.fund(KEY_ADDRESS, 3n);
     expect(
@@ -142,7 +142,7 @@ describe('tronwebDriverFactory', () => {
     expect(await run(client.trx.getBalance(RECIPIENT))).toBe(0);
   });
 
-  it('never waits on a real timer on any driver request path (R46)', async () => {
+  it('never waits on a real timer on any driver request path', async () => {
     const { driver, run, node, clock } = await driverOn();
     node.fund(KEY_ADDRESS, 100_000_000n);
     // Genesis serves no timestamp (proto3): a build needs a mined head to reference.
@@ -171,7 +171,7 @@ describe('tronwebDriverFactory', () => {
     expect(clock.pending).toBe(0);
   });
 
-  it("tags the native client's broadcasts ambiguous-on-failure (handoff §3)", async () => {
+  it("tags the native client's broadcasts ambiguous-on-failure", async () => {
     const { driver, run, node, calls } = await driverOn();
     node.fund(KEY_ADDRESS, 10_000_000n);
     const head = node.block(node.head) as { id: string; timestamp: number };
@@ -200,7 +200,7 @@ describe('tronwebDriverFactory', () => {
     expect(node.inPool(tx.id)).toBe(true);
   });
 
-  it('fails the identity check of an endpoint that lacks the solidity or JSON-RPC service (D2)', async () => {
+  it('fails the identity check of an endpoint that lacks the solidity or JSON-RPC service', async () => {
     const t = await driverOn();
     t.node.intercept('b', '/jsonrpc', () => ({ status: 404, text: 'Not Found' }));
     await t.run(t.transport.refreshHealth());

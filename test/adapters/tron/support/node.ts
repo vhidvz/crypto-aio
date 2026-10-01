@@ -1,8 +1,8 @@
 /**
- * A scripted Tron node for tests (test-only, D6): java-tron's HTTP API (`/wallet`,
+ * A scripted Tron node for tests (test-only): java-tron's HTTP API (`/wallet`,
  * `/walletsolidity`), its JSON-RPC block reads and TronGrid's `/v1` history, served per
- * endpoint through a `FakeFetch`. It models the rules the driver's safety depends on
- * (lesson 8). Fix round 1 checked each rule and text against java-tron GreatVoyage-v4.8.2.2
+ * endpoint through a `FakeFetch`. It models the rules the driver's safety depends on,
+ * deterministically. Each rule and text is checked against java-tron GreatVoyage-v4.8.2.2
  * (commit d5c3d1d1fd0cad12f09c4346d6ac937ab2cbb071); the file and method are named at each
  * rule. Where the source could not settle a case, the node is stricter than the chain,
  * never more lenient.
@@ -1372,8 +1372,8 @@ export class ScriptedTronNode {
       // java-tron lets 66–68 bytes through to recovery; the node refuses every size but 65.
       if (size !== SIGNATURE_BYTES) throw badSignature(`Signature size is ${size}`);
     }
-    // No contract at all (verified), or a contract the node does not model (the brief's
-    // answer; java-tron would validate it as its type).
+    // No contract at all (verified), or a contract the node does not model (a
+    // simplification; java-tron would validate it as its type).
     if (signed.contracts.length === 0 || !signed.model) throw invalid('No contract!');
     const tx = this.#stored(signed, signed.model);
     const head = this.#last;
@@ -1529,7 +1529,7 @@ export class ScriptedTronNode {
     return Number.isSafeInteger(n) && n >= 0 && n <= limit ? this.#blocks[n] : undefined;
   }
 
-  /** Every JSON answer is written with exact integers, as java-tron does (A12). */
+  /** Every JSON answer is written with exact integers, as java-tron does. */
   async #serve(
     endpoint: string,
     request: FakeRequest,

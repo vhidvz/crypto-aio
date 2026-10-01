@@ -1,6 +1,6 @@
 /**
  * A container on the scripted Tron node, for end-to-end tests. `restart({ killPrevious:
- * true })` kills the old generation through `fenceGeneration` (handoff R20, ruling A5): every
+ * true })` kills the old generation through `fenceGeneration`: every
  * clock sleep, fetch, store and signer call of the old container then never settles, exactly
  * like a dead process. A plain `restart()` starts a second live generation. `aio` and `bc`
  * are the current generation's; `clock` and `stores` are the shared, unfenced objects: drive
@@ -13,7 +13,7 @@
  * Determinism needs the caller's help: `CryptoAio` builds its transports itself, with no
  * `id` or `random` option, so their backoff jitter falls back to `Math.random`. A suite that
  * uses this env pins it (`jest.spyOn(Math, 'random').mockReturnValue(0.5)` in `beforeAll`,
- * restored in `afterAll`), as `e2e.test.ts` does (lesson 1, R46).
+ * restored in `afterAll`), as `e2e.test.ts` does.
  */
 import {
   CryptoAio,

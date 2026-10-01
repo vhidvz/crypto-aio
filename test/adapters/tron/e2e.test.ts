@@ -17,7 +17,7 @@ const JUNK = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
 
 type TronEnv = ReturnType<typeof createTronEnv>;
 
-/** Every java-tron answer the classifier reads as a definitive `rejected` (Task 5). */
+/** Every java-tron answer the classifier reads as a definitive `rejected`. */
 const CLAIMS = [
   ['SIGERROR', 'Validate signature error: Signature size is 64'],
   ['CONTRACT_VALIDATE_ERROR', 'Contract validate error : No contract!'],
@@ -43,7 +43,7 @@ const patchState = (state: string) => (args: readonly unknown[]) =>
 jest.setTimeout(60_000);
 
 // The container builds its own transports, whose backoff jitter then falls back to
-// `Math.random`: pin it (lesson 1, R46). Their ids cannot be fixed through `CryptoAio`.
+// `Math.random`: pin it. Their ids cannot be fixed through `CryptoAio`.
 beforeAll(() => {
   jest.spyOn(Math, 'random').mockReturnValue(0.5);
 });
@@ -110,8 +110,8 @@ describe('Tron end to end', () => {
       amount: { base: 1_500_000n },
     });
     expect(tx?.decoding).toBe('complete');
-    // The typed expiry ordering binds the signed expiration and the signed reference block
-    // (F4-R12, F4-R14, F4-R15): here the build-time head, block 1.
+    // The typed expiry ordering binds the signed expiration and the signed reference
+    // block: here the build-time head, block 1.
     const { attempt, signed } = await storedAttempt(env, sub.operationId);
     expect(referenced(env, signed)).toBe(1);
     expect(attempt.ordering).toEqual({
@@ -173,7 +173,7 @@ describe('Tron end to end', () => {
     expect(env.node.tokenBalance(USDT, RECIPIENT)).toBe(0n);
   });
 
-  it('never reports success for a token that moved nothing and logged nothing (lesson 7)', async () => {
+  it('never reports success for a token that moved nothing and logged nothing', async () => {
     const env = createTronEnv();
     env.node.deployToken(USDT, { symbol: 'USDT', decimals: 6, mode: 'no-log' });
     env.node.mintToken(USDT, env.address, 1_000n);
@@ -186,7 +186,7 @@ describe('Tron end to end', () => {
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).toBe('failed');
   });
 
-  it('counts a fee-on-transfer token as executed: from the sender to the recipient, any positive amount (F5)', async () => {
+  it('counts a fee-on-transfer token as executed: from the sender to the recipient, any positive amount', async () => {
     const env = createTronEnv();
     env.node.deployToken(USDT, { symbol: 'USDT', decimals: 6, mode: 'fee' });
     env.node.mintToken(USDT, env.address, 1_000_000n);
@@ -206,7 +206,7 @@ describe('Tron end to end', () => {
     ]);
   });
 
-  it('treats a base58 and a hex recipient as one intent under one idempotency key (F11)', async () => {
+  it('treats a base58 and a hex recipient as one intent under one idempotency key', async () => {
     const { signer, calls } = countingSigner();
     const env = createTronEnv({ signer });
     const first = await env.run(
@@ -357,7 +357,7 @@ describe('Tron end to end', () => {
   });
 
   describe('lying and lagging endpoints', () => {
-    it('confirms a transfer built on a forged reference head, and never expires or rebuilds it (F4-R14)', async () => {
+    it('confirms a transfer built on a forged reference head, and never expires or rebuilds it', async () => {
       const { signer, calls } = countingSigner();
       const env = createTronEnv({ signer });
       // The endpoint's identity and height probes run on the honest head first. A height a
@@ -448,7 +448,7 @@ describe('Tron end to end', () => {
       expect(calls()).toBe(1);
     });
 
-    it('decides nothing on an impossible answer: a failed result for an included TRX transfer (F4-R10)', async () => {
+    it('decides nothing on an impossible answer: a failed result for an included TRX transfer', async () => {
       const env = createTronEnv();
       // The lone endpoint serves the included transfer with a failed result, which java-tron
       // never records for a TransferContract; its honest answer comes from the same node.
@@ -489,7 +489,7 @@ describe('Tron end to end', () => {
       expect(env.node.balance(RECIPIENT)).toBe(13n);
     });
 
-    it('refuses before signing a fee limit that one endpoint inflates past maxFeeLimit (F4-R28)', async () => {
+    it('refuses before signing a fee limit that one endpoint inflates past maxFeeLimit', async () => {
       // A forged maximum fee limit and a 100× energy price: the estimate needs ~296 TRX,
       // above the 100 TRX default bound, and an assert-style failure would burn it all.
       const lying = { getMaxFeeLimit: 2n ** 60n, getEnergyFee: 10_000n };
@@ -532,7 +532,7 @@ describe('Tron end to end', () => {
       expect(calls()).toBe(1);
     });
 
-    it("keeps the Operation when a lone endpoint answers 'rejected' for bytes it relayed (spec §8.2)", async () => {
+    it("keeps the Operation when a lone endpoint answers 'rejected' for bytes it relayed", async () => {
       const { signer, calls } = countingSigner();
       const env = createTronEnv({ signer });
       const relay = env.node.endpoint('relay');
@@ -566,7 +566,7 @@ describe('Tron end to end', () => {
       expect(calls()).toBe(1);
     });
 
-    it('ends at a proven expiry, never failed, when a lone endpoint claims a rejection on every broadcast and relays nothing (F4-R23)', async () => {
+    it('ends at a proven expiry, never failed, when a lone endpoint claims a rejection on every broadcast and relays nothing', async () => {
       const { signer, calls } = countingSigner();
       const env = createTronEnv({ signer });
       // It keeps every copy it is sent, relays none, and claims each invalid.
@@ -588,7 +588,8 @@ describe('Tron end to end', () => {
       ).rejects.toMatchObject({ code: 'TX_REFUSED' });
       const op = await env.stores.operations.getByKey('default', 'liar');
       expect(op?.state).toBe('stalled');
-      // The liveness half of lesson 21: the proofs end it, as expired and never as failed.
+      // An unconfirmed rejection costs liveness only: the proofs end it, as expired and
+      // never as failed.
       await expect(
         env.mineWhile(env.bc.waitForConfirmation(op?.id ?? '', { finality: 'final' }), {
           maxBlocks: 100,
@@ -604,8 +605,9 @@ describe('Tron end to end', () => {
       expect(env.node.balance(RECIPIENT)).toBe(0n);
     });
 
+    // A node's rejection is a claim: it ends nothing unless it holds for our own bytes.
     it.each(CLAIMS)(
-      "never ends the Operation on a lone endpoint's unverified claim %s: %s (lesson 21)",
+      "never ends the Operation on a lone endpoint's unverified claim %s: %s",
       async (code, message) => {
         const { signer, calls } = countingSigner();
         const env = createTronEnv({ signer });
@@ -642,8 +644,9 @@ describe('Tron end to end', () => {
       },
     );
 
+    // A node's rejection is a claim: it ends nothing unless it holds for our own bytes.
     it.each(CLAIMS)(
-      'confirms our transfer when a lone endpoint relays it yet claims %s: %s (lesson 21)',
+      'confirms our transfer when a lone endpoint relays it yet claims %s: %s',
       async (code, message) => {
         const { signer, calls } = countingSigner();
         const env = createTronEnv({ signer });
@@ -678,7 +681,7 @@ describe('Tron end to end', () => {
       },
     );
 
-    it('retries a history entry the node serves only from its pool, never skipping it (F4-R14)', async () => {
+    it('retries a history entry the node serves only from its pool, never skipping it', async () => {
       const env = createTronEnv({ indexer: true });
       const sub = await env.run(env.bc.transfer({ to: RECIPIENT, amount: 14n }));
       const id = sub.attempt?.id ?? '';
@@ -715,7 +718,7 @@ describe('Tron end to end', () => {
     });
   });
 
-  it('scans final blocks for deposits, marking a junk token unresolved (R35)', async () => {
+  it('scans final blocks for deposits, marking a junk token unresolved', async () => {
     const env = createTronEnv();
     withToken(env);
     env.node.deployToken(JUNK, {
