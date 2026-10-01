@@ -25,7 +25,7 @@ import type { DriverIntent, IntentSummary } from '../../core/model/intent';
 import type { OrderingData } from '../../core/model/ordering';
 import type { UnsignedTx } from '../../core/model/transaction';
 import { equalBytes, fromHex, toHex } from '../../core/util/bytes';
-import { classifyBroadcastError } from './errors';
+import { classifyOwnBroadcast } from './errors';
 import {
   FEE_HISTORY_BLOCKS,
   FEE_PERCENTILES,
@@ -422,7 +422,7 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
   };
 }
 
-export function createEvmBroadcaster(client: EvmClient): Broadcaster {
+export function createEvmBroadcaster(client: EvmClient, chainId: bigint): Broadcaster {
   return {
     async broadcast(signed, options = {}): Promise<BroadcastResult> {
       try {
@@ -435,9 +435,12 @@ export function createEvmBroadcaster(client: EvmClient): Broadcaster {
         return { kind: 'accepted' };
       } catch (error) {
         // R17: an ambiguous error may hide a delivered transaction; it is never classified.
+        // Lesson 21: a rejection stands only when its reason holds for the bytes we sent.
         if (isCryptoAioError(error, 'RPC_ERROR') && !error.ambiguous) {
-          return classifyBroadcastError(
+          return classifyOwnBroadcast(
             String(error.details?.rpcMessage ?? error.message),
+            signed.raw.data,
+            chainId,
           );
         }
         throw error;

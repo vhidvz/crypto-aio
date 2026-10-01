@@ -205,6 +205,14 @@ an explicit override that raises each price by at least 10%. A cancel is a zero-
 transfer to yourself, at the smallest valid bump unless you pass `fee`. Arbitrum has no
 mempool, so it supports neither (`UNSUPPORTED_CAPABILITY`).
 
+A node's rejection is a claim, and every family checks it against the bytes it sent before
+it ends anything: on EVM networks, "invalid sender", "invalid chain id", "rlp: …" and "tip
+above fee cap" stand only when the signed bytes, read by the library itself, really carry a
+bad signature, another chain id, a broken encoding or a tip above the cap. Otherwise the
+answer is a refusal ("the node claimed the transaction is invalid"): the Operation stalls
+instead of failing, so an endpoint that lies and relays the bytes later can never make you
+pay twice. Retry a stalled transfer only with `rebroadcast` or the same idempotency key.
+
 On Bitcoin, a replacement or cancel (BIP125) spends every input of the transaction it
 replaces, and must pay the old fee plus 1 sat/vB of its own size, at a higher rate, or it
 throws `FEE_TOO_LOW`. A cancel pays everything, minus its fee, back to the sending address.

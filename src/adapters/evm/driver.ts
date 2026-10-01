@@ -54,7 +54,7 @@ export function evmDriverFactory(
         address: createEvmAddressCodec(client),
         reader: createEvmReader(evm),
         builder: createEvmBuilder(evm),
-        broadcaster: createEvmBroadcaster(client),
+        broadcaster: createEvmBroadcaster(client, config.chainId),
         proofs: createEvmProofs(evm),
         sequence: createEvmSequence(client),
         ...(replacement ? { replacement } : {}),

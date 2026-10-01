@@ -48,7 +48,7 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
       build,
       prepare,
       assemble,
-      broadcaster: createEvmBroadcaster(h.client),
+      broadcaster: createEvmBroadcaster(h.client, h.ctx.config.chainId),
     };
   }
 
@@ -571,9 +571,12 @@ describe('EVM broadcaster', () => {
     ref: { id: '', idKind: 'tx-hash', canonical: true },
   };
   const stub = (send: (tags: EvmCallTags) => Promise<string>) =>
-    createEvmBroadcaster({
-      sendRawTransaction: (_raw: string, tags: EvmCallTags) => send(tags),
-    } as unknown as EvmClient);
+    createEvmBroadcaster(
+      {
+        sendRawTransaction: (_raw: string, tags: EvmCallTags) => send(tags),
+      } as unknown as EvmClient,
+      11_155_111n,
+    );
 
   it('sends with broadcast tags, passing fanout and signal through (R41)', async () => {
     const seen: EvmCallTags[] = [];
