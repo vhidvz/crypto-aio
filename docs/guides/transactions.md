@@ -424,7 +424,10 @@ await aio.close(); // closes native clients and pooled drivers
 - `aio.monitor.runOnce({ workerId, batch })` runs one pass and returns how many Operations it
   claimed. Use it from a scheduler.
 - Call `close()` on the root container; a scope's `close()` does nothing. After it, handle
-  methods and `native()` throw `StateError` (`INVALID_TRANSITION`).
+  methods and `native()` throw `StateError` (`INVALID_TRANSITION`). It also stops every
+  `monitor.start()` loop, and a running `runOnce()` or `recover()` at its next check, so
+  the closed container claims no more Operations; starting one afterwards throws
+  `INVALID_TRANSITION` too.
 - Tune timing with `lifecycle`: `pollIntervalMs`, `droppedGracePeriodMs`,
   `rebroadcastIntervalMs`, `leaseMs`, `claimLeaseMs`, `waitTimeoutMs` and `signTimeoutMs`.
 
