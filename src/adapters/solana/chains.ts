@@ -9,6 +9,7 @@
  *   blockhash is valid for 150 blocks, so an endpoint further behind cannot judge expiry).
  */
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { deepFreeze } from '../../core/util/freeze';
 
 const EXPLORER = 'https://explorer.solana.com';
 
@@ -32,15 +33,6 @@ function cluster(
       address: `${EXPLORER}/address/{address}${query}`,
     },
   };
-}
-
-/** Freezes plain data all the way down (R56). */
-export function deepFreeze<T>(value: T): T {
-  if (typeof value === 'object' && value !== null) {
-    for (const item of Object.values(value)) deepFreeze(item);
-    Object.freeze(value);
-  }
-  return value;
 }
 
 export const SOLANA_CHAIN: ChainInfo = deepFreeze({

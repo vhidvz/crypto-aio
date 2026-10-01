@@ -1,3 +1,4 @@
+import { secp256k1 } from '@noble/curves/secp256k1';
 import { internalsOf } from '../../../src/core/blockchain/internal';
 import type { WalletConfig } from '../../../src/core/config/types';
 import { CryptoAio } from '../../../src/core/container/container';
@@ -11,6 +12,7 @@ import {
 } from '../../../src/core/lifecycle/engine';
 import { Monitor } from '../../../src/core/lifecycle/monitor';
 import { sequenceKey } from '../../../src/core/ordering/sequence';
+import { secret } from '../../../src/core/secret/secret';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
 import type { Signer } from '../../../src/core/signing/types';
@@ -33,7 +35,7 @@ import {
   type FakeEnv,
   type FakeEnvOptions,
 } from '../../../src/testing/env';
-import { REVERT_ADDRESS } from '../../../src/testing/fake-chain';
+import { REVERT_ADDRESS, signFake } from '../../../src/testing/fake-chain';
 import { fakePlugin } from '../../../src/testing/fake-plugin';
 import { CrashError, FaultyOperationStore } from '../../../src/testing/faulty-store';
 import { countingSigner, mineWhile } from './support';
@@ -509,6 +511,41 @@ describe('fix round 2 minors', () => {
       mineWhile(env, reverted.wait({ finality: 'final' })),
     ).rejects.toMatchObject({ code: 'TX_REVERTED' });
     expect((await stored(env, reverted.operationId)).state).toBe('failed');
+    await env.run(env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }));
+    env.chain.configureEndpoint('main', { lag: 200 });
+    const report = await env.run(env.aio.operations.recover());
+    expect(report).toMatchObject({ failed: 0, reconciled: 0 });
+    expect(await sequenceOf(env)).toMatchObject({ next: 3n, released: [] });
+  });
+
+  it('never releases the nonce of a proven replacement when a lagging endpoint under-reports pending (B113)', async () => {
+    const key = secp256k1.utils.randomPrivateKey();
+    const env = await createFakeEnv({
+      signer: localSigner({ id: 'hot', secp256k1: secret(key) }),
+    });
+    const first = await env.run(env.bc.transfer({ to: env.stranger(), amount: 1n }));
+    await mineWhile(env, first.wait({ finality: 'final' }));
+    const replaced = await env.run(env.bc.transfer({ to: env.stranger(), amount: 5n }));
+    env.chain.submit(
+      signFake(
+        {
+          chainId: 'fake-local',
+          from: env.address,
+          to: env.stranger(),
+          amount: '1',
+          fee: '9',
+          nonce: '1',
+        },
+        key,
+      ),
+    );
+    await expect(
+      mineWhile(env, replaced.wait({ finality: 'final' })),
+    ).rejects.toMatchObject({ code: 'TX_REPLACED' });
+    expect(await stored(env, replaced.operationId)).toMatchObject({
+      state: 'failed',
+      error: { code: 'TX_REPLACED' },
+    });
     await env.run(env.bc.prepareTransfer({ to: env.stranger(), amount: 1n }));
     env.chain.configureEndpoint('main', { lag: 200 });
     const report = await env.run(env.aio.operations.recover());

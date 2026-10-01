@@ -109,13 +109,26 @@ export class SequenceCoordinator {
       // Best effort: a failed release must not replace the callback's outcome (for
       // example a completed broadcast). The lease then lapses by its TTL, and fencing
       // still guards every write.
-      await this.deps.locks.release(handle.current).catch((error: unknown) => {
-        try {
-          this.deps.onReleaseError?.(error);
-        } catch {
-          // An observer failure must not replace the outcome either.
+      await this.#release(handle.current);
+    }
+  }
+
+  /**
+   * B111: a release that throws, synchronously or not, is reported and absorbed, and so
+   * is the observer's own failure, including an async observer's rejection.
+   */
+  async #release(lease: Lease): Promise<void> {
+    try {
+      await this.deps.locks.release(lease);
+    } catch (error) {
+      try {
+        const observed: unknown = this.deps.onReleaseError?.(error);
+        if (typeof (observed as { then?: unknown } | null)?.then === 'function') {
+          Promise.resolve(observed).catch(() => undefined);
         }
-      });
+      } catch {
+        // An observer failure must not replace the outcome either.
+      }
     }
   }
 

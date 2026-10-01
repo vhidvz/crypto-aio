@@ -106,7 +106,7 @@ The presets of each family are listed in [Networks](./networks/index.md#provider
 | --- | --- | --- |
 | `signer` | `string` | The signer holding the key; without one, the wallet is watch-only |
 | `signers` | `Record<keyRef id, signer>` | Routes requests to several signers by `keyRef.id` (multi-party) |
-| `publicKey` | hex `string` | A watch-only wallet that can still prepare transactions |
+| `publicKey` | hex `string` | A watch-only wallet that can still prepare transactions; exactly the key length of the chain's scheme (33 bytes compressed for secp256k1, 32 for ed25519) |
 | `address` | `string` | A watch-only address |
 | `xpub`, `xpubPath`, `xpubVersions` | | Deposit addresses with `deriveAddress`; the path template defaults to `0/{index}` |
 | `keyRef` | `{ id?, path? }` | Which key of the signer: a derivation path for mnemonic signers |

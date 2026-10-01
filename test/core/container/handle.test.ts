@@ -9,7 +9,9 @@ import {
   resetDefaultContainer,
 } from '../../../src/core/container/default';
 import { containerOf } from '../../../src/core/container/internals';
+import type { AioOptions } from '../../../src/core/config/types';
 import type { AdapterManifest } from '../../../src/core/driver/types';
+import { secret } from '../../../src/core/secret/secret';
 import { normalizeIntent } from '../../../src/core/lifecycle/intent';
 import { noopLogger } from '../../../src/core/events/logger';
 import { localSigner } from '../../../src/core/signing/local';
@@ -694,6 +696,51 @@ describe('containers', () => {
     expect(before.config.confirmations).toBe(2);
     expect(after.config.confirmations).toBe(7);
     expect(await env.run(after.getBlockHeight())).toBe(0n);
+  });
+
+  it('refuses a reference cycle in its options with CONFIG_INVALID, not a stack overflow (B116)', () => {
+    const nested: Record<string, unknown> = { depth: 1 };
+    nested.again = [{ back: nested }];
+    const options = { options: { nested } };
+    for (const build of [
+      () => new CryptoAio({ env: false, logger: noopLogger, chains: { c: options } }),
+      () =>
+        new CryptoAio({ env: false, logger: noopLogger }).scope({
+          chains: { c: options },
+        }),
+    ]) {
+      expect(thrown(build)).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message: 'the configuration holds a reference cycle',
+      });
+    }
+  });
+
+  it('configure() never lets undefined override, nor __proto__ reach a map (B105)', () => {
+    const hot = localSigner({ id: 'hot', secp256k1: secret(new Uint8Array(32).fill(1)) });
+    configure({
+      env: false,
+      logger: noopLogger,
+      signers: { hot },
+      wallets: { main: { signer: 'hot' } },
+      providers: { fake: { endpoints: [{ url: 'https://fake.test' }] } },
+      lifecycle: { leaseMs: 5_000 },
+      chains: { fakechain: { provider: 'fake' } },
+    });
+    const later = configure({
+      signers: { hot: undefined },
+      wallets: { main: undefined },
+      providers: { fake: undefined },
+      lifecycle: { leaseMs: undefined },
+      ...JSON.parse('{"chains":{"__proto__":{"provider":"fake"}}}'),
+    } as unknown as AioOptions);
+    const effective = containerOf(later).effective();
+    expect(effective.signers.hot).toBe(hot);
+    expect(effective.wallets.main).toEqual({ signer: 'hot' });
+    expect(effective.providers.fake).toBeDefined();
+    expect(effective.lifecycle.leaseMs).toBe(5_000);
+    expect(Object.getPrototypeOf(effective.chains)).toBe(Object.prototype);
+    expect(Object.keys(effective.chains)).toEqual(['fakechain']);
   });
 
   it('isolates tenant containers from each other', async () => {

@@ -1,3 +1,4 @@
+import { ConfigError } from '../errors/error';
 import type { Signer } from '../signing/types';
 import type {
   ChainDefaults,
@@ -12,6 +13,11 @@ import type {
 /** Keys that can repoint an object's prototype chain; a merge never copies these. */
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+/** Whether a merge must skip `key` (`__proto__`, `constructor` or `prototype`). */
+export function isUnsafeKey(key: string): boolean {
+  return UNSAFE_KEYS.has(key);
+}
+
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object') return false;
   const proto: unknown = Object.getPrototypeOf(value);
@@ -19,20 +25,36 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 }
 
 /**
+ * B116: config is plain data, so a plain object or array that contains itself is a mistake;
+ * it is refused at startup instead of overflowing the stack. `ancestors` holds the path
+ * being copied, so one object shared by two branches is still copied, once per branch.
+ */
+export function assertNoCycle(value: object, ancestors: ReadonlySet<object>): void {
+  if (ancestors.has(value)) {
+    throw new ConfigError('CONFIG_INVALID', 'the configuration holds a reference cycle');
+  }
+}
+
+/**
  * Deep-clones plain objects and arrays so a merge result never aliases the caller's input.
  * Class instances (Signer, Secret, ...) and other non-plain values keep their identity.
  */
-function cloneValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(cloneValue);
-  if (isPlainObject(value)) {
+function cloneValue(value: unknown, ancestors: Set<object> = new Set()): unknown {
+  if (!Array.isArray(value) && !isPlainObject(value)) return value;
+  assertNoCycle(value, ancestors);
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value))
+      return value.map((item: unknown) => cloneValue(item, ancestors));
     const out: Record<string, unknown> = {};
     for (const [key, v] of Object.entries(value)) {
       if (UNSAFE_KEYS.has(key)) continue;
-      out[key] = cloneValue(v);
+      out[key] = cloneValue(v, ancestors);
     }
     return out;
+  } finally {
+    ancestors.delete(value);
   }
-  return value;
 }
 
 /**
@@ -80,14 +102,15 @@ function shallow<T extends object>(base: T | undefined, over: T | undefined): T 
 /**
  * Merges a map of opaque values by name, taking every value by reference (never cloned). Used
  * for `signers`: `Signer` is an interface, so a plain-object signer is legitimate and must keep
- * its identity and its own-property state. Skips `__proto__`/`constructor`/`prototype` keys.
+ * its identity and its own-property state. `undefined` never overrides. Skips
+ * `__proto__`/`constructor`/`prototype` keys.
  */
-function byReference<T>(
-  base: Readonly<Record<string, T>>,
+export function byReference<T>(
+  base: Readonly<Record<string, T>> | undefined,
   over: Readonly<Record<string, T>> | undefined,
 ): Record<string, T> {
   const out: Record<string, T> = {};
-  for (const layer of [base, over ?? {}]) {
+  for (const layer of [base ?? {}, over ?? {}]) {
     for (const [key, value] of Object.entries(layer)) {
       if (value !== undefined && !UNSAFE_KEYS.has(key)) out[key] = value;
     }

@@ -2,8 +2,8 @@ import type { Hooks } from '../config/types';
 import {
   SigningError,
   ValidationError,
-  createError,
   isCryptoAioError,
+  withContext,
   type ErrorContext,
 } from '../errors/error';
 import type { EventBus } from '../events/bus';
@@ -354,13 +354,7 @@ export class SigningOrchestrator {
         cancelFailures += 1;
     }
     if (!isCryptoAioError(error)) return error;
-    return createError(error.code, error.message, {
-      cause: error.cause,
-      context: error.context,
-      details: { ...error.details, cancelFailures },
-      retryable: error.retryable,
-      ambiguous: error.ambiguous,
-    });
+    return withContext(error, {}, { details: { ...error.details, cancelFailures } });
   }
 
   /**

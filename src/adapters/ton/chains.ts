@@ -13,6 +13,7 @@
  *   a healthy proof peer may trail the freshest endpoint), all library policy.
  */
 import type { ChainInfo, NetworkInfo } from '../../core/model/chain';
+import { deepFreeze } from '../../core/util/freeze';
 
 function tonNetwork(
   id: string,
@@ -37,15 +38,6 @@ function tonNetwork(
       finalitySkewBlocks: 10,
     },
   };
-}
-
-/** R56: exported data is frozen all the way down. */
-export function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object') {
-    for (const item of Object.values(value)) deepFreeze(item);
-    Object.freeze(value);
-  }
-  return value;
 }
 
 export const TON_CHAINS: readonly ChainInfo[] = deepFreeze([

@@ -4,7 +4,7 @@
  * program mints with 6 decimals, read from the chain (Plan 5 appendix).
  */
 import type { AssetRegistration } from '../../core/registry/assets';
-import { deepFreeze } from './chains';
+import { deepFreeze } from '../../core/util/freeze';
 
 function token(
   network: 'mainnet' | 'devnet',

@@ -280,6 +280,66 @@ describe('SequenceCoordinator', () => {
     ).toBe('done');
   });
 
+  it("catches an async onReleaseError observer's rejection (B111)", async () => {
+    const clock = new FakeClock();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const coordinator = new SequenceCoordinator({
+        locks: failingRelease(clock),
+        sequences: new MemorySequenceStore(),
+        clock,
+        owner: 'w1',
+        leaseMs: 1_000,
+        onReleaseError: async () => {
+          throw new Error('async observer failed');
+        },
+      });
+      expect(
+        await drive(
+          clock,
+          coordinator.withLease(KEY, async () => 'done'),
+        ),
+      ).toBe('done');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('keeps the callback outcome when release throws synchronously (B111)', async () => {
+    const clock = new FakeClock();
+    const inner = new MemoryLockManager(clock);
+    const releaseErrors: unknown[] = [];
+    const coordinator = new SequenceCoordinator({
+      locks: {
+        acquire: (key, owner, ttlMs) => inner.acquire(key, owner, ttlMs),
+        renew: (lease, ttlMs) => inner.renew(lease, ttlMs),
+        release: () => {
+          throw new Error('lock store unavailable');
+        },
+      },
+      sequences: new MemorySequenceStore(),
+      clock,
+      owner: 'w1',
+      leaseMs: 1_000,
+      onReleaseError: (error) => releaseErrors.push(error),
+    });
+    expect(
+      await drive(
+        clock,
+        coordinator.withLease(KEY, async () => 'done'),
+      ),
+    ).toBe('done');
+    expect(releaseErrors).toEqual([
+      expect.objectContaining({ message: 'lock store unavailable' }),
+    ]);
+  });
+
   it('refuses to write a sequence with a lease held for another key', async () => {
     const { coordinator, clock, sequences } = setup();
     const OTHER = sequenceKey('ns', 'c', 'n', 'other');

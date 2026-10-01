@@ -22,6 +22,12 @@ Node 22.0 to 22.11, the first use of a Solana handle (`ready()`, a read or `nati
 fails with Node's own `ERR_REQUIRE_ESM`, not with `DEPENDENCY_MISSING`. The rest of
 crypto-aio needs Node 22.
 
+**A harmless install warning.** Installing `@solana/web3.js` can warn of an unmet peer
+`utf-8-validate@^5`: its `jayson` depends on `ws` 7, whose optional helper is
+`utf-8-validate` 5, while `ws` 8 elsewhere in the tree brings 6. Ignore it. `ws` runs
+without that helper, and the driver sends every request through the handle's transport,
+never over a WebSocket.
+
 | Network | Identity (genesis hash) | Presets |
 | --- | --- | --- |
 | `mainnet` | `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d` | `public`, `alchemy`, `infura`, `ankr` |

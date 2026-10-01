@@ -119,6 +119,45 @@ describe('resolveWallet', () => {
     expect(wallet.keys[0]?.publicKey).toEqual(original);
   });
 
+  it.each<[string, unknown]>([
+    ['a short key', toHex(new Uint8Array(32).fill(2))],
+    [
+      'an uncompressed key',
+      toHex(secp256k1.getPublicKey(secp256k1.utils.randomPrivateKey(), false)),
+    ],
+    ['odd hex', '0x02abc'],
+    ['not hex', 'zz'.repeat(33)],
+    ['not a string', 7],
+  ])(
+    'B109: refuses a watch-only publicKey that is %s with CONFIG_INVALID',
+    async (_label, publicKey) => {
+      const watchOnly = {
+        chain: { id: 'c', schemes: ['secp256k1-ecdsa'] },
+        wallet: { name: 'w', config: { publicKey } },
+      } as unknown as ResolvedSelection;
+      const error = await resolveWallet(watchOnly, driver, {}, catalog).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toMatchObject({
+        code: 'CONFIG_INVALID',
+        message: "wallet 'w': publicKey must be 33 bytes of hex for secp256k1-ecdsa",
+      });
+    },
+  );
+
+  it('B109: takes a watch-only publicKey of the right length, with or without 0x', async () => {
+    const key = secp256k1.getPublicKey(secp256k1.utils.randomPrivateKey(), true);
+    for (const publicKey of [toHex(key), toHex(key, true)]) {
+      const watchOnly = {
+        chain: { id: 'c', schemes: ['secp256k1-ecdsa'] },
+        wallet: { name: 'w', config: { publicKey } },
+      } as unknown as ResolvedSelection;
+      const wallet = await resolveWallet(watchOnly, driver, {}, catalog);
+      expect(wallet.keys[0]?.publicKey).toEqual(key);
+      expect(wallet.watchOnly).toBe(true);
+    }
+  });
+
   it('R9.3: guards reading the signer scheme list', async () => {
     const unreadable = {
       id: 'odd',

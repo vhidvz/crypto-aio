@@ -6,10 +6,12 @@ import type { ChainInfo, NetworkInfo } from '../model/chain';
 import type { Catalogs } from '../registry/plugin';
 import { redactDeep, redactHeaders, redactUrl } from '../secret/redact';
 import { reveal } from '../secret/secret';
+import { signerSchemes } from '../signing/guard';
 import type { EndpointConfig } from '../transport/types';
+import { deepFreeze } from '../util/freeze';
 import { canonicalJson, sha256Hex } from '../util/json';
 import { unknownName } from '../util/names';
-import { isPlainObject, mergeChainDefaults } from './merge';
+import { mergeChainDefaults } from './merge';
 import type {
   EffectiveOptions,
   HandleOptions,
@@ -129,19 +131,6 @@ function resolveProviders(
       }),
     };
   });
-}
-
-/** Recursively freezes plain objects and arrays; leaves class instances (Signer, Secret, ...) untouched. */
-function deepFreeze<T>(value: T): T {
-  if (Array.isArray(value)) {
-    for (const item of value) deepFreeze(item);
-    return Object.freeze(value) as T;
-  }
-  if (isPlainObject(value)) {
-    for (const v of Object.values(value)) deepFreeze(v);
-    return Object.freeze(value) as T;
-  }
-  return value;
 }
 
 function fallbackToPublic(
@@ -275,10 +264,12 @@ export function resolveSelection(input: ResolveInput): ResolvedSelection {
         unknownName('signer', Object.keys(effective.signers)),
       );
     }
-    if (!chain.schemes.some((scheme) => instance.schemes.includes(scheme))) {
+    // B107: `Signer` is an interface, so its scheme list is read once and checked.
+    const schemes = signerSchemes(signerId, instance);
+    if (!chain.schemes.some((scheme) => schemes.includes(scheme))) {
       throw new ConfigError(
         'CONFIG_INVALID',
-        `signer '${signerId}' supports ${instance.schemes.join(', ')} but chain '${chain.id}' needs one of ${chain.schemes.join(', ')}`,
+        `signer '${signerId}' supports ${schemes.join(', ')} but chain '${chain.id}' needs one of ${chain.schemes.join(', ')}`,
       );
     }
     signer = { id: signerId, instance };

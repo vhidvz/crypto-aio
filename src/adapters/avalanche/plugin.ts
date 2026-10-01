@@ -9,7 +9,8 @@ import type {
   PeerDependency,
 } from '../../core/driver/types';
 import type { Plugin } from '../../core/registry/plugin';
-import { AVALANCHE_CHAINS, deepFreeze } from './chains';
+import { deepFreeze } from '../../core/util/freeze';
+import { AVALANCHE_CHAINS } from './chains';
 import { AVALANCHE_CAPABILITIES } from './network';
 import { AVALANCHE_PRESETS } from './presets';
 

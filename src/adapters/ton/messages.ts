@@ -16,6 +16,7 @@ import {
 import { ProviderError, ValidationError } from '../../core/errors/error';
 import { parseTonAddress, rawAddress, type TonWorkchain } from './address';
 import { bocWithinLimits } from './api';
+import { MAX_COINS } from './fees';
 
 /** TEP-74 op codes, and the text-comment op (0). */
 export const OP = Object.freeze({
@@ -72,8 +73,6 @@ export function sdkAddress(raw: string): Address {
   return new Address(parsed.workchain, Buffer.from(parsed.hash));
 }
 
-/** `Coins` (VarUInteger 16): at most 15 bytes. */
-const MAX_COINS = (1n << 120n) - 1n;
 const MAX_QUERY_ID = (1n << 64n) - 1n;
 
 /**

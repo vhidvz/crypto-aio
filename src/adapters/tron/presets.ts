@@ -9,7 +9,7 @@ import { ConfigError } from '../../core/errors/error';
 import type { PresetInput, ProviderPreset } from '../../core/registry/providers';
 import { reveal, secret } from '../../core/secret/secret';
 import type { EndpointConfig } from '../../core/transport/types';
-import { deepFreeze } from './chains';
+import { deepFreeze } from '../../core/util/freeze';
 
 /** TronGrid hosts per network (Tron developer docs, "Networks"). */
 export const TRONGRID_HOSTS: Readonly<Record<string, string>> = Object.freeze({
