@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ChainInfo.xpubNetworkClass`: a UTXO chain whose wallets export `xpub` on every network
   (Avalanche) opts out of the SLIP-0132 network-class check of `deriveAddress`.
 
+### Changed
+
+- The documentation is now a site, published from `docs/` at
+  <https://vhidvz.github.io/crypto-aio/>: a quick start and a 10-minute mental model, a learning
+  path from first principles (blockchain foundations, then the engineering of payments), a
+  developer tour of the library, task guides with examples, and a reference (API, configuration,
+  errors, capabilities, networks, glossary). The guides' content moved into it; `docs/guides/`
+  keeps redirects from the old pages. Code samples marked runnable are executed and type-checked
+  by the test suite, and the API and capability pages are checked against the library.
+
 ## [0.1.0] - 2026-10-01
 
 ### Added

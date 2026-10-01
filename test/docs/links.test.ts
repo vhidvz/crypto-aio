@@ -1,19 +1,28 @@
-// Plan 7: every relative link in the README, the changelog and the guides resolves to a
-// tracked file, and every `#anchor` to a heading of its target (GitHub's heading ids).
-import { existsSync, readFileSync } from 'node:fs';
+// Plan 7: every relative link in the README, the changelog and the documentation site
+// resolves to a tracked file, and every `#anchor` to a heading of its target (GitHub's heading
+// ids, which the site's GFM Markdown also uses). Links to the published site
+// (https://vhidvz.github.io/crypto-aio/…) must name a page of docs/ the same way.
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 const ROOT = join(__dirname, '../..');
-const GUIDES = [
-  'concepts.md',
-  'index.md',
-  'networks.md',
-  'quick-start.md',
-  'security.md',
-  'transactions.md',
-  'tutorial.md',
-].map((name) => join(ROOT, 'docs/guides', name));
-const FILES = [join(ROOT, 'README.md'), join(ROOT, 'CHANGELOG.md'), ...GUIDES];
+const DOCS = join(ROOT, 'docs');
+const SITE = 'https://vhidvz.github.io/crypto-aio/';
+
+/** Every Markdown page of docs/, without the theme's own folders and the design records. */
+function pages(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith('_') || ['superpowers', 'api'].includes(entry.name))
+        return [];
+      return pages(path);
+    }
+    return entry.name.endsWith('.md') ? [path] : [];
+  });
+}
+
+const FILES = [join(ROOT, 'README.md'), join(ROOT, 'CHANGELOG.md'), ...pages(DOCS)];
 
 /** The lines of a Markdown file outside fenced code blocks. */
 function prose(text: string): string[] {
@@ -45,14 +54,29 @@ function anchors(file: string): Set<string> {
   return ids;
 }
 
-/** Relative link targets outside code: `[text](target)`, never `http(s):` or `mailto:`. */
-function links(file: string): string[] {
-  const out: string[] = [];
+/** The docs/ page a published site URL names: `x/` is `x/index.md`, `x.html` is `x.md`. */
+function sitePage(url: string): string {
+  const [path = '', anchor] = url.slice(SITE.length).split('#');
+  const page =
+    path === '' || path.endsWith('/')
+      ? `${path}index.md`
+      : path.replace(/\.html$/, '.md');
+  return relative(ROOT, join(DOCS, page)) + (anchor === undefined ? '' : `#${anchor}`);
+}
+
+/**
+ * Link targets outside code: `[text](target)`, never `http(s):` or `mailto:`, except links to
+ * the published site, returned as the docs/ page they name, relative to the repository root.
+ */
+function links(file: string): { target: string; base: string }[] {
+  const out: { target: string; base: string }[] = [];
   for (const line of prose(readFileSync(file, 'utf8'))) {
     const text = line.replace(/`[^`]*`/g, '');
     for (const match of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
       const target = match[1] as string;
-      if (!/^(https?:|mailto:)/.test(target)) out.push(target);
+      if (target.startsWith(SITE)) out.push({ target: sitePage(target), base: ROOT });
+      else if (!/^(https?:|mailto:)/.test(target))
+        out.push({ target, base: dirname(file) });
     }
   }
   return out;
@@ -63,9 +87,9 @@ describe('documentation links', () => {
     'every relative link in %s resolves',
     (_name, file) => {
       const broken: string[] = [];
-      for (const target of links(file)) {
+      for (const { target, base } of links(file)) {
         const [path, anchor] = target.split('#') as [string, string | undefined];
-        const resolved = path === '' ? file : join(dirname(file), path);
+        const resolved = path === '' ? file : join(base, path);
         if (!existsSync(resolved)) broken.push(`${target} (no such file)`);
         else if (anchor !== undefined && resolved.endsWith('.md')) {
           if (!anchors(resolved).has(anchor)) broken.push(`${target} (no such heading)`);

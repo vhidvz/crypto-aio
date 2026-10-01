@@ -1,24 +1,64 @@
-# Crypto-AIO
-
-All-In-One Crypto-Currency
+# crypto-aio
 
 [![npm](https://img.shields.io/npm/v/crypto-aio)](https://www.npmjs.com/package/crypto-aio)
-[![Coverage](https://raw.githubusercontent.com/vhidvz/crypto-aio/main/coverage-badge.svg)](https://htmlpreview.github.io/?https://github.com/vhidvz/crypto-aio/blob/main/docs/coverage/lcov-report/index.html)
 [![CI](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml/badge.svg)](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml)
 ![npm](https://img.shields.io/npm/dm/crypto-aio)
 [![License](https://img.shields.io/github/license/vhidvz/crypto-aio?style=flat)](LICENSE)
-[![documentation](https://img.shields.io/badge/documentation-click_to_read-c27cf4)](docs/guides/index.md)
+[![documentation](https://img.shields.io/badge/documentation-read_the_docs-c27cf4)](https://vhidvz.github.io/crypto-aio/)
 
-One TypeScript API for balances, transfers, confirmations and deposit scanning across EVM
-chains, Bitcoin, Tron, Solana, TON and the Avalanche X-Chain and P-Chain, built for
-exchanges, wallets and payment systems.
-Transfers are idempotent and crash-safe, and a signed transaction ends only on proof from
-finalized chain data, never on one endpoint's word.
+**One TypeScript API for moving money on blockchains.** Balances, transfers, confirmations
+and deposit scanning across EVM chains, Bitcoin, Tron, Solana, TON and the Avalanche X-Chain and
+P-Chain, built for exchanges, wallets and payment systems.
+
+[Documentation](https://vhidvz.github.io/crypto-aio/) ·
+[Quick start](https://vhidvz.github.io/crypto-aio/start/quick-start.html) ·
+[Learn from zero](https://vhidvz.github.io/crypto-aio/learn/) ·
+[Examples](https://vhidvz.github.io/crypto-aio/build/examples.html) ·
+[API](https://vhidvz.github.io/crypto-aio/reference/api.html)
+
+## Why crypto-aio
+
+Every chain has an SDK that can build, sign and send a transaction. None of them is a payment
+system. The hard part of moving money is everything around the transaction: a reply that never
+arrives, a process that dies between signing and sending, two servers sending from one wallet, a
+node that says "final" about a block that is later replaced. crypto-aio is the layer that handles
+those cases, written once, with the same API on every chain:
+
+- **Pay exactly once.** Every transfer carries your own idempotency key. Repeat the call after a
+  timeout, a crash or a lost reply, and you get the same payment back, never a second one.
+- **Crash-safe.** A signed transaction is stored before it is sent. After a restart, the library
+  sends those exact bytes again; recovery never signs.
+- **Final means proven.** A transfer is final only on finalized chain data that a quorum of
+  independent endpoints agree on, never on one node's word.
+- **Deposits that survive reorgs.** Durable scanners deliver every block at least once, and roll
+  back when the chain reorganizes.
+- **Keys stay with signers.** In memory, or behind your HSM, KMS or MPC custody, with a policy
+  hook before every signature. Logs, errors and events never carry a secret.
+- **One shape, explicit differences.** What a chain cannot do is a named capability, not a silent
+  difference.
+
+**Who it is for:** backend developers building exchanges, custodial wallets, payment processors
+and treasury systems on Node.js. New to crypto? The documentation teaches everything from first
+principles, starting with [what a ledger is](https://vhidvz.github.io/crypto-aio/learn/foundations/ledgers.html).
+
+## Supported networks
+
+| Family | Chains | Through |
+| --- | --- | --- |
+| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (default) or `web3` 4 |
+| Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7 and an Esplora indexer |
+| Tron | mainnet, Shasta, Nile | `tronweb` 6 |
+| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 |
+| TON | mainnet, testnet | `@ton/ton` 16 and toncenter |
+| Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5 and the Avalanche Data API |
+
+What each network supports, family by family, is in
+[Networks](https://vhidvz.github.io/crypto-aio/reference/networks/).
 
 ## Install
 
-crypto-aio needs Node.js 22 or later (Solana: 22.12 or later). Install the package, and only
-the SDK of each family you use:
+crypto-aio needs Node.js 22 or later (Solana: 22.12 or later). Install the package, and only the
+SDK of each family you use:
 
 ```sh
 npm install crypto-aio ethers           # EVM chains (or web3)
@@ -29,9 +69,29 @@ npm install crypto-aio @ton/ton @ton/core @ton/crypto  # TON
 npm install crypto-aio @avalabs/avalanchejs  # Avalanche X-Chain and P-Chain
 ```
 
-A handle whose SDK is missing fails with `DEPENDENCY_MISSING` and the install command.
+A handle whose SDK is missing fails with `DEPENDENCY_MISSING` and names the install command.
 
-## Quick start
+## Your first transfer, with no network and no keys
+
+`crypto-aio/testing` ships an in-memory chain, so you can see the whole flow before you configure
+anything:
+
+<!-- runnable -->
+```ts
+import { createFakeEnv } from 'crypto-aio/testing';
+
+const env = await createFakeEnv(); // an in-memory chain, a funded wallet, and a handle
+const sub = await env.run(
+  env.bc.transfer({ to: env.stranger(), amount: '0.001' }, { idempotencyKey: 'order-42' }),
+);
+env.chain.mine(4); // the fake chain makes blocks when you ask
+const { status } = await env.run(sub.wait({ finality: 'final' }));
+console.log(status.state, status.evidence); // final proven
+```
+
+The [Quick start](https://vhidvz.github.io/crypto-aio/start/quick-start.html) explains each line.
+
+## On a real network
 
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
@@ -59,115 +119,35 @@ const { status } = await sub.wait({ finality: 'final' });
 console.log(status.state, status.evidence); // 'final' 'proven'
 ```
 
-No key at hand? The [quick start](docs/guides/quick-start.md) runs this on the in-memory
-fake chain from `crypto-aio/testing`.
+The same calls work on every chain above. [Connect to a real
+network](https://vhidvz.github.io/crypto-aio/build/connect.html) has the configuration for each
+family.
 
-## Configuration: global, scoped and per handle
+## Where to go next
 
-`configure()` sets up the default container behind `Blockchain.create()`; use one isolated
-`new CryptoAio({ namespace })` per tenant. A scope inherits and overrides, and a handle is
-immutable: `with()` returns a new one.
+| If you… | Start here |
+| --- | --- |
+| Are new to cryptocurrency or blockchains | The [learning path](https://vhidvz.github.io/crypto-aio/learn/): money, keys, transactions and finality, then the engineering of safe payments, then a tour of crypto-aio |
+| Know blockchains and want the model fast | [crypto-aio in 10 minutes](https://vhidvz.github.io/crypto-aio/start/mental-model.html), then the [hands-on tutorial](https://vhidvz.github.io/crypto-aio/start/tutorial.html) |
+| Want to build now | [Examples](https://vhidvz.github.io/crypto-aio/build/examples.html) and the [Build guides](https://vhidvz.github.io/crypto-aio/build/) |
+| Need an exact answer | [API](https://vhidvz.github.io/crypto-aio/reference/api.html), [Configuration](https://vhidvz.github.io/crypto-aio/reference/configuration.html), [Errors](https://vhidvz.github.io/crypto-aio/reference/errors.html) |
+| Are going to production | [Production architecture](https://vhidvz.github.io/crypto-aio/tour/production.html) and the [checklist](https://vhidvz.github.io/crypto-aio/build/production.html) |
+| Want to add a chain or a store | [Explore](https://vhidvz.github.io/crypto-aio/explore/): plugins, stores and the source map |
 
-```ts
-import { CryptoAio, secret } from 'crypto-aio';
+## Status
 
-const tenant = new CryptoAio({
-  namespace: 'tenant-a', // prefixes every store key
-  providers: { node: { endpoints: [{ name: 'main', url: secret(process.env.RPC_URL ?? '') }] } },
-  chains: { bsc: { network: 'testnet', provider: 'node' } },
-});
-const eu = tenant.scope({ chains: { bsc: { maxLagBlocks: 20 } } }); // shares the pool and stores
-const bsc = eu.blockchain({ chain: 'bsc' });
-const viaWeb3 = bsc.with({ library: 'web3' }); // `bsc` is unchanged
-```
+crypto-aio is at **0.1.0**, the first release of this API; the 0.0.x releases on npm are an older,
+unrelated API. Before 1.0, some extension interfaces may still change
+([what is stable](https://vhidvz.github.io/crypto-aio/reference/stability.html)). Only in-memory
+stores ship: production needs durable stores of your own, proven with the contract suites in
+`crypto-aio/testing`. Release notes are in the [changelog](CHANGELOG.md).
 
-The most specific value wins: call, handle, scope, container, environment
-(`CRYPTO_AIO_<CHAIN>_{NETWORK|LIBRARY|PROVIDER|RPC_URL|INDEXER_URL}`, routing only, never
-keys), then built-in defaults.
+## Contributing
 
-## Many chains, one shape
-
-```ts
-const aio = new CryptoAio({ chains: { ton: { provider: 'public', indexer: 'public' } } });
-for (const bc of [
-  aio.blockchain({ chain: 'bitcoin', network: 'testnet4', provider: 'public', indexer: 'public' }),
-  aio.blockchain({ chain: 'tron', network: 'nile', provider: 'public' }),
-  aio.blockchain({ chain: 'solana', network: 'devnet', provider: 'public' }),
-  aio.blockchain({ chain: 'ton', network: 'testnet' }),
-]) {
-  console.log(bc.chain, await bc.getBlockHeight(), bc.supports('replace-fee'));
-}
-```
-
-Every family has the same handle (`getBalance`, `estimateFee`, `transfer`,
-`waitForConfirmation`, `scanner`, `history`) plus a typed `bc.ext.<family>`; what each
-network supports is in [Using any blockchain network](docs/guides/networks.md).
-
-## Integration matrix
-
-| Library                                           | Status                                          | Chains                                                                          |
-| ------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
-| `ethers` 6                                        | Supported, the EVM default                      | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base |
-| `web3` 4                                          | Supported (sunset upstream; prefer ethers)      | the same EVM chains                                                             |
-| `bitcoinjs-lib` 7                                 | Supported, over an Esplora indexer              | Bitcoin mainnet, testnet, testnet4, signet, regtest                             |
-| `tronweb` 6                                       | Supported                                       | Tron mainnet, Shasta, Nile                                                      |
-| `@solana/web3.js` 1                               | Supported                                       | Solana mainnet, devnet, testnet                                                 |
-| `@ton/ton` 16, with `@ton/core` and `@ton/crypto` | Supported, with toncenter API v3 as the indexer | TON mainnet and testnet; the coin is Gram (formerly Toncoin)                    |
-| `@tonconnect/sdk`                                 | Replaced by `@ton/ton`                          | TonConnect links dApps to user wallets; it is not a node SDK                    |
-| `@avalabs/avalanchejs` 5                          | Supported, with the Avalanche Data API as the indexer | Avalanche X-Chain and P-Chain, mainnet and Fuji (the C-Chain is supported as EVM) |
-| `@bnb-chain/javascript-sdk`                       | Unsupported                                     | BNB Beacon Chain, shut down in 2024: no node serves it (BNB Smart Chain is supported as EVM) |
-
-Only in-memory stores ship. Production needs durable stores of your own (Postgres, Redis,
-…), proven with the contract suites in `crypto-aio/testing`.
-
-## Extending
-
-A chain of an existing family is data, served by the built-in driver:
-
-```ts
-import { CryptoAio } from 'crypto-aio';
-import { evmChainPlugin } from 'crypto-aio/evm';
-
-const aio = new CryptoAio({ plugins: [evmChainPlugin({ name: 'acme', chains: [acmeChain] })] });
-```
-
-A provider preset is a plugin too; a custody signer (HSM, KMS, MPC) is three callbacks:
-
-```ts
-import { callbackSigner, reveal, secret, type ProviderPreset } from 'crypto-aio';
-
-const acmeCloud: ProviderPreset = {
-  name: 'acmecloud',
-  kind: 'rpc',
-  requiresApiKey: true,
-  supports: (chain) => chain === 'acmechain',
-  endpoints: ({ apiKey }) => [
-    { name: 'main', url: secret(`https://rpc.acme.example/v1/${reveal(apiKey ?? '')}`) },
-  ],
-};
-aio.use({ name: 'acme-presets', presets: [acmeCloud] });
-
-const custody = callbackSigner({
-  id: 'mpc-1',
-  schemes: ['secp256k1-ecdsa'],
-  getPublicKey: async (scheme, keyRef) => vault.publicKey(scheme, keyRef?.id),
-  sign: async (requests, ctx) => ({
-    status: 'pending', // or { status: 'signed', signatures }
-    ticket: await vault.submit(requests, ctx.operationId),
-  }),
-});
-```
-
-A new chain family is a plugin with an adapter: see
-[the plugin API](docs/guides/networks.md#3-a-new-family-the-plugin-api).
-
-## Documentation
-
-- [Guides](docs/guides/index.md): concepts, a quick start, a tutorial, sending and receiving,
-  keys and secrets (with the [production checklist](docs/guides/security.md#production-checklist)),
-  and every network.
-- API reference: run `pnpm doc` in a clone, then open `docs/api/index.html`.
-- [Changelog](CHANGELOG.md), with the 0.1.0 migration notes.
+Issues and pull requests are welcome. `pnpm install` and `pnpm check` (lint, typecheck and tests)
+are all a change needs locally; the [source map](https://vhidvz.github.io/crypto-aio/explore/source-map.html)
+explains the repository, and [docs/README.md](docs/README.md) how the documentation is built and
+tested.
 
 ## License
 

@@ -1,4 +1,4 @@
-// Runnable companion of docs/guides/tutorial.md ("Tutorial: review the concepts in 20
+// Runnable companion of docs/start/tutorial.md ("Tutorial: review the concepts in 20
 // minutes"). Each step's body here is the code block of the matching guide step, character
 // for character; tutorial-sync.test.ts checks that. The guide imports the package names, and
 // this file imports the same entry points from source, as test/e2e/public-api.test.ts does:
