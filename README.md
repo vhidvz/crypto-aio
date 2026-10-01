@@ -2,8 +2,9 @@
 
 All-In-One Crypto-Currency
 
-[![CI](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml/badge.svg)](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/crypto-aio)](https://www.npmjs.com/package/crypto-aio)
+[![Coverage](https://raw.githubusercontent.com/vhidvz/crypto-aio/main/coverage-badge.svg)](https://htmlpreview.github.io/?https://github.com/vhidvz/crypto-aio/blob/main/docs/coverage/lcov-report/index.html)
+[![CI](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml/badge.svg)](https://github.com/vhidvz/crypto-aio/actions/workflows/ci.yml)
 ![npm](https://img.shields.io/npm/dm/crypto-aio)
 [![License](https://img.shields.io/github/license/vhidvz/crypto-aio?style=flat)](LICENSE)
 [![documentation](https://img.shields.io/badge/documentation-click_to_read-c27cf4)](docs/guides/index.md)
