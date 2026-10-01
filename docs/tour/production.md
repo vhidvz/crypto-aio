@@ -4,7 +4,7 @@ parent: Developer tour
 nav_order: 9
 layout: lesson
 journey: learn
-description: How the pieces fit in a real deployment: processes, durable stores, custody, providers, tenants, startup and shutdown, observability, and failure drills.
+description: "How the pieces fit in a real deployment: processes, durable stores, custody, providers, tenants, startup and shutdown, observability, and failure drills."
 ---
 
 # Production architecture
@@ -23,36 +23,21 @@ description: How the pieces fit in a real deployment: processes, durable stores,
 ## The shape of a deployment
 
 ```mermaid
-flowchart TB
-  subgraph svc["Your service"]
-    direction LR
-    api1["API process 1<br/>transfer(), prepareTransfer()"]
-    api2["API process 2"]
+flowchart LR
+  subgraph svc["Your service: any number of processes"]
+    direction TB
+    api["API processes<br/>transfer(), prepareTransfer()"]
     wk["Worker processes<br/>monitor.start()"]
     sc["Deposit scanner<br/>bc.scanner(), mode 'final'"]
   end
-  subgraph data["Durable, shared stores (your implementation)"]
-    direction LR
-    ops[("OperationStore")]
-    lk[("LockManager")]
-    sq[("SequenceStore")]
-    cu[("CursorStore")]
-  end
-  subgraph keys["Custody"]
-    pol["Your policy service<br/>(beforeSign)"]
-    hsm["HSM, KMS or MPC<br/>(callbackSigner)"]
-  end
-  subgraph prov["Providers, per network"]
-    direction LR
-    p1["Provider A"]
-    p2["Provider B"]
-    p3["Your own node"]
-  end
+  stores[("Durable, shared stores<br/>operations · locks ·<br/>sequences · cursors")]
+  custody["Your policy (beforeSign)<br/>and custody signer<br/>HSM, KMS or MPC"]
+  prov["Two or three independent<br/>providers per network"]
   obs["Metrics and alerts<br/>(aio.on events)"]
-  api1 & api2 & wk & sc --> data
-  api1 & api2 --> pol --> hsm
-  api1 & api2 & wk & sc --> prov
-  api1 & api2 & wk & sc -.-> obs
+  svc --> stores
+  svc --> prov
+  api --> custody
+  svc -.-> obs
 ```
 
 Each part is something the earlier stops explained:

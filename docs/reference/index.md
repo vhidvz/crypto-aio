@@ -3,7 +3,7 @@ title: Reference
 nav_order: 6
 has_children: true
 has_toc: false
-description: Exact, complete details: every API, configuration option, error code, capability and network, and a glossary.
+description: "Exact, complete details: every API, configuration option, error code, capability and network, and a glossary."
 ---
 
 # Reference

@@ -5,7 +5,7 @@ grand_parent: Learn
 nav_order: 9
 layout: lesson
 journey: learn
-description: How your code reaches a blockchain: HTTP, JSON-RPC, nodes, providers, indexers, API keys and rate limits.
+description: "How your code reaches a blockchain: HTTP, JSON-RPC, nodes, providers, indexers, API keys and rate limits."
 ---
 
 # Nodes, RPC and providers

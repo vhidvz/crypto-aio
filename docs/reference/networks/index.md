@@ -34,6 +34,20 @@ Built-in families register in the package's composition root. Install only the S
 `DEPENDENCY_MISSING`. What each network can do is in [Capabilities](../capabilities.md), and
 how to configure each family is in [Connect to a real network](../../build/connect.md).
 
+## Libraries
+
+| Library | Status |
+| --- | --- |
+| `ethers` 6 | Supported, the EVM default |
+| `web3` 4 | Supported; sunset upstream (4.16.0 is its last release), so prefer ethers |
+| `bitcoinjs-lib` 7 | Supported, over an Esplora indexer |
+| `tronweb` 6 | Supported |
+| `@solana/web3.js` 1 | Supported |
+| `@ton/ton` 16, with `@ton/core` and `@ton/crypto` | Supported, with toncenter API v3 as the indexer |
+| `@avalabs/avalanchejs` 5 | Supported, with the Avalanche Data API as the indexer; the C-Chain is served as EVM |
+| `@tonconnect/sdk` | Replaced by `@ton/ton`: TonConnect links dApps to user wallets; it is not a node SDK |
+| `@bnb-chain/javascript-sdk` | Unsupported: it targets the BNB Beacon Chain, shut down in 2024 (BNB Smart Chain is supported as EVM) |
+
 ## What works, and what does not yet
 
 | Area | Status |

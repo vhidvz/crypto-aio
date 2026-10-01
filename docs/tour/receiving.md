@@ -45,7 +45,7 @@ sequenceDiagram
   participant Ch as Chain (via the driver)
   Sc->>C: read the cursor (or start at `from`)
   loop for each block
-    Sc->>Ch: next block after the cursor; check its parent hash
+    Sc->>Ch: next block after the cursor, and check its parent hash
     Ch-->>Sc: block N
     Sc-->>App: { type: 'block', block, transactions, ack }
     App->>App: credit each new transfer once (dedupe on transfer.id)

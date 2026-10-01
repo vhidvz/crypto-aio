@@ -52,12 +52,12 @@ sequenceDiagram
   L-->>A: lease, token 41
   B->>L: acquire(address)
   L-->>B: busy: wait and retry
-  A->>Q: next nonce? → 7; store next = 8 (token 41)
+  A->>Q: next nonce is 7, so store next = 8 (token 41)
   A->>A: build, sign, store the Attempt with nonce 7
   A->>L: release
   B->>L: acquire(address)
   L-->>B: lease, token 42
-  B->>Q: next nonce? → 8; store next = 9 (token 42)
+  B->>Q: next nonce is 8, so store next = 9 (token 42)
 ```
 
 Two processes that share the stores behave exactly like this. The testing kit can run two

@@ -3,7 +3,7 @@ title: Explore
 nav_order: 7
 has_children: true
 has_toc: false
-description: Internals and extension points: the source map, adding networks and chain families, writing durable stores, and the design records.
+description: "Internals and extension points: the source map, adding networks and chain families, writing durable stores, and the design records."
 ---
 
 # Explore

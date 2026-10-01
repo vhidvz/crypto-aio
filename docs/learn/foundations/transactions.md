@@ -52,7 +52,7 @@ sequenceDiagram
   App->>App: build: fill in every field (unsigned transaction)
   App->>Key: sign it
   Key-->>App: signature
-  App->>App: serialize: the raw, signed bytes; hash them for the id
+  App->>App: serialize the raw, signed bytes, and hash them for the id
   App->>Node: broadcast the raw bytes
   Node->>Node: check signature, balance, nonce, fee
   Node-->>App: accepted (or refused)

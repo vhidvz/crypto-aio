@@ -15,26 +15,18 @@ money moves.
 
 ```mermaid
 flowchart LR
-  subgraph app["Your service: N processes"]
-    api["API process<br/>transfer()"]
-    worker["Worker process<br/>monitor.start()"]
+  subgraph app["Your service: any number of processes"]
+    direction TB
+    api["API processes<br/>transfer()"]
+    worker["Worker processes<br/>monitor.start()"]
     scan["Scanner process<br/>bc.scanner()"]
   end
-  subgraph stores["Durable, shared stores"]
-    ops[("OperationStore")]
-    locks[("LockManager")]
-    seq[("SequenceStore")]
-    cur[("CursorStore")]
-  end
+  stores[("Durable, shared stores<br/>operations · locks ·<br/>sequences · cursors")]
   custody["Custody signer<br/>HSM, KMS or MPC"]
-  providers["2 or 3 independent<br/>providers per network"]
-  api --> stores
-  worker --> stores
-  scan --> stores
+  providers["Two or three independent<br/>providers per network"]
+  app --> stores
+  app --> providers
   api --> custody
-  api --> providers
-  worker --> providers
-  scan --> providers
 ```
 
 ## Production checklist

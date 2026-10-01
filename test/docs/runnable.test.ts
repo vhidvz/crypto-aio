@@ -1,5 +1,5 @@
-// Runs every code block of the documentation site marked `<!-- runnable -->`, with the
-// package's entry points taken from source, and checks what it prints: each
+// Runs every code block of the README and the documentation site marked `<!-- runnable -->`,
+// with the package's entry points taken from source, and checks what it prints: each
 // `console.log(…); // expected` line must print the text of its comment, where `…` matches
 // anything, and each `console.log` must run once. A `console.log` in a loop has no comment;
 // its lines follow a `// Prints:` line instead, one `// line` per printed line. Every block
@@ -45,7 +45,7 @@ interface Block {
 /** The `ts` blocks after a `<!-- runnable -->` (or `<!-- typecheck -->`) comment. */
 function blocks(marker: 'runnable' | 'typecheck'): Block[] {
   const out: Block[] = [];
-  for (const file of pages(join(ROOT, 'docs'))) {
+  for (const file of [join(ROOT, 'README.md'), ...pages(join(ROOT, 'docs'))]) {
     const text = readFileSync(file, 'utf8');
     const marked = new RegExp(
       `<!-- ${marker} -->\\s*\\n\`\`\`ts\\n([\\s\\S]*?)^\`\`\`$`,
