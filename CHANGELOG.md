@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   favours liveness.
 - `lifecycle.leaseWaitMs` (default: `leaseMs`): how long a transfer waits for its wallet's
   address lease before `SEQUENCE_BUSY`, so transfers can queue behind a slow signer.
+- Fuzz tests feed every decoder of untrusted bytes (Solana messages and transactions, Tron
+  protobuf, Bitcoin and EVM raw transactions, Avalanche transactions, cb58, exact-integer
+  JSON) random and mutated input; they may refuse it, never throw an unclassified error.
+  A nightly workflow runs them deeper, runs the live read-only integration suites, and
+  runs the unit suites on the newest release of every SDK.
 - The pack check compiles a project that imports every entry point with TypeScript 5.3 (the
   oldest supported, with `skipLibCheck`), the tested 5.9 and 7, under `nodenext` and
   `bundler` resolution.
