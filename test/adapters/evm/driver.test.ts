@@ -1808,11 +1808,10 @@ describe('the deprecated web3 library', () => {
     jest.isolateModules(() => {
       // A fresh module, so no earlier test's driver has warned already.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      factory = (
-        require('../../../src/adapters/evm/web3-client') as {
-          web3DriverFactory: typeof web3DriverFactory;
-        }
-      ).web3DriverFactory;
+      const fresh = require('../../../src/adapters/evm/web3-client') as {
+        web3DriverFactory: typeof web3DriverFactory;
+      };
+      factory = fresh.web3DriverFactory;
     });
     const emit = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
     try {
