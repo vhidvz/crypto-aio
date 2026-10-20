@@ -9,8 +9,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node: ['22.x', '24.x']
+        # Every Node.js release line crypto-aio supports (package.json's engines): the
+        # oldest supported version, then each current release line.
+        node: ['22.12.0', '22.x', '24.x', '26.x']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -31,3 +34,21 @@ jobs:
           path: coverage/
       - run: pnpm run build
       - run: pnpm run doc
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The runtime dependencies, which every user installs. The SDKs are the user's own
+      # peer installs, and the rest are development tools.
+      - run: pnpm audit --prod
+      # package.json's exports and types, under every module resolution.
+      - run: pnpm run lint:package
+      # The tarball as a user installs it, with and without the SDKs.
+      - run: node scripts/pack-check.mjs

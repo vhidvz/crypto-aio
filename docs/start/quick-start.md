@@ -16,8 +16,7 @@ network, no account with a provider, no keys and no cryptocurrency.
 
 ## What you need
 
-- **Node.js 22 or later.** Check with `node --version`. Solana needs 22.12 or later
-  ([why](../reference/networks/solana.md)).
+- **Node.js 22.12 or later.** Check with `node --version`.
 - A project folder with a `package.json` (`npm init -y` makes one).
 - A way to run TypeScript. This page uses [`tsx`](https://www.npmjs.com/package/tsx), which
   runs a `.ts` file directly. Plain JavaScript works too: crypto-aio is built as CommonJS, so
@@ -38,7 +37,7 @@ chain next to the package, and only that one:
 | EVM: Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | `npm install ethers` | Or `web3`, with `library: 'web3'` on the handle; ethers is the default |
 | Bitcoin | `npm install bitcoinjs-lib` | |
 | Tron | `npm install tronweb` | |
-| Solana | `npm install @solana/web3.js` | Node.js 22.12 or later |
+| Solana | `npm install @solana/web3.js` | |
 | TON | `npm install @ton/ton @ton/core @ton/crypto` | |
 | Avalanche X-Chain and P-Chain | `npm install @avalabs/avalanchejs` | |
 

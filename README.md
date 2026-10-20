@@ -69,7 +69,7 @@ What each network supports, family by family, is in
 
 ## Install
 
-crypto-aio needs Node.js 22 or later (Solana: 22.12 or later). Install the package, and only the
+crypto-aio needs Node.js 22.12 or later. Install the package, and only the
 SDK of each family you use:
 
 ```sh

@@ -55,7 +55,7 @@ how to configure each family is in [Connect to a real network](../../build/conne
 | EVM: Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base (ethers, web3) | Works today; no address history yet (it needs an indexer) |
 | UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Works today; no tokens, no OP_RETURN memo |
 | Tron (tronweb) | Works today; address history needs an indexer provider (`trongrid` or `public`) |
-| Solana (@solana/web3.js) | Works today: SOL, classic SPL tokens, memos, scanning and history without an indexer; needs Node.js 22.12 or later |
+| Solana (@solana/web3.js) | Works today: SOL, classic SPL tokens, memos, scanning and history without an indexer |
 | TON (@ton/ton): Gram and jettons, v4r2 and v5r1 wallets | Works today; needs an indexer (toncenter API v3); one output per transfer; no block scan (TON is sharded) |
 | Avalanche X-Chain and P-Chain (@avalabs/avalanchejs) | Works today: AVAX, batches, X-Chain memos; needs an indexer (the Avalanche Data API); no replace or cancel; no Avalanche native tokens |
 

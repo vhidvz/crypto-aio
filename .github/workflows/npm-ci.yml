@@ -5,14 +5,20 @@ name: Build, Test, and Publish
 # Trusted Publisher → GitHub Actions: user vhidvz, repository crypto-aio, workflow filename
 # npm-ci.yml, no environment). Without that, npm falls back to no credentials and the
 # registry answers the publish with a 404.
+#
+# Tag a release with its bare version: `1.0.0` publishes under npm's `latest` dist-tag, and a
+# prerelease such as `1.0.0-rc.1` under `next`, so `npm install crypto-aio` never picks it.
+# The tag must equal package.json's version, and CHANGELOG.md must have a section for it:
+# that section becomes the GitHub Release's notes.
 
 on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
 
 jobs:
-  build-and-publish:
+  publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,12 +41,50 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Fails before anything is published when the tag, package.json and the changelog
+      # disagree.
+      - name: Check the version and its release notes
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > /dev/null
+
+      # The same checks as CI, then the tarball as a user installs it.
+      - name: Check
+        run: |
+          pnpm run format:check
+          pnpm run lint
+          pnpm run typecheck
+          pnpm test
+          pnpm run lint:package
+          pnpm run test:pack
+
       # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
       - name: Upgrade npm to latest (≥11.5.2)
         run: npm install -g npm@11.5.2
 
-      - name: Run tests and build project
-        run: npm test && npm run build
-
       - name: Publish to npm registry
-        run: npm publish --provenance --access public
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) dist_tag=next ;;
+            *) dist_tag=latest ;;
+          esac
+          npm publish --provenance --access public --tag "$dist_tag"
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          case "$GITHUB_REF_NAME" in
+            *-*) prerelease=--prerelease ;;
+            *) prerelease= ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" --verify-tag $prerelease

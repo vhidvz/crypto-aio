@@ -13,11 +13,8 @@ compiles messages and backs `native()`.
 [Configuring a real network (Solana)](../../build/connect.md#solana)
 shows a configuration.
 
-**Solana needs Node.js 22.12 or later.** `@solana/web3.js` 1.99 depends, through
-`rpc-websockets`, on an ESM-only `uuid`, which `require` can load only from Node 22.12. On
-Node 22.0 to 22.11, the first use of a Solana handle (`ready()`, a read or `native()`)
-fails with Node's own `ERR_REQUIRE_ESM`, not with `DEPENDENCY_MISSING`. The rest of
-crypto-aio needs Node 22.
+**Node.js 22.12 or later**, as for all of crypto-aio. `@solana/web3.js` 1.99 depends, through
+`rpc-websockets`, on an ESM-only `uuid`, which `require` can load only from Node 22.12.
 
 **A harmless install warning.** Installing `@solana/web3.js` can warn of an unmet peer
 `utf-8-validate@^5`: its `jayson` depends on `ws` 7, whose optional helper is
