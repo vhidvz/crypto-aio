@@ -29,6 +29,22 @@ describe('the UTXO driver factory', () => {
     expect(driver.limits?.({})).toEqual({ maxOutputs: MAX_OUTPUTS });
   });
 
+  it('names the one scheme each wallet address type signs with, and refuses bad wallet options', async () => {
+    const driver = await withDriver(await utxoHarness());
+    expect(driver.signingSchemes?.({})).toEqual(['secp256k1-ecdsa']);
+    for (const addressType of ['p2wpkh', 'p2sh-p2wpkh', 'p2pkh'] as const) {
+      expect(driver.signingSchemes?.({ utxo: { addressType } })).toEqual([
+        'secp256k1-ecdsa',
+      ]);
+    }
+    expect(driver.signingSchemes?.({ utxo: { addressType: 'p2tr' } })).toEqual([
+      'secp256k1-schnorr',
+    ]);
+    expect(() => driver.signingSchemes?.({ utxo: { addressType: 'p2wsh' } })).toThrow(
+      expect.objectContaining({ code: 'CONFIG_INVALID' }),
+    );
+  });
+
   it('probes both transports with the genesis hash and disables an endpoint of another network', async () => {
     const good = await utxoHarness();
     await withDriver(good);

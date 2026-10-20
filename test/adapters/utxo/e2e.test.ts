@@ -1,6 +1,7 @@
 import { walletAddress } from '../../../src/adapters/utxo/address';
 import { networkOf, txidOfHex } from '../../../src/adapters/utxo/codec';
 import { bitcoin } from '../../../src/adapters/utxo/sdk';
+import { callbackSigner } from '../../../src/core/signing/callback';
 import { MemoryOperationStore } from '../../../src/core/store/memory';
 import type { AttemptRecord, OperationPatch } from '../../../src/core/store/types';
 import { toHex } from '../../../src/core/util/bytes';
@@ -20,6 +21,7 @@ import {
   REGTEST,
   TEST_KEY,
   TEST_PUBKEY,
+  testSigner,
 } from './support/vectors';
 
 const NETWORK = networkOf(REGTEST);
@@ -159,6 +161,106 @@ describe('cold signing with a PSBT', () => {
     const op = await env.stores.operations.get('default', prepared.operation.id);
     expect(op?.attempts).toHaveLength(0);
     expect(env.node.broadcasts).toHaveLength(0);
+  });
+});
+
+// A p2tr wallet signs with Schnorr only: a signer without it (a KMS key) once built and
+// reserved its transfer, then failed at signing.
+describe('a wallet whose signer lacks the scheme its address type signs with', () => {
+  /** The test key behind a signer that declares only `schemes`, counting its calls. */
+  function only(id: string, schemes: readonly string[]) {
+    const inner = testSigner(id);
+    const calls = { keys: 0, signs: 0 };
+    const signer = callbackSigner({
+      id,
+      schemes,
+      getPublicKey: (scheme, keyRef) => {
+        calls.keys += 1;
+        return inner.getPublicKey(scheme, keyRef);
+      },
+      sign: (requests, ctx) => {
+        calls.signs += 1;
+        return inner.sign(requests, ctx);
+      },
+    });
+    return { signer, calls };
+  }
+
+  it('refuses a p2tr wallet with an ECDSA-only signer in ready, walletAddress and transfer, before any build or reservation', async () => {
+    const env = await createUtxoEnv();
+    const kms = only('kms', ['secp256k1-ecdsa']);
+    const taproot = walletAddress(TEST_PUBKEY, 'p2tr', REGTEST).address;
+    env.node.fund(taproot, 100_000n);
+    const scoped = env.aio.scope({
+      signers: { kms: kms.signer },
+      wallets: {
+        taproot: { signer: 'kms', utxo: { addressType: 'p2tr' } },
+        segwit: { signer: 'kms' },
+        watching: { publicKey: toHex(TEST_PUBKEY), utxo: { addressType: 'p2tr' } },
+      },
+    });
+    const bc = scoped.blockchain({ chain: 'bitcoin', wallet: 'taproot' });
+    const REFUSED = {
+      code: 'CONFIG_INVALID',
+      message:
+        "signer 'kms' supports secp256k1-ecdsa but wallet 'taproot' needs secp256k1-schnorr",
+    };
+    await expect(env.run(bc.ready())).rejects.toMatchObject(REFUSED);
+    await expect(env.run(bc.walletAddress())).rejects.toMatchObject(REFUSED);
+    await expect(
+      env.run(scoped.blockchain({ chain: 'bitcoin' }).walletAddress('taproot')),
+    ).rejects.toMatchObject(REFUSED);
+    const intent = { to: env.stranger(), amount: 50_000n };
+    await expect(
+      env.run(bc.transfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toMatchObject(REFUSED);
+    await expect(
+      env.run(bc.prepareTransfer(intent, { idempotencyKey: 'k' })),
+    ).rejects.toMatchObject(REFUSED);
+    // Refused before the signer was asked for a key: nothing built, reserved or sent.
+    expect(kms.calls).toEqual({ keys: 0, signs: 0 });
+    expect(await env.stores.operations.getByKey('default', 'k')).toBeNull();
+    expect(env.node.broadcasts).toHaveLength(0);
+    // The same signer serves an ECDSA wallet, and the same key watch-only still prepares.
+    const segwit = scoped.blockchain({ chain: 'bitcoin', wallet: 'segwit' });
+    expect((await env.run(segwit.walletAddress())).canonical).toBe(
+      walletAddress(TEST_PUBKEY, 'p2wpkh', REGTEST).address,
+    );
+    const watching = scoped.blockchain({ chain: 'bitcoin', wallet: 'watching' });
+    expect((await env.run(watching.walletAddress())).canonical).toBe(taproot);
+    expect((await env.run(watching.getBalance(taproot))).amount.base).toBe(100_000n);
+    const prepared = await env.run(
+      watching.prepareTransfer(
+        { to: env.stranger(), amount: 50_000n },
+        { idempotencyKey: 'watch' },
+      ),
+    );
+    expect(prepared.unsigned?.signingRequests[0]?.scheme).toBe('secp256k1-schnorr');
+  });
+
+  it('takes a Schnorr-only signer for p2tr, and refuses it for an ECDSA wallet', async () => {
+    const env = await createUtxoEnv();
+    const schnorr = only('schnorr', ['secp256k1-schnorr']);
+    const scoped = env.aio.scope({
+      signers: { schnorr: schnorr.signer },
+      wallets: {
+        taproot: { signer: 'schnorr', utxo: { addressType: 'p2tr' } },
+        segwit: { signer: 'schnorr' },
+      },
+    });
+    const taproot = scoped.blockchain({ chain: 'bitcoin', wallet: 'taproot' });
+    expect((await env.run(taproot.walletAddress())).canonical).toBe(
+      walletAddress(TEST_PUBKEY, 'p2tr', REGTEST).address,
+    );
+    const keys = schnorr.calls.keys;
+    await expect(
+      env.run(scoped.blockchain({ chain: 'bitcoin', wallet: 'segwit' }).ready()),
+    ).rejects.toMatchObject({
+      code: 'CONFIG_INVALID',
+      message:
+        "signer 'schnorr' supports secp256k1-schnorr but wallet 'segwit' needs secp256k1-ecdsa",
+    });
+    expect(schnorr.calls.keys).toBe(keys);
   });
 });
 

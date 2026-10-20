@@ -136,6 +136,19 @@ export async function resolveWallet(
     // The signer is user-supplied code; its scheme list and keys are guarded.
     const { id, instance } = selection.signer;
     const supported = signerSchemes(id, instance);
+    // Selection checked that the signer has one of the chain's schemes; a wallet whose
+    // options narrow them (a `p2tr` wallet signs with Schnorr only) needs each scheme it
+    // signs with. Refused here, before any key is read, so a transfer is never built or
+    // reserved only to fail at signing.
+    const missing = (driver.signingSchemes?.(options) ?? []).filter(
+      (scheme) => !supported.includes(scheme),
+    );
+    if (missing.length > 0) {
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        `signer '${id}' supports ${supported.join(', ')} but wallet '${wallet.name}' needs ${missing.join(', ')}`,
+      );
+    }
     for (const scheme of selection.chain.schemes) {
       if (!supported.includes(scheme)) continue;
       const { publicKeyLength } = schemes.get(scheme);

@@ -117,7 +117,8 @@ export const BITCOIN_CHAIN: ChainInfo = deepFreeze({
   family: 'utxo',
   model: 'utxo',
   ordering: 'inputs',
-  // keys[0] (the ECDSA key) defines the address; p2tr wallets also sign with Schnorr.
+  // keys[0] (the ECDSA key) defines the address. A p2tr wallet signs with Schnorr only, so
+  // its signer must declare it (the driver's `signingSchemes`).
   schemes: ['secp256k1-ecdsa', 'secp256k1-schnorr'],
   nativeAsset: { symbol: 'BTC', decimals: 8, name: 'Bitcoin' },
   defaultNetwork: 'mainnet',

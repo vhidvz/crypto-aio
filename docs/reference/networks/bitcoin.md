@@ -96,8 +96,12 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   `p2sh-p2wpkh` and `p2pkh`, and Schnorr with the BIP341 key-path tweak for `p2tr`. A `p2tr`
   request's `publicKey` is the tweaked output key and its `params.tweak` the tweak, so a
   `callbackSigner` signs with the private key tweaked as BIP341 describes (`localSigner`
-  does this). A `p2tr` wallet needs a signer with a `secp256k1-schnorr` key: an ECDSA-only
-  signer, such as a KMS key, fails at signing, before anything is broadcast.
+  does this). A `p2tr` wallet needs a signer that declares `secp256k1-schnorr`, and every
+  other wallet type one that declares `secp256k1-ecdsa`. A wallet whose signer lacks its
+  scheme, such as a `p2tr` wallet on an ECDSA-only KMS key, fails with `CONFIG_INVALID`
+  when it resolves (`bc.ready()`, `walletAddress()`, `transfer()`, `prepareTransfer()`),
+  before any key is read and before anything is built or reserved. A watch-only wallet
+  (a `publicKey` and no signer) is not checked, and prepares PSBTs for a signer elsewhere.
 - **Cold signing.** `prepareTransfer` returns the PSBT (base64) as `unsigned.payload` for a
   cold or hardware signer; hand the signed PSBT back to `submitSignatures` (see
   [transactions](../../build/send.md)). `unsigned.expectedRef` is the txid, except on `p2pkh`,

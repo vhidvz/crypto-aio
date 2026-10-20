@@ -338,6 +338,7 @@ export interface DisposableNativeClient {
  * | `blocks.transactions` | `monitor` | `safe` | none | retryable `PROVIDER_INCONSISTENT` when the block at `block.height` no longer has `block.hash` |
  * | `history.list` | `read` (indexer transport when configured) | `safe` | none | propagate |
  * | `createNativeClient` | no I/O | – | – | a fresh SDK instance on every call, never the pooled one |
+ * | `signingSchemes` (optional) | no I/O | – | – | `ConfigError('CONFIG_INVALID')` for wallet options it refuses |
  *
  * Further rules:
  * - On a proof path (`proofs.*`), only a definitive negative proof may
@@ -377,6 +378,16 @@ export interface ChainDriver {
     Record<string, Readonly<Record<string, (...args: never[]) => Promise<unknown>>>>
   >;
   limits?(wallet: WalletOptions): DriverLimits;
+  /**
+   * The signature schemes a wallet with these options signs with, when its options narrow
+   * the chain's `schemes` (a Bitcoin `p2tr` wallet signs with `secp256k1-schnorr` only). No
+   * I/O; it throws `CONFIG_INVALID` for options the driver refuses. When the core resolves
+   * a wallet that has a signer, it refuses (`CONFIG_INVALID`) one that does not declare each
+   * of them, before reading any key: the transfer would otherwise be built, reserved and
+   * fail only at signing. Without this method, a signer needs one of the chain's schemes.
+   * A watch-only wallet is not checked.
+   */
+  signingSchemes?(wallet: WalletOptions): readonly string[];
   /**
    * A fresh, caller-owned SDK client for `crypto-aio/native`: a new SDK instance on every
    * call, never the pooled one.

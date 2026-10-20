@@ -7,7 +7,7 @@ import { ConfigError } from '../../core/errors/error';
 import type { EndpointCall, HealthProbes } from '../../core/transport/types';
 import { utxoBroadcaster, utxoBuilder, utxoReplacement } from './builder';
 import { networkOf } from './codec';
-import { READ, type UtxoContext } from './context';
+import { READ, parseWalletOptions, signingScheme, type UtxoContext } from './context';
 import { EsploraClient, parseHash, parseHeight } from './esplora';
 import { utxoNetworkConfig } from './network';
 import { blockSource, proofSource } from './proofs';
@@ -80,6 +80,11 @@ export const utxoDriverFactory: DriverFactory = {
         },
       } satisfies UtxoExt,
       limits: () => ({ maxOutputs: MAX_OUTPUTS }),
+      // One scheme per address type, so a p2tr wallet's ECDSA-only signer (a KMS key) is
+      // refused when the wallet resolves, not at signing.
+      signingSchemes: (wallet) => [
+        signingScheme(parseWalletOptions(wallet, config).addressType),
+      ],
       createNativeClient: () => {
         // The doc's promise: taproot works on this module (and a swapped backend is undone).
         useNobleEcc();

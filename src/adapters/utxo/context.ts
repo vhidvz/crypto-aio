@@ -89,6 +89,14 @@ export const ADDRESS_TYPES: readonly UtxoAddressType[] = [
   'p2tr',
 ];
 
+/**
+ * The scheme a wallet of `type` signs every input with: Schnorr with the BIP341 key-path
+ * tweak for `p2tr`, ECDSA otherwise. Its signing requests carry it, and the driver's
+ * `signingSchemes` names it, so the core refuses a signer without it before any build.
+ */
+export const signingScheme = (type: UtxoAddressType): string =>
+  type === 'p2tr' ? 'secp256k1-schnorr' : 'secp256k1-ecdsa';
+
 export interface ParsedWalletOptions {
   readonly addressType: UtxoAddressType;
   readonly changeAddress?: DecodedAddress;
