@@ -10,6 +10,9 @@ import { inspect } from 'node:util';
 export const DEFAULT_MAX_FEE_PER_GAS = 1000000000000n;
 
 // @public
+export const DEFAULT_MAX_GAS_LIMIT = 16777216n;
+
+// @public
 export const EVM_CAPABILITIES: readonly Capability[];
 
 // @public
@@ -46,6 +49,7 @@ export interface EvmFeeDetails {
     readonly l1Fee?: bigint;
     readonly maxFeePerGas?: bigint;
     readonly maxPriorityFeePerGas?: bigint;
+    readonly operatorFee?: bigint;
 }
 
 // @public

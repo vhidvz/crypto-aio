@@ -35,7 +35,7 @@ how to configure each family is in [Connect to a real network](../../build/conne
 | Library | Status |
 | --- | --- |
 | `ethers` 6 | Supported, the EVM default |
-| `web3` 4 | Supported; sunset upstream (4.16.0 is its last release), so prefer ethers |
+| `web3` 4 | Deprecated: sunset upstream (4.16.0 is its last release). It works through 1.x, warns once per process (`CRYPTO_AIO_WEB3`), and is removed in 2.0; use ethers |
 | `bitcoinjs-lib` 7 | Supported, over an Esplora indexer |
 | `tronweb` 6 | Supported |
 | `@solana/web3.js` 1 or 3 | Supported; the driver builds messages itself, so the two lines differ only in `native()`'s `Connection` |

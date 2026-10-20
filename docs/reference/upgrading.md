@@ -33,6 +33,17 @@ idempotency key repeated after the upgrade finds its Operation.
   `bc.ready()` no longer count an endpoint as `healthy` from its identity alone: `ready()`
   now fails with `PROVIDER_UNAVAILABLE` when no endpoint has answered its height probe.
 
+## If you send EVM or Tron tokens
+
+- **Deprecated Tether-style tokens are refused.** A token whose contract answers
+  `deprecated()` with `true` fails before signing with `ASSET_RESOLUTION`: send to the
+  upgraded contract instead, by its address or a registered asset.
+- **A gas-limit bound.** EVM transfers, replacements and cancels refuse a gas limit above
+  `maxGasLimit` (2^24 by default) with `INVALID_INTENT`. Raise it in the chain's or the
+  handle's `options` if you send to contracts that need more.
+- **`library: 'web3'` is deprecated** and warns once per process; switch to `ethers` before
+  2.0.
+
 ## If you sign Bitcoin `p2tr` with a custody signer
 
 A wallet whose signer does not declare the scheme its address type signs with is refused

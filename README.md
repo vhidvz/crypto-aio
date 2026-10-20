@@ -57,7 +57,7 @@ principles, starting with [what a ledger is](https://vhidvz.github.io/crypto-aio
 
 | Family | Chains | Through |
 | --- | --- | --- |
-| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (default) or `web3` 4 |
+| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (or the deprecated `web3` 4) |
 | Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7 and an Esplora indexer |
 | Tron | mainnet, Shasta, Nile | `tronweb` 6 |
 | Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 or 3 |
@@ -73,7 +73,7 @@ crypto-aio needs Node.js 22.12 or later. Install the package, and only the
 SDK of each family you use:
 
 ```sh
-npm install crypto-aio ethers           # EVM chains (or web3)
+npm install crypto-aio ethers           # EVM chains
 npm install crypto-aio bitcoinjs-lib    # Bitcoin
 npm install crypto-aio tronweb          # Tron
 npm install crypto-aio @solana/web3.js  # Solana

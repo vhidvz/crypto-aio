@@ -34,7 +34,7 @@ chain next to the package, and only that one:
 
 | Family | Install | Notes |
 | --- | --- | --- |
-| EVM: Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | `npm install ethers` | Or `web3`, with `library: 'web3'` on the handle; ethers is the default |
+| EVM: Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | `npm install ethers` | ethers is the default; `web3` (`library: 'web3'`) is deprecated |
 | Bitcoin | `npm install bitcoinjs-lib` | |
 | Tron | `npm install tronweb` | |
 | Solana | `npm install @solana/web3.js` | |

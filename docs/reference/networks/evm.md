@@ -7,7 +7,9 @@ description: "The EVM chains: networks, fees, tokens, presets and the fee ceilin
 
 One EVM driver serves every chain below, with either library: `ethers` (v6, the default) or
 `web3` (v4). ChainSafe sunset web3.js in 2025, and 4.16.0 is its last release, with no
-further fixes. crypto-aio keeps it working and tested, but prefer `ethers` for new work.
+further fixes, so `library: 'web3'` is **deprecated**: crypto-aio keeps it working and
+tested through 1.x, warns once per process (a `DeprecationWarning`, code `CRYPTO_AIO_WEB3`),
+and removes it in 2.0. Use `ethers`.
 The [Build guides](../../build/index.md) cover EVM [fees](../../build/send.md#fees),
 [replacements](../../build/stalled.md), [token verdicts and proofs](../../build/confirmations.md) and
 [scans](../../build/receive.md); [Keys, signers and secrets](../../build/keys.md) covers the

@@ -2,10 +2,10 @@
  * `Web3Client`: the web3 v4 strategy. Its I/O goes through an EIP-1193 provider object whose
  * `request` hands every call to the core transport, one request manager per call so each
  * request carries that call's tags. ChainSafe sunset web3.js in 2025 (4.16.0 is the last
- * release); ethers stays the default.
+ * release); ethers stays the default, and `library: 'web3'` is deprecated (removed in 2.0).
  */
 import { Web3, core, eth, utils } from 'web3';
-import type { DisposableNativeClient } from '../../core/driver/types';
+import type { DisposableNativeClient, DriverFactory } from '../../core/driver/types';
 import { ProviderError, isCryptoAioError } from '../../core/errors/error';
 import type { Transport } from '../../core/transport/types';
 import {
@@ -206,6 +206,26 @@ export class Web3Client extends EvmClientBase {
 }
 
 /** The `web3` adapter's driver factory; the manifest's `load()` returns it. */
-export const web3DriverFactory = evmDriverFactory(
+const factory = evmDriverFactory(
   (transport, chainId) => new Web3Client(transport, chainId),
 );
+
+let warned = false;
+
+/**
+ * The web3 strategy's factory: its first driver in a process warns, once, that the library
+ * is deprecated (a Node.js `DeprecationWarning`, code `CRYPTO_AIO_WEB3`).
+ */
+export const web3DriverFactory: DriverFactory = {
+  create(ctx) {
+    if (!warned) {
+      warned = true;
+      process.emitWarning(
+        "crypto-aio: library 'web3' is deprecated: web3.js is no longer maintained (4.16.0 " +
+          "is its last release). Use 'ethers', the default; 'web3' is removed in crypto-aio 2.0.",
+        { type: 'DeprecationWarning', code: 'CRYPTO_AIO_WEB3' },
+      );
+    }
+    return factory.create(ctx);
+  },
+};

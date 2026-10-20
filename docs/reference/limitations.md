@@ -10,20 +10,6 @@ none can make the library sign a second payment on its own. Most can only stall 
 or a read, the safe direction. Each is a candidate for a 1.x minor release, under the rules
 in [Versioning and stability](./stability.md).
 
-## Two that can make a paid transfer look failed
-
-A transfer that paid but reads as failed invites a second payment by hand, so know these two:
-
-- **A deprecated USDT on Tron.** Tether's Tron contract can deprecate itself in favour of a
-  new one (its `upgradedAddress`). If that ever happens, a USDT transfer still moves the
-  money, but the old contract logs no `Transfer`, so the transfer fails with
-  `TX_UNEVIDENCED`: value may have moved. It has not happened; the fix, when it does, is to
-  move the `USDT` alias to the new contract.
-- **A TON bounce on one indexer's word.** `failed` with `transfer bounced` rests on the
-  indexer service's answer. With a single indexer service, a lying one could report a bounce
-  for a transfer that landed. Configure two independent indexer services, as the
-  [TON page](./networks/ton.md) recommends.
-
 ## Trust and evidence
 
 - **Deposits are `observed`, never `proven`.** No driver proves a deposit yet, and Bitcoin
@@ -61,9 +47,14 @@ A transfer that paid but reads as failed invites a second payment by hand, so kn
 
 ## Not there yet
 
-- **A gas-limit bound on EVM.** `eth_estimateGas` sets the gas limit. An inflated estimate
-  only raises the reserved maximum (the funds check refuses what the wallet cannot cover),
-  but no operator bound exists. The OP Stack operator fee is not in the fee report.
+- **The OP Stack operator fee of a confirmed transaction.** Estimates and the funds check
+  include it, but the fee a confirmed transaction reports (`gasUsed × effectiveGasPrice`
+  plus the L1 fee) leaves it out: a receipt does not say which operator-fee formula applied.
+- **The TON wallet's own failures rest on the indexer.** A bounce is read from the chain, but
+  `the wallet transaction failed` and `the wallet skipped a message` still rest on the
+  indexer's record of your wallet transaction. Nothing was delivered in either case, but
+  configure two independent indexer services, as the [TON page](./networks/ton.md)
+  recommends.
 - **Hardware-wallet key origins on Bitcoin.** PSBTs carry no `bip32Derivation`.
 - **TON batches** have no outcome per leg, and `UQ…` addresses of active contracts are not
   sent bounceable on request.

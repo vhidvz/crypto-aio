@@ -63,12 +63,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signing. A Schnorr-only signer on a non-`p2tr` wallet gets the same error, where it got
   `INVALID_ADDRESS`. Watch-only wallets are unaffected. Drivers declare this with the
   optional `ChainDriver.signingSchemes(wallet)`.
+- **Breaking:** EVM and Tron: a token whose contract answers `deprecated()` with `true`
+  (Tether's `TetherToken`, USDT on Ethereum and Tron) is refused before signing with
+  `ASSET_RESOLUTION`, rather than sent through a contract that forwards it and logs no
+  `Transfer`. Every token estimate makes one more read.
+- **Breaking:** EVM: the `maxGasLimit` option (`chains.<id>.options`, a handle's `options`,
+  or a network's `params.maxGasLimit`) bounds the gas limit of every transfer, replacement
+  and cancel, by default 2^24 (`DEFAULT_MAX_GAS_LIMIT`, Ethereum's EIP-7825 cap). An
+  estimate (with its headroom) or an override above it fails with `INVALID_INTENT` before
+  signing (`details.required`, `details.maxGasLimit`).
+- EVM: on OP Stack chains since Isthmus, the operator fee (`GasPriceOracle.getOperatorFee`
+  for the gas limit) is its own `operator` charge and `details.operatorFee`, counted in
+  `details.expected` and the funds check.
 - `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
   resolves is now checked on chain and counted `unresent`, where it was counted `failed`
   without its check.
 - **Breaking (types only):** `Blockchain`'s constructor is private (handles come from
   `aio.blockchain()` or `Blockchain.create()`), and its internal `protected` methods are gone
   from the type declarations. `CryptoAio`'s constructor has one signature, `(options?)`.
+
+### Deprecated
+
+- `library: 'web3'` (and `Library.WEB3`): web3.js is no longer maintained upstream (4.16.0 is
+  its last release). It keeps working through 1.x, warns once per process with a
+  `DeprecationWarning` (code `CRYPTO_AIO_WEB3`), and is removed in 2.0. Use `ethers`.
+
+### Fixed
+
+- TON: `transfer bounced` and `jetton transfer bounced` no longer rest on the indexer's
+  word. The provider's raw records of the wallet transaction and of each delivery, checked
+  against their hashes and linked by message hash, must show the bounce; until they do, or
+  while the provider's endpoints disagree, the transfer stays undecided (a warning with code
+  `BOUNCE_UNPROVEN` when they contradict the indexer). A lone lying indexer can delay a
+  verdict, never fail a transfer that landed.
 
 ### Added
 

@@ -699,6 +699,7 @@ export interface ChainDriver {
     readonly replacement?: ReplacementPolicy;
     // (undocumented)
     readonly sequence?: SequenceSource;
+    signingSchemes?(wallet: WalletOptions): readonly string[];
 }
 
 // @public (undocumented)
@@ -1267,6 +1268,7 @@ export interface EvmFeeDetails {
     readonly l1Fee?: bigint;
     readonly maxFeePerGas?: bigint;
     readonly maxPriorityFeePerGas?: bigint;
+    readonly operatorFee?: bigint;
 }
 
 // @public
