@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   favours liveness.
 - `lifecycle.leaseWaitMs` (default: `leaseMs`): how long a transfer waits for its wallet's
   address lease before `SEQUENCE_BUSY`, so transfers can queue behind a slow signer.
+- The pack check compiles a project that imports every entry point with TypeScript 5.3 (the
+  oldest supported, with `skipLibCheck`), the tested 5.9 and 7, under `nodenext` and
+  `bundler` resolution.
 - `@solana/web3.js` 3 is supported next to 1.99 (peer range `^1.99.0 || ^3.0.0`). The
   Solana driver now compiles its messages and derives token account addresses itself
   (checked byte for byte against the SDK), so signed bytes no longer depend on the SDK

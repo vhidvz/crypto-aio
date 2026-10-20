@@ -82,6 +82,9 @@ npm install crypto-aio @avalabs/avalanchejs  # Avalanche X-Chain and P-Chain
 ```
 
 A handle whose SDK is missing fails with `DEPENDENCY_MISSING` and names the install command.
+The type declarations need TypeScript 5.3 or later, and each family's entry point
+(`crypto-aio/evm`, …) the types of its SDK; some SDKs' own declarations need TypeScript 5.7
+unless `skipLibCheck` is on. TypeScript 7 is supported.
 
 ## Your first transfer, with no network and no keys
 
