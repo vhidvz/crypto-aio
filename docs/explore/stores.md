@@ -60,6 +60,14 @@ and the stale write must fail with `FENCING` or `VERSION_CONFLICT`. crypto-aio s
 store ports, the in-memory stores and these suites. Durable stores, such as Redis or
 Postgres, are yours to write, and the suites define what they must do.
 
+For a starting point, the repository has a reference implementation of all four ports on
+PostgreSQL, with the `pg` driver:
+[examples/postgres-store](https://github.com/vhidvz/crypto-aio/tree/main/examples/postgres-store).
+It passes every suite against a real server in CI, and its README explains each choice:
+transactions and row locks, `FOR UPDATE SKIP LOCKED` claims, tokens from sequences, tagged
+JSON, the `format` column, and which columns to encrypt. It is an example to copy, not part
+of the package.
+
 One expectation reaches beyond the suites, which test one store instance: `findByRef` is
 read-your-writes consistent across every process that shares the store. It sees any
 `appendAttempt` another instance committed before the call, so no read replica or

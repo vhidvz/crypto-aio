@@ -70,3 +70,32 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:evm-local
+
+  # The PostgreSQL reference store (examples/postgres-store) against a real server: the four
+  # store contract suites and the engine end to end. The test skips itself without
+  # CRYPTO_AIO_PG_URL, so the check job's run passes over it.
+  postgres-store:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CRYPTO_AIO_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec jest test/examples --coverage=false

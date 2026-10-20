@@ -5,6 +5,12 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/test'],
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+  // examples/ import the package by name, as a user's project does; tsconfig.json's
+  // `paths` and this map point the names at the sources.
+  moduleNameMapper: {
+    '^crypto-aio$': '<rootDir>/src/index.ts',
+    '^crypto-aio/testing$': '<rootDir>/src/testing/index.ts',
+  },
   collectCoverageFrom: ['src/**/*.ts'],
   coverageDirectory: 'coverage',
   collectCoverage: true,
