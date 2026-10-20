@@ -40,7 +40,10 @@ const acme: ChainInfo = {
 const aio = new CryptoAio({ plugins: [evmChainPlugin({ name: 'acme', chains: [acme] })] });
 ```
 
-It registers as `evm:acme` and also takes `presets` and `assets`. Augment `ChainRegistry`
+It registers as `evm:acme` and also takes `presets` and `assets`. An asset is an `erc20` ref,
+registered under its EIP-55 checksummed contract whatever case it is given in, as the driver
+names the token in its transfers and balances, so its alias and its transfers share one asset
+id; a mixed-case contract with a wrong checksum is `CONFIG_INVALID`. Augment `ChainRegistry`
 with `acmechain: { family: 'evm'; network: 'mainnet' }` to type the handle and `ext.evm`.
 
 The registry rules that apply today already set the limits. A chain id registers once (a

@@ -3,6 +3,7 @@
  * adapter manifest per library. SDK-free: only a manifest's `load()` requires a client
  * module, and with it the SDK. `ethers` is registered first, so it is the family default.
  */
+import { keccak_256 } from '@noble/hashes/sha3';
 import type {
   AdapterManifest,
   DriverFactory,
@@ -13,6 +14,7 @@ import type { ChainInfo } from '../../core/model/chain';
 import type { AssetRegistration } from '../../core/registry/assets';
 import type { Plugin } from '../../core/registry/plugin';
 import type { ProviderPreset } from '../../core/registry/providers';
+import { toHex, utf8ToBytes } from '../../core/util/bytes';
 import { EVM_CHAINS } from './chains';
 import { EVM_CAPABILITIES, evmNetworkConfig } from './network';
 import { EVM_PRESETS } from './presets';
@@ -89,6 +91,48 @@ export function evmPlugin(): Plugin {
 /** A plugin name: lower-case letters, digits and hyphens, starting with a letter. */
 const PLUGIN_NAME = /^[a-z][a-z0-9-]*$/;
 
+/** `0x` and 40 hex digits, in any case. */
+const HEX_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** EIP-55: each letter upper-cased where the keccak-256 of the lower-case hex has 8 or more. */
+function eip55(address: string): string {
+  const hex = address.slice(2).toLowerCase();
+  const hash = toHex(keccak_256(utf8ToBytes(hex)));
+  let out = '0x';
+  for (let i = 0; i < hex.length; i++) {
+    const c = hex[i] as string;
+    out += Number.parseInt(hash[i] as string, 16) >= 8 ? c.toUpperCase() : c;
+  }
+  return out;
+}
+
+/**
+ * An ERC-20 registration under the contract the driver names it by. The driver normalizes
+ * every token ref it is given, reads or decodes to the EIP-55 form, and an asset id carries
+ * the contract as registered, so a lower-case registration would be a second asset of the
+ * same token: its alias would resolve to one id, and the token's own transfers, deposits
+ * and balances by ref to another. A mixed-case contract with a wrong checksum is a typo,
+ * refused as the driver refuses it in a transfer. The refusal never repeats the value.
+ */
+function erc20Registration(asset: AssetRegistration, name: string): AssetRegistration {
+  const { ref } = asset;
+  if (ref === 'native') return asset;
+  const fail = (reason: string): never => {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      `EVM chain plugin '${name}': the asset ${JSON.stringify(asset.metadata.symbol)} on ${asset.chain}:${asset.network} ${reason}`,
+    );
+  };
+  if (ref.standard !== 'erc20') fail(`must use the 'erc20' standard`);
+  if (!HEX_ADDRESS.test(ref.contract)) fail('needs a 0x-prefixed 20-byte hex contract');
+  const contract = eip55(ref.contract);
+  const digits = ref.contract.slice(2);
+  const mixedCase = /[a-f]/.test(digits) && /[A-F]/.test(digits);
+  if (mixedCase && contract !== ref.contract)
+    fail('has a contract with a wrong checksum');
+  return contract === ref.contract ? asset : { ...asset, ref: { ...ref, contract } };
+}
+
 export interface EvmChainPluginOptions {
   /**
    * A unique name matching `/^[a-z][a-z0-9-]*$/`. The plugin registers as `evm:<name>`, so
@@ -99,12 +143,16 @@ export interface EvmChainPluginOptions {
   /** Chains with `family: 'evm'`, nonce ordering and the `secp256k1-ecdsa` scheme. */
   readonly chains: readonly ChainInfo[];
   readonly presets?: readonly ProviderPreset[];
+  /**
+   * Tokens: `erc20` refs, each registered under its EIP-55 checksummed contract, whatever
+   * case it is given in, so its alias and its transfers name one asset id.
+   */
   readonly assets?: readonly AssetRegistration[];
 }
 
 /**
  * A plugin for EVM chains of your own, served by the built-in EVM driver with either
- * library. Every network is validated here, so bad data fails at registration.
+ * library. Every network and token is validated here, so bad data fails at registration.
  */
 export function evmChainPlugin(options: EvmChainPluginOptions): Plugin {
   if (!PLUGIN_NAME.test(options.name)) {
@@ -135,6 +183,8 @@ export function evmChainPlugin(options: EvmChainPluginOptions): Plugin {
       options.chains.map((chain) => chain.id),
     ),
     ...(options.presets ? { presets: options.presets } : {}),
-    ...(options.assets ? { assets: options.assets } : {}),
+    ...(options.assets
+      ? { assets: options.assets.map((asset) => erc20Registration(asset, name)) }
+      : {}),
   };
 }
