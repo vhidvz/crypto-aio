@@ -98,6 +98,19 @@ it waited.
 - The only-native guard is text-based.
 - No test watches `require.cache` across families; the packaging check proves today that every
   entry point loads with no SDK.
-- `CRYPTO_AIO_INTEGRATION_WRITE=1` enables no test yet: funded write tests need testnet keys in
-  CI. Determinism in tests could improve with a container option for the transport id and the
-  random source, a store clock, and one shared end-to-end environment.
+- The EVM write path runs against a real node (`pnpm test:evm-local`, anvil). The other
+  families' write paths run only against their scripted nodes: `CRYPTO_AIO_INTEGRATION_WRITE=1`
+  enables no live test yet, since funded testnet keys in CI, or local nodes (bitcoind and
+  electrs, a Solana test validator, a TON local network), are still to be set up.
+  Determinism in tests could improve with a container option for the transport id and the
+  random source, and one shared end-to-end environment.
+
+**Store ports** (found by the PostgreSQL reference store)
+
+- Observations carry no namespace: `getObservation` and `putObservation` key them by attempt
+  id alone, which is globally unique, so a store cannot partition them by tenant without
+  joining Attempts. Adding a namespace changes the port, so it waits for a major release.
+- `parseTagged` reads any plain object whose only key is `$bigint` or `$bytes` as a bigint or
+  bytes; there is no escape, so stored data never uses such an object.
+- Which record `findByRef` returns when several Operations of a namespace hold the ref is
+  unspecified; the core's AttemptRef guard keeps that from happening.
