@@ -211,7 +211,11 @@ export function feeDraft(
   speed: FeeSpeed | 'custom',
   gasLimit: bigint,
   params: EvmFeeParams,
-  extra: { readonly baseFeePerGas?: bigint; readonly l1Fee?: bigint } = {},
+  extra: {
+    readonly baseFeePerGas?: bigint;
+    readonly l1Fee?: bigint;
+    readonly operatorFee?: bigint;
+  } = {},
 ): FeeEstimateDraft {
   const cap = params.type === 'eip1559' ? params.maxFeePerGas : params.gasPrice;
   const expectedPrice =
@@ -231,7 +235,8 @@ export function feeDraft(
         }
       : { gasPrice: params.gasPrice }),
     ...(extra.l1Fee !== undefined ? { l1Fee: extra.l1Fee } : {}),
-    expected: gasLimit * expectedPrice + (extra.l1Fee ?? 0n),
+    ...(extra.operatorFee !== undefined ? { operatorFee: extra.operatorFee } : {}),
+    expected: gasLimit * expectedPrice + (extra.l1Fee ?? 0n) + (extra.operatorFee ?? 0n),
   } satisfies EvmFeeDetails;
   return {
     kind: params.type === 'eip1559' ? 'evm-1559' : 'evm-legacy',
@@ -241,9 +246,14 @@ export function feeDraft(
       ...(extra.l1Fee !== undefined
         ? [{ asset: 'native' as const, amount: extra.l1Fee, label: 'l1-data' }]
         : []),
+      ...(extra.operatorFee !== undefined
+        ? [{ asset: 'native' as const, amount: extra.operatorFee, label: 'operator' }]
+        : []),
     ],
-    // The L1 data fee moves with L1 prices until inclusion, so it is only expected.
-    bound: extra.l1Fee !== undefined ? 'expected' : 'upper',
+    // The L1 data fee moves with L1 prices until inclusion, and the operator fee with the
+    // chain's operator settings, so either is only expected.
+    bound:
+      extra.l1Fee !== undefined || extra.operatorFee !== undefined ? 'expected' : 'upper',
     details,
   };
 }

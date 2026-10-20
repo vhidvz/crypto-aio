@@ -91,6 +91,7 @@ describe('EthersClient and Web3Client parity', () => {
     });
     expect(b.abi.encodeGetL1Fee(payload)).toBe(a.abi.encodeGetL1Fee(payload));
     expect(b.abi.encodeDeprecated()).toBe(a.abi.encodeDeprecated());
+    expect(b.abi.encodeGetOperatorFee(61_200n)).toBe(a.abi.encodeGetOperatorFee(61_200n));
     expect(b.abi.transferTopic).toBe(a.abi.transferTopic);
   });
 

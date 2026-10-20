@@ -20,7 +20,7 @@ ethers and web3 clients.
 | `polygon` | `mainnet` (137), `amoy` (80002) | `evm-1559`; mainnet tips at least 25 gwei | `finalized` tag | yes |
 | `avalanche` | `mainnet` (43114), `fuji` (43113) | `evm-1559` | the `latest` block is final | yes |
 | `arbitrum` | `mainnet` (42161), `sepolia` (421614) | `evm-1559` | `finalized` tag | no: there is no mempool |
-| `optimism`, `base` | `mainnet` (10, 8453), `sepolia` (11155420, 84532) | `evm-1559` plus an `l1-data` charge | `finalized` tag | yes |
+| `optimism`, `base` | `mainnet` (10, 8453), `sepolia` (11155420, 84532) | `evm-1559` plus `l1-data` and `operator` charges | `finalized` tag | yes |
 
 - **Tokens.** ERC-20 only. USDT (Ethereum, Avalanche) and USDC (every built-in mainnet but
   BNB Smart Chain) resolve by alias on mainnet, where their issuers deploy them natively. Any
@@ -38,6 +38,17 @@ ethers and web3 clients.
   Send to the upgraded contract by contract, or register it as an asset, until a release
   moves the `USDT` alias there. A contract without the method (a revert, an empty answer, or
   anything but an ABI `bool`) is not deprecated, and a failed read stays retryable.
+- **OP Stack fees.** On OP Mainnet, Base, their testnets and a custom network with
+  `params.l1DataFee: 'op-stack'`, every estimate, replacement and cancel also reads the
+  `GasPriceOracle` predeploy, two calls side by side. `l1-data` is its `getL1Fee` for the
+  unsigned bytes (`details.l1Fee`). `operator`, since the Isthmus upgrade, is its
+  `getOperatorFee` for the whole gas limit (`details.operatorFee`): an upper bound, since
+  the fee grows with the gas used, by the formula of the chain's fork (Jovian changed it).
+  Both count in `details.expected` and the funds check, and the bound is `expected`: the L1
+  fee moves with L1 prices, the operator fee with the chain's operator settings. A chain
+  before Isthmus (the call reverts or answers nothing) or a zero operator fee adds no
+  `operator` charge; a failed or malformed answer stays retryable. A confirmed
+  transaction's reported fee includes its receipt's L1 fee, not the operator fee.
 - **Presets.** `alchemy` and `infura` serve every network above; `ankr` the Ethereum, BNB
   Smart Chain, Avalanche, Arbitrum and Base mainnets; `public` the networks whose chain
   documents a public endpoint (not Ethereum). The public Base, Arbitrum and OP Sepolia

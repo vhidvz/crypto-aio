@@ -80,7 +80,8 @@ Polygon mainnet), and the fee cap allows the base fee to double. On `evm-legacy`
 they scale `eth_gasPrice` by 100%, 110% or 125%. The gas limit is the node's estimate,
 plus 20% for anything but a plain transfer. The `network` charge is an `upper` bound, and
 `details.expected` (`EvmFeeDetails`) the likely cost. On OP Stack chains the L1 data fee is a
-separate `l1-data` charge, and the bound is `expected`, since that fee moves with L1 prices.
+separate `l1-data` charge, and the bound is `expected`, since that fee moves with L1 prices;
+since the Isthmus upgrade the operator fee, for the whole gas limit, is an `operator` charge.
 An override's `gasLimit` skips `eth_estimateGas`, the check that refuses a call that would
 fail: any call that would revert or run out of gas, such as a token transfer or a payment
 to a contract that refuses it, is then signed, broadcast, and burns its gas. The balance

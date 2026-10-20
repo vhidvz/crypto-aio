@@ -123,6 +123,148 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     });
   });
 
+  it('adds the OP Stack operator fee for the whole gas limit as its own charge, which the funds check counts', async () => {
+    const t = setup('base', 'sepolia', {
+      l1Fee: 777n,
+      operatorFee: { scalar: 3n, constant: 1_000n },
+    });
+    const asked: string[] = [];
+    t.node.intercept = (_endpoint, method, params) => {
+      if (method === 'eth_call') asked.push((params[0] as { data: string }).data);
+      return undefined;
+    };
+    const operatorFee = (gas: bigint) => gas * 300n + 1_000n;
+    const fee = await t.run(t.builder.estimateFee(intent(), t.build(5n)));
+    expect(fee.charges).toEqual([
+      { asset: 'native', amount: 21_000n * 4n * GWEI, label: 'network' },
+      { asset: 'native', amount: 777n, label: 'l1-data' },
+      { asset: 'native', amount: operatorFee(21_000n), label: 'operator' },
+    ]);
+    expect(fee).toMatchObject({
+      bound: 'expected',
+      details: {
+        l1Fee: 777n,
+        operatorFee: operatorFee(21_000n),
+        expected: 21_000n * 3n * GWEI + 777n + operatorFee(21_000n),
+      },
+    });
+    expect(asked).toContain(t.client.abi.encodeGetOperatorFee(21_000n));
+    // A token transfer's is for its gas limit, the estimate with its headroom.
+    t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
+    const token = intent({
+      asset: tokenAsset,
+      outputs: [{ to: RECIPIENT, amount: 10n }],
+    });
+    expect((await t.run(t.builder.estimateFee(token, t.build()))).details).toMatchObject({
+      gasLimit: 61_200n,
+      operatorFee: operatorFee(61_200n),
+    });
+    // A wallet that covers the amount, the network and L1 fees, but not the operator fee.
+    const costs = 21_000n * 4n * GWEI + 777n + operatorFee(21_000n);
+    const short = intent({
+      outputs: [{ to: RECIPIENT, amount: 10n ** 18n - costs + 1n }],
+    });
+    expect(await t.run(t.builder.checkFunds(short, fee, t.build()))).toEqual({
+      ok: false,
+      asset: 'native',
+      required: 10n ** 18n + 1n,
+      available: 10n ** 18n,
+    });
+    const exact = intent({ outputs: [{ to: RECIPIENT, amount: 10n ** 18n - costs }] });
+    expect(await t.run(t.builder.checkFunds(exact, fee, t.build()))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('charges no operator fee before Isthmus, at zero, or on an empty answer', async () => {
+    // Before Isthmus the predeploy has no getOperatorFee: the call reverts.
+    const before = setup('optimism', 'sepolia', { l1Fee: 777n });
+    const fee = await before.run(before.builder.estimateFee(intent(), before.build()));
+    expect(fee.charges.map((c) => c.label)).toEqual(['network', 'l1-data']);
+    expect(fee.details).not.toHaveProperty('operatorFee');
+    const zero = setup('base', 'sepolia', {
+      l1Fee: 777n,
+      operatorFee: { scalar: 0n, constant: 0n },
+    });
+    expect(
+      (await zero.run(zero.builder.estimateFee(intent(), zero.build()))).charges.map(
+        (c) => c.label,
+      ),
+    ).toEqual(['network', 'l1-data']);
+    const getOperatorFee = zero.client.abi.encodeGetOperatorFee(0n).slice(0, 10);
+    for (const answer of [
+      { result: '0x' },
+      { error: { code: 3, message: 'execution reverted' } },
+      { error: { code: -32000, message: 'invalid opcode: INVALID' } },
+    ]) {
+      zero.node.intercept = (_endpoint, method, params) =>
+        method === 'eth_call' &&
+        (params[0] as { data: string }).data.startsWith(getOperatorFee)
+          ? answer
+          : undefined;
+      const quiet = await zero.run(zero.builder.estimateFee(intent(), zero.build()));
+      expect(quiet.charges.map((c) => c.label)).toEqual(['network', 'l1-data']);
+    }
+  });
+
+  it('decides nothing on a failed operator fee read: the error stays retryable', async () => {
+    const t = setup('base', 'sepolia', {
+      l1Fee: 777n,
+      operatorFee: { scalar: 3n, constant: 1_000n },
+    });
+    const getOperatorFee = t.client.abi.encodeGetOperatorFee(0n).slice(0, 10);
+    const failing = (
+      answer: { result: unknown } | { error: { code: number; message: string } },
+    ) => {
+      t.node.intercept = (_endpoint, method, params) =>
+        method === 'eth_call' &&
+        (params[0] as { data: string }).data.startsWith(getOperatorFee)
+          ? answer
+          : undefined;
+      return t.run(t.builder.estimateFee(intent(), t.build()));
+    };
+    await expect(
+      failing({ error: { code: -32000, message: 'header not found' } }),
+    ).rejects.toMatchObject({ code: 'RPC_ERROR', retryable: true });
+    await expect(failing({ result: '0x1234' })).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: 'the operator fee oracle gave no fee',
+    });
+    await expect(failing({ result: 42 })).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
+  it('recomputes the operator fee for the gas limit of a replacement and a cancel', async () => {
+    const t = setup('base', 'sepolia', {
+      l1Fee: 777n,
+      operatorFee: { scalar: 3n, constant: 1_000n },
+    });
+    const policy = createEvmReplacement(t.ctx)!;
+    const original = await t.prepare();
+    await t.run(t.broadcaster.broadcast(await t.assemble(original)));
+    const replacement = await t.run(
+      policy.buildReplacement!(
+        original,
+        { maxFeePerGas: 7n * GWEI, maxPriorityFeePerGas: 3n * GWEI, gasLimit: 30_000n },
+        t.build(),
+      ),
+    );
+    expect(replacement.fee.charges).toContainEqual({
+      asset: 'native',
+      amount: 30_000n * 300n + 1_000n,
+      label: 'operator',
+    });
+    const cancel = await t.run(policy.buildCancel!(replacement, t.build()));
+    expect(cancel.fee).toMatchObject({
+      bound: 'expected',
+      details: { gasLimit: 21_000n, operatorFee: 21_000n * 300n + 1_000n },
+    });
+  });
+
   it('turns shortfalls and reverts into pre-signing failures', async () => {
     const t = setup();
     t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
@@ -608,11 +750,13 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     const original = await t.prepare();
     await t.run(t.broadcaster.broadcast(await t.assemble(original)));
     const asked: string[] = [];
+    const getL1Fee = t.client.abi.encodeGetL1Fee('0x').slice(0, 10);
     t.node.intercept = (_endpoint, method, params) => {
       const call = params[0] as { to?: string; data?: string };
       if (
         method !== 'eth_call' ||
-        call.to?.toLowerCase() !== GAS_PRICE_ORACLE.toLowerCase()
+        call.to?.toLowerCase() !== GAS_PRICE_ORACLE.toLowerCase() ||
+        !call.data?.startsWith(getL1Fee)
       )
         return undefined;
       asked.push(call.data ?? '');

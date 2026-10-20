@@ -538,6 +538,45 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     });
   });
 
+  it('reports the OP Stack operator fee and refuses before signing a wallet that cannot pay it', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createEvmEnv({
+      library,
+      chain: 'base',
+      network: 'sepolia',
+      signer,
+      node: { l1Fee: 777n, operatorFee: { scalar: 3n, constant: 1_000n } },
+    });
+    const GWEI = 1_000_000_000n;
+    const operator = 21_000n * 300n + 1_000n;
+    const fee = await env.run(env.bc.estimateFee({ to: RECIPIENT, amount: 5n }));
+    expect(fee.charges.map((c) => [c.label, c.amount.base])).toEqual([
+      ['network', 21_000n * 4n * GWEI],
+      ['l1-data', 777n],
+      ['operator', operator],
+    ]);
+    expect(fee).toMatchObject({ bound: 'expected', details: { operatorFee: operator } });
+    // Enough for the amount, the network and the L1 fees, one wei short of the operator fee.
+    const costs = 21_000n * 4n * GWEI + 777n + operator;
+    await expect(
+      env.run(
+        env.bc.transfer(
+          { to: RECIPIENT, amount: 10n ** 18n - costs + 1n },
+          { idempotencyKey: 'short' },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+    expect(calls()).toBe(0);
+    const sub = await env.run(
+      env.bc.transfer({ to: RECIPIENT, amount: 5n }, { idempotencyKey: 'paid' }),
+    );
+    await env.mineWhile(sub.wait({ finality: 'final' }));
+    // Paid on the gas used (21,000 at the base fee plus the tip) with both OP Stack fees.
+    expect(env.node.balance(env.address)).toBe(
+      10n ** 18n - 5n - 21_000n * 3n * GWEI - 777n - operator,
+    );
+  });
+
   it('transfers an ERC-20 token by contract, with decimals read from the chain', async () => {
     const { signer, calls } = countingSigner();
     const env = await createEvmEnv({ library, signer });

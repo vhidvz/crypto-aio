@@ -125,6 +125,22 @@ describe('EVM fee policy', () => {
       { asset: 'native', amount: 90_000n, label: 'network' },
       { asset: 'native', amount: 11n, label: 'l1-data' },
     ]);
+    // The OP Stack operator fee is its own charge, in the expected cost too.
+    const operated = feeDraft(
+      'custom',
+      30_000n,
+      { type: 'legacy', gasPrice: 3n },
+      { l1Fee: 11n, operatorFee: 5n },
+    );
+    expect(operated).toMatchObject({
+      bound: 'expected',
+      details: { l1Fee: 11n, operatorFee: 5n, expected: 90_016n },
+    });
+    expect(operated.charges).toEqual([
+      { asset: 'native', amount: 90_000n, label: 'network' },
+      { asset: 'native', amount: 11n, label: 'l1-data' },
+      { asset: 'native', amount: 5n, label: 'operator' },
+    ]);
     expect(feeOf(legacy.details)).toEqual({
       gasLimit: 30_000n,
       params: { type: 'legacy', gasPrice: 3n },

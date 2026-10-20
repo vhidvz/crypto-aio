@@ -47,6 +47,7 @@ import {
 import { GAS_PRICE_ORACLE } from './network';
 import {
   READ,
+  callIfPresent,
   erc20Balance,
   erc20Deprecated,
   isExecutionFailure,
@@ -246,16 +247,55 @@ async function l1FeeFor(
   }
 }
 
+/**
+ * OP Stack since Isthmus: the oracle's operator fee (`getOperatorFee`) for the whole gas
+ * limit. The fee grows with the gas used, so the limit gives an upper bound at the chain's
+ * current operator settings, as the `network` charge does at the fee cap; the predeploy
+ * applies the formula of the chain's fork (Isthmus or Jovian). `undefined` where nothing
+ * is charged: a zero fee, or a predeploy that has no such method yet (a revert, or `0x`).
+ * A node error is retryable (`callIfPresent`), and a malformed answer is a retryable
+ * `PROVIDER_UNAVAILABLE`, never no fee.
+ */
+async function operatorFeeFor(
+  ctx: EvmContext,
+  gasLimit: bigint,
+  signal?: AbortSignal,
+): Promise<bigint | undefined> {
+  if (!ctx.config.l1DataFee) return undefined;
+  const { client } = ctx;
+  const result = await callIfPresent(
+    client,
+    { to: GAS_PRICE_ORACLE, data: client.abi.encodeGetOperatorFee(gasLimit) },
+    withSignal(READ, signal),
+  );
+  if (result === null || result === '0x') return undefined;
+  let fee: bigint;
+  try {
+    fee = client.abi.decodeUint256(result);
+  } catch {
+    throw new ProviderError(
+      'PROVIDER_UNAVAILABLE',
+      'the operator fee oracle gave no fee',
+    );
+  }
+  return fee === 0n ? undefined : fee;
+}
+
+/** The fee draft for `fields`, with the OP Stack charges read side by side. */
 async function draftFor(
   ctx: EvmContext,
   fields: EvmTxFields,
   price: Price,
   signal?: AbortSignal,
 ): Promise<FeeEstimateDraft> {
-  const l1Fee = await l1FeeFor(ctx, fields, signal);
+  const [l1Fee, operatorFee] = await Promise.all([
+    l1FeeFor(ctx, fields, signal),
+    operatorFeeFor(ctx, fields.gasLimit, signal),
+  ]);
   return feeDraft(price.speed, fields.gasLimit, price.params, {
     ...(price.baseFeePerGas !== undefined ? { baseFeePerGas: price.baseFeePerGas } : {}),
     ...(l1Fee !== undefined ? { l1Fee } : {}),
+    ...(operatorFee !== undefined ? { operatorFee } : {}),
   });
 }
 

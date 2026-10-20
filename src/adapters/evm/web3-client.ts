@@ -51,6 +51,8 @@ const web3Abi: EvmAbi = {
   encodeDeprecated: () => eth.abi.encodeFunctionCall(fn('deprecated', []), []),
   encodeGetL1Fee: (unsignedTx) =>
     eth.abi.encodeFunctionCall(fn('getL1Fee', ['bytes']), [unsignedTx]),
+  encodeGetOperatorFee: (gasUsed) =>
+    eth.abi.encodeFunctionCall(fn('getOperatorFee', ['uint256']), [gasUsed]),
   decodeUint256: (data) => {
     if (!ABI_WORD.test(data)) throw new Error('not one ABI word');
     return BigInt(eth.abi.decodeParameter('uint256', data) as bigint);

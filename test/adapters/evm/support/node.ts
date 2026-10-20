@@ -36,6 +36,7 @@ const SELECTOR = {
   symbol: id('symbol()').slice(0, 10),
   deprecated: id('deprecated()').slice(0, 10),
   getL1Fee: id('getL1Fee(bytes)').slice(0, 10),
+  getOperatorFee: id('getOperatorFee(uint256)').slice(0, 10),
 };
 
 export interface NodeOptions {
@@ -50,6 +51,12 @@ export interface NodeOptions {
   readonly minBumpPercent?: number;
   /** OP Stack: the L1 data fee `getL1Fee` returns and receipts carry. */
   readonly l1Fee?: bigint;
+  /**
+   * OP Stack since Isthmus: the operator fee parameters, charged with the Jovian formula
+   * (`gas * scalar * 100 + constant`) on the gas used, and on the gas limit in the funds
+   * check. Without them `getOperatorFee` reverts, as on a predeploy before Isthmus.
+   */
+  readonly operatorFee?: { readonly scalar: bigint; readonly constant: bigint };
 }
 
 interface Token {
@@ -157,7 +164,8 @@ const cloneState = (state: State): State => ({
 
 export class ScriptedEvmNode {
   readonly fetch = new FakeFetch();
-  readonly options: Required<Omit<NodeOptions, 'l1Fee'>> & { readonly l1Fee?: bigint };
+  readonly options: Required<Omit<NodeOptions, 'l1Fee' | 'operatorFee'>> &
+    Pick<NodeOptions, 'l1Fee' | 'operatorFee'>;
   /** JSON-RPC methods each endpoint served, in order. */
   readonly served: { endpoint: string; method: string }[] = [];
   intercept: Intercept | undefined;
@@ -236,6 +244,12 @@ export class ScriptedEvmNode {
 
   #all(): State[] {
     return [this.#state, ...this.#states];
+  }
+
+  /** The operator fee for `gas` (0 before Isthmus). */
+  operatorFee(gas: bigint): bigint {
+    const fee = this.options.operatorFee;
+    return fee === undefined ? 0n : gas * fee.scalar * 100n + fee.constant;
   }
 
   balance(address: string): bigint {
@@ -388,7 +402,7 @@ export class ScriptedEvmNode {
     // Out of gas: the whole limit is used and paid for, and the transaction moves nothing.
     const outOfGas = needed > tx.gasLimit;
     const gasUsed = outOfGas ? tx.gasLimit : needed;
-    const fee = gasUsed * price + (this.options.l1Fee ?? 0n);
+    const fee = gasUsed * price + (this.options.l1Fee ?? 0n) + this.operatorFee(gasUsed);
     if (this.balance(tx.from) < fee + (reverts ? 0n : tx.value)) return undefined;
     credit(this.#state, tx.from, -fee);
     this.#state.nonces.set(lower(tx.from), tx.nonce + 1n);
@@ -536,7 +550,11 @@ export class ScriptedEvmNode {
     // stored refusal reason names no address stricter.
     if (!legacy && maxFee < this.options.baseFee)
       throw new RpcFailure(-32000, 'max fee per gas less than block base fee');
-    const cost = tx.value + tx.gasLimit * maxFee + (this.options.l1Fee ?? 0n);
+    const cost =
+      tx.value +
+      tx.gasLimit * maxFee +
+      (this.options.l1Fee ?? 0n) +
+      this.operatorFee(tx.gasLimit);
     if (this.balance(from) < cost) {
       throw new RpcFailure(
         -32000,
@@ -603,6 +621,14 @@ export class ScriptedEvmNode {
     if (to === lower(GAS_PRICE_ORACLE) && data.startsWith(SELECTOR.getL1Fee)) {
       if (this.options.l1Fee === undefined) return '0x';
       return abi.encode(['uint256'], [this.options.l1Fee]);
+    }
+    if (to === lower(GAS_PRICE_ORACLE) && data.startsWith(SELECTOR.getOperatorFee)) {
+      // Before Isthmus the predeploy has no such method, and no fallback: it reverts.
+      if (this.options.operatorFee === undefined) {
+        throw new RpcFailure(-32000, 'execution reverted');
+      }
+      const [gas] = abi.decode(['uint256'], `0x${data.slice(10)}`) as unknown as [bigint];
+      return abi.encode(['uint256'], [this.operatorFee(gas)]);
     }
     if (to === lower(REVERTER)) throw new RpcFailure(3, 'execution reverted');
     const token = this.#tokens.get(to);

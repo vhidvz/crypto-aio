@@ -70,6 +70,7 @@ const erc20 = new Interface([
 ]);
 const gasPriceOracle = new Interface([
   'function getL1Fee(bytes data) view returns (uint256)',
+  'function getOperatorFee(uint256 gasUsed) view returns (uint256)',
 ]);
 const TRANSFER_TOPIC = erc20.getEvent('Transfer')?.topicHash as string;
 
@@ -82,6 +83,8 @@ const ethersAbi: EvmAbi = {
   encodeDeprecated: () => erc20.encodeFunctionData('deprecated', []),
   encodeGetL1Fee: (unsignedTx) =>
     gasPriceOracle.encodeFunctionData('getL1Fee', [unsignedTx]),
+  encodeGetOperatorFee: (gasUsed) =>
+    gasPriceOracle.encodeFunctionData('getOperatorFee', [gasUsed]),
   decodeUint256: (data) => {
     if (!ABI_WORD.test(data)) throw new Error('not one ABI word');
     return coder.decode(['uint256'], data)[0] as bigint;
