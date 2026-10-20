@@ -64,6 +64,11 @@ declares `secp256k1-schnorr`, and the other address types `secp256k1-ecdsa`.
 now checked on chain, and counted there rather than in `failed`. Restore the wallet and
 recover again to resend them.
 
+## If your idempotency keys are unusual text
+
+An idempotency key or a scanner's `cursorKey` with U+0000 or a lone surrogate (half of a
+UTF-16 pair) is now refused. Keys made of ordinary text are unaffected.
+
 ## If you write a durable store
 
 Run the contract suites from `crypto-aio/testing` again: they now check two more fields.

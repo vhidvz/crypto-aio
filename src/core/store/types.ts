@@ -237,8 +237,13 @@ export interface CreateResult {
  *   a field.
  * - `appendAttempt` is atomic with its accompanying patch, never rewrites a
  *   previously stored `AttemptRecord`, and rejects a duplicate attempt id. Attempt ids
- *   are globally unique across every Operation and namespace (observations are keyed
- *   by attempt id alone).
+ *   are globally unique across every Operation and namespace: the core makes each one
+ *   random, and observations are keyed by attempt id alone, so a store may also refuse
+ *   (`INVALID_TRANSITION`) an id that another Operation holds.
+ * - Time: `createdAt`, `updatedAt` and claim expiry are stamped with the store's clock,
+ *   which the core compares with its own (`claimDue` gets the worker's `now`). Give a
+ *   durable store the container's clock, or a wall clock the processes share, as the
+ *   memory stores take theirs.
  * - `claimDue` and `list` are scoped by namespace: they never return a record of another
  *   namespace, even one with the same id.
  * - `claimDue` returns only non-terminal operations with `nextCheckAt` set and `<=

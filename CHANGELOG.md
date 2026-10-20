@@ -93,6 +93,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pnpm test:evm-local` proves the EVM write path on a local anvil node, with ethers and
   web3: proven finality, idempotent repeats, concurrent nonces, an ERC-20, replace, cancel,
   crash recovery, funds checks and a reorg. CI runs it on every change.
+- **Breaking:** an idempotency key and a scanner's `cursorKey` must be well-formed text
+  without U+0000 (`INVALID_INTENT`, `CONFIG_INVALID`): a database may refuse U+0000, and a
+  driver may turn a lone surrogate into U+FFFD, so two keys would become one.
+- The store ports say which clock stamps times (the container's, or a wall clock the
+  processes share), and that a store may refuse an attempt id another Operation holds; the
+  contract suite no longer reuses one. `createFakeEnv` takes a `clock`, so stores built
+  beforehand can share it, and `FaultyOperationStore` passes `purge` through. The memory
+  store lists and purges nothing for a negative `limit`, as for 0.
 - `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
   resolves is now checked on chain and counted `unresent`, where it was counted `failed`
   without its check.

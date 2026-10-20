@@ -370,7 +370,9 @@ export class MemoryOperationStore implements OperationStore {
     const found = [...this.#records.values()]
       .filter((r) => matches(r, filter))
       .sort((a, b) => a.createdAt - b.createdAt);
-    return clone(filter.limit === undefined ? found : found.slice(0, filter.limit));
+    return clone(
+      filter.limit === undefined ? found : found.slice(0, Math.max(0, filter.limit)),
+    );
   }
 
   async purge(filter: OperationFilter): Promise<number> {
@@ -381,7 +383,7 @@ export class MemoryOperationStore implements OperationStore {
     let removed = 0;
     for (const record of filter.limit === undefined
       ? found
-      : found.slice(0, filter.limit)) {
+      : found.slice(0, Math.max(0, filter.limit))) {
       this.#records.delete(compositeKey(record.namespace, record.id));
       this.#keys.delete(compositeKey(record.namespace, record.idempotencyKey));
       for (const attempt of record.attempts) this.#observations.delete(attempt.id);

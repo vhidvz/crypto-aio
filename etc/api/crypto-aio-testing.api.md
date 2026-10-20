@@ -203,6 +203,7 @@ export interface FakeEnvOptions {
     readonly aio?: Omit<AioOptions, 'clock' | 'stores' | 'transport'>;
     // (undocumented)
     readonly chain?: Omit<FakeChainOptions, 'ordering' | 'clock'>;
+    readonly clock?: FakeClock;
     // (undocumented)
     readonly endpoints?: readonly (string | ({
         readonly name: string;
@@ -394,6 +395,7 @@ export class FaultyOperationStore implements OperationStore {
     getObservation(attemptId: string): Promise<AttemptObservation | null>;
     // (undocumented)
     list(filter: OperationFilter): Promise<OperationRecord[]>;
+    readonly purge?: (filter: OperationFilter) => Promise<number>;
     // (undocumented)
     putObservation(observation: Omit<AttemptObservation, 'version'>, expectedVersion: number | null): Promise<AttemptObservation>;
     // (undocumented)

@@ -36,7 +36,13 @@ export interface FaultPoint {
 export class FaultyOperationStore implements OperationStore {
   readonly #faults: FaultPoint[] = [];
 
-  constructor(private readonly inner: OperationStore) {}
+  /** The inner store's `purge`, when it has one. */
+  readonly purge?: (filter: OperationFilter) => Promise<number>;
+
+  constructor(private readonly inner: OperationStore) {
+    const purge = inner.purge?.bind(inner);
+    if (purge) this.purge = (filter) => purge(filter);
+  }
 
   crashOn(fault: FaultPoint): void {
     this.#faults.push(fault);

@@ -57,6 +57,7 @@ import { OPERATION_FORMAT } from '../store/format';
 import { randomId } from '../util/bytes';
 import { abortReason, type Clock } from '../util/clock';
 import { canonicalJson, sha256Hex } from '../util/json';
+import { storableText } from '../util/names';
 import {
   CHAIN_EVIDENCE_STATES,
   CONFLICTABLE_STATES,
@@ -540,6 +541,13 @@ export class OperationEngine {
       throw new ValidationError(
         'INVALID_INTENT',
         'idempotencyKey must be 1-200 characters',
+      );
+    }
+    // Stores key Operations by it: text a database would refuse or alter is refused here.
+    if (key !== undefined && !storableText(key)) {
+      throw new ValidationError(
+        'INVALID_INTENT',
+        'idempotencyKey must be well-formed text without U+0000',
       );
     }
     const { selection } = target;

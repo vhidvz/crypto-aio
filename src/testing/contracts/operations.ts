@@ -334,7 +334,7 @@ export function describeOperationStoreContract(
         const { operations } = await create();
         for (const [name, ordering] of SAMPLE_ORDERINGS) {
           const { record } = await operations.create(sampleOperation());
-          const sample = sampleAttempt('a1');
+          const sample = sampleAttempt(`a1-${record.id}`);
           const appended = await operations.appendAttempt(
             'ns',
             record.id,
