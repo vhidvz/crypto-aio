@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `assets` on the root container's options registers tokens (decimals, symbol, aliases)
   without writing a plugin.
 - `PROVIDER_MISCONFIGURED` for refused credentials carries `details.httpStatus` (401 or 403).
+- Solana: the signature fee is computed (5,000 lamports per signature), and an endpoint's
+  `getFeeForMessage` quote must match the message's fee exactly; any other quote fails the
+  estimate with a retryable `PROVIDER_UNAVAILABLE`, so one endpoint can neither inflate an
+  estimate (refusing a payable transfer) nor deflate it. Whether an explicit fee fits in
+  u64 is decided locally.
+- **Breaking:** Bitcoin: a wallet whose signer does not declare the scheme its address type
+  signs with (a `p2tr` wallet on an ECDSA-only signer, such as a KMS key) is refused with
+  `CONFIG_INVALID` when the wallet resolves (`ready()`, `walletAddress()`, `transfer()`,
+  `prepareTransfer()`), before anything is built or reserved, instead of failing at
+  signing. A Schnorr-only signer on a non-`p2tr` wallet gets the same error, where it got
+  `INVALID_ADDRESS`. Watch-only wallets are unaffected. Drivers declare this with the
+  optional `ChainDriver.signingSchemes(wallet)`.
 - `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
   resolves is now checked on chain and counted `unresent`, where it was counted `failed`
   without its check.

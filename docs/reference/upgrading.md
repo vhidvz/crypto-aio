@@ -33,6 +33,12 @@ idempotency key repeated after the upgrade finds its Operation.
   `bc.ready()` no longer count an endpoint as `healthy` from its identity alone: `ready()`
   now fails with `PROVIDER_UNAVAILABLE` when no endpoint has answered its height probe.
 
+## If you sign Bitcoin `p2tr` with a custody signer
+
+A wallet whose signer does not declare the scheme its address type signs with is refused
+with `CONFIG_INVALID` when it resolves, not at signing: a `p2tr` wallet needs a signer that
+declares `secp256k1-schnorr`, and the other address types `secp256k1-ecdsa`.
+
 ## If you read `RecoveryReport`
 
 `aio.operations.recover()` reports `unresent`: Operations whose wallet no longer resolves are

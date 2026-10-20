@@ -64,10 +64,6 @@ A transfer that paid but reads as failed invites a second payment by hand, so kn
 - **A gas-limit bound on EVM.** `eth_estimateGas` sets the gas limit. An inflated estimate
   only raises the reserved maximum (the funds check refuses what the wallet cannot cover),
   but no operator bound exists. The OP Stack operator fee is not in the fee report.
-- **A sanity bound on Solana's fee quote** (`getFeeForMessage`). A wrong quote can mis-state
-  an estimate or stall a transfer; it is never signed into one.
-- **A p2tr wallet with an ECDSA-only signer** fails at signing, before anything is
-  broadcast.
 - **Hardware-wallet key origins on Bitcoin.** PSBTs carry no `bip32Derivation`.
 - **TON batches** have no outcome per leg, and `UQ…` addresses of active contracts are not
   sent bounceable on request.
