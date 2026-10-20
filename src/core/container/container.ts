@@ -1,5 +1,5 @@
 import { AssetService } from '../assets/service';
-import { Blockchain } from '../blockchain/handle';
+import { createBlockchain, type Blockchain } from '../blockchain/handle';
 import { internalsOf, type HandleInternals } from '../blockchain/internal';
 import { readEnvChains } from '../config/env';
 import { assertNoCycle, isPlainObject, mergeScopes } from '../config/merge';
@@ -96,6 +96,12 @@ interface ScopeInit {
   readonly parent: CryptoAio;
   readonly overrides: ScopeOptions;
 }
+
+/**
+ * Set by `scope()` for the one synchronous constructor call it makes, so a child container
+ * needs no constructor parameter in the public API.
+ */
+let pendingScope: ScopeInit | undefined;
 
 /**
  * Deep-clones plain objects/arrays into a frozen copy so a later mutation of the caller's
@@ -317,10 +323,9 @@ export interface MonitorApi {
 export class CryptoAio {
   readonly namespace: string;
 
-  constructor(options?: AioOptions);
-  /** @internal */
-  constructor(options: AioOptions, scope: ScopeInit);
-  constructor(options: AioOptions = {}, scope?: ScopeInit) {
+  constructor(options: AioOptions = {}) {
+    const scope = pendingScope;
+    pendingScope = undefined;
     if (scope) {
       const parent = containerOf(scope.parent);
       this.namespace = parent.runtime.namespace;
@@ -388,7 +393,12 @@ export class CryptoAio {
    * `new CryptoAio({ namespace })` when isolation between tenants is required.
    */
   scope(overrides: ScopeOptions): CryptoAio {
-    return new CryptoAio({}, { parent: this, overrides });
+    pendingScope = { parent: this, overrides };
+    try {
+      return new CryptoAio();
+    } finally {
+      pendingScope = undefined;
+    }
   }
 
   blockchain<C extends ChainId>(config: HandleConfig<C>): Blockchain<C> {
@@ -442,7 +452,7 @@ export class CryptoAio {
         return wallet;
       },
     };
-    return new Blockchain<C>(handle);
+    return createBlockchain<C>(handle);
   }
 
   /** Registers a plugin on this root container (copy-on-write catalogs). */

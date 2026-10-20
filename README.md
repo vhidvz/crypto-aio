@@ -157,7 +157,8 @@ stores ship: production needs durable stores of your own, proven with the contra
 ## Contributing
 
 Issues and pull requests are welcome. `pnpm install` and `pnpm check` (lint, typecheck and tests)
-are all a change needs locally; the [source map](https://vhidvz.github.io/crypto-aio/explore/source-map.html)
+are all a change needs locally, plus `pnpm api:update` when it changes the public API (CI
+compares the API with the reports in `etc/api/`); the [source map](https://vhidvz.github.io/crypto-aio/explore/source-map.html)
 explains the repository, and [docs/README.md](docs/README.md) how the documentation is built and
 tested.
 

@@ -94,8 +94,7 @@ it waited.
 - The families' ordering fields have no typed home in the core (a store contract pins them
   instead); `engine.ts` and TON's `proofs.ts`, `reader.ts` and `api.ts` are long, as are the TON
   and UTXO end-to-end tests.
-- The only-native guard is text-based, and the pooled driver is reachable through
-  TypeScript-protected handle methods, which could become module functions.
+- The only-native guard is text-based.
 - No test watches `require.cache` across families; the packaging check proves today that every
   entry point loads with no SDK.
 - `CRYPTO_AIO_INTEGRATION_WRITE=1` enables no test yet: funded write tests need testnet keys in

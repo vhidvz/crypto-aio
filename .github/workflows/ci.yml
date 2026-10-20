@@ -50,5 +50,7 @@ jobs:
       - run: pnpm audit --prod
       # package.json's exports and types, under every module resolution.
       - run: pnpm run lint:package
+      # The public API against etc/api/: a change needs its report updated (`pnpm api:update`).
+      - run: node scripts/api-report.mjs
       # The tarball as a user installs it, with and without the SDKs.
       - run: node scripts/pack-check.mjs
