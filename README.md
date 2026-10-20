@@ -161,7 +161,9 @@ stores ship: production needs durable stores of your own, proven with the contra
 
 Issues and pull requests are welcome. `pnpm install` and `pnpm check` (lint, typecheck and tests)
 are all a change needs locally, plus `pnpm api:update` when it changes the public API (CI
-compares the API with the reports in `etc/api/`); the [source map](https://vhidvz.github.io/crypto-aio/explore/source-map.html)
+compares the API with the reports in `etc/api/`). `pnpm test:evm-local` also signs, broadcasts
+and proves real EVM transactions on a local anvil node, which it starts and stops; CI runs it
+on every change. The [source map](https://vhidvz.github.io/crypto-aio/explore/source-map.html)
 explains the repository, and [docs/README.md](docs/README.md) how the documentation is built and
 tested.
 

@@ -1,6 +1,6 @@
 ---
 title: Test with the fake chain
-description: "The testing kit: the fake chain, fake time, scripted nodes and crash injection."
+description: "The testing kit: the fake chain, fake time, scripted nodes and crash injection, and a local EVM node."
 ---
 
 # Test with the fake chain
@@ -89,3 +89,46 @@ it('reads a balance through the acme driver', async () => {
 
 To check a store of your own against the store contracts, see
 [Write a durable store](../explore/stores.md).
+
+## Test against a local EVM node
+
+The fake chain proves your logic, not that a real node takes your transactions and answers as
+the library expects. On the EVM family, a development node such as Foundry's anvil
+(`npx @foundry-rs/anvil`) proves that too. Register it as a chain of your own
+([Add networks to a family](../explore/custom-networks.md)) and fund a fresh key from one of
+the node's prefunded accounts, which are unlocked (`eth_sendTransaction` from
+`eth_accounts[0]`):
+
+<!-- typecheck -->
+```ts
+import { CryptoAio, localSigner, type ChainId, type ChainInfo } from 'crypto-aio';
+import { evmChainPlugin } from 'crypto-aio/evm';
+
+const devnet: ChainInfo = {
+  id: 'devnet', family: 'evm', model: 'account', ordering: 'nonce', schemes: ['secp256k1-ecdsa'],
+  nativeAsset: { symbol: 'ETH', decimals: 18 }, defaultNetwork: 'local',
+  networks: {
+    local: {
+      id: 'local', identity: '31337', testnet: true, feeModel: 'evm-1559', // anvil's chain id
+      // anvil's `finalized` tag is a fixed depth below its head, not finality.
+      finality: { kind: 'confirmations', confirmations: 3 },
+      capabilities: { remove: ['finality-tag'] },
+      defaultConfirmations: 1, reorgWindow: 8, replacement: { minBumpPercent: 10 },
+    },
+  },
+};
+const { signer } = localSigner.generate({ curves: ['secp256k1'] }); // a fresh, random key
+const aio = new CryptoAio({
+  plugins: [evmChainPlugin({ name: 'devnet', chains: [devnet] })],
+  providers: { anvil: { endpoints: [{ name: 'anvil', url: 'http://127.0.0.1:8545' }] } },
+  signers: { hot: signer },
+  wallets: { main: { signer: 'hot' } },
+  chains: { devnet: { network: 'local', provider: 'anvil', wallet: 'main' } },
+});
+const bc = aio.blockchain({ chain: 'devnet' as ChainId });
+```
+
+Turn automine off (`evm_setAutomine`) to keep a transfer pending for `replace` or `cancel`, mine
+with `evm_mine`, and drop a block with `anvil_reorg`. This repository's own EVM write-path
+suite, `test/integration/evm-local.test.ts`, works this way; `pnpm test:evm-local` starts anvil,
+runs it with ethers and web3, and stops the node.

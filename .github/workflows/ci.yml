@@ -54,3 +54,19 @@ jobs:
       - run: node scripts/api-report.mjs
       # The tarball as a user installs it, with and without the SDKs.
       - run: node scripts/pack-check.mjs
+
+  evm-local:
+    # The EVM write path (sign, broadcast, prove, replace, cancel, recover, reorg) against a
+    # real node: Foundry's anvil, from the @foundry-rs/anvil devDependency, which
+    # scripts/evm-local.mjs starts on a free port and stops.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:evm-local
