@@ -15,11 +15,12 @@
  * transaction. A wallet can be reset (deleted, or destroyed to uninitialized, then
  * re-deployed from its public `StateInit` with seqno 0), so an activation, a destruction
  * or a chain start inside what the proof must see decides nothing, unless the chain
- * itself shows our transaction. Anything not yet decidable throws a retryable
- * `PROVIDER_UNAVAILABLE`, and an answer the chain could not have produced a retryable
- * `PROVIDER_INCONSISTENT`; both decide nothing.
+ * itself shows our transaction. A bounce rests on the same liteserver cells
+ * (`confirmBounce`), never on the indexer's trace alone, since `failed` invites a second
+ * payment too. Anything not yet decidable throws a retryable `PROVIDER_UNAVAILABLE`, and an answer the
+ * chain could not have produced a retryable `PROVIDER_INCONSISTENT`; both decide nothing.
  */
-import { Cell, loadTransaction, type Message, type Transaction } from '@ton/core';
+import type { Message, Transaction } from '@ton/core';
 import type { AddressHistorySource, ProofSource } from '../../core/driver/types';
 import {
   ProviderError,
@@ -48,10 +49,16 @@ import { OP } from './messages';
 import {
   CHAIN_MEMO,
   MEMO_TX_LENGTH,
+  accountId,
+  authenticated,
+  chainRan,
+  confirmBounce,
   confirmLegs,
   decodeWithJettons,
   findOwnAttempt,
   keep,
+  notTheChains,
+  ourRun,
   pageMemo,
   provenRequest,
   publicKeyAt,
@@ -64,7 +71,7 @@ import {
   recordedValidFrom,
 } from './network';
 import { attemptVerdict, consumesSeqno, isOwnAttempt } from './trace';
-import { externalHashOf, requestIsOwn } from './wallets';
+import { requestIsOwn } from './wallets';
 
 /** How far back the consumer of a seqno is searched: pages of `CONSUMER_PAGE` transactions. */
 export const CONSUMER_PAGES = 8;
@@ -324,40 +331,6 @@ async function consumerOf(
 
 const hex256 = (value: bigint): string => value.toString(16).padStart(64, '0');
 
-/**
- * A transaction the liteserver served, authenticated: its cell (capped by the API before
- * this decodes it) hashes to the id expected, and it is the account's own at the lt
- * expected. Anything else is not the chain's.
- */
-const notTheChains = () =>
-  inconsistent("the liteserver answered a transaction that is not the chain's");
-
-function authenticated(
-  row: RawTransaction,
-  expected: TransactionId,
-  account: bigint,
-): Transaction {
-  if (row.lt !== expected.lt || row.hash !== expected.hash) throw notTheChains();
-  let cell: Cell;
-  let tx: Transaction;
-  try {
-    const cells = Cell.fromBoc(Buffer.from(row.boc, 'base64'));
-    if (cells.length !== 1) throw notTheChains();
-    cell = cells[0] as Cell;
-    tx = loadTransaction(cell.beginParse());
-  } catch {
-    throw notTheChains();
-  }
-  if (
-    cell.hash().toString('hex') !== expected.hash ||
-    tx.lt !== expected.lt ||
-    tx.address !== account
-  ) {
-    throw notTheChains();
-  }
-  return tx;
-}
-
 /** The most transactions one walk visits, fetched or kept: `WALK_PAGES` full pages. */
 const WALK_LIMIT = WALK_PAGES * WALK_PAGE;
 
@@ -376,7 +349,7 @@ async function walkChain(
   from: TransactionId,
   visit: (tx: Transaction, hash: string) => Promise<boolean>,
 ): Promise<'stopped' | 'start' | 'exhausted'> {
-  const account = BigInt(`0x${wallet.slice(wallet.indexOf(':') + 1)}`);
+  const account = accountId(wallet);
   let expected = from;
   let page: RawTransaction[] = [];
   let fetched = 0;
@@ -426,8 +399,7 @@ function phasesOf(tx: Transaction) {
      * activates the account (transaction.cpp). */
     ran: vm !== undefined,
     /** A request ran to the end, so a seqno moved (the action phase keeps it). */
-    consumed:
-      d.type === 'generic' && vm?.success === true && d.actionPhase?.success === true,
+    consumed: chainRan(tx),
     /** The account had code before or after. */
     lived: CODE.has(tx.oldStatus) || CODE.has(tx.endStatus),
     /** A re-deploy from no code: the seqno starts again (transaction.cpp activation). */
@@ -589,7 +561,7 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
       first = tx.lt;
       const t = phasesOf(tx);
       const inbound = tx.inMessage;
-      if (ourRun(tx, t, q.wallet, q.id)) {
+      if (ourRun(tx, q.wallet, q.id)) {
         ours = hash;
         return true;
       }
@@ -616,24 +588,6 @@ async function fromTheChain(ctx: TonContext, q: ChainQuestion): Promise<Absence>
   if (reset || (needConsumer && !consumerFound)) throw resetSuspected(ctx);
   if (end === 'start') await codeNeverRan(ctx, q.wallet, q.head.id.seqno, first);
   return { absent: true };
-}
-
-/**
- * Whether `tx` is our message run to the end: its inbound external message's TEP-467 hash,
- * computed here from the authenticated body, is `id`, and it consumed its seqno.
- */
-function ourRun(
-  tx: Transaction,
-  t: ReturnType<typeof phasesOf>,
-  wallet: string,
-  id: string,
-): boolean {
-  const inbound = tx.inMessage;
-  return (
-    t.consumed &&
-    inbound?.info.type === 'external-in' &&
-    externalHashOf(wallet, inbound.body) === id
-  );
 }
 
 // ---- the replay guard ---------------------------------------------------------------------
@@ -749,7 +703,7 @@ export async function replayVerdict(
         linked = tx.lt === link.lastLt;
       }
       const t = phasesOf(tx);
-      if (ourRun(tx, t, wallet, id)) {
+      if (ourRun(tx, wallet, id)) {
         ours = true;
         return true;
       }
@@ -777,14 +731,16 @@ type Included = Extract<
 >;
 
 /**
- * Our indexed transaction that consumed its seqno, proven: a complete trace, whose last
- * block the endpoints attest they hold, and the verdict, its jetton wallets confirmed at
- * that block under the proof quorum.
+ * Our indexed transaction that consumed its seqno (the Attempt `id`), proven: a complete
+ * trace, whose last block the endpoints attest they hold, and the verdict, its jetton
+ * wallets confirmed at that block and a bounce read from the chain itself, both under the
+ * proof quorum.
  */
 async function proveIncluded(
   ctx: TonContext,
   tx: V3Transaction,
   from: string,
+  id: string,
 ): Promise<Included> {
   const trace = await ctx.api.trace(tx.hash, PROOF);
   if (!trace || !trace.complete) throw undecided('the message trace is not complete yet');
@@ -792,7 +748,13 @@ async function proveIncluded(
   if (!(await ctx.api.reachedMasterchain(last, PROOF))) {
     throw undecided('the endpoints have not reached the trace yet');
   }
-  const verdict = await confirmLegs(ctx, attemptVerdict(tx, trace), from, PROOF, last);
+  const verdict = await confirmBounce(
+    ctx,
+    await confirmLegs(ctx, attemptVerdict(tx, trace), from, PROOF, last),
+    from,
+    id,
+    PROOF,
+  );
   if (verdict.kind === 'pending')
     throw undecided('the message trace is not complete yet');
   const header = await masterchainBlock(ctx, tx.mcSeqno);
@@ -822,7 +784,7 @@ async function proveOurs(
   if (!isOwnAttempt(record, wallet, id) || !consumesSeqno(record)) {
     throw inconsistent("the indexer's record is not the chain's transaction");
   }
-  return proveIncluded(ctx, record, wallet);
+  return proveIncluded(ctx, record, wallet, id);
 }
 
 const seqnoOrdering = (ordering: OrderingData) =>
@@ -846,10 +808,10 @@ export function createTonProofs(ctx: TonContext): ProofSource {
       // Only our own wallet transaction, its hash computed here from the bound body. A
       // run that did not consume its seqno (a failed action phase) moved nothing and may
       // run again until the message expires: only the seqno decides it.
-      const own = await findOwnAttempt(ctx, ref, wallet, PROOF);
-      if (own && consumesSeqno(own)) return proveIncluded(ctx, own, wallet);
       const id = attemptId(ref.id);
       if (id === undefined) throw undecided('a TON attempt needs its message hash');
+      const own = await findOwnAttempt(ctx, ref, wallet, PROOF);
+      if (own && consumesSeqno(own)) return proveIncluded(ctx, own, wallet, id);
       const slot = seqnoOrdering(ordering);
       if (!slot) throw undecided('a TON attempt needs its seqno ordering');
       if (!hasLifetime(slot.validUntil))
@@ -879,7 +841,7 @@ export function createTonProofs(ctx: TonContext): ProofSource {
           });
         }
         if (hint && isOwnAttempt(hint, wallet, id))
-          return proveIncluded(ctx, hint, wallet);
+          return proveIncluded(ctx, hint, wallet, id);
       }
       // Never "not included" while the message may still run: a reset of the wallet could
       // bring its seqno back to ours.

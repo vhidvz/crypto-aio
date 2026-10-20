@@ -145,7 +145,25 @@ describe('the attempt verdict', () => {
     ]);
     t.node.mine(3);
     const { root, trace, verdict } = await verdictAfter(t, hashNorm);
-    expect(verdict).toEqual({ kind: 'failed', reason: REASONS.bounced });
+    // It names where the chain records the bounce, for the caller to read from the chain:
+    // our wallet transaction, and the delivery of its message that sent the value back.
+    const hop = trace!.transactions.find((tx) => tx.account === FRESH)!;
+    expect(verdict).toEqual({
+      kind: 'failed',
+      reason: REASONS.bounced,
+      bounce: {
+        root: { account: root.account, lt: root.lt, hash: root.hash },
+        path: [
+          {
+            account: FRESH,
+            lt: hop.lt,
+            hash: hop.hash,
+            message: root.outMsgs[0]!.hash,
+          },
+        ],
+        end: 'bounced',
+      },
+    });
     // A bounceable message whose compute phase failed always gets a bounce phase
     // (collator.cpp): a record without one lacks data, and is never a delivery.
     const unbounced = replaced(trace!, FRESH, ({ bounce: _bounce, ...tx }) => tx);
@@ -165,9 +183,10 @@ describe('the attempt verdict', () => {
       nativeMessage({ to: FRESH, value: GRAM, bounce: true }),
     ]);
     t.node.mine(3);
-    expect((await verdictAfter(t, hashNorm)).verdict).toEqual({
+    expect((await verdictAfter(t, hashNorm)).verdict).toMatchObject({
       kind: 'failed',
       reason: REASONS.bounced,
+      bounce: { path: [{ account: FRESH }], end: 'bounced' },
     });
   });
 
@@ -232,22 +251,42 @@ describe('the attempt verdict', () => {
 
     it('fails a jetton transfer the sender jetton wallet bounced', async () => {
       const t = tonNode();
-      const { hashNorm } = await jettonSend(t, 5_000_000n);
+      const { wallet, hashNorm } = await jettonSend(t, 5_000_000n);
       t.node.mine(5);
-      expect((await verdictAfter(t, hashNorm)).verdict).toEqual({
+      const { root, verdict } = await verdictAfter(t, hashNorm);
+      // Our jetton wallet ran nothing: the jettons never left.
+      expect(verdict).toMatchObject({
         kind: 'failed',
         reason: REASONS.jettonBounced,
+        bounce: {
+          path: [
+            {
+              account: t.node.jettonWalletOf(MASTER, wallet),
+              message: root.outMsgs[0]!.hash,
+            },
+          ],
+          end: 'unran',
+        },
       });
     });
 
     it("fails a jetton transfer the recipient's jetton wallet refused", async () => {
       const t = tonNode();
       t.node.failJettonWallet(t.node.jettonWalletOf(MASTER, FRESH));
-      const { hashNorm } = await jettonSend(t, 400_000n);
+      const { wallet, hashNorm } = await jettonSend(t, 400_000n);
       t.node.mine(6);
-      expect((await verdictAfter(t, hashNorm)).verdict).toEqual({
+      // Both jetton wallets are on the path: ours sent the jettons on, the recipient's
+      // ran nothing.
+      expect((await verdictAfter(t, hashNorm)).verdict).toMatchObject({
         kind: 'failed',
         reason: REASONS.jettonBounced,
+        bounce: {
+          path: [
+            { account: t.node.jettonWalletOf(MASTER, wallet) },
+            { account: t.node.jettonWalletOf(MASTER, FRESH) },
+          ],
+          end: 'unran',
+        },
       });
     });
 
@@ -257,7 +296,11 @@ describe('the attempt verdict', () => {
       t.node.mine(5);
       const { trace, verdict } = await verdictAfter(t, hashNorm);
       expect(trace?.complete).toBe(true);
-      expect(verdict).toEqual({ kind: 'failed', reason: REASONS.jettonBounced });
+      expect(verdict).toMatchObject({
+        kind: 'failed',
+        reason: REASONS.jettonBounced,
+        bounce: { path: [{}], end: 'unmoved' },
+      });
       // A verified wallet's zero credit moved nothing, so no transfer is decoded.
       const recipientWallet = t.node.jettonWalletOf(MASTER, FRESH);
       const verified = { address: recipientWallet, owner: FRESH, master: MASTER };
@@ -286,9 +329,10 @@ describe('the attempt verdict', () => {
         action: { ...tx.action!, success: false, resultCode: 37, msgsCreated: 0 },
         outMsgs: [],
       }));
-      expect(attemptVerdict(root, rolledBack)).toEqual({
+      expect(attemptVerdict(root, rolledBack)).toMatchObject({
         kind: 'failed',
         reason: REASONS.jettonBounced,
+        bounce: { path: [{}, { account: recipientWallet }], end: 'unran' },
       });
     });
 
@@ -570,7 +614,11 @@ describe('what moved to a native recipient', () => {
         root,
         replaced(trace!, FRESH, (tx) => ({ ...actionFailed(tx), bounce: 'ok' })),
       ),
-    ).toEqual({ kind: 'failed', reason: REASONS.bounced });
+    ).toMatchObject({
+      kind: 'failed',
+      reason: REASONS.bounced,
+      bounce: { end: 'bounced' },
+    });
   });
 });
 
@@ -686,7 +734,11 @@ describe('an answer that contradicts the chain or the request decides nothing', 
     ]);
     t.node.mine(3);
     const { root, trace, verdict } = await verdictAfter(t, hashNorm);
-    expect(verdict).toEqual({ kind: 'failed', reason: REASONS.bounced });
+    expect(verdict).toMatchObject({
+      kind: 'failed',
+      reason: REASONS.bounced,
+      bounce: { path: [{ account: FRESH }] },
+    });
     // The first output bounced; the second one's delivery contradicts the message sent.
     const elsewhere = replaced(trace!, other, (tx) => ({
       ...tx,

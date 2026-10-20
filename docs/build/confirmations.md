@@ -96,10 +96,16 @@ const now = await bc.getTransactionStatus(operationId); // one read
   (`TX_REVERTED`) with a `status.reason`: `transfer bounced` (the value came back, less
   fees), `jetton transfer bounced` (the jettons did not arrive), `the wallet skipped a
   message` (the wallet could not send it when it ran, usually for lack of funds) or `the
-  wallet transaction failed`; in these cases nothing was delivered. The one exception is
-  `TX_UNEVIDENCED` with `the jetton wallets are not the master’s`: the recipient's jetton
-  wallet answered, and it is not the one the master names for the recipient, so the jettons
-  left your wallet for another one; check the chain before you pay again. A jetton wallet that gives no answer
+  wallet transaction failed`; in these cases nothing was delivered. A bounce rests on the
+  chain itself, never on the indexer's word: the provider's raw records of your wallet's
+  transaction and of the delivery, each checked against its hash and linked by the
+  message's own hash, must show the value sent back (or a jetton wallet that ran nothing
+  or moved nothing), under the proof quorum. Until they do, or while the provider's
+  endpoints disagree, the transfer stays undecided (logged as `BOUNCE_UNPROVEN` when they
+  contradict the indexer). The one exception is `TX_UNEVIDENCED` with
+  `the jetton wallets are not the master’s`: the recipient's jetton wallet answered, and it
+  is not the one the master names for the recipient, so the jettons left your wallet for
+  another one; check the chain before you pay again. A jetton wallet that gives no answer
   (for example "no state" at that block) decides nothing: the transfer stays undecided until
   an endpoint answers.
 - **TON proofs.** A TON transfer that never landed is proven absent (`expired`, or
