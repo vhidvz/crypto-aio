@@ -91,9 +91,13 @@ for await (const event of scanner) {
 - **Bitcoin.** Each output with an address is a transfer (`<txid>:vout:<n>`) from the
   addresses of the transaction's inputs, change included; an output without one that
   carries value makes the transaction `decoding: 'partial'`. `filter.addresses` matches outputs to those
-  addresses and inputs that spend from them. Blocks are read 25 transactions per request,
-  filtered or not, so a full mainnet block takes over 100 requests: scan through your own
-  Esplora rather than a public one.
+  addresses and inputs that spend from them. Each block is read from its own bytes, checked
+  against its header, and each transaction delivered has its senders read from the
+  transactions its inputs spend ([Bitcoin networks](../reference/networks/bitcoin.md#scanning)).
+  So an unfiltered scan reads one previous transaction per transaction its inputs spend,
+  thousands for a full mainnet block, and a filtered one reads the block's index pages (25
+  transactions each, over 100 for a full mainnet block) and the previous transactions of
+  what it delivers. Scan through your own Esplora, with a filter, rather than a public one.
 - **Tron.** Blocks carry TRX transfers and TRC-20 `Transfer` events from any contract, so
   check `transfer.asset`: a copycat token has its own contract. A contract call is
   `decoding: 'partial'`, since TRX can move inside it without an event, and a TRC-10
@@ -164,7 +168,7 @@ has no proven deposit read yet, so credit a deposit this way:
 | Family | Deposit reads | What one read rests on |
 | --- | --- | --- |
 | EVM | `scanner()`: native transfers and ERC-20 `Transfer` logs from each block's receipts; no `history()` | the block and receipts one endpoint serves |
-| Bitcoin | `scanner()`, and `history()` (confirmed only) | one Esplora endpoint's block pages or address history |
+| Bitcoin | `scanner()`, and `history()` (confirmed only) | one Esplora endpoint's block (its transactions checked against the block's header), or address history |
 | Tron | `scanner()`, and `history()` from TronGrid, each entry read back from the `provider` | one endpoint's block, or one indexer's listing read back from one endpoint |
 | Solana | `scanner()`, and `history()` from `getSignaturesForAddress`, each item read back | one endpoint's block or signature list |
 | TON | `history()` only, from the indexer, with the provider's get-methods for jettons | one indexer endpoint and one provider endpoint |
@@ -175,8 +179,11 @@ wallet (`transfer.to`); on TON credit a jetton deposit only from its arrival in 
 jetton wallet ([TON networks](../reference/networks/ton.md)). A scanner in `final` mode emits
 a block only once the network's finality policy holds, and it decides a rollback only when
 the proof quorum serves a different block hash, but the transfers in a block are what the one
-endpoint that served it reported: a lying endpoint could add a transfer to a real block. The
-second read through an independent provider catches that.
+endpoint that served it reported: a lying endpoint could add a transfer to a real block. On
+Bitcoin the scanner checks every transaction it delivers against the block's header, so an
+endpoint cannot add one to a real block, but the block at each height is still its word, and
+it could serve a block of its own. The second read through an independent provider catches
+both.
 
 ## Next steps
 

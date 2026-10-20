@@ -118,8 +118,10 @@ for (const line of seen) console.log(line);
 Your own transfers are proven, because the library knows exactly which bytes it sent and can ask
 a quorum about them. A deposit is somebody else's transaction, read from one endpoint: a scanner
 in `final` mode knows the **block** is final, but the transfers inside it are what the one
-endpoint that served it reported. A dishonest endpoint could add a transfer to a real block. So
-every family reports deposits with `evidence: 'observed'`, and crediting is your policy:
+endpoint that served it reported. A dishonest endpoint could add a transfer to a real block.
+Bitcoin's scanner checks each block's transactions against the block's header, so there the
+endpoint cannot, but which block is at a height is still its word. So every family reports
+deposits with `evidence: 'observed'`, and crediting is your policy:
 
 1. Take deposits from final blocks (`mode: 'final'`, or `status.finality === 'final'`).
 2. Credit only transfers **to** your own deposit addresses, once per `transfer.id`.
