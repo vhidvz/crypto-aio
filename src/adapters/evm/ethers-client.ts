@@ -65,6 +65,7 @@ const erc20 = new Interface([
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
+  'function deprecated() view returns (bool)',
   'event Transfer(address indexed from, address indexed to, uint256 amount)',
 ]);
 const gasPriceOracle = new Interface([
@@ -78,6 +79,7 @@ const ethersAbi: EvmAbi = {
   encodeBalanceOf: (owner) => erc20.encodeFunctionData('balanceOf', [owner]),
   encodeDecimals: () => erc20.encodeFunctionData('decimals', []),
   encodeSymbol: () => erc20.encodeFunctionData('symbol', []),
+  encodeDeprecated: () => erc20.encodeFunctionData('deprecated', []),
   encodeGetL1Fee: (unsignedTx) =>
     gasPriceOracle.encodeFunctionData('getL1Fee', [unsignedTx]),
   decodeUint256: (data) => {

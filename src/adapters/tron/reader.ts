@@ -125,6 +125,32 @@ export async function trc20Balance(
   }
 }
 
+/** An ABI `bool` that is `true`: one word, exactly 1 (constant results are lower-case). */
+const TRUE_WORD = /^0{63}1$/;
+
+/**
+ * Whether a token answers `deprecated()` with `true`, as Tether's `TetherToken` (USDT on
+ * Tron) does once its owner deprecates it for an upgraded contract (`upgradedAddress`).
+ * Only a definitive answer decides: a contract without the method (a revert or VM failure,
+ * an answer that is not one ABI `bool`, or a node's "no contract", which the balance read
+ * beside it settles) is not deprecated. A node refusal or a malformed answer throws
+ * retryable, so a failed read is never taken for either answer. The contract's own
+ * account is the caller: it always exists.
+ */
+export async function trc20Deprecated(
+  ctx: TronContext,
+  contract: string,
+  tags: TronCallTags,
+): Promise<boolean> {
+  const answer = await ctx.api.constantCall(
+    contract,
+    contract,
+    SELECTORS.deprecated,
+    tags,
+  );
+  return answer.kind === 'ok' && TRUE_WORD.test(answer.result);
+}
+
 /**
  * An included transaction's observation. `guard` applies the verdict guard (on-chain
  * evidence that value moved) to our own Attempts; without it (a status lookup by id,

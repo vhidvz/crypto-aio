@@ -223,6 +223,20 @@ describe('Tron end to end', () => {
     expect(calls()).toBe(1);
   });
 
+  it('fails a transfer of a token whose contract is deprecated before signing, with a fixed text', async () => {
+    const { signer, calls } = countingSigner();
+    const env = createTronEnv({ signer });
+    env.node.deployToken(USDT, { symbol: 'USDT', decimals: 6, deprecated: true });
+    env.node.mintToken(USDT, env.address, 1_000n);
+    const error = await env
+      .run(env.bc.transfer({ asset: TOKEN, to: RECIPIENT, amount: 5n }))
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'ASSET_RESOLUTION', retryable: false });
+    expect(String((error as Error).message)).not.toContain(USDT);
+    expect(calls()).toBe(0);
+    expect(env.node.tokenBalance(USDT, RECIPIENT)).toBe(0n);
+  });
+
   it('fails before signing when the sender was never activated', async () => {
     const { signer, calls } = countingSigner();
     const env = createTronEnv({ fund: 0n, signer });

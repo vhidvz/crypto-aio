@@ -177,6 +177,7 @@ describe.each(LIBRARIES)('EvmClient codec (%s)', (library) => {
     );
     expect(abi.encodeDecimals()).toBe('0x313ce567');
     expect(abi.encodeSymbol()).toBe('0x95d89b41');
+    expect(abi.encodeDeprecated()).toBe('0x0e136b19');
     expect(abi.encodeBalanceOf(RECIPIENT)).toBe(
       `0x70a08231${RECIPIENT.slice(2).padStart(64, '0')}`,
     );

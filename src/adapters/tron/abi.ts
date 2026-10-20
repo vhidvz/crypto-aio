@@ -12,6 +12,8 @@ export const SELECTORS = Object.freeze({
   balanceOf: '70a08231',
   decimals: '313ce567',
   symbol: '95d89b41',
+  /** Tether's `deprecated()`: `true` once `TetherToken` forwards to an upgraded contract. */
+  deprecated: '0e136b19',
 });
 
 /** `keccak256("Transfer(address,address,uint256)")`, without `0x`. */

@@ -34,6 +34,7 @@ const SELECTOR = {
   balanceOf: id('balanceOf(address)').slice(0, 10),
   decimals: id('decimals()').slice(0, 10),
   symbol: id('symbol()').slice(0, 10),
+  deprecated: id('deprecated()').slice(0, 10),
   getL1Fee: id('getL1Fee(bytes)').slice(0, 10),
 };
 
@@ -63,6 +64,11 @@ interface Token {
   readonly logsZero?: boolean;
   /** A fee-on-transfer token: keeps this percent for `FEE_SINK`, logging both transfers. */
   readonly feePercent?: bigint;
+  /**
+   * Tether's `deprecated()` answer; without it the call reverts, as on most tokens. Only
+   * the answer is scripted: transfers run as on any token.
+   */
+  readonly deprecated?: boolean;
 }
 
 /** Where a fee-on-transfer token sends its fee. */
@@ -613,6 +619,9 @@ export class ScriptedEvmNode {
       return abi.encode(['uint8'], [token.decimals]);
     }
     if (data.startsWith(SELECTOR.symbol)) return abi.encode(['string'], [token.symbol]);
+    if (data === SELECTOR.deprecated && token.deprecated !== undefined) {
+      return abi.encode(['bool'], [token.deprecated]);
+    }
     throw new RpcFailure(3, 'execution reverted');
   }
 

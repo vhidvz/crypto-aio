@@ -47,6 +47,7 @@ import { GAS_PRICE_ORACLE } from './network';
 import {
   READ,
   erc20Balance,
+  erc20Deprecated,
   isExecutionFailure,
   isRevert,
   withSignal,
@@ -256,6 +257,30 @@ async function draftFor(
   });
 }
 
+/**
+ * Refuses a transfer of a token whose contract says it is deprecated. Tether's
+ * `TetherToken` (USDT on Ethereum) forwards a deprecated contract's `transfer` to its
+ * upgraded contract, which moves the value and emits the `Transfer` event, so the transfer
+ * estimates and executes, and the verdict, which reads the old contract's event, finds no
+ * evidence of it. Read once per estimate, before `eth_estimateGas` (which such a transfer
+ * passes); the core estimates before every build. One endpoint's answer, as for the
+ * builder's other token reads, not the proof quorum's: a `true` can only refuse before
+ * signing, the safe direction (as one endpoint's revert in `eth_estimateGas` already
+ * does), and a wrong `false` leaves the transfer where it was without the guard.
+ */
+async function refuseDeprecated(
+  ctx: EvmContext,
+  token: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (await erc20Deprecated(ctx.client, token, withSignal(READ, signal))) {
+    throw new ValidationError(
+      'ASSET_RESOLUTION',
+      'the token contract is deprecated in favour of an upgraded contract; the asset must be re-registered at the upgraded contract',
+    );
+  }
+}
+
 /** geth's estimate reached its gas cap: the call fails at any gas limit. */
 const GAS_ALLOWANCE = /^gas required exceeds allowance/i;
 
@@ -320,6 +345,9 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
     async estimateFee(intent, build: BuildContext) {
       const transfer = transferOf(intent);
       const price = await priceFor(ctx, intent.fee, build.signal);
+      if (transfer.token !== undefined) {
+        await refuseDeprecated(ctx, transfer.token, build.signal);
+      }
       const gasLimit =
         price.gasLimit ??
         gasLimitFrom(await estimateGas(ctx, intent.from, transfer, build.signal));

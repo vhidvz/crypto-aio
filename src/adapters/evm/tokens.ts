@@ -2,6 +2,9 @@
  * Well-known tokens: USDT and USDC where their issuers deploy them natively on
  * a built-in mainnet (Tether's supported-protocols page, Circle's USDC addresses page).
  * Addresses are EIP-55 checksummed; decimals are verified on each chain's explorer.
+ * Ethereum's USDT is Tether's `TetherToken`, which can deprecate itself for an upgraded
+ * contract; the builder then refuses its transfers (`ASSET_RESOLUTION`) until the alias
+ * moves.
  */
 import type { AssetRegistration } from '../../core/registry/assets';
 

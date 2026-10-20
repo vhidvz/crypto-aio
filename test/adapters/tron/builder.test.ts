@@ -140,8 +140,8 @@ describe('Tron builder: fees and funds', () => {
       code: 'INSUFFICIENT_FUNDS',
       details: { required: '5000', available: '1000' },
     });
-    // Only balanceOf ran: the transfer was never simulated.
-    expect(callsTo(h, '/wallet/triggerconstantcontract') - before).toBe(1);
+    // Only deprecated() and balanceOf ran: the transfer was never simulated.
+    expect(callsTo(h, '/wallet/triggerconstantcontract') - before).toBe(2);
     const fee = await h.run(h.builder.estimateFee(trx(TRX), h.build));
     expect(await h.run(h.builder.checkFunds(trx(200n * TRX), fee, h.build))).toEqual({
       ok: false,
@@ -199,6 +199,100 @@ describe('Tron builder: fees and funds', () => {
     await expect(h.run(h.builder.estimateFee(token(10n), h.build))).rejects.toMatchObject(
       { code: 'INVALID_INTENT' },
     );
+  });
+
+  it('refuses a token whose contract answers deprecated() true, with a fixed text, before simulating the transfer', async () => {
+    const h = setup();
+    // Tether's TetherToken once deprecated: its transfer would forward and simulate fine.
+    h.node.deployToken(USDT, { symbol: 'USDT', decimals: 6, deprecated: true });
+    h.node.mintToken(USDT, KEY_ADDRESS, 1_000n);
+    const before = h.calls.length;
+    await expect(h.run(h.builder.estimateFee(token(10n), h.build))).rejects.toMatchObject(
+      {
+        code: 'ASSET_RESOLUTION',
+        retryable: false,
+        message:
+          'the token contract is deprecated in favour of an upgraded contract; the asset must be re-registered at the upgraded contract',
+      },
+    );
+    // deprecated() and balanceOf, one endpoint's each under the read tags; no simulation.
+    const reads = h.calls
+      .slice(before)
+      .filter((c) => c.path === '/wallet/triggerconstantcontract');
+    expect(reads.map((c) => [c.tags.purpose, c.tags.quorum])).toEqual([
+      ['read', undefined],
+      ['read', undefined],
+    ]);
+    // The same contract while live answers false and builds as any token.
+    const live = setup();
+    live.node.deployToken(USDT, { symbol: 'USDT', decimals: 6, deprecated: false });
+    live.node.mintToken(USDT, KEY_ADDRESS, 1_000n);
+    const unsigned = await live.prepared(token(10n));
+    expect(unsigned.fee.details).toMatchObject({ feeLimit: 3_558_000n });
+  });
+
+  it('reads every deprecated() answer but an ABI true as not deprecated', async () => {
+    const word = (value: bigint) => value.toString(16).padStart(64, '0');
+    const ran = (result: string) => ({
+      json: {
+        constant_result: [result],
+        result: { result: true },
+        energy_used: 300,
+        transaction: { ret: [{}] },
+      },
+    });
+    const answers = [
+      ran(word(0n)),
+      ran(''),
+      ran(word(2n)),
+      ran(`${word(1n)}${word(0n)}`),
+      // A revert: most tokens have no deprecated().
+      {
+        json: {
+          constant_result: [''],
+          result: { result: true },
+          energy_used: 500,
+          transaction: { ret: [{ ret: 'FAILED' }] },
+        },
+      },
+      // A node's "no contract", which the balance read beside it settles.
+      {
+        json: {
+          result: {
+            code: 'CONTRACT_VALIDATE_ERROR',
+            message: toHex(bytes.utf8ToBytes('Smart contract is not exist.')),
+          },
+        },
+      },
+    ];
+    for (const answer of answers) {
+      const t = setup();
+      t.node.intercept('main', '/wallet/triggerconstantcontract', (request) =>
+        request.json<{ data: string }>().data === '0e136b19' ? answer : undefined,
+      );
+      const fee = await t.run(t.builder.estimateFee(token(10n), t.build));
+      expect(fee.details).toMatchObject({ feeLimit: 3_558_000n });
+    }
+  });
+
+  it('decides nothing on a failed deprecated() read: the error stays retryable', async () => {
+    const answers: [FakeReply, string][] = [
+      [{ json: { result: { code: 'OTHER_ERROR', message: '6f6f7073' } } }, 'RPC_ERROR'],
+      [{ json: { Error: 'class org.tron.core.exception' } }, 'RPC_ERROR'],
+      [
+        { json: { result: { result: true }, constant_result: 'x' } },
+        'PROVIDER_UNAVAILABLE',
+      ],
+    ];
+    for (const [answer, code] of answers) {
+      const h = setup();
+      h.node.intercept('main', '/wallet/triggerconstantcontract', (request) =>
+        request.json<{ data: string }>().data === '0e136b19' ? answer : undefined,
+      );
+      await expect(
+        h.run(h.builder.estimateFee(token(10n), h.build)),
+      ).rejects.toMatchObject({ code, retryable: true });
+    }
   });
 
   it('decides nothing when the transfer simulation finds no contract its balance read found', async () => {

@@ -183,6 +183,8 @@ export interface EvmAbi {
   encodeBalanceOf(owner: string): string;
   encodeDecimals(): string;
   encodeSymbol(): string;
+  /** `deprecated()`, which Tether's `TetherToken` answers `true` once it forwards transfers. */
+  encodeDeprecated(): string;
   /** OP Stack `GasPriceOracle.getL1Fee(bytes)` over an unsigned serialized transaction. */
   encodeGetL1Fee(unsignedTx: string): string;
   /** Throws on data that is not one ABI `uint256` word. */

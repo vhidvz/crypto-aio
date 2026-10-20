@@ -419,6 +419,107 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     );
   });
 
+  it('refuses a token whose contract answers deprecated() true, with a fixed text, before the gas estimate', async () => {
+    const t = setup();
+    // Tether's TetherToken once deprecated: its transfer would forward and estimate fine.
+    t.node.deployToken(TOKEN, { symbol: 'USDT', decimals: 6, deprecated: true });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
+    const deprecated = {
+      code: 'ASSET_RESOLUTION',
+      retryable: false,
+      message:
+        'the token contract is deprecated in favour of an upgraded contract; the asset must be re-registered at the upgraded contract',
+    };
+    const transfer = (fee: DriverIntent['fee'] = 'normal') =>
+      intent({ asset: tokenAsset, outputs: [{ to: RECIPIENT, amount: 10n }], fee });
+    await expect(
+      t.run(t.builder.estimateFee(transfer(), t.build())),
+    ).rejects.toMatchObject(deprecated);
+    // One `deprecated()` read at `latest`, one endpoint's, as the other token reads.
+    expect(t.calls.map((c) => [c.method, c.tags])).toEqual([
+      ['feeHistory', { purpose: 'read', retry: 'safe' }],
+      ['call', { purpose: 'read', retry: 'safe' }],
+    ]);
+    expect(t.node.served.map((s) => s.method)).not.toContain('eth_estimateGas');
+    // An explicit gas limit skips the estimate, never the guard.
+    const explicit = {
+      maxFeePerGas: 4n * GWEI,
+      maxPriorityFeePerGas: GWEI,
+      gasLimit: 70_000n,
+    };
+    await expect(
+      t.run(t.builder.estimateFee(transfer(explicit), t.build())),
+    ).rejects.toMatchObject(deprecated);
+    // The same contract while live answers false and builds as any token.
+    const live = setup();
+    live.node.deployToken(TOKEN, { symbol: 'USDT', decimals: 6, deprecated: false });
+    live.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
+    const unsigned = await live.prepare(transfer());
+    expect(unsigned.fee.details).toMatchObject({ gasLimit: 61_200n });
+  });
+
+  it('reads every deprecated() answer but an ABI true as not deprecated', async () => {
+    const t = setup();
+    t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
+    const word = (value: bigint) => `0x${value.toString(16).padStart(64, '0')}`;
+    const answers = [
+      { result: word(0n) },
+      { error: { code: 3, message: 'execution reverted' } },
+      { error: { code: -32000, message: 'execution reverted' } },
+      { error: { code: -32000, message: 'invalid opcode: INVALID' } },
+      // No code at the address, or a fallback that returns nothing.
+      { result: '0x' },
+      { result: word(2n) },
+      { result: `${word(1n)}${'00'.repeat(32)}` },
+      { result: '0x01' },
+    ];
+    for (const answer of answers) {
+      t.node.intercept = (_endpoint, method, params) =>
+        method === 'eth_call' &&
+        (params[0] as { data?: string }).data === t.client.abi.encodeDeprecated()
+          ? answer
+          : undefined;
+      const fee = await t.run(
+        t.builder.estimateFee(
+          intent({ asset: tokenAsset, outputs: [{ to: RECIPIENT, amount: 10n }] }),
+          t.build(),
+        ),
+      );
+      expect(fee.details).toMatchObject({ gasLimit: 61_200n });
+    }
+  });
+
+  it('decides nothing on a failed deprecated() read: the error stays retryable', async () => {
+    const t = setup();
+    t.node.deployToken(TOKEN, { symbol: 'TKN', decimals: 6 });
+    t.node.mintToken(TOKEN, KEY_ADDRESS, 10n);
+    const failing = (
+      answer: { result: unknown } | { error: { code: number; message: string } },
+    ) => {
+      t.node.intercept = (_endpoint, method, params) =>
+        method === 'eth_call' &&
+        (params[0] as { data?: string }).data === t.client.abi.encodeDeprecated()
+          ? answer
+          : undefined;
+      return t.run(
+        t.builder.estimateFee(
+          intent({ asset: tokenAsset, outputs: [{ to: RECIPIENT, amount: 10n }] }),
+          t.build(),
+        ),
+      );
+    };
+    // The node's own error, never the token's answer.
+    await expect(
+      failing({ error: { code: -32000, message: 'header not found' } }),
+    ).rejects.toMatchObject({ code: 'RPC_ERROR', retryable: true });
+    await expect(failing({ result: 42 })).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(t.node.served.map((s) => s.method)).not.toContain('eth_estimateGas');
+  });
+
   it('refuses a signing digest that is not the payload digest', async () => {
     const t = setup();
     const unsigned = await t.prepare();

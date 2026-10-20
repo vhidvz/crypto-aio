@@ -157,6 +157,7 @@ describe('TRC-20 ABI (SDK-free)', () => {
     expect(SELECTORS.balanceOf).toBe(k('balanceOf(address)').slice(0, 8));
     expect(SELECTORS.decimals).toBe(k('decimals()').slice(0, 8));
     expect(SELECTORS.symbol).toBe(k('symbol()').slice(0, 8));
+    expect(SELECTORS.deprecated).toBe(k('deprecated()').slice(0, 8));
     expect(TRANSFER_TOPIC).toBe(k('Transfer(address,address,uint256)'));
   });
 

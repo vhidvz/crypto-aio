@@ -571,6 +571,25 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect([calls(), env.node.nonce(env.address)]).toEqual([1, 1n]);
   });
 
+  it('fails a transfer of a token whose contract is deprecated before signing, with a fixed text', async () => {
+    const { signer, calls } = countingSigner();
+    const env = await createEvmEnv({ library, signer });
+    env.node.deployToken(TOKEN, { symbol: 'USDT', decimals: 6, deprecated: true });
+    env.node.mintToken(TOKEN, env.address, 5_000_000n);
+    const asset = { standard: 'erc20', contract: TOKEN };
+    const error = await env
+      .run(env.bc.transfer({ to: RECIPIENT, amount: '1.5', asset }))
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'ASSET_RESOLUTION', retryable: false });
+    expect(String((error as Error).message).toLowerCase()).not.toContain(
+      TOKEN.toLowerCase().slice(2),
+    );
+    expect([calls(), env.node.nonce(env.address)]).toEqual([0, 0n]);
+    const served = env.node.served.map((s) => s.method);
+    for (const method of ['eth_estimateGas', 'eth_sendRawTransaction'])
+      expect(served).not.toContain(method);
+  });
+
   it('proves a token transfer that returned false failed, while the chain reports success', async () => {
     const env = await createEvmEnv({ library });
     env.node.deployToken(FALSE_TOKEN, { symbol: 'FLS', decimals: 6, returnsFalse: true });

@@ -115,6 +115,11 @@ interface Token {
   readonly symbol: string;
   readonly decimals: number;
   readonly mode: TokenMode;
+  /**
+   * Tether's `deprecated()` answer; without it the call reverts, as on most tokens. Only
+   * the answer is scripted: transfers run as on any token.
+   */
+  readonly deprecated?: boolean;
   readonly balances: Map<string, bigint>;
 }
 
@@ -744,12 +749,13 @@ export class ScriptedTronNode {
 
   deployToken(
     address: string,
-    token: { symbol: string; decimals: number; mode?: TokenMode },
+    token: { symbol: string; decimals: number; mode?: TokenMode; deprecated?: boolean },
   ): void {
     this.#last.state.tokens.set(toHexAddress(address), {
       symbol: token.symbol,
       decimals: token.decimals,
       mode: token.mode ?? 'standard',
+      ...(token.deprecated !== undefined ? { deprecated: token.deprecated } : {}),
       balances: new Map(),
     });
   }
@@ -1253,6 +1259,14 @@ export class ScriptedTronNode {
       return {
         result: word(32n) + word(BigInt(bytes.length / 2)) + bytes.padEnd(64, '0'),
         energy: 600n,
+        revert: false,
+        logs: [],
+      };
+    }
+    if (selector === '0e136b19' && data.length === 8 && token.deprecated !== undefined) {
+      return {
+        result: word(token.deprecated ? 1n : 0n),
+        energy: 400n,
         revert: false,
         logs: [],
       };

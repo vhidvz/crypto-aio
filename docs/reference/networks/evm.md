@@ -29,6 +29,15 @@ ethers and web3 clients.
   `decimals()` or `symbol()` reverts or answers nothing usable, or an address with no
   contract yet, stays unresolvable (`ASSET_RESOLUTION`) until the container restarts; any
   other node error stays retryable.
+- **Deprecated tokens.** Tether's USDT contract on Ethereum (`TetherToken`) can deprecate
+  itself in favour of an upgraded contract (its `upgradedAddress()`). A transfer then still
+  moves the money through the new contract, which emits the `Transfer` event, but the token
+  verdict reads the event of the contract you sent to. So every token estimate first reads
+  the contract's `deprecated()` (one `eth_call` from one endpoint), and a token that answers
+  `true` is refused before signing with `ASSET_RESOLUTION`, whose message names no address.
+  Send to the upgraded contract by contract, or register it as an asset, until a release
+  moves the `USDT` alias there. A contract without the method (a revert, an empty answer, or
+  anything but an ABI `bool`) is not deprecated, and a failed read stays retryable.
 - **Presets.** `alchemy` and `infura` serve every network above; `ankr` the Ethereum, BNB
   Smart Chain, Avalanche, Arbitrum and Base mainnets; `public` the networks whose chain
   documents a public endpoint (not Ethereum). The public Base, Arbitrum and OP Sepolia

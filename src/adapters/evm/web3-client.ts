@@ -48,6 +48,7 @@ const web3Abi: EvmAbi = {
     eth.abi.encodeFunctionCall(fn('balanceOf', ['address']), [owner]),
   encodeDecimals: () => eth.abi.encodeFunctionCall(fn('decimals', []), []),
   encodeSymbol: () => eth.abi.encodeFunctionCall(fn('symbol', []), []),
+  encodeDeprecated: () => eth.abi.encodeFunctionCall(fn('deprecated', []), []),
   encodeGetL1Fee: (unsignedTx) =>
     eth.abi.encodeFunctionCall(fn('getL1Fee', ['bytes']), [unsignedTx]),
   decodeUint256: (data) => {
