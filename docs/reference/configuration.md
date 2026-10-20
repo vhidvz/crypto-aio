@@ -42,6 +42,7 @@ How layers merge: `chains.<id>` merges field by field, and its `options` merge d
 | `transport` | `TransportOptions` | | Root only: shared by every scope ([below](#transport-transport)) |
 | `stores` | `Partial<Stores>` | in-memory | `{ operations, locks, sequences, cursors }`; production needs durable ones |
 | `plugins` | `Plugin[]` | | Root only: extra chain families or networks |
+| `assets` | `AssetRegistration[]` | | Root only: tokens to register, `{ chain, network, ref, metadata: { symbol, decimals }, aliases? }`. Registered decimals scale amounts instead of the chain's, so take them only from a source you trust |
 | `logger` | `Logger` | `debug`-based | `createLogger(namespace, writer)` redacts before writing |
 | `env` | `Record<string, string> \| false` | `process.env` | The environment source; `false` ignores it |
 | `profile` | `string` | `CRYPTO_AIO_ENV` | The environment profile to read |

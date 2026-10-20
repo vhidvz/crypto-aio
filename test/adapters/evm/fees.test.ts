@@ -1,6 +1,7 @@
 import { classifyBroadcastError } from '../../../src/adapters/evm/errors';
 import {
   FEE_PERCENTILES,
+  comparePrices,
   feeDraft,
   feeOf,
   feesFromHistory,
@@ -163,6 +164,17 @@ describe('EVM fee policy', () => {
         expect.objectContaining({ code: 'INVALID_INTENT' }),
       );
     }
+  });
+
+  it('orders prices by the fee cap, then the tip, never by the gas limit', () => {
+    const at = (maxFeePerGas: bigint, maxPriorityFeePerGas: bigint) =>
+      ({ type: 'eip1559', maxFeePerGas, maxPriorityFeePerGas }) as const;
+    expect(comparePrices(at(100n, 1n), at(90n, 50n))).toBe(1);
+    expect(comparePrices(at(100n, 1n), at(100n, 2n))).toBe(-1);
+    expect(comparePrices(at(100n, 2n), at(100n, 2n))).toBe(0);
+    expect(
+      comparePrices({ type: 'legacy', gasPrice: 5n }, { type: 'legacy', gasPrice: 7n }),
+    ).toBe(-1);
   });
 
   it('requires both the fee cap and the tip to rise by the bump, strictly', () => {

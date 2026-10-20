@@ -12,10 +12,11 @@ under quorum, redaction. [Chains, families and drivers](../tour/families.md) exp
 pieces fit; this page is the contract.
 
 > [!NOTE]
-> The driver port is the part of the API most likely to change before 1.0
-> ([Stability](../reference/stability.md)). Read the two reference implementations next to
-> this page: the fake family (`src/testing/fake-plugin.ts` and `fake-driver.ts`) and the EVM
-> family (`src/adapters/evm/`).
+> From 1.0 the driver port follows semver ([Versioning](../reference/stability.md)): a
+> minor release may add an optional method or an optional field the core passes, and
+> never a required one. Read the two reference implementations next to this page: the
+> fake family (`src/testing/fake-plugin.ts` and `fake-driver.ts`) and the EVM family
+> (`src/adapters/evm/`).
 
 ## The plugin
 
@@ -143,8 +144,16 @@ relies on these rules most:
   which the core reserves.
 - **Native client.** `createNativeClient()` returns `{ client, close? }`, with a **fresh** SDK
   instance on every call. `CryptoAio.close()` calls `close`.
-- Amounts reach drivers in base units only. `DriverContext` has no asset resolver, and
-  `DriverIntent` carries no decimals. This is still open and may change.
+- **Base units and decimals.** Amounts reach drivers in base units only; the core scales
+  them with the asset's registered metadata, or what `getTokenMetadata` read from the
+  chain. `BuildContext.decimals` says which decimals it used. A driver whose transaction
+  signs the decimals (Solana's `transferChecked`) reads them from the chain under the
+  proof quorum and refuses a mismatch with `BuildContext.decimals` (`ASSET_RESOLUTION`):
+  the amounts were then scaled wrong.
+- **Replacement prices.** A driver with `replacement` may give `comparePrice(a, b)`, the
+  order a node uses to decide whether one transaction of a slot may replace another. A
+  repeat cancel bumps from the highest earlier cancel by it; without it, the core compares
+  total charges, which a gas limit can skew.
 - **Wallet options.** `BuildContext.wallet`, `limits(wallet)` and `address.fromPublicKey`'s
   `options` (when the core resolves a wallet or derives from its `xpub`) carry the wallet's
   `options`, its family settings (`utxo`, `ton`) and, when it has an `xpub`,

@@ -32,6 +32,7 @@ import {
   TRANSFER_GAS,
   assertWithinCeiling,
   capPrice,
+  comparePrices,
   feeDraft,
   feeOf,
   feesFromHistory,
@@ -482,6 +483,9 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
   return {
     replace: config.capabilities.has('replace-fee'),
     cancel: config.capabilities.has('cancel'),
+
+    comparePrice: (a, b) =>
+      comparePrices(feeOf(a.fee.details).params, feeOf(b.fee.details).params),
 
     async buildReplacement(previous, fee, build) {
       const before = feeOf(previous.fee.details);

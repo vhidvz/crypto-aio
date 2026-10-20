@@ -362,6 +362,10 @@ export class CryptoAio {
     const catalogs = createCatalogs();
     for (const plugin of [...builtinPlugins(), ...(options.plugins ?? [])])
       applyPlugin(catalogs, plugin);
+    for (const asset of options.assets ?? []) {
+      catalogs.chains.network(asset.chain, asset.network);
+      catalogs.assets.register(asset);
+    }
     const env = options.env === false ? {} : (options.env ?? process.env);
     const events = new EventBus(clock, log);
     // eslint-disable-next-line prefer-const -- closures below read it after assignment

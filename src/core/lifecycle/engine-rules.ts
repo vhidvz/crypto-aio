@@ -233,15 +233,20 @@ export function feeOf(attempt: AttemptRecord): bigint {
  * The cancel a new cancel is bumped from: among the earlier cancels that superseded
  * the active Attempt `previous` (refused ones gave it the active role back), the one paying
  * the most, so repeated bumps climb; otherwise `previous` itself, so a cancel never starts
- * below a newer, higher replacement. Fees are compared only between cancels. Known gap:
- * they are ranked by total charges, not by a price the driver compares, so on EVM a
- * repeat cancel may need an explicit `fee`.
+ * below a newer, higher replacement. Fees are compared only between cancels: by the
+ * driver's `comparePrice` when it has one, otherwise by total charges.
  */
-export function cancelBase(op: OperationRecord, previous: AttemptRecord): AttemptRecord {
+export function cancelBase(
+  op: OperationRecord,
+  previous: AttemptRecord,
+  comparePrice?: (a: UnsignedTx, b: UnsignedTx) => number,
+): AttemptRecord {
+  const higher = (a: AttemptRecord, b: AttemptRecord) =>
+    comparePrice ? comparePrice(a.unsigned, b.unsigned) > 0 : feeOf(a) > feeOf(b);
   let best: AttemptRecord | undefined;
   for (const attempt of op.attempts) {
     if (attempt.purpose !== 'cancel' || attempt.supersedes !== previous.id) continue;
-    if (!best || feeOf(attempt) > feeOf(best)) best = attempt;
+    if (!best || higher(attempt, best)) best = attempt;
   }
   return best ?? previous;
 }

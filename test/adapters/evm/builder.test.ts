@@ -331,6 +331,10 @@ describe.each(LIBRARIES)('EVM builder (%s)', (library) => {
     expect(await t.run(t.broadcaster.broadcast(await t.assemble(replacement)))).toEqual({
       kind: 'accepted',
     });
+    // Ranked by price, not by the charges a larger gas limit inflates.
+    expect(policy.comparePrice!(replacement, original)).toBe(1);
+    expect(policy.comparePrice!(original, replacement)).toBe(-1);
+    expect(policy.comparePrice!(replacement, replacement)).toBe(0);
     const cancel = await t.run(policy.buildCancel!(replacement, t.build()));
     expect(cancel.summary).toEqual({
       asset: 'ethereum:sepolia/native',

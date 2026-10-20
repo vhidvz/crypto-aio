@@ -479,6 +479,7 @@ export class OperationEngine {
         keys: target.wallet.keys,
         wallet: target.wallet.options,
         ...(ordering ? { ordering } : {}),
+        decimals: await this.decimalsOf(target, op.intent),
       };
       const fee = await driver.builder.estimateFee(op.intent, build);
       const unsigned = await driver.builder.build(op.intent, fee, build);
@@ -571,6 +572,16 @@ export class OperationEngine {
       );
     }
     return { record: created.record, stored: created.record.intent };
+  }
+
+  /** The decimals the intent's amounts were scaled with (see `BuildContext.decimals`). */
+  protected async decimalsOf(
+    target: OperationTarget,
+    intent: StoredIntent,
+  ): Promise<number> {
+    const { assets, selection, pooled } = target;
+    return (await assets.resolve(selection, pooled.driver, intent.asset)).metadata
+      .decimals;
   }
 
   protected executionContext(target: OperationTarget): ExecutionContext {
@@ -720,6 +731,7 @@ export class OperationEngine {
         wallet: target.wallet.options,
         ...(reservation ? { ordering: reservation } : {}),
         ...(excludeInputs ? { excludeInputs } : {}),
+        decimals: await this.decimalsOf(target, stored),
         ...(signal ? { signal } : {}),
       };
       const fee = await driver.builder.estimateFee(stored, build);
@@ -1266,7 +1278,10 @@ export class OperationEngine {
           ? reservedInputs(await this.walletOperations(op), op.id)
           : undefined;
       // A cancel climbs from the earlier cancels of this same Attempt (`cancelBase`).
-      const base = purpose === 'cancel' ? cancelBase(op, previous) : previous;
+      const base =
+        purpose === 'cancel'
+          ? cancelBase(op, previous, driver.replacement?.comparePrice)
+          : previous;
       const unsigned = await build(base.unsigned, {
         from: op.intent.from,
         keys: target.wallet.keys,

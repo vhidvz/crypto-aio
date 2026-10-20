@@ -42,6 +42,14 @@ export interface BuildContext {
   readonly ordering?: OrderingData;
   /** Inputs held by other live Operations of this wallet (`inputs` ordering). */
   readonly excludeInputs?: readonly string[];
+  /**
+   * The decimals the core scaled the intent's amounts with: the asset's registered
+   * metadata, or what the chain gave. Drivers work in base units. One whose transaction
+   * signs the decimals (Solana's `transferChecked`) reads them from the chain and must
+   * refuse a mismatch with this value (`ASSET_RESOLUTION`): the amounts were then scaled
+   * wrong. Absent where no transfer is built (a replacement or a cancel).
+   */
+  readonly decimals?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -264,6 +272,13 @@ export interface ReplacementPolicy {
     ctx: BuildContext,
     fee?: FeeSpeed | FeeOverride,
   ): Promise<UnsignedTx>;
+  /**
+   * Orders two transactions of one slot by the price a node compares when one replaces
+   * the other: negative when `a` pays less, positive when it pays more, `0` when neither
+   * does. A repeat cancel bumps from the highest earlier cancel by this order; without it,
+   * the core compares their total charges, which a gas limit can skew.
+   */
+  comparePrice?(a: UnsignedTx, b: UnsignedTx): number;
 }
 
 export interface ScanFilter {

@@ -237,6 +237,21 @@ export function feeOf(details: Readonly<Record<string, unknown>>): {
 }
 
 /**
+ * Orders two fee settings by what a txpool compares on replacement: the fee cap (or gas
+ * price), then the tip. A legacy gas price is compared as a fee cap and tip alike.
+ */
+export function comparePrices(a: EvmFeeParams, b: EvmFeeParams): number {
+  const pair = (p: EvmFeeParams): readonly [bigint, bigint] =>
+    p.type === 'eip1559'
+      ? [p.maxFeePerGas, p.maxPriorityFeePerGas]
+      : [p.gasPrice, p.gasPrice];
+  const [capA, tipA] = pair(a);
+  const [capB, tipB] = pair(b);
+  if (capA !== capB) return capA < capB ? -1 : 1;
+  return tipA === tipB ? 0 : tipA < tipB ? -1 : 1;
+}
+
+/**
  * Whether `next` may replace `previous` under a txpool's `percent` price bump: each price
  * strictly higher, and at least `percent` higher (geth), so a zero tip must still rise.
  */

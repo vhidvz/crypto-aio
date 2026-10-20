@@ -42,13 +42,15 @@ it waited.
 
 **Broadcasting and verdicts**
 
-- A first-broadcast `rejected` could need a second endpoint's agreement, in the core, as defence
-  in depth. Every family already keeps `rejected` only when the claimed reason holds for its own
-  bytes, so this needs a `Broadcaster` port change for little gain; the same holds for a
-  must-conflict set in the core, and for the broadcast fanout taking the first HTTP 200 answer
-  (a lying 200 refusal is only a transient `TX_REFUSED`).
-- The resend guard could move to the `Broadcaster` (it gets the ordering, or a veto hook), so
-  every family whose ordering can repeat guards its resends. TON guards in its broadcaster today.
+- Decided against for 1.0: a first-broadcast `rejected` needing a second endpoint's
+  agreement in the core. Every family already keeps `rejected` only when the claimed reason
+  holds for its own bytes, so it would change the `Broadcaster` port for little gain; the
+  same holds for a must-conflict set in the core, and for the broadcast fanout taking the
+  first HTTP 200 answer (a lying 200 refusal is only a transient `TX_REFUSED`).
+- The resend guard could move to the `Broadcaster`, with the Attempt's ordering passed as an
+  optional broadcast field, so every family whose ordering can repeat guards its resends.
+  TON guards in its broadcaster today. An optional field is a minor change, so it can come
+  in a 1.x release.
 - `recover()` skips its checks when the write target cannot be resolved; rebroadcast still
   requires the wallet's ownership check. The first inclusion is recorded from one endpoint's
   observation (the verdict stays under the proof quorum). Wallet resolution for the all-rejected
@@ -58,8 +60,6 @@ it waited.
 
 **EVM**
 
-- `cancelBase` ranks a replacement by total charges and needs a price comparator; the other
-  families compare prices.
 - The nonce search behind a verdict repeats on every pass; a cache per sender and nonce would
   save the reads.
 - An endpoint-set change between "slot consumed" and "included final" decides nothing.
@@ -91,9 +91,10 @@ it waited.
 
 **Structure and tests**
 
-- The families' ordering fields have no typed home in the core (a store contract pins them
-  instead); `engine.ts` and TON's `proofs.ts`, `reader.ts` and `api.ts` are long, as are the TON
-  and UTXO end-to-end tests.
+- The families' ordering fields stay in each family's exported type: `OrderingData` documents
+  that a store keeps them whole, and the store contract pins them (an index signature in the
+  core type would break every family type declared as an interface). `engine.ts` and TON's
+  `proofs.ts`, `reader.ts` and `api.ts` are long, as are the TON and UTXO end-to-end tests.
 - The only-native guard is text-based.
 - No test watches `require.cache` across families; the packaging check proves today that every
   entry point loads with no SDK.

@@ -379,6 +379,24 @@ describe('mint decimals under the proof quorum', () => {
   });
 });
 
+describe('the decimals the amounts were scaled with', () => {
+  it("refuses a token transfer whose amounts were scaled with other decimals than the mint's", async () => {
+    const h = setup();
+    const request = intent({ asset: SPL, outputs: [{ to: RECIPIENT, amount: 1n }] });
+    // The mint has 6 decimals; an asset registered with 9 scaled the amount a
+    // thousandfold.
+    await expect(
+      h.run(h.builder.estimateFee(request, { ...h.build, decimals: 9 })),
+    ).rejects.toMatchObject({ code: 'ASSET_RESOLUTION', retryable: false });
+    // The same decimals, or none given, build as before.
+    for (const build of [{ ...h.build, decimals: 6 }, h.build]) {
+      await expect(h.run(h.builder.estimateFee(request, build))).resolves.toMatchObject({
+        kind: expect.any(String),
+      });
+    }
+  });
+});
+
 describe('refusals before signing', () => {
   it('refuses recipients that would lose the funds', async () => {
     const h = setup();

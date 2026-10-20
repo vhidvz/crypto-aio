@@ -222,6 +222,7 @@ export interface AioEvents {
 
 // @public (undocumented)
 export interface AioOptions extends ScopeOptions {
+    readonly assets?: readonly AssetRegistration[];
     // (undocumented)
     readonly clock?: Clock;
     readonly env?: Readonly<Record<string, string | undefined>> | false;
@@ -595,6 +596,7 @@ export type BroadcastResult = {
 
 // @public (undocumented)
 export interface BuildContext {
+    readonly decimals?: number;
     readonly excludeInputs?: readonly string[];
     // (undocumented)
     readonly from: string;
@@ -1984,7 +1986,7 @@ export interface OperationView {
     readonly updatedAt: number;
 }
 
-// @public (undocumented)
+// @public
 export type OrderingData = {
     readonly kind: 'nonce';
     readonly nonce: bigint;
@@ -2156,6 +2158,7 @@ export interface ReplacementPolicy {
     buildReplacement?(previous: UnsignedTx, fee: FeeSpeed | FeeOverride, ctx: BuildContext): Promise<UnsignedTx>;
     // (undocumented)
     readonly cancel: boolean;
+    comparePrice?(a: UnsignedTx, b: UnsignedTx): number;
     // (undocumented)
     readonly replace: boolean;
 }

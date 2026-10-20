@@ -307,6 +307,7 @@ export class Blockchain<C extends ChainId = ChainId> {
       from: from.canonical,
       keys: wallet?.keys ?? [],
       wallet: wallet?.options ?? {},
+      decimals: normalized.asset.metadata.decimals,
     });
     return toFeeEstimate(m, draft);
   }

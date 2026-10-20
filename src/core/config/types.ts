@@ -3,6 +3,7 @@ import type { Logger } from '../events/logger';
 import type { Capability } from '../model/capability';
 import type { ChainInfo, NetworkInfo } from '../model/chain';
 import type { ChainId, LibraryOf, NetworkOf } from '../model/ids';
+import type { AssetRegistration } from '../registry/assets';
 import type { Plugin } from '../registry/plugin';
 import type { Secret } from '../secret/secret';
 import type { ExtendedKeyVersions } from '../signing/hd';
@@ -119,6 +120,13 @@ export interface AioOptions extends ScopeOptions {
   readonly logger?: Logger;
   readonly clock?: Clock;
   readonly plugins?: readonly Plugin[];
+  /**
+   * Tokens to register on this root container, as a plugin's `assets` would: their decimals
+   * and symbol, and aliases such as `USDC`. A registered token's decimals scale its amounts
+   * instead of what the chain says, so give each only from a source you trust; a token
+   * whose chain gives no decimals can be sent only once they are registered.
+   */
+  readonly assets?: readonly AssetRegistration[];
 }
 
 export interface HandleOptions {

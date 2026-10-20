@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   favours liveness.
 - `lifecycle.leaseWaitMs` (default: `leaseMs`): how long a transfer waits for its wallet's
   address lease before `SEQUENCE_BUSY`, so transfers can queue behind a slow signer.
+- `BuildContext.decimals`: the decimals the core scaled a transfer's amounts with. The
+  Solana driver refuses a token transfer whose mint has other decimals
+  (`ASSET_RESOLUTION`), which a wrong registration would otherwise sign as a mis-scaled
+  `transferChecked`.
+- `ReplacementPolicy.comparePrice` (optional): the EVM family ranks earlier cancels by
+  price, so a repeat cancel climbs from the highest one without an explicit `fee`.
+- `assets` on the root container's options registers tokens (decimals, symbol, aliases)
+  without writing a plugin.
 - `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
   resolves is now checked on chain and counted `unresent`, where it was counted `failed`
   without its check.

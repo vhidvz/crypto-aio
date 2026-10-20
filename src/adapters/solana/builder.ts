@@ -235,6 +235,7 @@ async function planTransfer(
   ctx: SolanaContext,
   intent: DriverIntent,
   tags: SolanaCallTags,
+  scaledWith: number | undefined,
 ): Promise<TransferPlan> {
   const output = onlyOutput(intent);
   const { from } = intent;
@@ -267,6 +268,15 @@ async function planTransfer(
   // signed into `transferChecked`, so a lagging endpoint without the mint decides
   // nothing.
   const decimals = await mintDecimals(ctx, mint, withSignal(METADATA, tags.signal));
+  // The core scaled the amount with the decimals it knows for the mint (registered, or
+  // read before). `transferChecked` signs the chain's: a mismatch means the amount was
+  // scaled wrong, by a factor of ten or more.
+  if (scaledWith !== undefined && scaledWith !== decimals) {
+    throw new ValidationError(
+      'ASSET_RESOLUTION',
+      'the mint has other decimals than the amount was scaled with: fix the registered asset',
+    );
+  }
   // Nobody can sign for a program's associated token account.
   if (recipient?.executable) {
     throw invalid('the recipient is a program; send to a wallet or a PDA owner');
@@ -543,7 +553,7 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
       if (override && override.computeUnitPrice > bound) {
         throw aboveMaxPrice(override.computeUnitPrice, bound);
       }
-      const plan = await planTransfer(ctx, intent, tags);
+      const plan = await planTransfer(ctx, intent, tags, build.decimals);
       const list = transferInstructions(plan);
       const variant = variantOffsets(ctx.nextVariant());
       let price: bigint;
