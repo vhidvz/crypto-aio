@@ -133,11 +133,21 @@ export function sha256Hex(input: string | Uint8Array): string {
   return bytesToHex(sha256(typeof input === 'string' ? utf8ToBytes(input) : input));
 }
 
-/** JSON that round-trips bigint and Uint8Array (for external store implementations). */
+/**
+ * JSON that round-trips bigint and Uint8Array (for external store implementations). Bytes
+ * are read from the holder, not from the replacer's value: `toJSON` runs first, and a
+ * Node.js `Buffer` (a Uint8Array, which the memory store keeps as bytes) would otherwise
+ * arrive as `{ type: 'Buffer', data }` and read back as a plain object. The check is by tag,
+ * as `clone` does, so bytes from another realm are bytes too.
+ */
 export function stringifyTagged(value: unknown): string {
-  return JSON.stringify(value, (_key, v: unknown) => {
+  return JSON.stringify(value, function (this: unknown, key: string, v: unknown) {
+    const raw = (this as Record<string, unknown>)[key];
+    if (Object.prototype.toString.call(raw) === '[object Uint8Array]') {
+      // A plain copy: the hex encoder checks its argument with `instanceof`.
+      return { $bytes: toHex(new Uint8Array(raw as Uint8Array)) };
+    }
     if (typeof v === 'bigint') return { $bigint: v.toString() };
-    if (v instanceof Uint8Array) return { $bytes: toHex(v) };
     return v;
   });
 }
