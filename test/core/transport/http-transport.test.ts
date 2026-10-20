@@ -333,4 +333,28 @@ describe('HttpTransport requests', () => {
     });
     expect(fake.callsTo('https://esplora.test/api/tx/')).toHaveLength(1);
   });
+
+  it('returns a binary answer byte for byte, and an error answer as text', async () => {
+    // Not UTF-8: a lone continuation byte, an invalid lead byte and a NUL.
+    const raw = Uint8Array.of(0x80, 0xff, 0x00, 0xc3, 0x28, 0x01);
+    const fake = new FakeFetch()
+      .route('https://esplora.test/api/block/ok/raw', () => new Response(raw))
+      .route('https://esplora.test/api/block/gone/raw', () => ({
+        status: 404,
+        text: 'Block not found',
+      }));
+    const { transport, clock } = setup(
+      [{ name: 'e', url: 'https://esplora.test/api' }],
+      fake,
+    );
+    const get = (path: string) =>
+      drive(clock, transport.http({ method: 'GET', path, responseType: 'bytes' }));
+    const answer = await get('/block/ok/raw');
+    expect(answer).toBeInstanceOf(Uint8Array);
+    expect(answer).toEqual(raw);
+    await expect(get('/block/gone/raw')).rejects.toMatchObject({
+      code: 'RPC_ERROR',
+      details: { status: 404, body: 'Block not found' },
+    });
+  });
 });

@@ -95,6 +95,28 @@ describe('HttpTransport: an answer is at most maxResponseBytes', () => {
     ).resolves.toHaveLength(LIMIT - 2);
   });
 
+  it('caps a binary answer as it caps a parsed one', async () => {
+    const liar = endless();
+    const fake = new FakeFetch().route('https://liar.example', () => liar.response);
+    const { transport, clock } = setup(
+      [{ name: 'liar', url: 'https://liar.example' }],
+      fake,
+      { maxResponseBytes: LIMIT, maxAttempts: 1 },
+    );
+    await expect(
+      drive(
+        clock,
+        transport.http({
+          method: 'GET',
+          path: '/raw',
+          route: '/raw',
+          responseType: 'bytes',
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    expect(liar.pulled()).toBeLessThanOrEqual(LIMIT + 2 * CHUNK);
+  });
+
   it('caps what the SDK bridge hands a native client too', async () => {
     const fake = new FakeFetch().route('https://liar.example', () => endless().response);
     const { transport, clock } = setup(

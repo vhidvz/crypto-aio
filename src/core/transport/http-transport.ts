@@ -48,7 +48,7 @@ const DEFAULTS = {
 };
 
 type ResolvedOptions = typeof DEFAULTS & { fetch?: typeof fetch };
-type Mode = 'rpc' | 'json' | 'text';
+type Mode = 'rpc' | 'json' | 'text' | 'bytes';
 type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 /** The counted endpoints' verdict: agreeing answers, or one refusal they all gave. */
 type Decided<T> =
@@ -1361,7 +1361,7 @@ export class HttpTransport implements Transport {
       : '';
     const hasBody = bodyText !== undefined;
     const mode = request.responseType ?? 'json';
-    const { text, json } = await this.#exchange(
+    const { text, json, bytes } = await this.#exchange(
       endpoint,
       routeLabel(request.method, request.route),
       {
@@ -1385,7 +1385,7 @@ export class HttpTransport implements Transport {
       routeLabel(request.method, request.route),
       exactIntegers,
     );
-    return (mode === 'text' ? text : json) as T;
+    return (mode === 'text' ? text : mode === 'bytes' ? bytes : json) as T;
   }
 
   /**
@@ -1436,7 +1436,7 @@ export class HttpTransport implements Transport {
     mode: Mode,
     errorLabel: string = label,
     exactIntegers = false,
-  ): Promise<{ text: string; json: unknown }> {
+  ): Promise<{ text: string; json: unknown; bytes: Uint8Array }> {
     const started = this.#clock.now();
     const response = await this.#fetch(request.url, {
       method: request.method,
@@ -1446,11 +1446,13 @@ export class HttpTransport implements Transport {
       redirect: 'error',
     });
     const bytes = await this.#body(endpoint, response);
-    const text = new TextDecoder().decode(bytes);
+    // A binary 2xx answer is returned as it came: UTF-8 decoding would corrupt it (and
+    // decode a whole block for nothing). An error body is text whatever the mode.
+    const text = mode === 'bytes' && response.ok ? '' : new TextDecoder().decode(bytes);
     this.#throwForStatus(endpoint, response);
     const context = this.#context(endpoint);
     let json: unknown;
-    if (mode !== 'text' || !response.ok) {
+    if ((mode !== 'text' && mode !== 'bytes') || !response.ok) {
       try {
         json = text.length > 0 ? parseJson(text, exactIntegers) : null;
       } catch {
@@ -1501,7 +1503,7 @@ export class HttpTransport implements Transport {
       }
     }
     this.#emitResponse(endpoint, label, started, bytes.byteLength);
-    return { text, json };
+    return { text, json, bytes };
   }
 
   /**
