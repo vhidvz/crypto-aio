@@ -1598,6 +1598,7 @@ export class HttpTransport implements Transport {
         `endpoint rejected the credentials (HTTP ${status})`,
         {
           context,
+          details: { httpStatus: status },
           retryable: true,
         },
       );

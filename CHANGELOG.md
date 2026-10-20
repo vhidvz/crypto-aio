@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   price, so a repeat cancel climbs from the highest one without an explicit `fee`.
 - `assets` on the root container's options registers tokens (decimals, symbol, aliases)
   without writing a plugin.
+- `PROVIDER_MISCONFIGURED` for refused credentials carries `details.httpStatus` (401 or 403).
 - `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
   resolves is now checked on chain and counted `unresent`, where it was counted `failed`
   without its check.

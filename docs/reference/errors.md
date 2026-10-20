@@ -57,7 +57,7 @@ land.**
 | `TIMEOUT` | A wait ran out; state unchanged | Wait again |
 | `SEQUENCE_BUSY` | A seqno wallet still has a message in flight | Retry later with the same key |
 | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_INCONSISTENT` (not ambiguous) | A read failed | Retry later |
-| `PROVIDER_MISCONFIGURED` | The endpoint serves another network | Fix the configuration |
+| `PROVIDER_MISCONFIGURED` | The endpoint serves another network, or refused the credentials (`details.httpStatus` 401 or 403) | Fix the configuration |
 | `SIGNER_UNAVAILABLE` | Watch-only wallet or unknown signer | Use `prepareTransfer`, or fix the configuration |
 | `INVALID_TRANSITION` | Not allowed in this state, or the container is closed | Read the state first |
 | `UNSUPPORTED_CAPABILITY` | The handle cannot do this | Check `bc.supports(…)` |
