@@ -105,6 +105,11 @@ export interface OperationClaim {
 
 export interface OperationRecord {
   readonly id: string;
+  /**
+   * The record format the Operation was stored in (`OPERATION_FORMAT` when it was created).
+   * A store keeps it as it keeps every other field. Records of 0.1.0 have none: format 1.
+   */
+  readonly format: number;
   readonly namespace: string;
   readonly idempotencyKey: string;
   readonly intentHash: string;
@@ -378,6 +383,7 @@ export const DATA_CLASSIFICATION: {
 } = Object.freeze({
   operation: Object.freeze({
     id: 'operational',
+    format: 'operational',
     namespace: 'operational',
     idempotencyKey: 'sensitive',
     intentHash: 'operational',

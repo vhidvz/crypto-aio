@@ -51,6 +51,8 @@ export const ERROR_CODES = deepFreezeCodes({
   /** The outcome may have happened (e.g. a delivered broadcast) but was not recorded. */
   STATE_UNRECORDED: { category: 'state', retryable: true },
   SCANNER_REORG_TOO_DEEP: { category: 'state', retryable: false },
+  /** A stored Operation's record format is newer than this version reads. */
+  RECORD_FORMAT_UNSUPPORTED: { category: 'state', retryable: false },
   TIMEOUT: { category: 'timeout', retryable: true },
 } as const satisfies Record<string, CodeDefinition>);
 

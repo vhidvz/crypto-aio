@@ -240,6 +240,7 @@ export {
   MemorySequenceStore,
   createMemoryStores,
 } from './core/store/memory';
+export { OPERATION_FORMAT } from './core/store/format';
 export {
   CLEARABLE_FIELDS,
   DATA_CLASSIFICATION,

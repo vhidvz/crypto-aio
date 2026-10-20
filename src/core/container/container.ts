@@ -38,6 +38,7 @@ import {
 } from '../registry/plugin';
 import { SigningOrchestrator } from '../signing/orchestrator';
 import { resolveWallet, type ResolvedWallet } from '../signing/wallet';
+import { formatGuard } from '../store/format';
 import { createMemoryStores } from '../store/memory';
 import type { OperationRecord, OperationState, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
@@ -145,6 +146,24 @@ function scopePart(options: ScopeOptions): ScopeOptions {
   };
 }
 
+const checkedStores = new WeakMap<RootRuntime, Stores>();
+
+/**
+ * The stores as the engine, the workers and `aio.operations` use them: Operation records
+ * pass the format guard, so none is ever read in a format this version does not know.
+ */
+function storesOf(runtime: RootRuntime): Stores {
+  let stores = checkedStores.get(runtime);
+  if (!stores) {
+    stores = {
+      ...runtime.stores,
+      operations: formatGuard(runtime.stores.operations, runtime.log.child('store')),
+    };
+    checkedStores.set(runtime, stores);
+  }
+  return stores;
+}
+
 function createEngine(
   runtime: RootRuntime,
   effective: () => EffectiveOptions,
@@ -154,7 +173,7 @@ function createEngine(
   const log = runtime.log.child('lifecycle');
   return new OperationEngine({
     namespace: runtime.namespace,
-    stores: runtime.stores,
+    stores: storesOf(runtime),
     events: runtime.events,
     clock: runtime.clock,
     log,
@@ -488,7 +507,7 @@ export class CryptoAio {
   /** Stored Operations of this namespace, as views, and startup recovery. */
   get operations(): OperationsApi {
     const internals = containerOf(this);
-    const store = internals.runtime.stores.operations;
+    const store = storesOf(internals.runtime).operations;
     const namespace = internals.runtime.namespace;
     const view = async (record: OperationRecord) =>
       toView(record, await loadObservations(store, record));
@@ -590,7 +609,7 @@ export class CryptoAio {
       monitor: () =>
         (monitor ??= new Monitor({
           engine: getEngine(),
-          stores: runtime.stores,
+          stores: storesOf(runtime),
           events: runtime.events,
           clock: runtime.clock,
           log: runtime.log.child('monitor'),

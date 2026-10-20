@@ -53,6 +53,7 @@ import {
   type OperationState,
   type Stores,
 } from '../store/types';
+import { OPERATION_FORMAT } from '../store/format';
 import { randomId } from '../util/bytes';
 import { abortReason, type Clock } from '../util/clock';
 import { canonicalJson, sha256Hex } from '../util/json';
@@ -550,6 +551,7 @@ export class OperationEngine {
     const hash = intentHash(selection.chain.id, selection.network.id, stored);
     const created = await this.deps.stores.operations.create({
       id: randomId('op'),
+      format: OPERATION_FORMAT,
       namespace: this.deps.namespace,
       idempotencyKey: key ?? randomId('idem'),
       intentHash: hash,

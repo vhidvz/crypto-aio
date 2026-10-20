@@ -111,6 +111,25 @@ Never store a key set to `undefined` as a value, such as `NULL`, whether it is i
   `undefined` reads back `undefined` (never `null`). The core relies on this to clear a
   stale failure reason or an orphaned block.
 
+## Upgrades and the record format
+
+Every Operation record carries `format`, the record format it was stored in
+(`OPERATION_FORMAT`, 1 today; records of 0.1.0 have none and are format 1). Store it as you
+store every other field, and never rewrite it: the contract suite checks that a record of
+any format reads back unchanged.
+
+A release that changes how an Operation, its intent, its unsigned transaction, its
+ordering data or its Attempts are stored raises `OPERATION_FORMAT` and still reads every
+earlier format, so you never migrate records yourself. The keys the core gives the other
+stores (`seq:<namespace>:<chain>:<network>:<address>` for nonce state and its lease,
+`<namespace>:<chain>:<network>:<cursorKey>` for a scanner) and the intent hash behind
+idempotency keys never change in a 1.x release.
+
+During a rolling upgrade, processes of two versions can share a store. A process never
+reads a record of a format newer than it knows: a read of one throws
+`RECORD_FORMAT_UNSUPPORTED`, and its workers release the claim on one at once and leave it
+to a newer process. Upgrade every process before you rely on what the new version stores.
+
 ## Data classification (for store implementers)
 
 The core never hands key material to a store. It classifies everything else it persists in

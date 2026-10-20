@@ -1216,6 +1216,10 @@ export const ERROR_CODES: {
         readonly category: "state";
         readonly retryable: false;
     };
+    readonly RECORD_FORMAT_UNSUPPORTED: {
+        readonly category: "state";
+        readonly retryable: false;
+    };
     readonly TIMEOUT: {
         readonly category: "timeout";
         readonly retryable: true;
@@ -1792,6 +1796,9 @@ export interface NormalizedAddress {
 }
 
 // @public
+export const OPERATION_FORMAT = 1;
+
+// @public
 export const OPERATION_PATCH_KEYS: readonly ["state", "outcome", "unsigned", "reservation", "signerTickets", "partialSignatures", "activeAttemptId", "ambiguous", "error", "nextCheckAt"];
 
 // @public (undocumented)
@@ -1860,6 +1867,7 @@ export interface OperationRecord {
     readonly createdAt: number;
     // (undocumented)
     readonly error?: SerializedError;
+    readonly format: number;
     // (undocumented)
     readonly id: string;
     // (undocumented)

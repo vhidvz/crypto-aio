@@ -168,6 +168,7 @@ monitor has observed; any other id is read as an unmanaged transaction.
 | `MemoryOperationStore`, `MemoryLockManager`, `MemorySequenceStore`, `MemoryCursorStore` | The in-memory stores, one by one | |
 | `DATA_CLASSIFICATION` | Every persisted field's class: `sensitive`, `sensitive-until-broadcast`, `operational` | [Write a durable store](../explore/stores.md#data-classification-for-store-implementers) |
 | `CLEARABLE_FIELDS`, `OPERATION_PATCH_KEYS` | The fields an Operation patch may set or clear | |
+| `OPERATION_FORMAT` | The record format this version stores Operations in; it reads every earlier one | [Write a durable store](../explore/stores.md#upgrades-and-the-record-format) |
 | `stringifyTagged(value)`, `parseTagged(text)` | JSON that round-trips `bigint` and `Uint8Array` | |
 
 ## Events

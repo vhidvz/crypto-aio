@@ -27,7 +27,7 @@ be ambiguous when its call may have reached the chain.
 | provider | `ProviderError` | `PROVIDER_UNAVAILABLE`, `RATE_LIMITED`, `PROVIDER_MISCONFIGURED`, `PROVIDER_INCONSISTENT`, `RPC_ERROR` |
 | chain | `ChainError` | `INSUFFICIENT_FUNDS`, `NONCE_CONFLICT`, `NONCE_TOO_HIGH`, `FEE_TOO_LOW`, `TX_REFUSED`, `TX_REJECTED`, `TX_REVERTED`, `TX_EXPIRED`, `TX_REPLACED` |
 | signing | `SigningError` | `SIGNER_UNAVAILABLE`, `SIGNING_FAILED`, `SIGNATURE_MISMATCH`, `POLICY_REJECTED`, `KEY_NOT_EXPORTABLE` |
-| state | `StateError` | `IDEMPOTENCY_CONFLICT`, `FENCING`, `VERSION_CONFLICT`, `INVALID_TRANSITION`, `NOT_FOUND`, `SEQUENCE_BUSY`, `STATE_UNRECORDED`, `SCANNER_REORG_TOO_DEEP` |
+| state | `StateError` | `IDEMPOTENCY_CONFLICT`, `FENCING`, `VERSION_CONFLICT`, `INVALID_TRANSITION`, `NOT_FOUND`, `SEQUENCE_BUSY`, `STATE_UNRECORDED`, `SCANNER_REORG_TOO_DEEP`, `RECORD_FORMAT_UNSUPPORTED` |
 | timeout | `TimeoutError` | `TIMEOUT` |
 
 ## What to do about each error
@@ -63,3 +63,4 @@ land.**
 | `INVALID_TRANSITION` | Not allowed in this state, or the container is closed | Read the state first |
 | `UNSUPPORTED_CAPABILITY` | The handle cannot do this | Check `bc.supports(…)` |
 | `SCANNER_REORG_TOO_DEEP` | Reorg deeper than the scanner window | Stop crediting; reset the cursor explicitly |
+| `RECORD_FORMAT_UNSUPPORTED` | A newer crypto-aio stored this Operation, during a rolling upgrade | Upgrade this process; the record is unchanged ([upgrades](../explore/stores.md#upgrades-and-the-record-format)) |
