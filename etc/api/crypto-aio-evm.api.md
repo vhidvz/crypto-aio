@@ -23,7 +23,6 @@ export function evmChainPlugin(options: EvmChainPluginOptions): Plugin;
 
 // @public (undocumented)
 export interface EvmChainPluginOptions {
-    // (undocumented)
     readonly assets?: readonly AssetRegistration[];
     readonly chains: readonly ChainInfo[];
     readonly name: string;

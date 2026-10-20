@@ -12,8 +12,10 @@ in [Versioning and stability](./stability.md).
 
 ## Trust and evidence
 
-- **Deposits are `observed`, never `proven`.** No driver proves a deposit yet, and Bitcoin
-  and Tron block pages are not bound to their block header. Credit
+- **Deposits are `observed`, never `proven`.** No driver proves a deposit yet. A Bitcoin
+  block's transactions are bound to its header, but which block is at a height rests on the
+  indexer (no proof of work is checked); Tron block pages are not bound to their header
+  (java-tron's JSON cannot reproduce every transaction's bytes). Credit
   deposits as [Receive deposits](../build/receive.md) explains: confirm each one you credit
   with a second read.
 - **A proof is only as independent as your endpoints.** A proof needs `proofQuorum`

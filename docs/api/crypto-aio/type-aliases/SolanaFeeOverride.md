@@ -4,7 +4,7 @@
 
 > **SolanaFeeOverride** = `object`
 
-Defined in: [src/adapters/solana/types.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L69)
+Defined in: [src/adapters/solana/types.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L73)
 
 An explicit Solana fee (`TransferIntent.fee`): the compute-unit price in micro-lamports
 (at most the handle's `maxComputeUnitPrice`) and, optionally, the compute-unit limit (1 to
@@ -19,7 +19,7 @@ an interface, so a value of this type is assignable to the core's `FeeOverride` 
 
 > `readonly` `optional` **computeUnitLimit?**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L71)
+Defined in: [src/adapters/solana/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L75)
 
 ***
 
@@ -29,4 +29,4 @@ Defined in: [src/adapters/solana/types.ts:71](https://github.com/vhidvz/crypto-a
 
 > `readonly` **computeUnitPrice**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L70)
+Defined in: [src/adapters/solana/types.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L74)

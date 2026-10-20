@@ -13,6 +13,7 @@ as an ethers `JsonRpcApiProvider` and `native(bc, 'web3')` as a `Web3` instance.
 ## Variables
 
 - [DEFAULT\_MAX\_FEE\_PER\_GAS](variables/DEFAULT_MAX_FEE_PER_GAS.md)
+- [DEFAULT\_MAX\_GAS\_LIMIT](variables/DEFAULT_MAX_GAS_LIMIT.md)
 - [EVM\_CAPABILITIES](variables/EVM_CAPABILITIES.md)
 - [EVM\_PEER\_DEPENDENCIES](variables/EVM_PEER_DEPENDENCIES.md)
 

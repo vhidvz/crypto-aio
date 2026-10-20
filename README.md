@@ -151,11 +151,14 @@ family.
 
 ## Status
 
-crypto-aio is at **0.1.0**, the first release of this API; the 0.0.x releases on npm are an older,
-unrelated API. Before 1.0, some extension interfaces may still change
-([what is stable](https://vhidvz.github.io/crypto-aio/reference/stability.html)). Only in-memory
-stores ship: production needs durable stores of your own, proven with the contract suites in
-`crypto-aio/testing`. Release notes are in the [changelog](CHANGELOG.md).
+crypto-aio is at **0.1.0**, on its way to 1.0, from which [semantic
+versioning](https://vhidvz.github.io/crypto-aio/reference/stability.html) covers the whole API,
+the driver port and what a process stores; the 0.0.x releases on npm are an older, unrelated
+API. [Known limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists
+what it does not do yet, and [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)
+what changes from 0.1.0. Only in-memory stores ship: production needs durable stores of your
+own, proven with the contract suites in `crypto-aio/testing`; [examples/postgres-store](examples/postgres-store)
+is a reference implementation on PostgreSQL. Release notes are in the [changelog](CHANGELOG.md).
 
 ## Contributing
 

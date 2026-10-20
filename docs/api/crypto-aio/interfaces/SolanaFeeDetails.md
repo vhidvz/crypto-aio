@@ -17,9 +17,11 @@ associated token account is created, `rent`.
 
 > `readonly` **baseFee**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L52)
+Defined in: [src/adapters/solana/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L56)
 
-The signature fee the node quoted for the message (`getFeeForMessage` minus priority).
+The signature fee: 5,000 lamports per signature of the message. The endpoint's
+`getFeeForMessage` quote must be exactly this plus `priorityFee`; any other quote fails
+the estimate with a retryable `PROVIDER_UNAVAILABLE`.
 
 ***
 
@@ -29,7 +31,7 @@ The signature fee the node quoted for the message (`getFeeForMessage` minus prio
 
 > `readonly` **computeUnitLimit**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L53)
+Defined in: [src/adapters/solana/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L57)
 
 ***
 
@@ -39,7 +41,7 @@ Defined in: [src/adapters/solana/types.ts:53](https://github.com/vhidvz/crypto-a
 
 > `readonly` **computeUnitPrice**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L55)
+Defined in: [src/adapters/solana/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L59)
 
 Micro-lamports per compute unit.
 
@@ -51,7 +53,7 @@ Micro-lamports per compute unit.
 
 > `readonly` **createsRecipientAccount**: `boolean`
 
-Defined in: [src/adapters/solana/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L60)
+Defined in: [src/adapters/solana/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L64)
 
 Whether the transaction creates the recipient's associated token account.
 
@@ -63,7 +65,7 @@ Whether the transaction creates the recipient's associated token account.
 
 > `readonly` **priorityFee**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L56)
+Defined in: [src/adapters/solana/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L60)
 
 ***
 
@@ -73,7 +75,7 @@ Defined in: [src/adapters/solana/types.ts:56](https://github.com/vhidvz/crypto-a
 
 > `readonly` **rent**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L58)
+Defined in: [src/adapters/solana/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L62)
 
 The rent-exempt deposit of a created associated token account; `0n` otherwise.
 

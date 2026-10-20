@@ -1497,8 +1497,7 @@ export interface HttpRequest {
     readonly path: string;
     // (undocumented)
     readonly query?: Readonly<Record<string, string>>;
-    // (undocumented)
-    readonly responseType?: 'json' | 'text';
+    readonly responseType?: 'json' | 'text' | 'bytes';
     readonly route?: string;
 }
 

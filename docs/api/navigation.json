@@ -1857,6 +1857,12 @@
                 "isDeprecated": false
               },
               {
+                "title": "DEFAULT_MAX_GAS_LIMIT",
+                "kind": 32,
+                "path": "crypto-aio/evm/variables/DEFAULT_MAX_GAS_LIMIT.md",
+                "isDeprecated": false
+              },
+              {
                 "title": "EVM_CAPABILITIES",
                 "kind": 32,
                 "path": "crypto-aio/evm/variables/EVM_CAPABILITIES.md",

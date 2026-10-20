@@ -44,6 +44,14 @@ idempotency key repeated after the upgrade finds its Operation.
 - **`library: 'web3'` is deprecated** and warns once per process; switch to `ethers` before
   2.0.
 
+## If you scan Bitcoin
+
+The scanner reads each block's raw bytes (`GET /block/:hash/raw`) and the previous
+transactions of its inputs (`GET /tx/:txid/hex`), so your Esplora service must serve both
+(Blockstream's and mempool.space's do). Scan with `filter.addresses`: an unfiltered scan reads
+one previous transaction per distinct parent outside the block, thousands for a full mainnet
+block. `details.vout[].type` is named from the script, as Blockstream electrs names it.
+
 ## If you sign Bitcoin `p2tr` with a custody signer
 
 A wallet whose signer does not declare the scheme its address type signs with is refused

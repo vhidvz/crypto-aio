@@ -2,7 +2,7 @@
 
 # Interface: PeerDependency
 
-Defined in: [src/core/driver/types.ts:412](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L412)
+Defined in: [src/core/driver/types.ts:423](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L423)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:412](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **name**: `string`
 
-Defined in: [src/core/driver/types.ts:413](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L413)
+Defined in: [src/core/driver/types.ts:424](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L424)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [src/core/driver/types.ts:413](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **range**: `string`
 
-Defined in: [src/core/driver/types.ts:414](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L414)
+Defined in: [src/core/driver/types.ts:425](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L425)

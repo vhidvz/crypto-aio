@@ -60,9 +60,14 @@ Defined in: [src/core/transport/types.ts:87](https://github.com/vhidvz/crypto-ai
 
 ### responseType?
 
-> `readonly` `optional` **responseType?**: `"json"` \| `"text"`
+> `readonly` `optional` **responseType?**: `"json"` \| `"text"` \| `"bytes"`
 
-Defined in: [src/core/transport/types.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L90)
+Defined in: [src/core/transport/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L96)
+
+How a 2xx answer is returned (default `'json'`): parsed JSON, the body as text, or its
+bytes unchanged as a `Uint8Array` (`'bytes'`, for a binary answer such as a serialized
+block, which text decoding would corrupt). Every type is read under
+`maxResponseBytes`; an error answer is read as text for its details whatever the type.
 
 ***
 
@@ -72,7 +77,7 @@ Defined in: [src/core/transport/types.ts:90](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **route?**: `string`
 
-Defined in: [src/core/transport/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L96)
+Defined in: [src/core/transport/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L102)
 
 Low-cardinality template label used for event and log method fields instead of the
 raw path, e.g. `'/address/:address/utxo'`. Must contain no identifiers (addresses,

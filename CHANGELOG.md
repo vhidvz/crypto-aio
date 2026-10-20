@@ -75,6 +75,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - EVM: on OP Stack chains since Isthmus, the operator fee (`GasPriceOracle.getOperatorFee`
   for the gas limit) is its own `operator` charge and `details.operatorFee`, counted in
   `details.expected` and the funds check.
+- **Breaking:** the Bitcoin scanner reads each block's own bytes (`/block/:hash/raw`) and
+  delivers only transactions its header commits to: the merkle root (refusing the
+  CVE-2012-2459 duplicate), a coinbase first, and the BIP141 witness commitment; the header
+  read at the height must match those bytes. A scanned transaction's `from`, input values and
+  fee come from the previous transactions' bytes, checked against the txids its inputs name.
+  A block that does not match is a retryable `PROVIDER_INCONSISTENT` and decides nothing. A
+  filtered scan uses the indexer's JSON pages only to find spends from watched addresses,
+  checked against the bytes; an unfiltered one reads one previous transaction per distinct
+  parent outside the block, so scan with `filter.addresses`. `details.vout[].type` is named
+  from the script, as Blockstream electrs names it.
+- The transport's `http` reads a binary answer with `responseType: 'bytes'`, within
+  `maxResponseBytes`.
+- A reference PostgreSQL implementation of the four store ports, in
+  `examples/postgres-store` (schema, source, README; not part of the package), passes every
+  store contract suite and an engine crash-and-recover run against PostgreSQL 16 in CI.
+- `pnpm test:evm-local` proves the EVM write path on a local anvil node, with ethers and
+  web3: proven finality, idempotent repeats, concurrent nonces, an ERC-20, replace, cancel,
+  crash recovery, funds checks and a reorg. CI runs it on every change.
 - `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
   resolves is now checked on chain and counted `unresent`, where it was counted `failed`
   without its check.
@@ -90,6 +108,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `evmChainPlugin` registers each `assets` ERC-20 under its EIP-55 checksummed contract,
+  whatever case it is given in, so a token's alias, its ref, its transfers and its balances
+  share one asset id (a lower-case contract made two assets, and deposits missed the
+  alias's). A token of another standard, a malformed contract, or a mixed-case contract with
+  a wrong checksum is refused with `CONFIG_INVALID` at registration.
+- `stringifyTagged` encodes a Node.js `Buffer` as bytes, as the memory store keeps it; it was
+  written as `{ type: 'Buffer', data }` and read back as a plain object by a durable store.
 - TON: `transfer bounced` and `jetton transfer bounced` no longer rest on the indexer's
   word. The provider's raw records of the wallet transaction and of each delivery, checked
   against their hashes and linked by message hash, must show the bounce; until they do, or
