@@ -37,7 +37,7 @@ The package is CommonJS with type declarations; `require('crypto-aio')` works as
 | `aio.use(plugin)` | Registers a chain family plugin (root container only; repeatable) | [Write a chain family plugin](../explore/plugins.md) |
 | `aio.on(type, handler)`, `aio.onAny(handler)` | Subscribe to [events](#events); each returns an unsubscribe function | [Production architecture](../tour/production.md#watching-it-run) |
 | `aio.operations.get(id)`, `.list(filter?)` | Read Operations of this namespace (`filter`: `states`, `chain`, `network`, `limit`) | [The life of a transfer](../tour/transfer.md) |
-| `aio.operations.recover({ signal? })` | Startup recovery; returns `{ rebroadcast, checked, skipped, failed, reconciled }` | [Run workers and recover](../build/workers.md) |
+| `aio.operations.recover({ signal? })` | Startup recovery; returns `{ rebroadcast, checked, skipped, unresent, failed, reconciled }` | [Run workers and recover](../build/workers.md) |
 | `aio.monitor.start({ workerId?, signal?, batch? })` | Background workers until the signal aborts | [Run workers and recover](../build/workers.md) |
 | `aio.monitor.runOnce({ workerId?, batch? })` | One worker pass; returns how many Operations it claimed | [Run workers and recover](../build/workers.md) |
 | `aio.close()` | Closes native clients and pooled drivers, stops workers; later calls throw `INVALID_TRANSITION` | [Run workers and recover](../build/workers.md) |

@@ -460,6 +460,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       seen: 'block',
       success: false,
       reason: 'token transfer failed',
+      failure: 'unevidenced',
     });
     t.calls.length = 0;
     expect(
@@ -467,6 +468,8 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ).toEqual({
       included: true,
       success: false,
+      reason: 'token transfer failed',
+      failure: 'unevidenced',
       blockHeight: 1n,
       blockHash: t.node.block(1n)?.hash,
       txHash: hash,

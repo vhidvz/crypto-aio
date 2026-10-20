@@ -14,7 +14,7 @@ worker whose claim expired and was taken over has its writes refused (`FENCING`)
 ```ts
 const aio = new CryptoAio({ namespace: 'payments', stores, signers, wallets, chains, providers });
 const report = await aio.operations.recover(); // at startup, before serving
-// report: { rebroadcast, checked, skipped, failed, reconciled }
+// report: { rebroadcast, checked, skipped, unresent, failed, reconciled }
 const stop = new AbortController();
 const workers = aio.monitor.start({ workerId: `api-${process.pid}`, signal: stop.signal });
 process.once('SIGTERM', () => stop.abort());
@@ -29,7 +29,9 @@ await aio.close(); // closes native clients and pooled drivers
 - Workers and `recover()` **never sign and need no signer**. They read through the
   Operation's chain, network and library with the current configuration. A resend or a nonce
   reconciliation needs only the Operation's wallet, and a watch-only wallet is enough. You can
-  rotate or remove a signer while Operations are in flight.
+  rotate or remove a signer while Operations are in flight. If the wallet itself is gone from
+  the configuration, `recover()` still checks the Operation and counts it `unresent`:
+  restore the wallet and recover again to resend it.
 - A nonce that leaked in a crash (allocated, never stored) is also reclaimed by the next
   `transfer` or `prepareTransfer` from that wallet, so a quiet wallet never stays blocked.
 - `aio.monitor.runOnce({ workerId, batch })` runs one pass and returns how many Operations it

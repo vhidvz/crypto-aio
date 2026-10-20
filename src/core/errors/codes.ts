@@ -35,6 +35,8 @@ export const ERROR_CODES = deepFreezeCodes({
   TX_REFUSED: { category: 'chain', retryable: false },
   TX_REJECTED: { category: 'chain', retryable: false },
   TX_REVERTED: { category: 'chain', retryable: false },
+  /** Included and executed, but no transfer to the recipient shows: value may have moved. */
+  TX_UNEVIDENCED: { category: 'chain', retryable: false },
   TX_EXPIRED: { category: 'chain', retryable: false },
   TX_REPLACED: { category: 'chain', retryable: false },
   SIGNER_UNAVAILABLE: { category: 'signing', retryable: false },

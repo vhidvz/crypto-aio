@@ -360,6 +360,7 @@ export function createTronProofs(ctx: TronContext): ProofSource {
           blockHash: header.id,
           txHash: id,
           ...(verdict.reason !== undefined ? { reason: verdict.reason } : {}),
+          ...(verdict.failure !== undefined ? { failure: verdict.failure } : {}),
         };
       }
       const bounds = attemptBounds(ordering);

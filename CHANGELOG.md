@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version every family already needed for Solana. `engines` no longer names an npm version,
   so npm 11 installs without an engine warning.
 - `package.json` declares `"type": "commonjs"`.
+- **Breaking:** a transfer whose transaction executed but shows no transfer to the
+  recipient fails with the new `TX_UNEVIDENCED`, not `TX_REVERTED`: an EVM or Tron token
+  that logged no `Transfer` to the recipient, or TON jettons sent to a wallet the master
+  does not name. Value may have moved, so check the chain before paying again; a
+  `TX_REVERTED` now always means the execution failed. Drivers say which with
+  `failure: 'reverted' | 'unevidenced'` (`TxFailure`) on `observe` and `includedFinal`, and
+  the core keeps it on the Attempt's observation (`failure`, a field stores must keep).
+- **Breaking:** an endpoint reads `healthy` in `status()` and `getNetworkStatus()` only
+  once its height is known, when its family probes heights: before that it is `unknown`,
+  where a confirmed identity alone used to make it `healthy`.
+- **Breaking:** a proof needs `proofQuorum` endpoints even after some drop out of its count
+  (down for three health intervals): the quorum is capped by the endpoints configured, not
+  by those still counted, so the one endpoint left never proves alone; proofs wait for the
+  others instead. The new `transport.degradedProofs: true` restores the old behavior, which
+  favours liveness.
+- `lifecycle.leaseWaitMs` (default: `leaseMs`): how long a transfer waits for its wallet's
+  address lease before `SEQUENCE_BUSY`, so transfers can queue behind a slow signer.
+- `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
+  resolves is now checked on chain and counted `unresent`, where it was counted `failed`
+  without its check.
 - **Breaking (types only):** `Blockchain`'s constructor is private (handles come from
   `aio.blockchain()` or `Blockchain.create()`), and its internal `protected` methods are gone
   from the type declarations. `CryptoAio`'s constructor has one signature, `(options?)`.

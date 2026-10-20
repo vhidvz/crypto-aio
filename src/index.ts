@@ -154,6 +154,7 @@ export type {
   Transaction,
   Transfer,
   TransferSource,
+  TxFailure,
   TxState,
   TxStatus,
   UnresolvedTransfer,

@@ -441,8 +441,14 @@ export function describeOperationStoreContract(
             blockHeight: 7n,
             blockHash: 'block-7',
             reason: 'transfer bounced',
+            failure: 'unevidenced',
           },
           null,
+        );
+        assert.equal(
+          (await operations.getObservation('a3'))?.failure,
+          'unevidenced',
+          'an observation keeps what failed',
         );
         await operations.putObservation(
           {
@@ -452,6 +458,7 @@ export function describeOperationStoreContract(
             evidence: 'observed',
             confirmations: 0,
             reason: undefined,
+            failure: undefined,
           },
           failed.version,
         );
@@ -460,6 +467,7 @@ export function describeOperationStoreContract(
         assert.equal(reread?.blockHeight, undefined);
         assert.equal(reread?.blockHash, undefined);
         assert.equal(reread?.reason, undefined);
+        assert.equal(reread?.failure, undefined);
       },
     );
 

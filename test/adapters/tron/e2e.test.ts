@@ -181,7 +181,7 @@ describe('Tron end to end', () => {
       env.bc.transfer({ asset: TOKEN, to: RECIPIENT, amount: 5n }),
     );
     await expect(env.mineWhile(sub.wait({ finality: 'final' }))).rejects.toMatchObject({
-      code: 'TX_REVERTED',
+      code: 'TX_UNEVIDENCED',
     });
     expect((await env.run(env.bc.getOperation(sub.operationId)))?.state).toBe('failed');
   });

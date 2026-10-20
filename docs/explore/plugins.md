@@ -163,6 +163,10 @@ relies on these rules most:
   `INVALID_ADDRESS`.
 - **Failure reasons.** With `success: false`, `observe` and `includedFinal` may return a
   short fixed `reason` (no addresses or amounts); the core shows it as `TxStatus.reason`.
+  They also say what failed, as `failure`: leave it out (or `'reverted'`) when execution
+  failed, and set `'unevidenced'` when the transaction executed but shows no transfer to
+  the recipient, so value may have moved; the Operation then fails with `TX_UNEVIDENCED`,
+  not `TX_REVERTED`.
 - **Signed payloads.** The optional `builder.signaturesFrom(unsigned, signed)` lets
   `submitSignatures` take a whole transaction signed elsewhere. Return only its signatures,
   with no I/O, and throw `INVALID_INTENT` when it is not the prepared transaction.

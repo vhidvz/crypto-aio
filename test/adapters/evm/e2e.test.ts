@@ -590,7 +590,7 @@ describe.each(LIBRARIES)('EVM end to end (%s)', (library) => {
     expect(env.node.receipt(ref)?.status).toBe(1);
     await expect(env.mineWhile(second.wait({ finality: 'final' }))).rejects.toMatchObject(
       {
-        code: 'TX_REVERTED',
+        code: 'TX_UNEVIDENCED',
         retryable: false,
       },
     );

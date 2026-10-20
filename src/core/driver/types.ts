@@ -13,6 +13,7 @@ import type {
   RawTx,
   SignedTx,
   TransferSource,
+  TxFailure,
   UnsignedTx,
 } from '../model/transaction';
 import type { KeyRef, SignatureBundle } from '../signing/types';
@@ -76,6 +77,11 @@ export interface DriverTxObservation {
    * (`TxStatus.reason`).
    */
   readonly reason?: string;
+  /**
+   * With `success: false`, what failed (`TxFailure`). Absent is `'reverted'`; a driver sets
+   * `'unevidenced'` when the transaction executed but shows no transfer to the recipient.
+   */
+  readonly failure?: TxFailure;
 }
 
 export interface DriverTransfer {
@@ -212,6 +218,8 @@ export interface ProofSource {
          * proven.
          */
         readonly reason?: string;
+        /** With `success: false`, what failed, as `DriverTxObservation.failure`. */
+        readonly failure?: TxFailure;
       }
   >;
   /** Whether the ordering slot (nonce/seqno/an input) is consumed by ANY transaction at `level`. */

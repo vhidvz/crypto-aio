@@ -342,6 +342,7 @@ export interface AttemptObservation {
     readonly confirmations: number;
     // (undocumented)
     readonly evidence: Evidence;
+    readonly failure?: TxFailure;
     // (undocumented)
     readonly firstSeenAt?: number;
     // (undocumented)
@@ -1014,6 +1015,7 @@ export interface DriverTxObservation {
     readonly blockHash?: string;
     // (undocumented)
     readonly blockHeight?: bigint;
+    readonly failure?: TxFailure;
     readonly reason?: string;
     // (undocumented)
     readonly seen: 'none' | 'mempool' | 'block';
@@ -1153,6 +1155,10 @@ export const ERROR_CODES: {
         readonly retryable: false;
     };
     readonly TX_REVERTED: {
+        readonly category: "chain";
+        readonly retryable: false;
+    };
+    readonly TX_UNEVIDENCED: {
         readonly category: "chain";
         readonly retryable: false;
     };
@@ -1566,6 +1572,7 @@ export interface LifecycleOptions {
     readonly droppedGracePeriodMs?: number;
     // (undocumented)
     readonly leaseMs?: number;
+    readonly leaseWaitMs?: number;
     // (undocumented)
     readonly pollIntervalMs?: number;
     // (undocumented)
@@ -2078,6 +2085,7 @@ export interface ProofSource {
         readonly blockHash: string;
         readonly txHash: string;
         readonly reason?: string;
+        readonly failure?: TxFailure;
     }>;
     slotConsumed(ordering: OrderingData, from: string, level: FinalityLevel): Promise<boolean>;
 }
@@ -2129,6 +2137,7 @@ export interface RecoveryReport {
     readonly rebroadcast: number;
     readonly reconciled: number;
     readonly skipped: number;
+    readonly unresent: number;
 }
 
 // @public (undocumented)
@@ -2669,6 +2678,7 @@ export interface Transport {
 export interface TransportOptions {
     // (undocumented)
     readonly baseDelayMs?: number;
+    readonly degradedProofs?: boolean;
     // (undocumented)
     readonly failureThreshold?: number;
     // (undocumented)
@@ -2742,6 +2752,9 @@ export interface TxBuilder {
     estimateFee(intent: DriverIntent, ctx: BuildContext): Promise<FeeEstimateDraft>;
     signaturesFrom?(unsigned: UnsignedTx, signed: RawTx): readonly SignatureBundle[];
 }
+
+// @public
+export type TxFailure = 'reverted' | 'unevidenced';
 
 // @public (undocumented)
 export type TxState = 'unknown' | 'pending' | 'mempool' | 'included' | 'final' | 'failed' | 'dropped' | 'replaced' | 'expired' | 'refused' | 'rejected';

@@ -36,6 +36,14 @@ export type TxState =
   | 'rejected';
 
 export type Evidence = 'observed' | 'proven';
+
+/**
+ * What failed in an included transaction: `'reverted'` when its execution failed, so
+ * nothing moved but the fee, and `'unevidenced'` when it executed but the chain shows no
+ * transfer to the recipient (a token that logged none, a jetton sent to a wallet its master
+ * does not name): value may have moved, so check the chain before paying again.
+ */
+export type TxFailure = 'reverted' | 'unevidenced';
 export type Finality = 'none' | 'probabilistic' | 'final';
 
 export interface TxStatus {

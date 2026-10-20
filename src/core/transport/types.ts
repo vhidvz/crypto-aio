@@ -21,6 +21,15 @@ export interface TransportOptions {
   readonly timeoutMs?: number;
   readonly maxLagBlocks?: number;
   readonly proofQuorum?: number;
+  /**
+   * Whether proofs go on, from fewer endpoints, once endpoints drop out of the proof
+   * quorum's count (their probes or requests failing for three health refreshes in a
+   * row). By default (`false`) a proof still needs `proofQuorum` endpoints, capped only by
+   * the endpoints configured, so it waits for the dropped ones and one endpoint left can
+   * never prove alone. `true` caps it by the endpoints still counted, down to one: proofs
+   * keep going through an outage, but the one endpoint left decides alone.
+   */
+  readonly degradedProofs?: boolean;
   readonly failureThreshold?: number;
   readonly openMs?: number;
   readonly healthIntervalMs?: number;

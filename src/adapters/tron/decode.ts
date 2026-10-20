@@ -22,6 +22,7 @@ import type {
   DriverTransfer,
   DriverTxObservation,
 } from '../../core/driver/types';
+import type { TxFailure } from '../../core/model/transaction';
 import { fromHex } from '../../core/util/bytes';
 import { TRANSFER_TOPIC, decodeTransferCall, decodeTransferLog } from './abi';
 import { toBase58Address } from './address';
@@ -31,6 +32,7 @@ import type { TronCodec, TronContract, TronRawData } from './types';
 export interface TxVerdict {
   readonly success: boolean;
   readonly reason?: string;
+  readonly failure?: TxFailure;
 }
 
 /** VM receipt results with a reason of their own; any other failure is generic. */
@@ -174,7 +176,7 @@ export function verdictOf(codec: TronCodec, tx: TronTxJson, info: TronTxInfo): T
   if (evidence === 'unreadable') throw malformed('Transfer log');
   return evidence === 'landed'
     ? chain
-    : { success: false, reason: 'token transfer not evidenced' };
+    : { success: false, reason: 'token transfer not evidenced', failure: 'unevidenced' };
 }
 
 const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });

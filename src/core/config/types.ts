@@ -64,6 +64,13 @@ export interface LifecycleOptions {
   readonly droppedGracePeriodMs?: number;
   readonly rebroadcastIntervalMs?: number;
   readonly leaseMs?: number;
+  /**
+   * How long a transfer waits for its wallet's address lease while another Operation of
+   * the wallet holds it, before it fails with `SEQUENCE_BUSY` (default: `leaseMs`). The
+   * holder keeps the lease while its signer works, for up to `signTimeoutMs`, so raise this
+   * to queue transfers behind a slow signer instead of failing them.
+   */
+  readonly leaseWaitMs?: number;
   readonly claimLeaseMs?: number;
   readonly waitTimeoutMs?: number;
   readonly requireIdempotencyKey?: boolean;

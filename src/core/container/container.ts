@@ -169,7 +169,7 @@ function createEngine(
   effective: () => EffectiveOptions,
 ): OperationEngine {
   const lifecycle = () => withLifecycleDefaults(effective().lifecycle);
-  const { leaseMs } = lifecycle();
+  const { leaseMs, leaseWaitMs } = lifecycle();
   const log = runtime.log.child('lifecycle');
   return new OperationEngine({
     namespace: runtime.namespace,
@@ -189,7 +189,7 @@ function createEngine(
       clock: runtime.clock,
       owner: runtime.owner,
       leaseMs,
-      acquireTimeoutMs: leaseMs,
+      acquireTimeoutMs: leaseWaitMs,
       // The code only: a store's error message may carry detail that logs must not.
       onReleaseError: (error) =>
         log.warn('lease release failed', { code: errorCode(error) }),

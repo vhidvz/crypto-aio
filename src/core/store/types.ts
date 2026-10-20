@@ -6,6 +6,7 @@ import type {
   AttemptRef,
   Evidence,
   RawTx,
+  TxFailure,
   TxState,
   UnsignedTx,
 } from '../model/transaction';
@@ -92,6 +93,8 @@ export interface AttemptObservation {
   readonly lastSeenAt?: number;
   readonly lastBroadcastAt?: number;
   readonly reason?: string;
+  /** With `state: 'failed'`: what failed (absent: `'reverted'`). */
+  readonly failure?: TxFailure;
   readonly replacedBy?: string;
   readonly version: number;
 }
@@ -433,6 +436,7 @@ export const DATA_CLASSIFICATION: {
     lastBroadcastAt: 'operational',
     // A node's refusal or rejection text can carry addresses or amounts.
     reason: 'sensitive',
+    failure: 'operational',
     replacedBy: 'operational',
     version: 'operational',
   }),

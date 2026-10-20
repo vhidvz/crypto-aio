@@ -66,6 +66,43 @@ describe('HttpTransport health', () => {
     });
   });
 
+  it('reads an endpoint healthy only once its height is known, with a height probe', async () => {
+    let heightFails = true;
+    const fake = new FakeFetch().route('https://a.test', (req) => {
+      const name = method(req);
+      if (name === 'chain_id') return rpcResult(req, '1');
+      if (name === 'height' && heightFails) return new Response('down', { status: 503 });
+      return rpcResult(req, name === 'height' ? '7' : 'from-a');
+    });
+    const { transport, clock } = setup([A], fake);
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+      height: async (call) => BigInt(await call.rpc<string>('height')),
+    });
+    // A request confirms the identity before any height is known.
+    await expect(drive(clock, transport.rpc('x'))).resolves.toBe('from-a');
+    expect(transport.status()[0]).toMatchObject({ state: 'unknown' });
+    await drive(clock, transport.refreshHealth());
+    expect(transport.status()[0]?.state).toBe('unknown');
+    heightFails = false;
+    await drive(clock, transport.refreshHealth());
+    expect(transport.status()[0]).toMatchObject({ state: 'healthy', height: 7n });
+  });
+
+  it('reads an endpoint with a confirmed identity healthy when no height probe exists', async () => {
+    const fake = new FakeFetch().route('https://a.test', (req) =>
+      rpcResult(req, method(req) === 'chain_id' ? '1' : 'from-a'),
+    );
+    const { transport, clock } = setup([A], fake);
+    transport.setProbes({
+      identity: (call) => call.rpc<string>('chain_id'),
+      expectedIdentity: '1',
+    });
+    await drive(clock, transport.refreshHealth());
+    expect(transport.status()[0]?.state).toBe('healthy');
+  });
+
   it('requires agreement for quorum reads', async () => {
     const answers: Record<string, unknown> = { a: { h: '10' }, b: { h: '11' } };
     const handler = (name: string) => (req: FakeRequest) => rpcResult(req, answers[name]);

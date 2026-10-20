@@ -591,6 +591,7 @@ describe('the TON reader: the seqno floor, jetton verdicts and content errors', 
     expect(await h.run(h.reader.observe(ref(hashNorm), ORDERING, sender))).toMatchObject({
       success: false,
       reason: REASONS.jettonUnverified,
+      failure: 'unevidenced',
     });
   });
 

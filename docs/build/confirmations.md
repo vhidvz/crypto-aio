@@ -23,7 +23,7 @@ const now = await bc.getTransactionStatus(operationId); // one read
   a transaction hash the monitor has observed. An Attempt's own id (`attempts[i].id`) is not
   a ref. Any other id is an unmanaged transaction, whose finality is `observed` only.
 - For an Operation, `waitForConfirmation` rejects with the stored failure: `TX_REVERTED`,
-  `TX_EXPIRED` or `TX_REPLACED` on proven evidence, `TX_REJECTED` when every Attempt was
+  `TX_UNEVIDENCED`, `TX_EXPIRED` or `TX_REPLACED` on proven evidence, `TX_REJECTED` when every Attempt was
   rejected, or the code of a failure before signing. An abandoned Operation gives
   `INVALID_TRANSITION`. An unmanaged transaction rejects with `TX_REVERTED` on observed
   finality. On `TIMEOUT` (retryable), nothing changed. Wait again.
@@ -33,8 +33,9 @@ const now = await bc.getTransactionStatus(operationId); // one read
   (of any amount for a zero-amount transfer), as ERC-20 requires. The recipient and amount
   are read from the signed call. A fee-on-transfer token that delivers less than asked still
   counts. A token that returns `false` instead of reverting, logs its `Transfer` to another
-  address or of nothing, or moves value without logging it, is reported failed
-  (`TX_REVERTED`) **although its receipt succeeded, so value may have moved.** Before you
+  address or of nothing, or moves value without logging it, is reported failed with
+  `TX_UNEVIDENCED`, not `TX_REVERTED`: **its receipt succeeded, so value may have moved.**
+  Before you
   pay again, check the chain: `bc.getTransaction(attempt.ref.id)` shows the receipt's own
   status (`status.state` is `included` when it succeeded, `failed` when it reverted), or
   read the recipient's token balance. Only your own Operations get this verdict;
@@ -49,7 +50,7 @@ const now = await bc.getTransactionStatus(operationId); // one read
   only if its receipt succeeded and the token contract logged a `Transfer` from the sender
   to the recipient, of any positive amount (a fee-on-transfer token that delivers less still
   counts). A token whose receipt succeeded but logged no such `Transfer` is reported failed
-  (`TX_REVERTED`, `status.reason` `token transfer not evidenced`) **although value may have
+  (`TX_UNEVIDENCED`, `status.reason` `token transfer not evidenced`) **although value may have
   moved**: check the chain (`bc.getTransaction(attempt.ref.id)`, or the recipient's token
   balance) before you pay again. A `Transfer` event from the token that does not decode
   leaves the Attempt undecided. A transfer that ran out of energy is failed (`out of
@@ -96,9 +97,9 @@ const now = await bc.getTransactionStatus(operationId); // one read
   fees), `jetton transfer bounced` (the jettons did not arrive), `the wallet skipped a
   message` (the wallet could not send it when it ran, usually for lack of funds) or `the
   wallet transaction failed`; in these cases nothing was delivered. The one exception is
-  `the jetton wallets are not the master’s`: the recipient's jetton wallet answered, and it
-  is not the one the master names for the recipient, so the jettons left your wallet for
-  another one; check the chain before you pay again. A jetton wallet that gives no answer
+  `TX_UNEVIDENCED` with `the jetton wallets are not the master’s`: the recipient's jetton
+  wallet answered, and it is not the one the master names for the recipient, so the jettons
+  left your wallet for another one; check the chain before you pay again. A jetton wallet that gives no answer
   (for example "no state" at that block) decides nothing: the transfer stays undecided until
   an endpoint answers.
 - **TON proofs.** A TON transfer that never landed is proven absent (`expired`, or

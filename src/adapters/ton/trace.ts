@@ -29,6 +29,7 @@
  * output is checked before any of them decides.
  */
 import { ProviderError } from '../../core/errors/error';
+import type { TxFailure } from '../../core/model/transaction';
 import type { V3Message, V3Trace, V3Transaction } from './api';
 import { ran, threwAfterCommit } from './decode';
 import {
@@ -51,7 +52,12 @@ export interface JettonLeg {
 
 export type Verdict =
   | { readonly kind: 'success'; readonly legs: readonly JettonLeg[] }
-  | { readonly kind: 'failed'; readonly reason: string }
+  | {
+      readonly kind: 'failed';
+      readonly reason: string;
+      /** Absent: the transfer did not happen (`reverted`). */
+      readonly failure?: TxFailure;
+    }
   /**
    * Not decidable yet: the trace is still being executed or indexed, or the request ran
    * without consuming its seqno and may still run again until it expires.

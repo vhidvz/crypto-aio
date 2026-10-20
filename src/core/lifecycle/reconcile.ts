@@ -115,7 +115,7 @@ export async function reclaimLeaked(
 /**
  * The lowest value reconciliation may reclaim: `chainPending` (a lagging endpoint can
  * under-report it), raised above every nonce the chain consumed at finality, i.e. those
- * of `final` Operations and of failures proven on chain (`TX_REVERTED`, `TX_REPLACED`).
+ * of `final` Operations and of failures proven on chain (`TX_REVERTED`, `TX_UNEVIDENCED`, `TX_REPLACED`).
  * A rejection, a failure before signing or an abandoned Operation consumed nothing.
  */
 export async function consumedFloor(

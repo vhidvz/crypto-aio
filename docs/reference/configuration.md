@@ -123,6 +123,7 @@ The presets of each family are listed in [Networks](./networks/index.md#provider
 | `droppedGracePeriodMs` | `120_000` | How long an unseen transaction waits before it counts as dropped and is resent |
 | `rebroadcastIntervalMs` | `60_000` | The least time between resends of one Attempt |
 | `leaseMs` | `30_000` | The address lease, held while a slot is reserved and signed |
+| `leaseWaitMs` | `leaseMs` | How long a transfer waits for its wallet's lease while another holds it, before `SEQUENCE_BUSY`; raise it, up to `signTimeoutMs`, to queue transfers behind a slow signer |
 | `claimLeaseMs` | `60_000` | A worker's claim on an Operation |
 | `waitTimeoutMs` | `600_000` | The default timeout of `waitForConfirmation` |
 | `signTimeoutMs` | `120_000` | The time allowed to `beforeSign` and the signers; on timeout, nothing is written |
@@ -137,7 +138,8 @@ Root container only: every scope and handle of a container shares its transports
 | `timeoutMs` | `15_000` | One request's timeout |
 | `maxAttempts` | `3` | Attempts per request, across endpoints |
 | `baseDelayMs`, `maxDelayMs` | `200`, `5_000` | Exponential backoff between attempts |
-| `proofQuorum` | `2` | Endpoints that must agree on a proof read |
+| `proofQuorum` | `2` | Endpoints that must agree on a proof read, capped by the endpoints configured |
+| `degradedProofs` | `false` | `true` lets proofs go on from the endpoints still counted, down to one, while others are down ([proof quorum](./concepts.md#provider-and-transport)) |
 | `maxLagBlocks` | `5` (some networks set more) | How far behind the best height an endpoint may be before it is lagging |
 | `failureThreshold`, `openMs` | `5`, `30_000` | The circuit breaker: failures before an endpoint rests, and for how long |
 | `healthIntervalMs` | `15_000` | How often endpoints' identity and height are probed |

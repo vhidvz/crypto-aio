@@ -104,7 +104,12 @@ export function evmObservation(
   if (!receipt || receipt.status === 0 || tokenTransferLanded(abi, tx, receipt)) {
     return observation;
   }
-  return { ...observation, success: false, reason: 'token transfer failed' };
+  return {
+    ...observation,
+    success: false,
+    reason: 'token transfer failed',
+    failure: 'unevidenced',
+  };
 }
 
 /** bor's fee log or native transfer log, from the MRC20 predeploy. */

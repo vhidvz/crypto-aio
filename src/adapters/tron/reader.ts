@@ -155,6 +155,7 @@ export async function observeIncluded(
     blockHash: header.id,
     success: verdict.success,
     ...(verdict.reason ? { reason: verdict.reason } : {}),
+    ...(verdict.failure ? { failure: verdict.failure } : {}),
   };
 }
 

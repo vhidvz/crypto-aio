@@ -1911,6 +1911,7 @@ export class OperationEngine {
           state: proven ? 'rejected' : 'refused',
           evidence: proven ? 'proven' : 'observed',
           reason: result.reason,
+          failure: undefined,
           lastBroadcastAt: now,
           // The `refused` state overwrites the live one, so the marker keeps a later
           // rejection seeing these bytes as possibly live (e.g. after an ambiguous send).

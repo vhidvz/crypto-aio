@@ -34,6 +34,7 @@ export const LIFECYCLE_DEFAULTS: ResolvedLifecycle = {
   droppedGracePeriodMs: 120_000,
   rebroadcastIntervalMs: 60_000,
   leaseMs: 30_000,
+  leaseWaitMs: 30_000,
   claimLeaseMs: 60_000,
   waitTimeoutMs: 600_000,
   requireIdempotencyKey: false,
@@ -45,7 +46,19 @@ export function withLifecycleDefaults(options: LifecycleOptions): ResolvedLifecy
   const out: Record<string, unknown> = { ...LIFECYCLE_DEFAULTS };
   for (const [key, value] of Object.entries(options))
     if (value !== undefined) out[key] = value;
-  const { signTimeoutMs } = out as ResolvedLifecycle;
+  // Waiting for the lease follows its length unless set on its own.
+  if (options.leaseWaitMs === undefined) out.leaseWaitMs = out.leaseMs;
+  const { leaseWaitMs, signTimeoutMs } = out as ResolvedLifecycle;
+  if (
+    typeof leaseWaitMs !== 'number' ||
+    !Number.isFinite(leaseWaitMs) ||
+    leaseWaitMs < 0
+  ) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'lifecycle.leaseWaitMs must be a finite number of 0 or more',
+    );
+  }
   if (
     typeof signTimeoutMs !== 'number' ||
     !Number.isFinite(signTimeoutMs) ||
@@ -169,6 +182,7 @@ export function heldNonces(op: OperationRecord): bigint[] {
 /** Failures proven on chain at finality: their nonce was consumed. */
 export const CONSUMED_FAILURES: ReadonlySet<string> = new Set([
   'TX_REVERTED',
+  'TX_UNEVIDENCED',
   'TX_REPLACED',
 ]);
 

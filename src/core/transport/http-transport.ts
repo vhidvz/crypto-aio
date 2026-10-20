@@ -39,6 +39,7 @@ const DEFAULTS = {
   timeoutMs: 15_000,
   maxLagBlocks: 5,
   proofQuorum: 2,
+  degradedProofs: false,
   failureThreshold: 5,
   openMs: 30_000,
   healthIntervalMs: 15_000,
@@ -617,7 +618,9 @@ export class HttpTransport implements Transport {
               ? 'half-open'
               : this.#lagging(e)
                 ? 'lagging'
-                : e.height !== undefined || e.identity === 'ok'
+                : // With a height probe, an endpoint is healthy only once its height is
+                  // known: a confirmed identity alone says nothing about its head.
+                  e.height !== undefined || (e.identity === 'ok' && !this.#probes.height)
                   ? 'healthy'
                   : 'unknown';
       return {
@@ -766,11 +769,14 @@ export class HttpTransport implements Transport {
     // retryable error instead of resolving from fewer endpoints than needed.
     // Nor may lag, an unknown height, an unconfirmed identity or an open
     // breaker shrink a proof quorum (#quorumCandidates), so one liar is never alone.
-    // Known gap: the floor of 1 lets the one endpoint still counted prove alone once
-    // every other endpoint is out of the count (a liar, if the honest ones are down for
-    // three health intervals). It favours liveness; raising it changes every family's
-    // proofs.
-    const needed = Math.max(1, Math.min(requested, counted.size));
+    // Nor, by default, may an endpoint that dropped out of the count (down for three
+    // health intervals): a proof waits for it, so the one endpoint left, which may be a
+    // liar, never proves alone. `degradedProofs` trades that for liveness.
+    const available =
+      proof && !this.#opts.degradedProofs
+        ? this.#endpoints.filter((e) => e.identity !== 'mismatch').length
+        : counted.size;
+    const needed = Math.max(1, Math.min(requested, available));
     const eligible = (): Endpoint[] => {
       const now = this.#clock.now();
       return this.#quorumCandidates(purpose, proof).inRange.filter(

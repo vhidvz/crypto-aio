@@ -803,6 +803,7 @@ async function proveIncluded(
     blockHash: header.id.rootHash,
     txHash: tx.hash,
     ...(verdict.kind === 'failed' ? { reason: verdict.reason } : {}),
+    ...(verdict.kind === 'failed' && verdict.failure ? { failure: verdict.failure } : {}),
   };
 }
 

@@ -694,7 +694,12 @@ export async function confirmLegs(
       recipient.wallet.owner !== leg.recipient ||
       recipient.wallet.master !== sender.wallet.master
     ) {
-      return Object.freeze({ kind: 'failed', reason: REASONS.jettonUnverified });
+      // The jettons left the wallet, to a wallet the master does not name.
+      return Object.freeze({
+        kind: 'failed',
+        reason: REASONS.jettonUnverified,
+        failure: 'unevidenced',
+      });
     }
   }
   return verdict;
@@ -838,7 +843,12 @@ export function createTonReader(ctx: TonContext): ChainReader {
       if (verdict.kind === 'pending') return seen;
       return verdict.kind === 'success'
         ? { ...seen, success: true }
-        : { ...seen, success: false, reason: verdict.reason };
+        : {
+            ...seen,
+            success: false,
+            reason: verdict.reason,
+            ...(verdict.failure ? { failure: verdict.failure } : {}),
+          };
     },
     getTokenMetadata: async (ref: TokenRef) =>
       jettonMetadata(ctx, jettonMaster(ctx, ref)),
