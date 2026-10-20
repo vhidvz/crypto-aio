@@ -122,9 +122,10 @@ export function merkleRootOf(leaves: readonly Uint8Array[]): {
  * - the merkle root of the txids is the header's, with no repeated pair (CVE-2012-2459) and
  *   no txid twice: no valid block holds one twice;
  * - the first transaction is a coinbase (one input, spending nothing). A 64-byte
- *   transaction's txid is the hash of two merkle nodes, so a forged list could stand in a
- *   subtree; its leftmost leaf would then have to be a coinbase whose null outpoint is 36
- *   fixed bytes of hash output, which no one can find;
+ *   transaction's txid is the hash of two merkle nodes, so a list with such "transactions"
+ *   in place of the nodes' subtrees has the same root. Its leftmost one stands for the
+ *   subtree that holds the coinbase, so it would have to be a coinbase made of hash output,
+ *   with a null outpoint's 36 fixed bytes in it, which no one can find;
  * - when any transaction carries a witness, the coinbase commits to every witness (BIP141):
  *   its last output that starts `OP_RETURN aa21a9ed` holds the double SHA-256 of the
  *   wtxids' merkle root (the coinbase's taken as zero) and the coinbase's one 32-byte
