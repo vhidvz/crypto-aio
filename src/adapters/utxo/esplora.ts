@@ -6,8 +6,8 @@
  * field is malformed and never a default, an answer for another id than the one asked for is
  * refused, and a 404 is `null`. Chain data is read as the chain allows it, never bounded by
  * what this library builds (lenient readers). Chain reads use the `rpc` transport; address
- * reads use the `indexer`. Only raw transaction hex is decoded, by the strict linear
- * reader (`rawtx.ts`), to bind it to its txid.
+ * reads use the `indexer`. Only raw transactions and blocks are decoded, by the strict
+ * linear readers (`rawtx.ts`, `rawblock.ts`), to bind them to their txid or block hash.
  */
 import {
   ProviderError,
@@ -16,6 +16,8 @@ import {
 } from '../../core/errors/error';
 import type { HttpRequest, Transport } from '../../core/transport/types';
 import { previousTxOf, txidOfHex, type PreviousTx } from './codec';
+import { commitsToTransactions, readBlock, type RawBlock } from './rawblock';
+import { readTxHex } from './rawtx';
 import type {
   EsploraAddressStats,
   EsploraBlock,
@@ -264,6 +266,28 @@ function txidOf(hex: string): { readonly txid: string } | undefined {
   }
 }
 
+/** An output as a transaction's bytes hold it: its value, signed as bitcoind reads it. */
+export interface TxOutput {
+  readonly value: bigint;
+  readonly script: Uint8Array;
+}
+
+/** The txid and outputs (copied) of strictly decoded transaction hex, or `undefined`. */
+function outputsOfHex(
+  hex: string,
+): { readonly txid: string; readonly outputs: readonly TxOutput[] } | undefined {
+  const tx = readTxHex(hex);
+  return (
+    tx && {
+      txid: tx.txid,
+      outputs: tx.outputs.map(({ value, script }) => ({
+        value,
+        script: Uint8Array.from(script),
+      })),
+    }
+  );
+}
+
 /** Transactions kept per txid, oldest out first, by count and by bytes without witness. */
 class TxCache {
   readonly #txs = new Map<string, PreviousTx>();
@@ -328,7 +352,7 @@ export class EsploraClient {
     path: string,
     route: string,
     tags: UtxoCallTags,
-    responseType: 'json' | 'text' = 'json',
+    responseType: 'json' | 'text' | 'bytes' = 'json',
     exactIntegers = false,
   ): Promise<T> {
     const request: HttpRequest = { method: 'GET', path, route, responseType };
@@ -383,6 +407,42 @@ export class EsploraClient {
       );
       // The answer must be the block asked for.
       if (block.hash !== blockHash) throw malformed('block.id');
+      return block;
+    });
+  }
+
+  /**
+   * `/block/:hash/raw`, the block's own bytes, read strictly once (`rawblock.ts`) and bound to
+   * `blockHash`: bytes that do not decode are malformed, and bytes whose header hashes to
+   * another block, or whose transactions are not the ones that header commits to, are a
+   * retryable `PROVIDER_INCONSISTENT`. So no endpoint can add, drop or alter a transaction of
+   * a block whose hash is right. A 404 (a backend that does not have the block) is `null`.
+   */
+  rawBlock(blockHash: string, tags: UtxoCallTags): Promise<RawBlock | null> {
+    return this.#orNull(async () => {
+      const answer = await this.#get<unknown>(
+        this.chain,
+        `/block/${segment(blockHash, 'id')}/raw`,
+        '/block/:hash/raw',
+        tags,
+        'bytes',
+      );
+      const block = answer instanceof Uint8Array ? readBlock(answer) : undefined;
+      if (!block) throw malformed('raw block');
+      if (block.hash !== blockHash) {
+        throw new ProviderError(
+          'PROVIDER_INCONSISTENT',
+          'the block bytes do not hash to the block asked for',
+          { retryable: true },
+        );
+      }
+      if (!commitsToTransactions(block)) {
+        throw new ProviderError(
+          'PROVIDER_INCONSISTENT',
+          "the block's transactions are not the ones its header commits to",
+          { retryable: true },
+        );
+      }
       return block;
     });
   }
@@ -493,6 +553,20 @@ export class EsploraClient {
     );
     if (found) this.#previous.set(found);
     return found;
+  }
+
+  /**
+   * The outputs of transaction `txid`, from its bytes, bound to `txid` (see `#rawTx`), or
+   * `null` when the endpoint does not have it: what an input naming `txid:vout` spends. A
+   * previous transaction this client keeps answers without a read; one read here is not kept,
+   * since a block scan reads thousands, which would evict a build's.
+   */
+  async outputsOf(txid: string, tags: UtxoCallTags): Promise<readonly TxOutput[] | null> {
+    const known = this.#own.get(txid) ?? this.#previous.get(txid);
+    if (known) return known.outputs;
+    return this.#orNull(
+      async () => (await this.#rawTx(txid, tags, outputsOfHex)).tx.outputs,
+    );
   }
 
   /**

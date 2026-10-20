@@ -16,6 +16,38 @@ import { fromHex } from '../../core/util/bytes';
 import { addressFromScript, type AddressParams } from './address';
 import type { EsploraOutput, EsploraStatus, EsploraTx } from './types';
 
+/**
+ * Esplora's name for an output script's type, from the script itself: rust-bitcoin's
+ * predicates in Blockstream electrs' order (`TxOutValue::new`), so a transaction read from a
+ * block's own bytes decodes as Blockstream's page of it would. mempool/electrs names a few
+ * more (`anchor`, `multisig`, and `op_return` for any provably unspendable script); a scan
+ * names them all the one way, whatever server it reads.
+ */
+export function scriptType(script: Uint8Array): string {
+  const n = script.length;
+  const at = (i: number): number | undefined => script[i];
+  if (n === 0) return 'empty';
+  if (at(0) === 0x6a) return 'op_return';
+  if (((n === 35 && at(0) === 33) || (n === 67 && at(0) === 65)) && at(n - 1) === 0xac) {
+    return 'p2pk';
+  }
+  if (
+    n === 25 &&
+    at(0) === 0x76 &&
+    at(1) === 0xa9 &&
+    at(2) === 0x14 &&
+    at(23) === 0x88 &&
+    at(24) === 0xac
+  ) {
+    return 'p2pkh';
+  }
+  if (n === 23 && at(0) === 0xa9 && at(1) === 0x14 && at(22) === 0x87) return 'p2sh';
+  if (n === 22 && at(0) === 0x00 && at(1) === 0x14) return 'v0_p2wpkh';
+  if (n === 34 && at(0) === 0x00 && at(1) === 0x20) return 'v0_p2wsh';
+  if (n === 34 && at(0) === 0x51 && at(1) === 0x20) return 'v1_p2tr';
+  return 'unknown';
+}
+
 export function observationOf(txid: string, status: EsploraStatus): DriverTxObservation {
   return status.confirmed
     ? {

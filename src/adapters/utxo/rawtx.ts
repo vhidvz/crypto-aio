@@ -3,7 +3,8 @@
  *
  * bitcoinjs-lib 7's `Transaction.fromBuffer` is quadratic in the number of inputs and
  * outputs: a 3.98 MB transaction with 92,500 outputs took 53 s. So bytes from a node, an
- * indexer or a coordinator are read here instead, in one pass. Every count is checked
+ * indexer or a coordinator are read here instead, in one pass, and so are a block's
+ * transactions (`readTxAt`, for `rawblock.ts`). Every count is checked
  * against the bytes left before anything is kept, scripts and witness items are views into
  * the input (never copies), and the txid is hashed from the three stretches of the
  * serialization it covers, without copying them.
@@ -52,6 +53,8 @@ export interface ParsedOutput {
 
 export interface ParsedTx {
   readonly txid: string;
+  /** The txid's hash in internal byte order: a block's merkle tree leaf. */
+  readonly hash: Uint8Array;
   readonly version: number;
   readonly locktime: number;
   readonly inputs: readonly ParsedInput[];
@@ -59,6 +62,8 @@ export interface ParsedTx {
   readonly hasWitness: boolean;
   /** The size without witness data (bitcoind's `TX_NO_WITNESS` serialization). */
   readonly strippedSize: number;
+  /** The serialization as read, witness included: a view. */
+  readonly bytes: Uint8Array;
   /** The output list as serialized (its count, then each output): a view. */
   readonly outputBytes: Uint8Array;
   /** The serialization without witness data (BIP174 `non_witness_utxo`). */
@@ -77,14 +82,15 @@ export interface ReadOptions {
 class Malformed extends Error {}
 
 /** Double SHA-256 of the given stretches, as one message. */
-function hash256(parts: readonly Uint8Array[]): Uint8Array {
+export function hash256(parts: readonly Uint8Array[]): Uint8Array {
   const inner = sha256.create();
   for (const part of parts) inner.update(part);
   return sha256(inner.digest());
 }
 
 /** A txid (or block hash) in display order. */
-const displayHex = (hash: Uint8Array): string => toHex(Uint8Array.from(hash).reverse());
+export const displayHex = (hash: Uint8Array): string =>
+  toHex(Uint8Array.from(hash).reverse());
 
 /** The txid of a serialization without witness data, given as consecutive stretches. */
 export const txidOfParts = (parts: readonly Uint8Array[]): string =>
@@ -112,7 +118,22 @@ export function readTx(
   const maxStripped = options.maxStripped ?? MAX_STRIPPED_BYTES;
   if (!(bytes instanceof Uint8Array) || bytes.length > MAX_TX_BYTES) return undefined;
   try {
-    return parse(bytes, maxStripped);
+    const tx = parse(bytes, 0, maxStripped);
+    return tx.bytes.length === bytes.length ? tx : undefined;
+  } catch (error) {
+    if (error instanceof Malformed) return undefined;
+    throw error;
+  }
+}
+
+/**
+ * The transaction that starts at `start` of `bytes` (a block's transaction list), read as
+ * `readTx` reads one; the next one starts where its `bytes` end. `undefined` when bitcoind
+ * would not decode it there.
+ */
+export function readTxAt(bytes: Uint8Array, start: number): ParsedTx | undefined {
+  try {
+    return parse(bytes, start, MAX_STRIPPED_BYTES);
   } catch (error) {
     if (error instanceof Malformed) return undefined;
     throw error;
@@ -135,9 +156,13 @@ export function readTxHex(hex: string, options: ReadOptions = {}): ParsedTx | un
   );
 }
 
-function parse(bytes: Uint8Array, maxStripped: number): ParsedTx {
+/**
+ * The transaction that starts at `start`; it ends where its lock time does (`bytes.length`
+ * of its result), and whatever follows is the caller's.
+ */
+function parse(bytes: Uint8Array, start: number, maxStripped: number): ParsedTx {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let pos = 0;
+  let pos = start;
   const need = (n: number): void => {
     if (n < 0 || pos + n > bytes.length) throw new Malformed();
   };
@@ -185,7 +210,7 @@ function parse(bytes: Uint8Array, maxStripped: number): ParsedTx {
 
   // `skipped`: the marker and flag bytes, which the stripped serialization leaves out.
   let skipped = 0;
-  const strippedSoFar = (): number => pos - skipped + 4; // with the lock time still to come
+  const strippedSoFar = (): number => pos - start - skipped + 4; // with the lock time to come
   const version = u32() | 0;
   let vinStart = pos;
   let inputCount = count(MIN_INPUT);
@@ -244,21 +269,28 @@ function parse(bytes: Uint8Array, maxStripped: number): ParsedTx {
     if (!hasWitness) throw new Malformed(); // a superfluous witness record
   }
   const locktime = u32();
-  if (pos !== bytes.length) throw new Malformed();
+  const whole = bytes.subarray(start, pos);
   const parts = extended
-    ? [bytes.subarray(0, 4), bytes.subarray(vinStart, outputEnd), bytes.subarray(pos - 4)]
-    : [bytes];
+    ? [
+        bytes.subarray(start, start + 4),
+        bytes.subarray(vinStart, outputEnd),
+        bytes.subarray(pos - 4, pos),
+      ]
+    : [whole];
   const stripped = parts.reduce((sum, part) => sum + part.length, 0);
   if (stripped > maxStripped) throw new Malformed();
+  const hash = hash256(parts);
   return {
-    txid: txidOfParts(parts),
+    txid: displayHex(hash),
+    hash,
     version,
     locktime,
     inputs,
     outputs,
     hasWitness,
     strippedSize: stripped,
+    bytes: whole,
     outputBytes: bytes.subarray(outputStart, outputEnd),
-    stripped: () => (parts.length === 1 ? bytes : concatBytes(...parts)),
+    stripped: () => (parts.length === 1 ? whole : concatBytes(...parts)),
   };
 }
