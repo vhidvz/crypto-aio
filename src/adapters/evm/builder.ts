@@ -31,6 +31,7 @@ import {
   FEE_PERCENTILES,
   TRANSFER_GAS,
   assertWithinCeiling,
+  assertWithinGasLimit,
   capPrice,
   comparePrices,
   feeDraft,
@@ -197,8 +198,9 @@ async function priceFor(
   const { client, config } = ctx;
   if (typeof fee === 'object') {
     const { params, gasLimit } = parseFeeOverride(fee, config.feeModel);
-    // An explicit fee above the ceiling is refused before any request.
+    // An explicit fee above either bound is refused before any request.
     assertWithinCeiling(params, config.maxFeePerGas);
+    if (gasLimit !== undefined) assertWithinGasLimit(gasLimit, config.maxGasLimit);
     return { speed: 'custom', params, ...(gasLimit !== undefined ? { gasLimit } : {}) };
   }
   // A node's suggestion is clamped to the ceiling, so no endpoint can raise it.
@@ -351,6 +353,8 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
       const gasLimit =
         price.gasLimit ??
         gasLimitFrom(await estimateGas(ctx, intent.from, transfer, build.signal));
+      // The estimate with its headroom is what would be signed, so that is what is bounded.
+      assertWithinGasLimit(gasLimit, ctx.config.maxGasLimit);
       const nonce = build.ordering?.kind === 'nonce' ? build.ordering.nonce : 0n;
       const fields = fieldsOf(
         ctx,
@@ -405,8 +409,9 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
           `this network takes ${ctx.config.feeModel} fees`,
         );
       }
-      // The ceiling is checked again, whatever produced the fee object.
+      // The bounds are checked again, whatever produced the fee object.
       assertWithinCeiling(params, ctx.config.maxFeePerGas);
+      assertWithinGasLimit(gasLimit, ctx.config.maxGasLimit);
       const fields = fieldsOf(
         ctx,
         callOf(client, transfer),
@@ -520,11 +525,14 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
       const price = await priceFor(ctx, fee, build.signal);
       if (!meetsBump(before.params, price.params, bump)) throw tooLow('a replacement');
       const old = unsignedFields(ctx, previous);
+      // The original's gas limit too: no replacement signs one above the bound.
+      const gasLimit = price.gasLimit ?? before.gasLimit;
+      assertWithinGasLimit(gasLimit, config.maxGasLimit);
       const fields = fieldsOf(
         ctx,
         { to: old.to, value: old.value, data: old.data },
         old.nonce,
-        price.gasLimit ?? before.gasLimit,
+        gasLimit,
         price.params,
       );
       return unsignedTx(
@@ -546,6 +554,8 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
       // A cancel whose least bump would pay above the ceiling is refused.
       assertWithinCeiling(price.params, config.maxFeePerGas);
       const nonce = nonceOf(previous.ordering);
+      // A self-transfer needs 21,000 gas, which every bound allows; an explicit fee's
+      // `gasLimit` was bounded when it was parsed.
       const fields = fieldsOf(
         ctx,
         { to: build.from, value: 0n, data: '0x' },

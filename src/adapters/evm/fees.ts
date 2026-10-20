@@ -141,6 +141,33 @@ export function assertWithinCeiling(params: EvmFeeParams, ceiling: bigint): void
   );
 }
 
+/**
+ * The default `maxGasLimit`, the highest gas limit an EVM transaction signs: 16,777,216
+ * (2^24), the per-transaction cap Ethereum enforces since Fusaka (EIP-7825), so no
+ * transaction above it is included there. A transfer this driver builds needs a small
+ * fraction of it (21,000 gas for a plain transfer, tens of thousands for a token's); an
+ * Arbitrum estimate also counts the L1 data fee in L2 gas, so it grows with L1 prices.
+ * Like `DEFAULT_MAX_FEE_PER_GAS`, it stops an absurd gas limit, from an endpoint's
+ * estimate or an override, not an expensive one: set the option to your own policy.
+ */
+export const DEFAULT_MAX_GAS_LIMIT = 16_777_216n;
+
+/**
+ * Refuses, before anything is signed, a gas limit above `bound` (the handle's
+ * `maxGasLimit`), whatever produced it: the node's estimate with its headroom, an
+ * override's `gasLimit`, a stored fee, or a replacement that keeps its original's. It is
+ * never clamped: a lower limit than the call needs runs out of gas and still pays. The
+ * details carry the gas limit and the bound as decimal strings.
+ */
+export function assertWithinGasLimit(gasLimit: bigint, bound: bigint): void {
+  if (gasLimit <= bound) return;
+  throw new ValidationError(
+    'INVALID_INTENT',
+    'the gas limit is above maxGasLimit, the EVM handle option that bounds it (gas)',
+    { details: { required: gasLimit.toString(), maxGasLimit: bound.toString() } },
+  );
+}
+
 /** Validates an `EvmFeeOverride` against the network's fee model. */
 export function parseFeeOverride(
   override: FeeOverride,

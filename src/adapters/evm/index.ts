@@ -19,6 +19,6 @@ declare module '../../index' {
 
 export { EVM_PEER_DEPENDENCIES, evmChainPlugin } from './plugin';
 export type { EvmChainPluginOptions } from './plugin';
-export { DEFAULT_MAX_FEE_PER_GAS } from './fees';
+export { DEFAULT_MAX_FEE_PER_GAS, DEFAULT_MAX_GAS_LIMIT } from './fees';
 export { EVM_CAPABILITIES } from './network';
 export type { EvmExt, EvmFeeDetails, EvmFeeOverride } from './types';

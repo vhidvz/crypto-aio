@@ -202,7 +202,8 @@ the package exports the types `Plugin`, `AdapterManifest`, `DriverFactory`, `Dri
 `ChainDriver` and its ports, `ChainInfo`, `NetworkInfo`, `ProviderPreset`, `AssetRegistration`,
 `SignatureScheme`, `Transport` and the store ports, and the value `PLACEHOLDER_ORIGIN`, the
 origin an SDK sees instead of a real URL. Family entry points add their own:
-`evmChainPlugin`, `DEFAULT_MAX_FEE_PER_GAS` and `EVM_CAPABILITIES` (`crypto-aio/evm`);
+`evmChainPlugin`, `DEFAULT_MAX_FEE_PER_GAS`, `DEFAULT_MAX_GAS_LIMIT` and `EVM_CAPABILITIES`
+(`crypto-aio/evm`);
 `MAX_MEMO_BYTES`, `DEFAULT_EXPIRATION_MS`, `MIN_EXPIRATION_MS`, `MAX_EXPIRATION_MS`,
 `DEFAULT_MAX_FEE_LIMIT` and `DEFAULT_ENERGY_MARGIN_PERCENT` (`crypto-aio/tron`);
 `DEFAULT_MAX_COMPUTE_UNIT_PRICE` (`crypto-aio/solana`); and each family's `…_CAPABILITIES` and

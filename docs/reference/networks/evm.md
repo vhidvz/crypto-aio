@@ -48,8 +48,21 @@ ethers and web3 clients.
   may set `params.maxFeePerGas`). A node's suggestion is clamped to it, and an explicit fee
   or a cancel's least bump above it fails with `INVALID_INTENT` before signing
   (`details.required`, `details.maxFeePerGas`). If the base fee rises above the ceiling,
-  transfers stall as `FEE_TOO_LOW` until it falls or you raise the option. Any other key in
-  the EVM options fails with `CONFIG_INVALID`.
+  transfers stall as `FEE_TOO_LOW` until it falls or you raise the option. Any key in the
+  EVM options but `maxFeePerGas` and `maxGasLimit` fails with `CONFIG_INVALID`.
+- **Gas-limit bound.** No transfer, replacement or cancel signs a gas limit above the
+  `maxGasLimit` option, in gas as a bigint from 21,000 to 2^64 − 1 (set like
+  `maxFeePerGas`; a custom network may set `params.maxGasLimit`). The default is 16,777,216
+  (2^24, `DEFAULT_MAX_GAS_LIMIT`), the per-transaction cap Ethereum enforces since Fusaka
+  (EIP-7825): far above what a transfer needs, it stops an absurd estimate or override, not
+  an expensive one, so set your own (with the fee ceiling it bounds the `network` charge at
+  `maxGasLimit × maxFeePerGas`). The gas limit a transfer would sign, the node's
+  `eth_estimateGas` plus its 20% headroom, an override's `gasLimit`, or the original's gas
+  limit that a replacement keeps, fails above it with `INVALID_INTENT` before signing
+  (`details.required`, `details.maxGasLimit`); it is never cut down, since a call given
+  less gas than it needs runs out and still pays. An explicit `gasLimit` above it is
+  refused before any request. Arbitrum's estimates count the L1 data fee in L2 gas, so
+  they grow with L1 prices: leave that bound generous.
 - **Types.** The declarations of `crypto-aio/evm` name both ethers' and web3's types, so with
   only one of them installed keep `skipLibCheck: true` (the `tsc --init` default), or install
   the other too.

@@ -180,6 +180,7 @@ Set in `chains.<id>.options` or a handle's `options`. Each family refuses keys i
 | Family | Option | Default | Bounds |
 | --- | --- | --- | --- |
 | EVM | `maxFeePerGas` | 1,000 gwei (`DEFAULT_MAX_FEE_PER_GAS`) | The highest price per gas any transaction signs |
+| EVM | `maxGasLimit` | 16,777,216 gas, 2^24 (`DEFAULT_MAX_GAS_LIMIT`) | The highest gas limit any transaction signs |
 | Bitcoin | `maxFeeRate` | 1,000 sat/vB | The highest fee rate signed |
 | Bitcoin | `maxFee` | 0.1 BTC | The highest fee signed |
 | Bitcoin | `maxEstimatedFeeRate` | 200 sat/vB | The highest estimate trusted from an endpoint |

@@ -86,7 +86,9 @@ fail: any call that would revert or run out of gas, such as a token transfer or 
 to a contract that refuses it, is then signed, broadcast, and burns its gas. The balance
 check still runs. No EVM transaction signs a price per gas above the handle's `maxFeePerGas`
 option (1,000 gwei by default): a speed's prices are clamped to it, and an override, or a
-cancel's least bump, above it is refused with `INVALID_INTENT` before signing; see
+cancel's least bump, above it is refused with `INVALID_INTENT` before signing. Nor does one
+sign a gas limit above its `maxGasLimit` option (2^24 by default): an estimate or an
+override's `gasLimit` above it is refused the same way, never cut down; see
 [EVM networks](../reference/networks/evm.md).
 
 On Bitcoin, `slow`, `normal` and `fast` take Esplora's estimate for 144, 6 or 2 blocks, and
