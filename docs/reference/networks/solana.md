@@ -91,15 +91,20 @@ never over a WebSocket.
   (`INVALID_INTENT`); and a transfer that would leave the sender with lamports between 0 and
   its rent-exempt minimum (650,240 lamports for an empty account today), which fails with
   `INSUFFICIENT_FUNDS` and its `details.required` and `details.available`.
-- **Fees (`solana`).** Every charge is in SOL: `network` (the signature fee the node quotes
-  for the message, 5,000 lamports per signature today), `priority` (the compute-unit price,
+- **Fees (`solana`).** Every charge is in SOL: `network` (the signature fee, 5,000 lamports
+  per signature of the message; a transfer has one), `priority` (the compute-unit price,
   in micro-lamports, times the compute-unit limit, rounded up to whole lamports; it is
   charged on the limit, not on what the transaction uses) and, when the recipient's token
   account is created, `rent`. The bound is `exact`, or `upper` with a `rent` charge;
-  `fee.details` is `SolanaFeeDetails`. The `network` charge, and so the `exact` bound, is
-  one endpoint's `getFeeForMessage` quote: it is never signed, and the chain charges its own
-  signature fee, so a wrong quote changes only the estimate and the balance check (a short
-  balance is then refused by the node and stalls, rather than paying more). `slow`, `normal`
+  `fee.details` is `SolanaFeeDetails`. The library computes the `network` and `priority`
+  charges from the message itself, and one endpoint's `getFeeForMessage` quote for that
+  message must equal their sum exactly. Any other quote, inflated or deflated, fails the
+  estimate with a retryable `PROVIDER_UNAVAILABLE` (`malformed getFeeForMessage answer`),
+  so no endpoint can overstate an estimate (the balance check would then refuse a transfer
+  the wallet can pay) or understate it (the node would then refuse the transfer, and it
+  stalls). The quote also shows that the endpoint knows the message's blockhash. Should
+  Solana change how it charges fees, estimates fail this way until the library follows,
+  rather than misstate the fee. `slow`, `normal`
   and `fast` take the 25th, 50th and 75th percentile of the node's
   `getRecentPrioritizationFees` for the accounts the transfer writes (0 when it reports
   none), and the limit is a simulation plus 20% and 1,000 units (the runtime's default of
@@ -237,6 +242,10 @@ decides whether a transfer can be sent again. The driver's guards:
   transfer's priority fee at 0.014 SOL, so one lying endpoint cannot spend the wallet. Any
   other key in `chains.solana.options` fails with `CONFIG_INVALID`. For a tighter policy per
   transfer, compare `ctx.fee` in `beforeSign`.
+- **Fee quote.** The signature fee is computed from the message, never taken from an
+  endpoint: a `getFeeForMessage` quote that differs from the message's fee by a single
+  lamport fails the estimate with a retryable `PROVIDER_UNAVAILABLE`, so one endpoint can
+  neither inflate an estimate nor deflate it.
 - **Proof providers.** A proof that a transfer never landed is what lets `rebuild` sign a
   new one, so a wrong one pays twice. Each proof is a quorum over your endpoints: use two or
   three independent keyed or self-hosted providers. The `public` preset's rate limits let it

@@ -102,8 +102,9 @@ maximum fee limit and the handle's `maxFeeLimit` option (100 TRX by default); `{
 may raise it to the lower of the two but never set it below the estimate.
 [Tron networks](../reference/networks/tron.md) explains the charges and the ceiling.
 
-On Solana, the `solana` fee has a `network` charge (the signature fee), a `priority` charge
-(the compute-unit price times the compute-unit limit) and, when the transfer creates the
+On Solana, the `solana` fee has a `network` charge (the signature fee, 5,000 lamports, which
+the library computes and the node's quote must confirm), a `priority` charge (the
+compute-unit price times the compute-unit limit) and, when the transfer creates the
 recipient's token account, a `rent` charge; the bound is `exact`, or `upper` with `rent`.
 `slow`, `normal` and `fast` take the 25th, 50th or 75th percentile of the node's recent
 prioritization fees, at most the handle's `maxComputeUnitPrice` option (10,000,000

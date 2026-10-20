@@ -48,7 +48,11 @@ export interface SolanaExt {
  */
 export interface SolanaFeeDetails {
   readonly signatures: number;
-  /** The signature fee the node quoted for the message (`getFeeForMessage` minus priority). */
+  /**
+   * The signature fee: 5,000 lamports per signature of the message. The endpoint's
+   * `getFeeForMessage` quote must be exactly this plus `priorityFee`; any other quote fails
+   * the estimate with a retryable `PROVIDER_UNAVAILABLE`.
+   */
   readonly baseFee: bigint;
   readonly computeUnitLimit: bigint;
   /** Micro-lamports per compute unit. */

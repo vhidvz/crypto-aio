@@ -1401,14 +1401,36 @@ describe('fees that have no u64 value', () => {
       code: 'INVALID_INTENT',
       message: 'Solana fee override: the fee does not fit in u64',
     };
-    // A priority fee beyond u64 is refused before the node is asked for a quote.
+    // A fee beyond u64 is refused before the node is asked for a quote, and so is one of
+    // exactly u64::MAX (base fee plus a priority fee of u64::MAX − 5,000), where agave's
+    // fee arithmetic saturates.
     h.calls.length = 0;
     await expect(priced(max, 1_400_000n)).rejects.toMatchObject(NO_FIT);
-    expect(h.calls.map((c) => c.method)).not.toContain('getFeeForMessage');
-    // The node's quote saturates at u64::MAX: base fee plus a priority fee of u64::MAX − 5,000.
     await expect(priced(max - 5_000n, 1_000_000n)).rejects.toMatchObject(NO_FIT);
+    expect(h.calls.map((c) => c.method)).not.toContain('getFeeForMessage');
     await expect(priced(max - 5_001n, 1_000_000n)).resolves.toMatchObject({
       details: { baseFee: 5_000n, priorityFee: max - 5_001n },
+    });
+  });
+
+  it("never reads an endpoint's saturated quote as an explicit fee that does not fit", async () => {
+    const h = setup();
+    h.node.intercept = (_endpoint, method) =>
+      method === 'getFeeForMessage'
+        ? { result: { context: { slot: 1 }, value: 2n ** 64n - 1n } }
+        : undefined;
+    // The caller's fee fits: the endpoint's word cannot turn it into INVALID_INTENT.
+    await expect(
+      h.run(
+        h.builder.estimateFee(
+          intent({ fee: { computeUnitPrice: 1n, computeUnitLimit: 1_000n } }),
+          h.build,
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: 'malformed getFeeForMessage answer',
     });
   });
 
@@ -1427,6 +1449,73 @@ describe('fees that have no u64 value', () => {
         },
       );
     }
+  });
+});
+
+// One endpoint's quote must neither overstate an estimate (the funds check then refuses a
+// transfer the wallet can pay) nor understate it (the node then refuses the transfer).
+describe('the fee quote: 5,000 lamports per signature plus the priority fee, exactly', () => {
+  const MALFORMED = {
+    code: 'PROVIDER_UNAVAILABLE',
+    retryable: true,
+    message: 'malformed getFeeForMessage answer',
+  };
+  /** The node's own quote, shifted by `delta` lamports. */
+  function shifted(h: Setup, delta: bigint): void {
+    h.node.intercept = (endpoint, method, params) => {
+      if (method !== 'getFeeForMessage') return undefined;
+      const answer = h.node.answer(endpoint, method, params) as { value: number };
+      return { result: { ...answer, value: BigInt(answer.value) + delta } };
+    };
+  }
+
+  it.each([
+    ['inflated by one lamport', 1n],
+    ['inflated by a second signature', 5_000n],
+    ['deflated by one lamport', -1n],
+    ['deflated to the priority fee alone', -5_000n],
+  ])(
+    'decides nothing on a quote %s, for a speed, an explicit fee and a token',
+    async (_, delta) => {
+      const h = setup();
+      shifted(h, delta);
+      const fast = intent({ fee: 'fast' });
+      const explicit = intent({
+        fee: { computeUnitPrice: 2_000_000n, computeUnitLimit: 20_000n },
+      });
+      const token = intent({ asset: SPL, outputs: [{ to: RECIPIENT, amount: 1n }] });
+      for (const request of [fast, explicit, token]) {
+        await expect(
+          h.run(h.builder.estimateFee(request, h.build)),
+        ).rejects.toMatchObject(MALFORMED);
+      }
+      // The node's own quote is the fee the library computes.
+      h.node.intercept = undefined;
+      for (const request of [fast, explicit, token]) {
+        const fee = await h.run(h.builder.estimateFee(request, h.build));
+        const d = fee.details as unknown as SolanaFeeDetails;
+        expect(d).toMatchObject({ signatures: 1, baseFee: 5_000n });
+        expect(d.priorityFee).toBe(priorityFee(d.computeUnitPrice, d.computeUnitLimit));
+        expect(fee.charges[0]).toEqual({
+          asset: 'native',
+          amount: 5_000n,
+          label: 'network',
+        });
+      }
+    },
+  );
+
+  it('decides nothing on a quote from an endpoint that does not know the blockhash', async () => {
+    const h = setup();
+    h.node.intercept = (_endpoint, method) =>
+      method === 'getFeeForMessage'
+        ? { result: { context: { slot: 1 }, value: null } }
+        : undefined;
+    await expect(h.run(h.builder.estimateFee(intent(), h.build))).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      retryable: true,
+      message: 'the endpoints cannot show the fee of the message yet',
+    });
   });
 });
 
