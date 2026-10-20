@@ -1,24 +1,18 @@
 /**
- * The only module that imports `@solana/web3.js`: program-derived addresses, legacy
- * message compilation and the `crypto-aio/native` `Connection`. It is never on a driver
- * request path: `Connection` retries HTTP 429 on a real timer and would drop the call's
- * tags, so the driver sends every request straight to the transport, and the native
- * `Connection` reaches the same transport through `transport.createFetch`.
+ * The only module that imports `@solana/web3.js`, for the `crypto-aio/native`
+ * `Connection` alone: the driver builds messages and program-derived addresses itself
+ * (`message.ts`), so it works the same with every supported SDK line (1.x and the
+ * Kit-based 3.x). It is never on a driver request path: `Connection` retries HTTP 429 on
+ * a real timer and would drop the call's tags, so the driver sends every request straight
+ * to the transport, and the native `Connection` reaches the same transport through
+ * `transport.createFetch`.
  */
-import {
-  Connection,
-  PublicKey,
-  TransactionInstruction,
-  TransactionMessage,
-} from '@solana/web3.js';
+import { Connection } from '@solana/web3.js';
 import { PLACEHOLDER_ORIGIN, type Transport } from '../../core/transport/types';
 import { solanaDriverFactory } from './driver';
-import { ASSOCIATED_TOKEN_PROGRAM, TOKEN_PROGRAM } from './programs';
+import { associatedTokenAddress, compileLegacyMessage } from './message';
 import { BROADCAST, READ } from './rpc';
 import type { SolanaCodec } from './types';
-
-const TOKEN = new PublicKey(TOKEN_PROGRAM);
-const ASSOCIATED_TOKEN = new PublicKey(ASSOCIATED_TOKEN_PROGRAM);
 
 /**
  * The tags of a native client's requests: broadcasts for its writes (a transaction send
@@ -33,36 +27,8 @@ function classify(_url: URL, init: RequestInit | undefined) {
 
 export function createWeb3Codec(transport: Transport): SolanaCodec {
   return {
-    associatedTokenAddress(owner, mint) {
-      const [address] = PublicKey.findProgramAddressSync(
-        [
-          new PublicKey(owner).toBuffer(),
-          TOKEN.toBuffer(),
-          new PublicKey(mint).toBuffer(),
-        ],
-        ASSOCIATED_TOKEN,
-      );
-      return address.toBase58();
-    },
-    compileMessage(payer, recentBlockhash, instructions) {
-      const message = new TransactionMessage({
-        payerKey: new PublicKey(payer),
-        recentBlockhash,
-        instructions: instructions.map(
-          (ix) =>
-            new TransactionInstruction({
-              programId: new PublicKey(ix.programId),
-              keys: ix.accounts.map((a) => ({
-                pubkey: new PublicKey(a.address),
-                isSigner: a.signer,
-                isWritable: a.writable,
-              })),
-              data: Buffer.from(ix.data),
-            }),
-        ),
-      }).compileToLegacyMessage();
-      return new Uint8Array(message.serialize());
-    },
+    associatedTokenAddress,
+    compileMessage: compileLegacyMessage,
     createNative() {
       const connection = new Connection(`${PLACEHOLDER_ORIGIN}/`, {
         commitment: 'confirmed',

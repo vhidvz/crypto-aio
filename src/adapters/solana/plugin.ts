@@ -18,7 +18,10 @@ import { SOLANA_TOKENS } from './tokens';
 export const SOLANA_PEER_DEPENDENCIES: Readonly<
   Record<'@solana/web3.js', PeerDependency>
 > = Object.freeze({
-  '@solana/web3.js': Object.freeze({ name: '@solana/web3.js', range: '^1.99.0' }),
+  '@solana/web3.js': Object.freeze({
+    name: '@solana/web3.js',
+    range: '^1.99.0 || ^3.0.0',
+  }),
 });
 
 /**

@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   favours liveness.
 - `lifecycle.leaseWaitMs` (default: `leaseMs`): how long a transfer waits for its wallet's
   address lease before `SEQUENCE_BUSY`, so transfers can queue behind a slow signer.
+- `@solana/web3.js` 3 is supported next to 1.99 (peer range `^1.99.0 || ^3.0.0`). The
+  Solana driver now compiles its messages and derives token account addresses itself
+  (checked byte for byte against the SDK), so signed bytes no longer depend on the SDK
+  version; the SDK only backs `native()`. The pack check loads the family with 3.x too.
 - `BuildContext.decimals`: the decimals the core scaled a transfer's amounts with. The
   Solana driver refuses a token transfer whose mint has other decimals
   (`ASSET_RESOLUTION`), which a wrong registration would otherwise sign as a mis-scaled

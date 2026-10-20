@@ -60,7 +60,7 @@ principles, starting with [what a ledger is](https://vhidvz.github.io/crypto-aio
 | EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (default) or `web3` 4 |
 | Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7 and an Esplora indexer |
 | Tron | mainnet, Shasta, Nile | `tronweb` 6 |
-| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 |
+| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 or 3 |
 | TON | mainnet, testnet | `@ton/ton` 16 and toncenter |
 | Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5 and the Avalanche Data API |
 

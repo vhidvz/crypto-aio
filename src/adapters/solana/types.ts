@@ -116,10 +116,9 @@ export interface SolanaInstruction {
 }
 
 /**
- * The codec work the driver delegates to `@solana/web3.js`: program-derived addresses and
- * legacy message compilation. Inputs are already-validated canonical base58 keys; outputs
- * are plain bytes and strings, never SDK objects, since store records hold plain data
- * only.
+ * Program-derived addresses, legacy message compilation (both SDK-free, `message.ts`) and
+ * the native client. Inputs are already-validated canonical base58 keys; outputs are plain
+ * bytes and strings, never SDK objects, since store records hold plain data only.
  */
 export interface SolanaCodec {
   /** The associated token account of `owner` for `mint` (classic Token program). */

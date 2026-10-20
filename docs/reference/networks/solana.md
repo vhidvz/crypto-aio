@@ -8,13 +8,16 @@ description: "Solana: priority fees, SPL tokens, expiry, scanning, history and s
 The Solana family serves the `solana` chain on three clusters with `@solana/web3.js` (v1),
 installed next to crypto-aio: `npm install @solana/web3.js`. A transfer moves SOL or one
 classic SPL token to one recipient, with an optional memo. The driver sends every request
-itself, through the handle's transport; the SDK only derives token account addresses,
-compiles messages and backs `native()`.
+itself, through the handle's transport, and builds its messages and token account
+addresses itself; the SDK only backs `native()`, so `@solana/web3.js` 1.99 or later, and
+3.x, work alike.
 [Configuring a real network (Solana)](../../build/connect.md#solana)
 shows a configuration.
 
 **Node.js 22.12 or later**, as for all of crypto-aio. `@solana/web3.js` 1.99 depends, through
 `rpc-websockets`, on an ESM-only `uuid`, which `require` can load only from Node 22.12.
+On Node 22, installing `@solana/web3.js` 3 warns that one of its dependencies asks for
+Node 24 (`EBADENGINE`); it loads and works on Node 22 all the same.
 
 **A harmless install warning.** Installing `@solana/web3.js` can warn of an unmet peer
 `utf-8-validate@^5`: its `jayson` depends on `ws` 7, whose optional helper is

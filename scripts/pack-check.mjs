@@ -9,6 +9,8 @@
 //    and each chain family's handle fails with `DEPENDENCY_MISSING` naming its SDK.
 // 3. With every SDK at its tested version (the `devDependencies`), each family's adapter
 //    loads: `ready()` gets as far as the (unreachable) endpoint.
+// 4. Every other major line a peer range admits (`^1.99.0 || ^3.0.0`): the family loads
+//    with its newest release too, and `native()` hands out its client.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -122,6 +124,36 @@ try {
     `${HANDLES}\ncheck('loaded').catch((e) => { console.error(e.message); process.exit(1); });`,
   );
   console.log(`each family's adapter loads with ${sdks.join(', ')}`);
+
+  // 4. The newest release of each further major line in a peer range.
+  for (const [name, range] of Object.entries(pkg.peerDependencies)) {
+    for (const line of range.split(' || ').slice(1)) {
+      const major = line.replace(/^\^/, '').split('.')[0];
+      run('npm', ['install', '--no-audit', '--no-fund', `${name}@${major}`], app);
+      node(
+        app,
+        `${HANDLES}
+const { native } = require('crypto-aio/native');
+check('loaded')
+  .then(async () => {
+    const [chain, network, , extra] = CASES.find(([, , sdk]) => sdk === ${JSON.stringify(name)});
+    // A fresh container: check() closed the first.
+    const other = new CryptoAio({
+      env: false,
+      providers: {
+        x: { endpoints: [{ name: 'x', url }] },
+        xi: { endpoints: [{ name: 'xi', url, kind: 'indexer' }] },
+      },
+    });
+    const bc = other.blockchain({ chain, network, provider: 'x', ...extra });
+    if (!(await native(bc, ${JSON.stringify(name)}))) throw new Error('no native client');
+    await other.close();
+  })
+  .catch((e) => { console.error(e.message); process.exit(1); });`,
+      );
+      console.log(`the ${name} family loads with ${name}@${major}`);
+    }
+  }
   console.log('pack check: ok');
 } finally {
   rmSync(work, { recursive: true, force: true });
