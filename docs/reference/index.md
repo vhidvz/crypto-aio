@@ -17,7 +17,9 @@ the guide or lesson that explains its subject.
 | [Capabilities](./capabilities.md) | What each capability means, and which chains have it |
 | [Networks](./networks/index.md) | Every family and network: fees, finality, tokens, presets, limits and safeguards |
 | [Glossary](./glossary.md) | Every term in a sentence, from "account model" to "xpub" |
-| [Stability before 1.0](./stability.md) | Which parts of the API may still change |
+| [Versioning and stability](./stability.md) | What semver covers, and the Node.js, TypeScript and SDK support policy |
+| [Known limitations](./limitations.md) | What crypto-aio does not do yet, and what to do about each |
+| [Upgrade to 1.0](./upgrading.md) | Every breaking change since 0.1.0, and what to change |
 
 > [!TIP]
 > Press <kbd>Ctrl</kbd> + <kbd>K</kbd> (or <kbd>⌘</kbd> + <kbd>K</kbd>) anywhere to search every

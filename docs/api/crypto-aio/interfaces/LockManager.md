@@ -2,7 +2,7 @@
 
 # Interface: LockManager
 
-Defined in: [src/core/store/types.ts:316](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L316)
+Defined in: [src/core/store/types.ts:324](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L324)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:316](https://github.com/vhidvz/crypto-aio/b
 
 > **acquire**(`key`, `owner`, `ttlMs`): `Promise`\<[`Lease`](Lease.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:317](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L317)
+Defined in: [src/core/store/types.ts:325](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L325)
 
 #### Parameters
 
@@ -40,7 +40,7 @@ Defined in: [src/core/store/types.ts:317](https://github.com/vhidvz/crypto-aio/b
 
 > **release**(`lease`): `Promise`\<`void`\>
 
-Defined in: [src/core/store/types.ts:319](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L319)
+Defined in: [src/core/store/types.ts:327](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L327)
 
 #### Parameters
 
@@ -60,7 +60,7 @@ Defined in: [src/core/store/types.ts:319](https://github.com/vhidvz/crypto-aio/b
 
 > **renew**(`lease`, `ttlMs`): `Promise`\<[`Lease`](Lease.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L318)
+Defined in: [src/core/store/types.ts:326](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L326)
 
 #### Parameters
 

@@ -2,7 +2,7 @@
 
 # Interface: SequenceStore
 
-Defined in: [src/core/store/types.ts:329](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L329)
+Defined in: [src/core/store/types.ts:337](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L337)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:329](https://github.com/vhidvz/crypto-aio/b
 
 > **get**(`key`): `Promise`\<[`SequenceState`](SequenceState.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:330](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L330)
+Defined in: [src/core/store/types.ts:338](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L338)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: [src/core/store/types.ts:330](https://github.com/vhidvz/crypto-aio/b
 
 > **put**(`key`, `state`, `expectedVersion`): `Promise`\<`void`\>
 
-Defined in: [src/core/store/types.ts:332](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L332)
+Defined in: [src/core/store/types.ts:340](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L340)
 
 Rejects on version mismatch (`VERSION_CONFLICT`) or when `fence` < stored fence (`FENCING`).
 

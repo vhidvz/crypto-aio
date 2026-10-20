@@ -2,7 +2,7 @@
 
 # Interface: SignedTx
 
-Defined in: [src/core/model/transaction.ts:140](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L140)
+Defined in: [src/core/model/transaction.ts:148](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L148)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/model/transaction.ts:140](https://github.com/vhidvz/crypto
 
 > `readonly` **raw**: [`RawTx`](RawTx.md)
 
-Defined in: [src/core/model/transaction.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L141)
+Defined in: [src/core/model/transaction.ts:149](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L149)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [src/core/model/transaction.ts:141](https://github.com/vhidvz/crypto
 
 > `readonly` **ref**: [`AttemptRef`](AttemptRef.md)
 
-Defined in: [src/core/model/transaction.ts:142](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L142)
+Defined in: [src/core/model/transaction.ts:150](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L150)

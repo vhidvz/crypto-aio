@@ -2,7 +2,7 @@
 
 # Interface: OperationFilter
 
-Defined in: [src/core/store/types.ts:202](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L202)
+Defined in: [src/core/store/types.ts:210](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L210)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:202](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **chain?**: `string`
 
-Defined in: [src/core/store/types.ts:204](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L204)
+Defined in: [src/core/store/types.ts:212](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L212)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/store/types.ts:204](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **from?**: `string`
 
-Defined in: [src/core/store/types.ts:206](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L206)
+Defined in: [src/core/store/types.ts:214](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L214)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/store/types.ts:206](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **limit?**: `number`
 
-Defined in: [src/core/store/types.ts:208](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L208)
+Defined in: [src/core/store/types.ts:216](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L216)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/store/types.ts:208](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **namespace**: `string`
 
-Defined in: [src/core/store/types.ts:203](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L203)
+Defined in: [src/core/store/types.ts:211](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L211)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/core/store/types.ts:203](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/store/types.ts:205](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L205)
+Defined in: [src/core/store/types.ts:213](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L213)
 
 ***
 
@@ -62,4 +62,4 @@ Defined in: [src/core/store/types.ts:205](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **states?**: readonly [`OperationState`](../type-aliases/OperationState.md)[]
 
-Defined in: [src/core/store/types.ts:207](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L207)
+Defined in: [src/core/store/types.ts:215](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L215)

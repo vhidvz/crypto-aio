@@ -2,7 +2,7 @@
 
 # Interface: Lease
 
-Defined in: [src/core/store/types.ts:308](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L308)
+Defined in: [src/core/store/types.ts:316](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L316)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:308](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **expiresAt**: `number`
 
-Defined in: [src/core/store/types.ts:313](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L313)
+Defined in: [src/core/store/types.ts:321](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L321)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/store/types.ts:313](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **key**: `string`
 
-Defined in: [src/core/store/types.ts:309](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L309)
+Defined in: [src/core/store/types.ts:317](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L317)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/store/types.ts:309](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **owner**: `string`
 
-Defined in: [src/core/store/types.ts:310](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L310)
+Defined in: [src/core/store/types.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L318)
 
 ***
 
@@ -42,6 +42,6 @@ Defined in: [src/core/store/types.ts:310](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **token**: `bigint`
 
-Defined in: [src/core/store/types.ts:312](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L312)
+Defined in: [src/core/store/types.ts:320](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L320)
 
 Strictly increasing per key across all acquisitions.

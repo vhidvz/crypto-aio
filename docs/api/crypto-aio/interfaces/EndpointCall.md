@@ -2,7 +2,7 @@
 
 # Interface: EndpointCall
 
-Defined in: [src/core/transport/types.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L91)
+Defined in: [src/core/transport/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L100)
 
 Single-attempt calls against one specific endpoint (used by health probes).
 
@@ -14,7 +14,7 @@ Single-attempt calls against one specific endpoint (used by health probes).
 
 > **http**\<`T`\>(`request`): `Promise`\<`T`\>
 
-Defined in: [src/core/transport/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L93)
+Defined in: [src/core/transport/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L102)
 
 #### Type Parameters
 
@@ -40,7 +40,7 @@ Defined in: [src/core/transport/types.ts:93](https://github.com/vhidvz/crypto-ai
 
 > **rpc**\<`T`\>(`method`, `params?`): `Promise`\<`T`\>
 
-Defined in: [src/core/transport/types.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L92)
+Defined in: [src/core/transport/types.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L101)
 
 #### Type Parameters
 

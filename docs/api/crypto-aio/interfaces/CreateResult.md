@@ -2,7 +2,7 @@
 
 # Interface: CreateResult
 
-Defined in: [src/core/store/types.ts:211](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L211)
+Defined in: [src/core/store/types.ts:219](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L219)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:211](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **created**: `boolean`
 
-Defined in: [src/core/store/types.ts:212](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L212)
+Defined in: [src/core/store/types.ts:220](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L220)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [src/core/store/types.ts:212](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **record**: [`OperationRecord`](OperationRecord.md)
 
-Defined in: [src/core/store/types.ts:213](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L213)
+Defined in: [src/core/store/types.ts:221](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L221)

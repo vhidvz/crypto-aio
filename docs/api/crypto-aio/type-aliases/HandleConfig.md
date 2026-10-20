@@ -4,7 +4,7 @@
 
 > **HandleConfig**\<`C`\> = `Omit`\<[`HandleOptions`](../interfaces/HandleOptions.md), `"chain"` \| `"network"` \| `"library"`\> & `object`
 
-Defined in: [src/core/config/types.ts:129](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L129)
+Defined in: [src/core/config/types.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L144)
 
 ## Type Declaration
 

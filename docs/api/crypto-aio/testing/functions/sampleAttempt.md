@@ -4,7 +4,7 @@
 
 > **sampleAttempt**(`id`, `overrides?`): [`AttemptRecord`](../../interfaces/AttemptRecord.md)
 
-Defined in: [src/testing/contracts/operations.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L54)
+Defined in: [src/testing/contracts/operations.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L55)
 
 ## Parameters
 

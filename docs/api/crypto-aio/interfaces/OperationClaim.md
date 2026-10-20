@@ -2,7 +2,7 @@
 
 # Interface: OperationClaim
 
-Defined in: [src/core/store/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L99)
+Defined in: [src/core/store/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L102)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:99](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **token**: `string`
 
-Defined in: [src/core/store/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L102)
+Defined in: [src/core/store/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L105)
 
 Strictly increasing per store (decimal string of a bigint).
 
@@ -24,7 +24,7 @@ Strictly increasing per store (decimal string of a bigint).
 
 > `readonly` **until**: `number`
 
-Defined in: [src/core/store/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L103)
+Defined in: [src/core/store/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L106)
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: [src/core/store/types.ts:103](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **workerId**: `string`
 
-Defined in: [src/core/store/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L100)
+Defined in: [src/core/store/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L103)

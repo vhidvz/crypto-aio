@@ -2,7 +2,7 @@
 
 # Interface: BlockRef
 
-Defined in: [src/core/model/transaction.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L60)
+Defined in: [src/core/model/transaction.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L68)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/model/transaction.ts:60](https://github.com/vhidvz/crypto-
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/core/model/transaction.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L62)
+Defined in: [src/core/model/transaction.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L70)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/model/transaction.ts:62](https://github.com/vhidvz/crypto-
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/core/model/transaction.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L61)
+Defined in: [src/core/model/transaction.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L69)
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: [src/core/model/transaction.ts:61](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **timestamp?**: `number`
 
-Defined in: [src/core/model/transaction.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L63)
+Defined in: [src/core/model/transaction.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L71)

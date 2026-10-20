@@ -4,4 +4,4 @@
 
 > **FundsCheck** = \{ `ok`: `true`; \} \| \{ `asset`: [`AssetRef`](AssetRef.md); `available`: `bigint`; `ok`: `false`; `required`: `bigint`; \}
 
-Defined in: [src/core/driver/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L47)
+Defined in: [src/core/driver/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L56)

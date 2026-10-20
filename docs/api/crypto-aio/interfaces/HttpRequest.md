@@ -2,7 +2,7 @@
 
 # Interface: HttpRequest
 
-Defined in: [src/core/transport/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L75)
+Defined in: [src/core/transport/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L84)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/transport/types.ts:75](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **body?**: `unknown`
 
-Defined in: [src/core/transport/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L79)
+Defined in: [src/core/transport/types.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L88)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/transport/types.ts:79](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **headers?**: `Readonly`\<`Record`\<`string`, `string`\>\>
 
-Defined in: [src/core/transport/types.ts:80](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L80)
+Defined in: [src/core/transport/types.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L89)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/transport/types.ts:80](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **method**: `"GET"` \| `"POST"`
 
-Defined in: [src/core/transport/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L76)
+Defined in: [src/core/transport/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L85)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/transport/types.ts:76](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **path**: `string`
 
-Defined in: [src/core/transport/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L77)
+Defined in: [src/core/transport/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L86)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/core/transport/types.ts:77](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **query?**: `Readonly`\<`Record`\<`string`, `string`\>\>
 
-Defined in: [src/core/transport/types.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L78)
+Defined in: [src/core/transport/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L87)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [src/core/transport/types.ts:78](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **responseType?**: `"json"` \| `"text"`
 
-Defined in: [src/core/transport/types.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L81)
+Defined in: [src/core/transport/types.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L90)
 
 ***
 
@@ -72,7 +72,7 @@ Defined in: [src/core/transport/types.ts:81](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **route?**: `string`
 
-Defined in: [src/core/transport/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L87)
+Defined in: [src/core/transport/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L96)
 
 Low-cardinality template label used for event and log method fields instead of the
 raw path, e.g. `'/address/:address/utxo'`. Must contain no identifiers (addresses,

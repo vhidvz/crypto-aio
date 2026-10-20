@@ -2,7 +2,7 @@
 
 # Interface: AttemptObservation
 
-Defined in: [src/core/store/types.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L82)
+Defined in: [src/core/store/types.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L83)
 
 Mutable, versioned view of what the chain says about an Attempt.
 
@@ -14,7 +14,7 @@ Mutable, versioned view of what the chain says about an Attempt.
 
 > `readonly` **attemptId**: `string`
 
-Defined in: [src/core/store/types.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L83)
+Defined in: [src/core/store/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L84)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/core/store/types.ts:83](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **blockHash?**: `string`
 
-Defined in: [src/core/store/types.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L88)
+Defined in: [src/core/store/types.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L89)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/core/store/types.ts:88](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **blockHeight?**: `bigint`
 
-Defined in: [src/core/store/types.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L89)
+Defined in: [src/core/store/types.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L90)
 
 ***
 
@@ -44,7 +44,7 @@ Defined in: [src/core/store/types.ts:89](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **confirmations**: `number`
 
-Defined in: [src/core/store/types.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L90)
+Defined in: [src/core/store/types.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L91)
 
 ***
 
@@ -54,7 +54,19 @@ Defined in: [src/core/store/types.ts:90](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **evidence**: [`Evidence`](../type-aliases/Evidence.md)
 
-Defined in: [src/core/store/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L86)
+Defined in: [src/core/store/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L87)
+
+***
+
+<a id="failure"></a>
+
+### failure?
+
+> `readonly` `optional` **failure?**: [`TxFailure`](../type-aliases/TxFailure.md)
+
+Defined in: [src/core/store/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L97)
+
+With `state: 'failed'`: what failed (absent: `'reverted'`).
 
 ***
 
@@ -64,7 +76,7 @@ Defined in: [src/core/store/types.ts:86](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **firstSeenAt?**: `number`
 
-Defined in: [src/core/store/types.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L91)
+Defined in: [src/core/store/types.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L92)
 
 ***
 
@@ -74,7 +86,7 @@ Defined in: [src/core/store/types.ts:91](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **lastBroadcastAt?**: `number`
 
-Defined in: [src/core/store/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L93)
+Defined in: [src/core/store/types.ts:94](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L94)
 
 ***
 
@@ -84,7 +96,7 @@ Defined in: [src/core/store/types.ts:93](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **lastSeenAt?**: `number`
 
-Defined in: [src/core/store/types.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L92)
+Defined in: [src/core/store/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L93)
 
 ***
 
@@ -94,7 +106,7 @@ Defined in: [src/core/store/types.ts:92](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **operationId**: `string`
 
-Defined in: [src/core/store/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L84)
+Defined in: [src/core/store/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L85)
 
 ***
 
@@ -104,7 +116,7 @@ Defined in: [src/core/store/types.ts:84](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **reason?**: `string`
 
-Defined in: [src/core/store/types.ts:94](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L94)
+Defined in: [src/core/store/types.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L95)
 
 ***
 
@@ -114,7 +126,7 @@ Defined in: [src/core/store/types.ts:94](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **replacedBy?**: `string`
 
-Defined in: [src/core/store/types.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L95)
+Defined in: [src/core/store/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L98)
 
 ***
 
@@ -124,7 +136,7 @@ Defined in: [src/core/store/types.ts:95](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **state**: [`TxState`](../type-aliases/TxState.md)
 
-Defined in: [src/core/store/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L85)
+Defined in: [src/core/store/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L86)
 
 ***
 
@@ -134,7 +146,7 @@ Defined in: [src/core/store/types.ts:85](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **txHash?**: `string`
 
-Defined in: [src/core/store/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L87)
+Defined in: [src/core/store/types.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L88)
 
 ***
 
@@ -144,4 +156,4 @@ Defined in: [src/core/store/types.ts:87](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **version**: `number`
 
-Defined in: [src/core/store/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L96)
+Defined in: [src/core/store/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L99)

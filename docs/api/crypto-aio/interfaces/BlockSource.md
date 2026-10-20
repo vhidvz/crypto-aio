@@ -2,7 +2,7 @@
 
 # Interface: BlockSource
 
-Defined in: [src/core/driver/types.ts:266](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L266)
+Defined in: [src/core/driver/types.ts:289](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L289)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:266](https://github.com/vhidvz/crypto-aio/
 
 > **header**(`height`): `Promise`\<[`DriverBlock`](DriverBlock.md) \| `null`\>
 
-Defined in: [src/core/driver/types.ts:267](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L267)
+Defined in: [src/core/driver/types.ts:290](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L290)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: [src/core/driver/types.ts:267](https://github.com/vhidvz/crypto-aio/
 
 > **transactions**(`block`, `filter?`): `Promise`\<readonly [`DriverTransaction`](DriverTransaction.md)[]\>
 
-Defined in: [src/core/driver/types.ts:268](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L268)
+Defined in: [src/core/driver/types.ts:291](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L291)
 
 #### Parameters
 

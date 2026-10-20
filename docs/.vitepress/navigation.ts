@@ -111,6 +111,8 @@ const reference: Section = {
     networks,
     'reference/glossary.md',
     'reference/stability.md',
+    'reference/limitations.md',
+    'reference/upgrading.md',
   ],
 };
 

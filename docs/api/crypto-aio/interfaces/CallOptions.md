@@ -2,7 +2,7 @@
 
 # Interface: CallOptions
 
-Defined in: [src/core/transport/types.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L35)
+Defined in: [src/core/transport/types.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L44)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/transport/types.ts:35](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **exactIntegers?**: `boolean`
 
-Defined in: [src/core/transport/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L68)
+Defined in: [src/core/transport/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L77)
 
 Parse JSON answers with exact integers: an integer outside the safe range becomes a
 `bigint` instead of a rounded number (`rpc`, `rpcRaw` and `http`; health probes always
@@ -26,7 +26,7 @@ parse plainly). A quorum key sees the revived values.
 
 > `readonly` `optional` **fanout?**: `number`
 
-Defined in: [src/core/transport/types.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L70)
+Defined in: [src/core/transport/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L79)
 
 Send to this many endpoints concurrently (raw-transaction broadcasts).
 
@@ -38,7 +38,7 @@ Send to this many endpoints concurrently (raw-transaction broadcasts).
 
 > `readonly` `optional` **purpose?**: [`RequestPurpose`](../type-aliases/RequestPurpose.md)
 
-Defined in: [src/core/transport/types.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L37)
+Defined in: [src/core/transport/types.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L46)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [src/core/transport/types.ts:37](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **quorum?**: `number` \| `"proof"`
 
-Defined in: [src/core/transport/types.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L54)
+Defined in: [src/core/transport/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L63)
 
 Independent endpoints that must agree; `'proof'` uses `proofQuorum`, capped by the
 endpoints the quorum counts. A proof quorum (`'proof'` under any purpose, or any quorum
@@ -73,7 +73,7 @@ JSON-RPC code, and for a JSON-RPC code each server defines (-32000 to -32099, an
 
 > `readonly` `optional` **quorumKey?**: (`result`) => `unknown`
 
-Defined in: [src/core/transport/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L62)
+Defined in: [src/core/transport/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L71)
 
 The part of each endpoint's result that must agree under `quorum` (default: the whole
 result). Lets a caller compare consensus facts only, e.g. a block's number, hash and
@@ -99,7 +99,7 @@ as a disagreement (a retryable `PROVIDER_INCONSISTENT`).
 
 > `readonly` `optional` **retry?**: [`RetryClass`](../type-aliases/RetryClass.md)
 
-Defined in: [src/core/transport/types.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L36)
+Defined in: [src/core/transport/types.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L45)
 
 ***
 
@@ -109,7 +109,7 @@ Defined in: [src/core/transport/types.ts:36](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **signal?**: `AbortSignal`
 
-Defined in: [src/core/transport/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L71)
+Defined in: [src/core/transport/types.ts:80](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L80)
 
 ***
 
@@ -119,4 +119,4 @@ Defined in: [src/core/transport/types.ts:71](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **timeoutMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L72)
+Defined in: [src/core/transport/types.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L81)

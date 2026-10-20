@@ -2,7 +2,7 @@
 
 # Interface: CursorStore
 
-Defined in: [src/core/store/types.ts:350](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L350)
+Defined in: [src/core/store/types.ts:358](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L358)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:350](https://github.com/vhidvz/crypto-aio/b
 
 > **get**(`key`): `Promise`\<[`StoredCursor`](StoredCursor.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:351](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L351)
+Defined in: [src/core/store/types.ts:359](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L359)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: [src/core/store/types.ts:351](https://github.com/vhidvz/crypto-aio/b
 
 > **put**(`key`, `cursor`, `expectedVersion`): `Promise`\<`number`\>
 
-Defined in: [src/core/store/types.ts:353](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L353)
+Defined in: [src/core/store/types.ts:361](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L361)
 
 Returns the new version.
 

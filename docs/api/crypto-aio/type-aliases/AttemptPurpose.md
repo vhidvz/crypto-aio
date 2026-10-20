@@ -4,4 +4,4 @@
 
 > **AttemptPurpose** = `"original"` \| `"replacement"` \| `"cancel"` \| `"rebuild"`
 
-Defined in: [src/core/store/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L66)
+Defined in: [src/core/store/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L67)

@@ -2,7 +2,7 @@
 
 # Interface: Stores
 
-Defined in: [src/core/store/types.ts:356](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L356)
+Defined in: [src/core/store/types.ts:364](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L364)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:356](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **cursors**: [`CursorStore`](CursorStore.md)
 
-Defined in: [src/core/store/types.ts:360](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L360)
+Defined in: [src/core/store/types.ts:368](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L368)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/store/types.ts:360](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **locks**: [`LockManager`](LockManager.md)
 
-Defined in: [src/core/store/types.ts:358](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L358)
+Defined in: [src/core/store/types.ts:366](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L366)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/store/types.ts:358](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **operations**: [`OperationStore`](OperationStore.md)
 
-Defined in: [src/core/store/types.ts:357](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L357)
+Defined in: [src/core/store/types.ts:365](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L365)
 
 ***
 
@@ -42,4 +42,4 @@ Defined in: [src/core/store/types.ts:357](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **sequences**: [`SequenceStore`](SequenceStore.md)
 
-Defined in: [src/core/store/types.ts:359](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L359)
+Defined in: [src/core/store/types.ts:367](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L367)

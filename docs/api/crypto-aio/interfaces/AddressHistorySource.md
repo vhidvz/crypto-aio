@@ -2,7 +2,7 @@
 
 # Interface: AddressHistorySource
 
-Defined in: [src/core/driver/types.ts:274](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L274)
+Defined in: [src/core/driver/types.ts:297](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L297)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:274](https://github.com/vhidvz/crypto-aio/
 
 > **list**(`address`, `options`): `Promise`\<\{ `items`: readonly [`DriverTransaction`](DriverTransaction.md)[]; `next?`: `string`; \}\>
 
-Defined in: [src/core/driver/types.ts:275](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L275)
+Defined in: [src/core/driver/types.ts:298](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L298)
 
 #### Parameters
 

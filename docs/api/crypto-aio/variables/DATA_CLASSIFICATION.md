@@ -4,7 +4,7 @@
 
 > `const` **DATA\_CLASSIFICATION**: `object`
 
-Defined in: [src/core/store/types.ts:374](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L374)
+Defined in: [src/core/store/types.ts:382](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L382)
 
 Field classification so backing stores can apply encryption and retention per field.
 

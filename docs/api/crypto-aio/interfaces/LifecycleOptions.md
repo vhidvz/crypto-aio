@@ -2,7 +2,7 @@
 
 # Interface: LifecycleOptions
 
-Defined in: [src/core/config/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L62)
+Defined in: [src/core/config/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L63)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/config/types.ts:62](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **broadcastFanout?**: `number`
 
-Defined in: [src/core/config/types.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L70)
+Defined in: [src/core/config/types.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L78)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/config/types.ts:70](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **claimLeaseMs?**: `number`
 
-Defined in: [src/core/config/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L67)
+Defined in: [src/core/config/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L75)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/config/types.ts:67](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **droppedGracePeriodMs?**: `number`
 
-Defined in: [src/core/config/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L64)
+Defined in: [src/core/config/types.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L65)
 
 ***
 
@@ -42,7 +42,22 @@ Defined in: [src/core/config/types.ts:64](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **leaseMs?**: `number`
 
-Defined in: [src/core/config/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L66)
+Defined in: [src/core/config/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L67)
+
+***
+
+<a id="leasewaitms"></a>
+
+### leaseWaitMs?
+
+> `readonly` `optional` **leaseWaitMs?**: `number`
+
+Defined in: [src/core/config/types.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L74)
+
+How long a transfer waits for its wallet's address lease while another Operation of
+the wallet holds it, before it fails with `SEQUENCE_BUSY` (default: `leaseMs`). The
+holder keeps the lease while its signer works, for up to `signTimeoutMs`, so raise this
+to queue transfers behind a slow signer instead of failing them.
 
 ***
 
@@ -52,7 +67,7 @@ Defined in: [src/core/config/types.ts:66](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **pollIntervalMs?**: `number`
 
-Defined in: [src/core/config/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L63)
+Defined in: [src/core/config/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L64)
 
 ***
 
@@ -62,7 +77,7 @@ Defined in: [src/core/config/types.ts:63](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **rebroadcastIntervalMs?**: `number`
 
-Defined in: [src/core/config/types.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L65)
+Defined in: [src/core/config/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L66)
 
 ***
 
@@ -72,7 +87,7 @@ Defined in: [src/core/config/types.ts:65](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **requireIdempotencyKey?**: `boolean`
 
-Defined in: [src/core/config/types.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L69)
+Defined in: [src/core/config/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L77)
 
 ***
 
@@ -82,7 +97,7 @@ Defined in: [src/core/config/types.ts:69](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **signTimeoutMs?**: `number`
 
-Defined in: [src/core/config/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L77)
+Defined in: [src/core/config/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L85)
 
 How long `transfer` and `submitSignatures` wait for the `beforeSign` hook and the
 signer(s) (default 120 000 ms). The wallet's address lease is kept alive meanwhile. On
@@ -97,4 +112,4 @@ repeat asks again. Signers that need longer should answer `pending` with a ticke
 
 > `readonly` `optional` **waitTimeoutMs?**: `number`
 
-Defined in: [src/core/config/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L68)
+Defined in: [src/core/config/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L76)

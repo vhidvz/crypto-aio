@@ -2,7 +2,7 @@
 
 # Interface: OperationStore
 
-Defined in: [src/core/store/types.ts:251](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L251)
+Defined in: [src/core/store/types.ts:259](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L259)
 
 Durable Operation storage. Required guarantees (verified by the contract suite),
 binding on every implementation (memory, Redis, Postgres, ...):
@@ -46,7 +46,7 @@ binding on every implementation (memory, Redis, Postgres, ...):
 
 > **appendAttempt**(`namespace`, `id`, `attempt`, `patch`, `expectedVersion`, `fence?`): `Promise`\<[`OperationRecord`](OperationRecord.md)\>
 
-Defined in: [src/core/store/types.ts:276](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L276)
+Defined in: [src/core/store/types.ts:284](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L284)
 
 #### Parameters
 
@@ -86,7 +86,7 @@ Defined in: [src/core/store/types.ts:276](https://github.com/vhidvz/crypto-aio/b
 
 > **claimDue**(`namespace`, `workerId`, `now`, `leaseMs`, `limit`): `Promise`\<[`OperationRecord`](OperationRecord.md)[]\>
 
-Defined in: [src/core/store/types.ts:296](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L296)
+Defined in: [src/core/store/types.ts:304](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L304)
 
 Claims non-terminal operations whose `nextCheckAt` is set and <= now (unscheduled ones are never due).
 
@@ -124,7 +124,7 @@ Claims non-terminal operations whose `nextCheckAt` is set and <= now (unschedule
 
 > **create**(`operation`): `Promise`\<[`CreateResult`](CreateResult.md)\>
 
-Defined in: [src/core/store/types.ts:252](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L252)
+Defined in: [src/core/store/types.ts:260](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L260)
 
 #### Parameters
 
@@ -144,7 +144,7 @@ Defined in: [src/core/store/types.ts:252](https://github.com/vhidvz/crypto-aio/b
 
 > **findByRef**(`namespace`, `refOrTxHash`): `Promise`\<[`OperationRecord`](OperationRecord.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:263](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L263)
+Defined in: [src/core/store/types.ts:271](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L271)
 
 Finds by an Attempt ref id or by an observed canonical tx hash. The engine's
 AttemptRef guard, which refuses an Attempt whose ref another Operation of the
@@ -175,7 +175,7 @@ index).
 
 > **get**(`namespace`, `id`): `Promise`\<[`OperationRecord`](OperationRecord.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:253](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L253)
+Defined in: [src/core/store/types.ts:261](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L261)
 
 #### Parameters
 
@@ -199,7 +199,7 @@ Defined in: [src/core/store/types.ts:253](https://github.com/vhidvz/crypto-aio/b
 
 > **getByKey**(`namespace`, `idempotencyKey`): `Promise`\<[`OperationRecord`](OperationRecord.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:254](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L254)
+Defined in: [src/core/store/types.ts:262](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L262)
 
 #### Parameters
 
@@ -223,7 +223,7 @@ Defined in: [src/core/store/types.ts:254](https://github.com/vhidvz/crypto-aio/b
 
 > **getObservation**(`attemptId`): `Promise`\<[`AttemptObservation`](AttemptObservation.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:284](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L284)
+Defined in: [src/core/store/types.ts:292](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L292)
 
 #### Parameters
 
@@ -243,7 +243,7 @@ Defined in: [src/core/store/types.ts:284](https://github.com/vhidvz/crypto-aio/b
 
 > **list**(`filter`): `Promise`\<[`OperationRecord`](OperationRecord.md)[]\>
 
-Defined in: [src/core/store/types.ts:304](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L304)
+Defined in: [src/core/store/types.ts:312](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L312)
 
 #### Parameters
 
@@ -263,7 +263,7 @@ Defined in: [src/core/store/types.ts:304](https://github.com/vhidvz/crypto-aio/b
 
 > `optional` **purge**(`filter`): `Promise`\<`number`\>
 
-Defined in: [src/core/store/types.ts:305](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L305)
+Defined in: [src/core/store/types.ts:313](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L313)
 
 #### Parameters
 
@@ -283,7 +283,7 @@ Defined in: [src/core/store/types.ts:305](https://github.com/vhidvz/crypto-aio/b
 
 > **putObservation**(`observation`, `expectedVersion`): `Promise`\<[`AttemptObservation`](AttemptObservation.md)\>
 
-Defined in: [src/core/store/types.ts:291](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L291)
+Defined in: [src/core/store/types.ts:299](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L299)
 
 Stores `observation` as the whole new record, version-checked. An optional field left
 out of it or set to `undefined` (a cleared `reason`, `blockHash` or `blockHeight`)
@@ -312,7 +312,7 @@ merge fields into the old one. The monitor relies on this to clear stale values.
 
 > **releaseClaim**(`namespace`, `id`, `fence`): `Promise`\<`void`\>
 
-Defined in: [src/core/store/types.ts:303](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L303)
+Defined in: [src/core/store/types.ts:311](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L311)
 
 #### Parameters
 
@@ -340,7 +340,7 @@ Defined in: [src/core/store/types.ts:303](https://github.com/vhidvz/crypto-aio/b
 
 > **update**(`namespace`, `id`, `patch`, `expectedVersion`, `fence?`): `Promise`\<[`OperationRecord`](OperationRecord.md)\>
 
-Defined in: [src/core/store/types.ts:269](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L269)
+Defined in: [src/core/store/types.ts:277](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L277)
 
 Compare-and-set on `expectedVersion`, optionally fenced. Every successful update bumps
 version, even when the patch changes no field (the engine fences stale writers

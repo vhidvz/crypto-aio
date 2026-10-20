@@ -2,7 +2,7 @@
 
 # Interface: TxBuilder
 
-Defined in: [src/core/driver/types.ts:146](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L146)
+Defined in: [src/core/driver/types.ts:160](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L160)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:146](https://github.com/vhidvz/crypto-aio/
 
 > **assemble**(`unsigned`, `signatures`): `Promise`\<[`SignedTx`](SignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:158](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L158)
+Defined in: [src/core/driver/types.ts:172](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L172)
 
 #### Parameters
 
@@ -36,7 +36,7 @@ readonly [`SignatureBundle`](SignatureBundle.md)[]
 
 > **build**(`intent`, `fee`, `ctx`): `Promise`\<[`UnsignedTx`](UnsignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:153](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L153)
+Defined in: [src/core/driver/types.ts:167](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L167)
 
 #### Parameters
 
@@ -64,7 +64,7 @@ Defined in: [src/core/driver/types.ts:153](https://github.com/vhidvz/crypto-aio/
 
 > **checkFunds**(`intent`, `fee`, `ctx`): `Promise`\<[`FundsCheck`](../type-aliases/FundsCheck.md)\>
 
-Defined in: [src/core/driver/types.ts:148](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L148)
+Defined in: [src/core/driver/types.ts:162](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L162)
 
 #### Parameters
 
@@ -92,7 +92,7 @@ Defined in: [src/core/driver/types.ts:148](https://github.com/vhidvz/crypto-aio/
 
 > **estimateFee**(`intent`, `ctx`): `Promise`\<[`FeeEstimateDraft`](FeeEstimateDraft.md)\>
 
-Defined in: [src/core/driver/types.ts:147](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L147)
+Defined in: [src/core/driver/types.ts:161](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L161)
 
 #### Parameters
 
@@ -116,7 +116,7 @@ Defined in: [src/core/driver/types.ts:147](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **signaturesFrom**(`unsigned`, `signed`): readonly [`SignatureBundle`](SignatureBundle.md)[]
 
-Defined in: [src/core/driver/types.ts:170](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L170)
+Defined in: [src/core/driver/types.ts:184](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L184)
 
 The signatures a payload signed elsewhere carries for `unsigned`'s requests,
 e.g. a PSBT a cold signer returned. No I/O. Throws `ValidationError('INVALID_INTENT')`

@@ -2,7 +2,7 @@
 
 # Interface: UnresolvedTransfer
 
-Defined in: [src/core/model/transaction.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L99)
+Defined in: [src/core/model/transaction.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L107)
 
 A transfer whose asset could not be resolved, for example a token with unusable
 metadata or a failing decimals call. It has no `asset` and no `amount`: without the
@@ -22,7 +22,7 @@ only a retryable failure fails the read, so it can be retried.
 
 > `readonly` `optional` **amount?**: `undefined`
 
-Defined in: [src/core/model/transaction.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L101)
+Defined in: [src/core/model/transaction.ts:109](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L109)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/model/transaction.ts:101](https://github.com/vhidvz/crypto
 
 > `readonly` `optional` **asset?**: `undefined`
 
-Defined in: [src/core/model/transaction.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L100)
+Defined in: [src/core/model/transaction.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L108)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/model/transaction.ts:100](https://github.com/vhidvz/crypto
 
 > `readonly` **from**: readonly [`Address`](../classes/Address.md)[]
 
-Defined in: [src/core/model/transaction.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L79)
+Defined in: [src/core/model/transaction.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L87)
 
 #### Inherited from
 
@@ -56,7 +56,7 @@ Defined in: [src/core/model/transaction.ts:79](https://github.com/vhidvz/crypto-
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/model/transaction.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L78)
+Defined in: [src/core/model/transaction.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L86)
 
 Deterministic: `${txId}:${locator}`.
 
@@ -72,7 +72,7 @@ Deterministic: `${txId}:${locator}`.
 
 > `readonly` `optional` **memo?**: `string`
 
-Defined in: [src/core/model/transaction.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L82)
+Defined in: [src/core/model/transaction.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L90)
 
 #### Inherited from
 
@@ -86,7 +86,7 @@ Defined in: [src/core/model/transaction.ts:82](https://github.com/vhidvz/crypto-
 
 > `readonly` **source**: [`TransferSource`](../type-aliases/TransferSource.md)
 
-Defined in: [src/core/model/transaction.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L81)
+Defined in: [src/core/model/transaction.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L89)
 
 #### Inherited from
 
@@ -100,7 +100,7 @@ Defined in: [src/core/model/transaction.ts:81](https://github.com/vhidvz/crypto-
 
 > `readonly` **to**: [`Address`](../classes/Address.md)
 
-Defined in: [src/core/model/transaction.ts:80](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L80)
+Defined in: [src/core/model/transaction.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L88)
 
 #### Inherited from
 
@@ -114,7 +114,7 @@ Defined in: [src/core/model/transaction.ts:80](https://github.com/vhidvz/crypto-
 
 > `readonly` **unresolved**: `object`
 
-Defined in: [src/core/model/transaction.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L102)
+Defined in: [src/core/model/transaction.ts:110](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L110)
 
 #### amount
 
@@ -130,6 +130,6 @@ The asset as the chain names it.
 
 #### code
 
-> `readonly` **code**: `"CONFIG_INVALID"` \| `"DEPENDENCY_MISSING"` \| `"INCOMPATIBLE_SELECTION"` \| `"UNSUPPORTED_CAPABILITY"` \| `"INVALID_ADDRESS"` \| `"INVALID_AMOUNT"` \| `"ASSET_RESOLUTION"` \| `"INVALID_INTENT"` \| `"PROVIDER_UNAVAILABLE"` \| `"RATE_LIMITED"` \| `"PROVIDER_MISCONFIGURED"` \| `"PROVIDER_INCONSISTENT"` \| `"RPC_ERROR"` \| `"INSUFFICIENT_FUNDS"` \| `"NONCE_CONFLICT"` \| `"NONCE_TOO_HIGH"` \| `"FEE_TOO_LOW"` \| `"TX_REFUSED"` \| `"TX_REJECTED"` \| `"TX_REVERTED"` \| `"TX_EXPIRED"` \| `"TX_REPLACED"` \| `"SIGNER_UNAVAILABLE"` \| `"SIGNING_FAILED"` \| `"SIGNATURE_MISMATCH"` \| `"POLICY_REJECTED"` \| `"KEY_NOT_EXPORTABLE"` \| `"IDEMPOTENCY_CONFLICT"` \| `"FENCING"` \| `"VERSION_CONFLICT"` \| `"INVALID_TRANSITION"` \| `"NOT_FOUND"` \| `"SEQUENCE_BUSY"` \| `"STATE_UNRECORDED"` \| `"SCANNER_REORG_TOO_DEEP"` \| `"TIMEOUT"`
+> `readonly` **code**: `"CONFIG_INVALID"` \| `"DEPENDENCY_MISSING"` \| `"INCOMPATIBLE_SELECTION"` \| `"UNSUPPORTED_CAPABILITY"` \| `"INVALID_ADDRESS"` \| `"INVALID_AMOUNT"` \| `"ASSET_RESOLUTION"` \| `"INVALID_INTENT"` \| `"PROVIDER_UNAVAILABLE"` \| `"RATE_LIMITED"` \| `"PROVIDER_MISCONFIGURED"` \| `"PROVIDER_INCONSISTENT"` \| `"RPC_ERROR"` \| `"INSUFFICIENT_FUNDS"` \| `"NONCE_CONFLICT"` \| `"NONCE_TOO_HIGH"` \| `"FEE_TOO_LOW"` \| `"TX_REFUSED"` \| `"TX_REJECTED"` \| `"TX_REVERTED"` \| `"TX_UNEVIDENCED"` \| `"TX_EXPIRED"` \| `"TX_REPLACED"` \| `"SIGNER_UNAVAILABLE"` \| `"SIGNING_FAILED"` \| `"SIGNATURE_MISMATCH"` \| `"POLICY_REJECTED"` \| `"KEY_NOT_EXPORTABLE"` \| `"IDEMPOTENCY_CONFLICT"` \| `"FENCING"` \| `"VERSION_CONFLICT"` \| `"INVALID_TRANSITION"` \| `"NOT_FOUND"` \| `"SEQUENCE_BUSY"` \| `"STATE_UNRECORDED"` \| `"SCANNER_REORG_TOO_DEEP"` \| `"RECORD_FORMAT_UNSUPPORTED"` \| `"TIMEOUT"`
 
 Why the asset did not resolve, e.g. `ASSET_RESOLUTION`.

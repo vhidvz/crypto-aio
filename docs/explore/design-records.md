@@ -13,7 +13,7 @@ explains:
   stops, the node behavior it works around, the trade-off it makes. Tests say in their names what
   they pin.
 - **In these pages.** The guides and reference describe the behavior you can rely on, and
-  [Stability before 1.0](../reference/stability.md#known-gaps) lists what the library does not do
+  [Known limitations](../reference/limitations.md) lists what the library does not do
   yet.
 
 The original documents, with the full history of each decision, are in the repository's history:
@@ -36,7 +36,7 @@ The specification planned a set of guides; their topics live in these pages:
 
 ## Open work inside the library
 
-The gaps a user can meet are in [Stability before 1.0](../reference/stability.md#known-gaps).
+The gaps a user can meet are in [Known limitations](../reference/limitations.md).
 These are the ones a contributor meets: none changes what a caller sees today, and each says why
 it waited.
 

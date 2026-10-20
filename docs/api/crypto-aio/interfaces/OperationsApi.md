@@ -2,7 +2,7 @@
 
 # Interface: OperationsApi
 
-Defined in: [src/core/container/container.ts:298](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L298)
+Defined in: [src/core/container/container.ts:323](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L323)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/container/container.ts:298](https://github.com/vhidvz/cryp
 
 > **get**(`id`): `Promise`\<[`OperationView`](OperationView.md) \| `null`\>
 
-Defined in: [src/core/container/container.ts:299](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L299)
+Defined in: [src/core/container/container.ts:324](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L324)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: [src/core/container/container.ts:299](https://github.com/vhidvz/cryp
 
 > **list**(`filter?`): `Promise`\<[`OperationView`](OperationView.md)[]\>
 
-Defined in: [src/core/container/container.ts:301](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L301)
+Defined in: [src/core/container/container.ts:326](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L326)
 
 In creation order.
 
@@ -54,7 +54,7 @@ In creation order.
 
 > **recover**(`options?`): `Promise`\<[`RecoveryReport`](RecoveryReport.md)\>
 
-Defined in: [src/core/container/container.ts:303](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L303)
+Defined in: [src/core/container/container.ts:328](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L328)
 
 Startup recovery for this namespace (see RecoveryReport); it never signs.
 

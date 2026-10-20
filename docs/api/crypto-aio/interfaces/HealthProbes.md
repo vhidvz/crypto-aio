@@ -2,7 +2,7 @@
 
 # Interface: HealthProbes
 
-Defined in: [src/core/transport/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L96)
+Defined in: [src/core/transport/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L105)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/transport/types.ts:96](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **expectedIdentity?**: `string`
 
-Defined in: [src/core/transport/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L98)
+Defined in: [src/core/transport/types.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L107)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/transport/types.ts:98](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **height?**: (`call`) => `Promise`\<`bigint`\>
 
-Defined in: [src/core/transport/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L99)
+Defined in: [src/core/transport/types.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L108)
 
 #### Parameters
 
@@ -42,7 +42,7 @@ Defined in: [src/core/transport/types.ts:99](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **identity?**: (`call`) => `Promise`\<`string`\>
 
-Defined in: [src/core/transport/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L97)
+Defined in: [src/core/transport/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L106)
 
 #### Parameters
 

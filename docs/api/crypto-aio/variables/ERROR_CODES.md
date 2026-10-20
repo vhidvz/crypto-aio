@@ -304,6 +304,22 @@ Frozen, with every entry: the table is shared by every error and every caller.
 
 > `readonly` **retryable**: `true` = `true`
 
+<a id="record_format_unsupported"></a>
+
+### RECORD\_FORMAT\_UNSUPPORTED
+
+> `readonly` **RECORD\_FORMAT\_UNSUPPORTED**: `object`
+
+A stored Operation's record format is newer than this version reads.
+
+#### RECORD\_FORMAT\_UNSUPPORTED.category
+
+> `readonly` **category**: `"state"` = `'state'`
+
+#### RECORD\_FORMAT\_UNSUPPORTED.retryable
+
+> `readonly` **retryable**: `false` = `false`
+
 <a id="rpc_error"></a>
 
 ### RPC\_ERROR
@@ -485,6 +501,22 @@ The outcome may have happened (e.g. a delivered broadcast) but was not recorded.
 > `readonly` **category**: `"chain"` = `'chain'`
 
 #### TX\_REVERTED.retryable
+
+> `readonly` **retryable**: `false` = `false`
+
+<a id="tx_unevidenced"></a>
+
+### TX\_UNEVIDENCED
+
+> `readonly` **TX\_UNEVIDENCED**: `object`
+
+Included and executed, but no transfer to the recipient shows: value may have moved.
+
+#### TX\_UNEVIDENCED.category
+
+> `readonly` **category**: `"chain"` = `'chain'`
+
+#### TX\_UNEVIDENCED.retryable
 
 > `readonly` **retryable**: `false` = `false`
 

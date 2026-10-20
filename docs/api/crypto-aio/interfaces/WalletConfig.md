@@ -2,7 +2,7 @@
 
 # Interface: WalletConfig
 
-Defined in: [src/core/config/types.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L24)
+Defined in: [src/core/config/types.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L25)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/config/types.ts:24](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **address?**: `string`
 
-Defined in: [src/core/config/types.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L28)
+Defined in: [src/core/config/types.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L29)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/config/types.ts:28](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **chains?**: readonly `string`[]
 
-Defined in: [src/core/config/types.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L38)
+Defined in: [src/core/config/types.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L39)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/config/types.ts:38](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **keyRef?**: [`KeyRef`](KeyRef.md)
 
-Defined in: [src/core/config/types.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L35)
+Defined in: [src/core/config/types.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L36)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/config/types.ts:35](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **options?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/config/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L41)
+Defined in: [src/core/config/types.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L42)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/core/config/types.ts:41](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **publicKey?**: `string`
 
-Defined in: [src/core/config/types.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L30)
+Defined in: [src/core/config/types.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L31)
 
 Hex public key for watch-only wallets that still prepare transactions.
 
@@ -64,7 +64,7 @@ Hex public key for watch-only wallets that still prepare transactions.
 
 > `readonly` `optional` **signer?**: `string`
 
-Defined in: [src/core/config/types.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L25)
+Defined in: [src/core/config/types.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L26)
 
 ***
 
@@ -74,7 +74,7 @@ Defined in: [src/core/config/types.ts:25](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **signers?**: `Readonly`\<`Record`\<`string`, `string`\>\>
 
-Defined in: [src/core/config/types.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L27)
+Defined in: [src/core/config/types.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L28)
 
 Routes requests to signers by `keyRef.id` (multi-party wallets).
 
@@ -86,7 +86,7 @@ Routes requests to signers by `keyRef.id` (multi-party wallets).
 
 > `readonly` `optional` **tier?**: `string`
 
-Defined in: [src/core/config/types.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L37)
+Defined in: [src/core/config/types.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L38)
 
 Metadata only (passed to signing context); no built-in behaviour.
 
@@ -98,7 +98,7 @@ Metadata only (passed to signing context); no built-in behaviour.
 
 > `readonly` `optional` **ton?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/config/types.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L40)
+Defined in: [src/core/config/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L41)
 
 ***
 
@@ -108,7 +108,7 @@ Defined in: [src/core/config/types.ts:40](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **utxo?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/config/types.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L39)
+Defined in: [src/core/config/types.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L40)
 
 ***
 
@@ -118,7 +118,7 @@ Defined in: [src/core/config/types.ts:39](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **xpub?**: `string`
 
-Defined in: [src/core/config/types.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L31)
+Defined in: [src/core/config/types.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L32)
 
 ***
 
@@ -128,7 +128,7 @@ Defined in: [src/core/config/types.ts:31](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **xpubPath?**: `string`
 
-Defined in: [src/core/config/types.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L34)
+Defined in: [src/core/config/types.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L35)
 
 Child path template relative to the xpub; `{index}` is replaced. Default `0/{index}`.
 
@@ -140,4 +140,4 @@ Child path template relative to the xpub; `{index}` is replaced. Default `0/{ind
 
 > `readonly` `optional` **xpubVersions?**: [`ExtendedKeyVersions`](ExtendedKeyVersions.md)
 
-Defined in: [src/core/config/types.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L32)
+Defined in: [src/core/config/types.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L33)

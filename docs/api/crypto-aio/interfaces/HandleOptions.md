@@ -2,7 +2,7 @@
 
 # Interface: HandleOptions
 
-Defined in: [src/core/config/types.ts:117](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L117)
+Defined in: [src/core/config/types.ts:132](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L132)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/config/types.ts:117](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/config/types.ts:118](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L118)
+Defined in: [src/core/config/types.ts:133](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L133)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/config/types.ts:118](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **confirmations?**: `number`
 
-Defined in: [src/core/config/types.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L126)
+Defined in: [src/core/config/types.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L141)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/config/types.ts:126](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **indexer?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:122](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L122)
+Defined in: [src/core/config/types.ts:137](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L137)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/config/types.ts:122](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **library?**: `string`
 
-Defined in: [src/core/config/types.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L120)
+Defined in: [src/core/config/types.ts:135](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L135)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/core/config/types.ts:120](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/config/types.ts:119](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L119)
+Defined in: [src/core/config/types.ts:134](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L134)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [src/core/config/types.ts:119](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **options?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/config/types.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L125)
+Defined in: [src/core/config/types.ts:140](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L140)
 
 ***
 
@@ -72,7 +72,7 @@ Defined in: [src/core/config/types.ts:125](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **provider?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L121)
+Defined in: [src/core/config/types.ts:136](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L136)
 
 ***
 
@@ -82,7 +82,7 @@ Defined in: [src/core/config/types.ts:121](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **signer?**: `string`
 
-Defined in: [src/core/config/types.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L124)
+Defined in: [src/core/config/types.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L139)
 
 ***
 
@@ -92,4 +92,4 @@ Defined in: [src/core/config/types.ts:124](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **wallet?**: `string`
 
-Defined in: [src/core/config/types.ts:123](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L123)
+Defined in: [src/core/config/types.ts:138](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L138)

@@ -2,7 +2,7 @@
 
 # Interface: ChainDefaults
 
-Defined in: [src/core/config/types.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L44)
+Defined in: [src/core/config/types.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L45)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/config/types.ts:44](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **confirmations?**: `number`
 
-Defined in: [src/core/config/types.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L52)
+Defined in: [src/core/config/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L53)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/config/types.ts:52](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **indexer?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L48)
+Defined in: [src/core/config/types.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L49)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/config/types.ts:48](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **library?**: `string`
 
-Defined in: [src/core/config/types.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L46)
+Defined in: [src/core/config/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L47)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/config/types.ts:46](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **maxLagBlocks?**: `number`
 
-Defined in: [src/core/config/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L59)
+Defined in: [src/core/config/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L60)
 
 This chain's lag tolerance, in blocks. It wins over the root
 `transport.maxLagBlocks`, which wins over the plugin network's own, which wins over
@@ -57,7 +57,7 @@ lagging, and a monitor or scanner view further behind is stale.
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/config/types.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L45)
+Defined in: [src/core/config/types.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L46)
 
 ***
 
@@ -67,7 +67,7 @@ Defined in: [src/core/config/types.ts:45](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **options?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/config/types.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L51)
+Defined in: [src/core/config/types.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L52)
 
 ***
 
@@ -77,7 +77,7 @@ Defined in: [src/core/config/types.ts:51](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **provider?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L47)
+Defined in: [src/core/config/types.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L48)
 
 ***
 
@@ -87,7 +87,7 @@ Defined in: [src/core/config/types.ts:47](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **signer?**: `string`
 
-Defined in: [src/core/config/types.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L50)
+Defined in: [src/core/config/types.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L51)
 
 ***
 
@@ -97,4 +97,4 @@ Defined in: [src/core/config/types.ts:50](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **wallet?**: `string`
 
-Defined in: [src/core/config/types.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L49)
+Defined in: [src/core/config/types.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L50)
