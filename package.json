@@ -76,7 +76,7 @@
     "@ton/ton": "16.3.0",
     "@types/debug": "^4.1.13",
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.20.4",
+    "@types/node": "^26.6.5",
     "@types/pg": "^8.23.1",
     "bitcoinjs-lib": "7.0.2",
     "eslint": "^9.39.5",
