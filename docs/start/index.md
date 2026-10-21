@@ -32,6 +32,6 @@ After that, go where your work is:
 - **Understand the design in depth:** the [Developer tour](../tour/index.md).
 
 > [!NOTE]
-> These pages describe crypto-aio 0.1.0, the first release of this API, and the changes on
-> `main` since then (the Avalanche X-Chain and P-Chain). The 0.0.x releases on npm are an older,
-> unrelated API.
+> These pages describe crypto-aio 0.2.0, which settles the API for 1.0
+> ([Upgrade to 1.0](../reference/upgrading.md) lists what changed since 0.1.0). The 0.0.x
+> releases on npm are an older, unrelated API.
