@@ -23,8 +23,8 @@ importers:
         specifier: ^1.2.6
         version: 1.2.6
       '@scure/bip32':
-        specifier: ^1.7.0
-        version: 1.7.0
+        specifier: ^2.4.0
+        version: 2.4.0
       '@scure/bip39':
         specifier: ^1.6.0
         version: 1.6.0
@@ -871,6 +871,10 @@ packages:
     resolution: {integrity: sha512-gbKGcRUYIjA3/zCCNaWDciTMFI0dCkvou3TL8Zmy5Nc7sJ47a0jtOeZoTaMxkuqRo9cRhjOdZJXegxYE5FN/xw==}
     engines: {node: ^14.21.3 || >=16}
 
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
+
   '@noble/hashes@1.3.2':
     resolution: {integrity: sha512-MVC8EAQp7MvEcm30KWENFjgR+Mkmf+D189XJTkFIlwohU5hcBbn1ZkKq7KVTi2Hme3PMGF390DaL52beVrIihQ==}
     engines: {node: '>= 16'}
@@ -886,6 +890,10 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@noble/secp256k1@2.0.0':
     resolution: {integrity: sha512-rUGBd95e2a45rlmFTqQJYEFA4/gdIARFfuTuTqLglz0PZ6AKyzyXsEZZq7UZn8hZsvaBgpCzKKBJizT2cJERXw==}
@@ -1146,11 +1154,14 @@ packages:
   '@scure/base@1.2.6':
     resolution: {integrity: sha512-g/nm5FgUa//MCj1gV09zTJTaM6KBAHqLN907YVQqf7zC49+DcO4B1so4ZX07Ef10Twr6nuqYEH9GEggFXA4Fmg==}
 
+  '@scure/base@2.4.0':
+    resolution: {integrity: sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg==}
+
   '@scure/bip32@1.4.0':
     resolution: {integrity: sha512-sVUpc0Vq3tXCkDGYVWGIZTRfnvu8LoTDaev7vbwh0omSvVORONr960MQWdKqJDCReIEmTj3PAr73O3aoxz7OPg==}
 
-  '@scure/bip32@1.7.0':
-    resolution: {integrity: sha512-E4FFX/N3f4B80AKWp5dP6ow+flD1LQZo/w8UnLGYZO674jS6YnYeepycOOksv+vLPSpgN35wgKgy+ybfTb2SMw==}
+  '@scure/bip32@2.4.0':
+    resolution: {integrity: sha512-i3DS0CptAocyvqE4n3SUkpzeQK4vJMFwWLofTwRiiKo2aWojBOfyMCgfKw9HVpO6fSY5AK86sHS/Uzn8kK9Few==}
 
   '@scure/bip39@1.3.0':
     resolution: {integrity: sha512-disdg7gHuTDZtY+ZdkmLpPCk7fxZSu3gBiEGuoC1XYxv9cGx3Z6cpTggCgW6odSOOIXCiDjuGejW+aJKCY/pIQ==}
@@ -3465,8 +3476,8 @@ packages:
   react-is@18.3.1:
     resolution: {integrity: sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==}
 
-  react-is@19.3.0:
-    resolution: {integrity: sha512-UpMYezM4v5/18F28aC66AEsjXIgE02kyEMH6yLdgLXu/UTfa1Ntwck/nNLrbqJsEXW7gPb0coNO9FQse9WTovA==}
+  react-is@19.3.1:
+    resolution: {integrity: sha512-RRieF6IyxQBkcK6pP8xOHprLTPW6QjRkbGdImtqNme+/hYVwCZkLQLdlZGOhUqXwkS9IEynaGvPJtv6XB/cz0Q==}
 
   regex-recursion@6.0.2:
     resolution: {integrity: sha512-0YCaSCq2VRIebiaUviZNs0cBz1kg5kVS2UKUfNIx8YVs1cN3AV7NTctO5FOKBA+UT2BPJIWZauYHPqJODG50cg==}
@@ -5027,6 +5038,10 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
 
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
+
   '@noble/hashes@1.3.2': {}
 
   '@noble/hashes@1.3.3': {}
@@ -5034,6 +5049,8 @@ snapshots:
   '@noble/hashes@1.4.0': {}
 
   '@noble/hashes@1.8.0': {}
+
+  '@noble/hashes@2.4.0': {}
 
   '@noble/secp256k1@2.0.0': {}
 
@@ -5222,17 +5239,19 @@ snapshots:
 
   '@scure/base@1.2.6': {}
 
+  '@scure/base@2.4.0': {}
+
   '@scure/bip32@1.4.0':
     dependencies:
       '@noble/curves': 1.4.2
       '@noble/hashes': 1.4.0
       '@scure/base': 1.1.9
 
-  '@scure/bip32@1.7.0':
+  '@scure/bip32@2.4.0':
     dependencies:
-      '@noble/curves': 1.9.7
-      '@noble/hashes': 1.8.0
-      '@scure/base': 1.2.6
+      '@noble/curves': 2.4.0
+      '@noble/hashes': 2.4.0
+      '@scure/base': 2.4.0
 
   '@scure/bip39@1.3.0':
     dependencies:
@@ -7582,7 +7601,7 @@ snapshots:
       '@ethereumjs/rlp': 5.0.0
       '@noble/curves': 1.3.0
       '@noble/hashes': 1.3.3
-      '@scure/base': 1.1.9
+      '@scure/base': 1.1.5
       micro-packed: 0.5.3
 
   micro-packed@0.5.3:
@@ -7849,7 +7868,7 @@ snapshots:
   pretty-format@30.5.1:
     dependencies:
       '@jest/react-is-18': react-is@18.3.1
-      '@jest/react-is-19': react-is@19.3.0
+      '@jest/react-is-19': react-is@19.3.1
       '@jest/schemas': 30.5.0
       ansi-styles: 5.2.0
 
@@ -7872,7 +7891,7 @@ snapshots:
 
   react-is@18.3.1: {}
 
-  react-is@19.3.0: {}
+  react-is@19.3.1: {}
 
   regex-recursion@6.0.2:
     dependencies:
