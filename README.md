@@ -151,7 +151,7 @@ family.
 
 ## Status
 
-crypto-aio is at **0.1.0**, on its way to 1.0, from which [semantic
+crypto-aio is at **0.2.0**, on its way to 1.0, from which [semantic
 versioning](https://vhidvz.github.io/crypto-aio/reference/stability.html) covers the whole API,
 the driver port and what a process stores; the 0.0.x releases on npm are an older, unrelated
 API. [Known limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists
