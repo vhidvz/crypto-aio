@@ -148,8 +148,11 @@ describe('the linear transaction reader', () => {
     expect(parsed?.strippedSize).toBe(witnessed.stripped.length);
   });
 
-  it('reads or refuses a hostile 3.9 MB transaction in well under a second, never through bitcoinjs', () => {
+  it('reads or refuses a hostile 3.9 MB transaction in seconds, not minutes, never through bitcoinjs', () => {
     /** The best of three runs, so a moment of load elsewhere does not decide the bound. */
+    // Alone this reads in about 50 ms (under 300 ms with coverage), but the full suite's
+    // parallel workers slowed it past a second; the quadratic decoder takes minutes.
+    const BOUND_MS = 5_000;
     const fastest = (work: () => unknown): number =>
       Math.min(
         ...[1, 2, 3].map(() => {
@@ -164,7 +167,7 @@ describe('the linear transaction reader', () => {
       const hostile = toHex(manyOutputs(433_000).bytes);
       expect(hostile.length).toBeGreaterThan(7_780_000);
       expect(readTxHex(hostile)).toBeUndefined();
-      expect(fastest(() => readTxHex(hostile))).toBeLessThan(1_000);
+      expect(fastest(() => readTxHex(hostile))).toBeLessThan(BOUND_MS);
       // The most outputs a real transaction's million bytes can hold, padded with a witness
       // to 3.9 MB: decoded, and its txid hashed from the bytes.
       const most = manyOutputs(110_000, 2_900_000);
@@ -173,7 +176,7 @@ describe('the linear transaction reader', () => {
       const parsed = readTxHex(hex);
       expect(parsed?.outputs).toHaveLength(110_000);
       expect(parsed?.txid).toBe(txidOf(most.stripped));
-      expect(fastest(() => readTxHex(hex))).toBeLessThan(1_000);
+      expect(fastest(() => readTxHex(hex))).toBeLessThan(BOUND_MS);
       expect(fromBuffer).not.toHaveBeenCalled();
     } finally {
       fromBuffer.mockRestore();
