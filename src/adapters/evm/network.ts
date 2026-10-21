@@ -8,7 +8,12 @@ import type { Capability } from '../../core/model/capability';
 import type { ChainInfo, FinalityPolicy, NetworkInfo } from '../../core/model/chain';
 import { ConfigError } from '../../core/errors/error';
 import { unknownName } from '../../core/util/names';
-import { DEFAULT_MAX_FEE_PER_GAS, type EvmFeeModel } from './fees';
+import {
+  DEFAULT_MAX_FEE_PER_GAS,
+  DEFAULT_MAX_GAS_LIMIT,
+  TRANSFER_GAS,
+  type EvmFeeModel,
+} from './fees';
 
 /** Every capability an EVM network can have; a network removes what it lacks. */
 export const EVM_CAPABILITIES: readonly Capability[] = [
@@ -46,16 +51,23 @@ export interface EvmNetworkConfig {
    * `DEFAULT_MAX_FEE_PER_GAS`.
    */
   readonly maxFeePerGas: bigint;
+  /**
+   * The highest gas limit a transaction signs: the handle's `maxGasLimit` option, else the
+   * network's `params.maxGasLimit`, else `DEFAULT_MAX_GAS_LIMIT`.
+   */
+  readonly maxGasLimit: bigint;
 }
 
 /**
- * The only driver option (`HandleOptions.options`) the EVM driver reads. Any other key is
+ * The only driver options (`HandleOptions.options`) the EVM driver reads. Any other key is
  * refused, so a typo, or another family's option such as Tron's `maxFeeLimit`, fails loudly
  * instead of leaving the default in place.
  */
-const OPTION_KEYS: readonly string[] = Object.freeze(['maxFeePerGas']);
+const OPTION_KEYS: readonly string[] = Object.freeze(['maxFeePerGas', 'maxGasLimit']);
 
 const MAX_UINT256 = 2n ** 256n - 1n;
+/** The largest gas limit a transaction carries: clients read it as a `uint64`. */
+const MAX_UINT64 = 2n ** 64n - 1n;
 
 /** A price ceiling: a bigint of wei per gas that an EVM transaction can carry. */
 function priceCeiling(
@@ -65,6 +77,17 @@ function priceCeiling(
 ): bigint {
   if (typeof value !== 'bigint' || value < 1n || value > MAX_UINT256) {
     fail(`${name} must be a bigint of wei per gas from 1 to 2^256 − 1`);
+  }
+  return value as bigint;
+}
+
+/**
+ * A gas-limit bound: a bigint of gas a transaction can carry, and at least a plain
+ * transfer's 21,000, below which nothing could be signed.
+ */
+function gasBound(value: unknown, name: string, fail: (reason: string) => never): bigint {
+  if (typeof value !== 'bigint' || value < TRANSFER_GAS || value > MAX_UINT64) {
+    fail(`${name} must be a bigint of gas from 21,000 to 2^64 − 1`);
   }
   return value as bigint;
 }
@@ -169,6 +192,14 @@ export function evmNetworkConfig(
     options.maxFeePerGas !== undefined
       ? priceCeiling(options.maxFeePerGas, 'maxFeePerGas', fail)
       : (networkCeiling ?? DEFAULT_MAX_FEE_PER_GAS);
+  // The gas-limit bound resolves the same way.
+  const ownGas = params.maxGasLimit;
+  const networkGas =
+    ownGas === undefined ? undefined : gasBound(ownGas, 'params.maxGasLimit', fail);
+  const maxGasLimit =
+    options.maxGasLimit !== undefined
+      ? gasBound(options.maxGasLimit, 'maxGasLimit', fail)
+      : (networkGas ?? DEFAULT_MAX_GAS_LIMIT);
   const replaces = capabilities.has('replace-fee') || capabilities.has('cancel');
   return {
     chainId: BigInt(network.identity as string),
@@ -180,5 +211,6 @@ export function evmNetworkConfig(
     polygonSystemLogs: params.systemLogs === 'bor',
     capabilities,
     maxFeePerGas,
+    maxGasLimit,
   };
 }

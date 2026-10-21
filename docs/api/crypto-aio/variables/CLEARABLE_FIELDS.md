@@ -4,4 +4,4 @@
 
 > `const` **CLEARABLE\_FIELDS**: readonly \[`"outcome"`, `"unsigned"`, `"reservation"`, `"signerTickets"`, `"partialSignatures"`, `"activeAttemptId"`, `"ambiguous"`, `"error"`, `"nextCheckAt"`\]
 
-Defined in: [src/core/store/types.ts:136](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L136)
+Defined in: [src/core/store/types.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L144)

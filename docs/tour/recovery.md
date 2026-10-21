@@ -130,7 +130,7 @@ worker that paused past its claim has its writes refused (`FENCING`) once anothe
 | `created`, `prepared`, `awaiting-signature`, `stalled` | Skips them with a `recovery.skipped` event: they need you |
 | Nonces allocated but never stored (a crash mid-allocation) | Returns them for reuse |
 
-It returns a report, `{ rebroadcast, checked, skipped, failed, reconciled }`, and like the
+It returns a report, `{ rebroadcast, checked, skipped, unresent, failed, reconciled }`, and like the
 workers, it never signs. The [persistence lesson](../learn/engineering/persistence.md#in-crypto-aio)
 runs a crash and a recovery end to end; [Run workers and recover](../build/workers.md) shows the
 startup sequence of a service.

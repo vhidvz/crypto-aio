@@ -120,13 +120,17 @@ describe('HttpTransport retry policy', () => {
 
   // PROVIDER_MISCONFIGURED is only retryable internally; once every endpoint is
   // exhausted the caller must see it as final.
-  it('surfaces a final PROVIDER_MISCONFIGURED as non-retryable', async () => {
+  it('surfaces a final PROVIDER_MISCONFIGURED as non-retryable, with the HTTP status', async () => {
     const fake = new FakeFetch()
       .route('https://a.test', () => ({ status: 401, text: '' }))
       .route('https://b.test', () => ({ status: 401, text: '' }));
     const { transport, clock } = setup([A, B], fake);
     const error = await drive(clock, transport.rpc('x')).catch((e: unknown) => e);
-    expect(error).toMatchObject({ code: 'PROVIDER_MISCONFIGURED', retryable: false });
+    expect(error).toMatchObject({
+      code: 'PROVIDER_MISCONFIGURED',
+      retryable: false,
+      details: { httpStatus: 401 },
+    });
   });
 
   // A later definitive error inherits ambiguity from an earlier possibly-delivered attempt.

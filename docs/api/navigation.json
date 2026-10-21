@@ -1399,6 +1399,12 @@
             "isDeprecated": false
           },
           {
+            "title": "TxFailure",
+            "kind": 2097152,
+            "path": "crypto-aio/type-aliases/TxFailure.md",
+            "isDeprecated": false
+          },
+          {
             "title": "TxState",
             "kind": 2097152,
             "path": "crypto-aio/type-aliases/TxState.md",
@@ -1479,6 +1485,12 @@
             "title": "noopLogger",
             "kind": 32,
             "path": "crypto-aio/variables/noopLogger.md",
+            "isDeprecated": false
+          },
+          {
+            "title": "OPERATION_FORMAT",
+            "kind": 32,
+            "path": "crypto-aio/variables/OPERATION_FORMAT.md",
             "isDeprecated": false
           },
           {
@@ -1842,6 +1854,12 @@
                 "title": "DEFAULT_MAX_FEE_PER_GAS",
                 "kind": 32,
                 "path": "crypto-aio/evm/variables/DEFAULT_MAX_FEE_PER_GAS.md",
+                "isDeprecated": false
+              },
+              {
+                "title": "DEFAULT_MAX_GAS_LIMIT",
+                "kind": 32,
+                "path": "crypto-aio/evm/variables/DEFAULT_MAX_GAS_LIMIT.md",
                 "isDeprecated": false
               },
               {

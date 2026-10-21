@@ -4,4 +4,4 @@
 
 > **ProviderRef** = `string` \| [`ProviderConfig`](ProviderConfig.md)
 
-Defined in: [src/core/config/types.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L22)
+Defined in: [src/core/config/types.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L23)

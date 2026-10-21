@@ -74,6 +74,15 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   counts as executed only with its `Transfer` event from the token contract
   ([token verdicts](../../build/confirmations.md)). TRC-10 tokens are not
   supported, and TRC-10 transfers are not decoded.
+- **A deprecated USDT.** Tether's USDT contract (`TetherToken`) can deprecate itself in
+  favour of an upgraded contract (its `upgradedAddress()`). A transfer then still moves the
+  money through the new contract, which emits the `Transfer` event, but the token verdict
+  reads the event of the contract you sent to. So every TRC-20 estimate also reads the
+  contract's `deprecated()` (one constant call from one endpoint, beside the balance read),
+  and a token that answers `true` is refused before signing with `ASSET_RESOLUTION`, whose
+  message names no address. Send to the upgraded contract by contract, or register it as an
+  asset, until a release moves the `USDT` alias there. A contract without the method (a
+  revert, or anything but an ABI `bool`) is not deprecated, and a failed read stays retryable.
 - **Memos** are UTF-8 text of at most 256 bytes (`MAX_MEMO_BYTES`), public forever, and each
   costs the memo fee. A deposit's memo arrives as `transfer.memo`.
 - **Scanning and history.** Blocks carry TRX transfers and TRC-20 `Transfer` events; any

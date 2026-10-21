@@ -1,0 +1,77 @@
+name: Nightly
+
+# What a pull request cannot afford to run: a deep fuzz of the decoders, the opt-in
+# integration suites against live testnets, and the unit suites on the newest release of
+# every chain SDK, so an upstream release that breaks a family shows here before a user
+# meets it. Endpoint URLs come from repository secrets when set (keyed endpoints avoid the
+# public ones' rate limits); without them the suites use the keyless public presets.
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec jest test/fuzz --coverage=false --testTimeout=3600000
+        env:
+          CRYPTO_AIO_FUZZ_ROUNDS: '200000'
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Read-only: no key is configured, and none is needed.
+      - run: pnpm exec jest test/integration --coverage=false --runInBand
+        env:
+          CRYPTO_AIO_INTEGRATION: '1'
+          CRYPTO_AIO_IT_EVM_RPC_URL: ${{ secrets.CRYPTO_AIO_IT_EVM_RPC_URL }}
+          CRYPTO_AIO_IT_TRON_URL: ${{ secrets.CRYPTO_AIO_IT_TRON_URL }}
+          CRYPTO_AIO_IT_SOLANA_RPC_URL: ${{ secrets.CRYPTO_AIO_IT_SOLANA_RPC_URL }}
+          CRYPTO_AIO_IT_TON_RPC_URL: ${{ secrets.CRYPTO_AIO_IT_TON_RPC_URL }}
+          CRYPTO_AIO_IT_TON_INDEXER_URL: ${{ secrets.CRYPTO_AIO_IT_TON_INDEXER_URL }}
+
+  newest-sdks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The newest release of the tested line of each SDK, in place of the tested pins (a
+      # further line, such as @solana/web3.js 3, is loaded by the pack check; the unit suites
+      # use the tested line's own API as their reference).
+      - name: Install the newest SDK releases
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const specs = Object.entries(pkg.peerDependencies).map(
+              ([name, range]) => `${name}@${range.split(" || ")[0]}`,
+            );
+            console.log(specs.join("\n"));
+          ' > "$RUNNER_TEMP/sdks.txt"
+          cat "$RUNNER_TEMP/sdks.txt"
+          pnpm add --save-dev $(cat "$RUNNER_TEMP/sdks.txt")
+      - run: pnpm run typecheck
+      - run: pnpm exec jest --coverage=false

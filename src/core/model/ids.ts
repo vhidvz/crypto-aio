@@ -35,6 +35,7 @@ export type ExtOf<C extends ChainId> =
 
 export const Library = Object.freeze({
   ETHERS: 'ethers',
+  /** @deprecated web3.js is no longer maintained: use `ETHERS`. Removed in crypto-aio 2.0. */
   WEB3: 'web3',
   TRONWEB: 'tronweb',
   BITCOINJS_LIB: 'bitcoinjs-lib',

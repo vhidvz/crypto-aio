@@ -177,10 +177,14 @@ describe.each(LIBRARIES)('EvmClient codec (%s)', (library) => {
     );
     expect(abi.encodeDecimals()).toBe('0x313ce567');
     expect(abi.encodeSymbol()).toBe('0x95d89b41');
+    expect(abi.encodeDeprecated()).toBe('0x0e136b19');
     expect(abi.encodeBalanceOf(RECIPIENT)).toBe(
       `0x70a08231${RECIPIENT.slice(2).padStart(64, '0')}`,
     );
     expect(abi.encodeGetL1Fee('0x02c0')).toMatch(/^0x49948e0e/);
+    expect(abi.encodeGetOperatorFee(21_000n)).toBe(
+      `0x275aedd2${(21_000).toString(16).padStart(64, '0')}`,
+    );
     expect(abi.decodeUint256(`0x${'00'.repeat(31)}06`)).toBe(6n);
     expect(() => abi.decodeUint256('0x06')).toThrow();
     const word = (hex: string) => `0x${hex.padStart(64, '0')}`;

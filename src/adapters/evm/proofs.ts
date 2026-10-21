@@ -12,6 +12,7 @@ import { hexToBytes } from '@noble/hashes/utils';
 import type { BlockSource, ProofSource } from '../../core/driver/types';
 import { ProviderError, isCryptoAioError } from '../../core/errors/error';
 import type { OrderingData } from '../../core/model/ordering';
+import type { TxFailure } from '../../core/model/transaction';
 import { quantity } from './client';
 import { decodeTransaction, tokenTransferLanded } from './decode';
 import {
@@ -166,11 +167,25 @@ async function nonceConsumer(
   }
   return {
     included: true,
-    success: receipt.status === 1 && tokenTransferLanded(client.abi, consumer, receipt),
+    ...verdict(receipt.status === 1, tokenTransferLanded(client.abi, consumer, receipt)),
     blockHeight: height,
     blockHash: block.hash,
     txHash: consumer.hash,
   };
+}
+
+/**
+ * The verdict of an included transaction of ours: a reverted one, or one that executed but
+ * logged no token transfer to its recipient (`unevidenced`: value may have moved).
+ */
+function verdict(
+  executed: boolean,
+  landed: boolean,
+): { readonly success: boolean; readonly reason?: string; readonly failure?: TxFailure } {
+  if (!executed) return { success: false };
+  return landed
+    ? { success: true }
+    : { success: false, reason: 'token transfer failed', failure: 'unevidenced' };
 }
 
 export function createEvmProofs(ctx: EvmContext): ProofSource {
@@ -211,8 +226,9 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
             'the receipt is not in the final block at its height',
           );
         }
-        let success = receipt.status === 1;
-        if (success) {
+        const executed = receipt.status === 1;
+        let landed = true;
+        if (executed) {
           // A token transfer that logged no transfer to its recipient paid it nothing
           // (read from the ref alone, the call's arguments from its keyed calldata). The
           // core proves only its own Attempts, so this is always a verdict.
@@ -223,11 +239,11 @@ export function createEvmProofs(ctx: EvmContext): ProofSource {
               'a receipt without its transaction',
             );
           }
-          success = tokenTransferLanded(client.abi, tx, receipt);
+          landed = tokenTransferLanded(client.abi, tx, receipt);
         }
         return {
           included: true,
-          success,
+          ...verdict(executed, landed),
           blockHeight: receipt.blockNumber,
           blockHash: receipt.blockHash,
           txHash: receipt.transactionHash,

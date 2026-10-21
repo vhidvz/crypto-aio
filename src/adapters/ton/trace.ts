@@ -15,6 +15,10 @@
  *   wallets are the master's own for the sender and the intended recipient. That last
  *   check needs chain reads, so the verdict returns the `legs` for the caller to confirm
  *   (`confirmLegs` in `reader.ts`); the receiving wallet's own 707 check then holds.
+ * A bounce read here is still only the indexer's word, and a lone lying indexer could
+ * report one for a transfer that landed: so a bounce verdict returns where the chain
+ * records it (`bounce`), for the caller to authenticate from the chain itself
+ * (`confirmBounce` in `reader.ts`) before it decides anything.
  * Only a request that consumed its seqno is final: any other run (a failed action phase,
  * or a compute phase that failed before `commit()`) left the same message valid until it
  * expires, so anyone may replay it and move the value; such a run decides nothing
@@ -29,6 +33,7 @@
  * output is checked before any of them decides.
  */
 import { ProviderError } from '../../core/errors/error';
+import type { TxFailure } from '../../core/model/transaction';
 import type { V3Message, V3Trace, V3Transaction } from './api';
 import { ran, threwAfterCommit } from './decode';
 import {
@@ -49,9 +54,40 @@ export interface JettonLeg {
   readonly recipient: string;
 }
 
+/** A transaction as the chain names it: its account (raw), logical time and hash (hex). */
+export interface ChainTxId {
+  readonly account: string;
+  readonly lt: bigint;
+  readonly hash: string;
+}
+
+/** A delivery on a bounce's path: its transaction and the hash of the message it received. */
+export interface Delivery extends ChainTxId {
+  readonly message: string;
+}
+
+/**
+ * Where the chain records a bounce, as the indexer names it: our wallet transaction
+ * (`root`), each delivery from its message on to the one that failed (`path`), and what
+ * that last one did (`end`): sent the value back (its bounce phase), ran nothing, or ran
+ * and moved no jettons. Names only: `confirmBounce` reads each from the chain.
+ */
+export interface BounceEvidence {
+  readonly root: ChainTxId;
+  readonly path: readonly Delivery[];
+  readonly end: 'bounced' | 'unran' | 'unmoved';
+}
+
 export type Verdict =
   | { readonly kind: 'success'; readonly legs: readonly JettonLeg[] }
-  | { readonly kind: 'failed'; readonly reason: string }
+  | {
+      readonly kind: 'failed';
+      readonly reason: string;
+      /** Absent: the transfer did not happen (`reverted`). */
+      readonly failure?: TxFailure;
+      /** Every `bounced` and `jettonBounced` verdict carries its chain evidence. */
+      readonly bounce?: BounceEvidence;
+    }
   /**
    * Not decidable yet: the trace is still being executed or indexed, or the request ran
    * without consuming its seqno and may still run again until it expires.
@@ -68,7 +104,8 @@ export const REASONS = Object.freeze({
 });
 
 const PENDING: Verdict = Object.freeze({ kind: 'pending' });
-const failed = (reason: string): Verdict => Object.freeze({ kind: 'failed', reason });
+const failed = (reason: string, bounce?: BounceEvidence): Verdict =>
+  Object.freeze({ kind: 'failed', reason, ...(bounce ? { bounce } : {}) });
 
 const inconsistent = (reason: string) =>
   new ProviderError('PROVIDER_INCONSISTENT', reason, { retryable: true });
@@ -252,16 +289,32 @@ function onward(hop: V3Transaction, from: string): V3Message | null {
   throw inconsistent('the jetton wallet ran the transfer but sent none from the sender');
 }
 
-/** What one output did: failed (with why), a jetton leg to confirm, or delivered. */
+/**
+ * What one output did: failed (with why, and the deliveries the chain records it in), a
+ * jetton leg to confirm, or delivered.
+ */
 type Outcome =
-  | { readonly failed: string }
+  | {
+      readonly failed: string;
+      readonly path: readonly Delivery[];
+      readonly end: BounceEvidence['end'];
+    }
   | { readonly leg: JettonLeg }
   | { readonly delivered: true };
+
+/** `tx`, which received `message`, as a delivery on a bounce's path. */
+const delivery = (tx: V3Transaction, message: V3Message): Delivery => ({
+  account: tx.account,
+  lt: tx.lt,
+  hash: tx.hash,
+  message: message.hash,
+});
 
 /** The outcome of the output `sent` of our wallet `from`, checked against the chain. */
 function outcomeOf(trace: V3Trace, from: string, sent: Sent): Outcome {
   const { out, bounceable, jettonRecipient } = sent;
   const hop = receiver(trace, out, from);
+  const first = delivery(hop, out);
   const hopRan = ran(hop);
   // A bounce phase exists only for a bounceable message, and always when its compute
   // phase failed (collator.cpp, transaction.cpp `bounce_enabled`). A bounce on a message
@@ -277,17 +330,27 @@ function outcomeOf(trace: V3Trace, from: string, sent: Sent): Outcome {
   }
   if (jettonRecipient === undefined) {
     // The value stays unless the bounce phase sent it back.
-    return hop.bounce === 'ok' ? { failed: REASONS.bounced } : { delivered: true };
+    return hop.bounce === 'ok'
+      ? { failed: REASONS.bounced, path: [first], end: 'bounced' }
+      : { delivered: true };
   }
   // The owner's jetton wallet ran `transfer` and sent `internal_transfer` onwards. A
   // failed phase dropped its state: the jettons never left.
-  if (!hopRan) return { failed: REASONS.jettonBounced };
+  if (!hopRan) return { failed: REASONS.jettonBounced, path: [first], end: 'unran' };
   const arrivalMessage = onward(hop, from);
-  if (!arrivalMessage) return { failed: REASONS.jettonBounced };
+  if (!arrivalMessage) {
+    return { failed: REASONS.jettonBounced, path: [first], end: 'unmoved' };
+  }
   // TEP-74 707: the receiving wallet takes it only from the sender's jetton wallet.
   const arrival = receiver(trace, arrivalMessage, hop.account);
   // A failed phase drops the credit: the jettons came back, or never arrived.
-  if (!ran(arrival)) return { failed: REASONS.jettonBounced };
+  if (!ran(arrival)) {
+    return {
+      failed: REASONS.jettonBounced,
+      path: [first, delivery(arrival, arrivalMessage)],
+      end: 'unran',
+    };
+  }
   return {
     leg: {
       senderWallet: hop.account,
@@ -312,7 +375,17 @@ export function attemptVerdict(root: V3Transaction, trace: V3Trace | null): Verd
   // contradiction.
   const outcomes = sent.map((each) => outcomeOf(trace, root.account, each));
   for (const outcome of outcomes) {
-    if ('failed' in outcome) return failed(outcome.failed);
+    if ('failed' in outcome) {
+      const { account, lt, hash } = root;
+      return failed(
+        outcome.failed,
+        Object.freeze({
+          root: { account, lt, hash },
+          path: outcome.path,
+          end: outcome.end,
+        }),
+      );
+    }
   }
   const legs = outcomes.flatMap((outcome) => ('leg' in outcome ? [outcome.leg] : []));
   return Object.freeze({ kind: 'success', legs });

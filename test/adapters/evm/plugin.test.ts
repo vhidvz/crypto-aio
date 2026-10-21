@@ -240,6 +240,78 @@ describe('evmChainPlugin', () => {
     await aio.close();
   });
 
+  describe('tokens', () => {
+    // Ethereum's USDC, EIP-55 checksummed: any 20-byte contract would do.
+    const CONTRACT = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+    const token = (ref: { readonly standard: string; readonly contract: string }) => ({
+      chain: 'acmechain',
+      network: 'main',
+      ref,
+      metadata: { symbol: 'TKN', decimals: 6 },
+      aliases: ['TKN'],
+    });
+    const erc20 = (contract: string) => token({ standard: 'erc20', contract });
+
+    it.each([
+      ['lower', CONTRACT.toLowerCase()],
+      ['upper', `0x${CONTRACT.slice(2).toUpperCase()}`],
+      ['checksummed', CONTRACT],
+    ])(
+      'registers a %s-case contract checksummed, so its alias and its ref name one asset',
+      async (_case, contract) => {
+        // A lower-case contract, as a receipt's contractAddress prints it, once registered
+        // as written: the alias named one asset id, the driver's checksummed ref another.
+        const plugin = evmChainPlugin({
+          name: 'acme',
+          chains: [acme],
+          assets: [erc20(contract)],
+        });
+        expect(plugin.assets?.[0]?.ref).toEqual({
+          standard: 'erc20',
+          contract: CONTRACT,
+        });
+        expect(
+          samePlugin(
+            plugin,
+            evmChainPlugin({ name: 'acme', chains: [acme], assets: [erc20(CONTRACT)] }),
+          ),
+        ).toBe(true);
+        const { aio, run } = container(777n, { plugins: [plugin] });
+        const bc = aio.blockchain({
+          chain: 'acmechain' as 'ethereum',
+          network: 'main' as 'mainnet',
+          provider: 'local',
+        });
+        const id = `acmechain:main/erc20:${CONTRACT}`;
+        expect((await run(bc.resolveAsset('TKN'))).id).toBe(id);
+        const byRef = await run(bc.resolveAsset({ standard: 'erc20', contract }));
+        // The registration itself, metadata included, not a second asset read from the node.
+        expect([byRef.id, byRef.metadata]).toEqual([id, { symbol: 'TKN', decimals: 6 }]);
+        await aio.close();
+      },
+    );
+
+    it.each([
+      ['another standard', token({ standard: 'trc20', contract: CONTRACT }), /'erc20'/],
+      ['a short contract', erc20(CONTRACT.slice(0, 40)), /20-byte hex contract/],
+      ['no 0x prefix', erc20(CONTRACT.slice(2)), /20-byte hex contract/],
+      // One letter's case flipped: a mixed-case contract with a wrong checksum is a typo.
+      ['a wrong checksum', erc20(`0xa${CONTRACT.slice(3)}`), /wrong checksum/],
+    ])(
+      'refuses a token with %s, at registration, never repeating it',
+      (_name, asset, reason) => {
+        const error = thrown(() =>
+          evmChainPlugin({ name: 'acme', chains: [acme], assets: [asset] }),
+        );
+        expect(error).toMatchObject({
+          code: 'CONFIG_INVALID',
+          message: expect.stringMatching(reason),
+        });
+        expect((error as Error).message).not.toContain(asset.ref.contract.slice(2, 12));
+      },
+    );
+  });
+
   it('refuses chain data the EVM driver cannot serve, at registration', () => {
     expect(() =>
       evmChainPlugin({ name: 'x', chains: [{ ...acme, family: 'utxo' }] }),

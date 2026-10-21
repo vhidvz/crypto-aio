@@ -2,7 +2,7 @@
 
 # Interface: ScanFilter
 
-Defined in: [src/core/driver/types.ts:261](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L261)
+Defined in: [src/core/driver/types.ts:284](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L284)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:261](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **addresses?**: readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:262](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L262)
+Defined in: [src/core/driver/types.ts:285](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L285)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [src/core/driver/types.ts:262](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **assets?**: readonly [`AssetRef`](../type-aliases/AssetRef.md)[]
 
-Defined in: [src/core/driver/types.ts:263](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L263)
+Defined in: [src/core/driver/types.ts:286](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L286)

@@ -77,7 +77,7 @@ import {
   MIN_EXPIRATION_MS,
   TAPOS_WINDOW,
 } from './network';
-import { trc20Balance, trc20Contract, type TronContext } from './reader';
+import { trc20Balance, trc20Contract, trc20Deprecated, type TronContext } from './reader';
 import type {
   TronCallTags,
   TronContract,
@@ -363,14 +363,33 @@ export function createTronBuilder(ctx: TronContext): {
   }
 
   /**
-   * The simulated energy of a TRC-20 transfer, after the balance check: a shortfall is
-   * `INSUFFICIENT_FUNDS`, never a revert; a token that refuses a transfer its balance
-   * allows (a blacklist, say) is `INVALID_INTENT`.
+   * The simulated energy of a TRC-20 transfer, after the deprecation and balance checks: a
+   * deprecated token is `ASSET_RESOLUTION`; a shortfall is `INSUFFICIENT_FUNDS`, never a
+   * revert; a token that refuses a transfer its balance allows (a blacklist, say) is
+   * `INVALID_INTENT`.
+   *
+   * Tether's `TetherToken` (USDT) forwards a deprecated contract's `transfer` to its
+   * upgraded contract, which moves the value and emits the `Transfer` event, so the
+   * transfer simulates and executes, and the verdict, which reads the old contract's event,
+   * finds no evidence of it. So `deprecated()` is read beside the balance, once per
+   * estimate (the core estimates before every build), one endpoint's answer as for the
+   * other token reads here, not the proof quorum's: a `true` can only refuse before
+   * signing, the safe direction (as one endpoint's failed simulation already does), and a
+   * wrong `false` leaves the transfer where it was without the guard.
    */
   async function tokenEnergy(p: Prepared, signal?: AbortSignal): Promise<bigint> {
     const tags = withSignal(READ, signal);
     const token = p.token as string;
-    const available = await trc20Balance(ctx, token, p.owner, tags);
+    const [deprecated, available] = await Promise.all([
+      trc20Deprecated(ctx, token, tags),
+      trc20Balance(ctx, token, p.owner, tags),
+    ]);
+    if (deprecated) {
+      throw new ValidationError(
+        'ASSET_RESOLUTION',
+        'the token contract is deprecated in favour of an upgraded contract; the asset must be re-registered at the upgraded contract',
+      );
+    }
     if (available < p.amount) {
       throw new ChainError(
         'INSUFFICIENT_FUNDS',

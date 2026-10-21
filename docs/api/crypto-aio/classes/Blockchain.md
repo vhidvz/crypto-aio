@@ -74,7 +74,7 @@ Frozen, redacted snapshot of the resolved configuration.
 
 > **get** **ext**(): [`ExtOf`](../type-aliases/ExtOf.md)\<`C`\>
 
-Defined in: [src/core/blockchain/handle.ts:651](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L651)
+Defined in: [src/core/blockchain/handle.ts:663](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L663)
 
 Typed family extensions: `bc.ext.<family>.<method>(...)` (async, loads the adapter on demand).
 
@@ -122,7 +122,7 @@ Defined in: [src/core/blockchain/handle.ts:94](https://github.com/vhidvz/crypto-
 
 > **abandon**(`operationId`): `Promise`\<[`OperationView`](../interfaces/OperationView.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:638](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L638)
+Defined in: [src/core/blockchain/handle.ts:650](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L650)
 
 Abandons an Operation that has no signed transaction yet and releases its reservation.
 
@@ -172,7 +172,7 @@ from a wallet's `xpub`, so a caller's `hd` is dropped and never reaches the driv
 
 > **broadcast**(`raw`): `Promise`\<[`BroadcastResult`](../type-aliases/BroadcastResult.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:629](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L629)
+Defined in: [src/core/blockchain/handle.ts:641](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L641)
 
 Broadcasts an externally signed transaction WITHOUT creating an Operation: no idempotency,
 persistence or monitoring. Prefer prepareTransfer + submitSignatures for managed flows.
@@ -195,7 +195,7 @@ persistence or monitoring. Prefer prepareTransfer + submitSignatures for managed
 
 > **cancel**(`operationId`, `options?`): `Promise`\<[`Submission`](../interfaces/Submission.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:611](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L611)
+Defined in: [src/core/blockchain/handle.ts:619](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L619)
 
 Tries to cancel with a conflicting Attempt (capability `cancel`); the outcome is
 `cancelled` only if the cancel wins at finality, and the original may still win. The
@@ -329,7 +329,7 @@ readonly (`string` \| \{ `contract`: `string`; `standard`: `string`; \})[]
 
 > **getBlock**(`ref`): `Promise`\<[`Block`](../interfaces/Block.md) \| `null`\>
 
-Defined in: [src/core/blockchain/handle.ts:377](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L377)
+Defined in: [src/core/blockchain/handle.ts:378](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L378)
 
 #### Parameters
 
@@ -349,7 +349,7 @@ Defined in: [src/core/blockchain/handle.ts:377](https://github.com/vhidvz/crypto
 
 > **getBlockHeight**(): `Promise`\<`bigint`\>
 
-Defined in: [src/core/blockchain/handle.ts:373](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L373)
+Defined in: [src/core/blockchain/handle.ts:374](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L374)
 
 #### Returns
 
@@ -363,7 +363,7 @@ Defined in: [src/core/blockchain/handle.ts:373](https://github.com/vhidvz/crypto
 
 > **getNetworkStatus**(): `Promise`\<[`NetworkStatus`](../interfaces/NetworkStatus.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:469](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L469)
+Defined in: [src/core/blockchain/handle.ts:470](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L470)
 
 #### Returns
 
@@ -377,7 +377,7 @@ Defined in: [src/core/blockchain/handle.ts:469](https://github.com/vhidvz/crypto
 
 > **getOperation**(`operationId`): `Promise`\<[`OperationView`](../interfaces/OperationView.md) \| `null`\>
 
-Defined in: [src/core/blockchain/handle.ts:643](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L643)
+Defined in: [src/core/blockchain/handle.ts:655](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L655)
 
 An Operation of this handle's chain and network (another one is INVALID_INTENT).
 
@@ -399,7 +399,7 @@ An Operation of this handle's chain and network (another one is INVALID_INTENT).
 
 > **getTransaction**(`id`): `Promise`\<[`Transaction`](../interfaces/Transaction.md) \| `null`\>
 
-Defined in: [src/core/blockchain/handle.ts:314](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L314)
+Defined in: [src/core/blockchain/handle.ts:315](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L315)
 
 #### Parameters
 
@@ -419,7 +419,7 @@ Defined in: [src/core/blockchain/handle.ts:314](https://github.com/vhidvz/crypto
 
 > **getTransactionStatus**(`id`): `Promise`\<[`TxStatus`](../interfaces/TxStatus.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:326](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L326)
+Defined in: [src/core/blockchain/handle.ts:327](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L327)
 
 Status of a managed Operation (by id, Attempt ref or tx hash) or of any transaction id.
 
@@ -441,7 +441,7 @@ Status of a managed Operation (by id, Attempt ref or tx hash) or of any transact
 
 > **history**(`address`, `options?`): `Promise`\<\{ `items`: readonly [`Transaction`](../interfaces/Transaction.md)[]; `next?`: `string`; \}\>
 
-Defined in: [src/core/blockchain/handle.ts:429](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L429)
+Defined in: [src/core/blockchain/handle.ts:430](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L430)
 
 Indexer-backed transaction history of an address (capability `address-history`).
 
@@ -507,7 +507,7 @@ Defined in: [src/core/blockchain/handle.ts:178](https://github.com/vhidvz/crypto
 
 > **prepareTransfer**(`intent`, `options?`): `Promise`\<[`PreparedOperation`](../interfaces/PreparedOperation.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:491](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L491)
+Defined in: [src/core/blockchain/handle.ts:492](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L492)
 
 Builds and persists the unsigned transaction (reserving nonce/inputs) for offline or async signing.
 
@@ -556,7 +556,7 @@ healthy/lagging in that case, so 'unknown' is simply its steady state.
 
 > **rebroadcast**(`operationId`): `Promise`\<[`Submission`](../interfaces/Submission.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:567](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L567)
+Defined in: [src/core/blockchain/handle.ts:573](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L573)
 
 Resends the active Attempt's stored raw transaction (e.g. after topping up a stalled wallet).
 
@@ -578,7 +578,7 @@ Resends the active Attempt's stored raw transaction (e.g. after topping up a sta
 
 > **rebuild**(`operationId`): `Promise`\<[`Submission`](../interfaces/Submission.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:621](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L621)
+Defined in: [src/core/blockchain/handle.ts:630](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L630)
 
 Expiry-based chains: re-issues an Operation whose earlier Attempts are provably expired.
 
@@ -600,7 +600,7 @@ Expiry-based chains: re-issues an Operation whose earlier Attempts are provably 
 
 > **replace**(`operationId`, `options`): `Promise`\<[`Submission`](../interfaces/Submission.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:587](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L587)
+Defined in: [src/core/blockchain/handle.ts:594](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L594)
 
 Replaces a pending transfer with a higher-fee, mutually exclusive Attempt (capability
 `replace-fee`; a synchronous signer). If the node refuses it, the original stays live
@@ -659,7 +659,7 @@ Defined in: [src/core/blockchain/handle.ts:275](https://github.com/vhidvz/crypto
 
 > **scanner**(`options`): [`Scanner`](../interfaces/Scanner.md)
 
-Defined in: [src/core/blockchain/handle.ts:386](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L386)
+Defined in: [src/core/blockchain/handle.ts:387](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L387)
 
 Reorg-aware, at-least-once block scanner (capability `block-scan`): `ack()` each event
 to commit the cursor before asking for the next. Invalid options throw `CONFIG_INVALID`.
@@ -682,7 +682,7 @@ to commit the cursor before asking for the next. Invalid options throw `CONFIG_I
 
 > **submitSignatures**(`operationId`, `signatures`): `Promise`\<[`Submission`](../interfaces/Submission.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:518](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L518)
+Defined in: [src/core/blockchain/handle.ts:523](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L523)
 
 Completes an Operation that awaits signatures, with signature bundles or with the whole
 payload signed elsewhere, e.g. a signed PSBT: the driver extracts its signatures
@@ -731,7 +731,7 @@ Defined in: [src/core/blockchain/handle.ts:112](https://github.com/vhidvz/crypto
 
 > **transfer**(`intent`, `options?`): `Promise`\<[`Submission`](../interfaces/Submission.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:504](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L504)
+Defined in: [src/core/blockchain/handle.ts:509](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L509)
 
 Idempotent transfer. Throws the mapped chain error when the Operation stalls or fails;
 throws an `ambiguous` error (with `context.operationId`) when the broadcast outcome is
@@ -779,7 +779,7 @@ Defined in: [src/core/blockchain/handle.ts:174](https://github.com/vhidvz/crypto
 
 > **waitForConfirmation**(`ref`, `options?`): `Promise`\<[`ConfirmationResult`](../interfaces/ConfirmationResult.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:340](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L340)
+Defined in: [src/core/blockchain/handle.ts:341](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L341)
 
 Resolves once `confirmations` (default: the handle's) are reached. With
 `finality: 'final'`, a managed Operation (by id, Attempt ref or tx hash) resolves on
@@ -838,7 +838,7 @@ signer-scheme compatibility check that the handle's own wallet got at constructi
 
 > **watch**(`ref`, `options?`): `AsyncIterable`\<[`TxStatusEvent`](../interfaces/TxStatusEvent.md)\>
 
-Defined in: [src/core/blockchain/handle.ts:353](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L353)
+Defined in: [src/core/blockchain/handle.ts:354](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L354)
 
 Yields each status change until the Operation is terminal (or the transaction is final).
 

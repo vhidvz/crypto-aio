@@ -65,10 +65,12 @@ const erc20 = new Interface([
   'function balanceOf(address owner) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function symbol() view returns (string)',
+  'function deprecated() view returns (bool)',
   'event Transfer(address indexed from, address indexed to, uint256 amount)',
 ]);
 const gasPriceOracle = new Interface([
   'function getL1Fee(bytes data) view returns (uint256)',
+  'function getOperatorFee(uint256 gasUsed) view returns (uint256)',
 ]);
 const TRANSFER_TOPIC = erc20.getEvent('Transfer')?.topicHash as string;
 
@@ -78,8 +80,11 @@ const ethersAbi: EvmAbi = {
   encodeBalanceOf: (owner) => erc20.encodeFunctionData('balanceOf', [owner]),
   encodeDecimals: () => erc20.encodeFunctionData('decimals', []),
   encodeSymbol: () => erc20.encodeFunctionData('symbol', []),
+  encodeDeprecated: () => erc20.encodeFunctionData('deprecated', []),
   encodeGetL1Fee: (unsignedTx) =>
     gasPriceOracle.encodeFunctionData('getL1Fee', [unsignedTx]),
+  encodeGetOperatorFee: (gasUsed) =>
+    gasPriceOracle.encodeFunctionData('getOperatorFee', [gasUsed]),
   decodeUint256: (data) => {
     if (!ABI_WORD.test(data)) throw new Error('not one ABI word');
     return coder.decode(['uint256'], data)[0] as bigint;

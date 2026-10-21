@@ -1,7 +1,8 @@
 /**
- * The Solana fee policy (base fee plus priority), pure and bigint-only. The
- * priority fee is `ceil(computeUnitPrice × computeUnitLimit / 1_000_000)` lamports, charged
- * on the requested limit (Solana's fee documentation).
+ * The Solana fee policy (base fee plus priority), pure and bigint-only. The base fee is
+ * `LAMPORTS_PER_SIGNATURE` per signature, and the priority fee is
+ * `ceil(computeUnitPrice × computeUnitLimit / 1_000_000)` lamports, charged on the requested
+ * limit (Solana's fee documentation; agave `get_prioritization_fee`).
  */
 import { ValidationError } from '../../core/errors/error';
 import type {
@@ -13,6 +14,15 @@ import type {
 import { DEFAULT_INSTRUCTION_COMPUTE_UNITS, MAX_COMPUTE_UNIT_LIMIT } from './programs';
 import { malformed, u64 } from './rpc';
 import type { SolanaFeeDetails, SolanaFeeOverride } from './types';
+
+/**
+ * The signature fee, in lamports per signature of a message: agave's `FeeStructure` rate,
+ * which every bank charges since the fee-rate governor was retired (`get_fee_for_message`
+ * reads the blockhash's recorded rate only to know the blockhash). agave's
+ * `calculate_signature_fee` also counts precompile (ed25519, secp256k1, secp256r1)
+ * signatures; a transfer carries none, so its base fee follows from its signers alone.
+ */
+export const LAMPORTS_PER_SIGNATURE = 5_000n;
 
 /** Library policy: the percentile of recent prioritization fees each speed pays. */
 export const SPEED_PERCENTILE: Readonly<Record<FeeSpeed, number>> = Object.freeze({

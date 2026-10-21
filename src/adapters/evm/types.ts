@@ -43,6 +43,12 @@ export interface EvmFeeDetails {
   readonly gasPrice?: bigint;
   /** OP Stack networks: the L1 data fee estimate, also charged as `l1-data`. */
   readonly l1Fee?: bigint;
+  /**
+   * OP Stack networks since Isthmus, where it is not zero: the operator fee for the whole
+   * gas limit (an upper bound at the chain's current operator settings), also charged as
+   * `operator`.
+   */
+  readonly operatorFee?: bigint;
   /** The expected total cost in wei; the `network` charge is its upper bound. */
   readonly expected: bigint;
 }
@@ -183,8 +189,12 @@ export interface EvmAbi {
   encodeBalanceOf(owner: string): string;
   encodeDecimals(): string;
   encodeSymbol(): string;
+  /** `deprecated()`, which Tether's `TetherToken` answers `true` once it forwards transfers. */
+  encodeDeprecated(): string;
   /** OP Stack `GasPriceOracle.getL1Fee(bytes)` over an unsigned serialized transaction. */
   encodeGetL1Fee(unsignedTx: string): string;
+  /** OP Stack `GasPriceOracle.getOperatorFee(uint256)` for `gasUsed` (since Isthmus). */
+  encodeGetOperatorFee(gasUsed: bigint): string;
   /** Throws on data that is not one ABI `uint256` word. */
   decodeUint256(data: string): bigint;
   /** Throws on data that is not an ABI `string`. */

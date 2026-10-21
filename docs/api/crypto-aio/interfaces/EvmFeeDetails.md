@@ -26,7 +26,7 @@ Defined in: [src/adapters/evm/types.ts:41](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **expected**: `bigint`
 
-Defined in: [src/adapters/evm/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/types.ts#L47)
+Defined in: [src/adapters/evm/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/types.ts#L53)
 
 The expected total cost in wei; the `network` charge is its upper bound.
 
@@ -87,3 +87,17 @@ Defined in: [src/adapters/evm/types.ts:37](https://github.com/vhidvz/crypto-aio/
 Defined in: [src/adapters/evm/types.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/types.ts#L39)
 
 `evm-1559` only.
+
+***
+
+<a id="operatorfee"></a>
+
+### operatorFee?
+
+> `readonly` `optional` **operatorFee?**: `bigint`
+
+Defined in: [src/adapters/evm/types.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/types.ts#L51)
+
+OP Stack networks since Isthmus, where it is not zero: the operator fee for the whole
+gas limit (an upper bound at the chain's current operator settings), also charged as
+`operator`.

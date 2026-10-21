@@ -34,6 +34,7 @@ export const LIFECYCLE_DEFAULTS: ResolvedLifecycle = {
   droppedGracePeriodMs: 120_000,
   rebroadcastIntervalMs: 60_000,
   leaseMs: 30_000,
+  leaseWaitMs: 30_000,
   claimLeaseMs: 60_000,
   waitTimeoutMs: 600_000,
   requireIdempotencyKey: false,
@@ -45,7 +46,19 @@ export function withLifecycleDefaults(options: LifecycleOptions): ResolvedLifecy
   const out: Record<string, unknown> = { ...LIFECYCLE_DEFAULTS };
   for (const [key, value] of Object.entries(options))
     if (value !== undefined) out[key] = value;
-  const { signTimeoutMs } = out as ResolvedLifecycle;
+  // Waiting for the lease follows its length unless set on its own.
+  if (options.leaseWaitMs === undefined) out.leaseWaitMs = out.leaseMs;
+  const { leaseWaitMs, signTimeoutMs } = out as ResolvedLifecycle;
+  if (
+    typeof leaseWaitMs !== 'number' ||
+    !Number.isFinite(leaseWaitMs) ||
+    leaseWaitMs < 0
+  ) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'lifecycle.leaseWaitMs must be a finite number of 0 or more',
+    );
+  }
   if (
     typeof signTimeoutMs !== 'number' ||
     !Number.isFinite(signTimeoutMs) ||
@@ -169,6 +182,7 @@ export function heldNonces(op: OperationRecord): bigint[] {
 /** Failures proven on chain at finality: their nonce was consumed. */
 export const CONSUMED_FAILURES: ReadonlySet<string> = new Set([
   'TX_REVERTED',
+  'TX_UNEVIDENCED',
   'TX_REPLACED',
 ]);
 
@@ -219,15 +233,20 @@ export function feeOf(attempt: AttemptRecord): bigint {
  * The cancel a new cancel is bumped from: among the earlier cancels that superseded
  * the active Attempt `previous` (refused ones gave it the active role back), the one paying
  * the most, so repeated bumps climb; otherwise `previous` itself, so a cancel never starts
- * below a newer, higher replacement. Fees are compared only between cancels. Known gap:
- * they are ranked by total charges, not by a price the driver compares, so on EVM a
- * repeat cancel may need an explicit `fee`.
+ * below a newer, higher replacement. Fees are compared only between cancels: by the
+ * driver's `comparePrice` when it has one, otherwise by total charges.
  */
-export function cancelBase(op: OperationRecord, previous: AttemptRecord): AttemptRecord {
+export function cancelBase(
+  op: OperationRecord,
+  previous: AttemptRecord,
+  comparePrice?: (a: UnsignedTx, b: UnsignedTx) => number,
+): AttemptRecord {
+  const higher = (a: AttemptRecord, b: AttemptRecord) =>
+    comparePrice ? comparePrice(a.unsigned, b.unsigned) > 0 : feeOf(a) > feeOf(b);
   let best: AttemptRecord | undefined;
   for (const attempt of op.attempts) {
     if (attempt.purpose !== 'cancel' || attempt.supersedes !== previous.id) continue;
-    if (!best || feeOf(attempt) > feeOf(best)) best = attempt;
+    if (!best || higher(attempt, best)) best = attempt;
   }
   return best ?? previous;
 }

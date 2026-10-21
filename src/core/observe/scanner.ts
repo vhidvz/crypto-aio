@@ -7,6 +7,7 @@ import type { Block, Transaction } from '../model/transaction';
 import type { CursorStore, ScanCursor } from '../store/types';
 import { isStaleView, type StaleViewSource } from '../transport/stale-view';
 import type { Clock } from '../util/clock';
+import { storableText } from '../util/names';
 
 export interface ScannerOptions {
   /** Durable name of this consumer's position (namespaced per container, chain and network). */
@@ -117,6 +118,8 @@ function assertOptions(options: ScannerOptions): void {
   assertFilter(options.filter, invalid);
   if (typeof cursorKey !== 'string' || cursorKey.length === 0)
     throw invalid('cursorKey must be a non-empty string');
+  if (!storableText(cursorKey))
+    throw invalid('cursorKey must be well-formed text without U+0000');
   if (from !== undefined && from !== 'latest' && (typeof from !== 'bigint' || from < 0n))
     throw invalid("from must be 'latest' or a non-negative bigint height");
   if (mode !== undefined && mode !== 'final' && mode !== 'head')

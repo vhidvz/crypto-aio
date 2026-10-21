@@ -90,4 +90,18 @@ describe('tagged JSON', () => {
     };
     expect(parseTagged(stringifyTagged(value))).toEqual(value);
   });
+
+  it('round-trips a Buffer as bytes, as the memory store keeps it', () => {
+    // Buffer.prototype.toJSON runs before the replacer and turns the bytes into
+    // { type: 'Buffer', data: [...] }, which would read back as a plain object.
+    const text = stringifyTagged({
+      raw: Buffer.from([0, 1, 255]),
+      top: [Buffer.from([7])],
+    });
+    expect(text).toBe('{"raw":{"$bytes":"0001ff"},"top":[{"$bytes":"07"}]}');
+    const parsed = parseTagged<{ raw: Uint8Array; top: Uint8Array[] }>(text);
+    expect(Object.prototype.toString.call(parsed.raw)).toBe('[object Uint8Array]');
+    expect([...parsed.raw]).toEqual([0, 1, 255]);
+    expect(stringifyTagged(Buffer.from([2]))).toBe('{"$bytes":"02"}');
+  });
 });

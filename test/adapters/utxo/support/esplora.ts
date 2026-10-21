@@ -12,7 +12,7 @@ import { bitcoin, type Network } from '../../../../src/adapters/utxo/sdk';
 import { concatBytes, equalBytes, fromHex, toHex } from '../../../../src/core/util/bytes';
 import type { FakeReply } from '../../../../src/testing/fake-fetch';
 import type { Block, EndpointOptions, Entry, ErrorFormat, Output, State } from './node';
-import { compactSizeLength, solve, type ScriptType } from './script';
+import { UnmodelledError, compactSizeLength, solve, type ScriptType } from './script';
 
 /** electrs' page size for block transactions and address history. */
 const PAGE = 25;
@@ -279,7 +279,9 @@ export class EsploraApi {
       merkle_root: reversedHex(level[0]!),
       previousblockhash: block.height === 0 ? null : block.parentHash,
       mediantime: block.mediantime,
-      nonce: 0,
+      nonce: block.header
+        ? new DataView(block.header.buffer, block.header.byteOffset).getUint32(76, true)
+        : 0,
       bits: 0x207fffff,
       difficulty: 1,
     };
@@ -429,7 +431,9 @@ export class EsploraApi {
     const [, id, sub, start] = parts;
     const n = parts.length;
     const shape =
-      n === 2 || (n === 3 && sub === 'txids') || ((n === 3 || n === 4) && sub === 'txs');
+      n === 2 ||
+      (n === 3 && (sub === 'txids' || sub === 'raw')) ||
+      ((n === 3 || n === 4) && sub === 'txs');
     if (!shape) return undefined;
     const hash = parseHash(id as string);
     if (hash === undefined) return { status: 400, text: this.#badHash() };
@@ -438,6 +442,16 @@ export class EsploraApi {
       return active
         ? { json: this.#blockJson(active) }
         : { status: 404, text: 'Block not found' };
+    }
+    if (sub === 'raw') {
+      // `get_block_raw`: full mode rebuilds the bytes from its index of the best chain only;
+      // light mode asks bitcoind, which also has a disconnected block.
+      const stale = view.lightMode ? state.stale.get(hash) : undefined;
+      const block = active ?? (stale && stale.height <= view.height ? stale : undefined);
+      if (!block) return { status: 404, text: 'Block not found' };
+      return new Response(rawBlockOf(block), {
+        headers: { 'content-type': 'application/octet-stream' },
+      });
     }
     // electrs keeps a disconnected block's txids and transactions.
     const stale = state.stale.get(hash);
@@ -506,6 +520,19 @@ export class EsploraApi {
       ? { text: entry.hex }
       : { json: this.#txJson(state, view, entry) };
   }
+}
+
+/**
+ * A block's bytes as bitcoind serializes it: the header, the transaction count, then each
+ * transaction with its witness. The genesis block has no header here (its hash is the
+ * network's), so its bytes are not modelled.
+ */
+export function rawBlockOf(block: Block): Uint8Array {
+  if (!block.header) throw new UnmodelledError('the raw bytes of the genesis block');
+  const count = block.entries.length;
+  const size =
+    count < 0xfd ? Uint8Array.of(count) : Uint8Array.of(0xfd, count & 0xff, count >>> 8); // no test block holds 65,536
+  return concatBytes(block.header, size, ...block.entries.map((e) => fromHex(e.hex)));
 }
 
 /** A txid or block hash as electrs parses one (either case), lowercased. */

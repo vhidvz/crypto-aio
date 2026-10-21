@@ -141,6 +141,33 @@ export function assertWithinCeiling(params: EvmFeeParams, ceiling: bigint): void
   );
 }
 
+/**
+ * The default `maxGasLimit`, the highest gas limit an EVM transaction signs: 16,777,216
+ * (2^24), the per-transaction cap Ethereum enforces since Fusaka (EIP-7825), so no
+ * transaction above it is included there. A transfer this driver builds needs a small
+ * fraction of it (21,000 gas for a plain transfer, tens of thousands for a token's); an
+ * Arbitrum estimate also counts the L1 data fee in L2 gas, so it grows with L1 prices.
+ * Like `DEFAULT_MAX_FEE_PER_GAS`, it stops an absurd gas limit, from an endpoint's
+ * estimate or an override, not an expensive one: set the option to your own policy.
+ */
+export const DEFAULT_MAX_GAS_LIMIT = 16_777_216n;
+
+/**
+ * Refuses, before anything is signed, a gas limit above `bound` (the handle's
+ * `maxGasLimit`), whatever produced it: the node's estimate with its headroom, an
+ * override's `gasLimit`, a stored fee, or a replacement that keeps its original's. It is
+ * never clamped: a lower limit than the call needs runs out of gas and still pays. The
+ * details carry the gas limit and the bound as decimal strings.
+ */
+export function assertWithinGasLimit(gasLimit: bigint, bound: bigint): void {
+  if (gasLimit <= bound) return;
+  throw new ValidationError(
+    'INVALID_INTENT',
+    'the gas limit is above maxGasLimit, the EVM handle option that bounds it (gas)',
+    { details: { required: gasLimit.toString(), maxGasLimit: bound.toString() } },
+  );
+}
+
 /** Validates an `EvmFeeOverride` against the network's fee model. */
 export function parseFeeOverride(
   override: FeeOverride,
@@ -184,7 +211,11 @@ export function feeDraft(
   speed: FeeSpeed | 'custom',
   gasLimit: bigint,
   params: EvmFeeParams,
-  extra: { readonly baseFeePerGas?: bigint; readonly l1Fee?: bigint } = {},
+  extra: {
+    readonly baseFeePerGas?: bigint;
+    readonly l1Fee?: bigint;
+    readonly operatorFee?: bigint;
+  } = {},
 ): FeeEstimateDraft {
   const cap = params.type === 'eip1559' ? params.maxFeePerGas : params.gasPrice;
   const expectedPrice =
@@ -204,7 +235,8 @@ export function feeDraft(
         }
       : { gasPrice: params.gasPrice }),
     ...(extra.l1Fee !== undefined ? { l1Fee: extra.l1Fee } : {}),
-    expected: gasLimit * expectedPrice + (extra.l1Fee ?? 0n),
+    ...(extra.operatorFee !== undefined ? { operatorFee: extra.operatorFee } : {}),
+    expected: gasLimit * expectedPrice + (extra.l1Fee ?? 0n) + (extra.operatorFee ?? 0n),
   } satisfies EvmFeeDetails;
   return {
     kind: params.type === 'eip1559' ? 'evm-1559' : 'evm-legacy',
@@ -214,9 +246,14 @@ export function feeDraft(
       ...(extra.l1Fee !== undefined
         ? [{ asset: 'native' as const, amount: extra.l1Fee, label: 'l1-data' }]
         : []),
+      ...(extra.operatorFee !== undefined
+        ? [{ asset: 'native' as const, amount: extra.operatorFee, label: 'operator' }]
+        : []),
     ],
-    // The L1 data fee moves with L1 prices until inclusion, so it is only expected.
-    bound: extra.l1Fee !== undefined ? 'expected' : 'upper',
+    // The L1 data fee moves with L1 prices until inclusion, and the operator fee with the
+    // chain's operator settings, so either is only expected.
+    bound:
+      extra.l1Fee !== undefined || extra.operatorFee !== undefined ? 'expected' : 'upper',
     details,
   };
 }
@@ -234,6 +271,21 @@ export function feeOf(details: Readonly<Record<string, unknown>>): {
   if (typeof gasPrice === 'bigint')
     return { gasLimit, params: { type: 'legacy', gasPrice } };
   throw invalid('the fee holds no EVM gas prices');
+}
+
+/**
+ * Orders two fee settings by what a txpool compares on replacement: the fee cap (or gas
+ * price), then the tip. A legacy gas price is compared as a fee cap and tip alike.
+ */
+export function comparePrices(a: EvmFeeParams, b: EvmFeeParams): number {
+  const pair = (p: EvmFeeParams): readonly [bigint, bigint] =>
+    p.type === 'eip1559'
+      ? [p.maxFeePerGas, p.maxPriorityFeePerGas]
+      : [p.gasPrice, p.gasPrice];
+  const [capA, tipA] = pair(a);
+  const [capB, tipB] = pair(b);
+  if (capA !== capB) return capA < capB ? -1 : 1;
+  return tipA === tipB ? 0 : tipA < tipB ? -1 : 1;
 }
 
 /**

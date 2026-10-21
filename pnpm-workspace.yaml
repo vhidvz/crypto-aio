@@ -6,3 +6,6 @@ onlyBuiltDependencies:
   - utf-8-validate
 overrides:
   rpc-websockets>uuid: ^11.1.1
+  # Development only: the SDKs' own pins, patched for the tests (users install the SDKs).
+  axios: ^1.20.0
+  handlebars: ^4.7.10

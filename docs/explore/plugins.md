@@ -12,10 +12,11 @@ under quorum, redaction. [Chains, families and drivers](../tour/families.md) exp
 pieces fit; this page is the contract.
 
 > [!NOTE]
-> The driver port is the part of the API most likely to change before 1.0
-> ([Stability](../reference/stability.md)). Read the two reference implementations next to
-> this page: the fake family (`src/testing/fake-plugin.ts` and `fake-driver.ts`) and the EVM
-> family (`src/adapters/evm/`).
+> From 1.0 the driver port follows semver ([Versioning](../reference/stability.md)): a
+> minor release may add an optional method or an optional field the core passes, and
+> never a required one. Read the two reference implementations next to this page: the
+> fake family (`src/testing/fake-plugin.ts` and `fake-driver.ts`) and the EVM family
+> (`src/adapters/evm/`).
 
 ## The plugin
 
@@ -113,6 +114,7 @@ a `ChainDriver` that implements the ports in `src/core/driver/types.ts`:
 | `replacement?` | the `replace` and `cancel` booleans, `buildReplacement`, `buildCancel` (capabilities `replace-fee`, `cancel`) |
 | `blocks?`, `history?` | block source for the scanner (`block-scan`), indexer history (`address-history`) |
 | `ext?`, `limits?`, `createNativeClient?`, `close?` | family extras, output limits, the native client, cleanup |
+| `signingSchemes?` | the schemes a wallet's options make it sign with, when they narrow the chain's (Bitcoin `p2tr`: `secp256k1-schnorr`) |
 
 The JSDoc of `ChainDriver` holds the **per-method contract table**: the request purpose, the
 retry class, the quorum and the throw rules for each method. Follow it exactly. The core
@@ -143,16 +145,30 @@ relies on these rules most:
   which the core reserves.
 - **Native client.** `createNativeClient()` returns `{ client, close? }`, with a **fresh** SDK
   instance on every call. `CryptoAio.close()` calls `close`.
-- Amounts reach drivers in base units only. `DriverContext` has no asset resolver, and
-  `DriverIntent` carries no decimals. This is still open and may change.
-- **Wallet options.** `BuildContext.wallet`, `limits(wallet)` and `address.fromPublicKey`'s
-  `options` (when the core resolves a wallet or derives from its `xpub`) carry the wallet's
-  `options`, its family settings (`utxo`, `ton`) and, when it has an `xpub`,
-  `hd: { xpub, xpubPath?, xpubVersions? }` (`WalletHdOptions`, always a readable public
-  extended key). `hd` is always the core's: neither a wallet's own `options.hd` nor the
-  `options` a caller passes to `Blockchain.addressFromPublicKey` bring an `hd` to a
+- **Base units and decimals.** Amounts reach drivers in base units only; the core scales
+  them with the asset's registered metadata, or what `getTokenMetadata` read from the
+  chain. `BuildContext.decimals` says which decimals it used. A driver whose transaction
+  signs the decimals (Solana's `transferChecked`) reads them from the chain under the
+  proof quorum and refuses a mismatch with `BuildContext.decimals` (`ASSET_RESOLUTION`):
+  the amounts were then scaled wrong.
+- **Replacement prices.** A driver with `replacement` may give `comparePrice(a, b)`, the
+  order a node uses to decide whether one transaction of a slot may replace another. A
+  repeat cancel bumps from the highest earlier cancel by it; without it, the core compares
+  total charges, which a gas limit can skew.
+- **Wallet options.** `BuildContext.wallet`, `limits(wallet)`, `signingSchemes(wallet)` and
+  `address.fromPublicKey`'s `options` (when the core resolves a wallet or derives from its
+  `xpub`) carry the wallet's `options`, its family settings (`utxo`, `ton`) and, when it has
+  an `xpub`, `hd: { xpub, xpubPath?, xpubVersions? }` (`WalletHdOptions`, always a readable
+  public extended key). `hd` is always the core's: neither a wallet's own `options.hd` nor
+  the `options` a caller passes to `Blockchain.addressFromPublicKey` bring an `hd` to a
   driver. The core does not check `hd` against the network class when it resolves the
   wallet: a UTXO driver passes `{ testnet }` to `deriveXpubChild` when it derives from it.
+- **Signing schemes.** When a wallet's options narrow the schemes its requests use, as a
+  Bitcoin `p2tr` wallet signs with `secp256k1-schnorr` only, return them from the optional
+  `signingSchemes(wallet)`, with no I/O. The core then refuses a wallet whose signer does
+  not declare each of them, with `CONFIG_INVALID` when it resolves the wallet, instead of
+  building and reserving a transfer that fails at signing. Without it, a signer needs only
+  one of the chain's `schemes`.
 - **Exact integers.** Pass `exactIntegers: true` on a read whose JSON answer carries amounts
   as numbers: integers beyond 2^53 − 1 then arrive as `bigint`, and a quorum compares them
   exactly.
@@ -163,6 +179,10 @@ relies on these rules most:
   `INVALID_ADDRESS`.
 - **Failure reasons.** With `success: false`, `observe` and `includedFinal` may return a
   short fixed `reason` (no addresses or amounts); the core shows it as `TxStatus.reason`.
+  They also say what failed, as `failure`: leave it out (or `'reverted'`) when execution
+  failed, and set `'unevidenced'` when the transaction executed but shows no transfer to
+  the recipient, so value may have moved; the Operation then fails with `TX_UNEVIDENCED`,
+  not `TX_REVERTED`.
 - **Signed payloads.** The optional `builder.signaturesFrom(unsigned, signed)` lets
   `submitSignatures` take a whole transaction signed elsewhere. Return only its signatures,
   with no I/O, and throw `INVALID_INTENT` when it is not the prepared transaction.

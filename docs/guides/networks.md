@@ -50,4 +50,4 @@ Moved to [Test with the fake chain](../build/testing.md) and [Write a durable st
 
 ## What is stable before 1.0
 
-Moved to [Stability before 1.0](../reference/stability.md).
+Moved to [Versioning and stability](../reference/stability.md).

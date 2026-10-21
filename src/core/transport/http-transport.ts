@@ -39,6 +39,7 @@ const DEFAULTS = {
   timeoutMs: 15_000,
   maxLagBlocks: 5,
   proofQuorum: 2,
+  degradedProofs: false,
   failureThreshold: 5,
   openMs: 30_000,
   healthIntervalMs: 15_000,
@@ -47,7 +48,7 @@ const DEFAULTS = {
 };
 
 type ResolvedOptions = typeof DEFAULTS & { fetch?: typeof fetch };
-type Mode = 'rpc' | 'json' | 'text';
+type Mode = 'rpc' | 'json' | 'text' | 'bytes';
 type Work<T> = (endpoint: Endpoint, signal: AbortSignal) => Promise<T>;
 /** The counted endpoints' verdict: agreeing answers, or one refusal they all gave. */
 type Decided<T> =
@@ -617,7 +618,9 @@ export class HttpTransport implements Transport {
               ? 'half-open'
               : this.#lagging(e)
                 ? 'lagging'
-                : e.height !== undefined || e.identity === 'ok'
+                : // With a height probe, an endpoint is healthy only once its height is
+                  // known: a confirmed identity alone says nothing about its head.
+                  e.height !== undefined || (e.identity === 'ok' && !this.#probes.height)
                   ? 'healthy'
                   : 'unknown';
       return {
@@ -766,11 +769,14 @@ export class HttpTransport implements Transport {
     // retryable error instead of resolving from fewer endpoints than needed.
     // Nor may lag, an unknown height, an unconfirmed identity or an open
     // breaker shrink a proof quorum (#quorumCandidates), so one liar is never alone.
-    // Known gap: the floor of 1 lets the one endpoint still counted prove alone once
-    // every other endpoint is out of the count (a liar, if the honest ones are down for
-    // three health intervals). It favours liveness; raising it changes every family's
-    // proofs.
-    const needed = Math.max(1, Math.min(requested, counted.size));
+    // Nor, by default, may an endpoint that dropped out of the count (down for three
+    // health intervals): a proof waits for it, so the one endpoint left, which may be a
+    // liar, never proves alone. `degradedProofs` trades that for liveness.
+    const available =
+      proof && !this.#opts.degradedProofs
+        ? this.#endpoints.filter((e) => e.identity !== 'mismatch').length
+        : counted.size;
+    const needed = Math.max(1, Math.min(requested, available));
     const eligible = (): Endpoint[] => {
       const now = this.#clock.now();
       return this.#quorumCandidates(purpose, proof).inRange.filter(
@@ -1355,7 +1361,7 @@ export class HttpTransport implements Transport {
       : '';
     const hasBody = bodyText !== undefined;
     const mode = request.responseType ?? 'json';
-    const { text, json } = await this.#exchange(
+    const { text, json, bytes } = await this.#exchange(
       endpoint,
       routeLabel(request.method, request.route),
       {
@@ -1379,7 +1385,7 @@ export class HttpTransport implements Transport {
       routeLabel(request.method, request.route),
       exactIntegers,
     );
-    return (mode === 'text' ? text : json) as T;
+    return (mode === 'text' ? text : mode === 'bytes' ? bytes : json) as T;
   }
 
   /**
@@ -1430,7 +1436,7 @@ export class HttpTransport implements Transport {
     mode: Mode,
     errorLabel: string = label,
     exactIntegers = false,
-  ): Promise<{ text: string; json: unknown }> {
+  ): Promise<{ text: string; json: unknown; bytes: Uint8Array }> {
     const started = this.#clock.now();
     const response = await this.#fetch(request.url, {
       method: request.method,
@@ -1440,11 +1446,13 @@ export class HttpTransport implements Transport {
       redirect: 'error',
     });
     const bytes = await this.#body(endpoint, response);
-    const text = new TextDecoder().decode(bytes);
+    // A binary 2xx answer is returned as it came: UTF-8 decoding would corrupt it (and
+    // decode a whole block for nothing). An error body is text whatever the mode.
+    const text = mode === 'bytes' && response.ok ? '' : new TextDecoder().decode(bytes);
     this.#throwForStatus(endpoint, response);
     const context = this.#context(endpoint);
     let json: unknown;
-    if (mode !== 'text' || !response.ok) {
+    if ((mode !== 'text' && mode !== 'bytes') || !response.ok) {
       try {
         json = text.length > 0 ? parseJson(text, exactIntegers) : null;
       } catch {
@@ -1495,7 +1503,7 @@ export class HttpTransport implements Transport {
       }
     }
     this.#emitResponse(endpoint, label, started, bytes.byteLength);
-    return { text, json };
+    return { text, json, bytes };
   }
 
   /**
@@ -1592,6 +1600,7 @@ export class HttpTransport implements Transport {
         `endpoint rejected the credentials (HTTP ${status})`,
         {
           context,
+          details: { httpStatus: status },
           retryable: true,
         },
       );

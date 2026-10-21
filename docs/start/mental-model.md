@@ -102,7 +102,7 @@ P-Chain.
 - **No general contract calls.** Native coins and tokens (ERC-20, TRC-20, SPL, jettons) only.
 - **No proven deposits.** Deposits are observed; [crediting them
   safely](../build/receive.md#crediting-deposits) is a documented policy.
-- **Not a wallet UI or an indexer.** It is a backend library for Node.js 22 or later.
+- **Not a wallet UI or an indexer.** It is a backend library for Node.js 22.12 or later.
 
 ## The API at a glance
 

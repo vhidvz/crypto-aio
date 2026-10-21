@@ -6,6 +6,7 @@ import type {
   AttemptRef,
   Evidence,
   RawTx,
+  TxFailure,
   TxState,
   UnsignedTx,
 } from '../model/transaction';
@@ -92,6 +93,8 @@ export interface AttemptObservation {
   readonly lastSeenAt?: number;
   readonly lastBroadcastAt?: number;
   readonly reason?: string;
+  /** With `state: 'failed'`: what failed (absent: `'reverted'`). */
+  readonly failure?: TxFailure;
   readonly replacedBy?: string;
   readonly version: number;
 }
@@ -105,6 +108,11 @@ export interface OperationClaim {
 
 export interface OperationRecord {
   readonly id: string;
+  /**
+   * The record format the Operation was stored in (`OPERATION_FORMAT` when it was created).
+   * A store keeps it as it keeps every other field. Records of 0.1.0 have none: format 1.
+   */
+  readonly format: number;
   readonly namespace: string;
   readonly idempotencyKey: string;
   readonly intentHash: string;
@@ -229,8 +237,13 @@ export interface CreateResult {
  *   a field.
  * - `appendAttempt` is atomic with its accompanying patch, never rewrites a
  *   previously stored `AttemptRecord`, and rejects a duplicate attempt id. Attempt ids
- *   are globally unique across every Operation and namespace (observations are keyed
- *   by attempt id alone).
+ *   are globally unique across every Operation and namespace: the core makes each one
+ *   random, and observations are keyed by attempt id alone, so a store may also refuse
+ *   (`INVALID_TRANSITION`) an id that another Operation holds.
+ * - Time: `createdAt`, `updatedAt` and claim expiry are stamped with the store's clock,
+ *   which the core compares with its own (`claimDue` gets the worker's `now`). Give a
+ *   durable store the container's clock, or a wall clock the processes share, as the
+ *   memory stores take theirs.
  * - `claimDue` and `list` are scoped by namespace: they never return a record of another
  *   namespace, even one with the same id.
  * - `claimDue` returns only non-terminal operations with `nextCheckAt` set and `<=
@@ -378,6 +391,7 @@ export const DATA_CLASSIFICATION: {
 } = Object.freeze({
   operation: Object.freeze({
     id: 'operational',
+    format: 'operational',
     namespace: 'operational',
     idempotencyKey: 'sensitive',
     intentHash: 'operational',
@@ -427,6 +441,7 @@ export const DATA_CLASSIFICATION: {
     lastBroadcastAt: 'operational',
     // A node's refusal or rejection text can carry addresses or amounts.
     reason: 'sensitive',
+    failure: 'operational',
     replacedBy: 'operational',
     version: 'operational',
   }),

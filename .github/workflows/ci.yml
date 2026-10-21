@@ -9,8 +9,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node: ['22.x', '24.x']
+        # Every Node.js release line crypto-aio supports (package.json's engines): the
+        # oldest supported version, then each current release line.
+        node: ['22.12.0', '22.x', '24.x', '26.x']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -31,3 +34,68 @@ jobs:
           path: coverage/
       - run: pnpm run build
       - run: pnpm run doc
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The runtime dependencies, which every user installs. The SDKs are the user's own
+      # peer installs, and the rest are development tools.
+      - run: pnpm audit --prod
+      # package.json's exports and types, under every module resolution.
+      - run: pnpm run lint:package
+      # The public API against etc/api/: a change needs its report updated (`pnpm api:update`).
+      - run: node scripts/api-report.mjs
+      # The tarball as a user installs it, with and without the SDKs.
+      - run: node scripts/pack-check.mjs
+
+  evm-local:
+    # The EVM write path (sign, broadcast, prove, replace, cancel, recover, reorg) against a
+    # real node: Foundry's anvil, from the @foundry-rs/anvil devDependency, which
+    # scripts/evm-local.mjs starts on a free port and stops.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:evm-local
+
+  # The PostgreSQL reference store (examples/postgres-store) against a real server: the four
+  # store contract suites and the engine end to end. The test skips itself without
+  # CRYPTO_AIO_PG_URL, so the check job's run passes over it.
+  postgres-store:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CRYPTO_AIO_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec jest test/examples --coverage=false

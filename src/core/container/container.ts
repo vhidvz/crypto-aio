@@ -1,5 +1,5 @@
 import { AssetService } from '../assets/service';
-import { Blockchain } from '../blockchain/handle';
+import { createBlockchain, type Blockchain } from '../blockchain/handle';
 import { internalsOf, type HandleInternals } from '../blockchain/internal';
 import { readEnvChains } from '../config/env';
 import { assertNoCycle, isPlainObject, mergeScopes } from '../config/merge';
@@ -38,6 +38,7 @@ import {
 } from '../registry/plugin';
 import { SigningOrchestrator } from '../signing/orchestrator';
 import { resolveWallet, type ResolvedWallet } from '../signing/wallet';
+import { formatGuard } from '../store/format';
 import { createMemoryStores } from '../store/memory';
 import type { OperationRecord, OperationState, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
@@ -98,6 +99,12 @@ interface ScopeInit {
 }
 
 /**
+ * Set by `scope()` for the one synchronous constructor call it makes, so a child container
+ * needs no constructor parameter in the public API.
+ */
+let pendingScope: ScopeInit | undefined;
+
+/**
  * Deep-clones plain objects/arrays into a frozen copy so a later mutation of the caller's
  * own input can never reach a layer already captured by a container. Class instances
  * (Signer, Secret, ...) are referenced, not cloned — they're already immutable.
@@ -139,16 +146,34 @@ function scopePart(options: ScopeOptions): ScopeOptions {
   };
 }
 
+const checkedStores = new WeakMap<RootRuntime, Stores>();
+
+/**
+ * The stores as the engine, the workers and `aio.operations` use them: Operation records
+ * pass the format guard, so none is ever read in a format this version does not know.
+ */
+function storesOf(runtime: RootRuntime): Stores {
+  let stores = checkedStores.get(runtime);
+  if (!stores) {
+    stores = {
+      ...runtime.stores,
+      operations: formatGuard(runtime.stores.operations, runtime.log.child('store')),
+    };
+    checkedStores.set(runtime, stores);
+  }
+  return stores;
+}
+
 function createEngine(
   runtime: RootRuntime,
   effective: () => EffectiveOptions,
 ): OperationEngine {
   const lifecycle = () => withLifecycleDefaults(effective().lifecycle);
-  const { leaseMs } = lifecycle();
+  const { leaseMs, leaseWaitMs } = lifecycle();
   const log = runtime.log.child('lifecycle');
   return new OperationEngine({
     namespace: runtime.namespace,
-    stores: runtime.stores,
+    stores: storesOf(runtime),
     events: runtime.events,
     clock: runtime.clock,
     log,
@@ -164,7 +189,7 @@ function createEngine(
       clock: runtime.clock,
       owner: runtime.owner,
       leaseMs,
-      acquireTimeoutMs: leaseMs,
+      acquireTimeoutMs: leaseWaitMs,
       // The code only: a store's error message may carry detail that logs must not.
       onReleaseError: (error) =>
         log.warn('lease release failed', { code: errorCode(error) }),
@@ -317,10 +342,9 @@ export interface MonitorApi {
 export class CryptoAio {
   readonly namespace: string;
 
-  constructor(options?: AioOptions);
-  /** @internal */
-  constructor(options: AioOptions, scope: ScopeInit);
-  constructor(options: AioOptions = {}, scope?: ScopeInit) {
+  constructor(options: AioOptions = {}) {
+    const scope = pendingScope;
+    pendingScope = undefined;
     if (scope) {
       const parent = containerOf(scope.parent);
       this.namespace = parent.runtime.namespace;
@@ -338,6 +362,10 @@ export class CryptoAio {
     const catalogs = createCatalogs();
     for (const plugin of [...builtinPlugins(), ...(options.plugins ?? [])])
       applyPlugin(catalogs, plugin);
+    for (const asset of options.assets ?? []) {
+      catalogs.chains.network(asset.chain, asset.network);
+      catalogs.assets.register(asset);
+    }
     const env = options.env === false ? {} : (options.env ?? process.env);
     const events = new EventBus(clock, log);
     // eslint-disable-next-line prefer-const -- closures below read it after assignment
@@ -388,7 +416,12 @@ export class CryptoAio {
    * `new CryptoAio({ namespace })` when isolation between tenants is required.
    */
   scope(overrides: ScopeOptions): CryptoAio {
-    return new CryptoAio({}, { parent: this, overrides });
+    pendingScope = { parent: this, overrides };
+    try {
+      return new CryptoAio();
+    } finally {
+      pendingScope = undefined;
+    }
   }
 
   blockchain<C extends ChainId>(config: HandleConfig<C>): Blockchain<C> {
@@ -442,7 +475,7 @@ export class CryptoAio {
         return wallet;
       },
     };
-    return new Blockchain<C>(handle);
+    return createBlockchain<C>(handle);
   }
 
   /** Registers a plugin on this root container (copy-on-write catalogs). */
@@ -478,7 +511,7 @@ export class CryptoAio {
   /** Stored Operations of this namespace, as views, and startup recovery. */
   get operations(): OperationsApi {
     const internals = containerOf(this);
-    const store = internals.runtime.stores.operations;
+    const store = storesOf(internals.runtime).operations;
     const namespace = internals.runtime.namespace;
     const view = async (record: OperationRecord) =>
       toView(record, await loadObservations(store, record));
@@ -580,7 +613,7 @@ export class CryptoAio {
       monitor: () =>
         (monitor ??= new Monitor({
           engine: getEngine(),
-          stores: runtime.stores,
+          stores: storesOf(runtime),
           events: runtime.events,
           clock: runtime.clock,
           log: runtime.log.child('monitor'),

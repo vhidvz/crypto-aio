@@ -28,7 +28,7 @@ Operations checked on chain after any resend.
 
 > `readonly` **failed**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L37)
+Defined in: [src/core/lifecycle/workers.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L43)
 
 Operations whose target could not be rebuilt, or whose resend or check threw.
 
@@ -53,7 +53,7 @@ attempted resends, including ones the node refused or whose outcome is unknown.
 
 > `readonly` **reconciled**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L39)
+Defined in: [src/core/lifecycle/workers.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L45)
 
 Leaked nonce values that reconciliation returned for reuse (across all wallets).
 
@@ -68,3 +68,17 @@ Leaked nonce values that reconciliation returned for reuse (across all wallets).
 Defined in: [src/core/lifecycle/workers.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L35)
 
 Operations that need a caller (see `recovery.skipped`); never resent or checked.
+
+***
+
+<a id="unresent"></a>
+
+### unresent
+
+> `readonly` **unresent**: `number`
+
+Defined in: [src/core/lifecycle/workers.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L41)
+
+`signed` or ambiguously `submitted` Operations whose wallet no longer resolves (its
+configuration or signer was removed): checked on chain, but their stored bytes were not
+sent again. Restore the wallet and recover again to resend them.

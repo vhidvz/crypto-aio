@@ -1,95 +1,70 @@
 ---
-title: Stability before 1.0
-description: What may change before crypto-aio 1.0, surface by surface.
+title: Versioning and stability
+description: What semantic versioning covers in crypto-aio, surface by surface, and the support policy for Node.js, TypeScript and the chain SDKs.
 ---
 
-# Stability before 1.0
+# Versioning and stability
 
-crypto-aio is pre-1.0 (`0.x`). Breaking changes can happen in a minor release, and they are
-listed in the changelog. Recent changes are an example: `Transfer` became a union
-with an unresolved-asset variant, `TERMINAL_STATES` became an array, and `Scanner` became a
-type-only export (get a scanner from `bc.scanner()`).
+crypto-aio follows [semantic versioning](https://semver.org/). From 1.0.0, a breaking change
+to anything this page lists as covered comes only in a new major version; a minor release
+adds, and a patch release fixes. Every release is listed, with what changed, in the
+[changelog](https://github.com/vhidvz/crypto-aio/blob/main/CHANGELOG.md), and every change to
+the public API is visible in the API reports the repository keeps (`etc/api/`), which CI
+compares on every change.
 
-| Surface | Expectation |
+Before 1.0 (the `0.x` releases), a minor release may break, and the changelog says how.
+
+## What is covered
+
+| Surface | Promise |
 | --- | --- |
-| Handle and container API, configuration shape, `Amount` / `Address` / asset model, error codes, event names and payloads, store ports and their contract suites | Intended to stay; changes only for real-adapter findings |
-| Driver port (`ChainDriver` and its sub-ports), `Plugin`, `AdapterManifest`, `DriverContext` | **Likely to change** while real families are added. It changed recently (`ProofSource.blockHash`, `createNativeClient` returning `{ client, close? }`) and has open questions, such as how drivers get token decimals |
-| Family `ext` APIs and fee override shapes | Defined by each family's adapter |
-| `crypto-aio/testing` | Public and documented; the fake chain's wire protocol is not an API |
-| `crypto-aio/native` | **Outside semver.** The SDK's API is the SDK's |
+| The container and handle API (`CryptoAio`, `Blockchain`, `configure`), the configuration shape, the model (`Amount`, `Address`, assets, intents, statuses), signers, error classes and codes, event names and payloads, the store ports and their contract suites | Covered by semver |
+| The driver port (`ChainDriver` and its sub-ports), `Plugin`, `AdapterManifest`, `DriverContext`, `BuildContext` | Covered by semver, under the rules for ports below |
+| What a process stores: Operation records, observations, the store keys, the intent hash behind idempotency keys | Covered: every 1.x release reads what any earlier 1.x release (and 0.1.0) stored. See [the record format](../explore/stores.md#upgrades-and-the-record-format) |
+| Family `ext` APIs and fee override shapes | Covered per family, as each family's network page describes them |
+| `crypto-aio/testing` | Covered, except the fake chain's wire protocol, which is not an API |
+| `crypto-aio/native` | **Not covered.** It hands you the SDK's own client; the SDK's API is the SDK's |
+| Error and log message texts, `details` and `context` beyond what [Errors](./errors.md) documents, the order of events of different Operations | Not covered: match on codes, categories and documented fields |
 
-## Known gaps
+## What a minor release may do
 
-What 0.1.0 does not do yet, and what to do about it. None of these leaks a secret, and none can
-make the library sign a second payment on its own. Most can only stall an Operation or a read,
-the safe direction.
+TypeScript makes some additions breaking for some code, so these are the rules:
 
-### Two that can make a paid transfer look failed
+- **Unions grow.** `ErrorCode`, `OperationState`, `TxState`, `TxFailure`, capability names,
+  event names and other string unions may gain members in a minor release. Handle the
+  unknown case in an exhaustive `switch` (a `default` branch), and match on documented
+  codes rather than on their absence.
+- **Results grow.** An object the library returns or emits may gain optional fields.
+- **Inputs grow, optionally.** An options object may gain optional fields with defaults that
+  keep today's behavior.
+- **Ports you implement never gain a required member.** A store port, `Signer`, or a driver
+  port may gain an optional method, or an optional field the core passes to you; never one
+  you must implement. The contract suites may gain tests only for behavior the port's
+  documentation already requires.
+- **Safety fixes.** A fix for a security vulnerability or for a verdict that could pay twice
+  may change behavior in a patch or minor release, and is called out as such in the
+  changelog.
 
-A transfer that paid but reads as failed invites a second payment by hand, so know these two:
+## Deprecation
 
-- **A deprecated USDT on Tron.** Tether's Tron contract can deprecate itself in favour of a new
-  one (its `upgradedAddress`). If that ever happens, a USDT transfer still moves the money, but
-  the library checks the event of the old contract and reports the transfer `failed`. It has not
-  happened; the fix, when it does, is to move the `USDT` alias to the new contract.
-- **A TON bounce on one indexer's word.** `failed` with `transfer bounced` rests on the indexer
-  service's answer. With a single indexer service, a lying one could report a bounce for a
-  transfer that landed. Configure two independent indexer services, as the
-  [TON page](./networks/ton.md) recommends.
+A feature is deprecated in a minor release: its documentation and type declarations say so
+(`@deprecated`), and using it warns once per process with a Node.js `DeprecationWarning`
+whose code starts with `CRYPTO_AIO_`. It is removed no earlier than the next major release.
 
-### Trust and evidence
+## Support policy
 
-- **Deposits are `observed`, never `proven`.** No driver proves a deposit yet, and Bitcoin and
-  Tron block pages are not bound to their block header. Credit deposits as
-  [Receive deposits](../build/receive.md) explains: confirm each one you credit with a second read.
-- **The proof quorum has a floor of one.** A proof needs `min(requested, counted)` endpoints, and
-  at least one. When every other endpoint is out of the count (its circuit open), the one left
-  proves alone. Give each network endpoints from independent providers.
-- **EVM proofs compare raw answers.** Two honest endpoints that format an answer differently read
-  as a disagreement, so the verdict waits; it never decides wrongly.
+| Dependency | Supported |
+| --- | --- |
+| Node.js | 22.12 or later: every Node.js LTS line that has not reached its end of life. CI runs 22.12.0, 22, 24 and 26. A line that reaches its end of life may be dropped in a minor release, announced in the changelog beforehand |
+| TypeScript | 5.3 or later for the declarations, and 7. The minimum may rise in a minor release, only to a version released at least two years before |
+| Chain SDKs | The peer range each family declares in `package.json`, such as `@solana/web3.js` `^1.99.0 \|\| ^3.0.0`. Tests pin the oldest version of each range; a nightly run tests the newest. A new SDK major line may be added in a minor release; dropping one is a major release |
+| Module systems | CommonJS, and ES modules through Node.js's CommonJS interop; `node16`/`nodenext` and `bundler` type resolution |
 
-### Things that can stall
+Security fixes go to the latest minor release of the latest major version
+([security policy](https://github.com/vhidvz/crypto-aio/blob/main/SECURITY.md)).
 
-- **A disagreeing endpoint stays in the proof set.** After a quorum disagreement no endpoint is
-  demoted, so a lying endpoint among the first proof endpoints stalls verdicts until you remove
-  it. Outside proofs, a quorum read stops at the first endpoint's definitive error, so one token
-  can stay unresolvable until a restart.
-- **A rate-limited proof endpoint stays counted.** While it answers `429`, proofs wait for it.
-  Rate limits are per transport, not per method or per host: toncenter, for one, limits by IP
-  across its v2 and v3 APIs and every handle's transport.
-- **`status()` reads healthy before an endpoint's height is known.**
-- **A queued transfer waits at most `leaseMs`.** A transfer queued behind one that signs for up
-  to `signTimeoutMs` (120 s by default) fails `SEQUENCE_BUSY` after `leaseMs` (30 s); there is no
-  option to wait longer. Repeat it with the same idempotency key.
-- **An EIP-7702 authorization that uses the sender's nonce** leaves the EVM verdict undecided.
-- **A refusal can hide behind `dropped`.** After an ambiguous send, a node's later refusal of the
-  same bytes shows as `dropped`, and the Operation stays `submitted`. A repeat with the same
-  key, `rebroadcast` or recovery records the refusal again.
-- **A hung signer slows a worker pass.** If a wallet's `getPublicKey` hangs, each Operation of
-  a pass that every node rejected can wait up to `signTimeoutMs` for it.
-- **Recovery cannot check an Operation whose wallet is gone.** A `signed` or ambiguous
-  Operation whose wallet no longer resolves (its configuration was removed, say) is counted
-  `failed` in the `RecoveryReport` without its check. Restore the wallet and recover again.
-- **The same key used outside crypto-aio.** While an endpoint lags, nonce reconciliation can
-  reclaim a nonce that a transaction sent from outside the library already used. The transfer
-  that reuses it fails with `TX_REPLACED`; nothing is paid twice.
+## What crypto-aio does not do yet
 
-### Not there yet
-
-- **Decimals you supply.** A token or jetton whose decimals the chain does not give cannot be
-  sent until a [plugin](../explore/plugins.md) registers them; there is no decimals option on a
-  transfer, since a wrong default could scale an amount a thousandfold.
-- **A gas-limit bound on EVM.** `eth_estimateGas` sets the gas limit. An inflated estimate only
-  raises the reserved maximum (the funds check refuses what the wallet cannot cover), but no
-  operator bound exists. The OP Stack operator fee is not in the fee report.
-- **A repeat cancel on EVM** ranks earlier cancels by their total charges, not by price, so it
-  may need an explicit `fee`.
-- **A sanity bound on Solana's fee quote** (`getFeeForMessage`). A wrong quote can mis-state an
-  estimate or stall a transfer; it is never signed into one.
-- **Hardware-wallet key origins on Bitcoin.** PSBTs carry no `bip32Derivation`.
-- **A p2tr wallet with an ECDSA-only signer** fails at signing, before anything is broadcast.
-- **TON batches** have no outcome per leg, and `UQ…` addresses of active contracts are not sent
-  bounceable on request.
-- **A distinct error for a token that did not log its transfer.** It is `TX_REVERTED`, as
-  [Errors](./errors.md) describes.
-- **A structured HTTP status on `PROVIDER_MISCONFIGURED`.** The message names the status.
+The behaviors with limits worth knowing before production are in
+[Known limitations](./limitations.md): none of them leaks a secret or makes the library pay
+twice on its own.

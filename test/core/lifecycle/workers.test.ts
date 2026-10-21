@@ -685,6 +685,32 @@ describe('monitoring is signer-free', () => {
     expect(env.chain.inMempool(signed?.attempts[0]?.ref.id ?? '')).toBe(true);
   });
 
+  it('recover() checks a signed operation whose wallet is gone, and reports it unresent', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({ stores: { operations: faulty } });
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    await expect(
+      env.run(
+        env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'signed' }),
+      ),
+    ).rejects.toBeInstanceOf(CrashError);
+    const signed = await env.stores.operations.getByKey('default', 'signed');
+    const ref = signed?.attempts[0]?.ref.id ?? '';
+    // Another process whose config no longer has the wallet at all.
+    const gone = rotatedContainer(env, {});
+    const report = await env.run(gone.operations.recover());
+    expect(report).toMatchObject({ rebroadcast: 0, checked: 1, unresent: 1, failed: 0 });
+    expect(env.chain.inMempool(ref)).toBe(false);
+    // With the wallet restored, recovery resends the stored bytes.
+    const restored = rotatedContainer(env, { main: { address: env.address } });
+    expect(await env.run(restored.operations.recover())).toMatchObject({
+      rebroadcast: 1,
+      unresent: 0,
+      failed: 0,
+    });
+    expect(env.chain.inMempool(ref)).toBe(true);
+  });
+
   it('never lets a hung getPublicKey stall the checks of a worker pass', async () => {
     const { signer, hang } = keyReadingSigner();
     const env = await createFakeEnv({ signer });

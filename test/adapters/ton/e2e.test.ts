@@ -305,6 +305,52 @@ describe('TON end to end (scripted toncenter node)', () => {
       expect(await pay(friendly(REVERTER, false), GRAM)).toBe('final');
       expect(env.node.balance(REVERTER)).toBe(before + GRAM);
     });
+
+    // A `failed` invites a second payment by hand: a bounce stands only once the
+    // liteserver's own transactions show it, never on the one indexer's word.
+    it('never fails a delivered transfer a lone lying indexer reports bounced, then proves it final', async () => {
+      const { signer, calls } = countingSigner();
+      const env = await createTonEnv({ signer });
+      // An active wallet keeps a bounceable transfer.
+      env.node.deployWallet(SMALL, {
+        version: 'v4r2',
+        publicKey: new Uint8Array(32).fill(7),
+        walletId: 698_983_191,
+      });
+      // The indexer records the delivery as a bounce, its phases consistent.
+      lyingIndexer(env, (route, json) => {
+        if (route !== '/traces') return json;
+        for (const trace of json.traces as Json[]) {
+          for (const tx of Object.values(trace.transactions as Record<string, Json>)) {
+            if ((tx.account as string).toLowerCase() !== SMALL) continue;
+            tx.description = {
+              type: 'ord',
+              aborted: true,
+              compute_ph: { skipped: false, success: false, exit_code: 100 },
+              bounce: { type: 'ok' },
+            };
+            tx.out_msgs = [];
+          }
+        }
+        return json;
+      });
+      const sub = await env.run(
+        env.bc.transfer({ to: friendly(SMALL, true), amount: GRAM }),
+      );
+      await monitorFor(env, 20, async () => {
+        const record = await recordOf(env, sub.operationId);
+        expect(['submitted', 'included']).toContain(record.state);
+        expect(
+          (await env.run(env.bc.getTransactionStatus(sub.operationId))).state,
+        ).not.toBe('failed');
+      });
+      expect(env.warnings).toContain('BOUNCE_UNPROVEN');
+      expect(env.node.balance(SMALL)).toBe(GRAM);
+      env.node.intercept = undefined;
+      const done = await env.mineWhile(sub.wait({ finality: 'final' }));
+      expect(done.status).toMatchObject({ state: 'final', evidence: 'proven' });
+      expect(calls()).toBe(1);
+    });
   });
 
   describe('the funds path and the fee ceiling', () => {

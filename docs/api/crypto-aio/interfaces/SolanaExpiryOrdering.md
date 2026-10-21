@@ -2,7 +2,7 @@
 
 # Interface: SolanaExpiryOrdering
 
-Defined in: [src/adapters/solana/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L98)
+Defined in: [src/adapters/solana/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L102)
 
 The expiry ordering a Solana build records: the recent blockhash's
 `lastValidBlockHeight`, the blockhash itself and the slot of its block, all from one
@@ -23,7 +23,7 @@ this ordering whole and unmodified: a changed `blockhash` misplaces the window.
 
 > `readonly` **blockhash**: `string`
 
-Defined in: [src/adapters/solana/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L102)
+Defined in: [src/adapters/solana/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L106)
 
 The message's recent blockhash (base58).
 
@@ -35,7 +35,7 @@ The message's recent blockhash (base58).
 
 > `readonly` **blockhashSlot**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L104)
+Defined in: [src/adapters/solana/types.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L108)
 
 The slot of the block whose hash `blockhash` is.
 
@@ -47,7 +47,7 @@ The slot of the block whose hash `blockhash` is.
 
 > `readonly` **kind**: `"expiry"`
 
-Defined in: [src/adapters/solana/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L99)
+Defined in: [src/adapters/solana/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L103)
 
 ***
 
@@ -57,4 +57,4 @@ Defined in: [src/adapters/solana/types.ts:99](https://github.com/vhidvz/crypto-a
 
 > `readonly` **lastValidHeight**: `bigint`
 
-Defined in: [src/adapters/solana/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L100)
+Defined in: [src/adapters/solana/types.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/solana/types.ts#L104)

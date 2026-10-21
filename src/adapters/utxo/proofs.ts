@@ -19,12 +19,21 @@
  * final spend, and an endpoint-set change between the monitor's `slotConsumed` and
  * `includedFinal` calls cannot produce a false proven `replaced`.
  *
- * The block source reads chain data leniently (the Esplora client's parsers) and binds
- * every page to its block: each page has exactly the transactions the block's count
- * leaves for it, no txid twice, each confirmed in that block. A reorg while paging, or a
- * page the endpoint does not have, decides nothing (retryable). Address filters match
- * output and prevout scripts, so a watched address's spend is kept even when no output of
- * it has an address.
+ * The block source delivers only what authenticated bytes say. A block's transactions are
+ * decoded from its own bytes (`rawBlock`), which must hash to the block the scan asked for
+ * and commit to every transaction and witness, and the header read at its height must be
+ * those bytes' own (parent and time). The outputs a delivered transaction's inputs spend,
+ * which give its `from`, input values and fee, are read from the block itself or from each
+ * previous transaction's bytes, bound to the txid the input names. So no endpoint can add,
+ * drop or alter a transaction, an output or a sender of what is delivered. A filtered scan
+ * picks transactions by their outputs (the bytes) and by the inputs the index's pages say
+ * spend from a watched address; each page must be the bytes' own, confirmed in that block,
+ * and its claims must hold for every transaction delivered, so a lying index can at most
+ * hide a watched address's spend that pays no watched address. Which block is at a height
+ * stays the endpoint's word, as in every family (the proof quorum confirms rollbacks). A
+ * reorg while reading, or a block, page or previous transaction the endpoint does not have,
+ * decides nothing (retryable). Address filters match output and prevout scripts, so a
+ * watched address's spend is kept even when no output of it has an address.
  */
 import type {
   BlockSource,
@@ -46,8 +55,9 @@ import {
   withSignal,
   type UtxoContext,
 } from './context';
-import { decodeTransaction } from './decode';
+import { decodeTransaction, scriptType } from './decode';
 import {
+  MAX_MONEY,
   isHash,
   isNotFound,
   type EsploraClient,
@@ -56,17 +66,23 @@ import {
   parseHeight,
   parseOutspend,
   parseTx,
+  type TxOutput,
 } from './esplora';
+import { isNullOutpoint, type RawBlock } from './rawblock';
+import type { ParsedTx } from './rawtx';
 import { isOwnCopy } from './reader';
-import type { EsploraTx } from './types';
+import type { EsploraInput, EsploraOutput, EsploraStatus, EsploraTx } from './types';
 
 /** Blocks `finalizedHead` trails one endpoint's head by, so peers can attest it. */
 export const PEER_SKEW = 2n;
 
 /** Esplora's page of block transactions (electrs' `CHAIN_TXS_PER_PAGE`). */
 const PAGE = 25;
-/** Consensus: a block's transaction count × 4 is at most `MAX_BLOCK_WEIGHT` (4,000,000). */
-const MAX_BLOCK_TXS = 1_000_000;
+/**
+ * How many previous transactions a block scan reads at once: a full block's delivered
+ * transactions spend outputs of thousands. The transport's rate limit still paces them.
+ */
+const PREVIOUS_READS = 8;
 /** No height is below 0 or beyond what a server parses: such a height is never sent. */
 const MAX_HEIGHT = BigInt(Number.MAX_SAFE_INTEGER);
 const outOfRange = (height: bigint): boolean => height < 0n || height > MAX_HEIGHT;
@@ -80,6 +96,55 @@ const contradiction = (reason: string): ProviderError =>
 
 const stale = (): ProviderError =>
   contradiction('the including block is no longer the block at its height');
+
+/** The block a scan reads is gone from the endpoint's chain, or was never on it. */
+const changed = (block: DriverBlock): ProviderError =>
+  contradiction(`block ${block.height} changed while scanning`);
+
+/**
+ * An output of a block's or a previous transaction's bytes as an Esplora page shows it.
+ * Its value is in range (consensus), so out of range the bytes are not chain data.
+ */
+function outputView(output: TxOutput): EsploraOutput {
+  if (output.value < 0n || output.value > MAX_MONEY) throw malformed('output value');
+  return {
+    script: toHex(output.script),
+    type: scriptType(output.script),
+    value: output.value,
+  };
+}
+
+/**
+ * Whether a page's transaction is `own`, the one the block's bytes hold at its place: the
+ * same txid, and the same inputs (outpoints, sequences, coinbase) and outputs.
+ */
+function samePageTx(page: EsploraTx, own: ParsedTx): boolean {
+  return (
+    page.txid === own.txid &&
+    page.version === own.version &&
+    page.locktime === own.locktime &&
+    page.vin.length === own.inputs.length &&
+    page.vout.length === own.outputs.length &&
+    page.vin.every((input, n) => {
+      const mine = own.inputs[n];
+      return (
+        mine !== undefined &&
+        input.txid === mine.txid &&
+        input.vout === mine.vout &&
+        input.sequence === mine.sequence &&
+        input.coinbase === isNullOutpoint(mine)
+      );
+    }) &&
+    page.vout.every((output, n) => {
+      const mine = own.outputs[n];
+      return (
+        mine !== undefined &&
+        output.value === mine.value &&
+        output.script === toHex(mine.script)
+      );
+    })
+  );
+}
 
 /**
  * A block hash read under the proof quorum is compared as `parseHash` reads it, so two
@@ -332,6 +397,132 @@ export function blockSource(ctx: UtxoContext): BlockSource {
     return scripts;
   };
 
+  /**
+   * The places of `raw`'s transactions that touch `wanted`, with each one's page: an output
+   * to it, read from the block's own bytes, or an input that, by the index's pages, spends
+   * from it. Every page is bound to the bytes: exactly the transactions they hold at its
+   * places, with the same inputs and outputs, confirmed in this block. So a page only claims
+   * which outputs the block's inputs spend, and `viewOf` checks the claims of every
+   * transaction delivered against the previous transactions' own bytes: all a lying index
+   * can do is hide a spend from a watched address that pays no watched address.
+   */
+  const touching = async (
+    block: DriverBlock,
+    raw: RawBlock,
+    wanted: ReadonlySet<string>,
+  ): Promise<Map<number, EsploraTx>> => {
+    const picked = new Map<number, EsploraTx>();
+    for (let start = 0; start < raw.txs.length; start += PAGE) {
+      let page: EsploraTx[];
+      try {
+        page = await esplora.blockTxs(block.hash, start, MONITOR);
+      } catch (error) {
+        // A backend that does not have the block (lagging, load-balanced) decides nothing.
+        if (isNotFound(error)) throw changed(block);
+        throw error;
+      }
+      // Each page holds exactly what the block leaves for it.
+      if (page.length !== Math.min(PAGE, raw.txs.length - start)) {
+        throw malformed('block txs page');
+      }
+      page.forEach((tx, offset) => {
+        const own = raw.txs[start + offset] as ParsedTx;
+        if (!samePageTx(tx, own)) {
+          throw contradiction("a block page differs from the block's own bytes");
+        }
+        const { status } = tx;
+        if (
+          !status.confirmed ||
+          status.blockHash !== block.hash ||
+          status.blockHeight !== block.height
+        ) {
+          throw changed(block);
+        }
+        if (
+          own.outputs.some((output) => wanted.has(toHex(output.script))) ||
+          tx.vin.some((input) => input.prevout && wanted.has(input.prevout.script))
+        ) {
+          picked.set(start + offset, tx);
+        }
+      });
+    }
+    return picked;
+  };
+
+  /**
+   * The outputs the inputs of `txs` spend, by previous txid: a transaction of the block
+   * itself, or the previous transaction's own bytes, bound to its txid (`outputsOf`). One
+   * endpoint answers, so one that does not have a previous transaction decides nothing.
+   */
+  const spentOutputs = async (
+    raw: RawBlock,
+    txs: readonly ParsedTx[],
+  ): Promise<ReadonlyMap<string, readonly TxOutput[]>> => {
+    const known = new Map<string, readonly TxOutput[]>(
+      raw.txs.map((tx) => [tx.txid, tx.outputs]),
+    );
+    const missing = new Set<string>();
+    for (const tx of txs) {
+      for (const input of tx.inputs) {
+        if (!isNullOutpoint(input) && !known.has(input.txid)) missing.add(input.txid);
+      }
+    }
+    await forEachBounded([...missing], PREVIOUS_READS, async (txid) => {
+      const outputs = await esplora.outputsOf(txid, MONITOR);
+      if (!outputs) throw undecided("an input's previous transaction is not available");
+      known.set(txid, outputs);
+    });
+    return known;
+  };
+
+  /**
+   * A transaction of the block as Esplora shows it, from its own bytes and the outputs its
+   * inputs spend, so it decodes as a page of it would. A page's claims about those outputs
+   * (`page`) must be what the previous transactions hold.
+   */
+  const viewOf = (
+    tx: ParsedTx,
+    spent: ReadonlyMap<string, readonly TxOutput[]>,
+    status: EsploraStatus,
+    page: EsploraTx | undefined,
+  ): EsploraTx => {
+    const vout = tx.outputs.map(outputView);
+    let coinbase = false;
+    let fee = -vout.reduce((sum, output) => sum + output.value, 0n);
+    const vin = tx.inputs.map((input, n): EsploraInput => {
+      const outpoint = { txid: input.txid, vout: input.vout, sequence: input.sequence };
+      if (isNullOutpoint(input)) {
+        coinbase = true;
+        return { ...outpoint, coinbase: true };
+      }
+      const output = spent.get(input.txid)?.[input.vout];
+      if (!output)
+        throw contradiction('a block input spends an output that does not exist');
+      const prevout = outputView(output);
+      const claim = page?.vin[n]?.prevout;
+      if (claim && (claim.script !== prevout.script || claim.value !== prevout.value)) {
+        throw contradiction(
+          'the index names another output than the one an input spends',
+        );
+      }
+      fee += prevout.value;
+      return { ...outpoint, coinbase: false, prevout };
+    });
+    // Esplora's convention: a coinbase's fee is 0.
+    if (coinbase) fee = 0n;
+    if (fee < 0n || fee > MAX_MONEY) throw malformed('tx fee');
+    return {
+      txid: tx.txid,
+      version: tx.version,
+      locktime: tx.locktime,
+      weight: tx.strippedSize * 3 + tx.bytes.length,
+      fee,
+      vin,
+      vout,
+      status,
+    };
+  };
+
   return {
     async header(height): Promise<DriverBlock | null> {
       if (outOfRange(height)) return null;
@@ -352,55 +543,44 @@ export function blockSource(ctx: UtxoContext): BlockSource {
     },
 
     async transactions(block, filter) {
-      const inconsistent = () =>
-        contradiction(`block ${block.height} changed while scanning`);
-      const meta = await esplora.block(block.hash, MONITOR);
-      if (!meta || meta.height !== block.height) throw inconsistent();
-      // Every block has a coinbase; none holds more than consensus allows. Bounded work.
-      if (meta.txCount < 1 || meta.txCount > MAX_BLOCK_TXS) {
-        throw malformed('block.tx_count');
-      }
       // `filter.assets` is a hint: a list without the native asset wants tokens only, and a
-      // Bitcoin block has none, so nothing is paged.
+      // Bitcoin block has none, so nothing is read.
       if (filter?.assets?.length && !filter.assets.includes('native')) return [];
-      const txs: EsploraTx[] = [];
-      const seen = new Set<string>();
-      for (let start = 0; start < meta.txCount; start += PAGE) {
-        let page: EsploraTx[];
-        try {
-          page = await esplora.blockTxs(block.hash, start, MONITOR);
-        } catch (error) {
-          // A backend that does not have the block (lagging, load-balanced) decides nothing.
-          if (isNotFound(error)) throw inconsistent();
-          throw error;
-        }
-        // Each page holds exactly what the count leaves for it, and no txid twice.
-        if (page.length !== Math.min(PAGE, meta.txCount - start)) {
-          throw malformed('block txs page');
-        }
-        for (const tx of page) {
-          if (seen.has(tx.txid)) throw malformed('block txs page');
-          seen.add(tx.txid);
-          const { status } = tx;
-          if (
-            !status.confirmed ||
-            status.blockHash !== block.hash ||
-            status.blockHeight !== block.height
-          ) {
-            throw inconsistent();
-          }
-          txs.push(tx);
-        }
+      // The block's own bytes, bound to its hash (`rawBlock`): every transaction delivered
+      // is the block's, byte for byte, whatever the index's pages say.
+      const raw = await esplora.rawBlock(block.hash, MONITOR);
+      // A backend that does not have the block (lagging, load-balanced, or a full-mode
+      // electrs, which serves its best chain's only) decides nothing.
+      if (!raw) throw changed(block);
+      // The header read at this height must be the bytes' own, so the block delivered (its
+      // parent link and time) is the one its hash names.
+      if (raw.parentHash !== block.parentHash || raw.time !== block.timestamp) {
+        throw contradiction(`the header of block ${block.height} is not its own`);
       }
-      // Checked after the pages, so a reorg while paging is caught.
-      if ((await esplora.blockHashAt(block.height, MONITOR)) !== block.hash)
-        throw inconsistent();
       const wanted = scriptsOf(filter?.addresses);
-      const touches = (tx: EsploraTx) =>
-        wanted === undefined ||
-        tx.vout.some((output) => wanted.has(output.script)) ||
-        tx.vin.some((input) => input.prevout && wanted.has(input.prevout.script));
-      return txs.filter(touches).map((tx) => decodeTransaction(tx, config.address));
+      const picked = wanted && (await touching(block, raw, wanted));
+      const txs = picked ? raw.txs.filter((_, i) => picked.has(i)) : raw.txs;
+      const spent = await spentOutputs(raw, txs);
+      // Checked after the reads, so a reorg while reading is caught.
+      if ((await esplora.blockHashAt(block.height, MONITOR)) !== block.hash) {
+        throw changed(block);
+      }
+      const status: EsploraStatus = {
+        confirmed: true,
+        blockHeight: block.height,
+        blockHash: block.hash,
+        blockTime: raw.time,
+      };
+      return raw.txs.flatMap((tx, i) =>
+        picked && !picked.has(i)
+          ? []
+          : [
+              decodeTransaction(
+                viewOf(tx, spent, status, picked?.get(i)),
+                config.address,
+              ),
+            ],
+      );
     },
   };
 }

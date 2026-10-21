@@ -552,6 +552,45 @@ describe('transfer: signing under the address lease', () => {
     ).rejects.toMatchObject({ code: 'SEQUENCE_BUSY' });
   });
 
+  it('waits lifecycle.leaseWaitMs for a busy address lease (default: leaseMs)', async () => {
+    const busy = async (
+      lifecycle: FakeEnvOptions['lifecycle'],
+      releaseAfterMs: number,
+    ) => {
+      const env = await createFakeEnv({ lifecycle });
+      const key = sequenceKey('default', 'fakechain', 'local', env.address);
+      // Another Operation of the wallet, whose signer is still working.
+      const holder = await env.stores.locks.acquire(key, 'holder', 120_000);
+      const started = env.clock.now();
+      void env.clock
+        .sleep(releaseAfterMs)
+        .then(() => (holder ? env.stores.locks.release(holder) : undefined));
+      const outcome = await env
+        .run(env.bc.transfer({ to: env.stranger(), amount: 3n }), 1_000)
+        .then(
+          (sub) => sub.state,
+          (error: { code?: string }) => error.code,
+        );
+      return { outcome, waitedMs: env.clock.now() - started };
+    };
+    // The holder releases after 40 s: by default the transfer gave up at 30 s.
+    expect(await busy({}, 40_000)).toMatchObject({ outcome: 'SEQUENCE_BUSY' });
+    expect((await busy({}, 40_000)).waitedMs).toBeLessThan(40_000);
+    // Waiting up to 60 s, it takes the lease once it is released and goes on.
+    expect(await busy({ leaseWaitMs: 60_000 }, 40_000)).toMatchObject({
+      outcome: 'submitted',
+    });
+    // The wait follows leaseMs unless set on its own.
+    expect(await busy({ leaseMs: 50_000 }, 40_000)).toMatchObject({
+      outcome: 'submitted',
+    });
+    await expect(createFakeEnv({ lifecycle: { leaseWaitMs: -1 } })).rejects.toMatchObject(
+      {
+        code: 'CONFIG_INVALID',
+      },
+    );
+  });
+
   it('re-authorizes on submitSignatures: a veto fails the operation, cancels its tickets and frees the nonce', async () => {
     const cancelled: string[] = [];
     const { inner, signer } = asyncSigner('job-3', cancelled);

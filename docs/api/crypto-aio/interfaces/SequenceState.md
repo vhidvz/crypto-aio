@@ -2,7 +2,7 @@
 
 # Interface: SequenceState
 
-Defined in: [src/core/store/types.ts:322](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L322)
+Defined in: [src/core/store/types.ts:330](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L330)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:322](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **fence**: `bigint`
 
-Defined in: [src/core/store/types.ts:325](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L325)
+Defined in: [src/core/store/types.ts:333](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L333)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/store/types.ts:325](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **next**: `bigint`
 
-Defined in: [src/core/store/types.ts:323](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L323)
+Defined in: [src/core/store/types.ts:331](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L331)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/store/types.ts:323](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **released**: readonly `bigint`[]
 
-Defined in: [src/core/store/types.ts:324](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L324)
+Defined in: [src/core/store/types.ts:332](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L332)
 
 ***
 
@@ -42,4 +42,4 @@ Defined in: [src/core/store/types.ts:324](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **version**: `number`
 
-Defined in: [src/core/store/types.ts:326](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L326)
+Defined in: [src/core/store/types.ts:334](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L334)

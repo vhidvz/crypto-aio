@@ -106,6 +106,12 @@ const custody = callbackSigner({
   credentials in a custody error message never reach logs.
 - A wallet can route requests to several signers by `keyRef.id`:
   `{ signers: { 'key-a': 'mpc-1', 'key-b': 'hsm-2' } }`.
+- **Schemes.** Declare every scheme the custody key can sign with. A signer with none of
+  the chain's schemes fails with `CONFIG_INVALID` when the handle is created. A wallet's
+  settings can also fix its scheme: a Bitcoin `p2tr` wallet signs with `secp256k1-schnorr`,
+  so an ECDSA-only key cannot serve one. That fails with `CONFIG_INVALID` when the handle
+  resolves the wallet (`bc.ready()`, `walletAddress()`, a transfer), before any key is read
+  and before anything is built.
 
 ## The `beforeSign` policy hook
 

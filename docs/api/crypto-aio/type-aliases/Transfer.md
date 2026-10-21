@@ -4,6 +4,6 @@
 
 > **Transfer** = [`ResolvedTransfer`](../interfaces/ResolvedTransfer.md) \| [`UnresolvedTransfer`](../interfaces/UnresolvedTransfer.md)
 
-Defined in: [src/core/model/transaction.ts:113](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L113)
+Defined in: [src/core/model/transaction.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L121)
 
 Check `unresolved` (or `amount`) before using a transfer's `asset` and `amount`.

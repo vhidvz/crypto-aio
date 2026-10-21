@@ -13,7 +13,7 @@ explains:
   stops, the node behavior it works around, the trade-off it makes. Tests say in their names what
   they pin.
 - **In these pages.** The guides and reference describe the behavior you can rely on, and
-  [Stability before 1.0](../reference/stability.md#known-gaps) lists what the library does not do
+  [Known limitations](../reference/limitations.md) lists what the library does not do
   yet.
 
 The original documents, with the full history of each decision, are in the repository's history:
@@ -36,19 +36,21 @@ The specification planned a set of guides; their topics live in these pages:
 
 ## Open work inside the library
 
-The gaps a user can meet are in [Stability before 1.0](../reference/stability.md#known-gaps).
+The gaps a user can meet are in [Known limitations](../reference/limitations.md).
 These are the ones a contributor meets: none changes what a caller sees today, and each says why
 it waited.
 
 **Broadcasting and verdicts**
 
-- A first-broadcast `rejected` could need a second endpoint's agreement, in the core, as defence
-  in depth. Every family already keeps `rejected` only when the claimed reason holds for its own
-  bytes, so this needs a `Broadcaster` port change for little gain; the same holds for a
-  must-conflict set in the core, and for the broadcast fanout taking the first HTTP 200 answer
-  (a lying 200 refusal is only a transient `TX_REFUSED`).
-- The resend guard could move to the `Broadcaster` (it gets the ordering, or a veto hook), so
-  every family whose ordering can repeat guards its resends. TON guards in its broadcaster today.
+- Decided against for 1.0: a first-broadcast `rejected` needing a second endpoint's
+  agreement in the core. Every family already keeps `rejected` only when the claimed reason
+  holds for its own bytes, so it would change the `Broadcaster` port for little gain; the
+  same holds for a must-conflict set in the core, and for the broadcast fanout taking the
+  first HTTP 200 answer (a lying 200 refusal is only a transient `TX_REFUSED`).
+- The resend guard could move to the `Broadcaster`, with the Attempt's ordering passed as an
+  optional broadcast field, so every family whose ordering can repeat guards its resends.
+  TON guards in its broadcaster today. An optional field is a minor change, so it can come
+  in a 1.x release.
 - `recover()` skips its checks when the write target cannot be resolved; rebroadcast still
   requires the wallet's ownership check. The first inclusion is recorded from one endpoint's
   observation (the verdict stays under the proof quorum). Wallet resolution for the all-rejected
@@ -58,8 +60,6 @@ it waited.
 
 **EVM**
 
-- `cancelBase` ranks a replacement by total charges and needs a price comparator; the other
-  families compare prices.
 - The nonce search behind a verdict repeats on every pass; a cache per sender and nonce would
   save the reads.
 - An endpoint-set change between "slot consumed" and "included final" decides nothing.
@@ -91,13 +91,26 @@ it waited.
 
 **Structure and tests**
 
-- The families' ordering fields have no typed home in the core (a store contract pins them
-  instead); `engine.ts` and TON's `proofs.ts`, `reader.ts` and `api.ts` are long, as are the TON
-  and UTXO end-to-end tests.
-- The only-native guard is text-based, and the pooled driver is reachable through
-  TypeScript-protected handle methods, which could become module functions.
+- The families' ordering fields stay in each family's exported type: `OrderingData` documents
+  that a store keeps them whole, and the store contract pins them (an index signature in the
+  core type would break every family type declared as an interface). `engine.ts` and TON's
+  `proofs.ts`, `reader.ts` and `api.ts` are long, as are the TON and UTXO end-to-end tests.
+- The only-native guard is text-based.
 - No test watches `require.cache` across families; the packaging check proves today that every
   entry point loads with no SDK.
-- `CRYPTO_AIO_INTEGRATION_WRITE=1` enables no test yet: funded write tests need testnet keys in
-  CI. Determinism in tests could improve with a container option for the transport id and the
-  random source, a store clock, and one shared end-to-end environment.
+- The EVM write path runs against a real node (`pnpm test:evm-local`, anvil). The other
+  families' write paths run only against their scripted nodes: `CRYPTO_AIO_INTEGRATION_WRITE=1`
+  enables no live test yet, since funded testnet keys in CI, or local nodes (bitcoind and
+  electrs, a Solana test validator, a TON local network), are still to be set up.
+  Determinism in tests could improve with a container option for the transport id and the
+  random source, and one shared end-to-end environment.
+
+**Store ports** (found by the PostgreSQL reference store)
+
+- Observations carry no namespace: `getObservation` and `putObservation` key them by attempt
+  id alone, which is globally unique, so a store cannot partition them by tenant without
+  joining Attempts. Adding a namespace changes the port, so it waits for a major release.
+- `parseTagged` reads any plain object whose only key is `$bigint` or `$bytes` as a bigint or
+  bytes; there is no escape, so stored data never uses such an object.
+- Which record `findByRef` returns when several Operations of a namespace hold the ref is
+  unspecified; the core's AttemptRef guard keeps that from happening.

@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Development dependencies, including the chain SDKs at their tested versions: CI runs the
+  # whole suite on each update, so a new SDK release is tested before users meet it.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    groups:
+      tooling:
+        patterns: ['*']
+        exclude-patterns:
+          - '@avalabs/avalanchejs'
+          - '@solana/*'
+          - '@ton/*'
+          - 'bitcoinjs-lib'
+          - 'ethers'
+          - 'tronweb'
+          - 'web3'
+          - '@noble/*'
+          - '@scure/*'
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

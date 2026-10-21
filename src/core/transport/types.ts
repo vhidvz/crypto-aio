@@ -21,6 +21,15 @@ export interface TransportOptions {
   readonly timeoutMs?: number;
   readonly maxLagBlocks?: number;
   readonly proofQuorum?: number;
+  /**
+   * Whether proofs go on, from fewer endpoints, once endpoints drop out of the proof
+   * quorum's count (their probes or requests failing for three health refreshes in a
+   * row). By default (`false`) a proof still needs `proofQuorum` endpoints, capped only by
+   * the endpoints configured, so it waits for the dropped ones and one endpoint left can
+   * never prove alone. `true` caps it by the endpoints still counted, down to one: proofs
+   * keep going through an outage, but the one endpoint left decides alone.
+   */
+  readonly degradedProofs?: boolean;
   readonly failureThreshold?: number;
   readonly openMs?: number;
   readonly healthIntervalMs?: number;
@@ -78,7 +87,13 @@ export interface HttpRequest {
   readonly query?: Readonly<Record<string, string>>;
   readonly body?: unknown;
   readonly headers?: Readonly<Record<string, string>>;
-  readonly responseType?: 'json' | 'text';
+  /**
+   * How a 2xx answer is returned (default `'json'`): parsed JSON, the body as text, or its
+   * bytes unchanged as a `Uint8Array` (`'bytes'`, for a binary answer such as a serialized
+   * block, which text decoding would corrupt). Every type is read under
+   * `maxResponseBytes`; an error answer is read as text for its details whatever the type.
+   */
+  readonly responseType?: 'json' | 'text' | 'bytes';
   /**
    * Low-cardinality template label used for event and log method fields instead of the
    * raw path, e.g. `'/address/:address/utxo'`. Must contain no identifiers (addresses,

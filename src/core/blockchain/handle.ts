@@ -76,8 +76,8 @@ export interface NetworkStatus {
 
 /** Immutable handle bound to one chain, network, library, provider set and wallet. */
 export class Blockchain<C extends ChainId = ChainId> {
-  /** @internal Use `CryptoAio#blockchain` or `Blockchain.create`. */
-  constructor(internals: HandleInternals) {
+  /** Handles come from `CryptoAio#blockchain` or `Blockchain.create`. */
+  private constructor(internals: HandleInternals) {
     bindInternals(this, internals);
     Object.freeze(this);
   }
@@ -172,11 +172,11 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   async validateAddress(address: string): Promise<boolean> {
-    return (await this.mapping()).driver.address.validate(address);
+    return (await mappingOf(this)).driver.address.validate(address);
   }
 
   async normalizeAddress(address: string): Promise<Address> {
-    return toAddress(await this.mapping(), address);
+    return toAddress(await mappingOf(this), address);
   }
 
   /** The chain's address for `publicKey`. `options.hd` is reserved: the core builds it
@@ -188,7 +188,7 @@ export class Blockchain<C extends ChainId = ChainId> {
   ): Promise<Address> {
     const { hd: _reserved, ...callerOptions } = options ?? {};
     const bytes = typeof publicKey === 'string' ? fromHex(publicKey) : publicKey;
-    return this.driverAddress(bytes, callerOptions);
+    return driverAddress(this, bytes, callerOptions);
   }
 
   /** Address of the handle's own selected wallet, or of another configured `wallet` by name
@@ -269,16 +269,16 @@ export class Blockchain<C extends ChainId = ChainId> {
       classed ? { testnet: network.testnet } : undefined,
     );
     // The core's own options, with the wallet's `hd`, reach the driver directly.
-    return this.driverAddress(publicKey, walletOptionsOf(config));
+    return driverAddress(this, publicKey, walletOptionsOf(config));
   }
 
   async resolveAsset(asset?: AssetRef | string): Promise<AssetInfo> {
-    const m = await this.mapping();
+    const m = await mappingOf(this);
     return m.assets.resolve(m.selection, m.driver, asset);
   }
 
   async getBalance(address: string, asset?: AssetRef | string): Promise<Balance> {
-    const m = await this.mapping();
+    const m = await mappingOf(this);
     const target = toAddress(m, address);
     const info = await m.assets.resolve(m.selection, m.driver, asset);
     const base = await m.driver.reader.getBalance(target.canonical, info.ref);
@@ -293,7 +293,7 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   async estimateFee(intent: TransferIntent): Promise<FeeEstimate> {
-    const m = await this.mapping();
+    const m = await mappingOf(this);
     const internals = internalsOf(this);
     const wallet = internals.selection.wallet ? await internals.wallet() : undefined;
     const from = intent.from !== undefined ? toAddress(m, intent.from) : wallet?.address;
@@ -307,12 +307,13 @@ export class Blockchain<C extends ChainId = ChainId> {
       from: from.canonical,
       keys: wallet?.keys ?? [],
       wallet: wallet?.options ?? {},
+      decimals: normalized.asset.metadata.decimals,
     });
     return toFeeEstimate(m, draft);
   }
 
   async getTransaction(id: string): Promise<Transaction | null> {
-    const m = await this.mapping();
+    const m = await mappingOf(this);
     const tx = await m.driver.reader.getTransaction(id);
     if (!tx) return null;
     const [head, finalized] = await Promise.all([
@@ -324,7 +325,7 @@ export class Blockchain<C extends ChainId = ChainId> {
 
   /** Status of a managed Operation (by id, Attempt ref or tx hash) or of any transaction id. */
   async getTransactionStatus(id: string): Promise<TxStatus> {
-    return (await this.monitor().status(await this.readTarget(), id)).status;
+    return (await monitorOf(this).status(await readTargetOf(this), id)).status;
   }
 
   /**
@@ -341,12 +342,12 @@ export class Blockchain<C extends ChainId = ChainId> {
     ref: string,
     options: WaitOptions = {},
   ): Promise<ConfirmationResult> {
-    const { status, record } = await this.monitor().waitFor(
-      await this.readTarget(),
+    const { status, record } = await monitorOf(this).waitFor(
+      await readTargetOf(this),
       ref,
       options,
     );
-    return { status, ...(record ? { operation: await this.view(record) } : {}) };
+    return { status, ...(record ? { operation: await viewOf(this, record) } : {}) };
   }
 
   /** Yields each status change until the Operation is terminal (or the transaction is final). */
@@ -354,9 +355,9 @@ export class Blockchain<C extends ChainId = ChainId> {
     ref: string,
     options: { readonly pollIntervalMs?: number; readonly signal?: AbortSignal } = {},
   ): AsyncIterable<TxStatusEvent> {
-    const readTarget = () => this.readTarget();
-    const monitor = () => this.monitor();
-    const view = (record: OperationRecord) => this.view(record);
+    const readTarget = () => readTargetOf(this);
+    const monitor = () => monitorOf(this);
+    const view = (record: OperationRecord) => viewOf(this, record);
     return {
       async *[Symbol.asyncIterator]() {
         const target = await readTarget();
@@ -371,11 +372,11 @@ export class Blockchain<C extends ChainId = ChainId> {
   }
 
   async getBlockHeight(): Promise<bigint> {
-    return (await this.mapping()).driver.reader.getBlockHeight();
+    return (await mappingOf(this)).driver.reader.getBlockHeight();
   }
 
   async getBlock(ref: bigint | string): Promise<Block | null> {
-    const block = await (await this.mapping()).driver.reader.getBlock(ref);
+    const block = await (await mappingOf(this)).driver.reader.getBlock(ref);
     return block ? toBlock(block) : null;
   }
 
@@ -443,7 +444,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     if (cursor !== undefined && typeof cursor !== 'string') {
       throw new ConfigError('CONFIG_INVALID', 'history cursor must be a string');
     }
-    const m = await this.mapping();
+    const m = await mappingOf(this);
     const source = m.driver.history;
     if (!source)
       throw new UnsupportedCapabilityError(
@@ -492,8 +493,12 @@ export class Blockchain<C extends ChainId = ChainId> {
     intent: TransferIntent,
     options: TransferOptions = {},
   ): Promise<PreparedOperation> {
-    const target = await this.target();
-    return this.prepared(target, await this.engine().prepare(target, intent, options));
+    const target = await targetOf(this);
+    return preparedOf(
+      this,
+      target,
+      await engineOf(this).prepare(target, intent, options),
+    );
   }
 
   /**
@@ -505,8 +510,8 @@ export class Blockchain<C extends ChainId = ChainId> {
     intent: TransferIntent,
     options: TransferOptions = {},
   ): Promise<Submission> {
-    const target = await this.target();
-    return this.submission(await this.engine().transfer(target, intent, options));
+    const target = await targetOf(this);
+    return submissionOf(this, await engineOf(this).transfer(target, intent, options));
   }
 
   /**
@@ -519,7 +524,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     operationId: string,
     signatures: readonly SignatureBundle[] | RawTx,
   ): Promise<Submission> {
-    const target = await this.target();
+    const target = await targetOf(this);
     let bundles: readonly SignatureBundle[];
     if (Array.isArray(signatures)) {
       bundles = signatures;
@@ -538,7 +543,7 @@ export class Blockchain<C extends ChainId = ChainId> {
         );
       }
       // Ownership first, so another wallet's Operation never reaches the driver.
-      const record = await this.engine().requireOwned(target, operationId);
+      const record = await engineOf(this).requireOwned(target, operationId);
       if (!record.unsigned) {
         throw new StateError(
           'INVALID_TRANSITION',
@@ -558,15 +563,17 @@ export class Blockchain<C extends ChainId = ChainId> {
         );
       }
     }
-    return this.submission(
-      await this.engine().submitSignatures(target, operationId, bundles),
+    return submissionOf(
+      this,
+      await engineOf(this).submitSignatures(target, operationId, bundles),
     );
   }
 
   /** Resends the active Attempt's stored raw transaction (e.g. after topping up a stalled wallet). */
   async rebroadcast(operationId: string): Promise<Submission> {
-    return this.submission(
-      await this.engine().rebroadcast(await this.target(), operationId),
+    return submissionOf(
+      this,
+      await engineOf(this).rebroadcast(await targetOf(this), operationId),
     );
   }
 
@@ -588,8 +595,9 @@ export class Blockchain<C extends ChainId = ChainId> {
     operationId: string,
     options: { readonly fee: FeeSpeed | FeeOverride },
   ): Promise<Submission> {
-    return this.submission(
-      await this.engine().replace(await this.target(), operationId, options.fee),
+    return submissionOf(
+      this,
+      await engineOf(this).replace(await targetOf(this), operationId, options.fee),
     );
   }
 
@@ -612,14 +620,18 @@ export class Blockchain<C extends ChainId = ChainId> {
     operationId: string,
     options: { readonly fee?: FeeSpeed | FeeOverride } = {},
   ): Promise<Submission> {
-    return this.submission(
-      await this.engine().cancel(await this.target(), operationId, options.fee),
+    return submissionOf(
+      this,
+      await engineOf(this).cancel(await targetOf(this), operationId, options.fee),
     );
   }
 
   /** Expiry-based chains: re-issues an Operation whose earlier Attempts are provably expired. */
   async rebuild(operationId: string): Promise<Submission> {
-    return this.submission(await this.engine().rebuild(await this.target(), operationId));
+    return submissionOf(
+      this,
+      await engineOf(this).rebuild(await targetOf(this), operationId),
+    );
   }
 
   /**
@@ -636,15 +648,15 @@ export class Blockchain<C extends ChainId = ChainId> {
 
   /** Abandons an Operation that has no signed transaction yet and releases its reservation. */
   async abandon(operationId: string): Promise<OperationView> {
-    return this.view(await this.engine().abandon(await this.target(), operationId));
+    return viewOf(this, await engineOf(this).abandon(await targetOf(this), operationId));
   }
 
   /** An Operation of this handle's chain and network (another one is INVALID_INTENT). */
   async getOperation(operationId: string): Promise<OperationView | null> {
-    const record = await this.engine().get(operationId);
+    const record = await engineOf(this).get(operationId);
     if (!record) return null;
     assertSameNetwork(internalsOf(this).selection, record);
-    return this.view(record);
+    return viewOf(this, record);
   }
 
   /** Typed family extensions: `bc.ext.<family>.<method>(...)` (async, loads the adapter on demand). */
@@ -689,107 +701,118 @@ export class Blockchain<C extends ChainId = ChainId> {
       },
     ) as ExtOf<C>;
   }
+}
 
-  /** @internal The driver's address for `publicKey` under options the core built. */
-  protected async driverAddress(
-    publicKey: Uint8Array,
-    options: WalletOptions,
-  ): Promise<Address> {
-    const { driver, selection } = await this.mapping();
-    return new Address(
-      selection.chain.id,
-      driver.address.fromPublicKey(publicKey, options),
-      driver.address.format,
-    );
-  }
+/** A handle on `internals`; the container's way past the private constructor. */
+export function createBlockchain<C extends ChainId>(
+  internals: HandleInternals,
+): Blockchain<C> {
+  const Handle = Blockchain as unknown as new (
+    internals: HandleInternals,
+  ) => Blockchain<C>;
+  return new Handle(internals);
+}
 
-  /** @internal */
-  protected async mapping(): Promise<MappingContext> {
-    const internals = internalsOf(this);
-    const { driver } = await internals.pooled();
-    return {
-      selection: internals.selection,
-      driver,
-      assets: containerOf(internals.container).runtime.assets,
-    };
-  }
+/** The driver's address for `publicKey` under options the core built. */
+async function driverAddress(
+  handle: Blockchain,
+  publicKey: Uint8Array,
+  options: WalletOptions,
+): Promise<Address> {
+  const { driver, selection } = await mappingOf(handle);
+  return new Address(
+    selection.chain.id,
+    driver.address.fromPublicKey(publicKey, options),
+    driver.address.format,
+  );
+}
 
-  /** @internal */
-  protected engine(): OperationEngine {
-    const internals = internalsOf(this);
-    internals.assertOpen();
-    return containerOf(internals.container).engine();
-  }
+async function mappingOf(handle: Blockchain): Promise<MappingContext> {
+  const internals = internalsOf(handle);
+  const { driver } = await internals.pooled();
+  return {
+    selection: internals.selection,
+    driver,
+    assets: containerOf(internals.container).runtime.assets,
+  };
+}
 
-  /** @internal */
-  protected monitor(): Monitor {
-    return containerOf(internalsOf(this).container).monitor();
-  }
+function engineOf(handle: Blockchain): OperationEngine {
+  const internals = internalsOf(handle);
+  internals.assertOpen();
+  return containerOf(internals.container).engine();
+}
 
-  /** @internal */
-  protected async readTarget(): Promise<ReadTarget> {
-    const internals = internalsOf(this);
-    return { selection: internals.selection, pooled: await internals.pooled() };
-  }
+function monitorOf(handle: Blockchain): Monitor {
+  return containerOf(internalsOf(handle).container).monitor();
+}
 
-  /** @internal */
-  protected async target(): Promise<OperationTarget> {
-    const internals = internalsOf(this);
-    const [pooled, wallet] = await Promise.all([internals.pooled(), internals.wallet()]);
-    return {
-      selection: internals.selection,
-      pooled,
-      wallet,
-      assets: containerOf(internals.container).runtime.assets,
-    };
-  }
+async function readTargetOf(handle: Blockchain): Promise<ReadTarget> {
+  const internals = internalsOf(handle);
+  return { selection: internals.selection, pooled: await internals.pooled() };
+}
 
-  /** @internal */
-  protected async view(record: OperationRecord): Promise<OperationView> {
-    const { runtime } = containerOf(internalsOf(this).container);
-    return toView(record, await loadObservations(runtime.stores.operations, record));
-  }
+async function targetOf(handle: Blockchain): Promise<OperationTarget> {
+  const internals = internalsOf(handle);
+  const [pooled, wallet] = await Promise.all([internals.pooled(), internals.wallet()]);
+  return {
+    selection: internals.selection,
+    pooled,
+    wallet,
+    assets: containerOf(internals.container).runtime.assets,
+  };
+}
 
-  /** @internal */
-  protected async submission(record: OperationRecord): Promise<Submission> {
-    const view = await this.view(record);
-    return {
-      ...view,
-      operationId: view.id,
-      ...(view.activeAttempt ? { attempt: view.activeAttempt } : {}),
-      wait: (options?: WaitOptions) => this.waitForConfirmation(view.id, options),
-    };
-  }
+async function viewOf(
+  handle: Blockchain,
+  record: OperationRecord,
+): Promise<OperationView> {
+  const { runtime } = containerOf(internalsOf(handle).container);
+  return toView(record, await loadObservations(runtime.stores.operations, record));
+}
 
-  /**
-   * @internal Signing material only while the Operation awaits signatures: an idempotent
-   * repeat of an abandoned Operation returns its view alone.
-   */
-  protected async prepared(
-    target: OperationTarget,
-    record: OperationRecord,
-  ): Promise<PreparedOperation> {
-    const operation = await this.view(record);
-    const unsigned = record.unsigned;
-    if (!unsigned || !PRE_SIGNING_STATES.has(record.state)) return { operation };
-    const fee = await toFeeEstimate(
-      {
-        selection: target.selection,
-        driver: target.pooled.driver,
-        assets: target.assets,
-      },
-      unsigned.fee,
-    );
-    return {
-      operation,
-      unsigned: {
-        payload: unsigned.payload,
-        signingRequests: unsigned.signingRequests,
-        ...(unsigned.expectedRef ? { expectedRef: unsigned.expectedRef } : {}),
-        fee,
-      },
-    };
-  }
+async function submissionOf(
+  handle: Blockchain,
+  record: OperationRecord,
+): Promise<Submission> {
+  const view = await viewOf(handle, record);
+  return {
+    ...view,
+    operationId: view.id,
+    ...(view.activeAttempt ? { attempt: view.activeAttempt } : {}),
+    wait: (options?: WaitOptions) => handle.waitForConfirmation(view.id, options),
+  };
+}
+
+/**
+ * Signing material only while the Operation awaits signatures: an idempotent repeat of an
+ * abandoned Operation returns its view alone.
+ */
+async function preparedOf(
+  handle: Blockchain,
+  target: OperationTarget,
+  record: OperationRecord,
+): Promise<PreparedOperation> {
+  const operation = await viewOf(handle, record);
+  const unsigned = record.unsigned;
+  if (!unsigned || !PRE_SIGNING_STATES.has(record.state)) return { operation };
+  const fee = await toFeeEstimate(
+    {
+      selection: target.selection,
+      driver: target.pooled.driver,
+      assets: target.assets,
+    },
+    unsigned.fee,
+  );
+  return {
+    operation,
+    unsigned: {
+      payload: unsigned.payload,
+      signingRequests: unsigned.signingRequests,
+      ...(unsigned.expectedRef ? { expectedRef: unsigned.expectedRef } : {}),
+      fee,
+    },
+  };
 }
 
 /** The shape of a signed payload (`RawTx`), checked at run time. */

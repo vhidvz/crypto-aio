@@ -35,10 +35,10 @@ how to configure each family is in [Connect to a real network](../../build/conne
 | Library | Status |
 | --- | --- |
 | `ethers` 6 | Supported, the EVM default |
-| `web3` 4 | Supported; sunset upstream (4.16.0 is its last release), so prefer ethers |
+| `web3` 4 | Deprecated: sunset upstream (4.16.0 is its last release). It works through 1.x, warns once per process (`CRYPTO_AIO_WEB3`), and is removed in 2.0; use ethers |
 | `bitcoinjs-lib` 7 | Supported, over an Esplora indexer |
 | `tronweb` 6 | Supported |
-| `@solana/web3.js` 1 | Supported |
+| `@solana/web3.js` 1 or 3 | Supported; the driver builds messages itself, so the two lines differ only in `native()`'s `Connection` |
 | `@ton/ton` 16, with `@ton/core` and `@ton/crypto` | Supported, with toncenter API v3 as the indexer |
 | `@avalabs/avalanchejs` 5 | Supported, with the Avalanche Data API as the indexer; the C-Chain is served as EVM |
 | `@tonconnect/sdk` | Replaced by `@ton/ton`: TonConnect links dApps to user wallets; it is not a node SDK |
@@ -55,7 +55,7 @@ how to configure each family is in [Connect to a real network](../../build/conne
 | EVM: Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base (ethers, web3) | Works today; no address history yet (it needs an indexer) |
 | UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Works today; no tokens, no OP_RETURN memo |
 | Tron (tronweb) | Works today; address history needs an indexer provider (`trongrid` or `public`) |
-| Solana (@solana/web3.js) | Works today: SOL, classic SPL tokens, memos, scanning and history without an indexer; needs Node.js 22.12 or later |
+| Solana (@solana/web3.js) | Works today: SOL, classic SPL tokens, memos, scanning and history without an indexer |
 | TON (@ton/ton): Gram and jettons, v4r2 and v5r1 wallets | Works today; needs an indexer (toncenter API v3); one output per transfer; no block scan (TON is sharded) |
 | Avalanche X-Chain and P-Chain (@avalabs/avalanchejs) | Works today: AVAX, batches, X-Chain memos; needs an indexer (the Avalanche Data API); no replace or cancel; no Avalanche native tokens |
 

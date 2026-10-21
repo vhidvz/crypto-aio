@@ -17,6 +17,7 @@ import {
   jettonMessage,
   nativeMessage,
 } from '../../../src/adapters/ton/messages';
+import { MONITOR } from '../../../src/adapters/ton/api';
 import {
   CONSUMER_PAGES,
   WALK_PAGES,
@@ -24,7 +25,8 @@ import {
   createTonProofs,
   replayVerdict,
 } from '../../../src/adapters/ton/proofs';
-import { REASONS } from '../../../src/adapters/ton/trace';
+import { confirmBounce } from '../../../src/adapters/ton/reader';
+import { REASONS, attemptVerdict, type Verdict } from '../../../src/adapters/ton/trace';
 import { normalizedHash } from '../../../src/adapters/ton/wallets';
 import { CHAIN_TIME_TOLERANCE } from '../../../src/adapters/ton/builder';
 import type { TonSeqnoOrdering } from '../../../src/adapters/ton/types';
@@ -1225,6 +1227,296 @@ describe('TON proofs', () => {
       expect(await s.h.run(s.proofs.slotConsumed(ordering, s.from, 'finalized'))).toBe(
         false,
       );
+    });
+  });
+});
+
+/**
+ * The trace answer `json` with the delivery at `account` recorded as a bounce, its phases
+ * consistent with each other: what a lone lying indexer reports. With `as`, the record
+ * also names another transaction of that account (its hash and lt) as the delivery.
+ */
+function bouncedAt(
+  json: Json,
+  account: string,
+  as?: { readonly hash: string; readonly lt: bigint },
+): Json {
+  const [trace] = json.traces as Json[];
+  const txs = trace!.transactions as Record<string, Json>;
+  const order = trace!.transactions_order as string[];
+  for (const [key, tx] of Object.entries(txs)) {
+    if ((tx.account as string).toLowerCase() !== account) continue;
+    tx.description = {
+      type: 'ord',
+      aborted: true,
+      compute_ph: { skipped: false, success: false, exit_code: 100 },
+      bounce: { type: 'ok' },
+    };
+    tx.out_msgs = [];
+    if (as) {
+      const id = Buffer.from(as.hash, 'hex').toString('base64');
+      Object.assign(tx, { hash: id, lt: as.lt.toString() });
+      delete txs[key];
+      txs[id] = tx;
+      order[order.indexOf(key)] = id;
+    }
+  }
+  return json;
+}
+
+/** An active wallet at `address` that keeps what it is sent, bounceable or not. */
+const activeWallet = (h: Harness, address: string) =>
+  h.node.deployWallet(address, {
+    version: 'v4r2',
+    publicKey: new Uint8Array(32).fill(7),
+    walletId: 698_983_191,
+  });
+
+// A `failed` invites a second payment by hand, so a bounce never rests on the indexer's
+// word: the indexer only names the transactions, and the verdict stands only when the
+// liteserver's own cells of them, hashed here, show the bounce. A lone lying indexer can
+// delay a verdict, never fail a transfer that landed; a real bounce is still `failed`.
+describe('a bounce rests on the chain itself, never on the indexer alone', () => {
+  const lieAt = (
+    s: ReturnType<typeof setup>,
+    account: string,
+    as?: Parameters<typeof bouncedAt>[2],
+  ) =>
+    rewrite(
+      s.h,
+      (_endpoint, route) => route === '/traces',
+      (json) => bouncedAt(json, account, as),
+    );
+
+  it('never fails a delivered transfer a lone lying indexer reports bounced, observed or proven', async () => {
+    const s = setup();
+    activeWallet(s.h, FRESH);
+    const { boc, hashNorm, ordering } = await s.pay(true);
+    s.h.node.submit(boc);
+    s.h.node.mine(3);
+    expect(s.h.node.balance(FRESH)).toBe(GRAM);
+    lieAt(s, FRESH);
+    // The chain's own cell of the delivery shows no bounce phase: no verdict either way.
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    await expect(
+      s.h.run(s.h.reader.observe(ref(hashNorm), ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    // Once the indexer tells the truth, the transfer is proven final.
+    s.h.node.intercept = undefined;
+    expect(
+      await s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).toMatchObject({ included: true, success: true });
+  });
+
+  it("never takes another delivery's real bounce at the same recipient for ours", async () => {
+    const s = setup();
+    // A stranger's bounceable message reached FRESH before it had code: it came back.
+    s.h.node.inject(PAYER, FRESH, GRAM, beginCell().endCell(), true);
+    s.h.node.mine();
+    const other = s.h.node.transactions().find((tx) => tx.account === FRESH)!;
+    expect(other.description).toMatchObject({ bounce: { type: 'ok' } });
+    // FRESH is an active wallet now, and keeps our bounceable payment.
+    activeWallet(s.h, FRESH);
+    const { boc, hashNorm, ordering } = await s.pay(true);
+    s.h.node.submit(boc);
+    s.h.node.mine(3);
+    // The indexer names that bounce, a real one of the same recipient, as our delivery:
+    // it did not receive our message.
+    lieAt(s, FRESH, other);
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    s.h.node.intercept = undefined;
+    expect(
+      await s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).toMatchObject({ included: true, success: true });
+  });
+
+  it('proves a real bounce from the liteserver under the proof quorum, observed and proven', async () => {
+    const s = setup({ endpoints: ['a', 'b'] });
+    const { boc, hashNorm, ordering } = await s.pay(true);
+    s.h.node.submit(boc);
+    s.h.node.mine(3);
+    const tags: string[] = [];
+    const original = s.h.rpc.http.bind(s.h.rpc);
+    s.h.rpc.http = ((request, options) => {
+      if (request.route === '/getTransactions') tags.push(String(options?.purpose));
+      return original(request, options);
+    }) as typeof s.h.rpc.http;
+    expect(
+      await s.h.run(s.h.reader.observe(ref(hashNorm), ordering, s.from)),
+    ).toMatchObject({ seen: 'block', success: false, reason: REASONS.bounced });
+    expect(
+      await s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).toMatchObject({ included: true, success: false, reason: REASONS.bounced });
+    // Our wallet transaction and the delivery that bounced, each read from the liteserver:
+    // once observed, once proven.
+    expect(tags).toEqual(['monitor', 'monitor', 'proof', 'proof']);
+  });
+
+  it('decides nothing while the liteserver does not hold the bounce, or its endpoints disagree on it', async () => {
+    const s = setup({ endpoints: ['a', 'b'] });
+    const { boc, hashNorm, ordering } = await s.pay(true);
+    s.h.node.submit(boc);
+    s.h.node.mine(3);
+    const fresh = (request: FakeRequest) =>
+      request.url.searchParams.get('address') === FRESH;
+    // Endpoint `b` holds none of the delivery's transactions: the quorum disagrees.
+    s.h.node.intercept = (endpoint, route, request) =>
+      endpoint === 'b' && route === '/getTransactions' && fresh(request)
+        ? { json: { ok: true, result: [] } }
+        : undefined;
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+    // Neither holds it yet ("not found", as a lagging liteserver answers).
+    s.h.node.intercept = (_endpoint, route, request) =>
+      route === '/getTransactions' && fresh(request)
+        ? {
+            status: 500,
+            json: { ok: false, error: 'LITE_SERVER_UNKNOWN: not found', code: 500 },
+          }
+        : undefined;
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    await expect(
+      s.h.run(s.h.reader.observe(ref(hashNorm), ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    // An endpoint that serves no transaction at all for it decides nothing either.
+    s.h.node.intercept = (_endpoint, route, request) =>
+      route === '/getTransactions' && fresh(request)
+        ? { json: { ok: true, result: [] } }
+        : undefined;
+    await expect(
+      s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', retryable: true });
+    s.h.node.intercept = undefined;
+    expect(
+      await s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+    ).toMatchObject({ included: true, success: false, reason: REASONS.bounced });
+  });
+
+  describe('jettons', () => {
+    const MASTER = `0:${'77'.repeat(32)}`;
+    const jettonPay = async (s: ReturnType<typeof setup>, amount: bigint) => {
+      s.h.node.deployJetton(MASTER, { symbol: 'TST', decimals: 6, content: 'onchain' });
+      s.h.node.mintJetton(MASTER, s.from, 1_000_000n);
+      const signed = await s.request([
+        jettonMessage({
+          jettonWallet: s.h.node.jettonWalletOf(MASTER, s.from),
+          attached: 50_000_000n,
+          queryId: 0n,
+          amount,
+          destination: FRESH,
+          responseDestination: s.from,
+          forwardAmount: 1n,
+        }),
+      ]);
+      s.h.node.submit(signed.boc);
+      s.h.node.mine(6);
+      return signed;
+    };
+
+    it.each([
+      ['our jetton wallet ran nothing', 5_000_000n, false],
+      ["the recipient's jetton wallet ran nothing", 400_000n, true],
+      ['our jetton wallet moved nothing', 0n, false],
+    ])('proves a jetton bounce from the chain: %s', async (_case, amount, refuse) => {
+      const s = setup();
+      if (refuse) s.h.node.failJettonWallet(s.h.node.jettonWalletOf(MASTER, FRESH));
+      const { hashNorm, ordering } = await jettonPay(s, amount);
+      expect(
+        await s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+      ).toMatchObject({ included: true, success: false, reason: REASONS.jettonBounced });
+    });
+
+    it('never fails a jetton transfer whose arrival a lone lying indexer reports refused', async () => {
+      const s = setup();
+      const { hashNorm, ordering } = await jettonPay(s, 400_000n);
+      expect(s.h.node.jettonBalance(MASTER, FRESH)).toBe(400_000n);
+      lieAt(s, s.h.node.jettonWalletOf(MASTER, FRESH));
+      await expect(
+        s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+      // Nor that our jetton wallet ran nothing, when it sent the jettons on.
+      lieAt(s, s.h.node.jettonWalletOf(MASTER, s.from));
+      await expect(
+        s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+      ).rejects.toMatchObject({ code: 'PROVIDER_INCONSISTENT', retryable: true });
+      s.h.node.intercept = undefined;
+      expect(
+        await s.h.run(s.proofs.includedFinal(ref(hashNorm), ordering, s.from)),
+      ).toMatchObject({ included: true, success: true });
+    });
+  });
+
+  describe("evidence that is not the chain's decides nothing", () => {
+    /** A real bounce of our transfer, its verdict as the indexer's records give it. */
+    const bounce = async () => {
+      const s = setup();
+      const { boc, hashNorm } = await s.pay(true);
+      s.h.node.submit(boc);
+      s.h.node.mine(3);
+      const [root] = await s.h.run(s.h.api.transactionsByMessage(hashNorm, MONITOR));
+      const trace = await s.h.run(s.h.api.trace(root!.hash, MONITOR));
+      const verdict = attemptVerdict(root!, trace);
+      if (verdict.kind !== 'failed' || !verdict.bounce) throw new Error('no bounce');
+      // What the delivery sent: the bounce, back to our wallet.
+      const [back] = trace!.transactions.find((tx) => tx.account === FRESH)!.outMsgs;
+      const confirm = (v: Verdict, id = hashNorm) =>
+        s.h.run(confirmBounce(s.h.ctx, v, s.from, id, MONITOR));
+      return { s, root: root!, back: back!, verdict, evidence: verdict.bounce, confirm };
+    };
+
+    it('passes every other verdict unchanged, reading nothing', async () => {
+      const { s, confirm } = await bounce();
+      const before = s.h.node.served.length;
+      for (const verdict of [
+        { kind: 'success', legs: [] },
+        { kind: 'pending' },
+        { kind: 'failed', reason: REASONS.skipped },
+      ] as const) {
+        expect(await confirm(verdict)).toBe(verdict);
+      }
+      expect(s.h.node.served.length).toBe(before);
+    });
+
+    it('refuses a bounce without its evidence, or with another Attempt, message or path', async () => {
+      const { root, back, verdict, evidence, confirm } = await bounce();
+      const [step] = evidence.path;
+      const unproven = { code: 'PROVIDER_INCONSISTENT', retryable: true };
+      const variants: Verdict[] = [
+        // A bounce verdict that names no chain evidence.
+        { kind: 'failed', reason: REASONS.bounced },
+        { kind: 'failed', reason: REASONS.jettonBounced },
+        { ...verdict, bounce: { ...evidence, path: [] } },
+        // A message our wallet transaction did not send.
+        { ...verdict, bounce: { ...evidence, path: [{ ...step!, message: root.hash }] } },
+        // Past the first delivery, a message that carries no jettons of ours onward (the
+        // delivery did send it: the bounce).
+        {
+          ...verdict,
+          bounce: { ...evidence, path: [step!, { ...step!, message: back.hash }] },
+        },
+        // An end that is not the reason's: only a Gram bounce sends the value back.
+        { ...verdict, bounce: { ...evidence, end: 'unran' } },
+        { ...verdict, reason: REASONS.jettonBounced },
+        // A delivery that did what the chain says it did not: it ran nothing.
+        {
+          ...verdict,
+          reason: REASONS.jettonBounced,
+          bounce: { ...evidence, end: 'unmoved' },
+        },
+      ];
+      for (const variant of variants) {
+        await expect(confirm(variant)).rejects.toMatchObject(unproven);
+      }
+      // Our wallet transaction, read for another Attempt's id.
+      await expect(confirm(verdict, 'ab'.repeat(32))).rejects.toMatchObject(unproven);
+      expect(await confirm(verdict)).toBe(verdict);
     });
   });
 });

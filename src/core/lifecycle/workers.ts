@@ -33,6 +33,12 @@ export interface RecoveryReport {
   readonly checked: number;
   /** Operations that need a caller (see `recovery.skipped`); never resent or checked. */
   readonly skipped: number;
+  /**
+   * `signed` or ambiguously `submitted` Operations whose wallet no longer resolves (its
+   * configuration or signer was removed): checked on chain, but their stored bytes were not
+   * sent again. Restore the wallet and recover again to resend them.
+   */
+  readonly unresent: number;
   /** Operations whose target could not be rebuilt, or whose resend or check threw. */
   readonly failed: number;
   /** Leaked nonce values that reconciliation returned for reuse (across all wallets). */
@@ -191,9 +197,9 @@ export class Workers {
    * a caller and are reported through `recovery.skipped` (codes and states only). Then each
    * wallet with a live Operation has its nonces reconciled under its address lease. A
    * failure is logged by code and counted, and the rest go on. `signal` stops recovery
-   * between Operations and bounds each check and lease wait. Known gap: a `signed` or
-   * ambiguous Operation whose wallet-bound target cannot be resolved is counted `failed`
-   * without its check, although the check needs no wallet.
+   * between Operations and bounds each check and lease wait. A `signed` or ambiguous
+   * Operation whose wallet no longer resolves is still checked, since the check needs no
+   * wallet, and counted `unresent`: only its resend needs the wallet.
    */
   async recover(
     options: { readonly signal?: AbortSignal } = {},
@@ -209,6 +215,7 @@ export class Workers {
     let rebroadcast = 0;
     let checked = 0;
     let skipped = 0;
+    let unresent = 0;
     let failed = 0;
     let reconciled = 0;
     const skip = (op: OperationRecord, reason: string) => {
@@ -237,19 +244,30 @@ export class Workers {
           op.state === 'signed' ||
           (op.state === 'submitted' && op.ambiguous === true)
         ) {
-          const writer = await this.#resolved(writes, op);
-          try {
-            current = await this.deps.engine.rebroadcast(writer, op.id, signal);
-          } catch (error) {
-            // A refusal or an unknown outcome is recorded on the Operation: check it next.
-            if (
-              !isCryptoAioError(error) ||
-              (error.category !== 'chain' && error.ambiguous !== true)
-            )
-              throw error;
-            current = (await this.monitor.find(op.id)) ?? op;
+          const writer = await this.#resolved(writes, op).catch((error: unknown) => {
+            // A wallet whose configuration or signer is gone rules out the resend only.
+            if (!walletUnresolved(error)) throw error;
+            unresent += 1;
+            this.deps.log.warn('recovery checks an operation it cannot resend', {
+              operationId: op.id,
+              code: errorCode(error),
+            });
+            return undefined;
+          });
+          if (writer) {
+            try {
+              current = await this.deps.engine.rebroadcast(writer, op.id, signal);
+            } catch (error) {
+              // A refusal or an unknown outcome is recorded on the Operation: check it next.
+              if (
+                !isCryptoAioError(error) ||
+                (error.category !== 'chain' && error.ambiguous !== true)
+              )
+                throw error;
+              current = (await this.monitor.find(op.id)) ?? op;
+            }
+            rebroadcast += 1;
           }
-          rebroadcast += 1;
         }
         await this.monitor.check(target, current, undefined, signal);
         checked += 1;
@@ -279,7 +297,7 @@ export class Workers {
         });
       }
     }
-    return { rebroadcast, checked, skipped, failed, reconciled };
+    return { rebroadcast, checked, skipped, unresent, failed, reconciled };
   }
 
   /**
@@ -415,4 +433,12 @@ export class Workers {
       });
     }
   }
+}
+
+/** A wallet that cannot be resolved for writes: its configuration or its signer is gone. */
+function walletUnresolved(error: unknown): boolean {
+  return (
+    isCryptoAioError(error) &&
+    (error.category === 'config' || error.category === 'signing')
+  );
 }

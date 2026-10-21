@@ -4,7 +4,14 @@
  * queries, `monitor` for heights, observations and seqnos. Jetton metadata, which the
  * core caches for the container's life, is a `read` under the proof quorum.
  */
-import { Cell, Dictionary, type Transaction } from '@ton/core';
+import {
+  Cell,
+  Dictionary,
+  loadMessage,
+  loadTransaction,
+  type DictionaryValue,
+  type Transaction,
+} from '@ton/core';
 import { createHash } from 'node:crypto';
 import type {
   AddressCodec,
@@ -39,8 +46,10 @@ import {
   type BlockHeader,
   type BlockId,
   type BoundRunResult,
+  type RawTransaction,
   type RunResult,
   type TonApi,
+  type TransactionId,
   type V3Trace,
   type V3Transaction,
 } from './api';
@@ -54,6 +63,7 @@ import {
 import {
   addressArgument,
   addressFromBoc,
+  decodeJettonInternalTransfer,
   decodeWalletRequest,
   messageBody,
   type WalletRequest,
@@ -64,10 +74,12 @@ import {
   attemptVerdict,
   consumesSeqno,
   isOwnAttempt,
+  type BounceEvidence,
+  type ChainTxId,
   type Verdict,
 } from './trace';
 import type { TonCallTags, TonExt } from './types';
-import { requestIsOwn, resolveIdentity, walletAddress } from './wallets';
+import { externalHashOf, requestIsOwn, resolveIdentity, walletAddress } from './wallets';
 
 /**
  * What every TON port is built from. Drivers are shared: the caches hold only immutable
@@ -89,9 +101,10 @@ export interface TonContext {
   /** jetton wallet → its owner and master, verified under the quorum. */
   readonly verified: Map<string, VerifiedJettonWallet>;
   /**
-   * Wallet transactions the chain walk authenticated, by `lt:hash`. A
-   * transaction is immutable and its cell hashes to its id, so a kept one is as good as one
-   * fetched again; each walk fetches only what it has not seen (bounded, `CHAIN_MEMO`).
+   * Transactions authenticated under the proof quorum (the chain walk's wallet
+   * transactions, a bounce's deliveries), by `lt:hash`. A transaction is immutable and its
+   * cell hashes to its id, so a kept one is as good as one fetched again; each walk fetches
+   * only what it has not seen (bounded, `CHAIN_MEMO`).
    */
   readonly chainTxs: Map<string, Transaction>;
   /**
@@ -694,7 +707,12 @@ export async function confirmLegs(
       recipient.wallet.owner !== leg.recipient ||
       recipient.wallet.master !== sender.wallet.master
     ) {
-      return Object.freeze({ kind: 'failed', reason: REASONS.jettonUnverified });
+      // The jettons left the wallet, to a wallet the master does not name.
+      return Object.freeze({
+        kind: 'failed',
+        reason: REASONS.jettonUnverified,
+        failure: 'unevidenced',
+      });
     }
   }
   return verdict;
@@ -703,6 +721,232 @@ export async function confirmLegs(
 /** The newest masterchain block of a trace: every leg's wallet has run by then. */
 export function traceBlock(root: V3Transaction, trace: V3Trace | null): number {
   return Math.max(root.mcSeqno, ...(trace?.transactions ?? []).map((tx) => tx.mcSeqno));
+}
+
+// ---- the chain's own transactions ---------------------------------------------------------
+
+/** A raw address's account id, as a transaction cell names it. */
+export const accountId = (raw: string): bigint =>
+  BigInt(`0x${raw.slice(raw.indexOf(':') + 1)}`);
+
+export const notTheChains = () =>
+  new ProviderError(
+    'PROVIDER_INCONSISTENT',
+    "the liteserver answered a transaction that is not the chain's",
+    { retryable: true },
+  );
+
+/**
+ * A transaction the liteserver served, authenticated: its cell (capped by the API before
+ * this decodes it) hashes to the id expected, and it is the account's own at the lt
+ * expected. Anything else is not the chain's.
+ */
+export function authenticated(
+  row: RawTransaction,
+  expected: TransactionId,
+  account: bigint,
+): Transaction {
+  if (row.lt !== expected.lt || row.hash !== expected.hash) throw notTheChains();
+  let cell: Cell;
+  let tx: Transaction;
+  try {
+    const cells = Cell.fromBoc(Buffer.from(row.boc, 'base64'));
+    if (cells.length !== 1) throw notTheChains();
+    cell = cells[0] as Cell;
+    tx = loadTransaction(cell.beginParse());
+  } catch {
+    throw notTheChains();
+  }
+  if (
+    cell.hash().toString('hex') !== expected.hash ||
+    tx.lt !== expected.lt ||
+    tx.address !== account
+  ) {
+    throw notTheChains();
+  }
+  return tx;
+}
+
+/**
+ * Whether the chain's `tx` ran its inbound message to the end: its compute and action
+ * phases both succeeded, so its state and its outgoing messages stand (a failed phase
+ * drops both, transaction.cpp).
+ */
+export function chainRan(tx: Transaction): boolean {
+  const d = tx.description;
+  return (
+    d.type === 'generic' &&
+    d.computePhase.type === 'vm' &&
+    d.computePhase.success &&
+    d.actionPhase?.success === true
+  );
+}
+
+/**
+ * Whether the chain's `tx` is our message run to the end: its inbound external message's
+ * TEP-467 hash, computed here from the authenticated body, is `id`, and it consumed its
+ * seqno.
+ */
+export function ourRun(tx: Transaction, wallet: string, id: string): boolean {
+  const inbound = tx.inMessage;
+  return (
+    chainRan(tx) &&
+    inbound?.info.type === 'external-in' &&
+    externalHashOf(wallet, inbound.body) === id
+  );
+}
+
+/**
+ * The transaction `id` names, as the liteserver serves it under `tags` (v2, by its lt and
+ * hash), authenticated. One read under the proof quorum is kept with the chain walk's
+ * (`chainTxs`), and a kept one is as good as one fetched again; one read under any other
+ * tags is used once.
+ */
+async function chainTransaction(
+  ctx: TonContext,
+  id: ChainTxId,
+  tags: TonCallTags,
+): Promise<Transaction> {
+  const key = `${id.lt}:${id.hash}`;
+  const account = accountId(id.account);
+  const kept = ctx.chainTxs.get(key);
+  if (kept !== undefined) {
+    if (kept.address !== account) throw notTheChains();
+    return kept;
+  }
+  const [row] = await ctx.api.rawTransactions(id.account, id, 1, tags);
+  if (row === undefined)
+    throw notYet('the liteserver does not hold the transaction asked');
+  const tx = authenticated(row, id, account);
+  if (tags.quorum !== undefined && row.boc.length <= MEMO_TX_LENGTH) {
+    keep(ctx.chainTxs, key, tx, CHAIN_MEMO);
+  }
+  return tx;
+}
+
+/**
+ * An `out_msgs` value (block.tlb `HashmapE 15 ^(Message Any)`): the message's own cell,
+ * read as `loadTransaction` reads it, so every transaction it loaded reads here too.
+ */
+const MESSAGE_CELL: DictionaryValue<Cell> = {
+  serialize: Dictionary.Values.Cell().serialize,
+  parse: (slice) => slice.loadRef(),
+};
+
+/**
+ * The cells of the messages the chain's `tx` received and sent, as its own cell holds
+ * them: a message's hash is its cell's, the same in the transaction that sent it and the
+ * one that received it.
+ */
+function messageCells(tx: Transaction): {
+  readonly inbound: Cell | undefined;
+  readonly outbound: readonly Cell[];
+} {
+  const slice = (tx.raw.refs[0] as Cell).beginParse();
+  const inbound = slice.loadBit() ? slice.loadRef() : undefined;
+  const outbound = slice.loadDict(Dictionary.Keys.Uint(15), MESSAGE_CELL).values();
+  return { inbound, outbound };
+}
+
+const hashOf = (cell: Cell | undefined): string | undefined =>
+  cell?.hash().toString('hex');
+
+/** The jettons an `internal_transfer` in `message` carries from `from`; else undefined. */
+function jettonsFrom(message: Cell, from: string): bigint | undefined {
+  const { info, body } = loadMessage(message.beginParse());
+  const transfer = info.type === 'internal' ? decodeJettonInternalTransfer(body) : null;
+  return transfer?.from === from ? transfer.amount : undefined;
+}
+
+/** Whether the chain's last delivery `tx` did what the verdict says (`end`). */
+function endedAs(tx: Transaction, end: BounceEvidence['end'], from: string): boolean {
+  if (end === 'bounced') {
+    // The bounce phase sent the value back; `nofunds` and `negfunds` left it there.
+    const d = tx.description;
+    return d.type === 'generic' && d.bouncePhase?.type === 'ok';
+  }
+  if (end === 'unran') return !chainRan(tx);
+  // It ran, and every `internal_transfer` it sent for us moved nothing.
+  const amounts = messageCells(tx).outbound.map((m) => jettonsFrom(m, from));
+  return (
+    chainRan(tx) &&
+    amounts.some((amount) => amount === 0n) &&
+    !amounts.some((amount) => amount !== undefined && amount > 0n)
+  );
+}
+
+/**
+ * A bounce verdict (`transfer bounced`, `jetton transfer bounced`), authenticated from the
+ * chain itself: a lone lying indexer could report one for a transfer that landed, and a
+ * `failed` invites a second payment. The indexer only names the transactions
+ * (`BounceEvidence`); the liteserver serves each under `tags` (the proof quorum on the
+ * proof path), hashed here (`chainTransaction`). The verdict stands only when the chain
+ * shows all of it: our wallet transaction is our Attempt run to the end; each delivery
+ * received a message the one before it sent, by the message's cell hash, so no other
+ * delivery (another transfer's bounce at the same recipient) stands in for ours, and the
+ * message past our jetton wallet carries our jettons onward; and the last one sent the
+ * value back, ran nothing, or moved no jettons. A delivery the liteserver does not hold
+ * yet decides nothing (a retryable `PROVIDER_UNAVAILABLE`), nor do endpoints that disagree
+ * on one (the quorum's `PROVIDER_INCONSISTENT`); a chain that shows otherwise is a
+ * retryable `PROVIDER_INCONSISTENT` (logged `BOUNCE_UNPROVEN`), never `success` either: a
+ * real bounce may only lack its evidence yet, and the indexer's word decides neither way.
+ * Any other verdict passes unchanged.
+ */
+export async function confirmBounce(
+  ctx: TonContext,
+  verdict: Verdict,
+  from: string,
+  id: string,
+  tags: TonCallTags,
+): Promise<Verdict> {
+  if (verdict.kind !== 'failed') return verdict;
+  const evidence = verdict.bounce;
+  if (
+    evidence === undefined &&
+    verdict.reason !== REASONS.bounced &&
+    verdict.reason !== REASONS.jettonBounced
+  ) {
+    return verdict;
+  }
+  const unproven = () => {
+    ctx.log.warn('the chain does not show the bounce the indexer reports', {
+      code: 'BOUNCE_UNPROVEN',
+    });
+    return new ProviderError(
+      'PROVIDER_INCONSISTENT',
+      'the chain does not show the bounce the indexer reports',
+      { retryable: true },
+    );
+  };
+  // Only a Gram bounce rests on a bounce phase, the value sent back; a jetton one rests on
+  // a jetton wallet that ran nothing or moved nothing.
+  if (
+    evidence === undefined ||
+    evidence.path.length === 0 ||
+    (evidence.end === 'bounced') !== (verdict.reason === REASONS.bounced)
+  ) {
+    throw unproven();
+  }
+  const ours = await chainTransaction(ctx, { ...evidence.root, account: from }, tags);
+  if (!ourRun(ours, from, id)) throw unproven();
+  let sent = messageCells(ours).outbound;
+  for (const [index, step] of evidence.path.entries()) {
+    const message = sent.find((cell) => hashOf(cell) === step.message);
+    if (!message || (index > 0 && !((jettonsFrom(message, from) ?? 0n) > 0n))) {
+      throw unproven();
+    }
+    const tx = await chainTransaction(ctx, step, tags);
+    const cells = messageCells(tx);
+    const last = index === evidence.path.length - 1;
+    if (
+      hashOf(cells.inbound) !== step.message ||
+      (last ? !endedAs(tx, evidence.end, from) : !chainRan(tx))
+    ) {
+      throw unproven();
+    }
+    sent = cells.outbound;
+  }
+  return verdict;
 }
 
 /**
@@ -826,19 +1070,31 @@ export function createTonReader(ctx: TonContext): ChainReader {
       };
       // Anyone's transaction: its execution status as the chain reports it.
       if (wallet === undefined) return { ...seen, success: executed(tx) };
-      // Our own Attempt: the verdict path.
+      // Our own Attempt, found under its id: the verdict path. A bounce, as a jetton leg,
+      // stands only once the chain shows it.
       const trace = await api.trace(tx.hash, MONITOR);
-      const verdict = await confirmLegs(
+      const verdict = await confirmBounce(
         ctx,
-        attemptVerdict(tx, trace),
+        await confirmLegs(
+          ctx,
+          attemptVerdict(tx, trace),
+          wallet,
+          MONITOR,
+          traceBlock(tx, trace),
+        ),
         wallet,
+        hashId(ref.id) as string,
         MONITOR,
-        traceBlock(tx, trace),
       );
       if (verdict.kind === 'pending') return seen;
       return verdict.kind === 'success'
         ? { ...seen, success: true }
-        : { ...seen, success: false, reason: verdict.reason };
+        : {
+            ...seen,
+            success: false,
+            reason: verdict.reason,
+            ...(verdict.failure ? { failure: verdict.failure } : {}),
+          };
     },
     getTokenMetadata: async (ref: TokenRef) =>
       jettonMetadata(ctx, jettonMaster(ctx, ref)),

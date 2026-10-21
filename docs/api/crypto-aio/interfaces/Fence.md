@@ -2,7 +2,7 @@
 
 # Interface: Fence
 
-Defined in: [src/core/store/types.ts:198](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L198)
+Defined in: [src/core/store/types.ts:206](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L206)
 
 ## Properties
 
@@ -12,4 +12,4 @@ Defined in: [src/core/store/types.ts:198](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **claimToken**: `string`
 
-Defined in: [src/core/store/types.ts:199](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L199)
+Defined in: [src/core/store/types.ts:207](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L207)

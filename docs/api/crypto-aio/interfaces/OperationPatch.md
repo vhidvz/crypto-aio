@@ -2,7 +2,7 @@
 
 # Interface: OperationPatch
 
-Defined in: [src/core/store/types.ts:151](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L151)
+Defined in: [src/core/store/types.ts:159](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L159)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/store/types.ts:151](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **activeAttemptId?**: `string`
 
-Defined in: [src/core/store/types.ts:158](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L158)
+Defined in: [src/core/store/types.ts:166](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L166)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/store/types.ts:158](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **ambiguous?**: `boolean`
 
-Defined in: [src/core/store/types.ts:159](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L159)
+Defined in: [src/core/store/types.ts:167](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L167)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/store/types.ts:159](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **clear?**: readonly (`"error"` \| `"ambiguous"` \| `"outcome"` \| `"unsigned"` \| `"reservation"` \| `"signerTickets"` \| `"partialSignatures"` \| `"activeAttemptId"` \| `"nextCheckAt"`)[]
 
-Defined in: [src/core/store/types.ts:163](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L163)
+Defined in: [src/core/store/types.ts:171](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L171)
 
 Fields to delete; applied after the values above.
 
@@ -44,7 +44,7 @@ Fields to delete; applied after the values above.
 
 > `readonly` `optional` **error?**: [`SerializedError`](SerializedError.md)
 
-Defined in: [src/core/store/types.ts:160](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L160)
+Defined in: [src/core/store/types.ts:168](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L168)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [src/core/store/types.ts:160](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **nextCheckAt?**: `number`
 
-Defined in: [src/core/store/types.ts:161](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L161)
+Defined in: [src/core/store/types.ts:169](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L169)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [src/core/store/types.ts:161](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **outcome?**: `"executed"` \| `"cancelled"`
 
-Defined in: [src/core/store/types.ts:153](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L153)
+Defined in: [src/core/store/types.ts:161](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L161)
 
 ***
 
@@ -74,7 +74,7 @@ Defined in: [src/core/store/types.ts:153](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **partialSignatures?**: readonly [`SignatureBundle`](SignatureBundle.md)[]
 
-Defined in: [src/core/store/types.ts:157](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L157)
+Defined in: [src/core/store/types.ts:165](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L165)
 
 ***
 
@@ -84,7 +84,7 @@ Defined in: [src/core/store/types.ts:157](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **reservation?**: [`OrderingData`](../type-aliases/OrderingData.md)
 
-Defined in: [src/core/store/types.ts:155](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L155)
+Defined in: [src/core/store/types.ts:163](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L163)
 
 ***
 
@@ -94,7 +94,7 @@ Defined in: [src/core/store/types.ts:155](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **signerTickets?**: readonly [`SignerTicket`](SignerTicket.md)[]
 
-Defined in: [src/core/store/types.ts:156](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L156)
+Defined in: [src/core/store/types.ts:164](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L164)
 
 ***
 
@@ -104,7 +104,7 @@ Defined in: [src/core/store/types.ts:156](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **state?**: [`OperationState`](../type-aliases/OperationState.md)
 
-Defined in: [src/core/store/types.ts:152](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L152)
+Defined in: [src/core/store/types.ts:160](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L160)
 
 ***
 
@@ -114,4 +114,4 @@ Defined in: [src/core/store/types.ts:152](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **unsigned?**: [`UnsignedTx`](UnsignedTx.md)
 
-Defined in: [src/core/store/types.ts:154](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L154)
+Defined in: [src/core/store/types.ts:162](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L162)

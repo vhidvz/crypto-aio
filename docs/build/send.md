@@ -80,13 +80,16 @@ Polygon mainnet), and the fee cap allows the base fee to double. On `evm-legacy`
 they scale `eth_gasPrice` by 100%, 110% or 125%. The gas limit is the node's estimate,
 plus 20% for anything but a plain transfer. The `network` charge is an `upper` bound, and
 `details.expected` (`EvmFeeDetails`) the likely cost. On OP Stack chains the L1 data fee is a
-separate `l1-data` charge, and the bound is `expected`, since that fee moves with L1 prices.
+separate `l1-data` charge, and the bound is `expected`, since that fee moves with L1 prices;
+since the Isthmus upgrade the operator fee, for the whole gas limit, is an `operator` charge.
 An override's `gasLimit` skips `eth_estimateGas`, the check that refuses a call that would
 fail: any call that would revert or run out of gas, such as a token transfer or a payment
 to a contract that refuses it, is then signed, broadcast, and burns its gas. The balance
 check still runs. No EVM transaction signs a price per gas above the handle's `maxFeePerGas`
 option (1,000 gwei by default): a speed's prices are clamped to it, and an override, or a
-cancel's least bump, above it is refused with `INVALID_INTENT` before signing; see
+cancel's least bump, above it is refused with `INVALID_INTENT` before signing. Nor does one
+sign a gas limit above its `maxGasLimit` option (2^24 by default): an estimate or an
+override's `gasLimit` above it is refused the same way, never cut down; see
 [EVM networks](../reference/networks/evm.md).
 
 On Bitcoin, `slow`, `normal` and `fast` take Esplora's estimate for 144, 6 or 2 blocks, and
@@ -102,8 +105,9 @@ maximum fee limit and the handle's `maxFeeLimit` option (100 TRX by default); `{
 may raise it to the lower of the two but never set it below the estimate.
 [Tron networks](../reference/networks/tron.md) explains the charges and the ceiling.
 
-On Solana, the `solana` fee has a `network` charge (the signature fee), a `priority` charge
-(the compute-unit price times the compute-unit limit) and, when the transfer creates the
+On Solana, the `solana` fee has a `network` charge (the signature fee, 5,000 lamports, which
+the library computes and the node's quote must confirm), a `priority` charge (the
+compute-unit price times the compute-unit limit) and, when the transfer creates the
 recipient's token account, a `rent` charge; the bound is `exact`, or `upper` with `rent`.
 `slow`, `normal` and `fast` take the 25th, 50th or 75th percentile of the node's recent
 prioritization fees, at most the handle's `maxComputeUnitPrice` option (10,000,000

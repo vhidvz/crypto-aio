@@ -31,7 +31,9 @@ import {
   FEE_PERCENTILES,
   TRANSFER_GAS,
   assertWithinCeiling,
+  assertWithinGasLimit,
   capPrice,
+  comparePrices,
   feeDraft,
   feeOf,
   feesFromHistory,
@@ -45,7 +47,9 @@ import {
 import { GAS_PRICE_ORACLE } from './network';
 import {
   READ,
+  callIfPresent,
   erc20Balance,
+  erc20Deprecated,
   isExecutionFailure,
   isRevert,
   withSignal,
@@ -195,8 +199,9 @@ async function priceFor(
   const { client, config } = ctx;
   if (typeof fee === 'object') {
     const { params, gasLimit } = parseFeeOverride(fee, config.feeModel);
-    // An explicit fee above the ceiling is refused before any request.
+    // An explicit fee above either bound is refused before any request.
     assertWithinCeiling(params, config.maxFeePerGas);
+    if (gasLimit !== undefined) assertWithinGasLimit(gasLimit, config.maxGasLimit);
     return { speed: 'custom', params, ...(gasLimit !== undefined ? { gasLimit } : {}) };
   }
   // A node's suggestion is clamped to the ceiling, so no endpoint can raise it.
@@ -242,17 +247,80 @@ async function l1FeeFor(
   }
 }
 
+/**
+ * OP Stack since Isthmus: the oracle's operator fee (`getOperatorFee`) for the whole gas
+ * limit. The fee grows with the gas used, so the limit gives an upper bound at the chain's
+ * current operator settings, as the `network` charge does at the fee cap; the predeploy
+ * applies the formula of the chain's fork (Isthmus or Jovian). `undefined` where nothing
+ * is charged: a zero fee, or a predeploy that has no such method yet (a revert, or `0x`).
+ * A node error is retryable (`callIfPresent`), and a malformed answer is a retryable
+ * `PROVIDER_UNAVAILABLE`, never no fee.
+ */
+async function operatorFeeFor(
+  ctx: EvmContext,
+  gasLimit: bigint,
+  signal?: AbortSignal,
+): Promise<bigint | undefined> {
+  if (!ctx.config.l1DataFee) return undefined;
+  const { client } = ctx;
+  const result = await callIfPresent(
+    client,
+    { to: GAS_PRICE_ORACLE, data: client.abi.encodeGetOperatorFee(gasLimit) },
+    withSignal(READ, signal),
+  );
+  if (result === null || result === '0x') return undefined;
+  let fee: bigint;
+  try {
+    fee = client.abi.decodeUint256(result);
+  } catch {
+    throw new ProviderError(
+      'PROVIDER_UNAVAILABLE',
+      'the operator fee oracle gave no fee',
+    );
+  }
+  return fee === 0n ? undefined : fee;
+}
+
+/** The fee draft for `fields`, with the OP Stack charges read side by side. */
 async function draftFor(
   ctx: EvmContext,
   fields: EvmTxFields,
   price: Price,
   signal?: AbortSignal,
 ): Promise<FeeEstimateDraft> {
-  const l1Fee = await l1FeeFor(ctx, fields, signal);
+  const [l1Fee, operatorFee] = await Promise.all([
+    l1FeeFor(ctx, fields, signal),
+    operatorFeeFor(ctx, fields.gasLimit, signal),
+  ]);
   return feeDraft(price.speed, fields.gasLimit, price.params, {
     ...(price.baseFeePerGas !== undefined ? { baseFeePerGas: price.baseFeePerGas } : {}),
     ...(l1Fee !== undefined ? { l1Fee } : {}),
+    ...(operatorFee !== undefined ? { operatorFee } : {}),
   });
+}
+
+/**
+ * Refuses a transfer of a token whose contract says it is deprecated. Tether's
+ * `TetherToken` (USDT on Ethereum) forwards a deprecated contract's `transfer` to its
+ * upgraded contract, which moves the value and emits the `Transfer` event, so the transfer
+ * estimates and executes, and the verdict, which reads the old contract's event, finds no
+ * evidence of it. Read once per estimate, before `eth_estimateGas` (which such a transfer
+ * passes); the core estimates before every build. One endpoint's answer, as for the
+ * builder's other token reads, not the proof quorum's: a `true` can only refuse before
+ * signing, the safe direction (as one endpoint's revert in `eth_estimateGas` already
+ * does), and a wrong `false` leaves the transfer where it was without the guard.
+ */
+async function refuseDeprecated(
+  ctx: EvmContext,
+  token: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (await erc20Deprecated(ctx.client, token, withSignal(READ, signal))) {
+    throw new ValidationError(
+      'ASSET_RESOLUTION',
+      'the token contract is deprecated in favour of an upgraded contract; the asset must be re-registered at the upgraded contract',
+    );
+  }
 }
 
 /** geth's estimate reached its gas cap: the call fails at any gas limit. */
@@ -319,9 +387,14 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
     async estimateFee(intent, build: BuildContext) {
       const transfer = transferOf(intent);
       const price = await priceFor(ctx, intent.fee, build.signal);
+      if (transfer.token !== undefined) {
+        await refuseDeprecated(ctx, transfer.token, build.signal);
+      }
       const gasLimit =
         price.gasLimit ??
         gasLimitFrom(await estimateGas(ctx, intent.from, transfer, build.signal));
+      // The estimate with its headroom is what would be signed, so that is what is bounded.
+      assertWithinGasLimit(gasLimit, ctx.config.maxGasLimit);
       const nonce = build.ordering?.kind === 'nonce' ? build.ordering.nonce : 0n;
       const fields = fieldsOf(
         ctx,
@@ -376,8 +449,9 @@ export function createEvmBuilder(ctx: EvmContext): TxBuilder {
           `this network takes ${ctx.config.feeModel} fees`,
         );
       }
-      // The ceiling is checked again, whatever produced the fee object.
+      // The bounds are checked again, whatever produced the fee object.
       assertWithinCeiling(params, ctx.config.maxFeePerGas);
+      assertWithinGasLimit(gasLimit, ctx.config.maxGasLimit);
       const fields = fieldsOf(
         ctx,
         callOf(client, transfer),
@@ -483,16 +557,22 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
     replace: config.capabilities.has('replace-fee'),
     cancel: config.capabilities.has('cancel'),
 
+    comparePrice: (a, b) =>
+      comparePrices(feeOf(a.fee.details).params, feeOf(b.fee.details).params),
+
     async buildReplacement(previous, fee, build) {
       const before = feeOf(previous.fee.details);
       const price = await priceFor(ctx, fee, build.signal);
       if (!meetsBump(before.params, price.params, bump)) throw tooLow('a replacement');
       const old = unsignedFields(ctx, previous);
+      // The original's gas limit too: no replacement signs one above the bound.
+      const gasLimit = price.gasLimit ?? before.gasLimit;
+      assertWithinGasLimit(gasLimit, config.maxGasLimit);
       const fields = fieldsOf(
         ctx,
         { to: old.to, value: old.value, data: old.data },
         old.nonce,
-        price.gasLimit ?? before.gasLimit,
+        gasLimit,
         price.params,
       );
       return unsignedTx(
@@ -514,6 +594,8 @@ export function createEvmReplacement(ctx: EvmContext): ReplacementPolicy | undef
       // A cancel whose least bump would pay above the ceiling is refused.
       assertWithinCeiling(price.params, config.maxFeePerGas);
       const nonce = nonceOf(previous.ordering);
+      // A self-transfer needs 21,000 gas, which every bound allows; an explicit fee's
+      // `gasLimit` was bounded when it was parsed.
       const fields = fieldsOf(
         ctx,
         { to: build.from, value: 0n, data: '0x' },

@@ -57,10 +57,10 @@ principles, starting with [what a ledger is](https://vhidvz.github.io/crypto-aio
 
 | Family | Chains | Through |
 | --- | --- | --- |
-| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (default) or `web3` 4 |
+| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (or the deprecated `web3` 4) |
 | Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7 and an Esplora indexer |
 | Tron | mainnet, Shasta, Nile | `tronweb` 6 |
-| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 |
+| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 or 3 |
 | TON | mainnet, testnet | `@ton/ton` 16 and toncenter |
 | Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5 and the Avalanche Data API |
 
@@ -69,11 +69,11 @@ What each network supports, family by family, is in
 
 ## Install
 
-crypto-aio needs Node.js 22 or later (Solana: 22.12 or later). Install the package, and only the
+crypto-aio needs Node.js 22.12 or later. Install the package, and only the
 SDK of each family you use:
 
 ```sh
-npm install crypto-aio ethers           # EVM chains (or web3)
+npm install crypto-aio ethers           # EVM chains
 npm install crypto-aio bitcoinjs-lib    # Bitcoin
 npm install crypto-aio tronweb          # Tron
 npm install crypto-aio @solana/web3.js  # Solana
@@ -82,6 +82,9 @@ npm install crypto-aio @avalabs/avalanchejs  # Avalanche X-Chain and P-Chain
 ```
 
 A handle whose SDK is missing fails with `DEPENDENCY_MISSING` and names the install command.
+The type declarations need TypeScript 5.3 or later, and each family's entry point
+(`crypto-aio/evm`, …) the types of its SDK; some SDKs' own declarations need TypeScript 5.7
+unless `skipLibCheck` is on. TypeScript 7 is supported.
 
 ## Your first transfer, with no network and no keys
 
@@ -148,16 +151,22 @@ family.
 
 ## Status
 
-crypto-aio is at **0.1.0**, the first release of this API; the 0.0.x releases on npm are an older,
-unrelated API. Before 1.0, some extension interfaces may still change
-([what is stable](https://vhidvz.github.io/crypto-aio/reference/stability.html)). Only in-memory
-stores ship: production needs durable stores of your own, proven with the contract suites in
-`crypto-aio/testing`. Release notes are in the [changelog](CHANGELOG.md).
+crypto-aio is at **0.1.0**, on its way to 1.0, from which [semantic
+versioning](https://vhidvz.github.io/crypto-aio/reference/stability.html) covers the whole API,
+the driver port and what a process stores; the 0.0.x releases on npm are an older, unrelated
+API. [Known limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists
+what it does not do yet, and [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)
+what changes from 0.1.0. Only in-memory stores ship: production needs durable stores of your
+own, proven with the contract suites in `crypto-aio/testing`; [examples/postgres-store](examples/postgres-store)
+is a reference implementation on PostgreSQL. Release notes are in the [changelog](CHANGELOG.md).
 
 ## Contributing
 
 Issues and pull requests are welcome. `pnpm install` and `pnpm check` (lint, typecheck and tests)
-are all a change needs locally; the [source map](https://vhidvz.github.io/crypto-aio/explore/source-map.html)
+are all a change needs locally, plus `pnpm api:update` when it changes the public API (CI
+compares the API with the reports in `etc/api/`). `pnpm test:evm-local` also signs, broadcasts
+and proves real EVM transactions on a local anvil node, which it starts and stops; CI runs it
+on every change. The [source map](https://vhidvz.github.io/crypto-aio/explore/source-map.html)
 explains the repository, and [docs/README.md](docs/README.md) how the documentation is built and
 tested.
 

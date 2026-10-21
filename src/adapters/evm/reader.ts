@@ -227,6 +227,51 @@ export async function erc20Balance(
   }
 }
 
+/**
+ * An `eth_call` at `latest` to a method the contract may lack: `null` when the call reverts
+ * or the VM stops it, as a call to a missing method does (the dispatcher reverts, or older
+ * code hits an invalid opcode). Any other JSON-RPC error is the node's and is rethrown
+ * retryable, and everything else propagates unchanged: a failed read is never an answer.
+ */
+export async function callIfPresent(
+  client: EvmClient,
+  request: { readonly to: string; readonly data: string },
+  tags: EvmCallTags,
+): Promise<string | null> {
+  try {
+    return await client.call(request, 'latest', tags);
+  } catch (error) {
+    if (isRevert(error) || isExecutionFailure(error)) return null;
+    if (isCryptoAioError(error, 'RPC_ERROR')) {
+      throw withContext(error, {}, { retryable: true });
+    }
+    throw error;
+  }
+}
+
+/** An ABI `bool` that is `true`: one word, exactly 1 (`call` answers lower-case). */
+const TRUE_WORD = /^0x0{63}1$/;
+
+/**
+ * Whether a token answers `deprecated()` with `true` at `latest`, as Tether's `TetherToken`
+ * does once its owner deprecates it for an upgraded contract (`upgradedAddress`). Only a
+ * definitive answer decides: a contract without the method (a revert, a VM failure, `0x`,
+ * or an answer that is not one ABI `bool`) is not deprecated, and a failed read throws
+ * (`callIfPresent`), so it is never taken for either answer.
+ */
+export async function erc20Deprecated(
+  client: EvmClient,
+  token: string,
+  tags: EvmCallTags,
+): Promise<boolean> {
+  const data = await callIfPresent(
+    client,
+    { to: token, data: client.abi.encodeDeprecated() },
+    tags,
+  );
+  return data !== null && TRUE_WORD.test(data);
+}
+
 function tokenOf(asset: AssetRef): string {
   if (asset === 'native' || asset.standard !== 'erc20') {
     throw assetError(`EVM tokens use the 'erc20' standard`);

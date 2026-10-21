@@ -2,7 +2,7 @@
 
 # Interface: EndpointStatus
 
-Defined in: [src/core/transport/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L105)
+Defined in: [src/core/transport/types.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L120)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/transport/types.ts:105](https://github.com/vhidvz/crypto-a
 
 > `readonly` **failures**: `number`
 
-Defined in: [src/core/transport/types.ts:109](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L109)
+Defined in: [src/core/transport/types.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L124)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/transport/types.ts:109](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **height?**: `bigint`
 
-Defined in: [src/core/transport/types.ts:110](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L110)
+Defined in: [src/core/transport/types.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L125)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/transport/types.ts:110](https://github.com/vhidvz/crypto-a
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/transport/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L106)
+Defined in: [src/core/transport/types.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L121)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/transport/types.ts:106](https://github.com/vhidvz/crypto-a
 
 > `readonly` **kind**: `"rpc"` \| `"indexer"`
 
-Defined in: [src/core/transport/types.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L107)
+Defined in: [src/core/transport/types.ts:122](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L122)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/core/transport/types.ts:107](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **lag?**: `bigint`
 
-Defined in: [src/core/transport/types.ts:111](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L111)
+Defined in: [src/core/transport/types.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L126)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [src/core/transport/types.ts:111](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **latencyMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L112)
+Defined in: [src/core/transport/types.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L127)
 
 ***
 
@@ -72,7 +72,7 @@ Defined in: [src/core/transport/types.ts:112](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **reason?**: `string`
 
-Defined in: [src/core/transport/types.ts:113](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L113)
+Defined in: [src/core/transport/types.ts:128](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L128)
 
 ***
 
@@ -82,4 +82,4 @@ Defined in: [src/core/transport/types.ts:113](https://github.com/vhidvz/crypto-a
 
 > `readonly` **state**: [`EndpointState`](../type-aliases/EndpointState.md)
 
-Defined in: [src/core/transport/types.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L108)
+Defined in: [src/core/transport/types.ts:123](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L123)

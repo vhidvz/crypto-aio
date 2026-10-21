@@ -37,6 +37,11 @@ export interface FakeEnvOptions {
   readonly wallets?: Readonly<Record<string, WalletConfig>>;
   readonly signer?: Signer;
   readonly stores?: Partial<Stores>;
+  /**
+   * The clock of the chain, the container and its memory stores (default: a new one). Pass
+   * it to give stores you build beforehand the same clock.
+   */
+  readonly clock?: FakeClock;
   readonly transport?: Omit<TransportOptions, 'fetch'>;
   readonly lifecycle?: LifecycleOptions;
   readonly hooks?: Hooks;
@@ -90,7 +95,7 @@ interface Shared {
 }
 
 export async function createFakeEnv(options: FakeEnvOptions = {}): Promise<FakeEnv> {
-  const clock = new FakeClock();
+  const clock = options.clock ?? new FakeClock();
   const ordering = options.ordering ?? 'nonce';
   const chain = new FakeChain({ ...options.chain, ordering, clock });
   const chainId: FakeChainId =

@@ -1,6 +1,7 @@
 import { classifyBroadcastError } from '../../../src/adapters/evm/errors';
 import {
   FEE_PERCENTILES,
+  comparePrices,
   feeDraft,
   feeOf,
   feesFromHistory,
@@ -124,6 +125,22 @@ describe('EVM fee policy', () => {
       { asset: 'native', amount: 90_000n, label: 'network' },
       { asset: 'native', amount: 11n, label: 'l1-data' },
     ]);
+    // The OP Stack operator fee is its own charge, in the expected cost too.
+    const operated = feeDraft(
+      'custom',
+      30_000n,
+      { type: 'legacy', gasPrice: 3n },
+      { l1Fee: 11n, operatorFee: 5n },
+    );
+    expect(operated).toMatchObject({
+      bound: 'expected',
+      details: { l1Fee: 11n, operatorFee: 5n, expected: 90_016n },
+    });
+    expect(operated.charges).toEqual([
+      { asset: 'native', amount: 90_000n, label: 'network' },
+      { asset: 'native', amount: 11n, label: 'l1-data' },
+      { asset: 'native', amount: 5n, label: 'operator' },
+    ]);
     expect(feeOf(legacy.details)).toEqual({
       gasLimit: 30_000n,
       params: { type: 'legacy', gasPrice: 3n },
@@ -163,6 +180,17 @@ describe('EVM fee policy', () => {
         expect.objectContaining({ code: 'INVALID_INTENT' }),
       );
     }
+  });
+
+  it('orders prices by the fee cap, then the tip, never by the gas limit', () => {
+    const at = (maxFeePerGas: bigint, maxPriorityFeePerGas: bigint) =>
+      ({ type: 'eip1559', maxFeePerGas, maxPriorityFeePerGas }) as const;
+    expect(comparePrices(at(100n, 1n), at(90n, 50n))).toBe(1);
+    expect(comparePrices(at(100n, 1n), at(100n, 2n))).toBe(-1);
+    expect(comparePrices(at(100n, 2n), at(100n, 2n))).toBe(0);
+    expect(
+      comparePrices({ type: 'legacy', gasPrice: 5n }, { type: 'legacy', gasPrice: 7n }),
+    ).toBe(-1);
   });
 
   it('requires both the fee cap and the tip to rise by the bump, strictly', () => {

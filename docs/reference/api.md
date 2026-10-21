@@ -37,7 +37,7 @@ The package is CommonJS with type declarations; `require('crypto-aio')` works as
 | `aio.use(plugin)` | Registers a chain family plugin (root container only; repeatable) | [Write a chain family plugin](../explore/plugins.md) |
 | `aio.on(type, handler)`, `aio.onAny(handler)` | Subscribe to [events](#events); each returns an unsubscribe function | [Production architecture](../tour/production.md#watching-it-run) |
 | `aio.operations.get(id)`, `.list(filter?)` | Read Operations of this namespace (`filter`: `states`, `chain`, `network`, `limit`) | [The life of a transfer](../tour/transfer.md) |
-| `aio.operations.recover({ signal? })` | Startup recovery; returns `{ rebroadcast, checked, skipped, failed, reconciled }` | [Run workers and recover](../build/workers.md) |
+| `aio.operations.recover({ signal? })` | Startup recovery; returns `{ rebroadcast, checked, skipped, unresent, failed, reconciled }` | [Run workers and recover](../build/workers.md) |
 | `aio.monitor.start({ workerId?, signal?, batch? })` | Background workers until the signal aborts | [Run workers and recover](../build/workers.md) |
 | `aio.monitor.runOnce({ workerId?, batch? })` | One worker pass; returns how many Operations it claimed | [Run workers and recover](../build/workers.md) |
 | `aio.close()` | Closes native clients and pooled drivers, stops workers; later calls throw `INVALID_TRANSITION` | [Run workers and recover](../build/workers.md) |
@@ -168,6 +168,7 @@ monitor has observed; any other id is read as an unmanaged transaction.
 | `MemoryOperationStore`, `MemoryLockManager`, `MemorySequenceStore`, `MemoryCursorStore` | The in-memory stores, one by one | |
 | `DATA_CLASSIFICATION` | Every persisted field's class: `sensitive`, `sensitive-until-broadcast`, `operational` | [Write a durable store](../explore/stores.md#data-classification-for-store-implementers) |
 | `CLEARABLE_FIELDS`, `OPERATION_PATCH_KEYS` | The fields an Operation patch may set or clear | |
+| `OPERATION_FORMAT` | The record format this version stores Operations in; it reads every earlier one | [Write a durable store](../explore/stores.md#upgrades-and-the-record-format) |
 | `stringifyTagged(value)`, `parseTagged(text)` | JSON that round-trips `bigint` and `Uint8Array` | |
 
 ## Events
@@ -201,7 +202,8 @@ the package exports the types `Plugin`, `AdapterManifest`, `DriverFactory`, `Dri
 `ChainDriver` and its ports, `ChainInfo`, `NetworkInfo`, `ProviderPreset`, `AssetRegistration`,
 `SignatureScheme`, `Transport` and the store ports, and the value `PLACEHOLDER_ORIGIN`, the
 origin an SDK sees instead of a real URL. Family entry points add their own:
-`evmChainPlugin`, `DEFAULT_MAX_FEE_PER_GAS` and `EVM_CAPABILITIES` (`crypto-aio/evm`);
+`evmChainPlugin`, `DEFAULT_MAX_FEE_PER_GAS`, `DEFAULT_MAX_GAS_LIMIT` and `EVM_CAPABILITIES`
+(`crypto-aio/evm`);
 `MAX_MEMO_BYTES`, `DEFAULT_EXPIRATION_MS`, `MIN_EXPIRATION_MS`, `MAX_EXPIRATION_MS`,
 `DEFAULT_MAX_FEE_LIMIT` and `DEFAULT_ENERGY_MARGIN_PERCENT` (`crypto-aio/tron`);
 `DEFAULT_MAX_COMPUTE_UNIT_PRICE` (`crypto-aio/solana`); and each family's `…_CAPABILITIES` and

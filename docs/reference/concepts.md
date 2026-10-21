@@ -85,13 +85,16 @@ A proof read needs `proofQuorum` endpoints (2 by default) to agree. The quorum's
 every endpoint not proven to serve another network, including lagging ones, ones whose
 identity is not yet confirmed and ones whose circuit breaker is open, so one endpoint never
 proves a fact alone while the others are only briefly unavailable. That costs liveness:
-proofs wait at startup, while an honest endpoint's breaker is briefly open, and for about
-three health intervals (`healthIntervalMs`, 15 s by default) after an endpoint stops
-answering its probes or its requests; then it stops counting. A recovering endpoint is tried
-alongside the others and can only block a proof; once it answers, it rejoins at the next
-health refresh, if its probes answer; the next proof read triggers that refresh. With two
-endpoints both must answer, and once one stops counting the other proves alone, so use three
-or more endpoints for production proofs.
+proofs wait at startup, and while an honest endpoint's breaker is briefly open. After about
+three health intervals (`healthIntervalMs`, 15 s by default) of an endpoint failing its
+probes or its requests, it stops counting, but a proof still needs `proofQuorum` endpoints,
+capped only by the endpoints you configured: with two endpoints and one down, proofs wait
+for it, and the one left never proves alone. Use three or more endpoints, from independent
+providers, so one outage leaves enough. A recovering endpoint is tried alongside the others
+and can only block a proof; once it answers, it rejoins at the next health refresh, if its
+probes answer; the next proof read triggers that refresh. `transport.degradedProofs: true`
+trades this for liveness: proofs then need only the endpoints still counted, down to one,
+which keeps them going through an outage but lets the one endpoint left decide alone.
 
 ```ts
 const aio = new CryptoAio({

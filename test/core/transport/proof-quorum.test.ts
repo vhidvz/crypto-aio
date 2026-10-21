@@ -11,6 +11,14 @@ import {
 } from '../../../src/testing/fake-fetch';
 import { setup } from './support';
 
+/**
+ * The mode most of these tests drive, `degradedProofs: true`: once an endpoint drops out of
+ * the count, the endpoints left prove without it. By default a proof waits for it instead
+ * (see "by default, never lets the endpoints left prove without a dropped one").
+ */
+const degraded: typeof setup = (endpoints, fake, options = {}, log) =>
+  setup(endpoints, fake, { degradedProofs: true, ...options }, log);
+
 const method = (req: FakeRequest) => req.json<{ method: string }>().method;
 const endpoint = (name: string, priority = 0): EndpointConfig => ({
   name,
@@ -172,7 +180,7 @@ describe('proof quorum and height exclusion', () => {
   it('stops counting an endpoint whose height probe failed three refreshes in a row', async () => {
     const heights = { a: '100', b: 'down' };
     const { fake, finCalls } = network(heights);
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake);
     transport.setProbes(probes);
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
     for (let refresh = 1; refresh <= 2; refresh++) {
@@ -190,6 +198,54 @@ describe('proof quorum and height exclusion', () => {
     await drive(clock, transport.refreshHealth());
     await expect(proof()).resolves.toBe('fact');
     expect([finCalls('a'), finCalls('b')]).toEqual([2, 1]);
+  });
+
+  it('by default, never lets the endpoints left prove without a dropped one', async () => {
+    const heights = { a: '100', b: 'down' };
+    const { fake, finCalls } = network(heights);
+    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    transport.setProbes(probes);
+    const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
+    // Long past the three failed refreshes that drop b from the count: a, possibly a
+    // liar, still never proves alone.
+    for (let refresh = 1; refresh <= 6; refresh++) {
+      await drive(clock, transport.refreshHealth());
+      await expect(proof()).rejects.toMatchObject({
+        code: 'PROVIDER_UNAVAILABLE',
+        retryable: true,
+      });
+      await clock.advance(HEALTH_INTERVAL_MS);
+    }
+    expect(finCalls('a')).toBe(0);
+    // Once b answers again, it counts, and the proof goes through with both.
+    heights.b = '100';
+    await drive(clock, transport.refreshHealth());
+    await expect(proof()).resolves.toBe('fact');
+    expect([finCalls('a'), finCalls('b')]).toEqual([1, 1]);
+  });
+
+  it('by default, still lets a single configured endpoint prove, and caps the quorum by those configured', async () => {
+    const single = network({ a: '100' });
+    const one = setup([endpoint('a')], single.fake);
+    one.transport.setProbes(probes);
+    await drive(one.clock, one.transport.refreshHealth());
+    await expect(
+      drive(one.clock, one.transport.rpc('fin', [], { quorum: 'proof' })),
+    ).resolves.toBe('fact');
+    // Three endpoints, a quorum of 2, one of them down for good: the other two prove.
+    const three = network({ a: '100', b: '100', c: 'down' });
+    const { transport, clock } = setup(
+      [endpoint('a'), endpoint('b'), endpoint('c')],
+      three.fake,
+    );
+    transport.setProbes(probes);
+    for (let refresh = 1; refresh <= 3; refresh++) {
+      await drive(clock, transport.refreshHealth());
+      await clock.advance(HEALTH_INTERVAL_MS);
+    }
+    await expect(
+      drive(clock, transport.rpc('fin', [], { quorum: 'proof' })),
+    ).resolves.toBe('fact');
   });
 
   it("measures a single proof read's lag against the corroborated height", async () => {
@@ -227,7 +283,7 @@ describe('proof quorum and height exclusion', () => {
       });
     }
     const finCalls = counter(fake, 'fin');
-    const { transport, clock } = setup([endpoint('b', 0), endpoint('a', 1)], fake);
+    const { transport, clock } = degraded([endpoint('b', 0), endpoint('a', 1)], fake);
     transport.setProbes({ ...probes, ...identity });
     // A plain read starts b's first-use identity check; a refresh joins it; the read's caller
     // aborts it.
@@ -301,7 +357,7 @@ describe('proof quorum and unverified identities', () => {
   it('drops an endpoint from the count once its identity probe fails three refreshes in a row', async () => {
     const ids = { a: '1', b: 'down' };
     const { fake, finCalls, idCalls } = identified(ids);
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake);
     transport.setProbes({ ...probes, ...identity });
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
     for (let refresh = 1; refresh <= 2; refresh++) {
@@ -414,7 +470,7 @@ describe('proof quorum health misses', () => {
     const ids = { a: '1', b: '1' };
     const answers: Record<string, string> = {};
     const { fake, idCalls } = identified(ids, {}, answers);
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake);
     transport.setProbes(identity);
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
     await expect(proof()).resolves.toBe('fact');
@@ -456,7 +512,7 @@ describe('proof quorum health misses', () => {
     const ids = { a: '1', b: '1' };
     const answers: Record<string, string> = {};
     const { fake } = identified(ids, {}, answers);
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake);
     transport.setProbes(identity);
     const metadata = () =>
       drive(clock, transport.rpc('fin', [], { purpose: 'read', quorum: 'proof' }));
@@ -473,7 +529,7 @@ describe('proof quorum health misses', () => {
 
   it('counts only usable endpoints when no probe is configured, so proofs never stall', async () => {
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake, {
       failureThreshold: 1,
     });
     const proof = () => drive(clock, transport.rpc('fin', [], { quorum: 'proof' }));
@@ -485,7 +541,7 @@ describe('proof quorum health misses', () => {
 
   it('counts only usable endpoints when no refresh can see a dead endpoint', async () => {
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake, {
       failureThreshold: 1,
     });
     // An identity probe without an expected identity checks nothing, and there is no height
@@ -511,7 +567,7 @@ describe('proof quorum health misses', () => {
       });
     }
     const finCalls = counter(fake, 'fin');
-    const { transport, clock } = setup([endpoint('b', 0), endpoint('a', 1)], fake);
+    const { transport, clock } = degraded([endpoint('b', 0), endpoint('a', 1)], fake);
     transport.setProbes({ ...probes, ...identity });
     // A read with a short timeout starts b's first-use identity check, a refresh joins it,
     // and the read's own deadline ends it long before the refresh's: not a miss.
@@ -547,7 +603,7 @@ describe('proof quorum and request-dead endpoints', () => {
     // probe, b answers HTTP 503 to every proof read, and a proof read runs every 20 s for
     // 20 minutes.
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, { b: 'down' });
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake);
     transport.setProbes(probes);
     const outcomes: string[] = [];
     for (let read = 0; read < 60; read++) {
@@ -576,7 +632,7 @@ describe('proof quorum and request-dead endpoints', () => {
       {},
       { honest: 'down', liar: 'forged' },
     );
-    const { transport, clock } = setup(
+    const { transport, clock } = degraded(
       [endpoint('honest', 0), endpoint('liar', 1)],
       fake,
       { failureThreshold: 2, openMs: 10 * 60_000 },
@@ -611,7 +667,7 @@ describe('proof quorum and request-dead endpoints', () => {
     const answers: Record<string, string> = { honest: 'down', liar: 'forged' };
     const { fake, finCalls } = identified({ honest: '1', liar: '1' }, {}, answers);
     const openMs = 60_000;
-    const { transport, clock } = setup(
+    const { transport, clock } = degraded(
       [endpoint('honest', 0), endpoint('liar', 1)],
       fake,
       { failureThreshold: 2, openMs },
@@ -670,7 +726,7 @@ describe('proof quorum trials of a recovering endpoint', () => {
         return answer === 'down' ? { status: 503, text: '' } : rpcResult(req, answer);
       });
     }
-    const { transport, clock, seen } = setup(
+    const { transport, clock, seen } = degraded(
       [endpoint('a'), { ...endpoint('b'), ...b }],
       fake,
       { failureThreshold: 2, openMs: OPEN_MS },
@@ -699,7 +755,7 @@ describe('proof quorum trials of a recovering endpoint', () => {
     // The reproduction above, then b recovers.
     const answers: Record<string, string> = { b: 'down' };
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, answers);
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake);
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake);
     transport.setProbes(probes);
     const proof = () =>
       drive(clock, transport.rpc('fin', [], { quorum: 'proof' })).then(
@@ -865,7 +921,7 @@ describe('proof quorum trials of a recovering endpoint', () => {
   it('tries a recovering endpoint even when no counted endpoint can answer', async () => {
     const answers: Record<string, string> = { a: 'down', b: 'down' };
     const { fake, finCalls } = identified({ a: '1', b: '1' }, {}, answers);
-    const { transport, clock } = setup([endpoint('a'), endpoint('b')], fake, {
+    const { transport, clock } = degraded([endpoint('a'), endpoint('b')], fake, {
       failureThreshold: 2,
       openMs: OPEN_MS,
     });

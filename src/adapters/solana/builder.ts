@@ -30,6 +30,7 @@ import type { RawTx, SignedTx, UnsignedTx } from '../../core/model/transaction';
 import { equalBytes } from '../../core/util/bytes';
 import { classifyOwnBroadcast } from './errors';
 import {
+  LAMPORTS_PER_SIGNATURE,
   aboveMaxPrice,
   computeUnitLimitFor,
   fallbackComputeUnitLimit,
@@ -235,6 +236,7 @@ async function planTransfer(
   ctx: SolanaContext,
   intent: DriverIntent,
   tags: SolanaCallTags,
+  scaledWith: number | undefined,
 ): Promise<TransferPlan> {
   const output = onlyOutput(intent);
   const { from } = intent;
@@ -267,6 +269,15 @@ async function planTransfer(
   // signed into `transferChecked`, so a lagging endpoint without the mint decides
   // nothing.
   const decimals = await mintDecimals(ctx, mint, withSignal(METADATA, tags.signal));
+  // The core scaled the amount with the decimals it knows for the mint (registered, or
+  // read before). `transferChecked` signs the chain's: a mismatch means the amount was
+  // scaled wrong, by a factor of ten or more.
+  if (scaledWith !== undefined && scaledWith !== decimals) {
+    throw new ValidationError(
+      'ASSET_RESOLUTION',
+      'the mint has other decimals than the amount was scaled with: fix the registered asset',
+    );
+  }
   // Nobody can sign for a program's associated token account.
   if (recipient?.executable) {
     throw invalid('the recipient is a program; send to a wallet or a PDA owner');
@@ -543,7 +554,7 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
       if (override && override.computeUnitPrice > bound) {
         throw aboveMaxPrice(override.computeUnitPrice, bound);
       }
-      const plan = await planTransfer(ctx, intent, tags);
+      const plan = await planTransfer(ctx, intent, tags, build.decimals);
       const list = transferInstructions(plan);
       const variant = variantOffsets(ctx.nextVariant());
       let price: bigint;
@@ -582,20 +593,24 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
         base + variant.limit > MAX_COMPUTE_UNIT_LIMIT
           ? MAX_COMPUTE_UNIT_LIMIT
           : base + variant.limit;
-      // A fee is a u64 of lamports. An explicit price without one is the
-      // caller's; a node's recent prices or quote without one decide nothing (retryable).
-      const unpriced = (what: string) =>
-        override
-          ? invalid('Solana fee override: the fee does not fit in u64')
-          : malformed(what);
-      const priority = priorityFee(price, limit);
-      if (priority > U64_MAX) throw unpriced('getRecentPrioritizationFees');
       const message = ctx.codec.compileMessage(
         plan.from,
         blockhash,
         withBudget(limit, price, list),
       );
-      readBack(message, plan.from);
+      // The fee follows from the message alone (agave `calculate_fee`): its signatures at
+      // the fixed rate, plus the priority fee its budget costs.
+      const { required: signatures } = readBack(message, plan.from);
+      const baseFee = LAMPORTS_PER_SIGNATURE * BigInt(signatures);
+      const priority = priorityFee(price, limit);
+      // A fee is a u64 of lamports, and agave's fee arithmetic saturates at u64::MAX, so a
+      // fee there may stand for a larger one: no fee. An explicit price without one is the
+      // caller's; a node's recent prices without one decide nothing (retryable).
+      if (baseFee + priority >= U64_MAX) {
+        throw override
+          ? invalid('Solana fee override: the fee does not fit in u64')
+          : malformed('getRecentPrioritizationFees');
+      }
       const quoted = contextValue(
         await call(
           ctx.transport,
@@ -607,13 +622,16 @@ export function createSolanaBuilder(ctx: SolanaContext): TxBuilder {
       );
       // `null`: the endpoint does not know the blockhash yet.
       if (quoted === null) throw notYet('the fee of the message');
-      const total = u64(quoted, 'getFeeForMessage');
-      // agave's fee arithmetic saturates: a quote of u64::MAX is no fee.
-      if (total === U64_MAX) throw unpriced('getFeeForMessage');
-      if (total < priority) throw malformed('getFeeForMessage');
+      // The quote confirms that fee and nothing else: one endpoint's inflated quote would
+      // refuse a transfer the wallet can pay (the funds check), a deflated one would pass a
+      // transfer the node then refuses. Any other value, a protocol change to the fee
+      // included, decides nothing (retryable) rather than mis-state the estimate.
+      if (u64(quoted, 'getFeeForMessage') !== baseFee + priority) {
+        throw malformed('getFeeForMessage');
+      }
       const details: SolanaFeeDetails = {
-        signatures: 1,
-        baseFee: total - priority,
+        signatures,
+        baseFee,
         computeUnitLimit: limit,
         computeUnitPrice: price,
         priorityFee: priority,

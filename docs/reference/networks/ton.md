@@ -194,6 +194,22 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   the value moved. A masterchain block is final once it exists, so `getFinalizedHeight()` is
   the masterchain head, while proofs attest a block 10 below it. An endpoint more than 150
   masterchain blocks (about a minute) behind the best is lagging.
+- **Bounces rest on the chain.** A transfer that reads as failed invites a second payment,
+  so `transfer bounced` and `jetton transfer bounced` never rest on the indexer's word: a
+  lying indexer could report a bounce for a transfer that landed. The indexer only names
+  the transactions. The provider (API v2) serves each one's raw record, which the library
+  hashes and checks against its id: your wallet's transaction that sent the message, and
+  the delivery that received it (both jetton wallets, for a jetton that reached the
+  recipient's), linked by the message's own hash, so another delivery's bounce never
+  stands in for yours. The transfer is `failed` only when the delivery's own record shows
+  the value sent back (its bounce phase) or, for a jetton, a jetton wallet that ran
+  nothing or moved nothing. Proofs read these under the proof quorum; the monitor's
+  observed status reads them from one provider endpoint. While the provider does not hold
+  them yet, or its endpoints disagree, the transfer stays undecided (`submitted` or
+  `included`), never `final` either; a record that contradicts the indexer is logged as
+  `BOUNCE_UNPROVEN`. Each check of a bounced transfer costs two or three more provider
+  requests. With a single provider service, that service alone decides a bounce, as it
+  decides a transfer's absence: configure two or three independent ones, as above.
 - **Jettons.** `asset: { standard: 'jetton', contract: <master> }`, or the alias `USDT` on
   mainnet (Tether's master `EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs`, 6 decimals);
   testnet has no catalog tokens. A transfer goes through your jetton wallet, the one the

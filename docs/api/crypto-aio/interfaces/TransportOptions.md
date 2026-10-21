@@ -16,13 +16,30 @@ Defined in: [src/core/transport/types.ts:19](https://github.com/vhidvz/crypto-ai
 
 ***
 
+<a id="degradedproofs"></a>
+
+### degradedProofs?
+
+> `readonly` `optional` **degradedProofs?**: `boolean`
+
+Defined in: [src/core/transport/types.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L32)
+
+Whether proofs go on, from fewer endpoints, once endpoints drop out of the proof
+quorum's count (their probes or requests failing for three health refreshes in a
+row). By default (`false`) a proof still needs `proofQuorum` endpoints, capped only by
+the endpoints configured, so it waits for the dropped ones and one endpoint left can
+never prove alone. `true` caps it by the endpoints still counted, down to one: proofs
+keep going through an outage, but the one endpoint left decides alone.
+
+***
+
 <a id="failurethreshold"></a>
 
 ### failureThreshold?
 
 > `readonly` `optional` **failureThreshold?**: `number`
 
-Defined in: [src/core/transport/types.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L24)
+Defined in: [src/core/transport/types.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L33)
 
 ***
 
@@ -56,7 +73,7 @@ Defined in: [src/core/transport/types.ts:17](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **healthIntervalMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L26)
+Defined in: [src/core/transport/types.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L35)
 
 ***
 
@@ -96,7 +113,7 @@ Defined in: [src/core/transport/types.ts:22](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **maxResponseBytes?**: `number`
 
-Defined in: [src/core/transport/types.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L32)
+Defined in: [src/core/transport/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L41)
 
 The most bytes one answer may carry (default 64 MiB). A longer answer, by its declared
 length or as it arrives, is cancelled and fails as a retryable `PROVIDER_UNAVAILABLE`,
@@ -110,7 +127,7 @@ so one endpoint can never make a call hold unbounded memory.
 
 > `readonly` `optional` **openMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L25)
+Defined in: [src/core/transport/types.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L34)
 
 ***
 

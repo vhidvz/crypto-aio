@@ -25,6 +25,7 @@ export function sampleOperation(overrides: Partial<NewOperation> = {}): NewOpera
   counter += 1;
   return {
     id: `op_contract_${counter}`,
+    format: 1,
     namespace: 'ns',
     idempotencyKey: `key-${counter}`,
     intentHash: 'hash',
@@ -184,6 +185,35 @@ export function describeOperationStoreContract(
       assert.equal(await operations.getByKey('ns', 'missing'), null);
     });
 
+    api.it('keeps the record format of every record through each write', async () => {
+      // A future format is stored as it is: the core, not the store, decides what it reads.
+      const { operations } = await create();
+      for (const format of [1, 2]) {
+        const { record } = await operations.create(sampleOperation({ format }));
+        assert.equal(record.format, format);
+        const updated = await operations.update(
+          'ns',
+          record.id,
+          { state: 'prepared' },
+          1,
+        );
+        assert.equal(updated.format, format);
+        const appended = await operations.appendAttempt(
+          'ns',
+          record.id,
+          sampleAttempt(`att_format_${format}_${record.id}`),
+          {},
+          updated.version,
+        );
+        assert.equal(appended.format, format);
+        assert.equal((await operations.get('ns', record.id))?.format, format);
+        assert.equal(
+          (await operations.getByKey('ns', record.idempotencyKey))?.format,
+          format,
+        );
+      }
+    });
+
     api.it(
       'rejects create when the runtime input carries a store-owned field, storing nothing',
       async () => {
@@ -304,7 +334,7 @@ export function describeOperationStoreContract(
         const { operations } = await create();
         for (const [name, ordering] of SAMPLE_ORDERINGS) {
           const { record } = await operations.create(sampleOperation());
-          const sample = sampleAttempt('a1');
+          const sample = sampleAttempt(`a1-${record.id}`);
           const appended = await operations.appendAttempt(
             'ns',
             record.id,
@@ -411,8 +441,14 @@ export function describeOperationStoreContract(
             blockHeight: 7n,
             blockHash: 'block-7',
             reason: 'transfer bounced',
+            failure: 'unevidenced',
           },
           null,
+        );
+        assert.equal(
+          (await operations.getObservation('a3'))?.failure,
+          'unevidenced',
+          'an observation keeps what failed',
         );
         await operations.putObservation(
           {
@@ -422,6 +458,7 @@ export function describeOperationStoreContract(
             evidence: 'observed',
             confirmations: 0,
             reason: undefined,
+            failure: undefined,
           },
           failed.version,
         );
@@ -430,6 +467,7 @@ export function describeOperationStoreContract(
         assert.equal(reread?.blockHeight, undefined);
         assert.equal(reread?.blockHash, undefined);
         assert.equal(reread?.reason, undefined);
+        assert.equal(reread?.failure, undefined);
       },
     );
 

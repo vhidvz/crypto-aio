@@ -4,4 +4,4 @@
 
 > `const` **TERMINAL\_STATES**: readonly [`OperationState`](../type-aliases/OperationState.md)[]
 
-Defined in: [src/core/store/types.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L29)
+Defined in: [src/core/store/types.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L30)

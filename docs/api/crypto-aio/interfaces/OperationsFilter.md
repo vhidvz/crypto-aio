@@ -2,7 +2,7 @@
 
 # Interface: OperationsFilter
 
-Defined in: [src/core/container/container.ts:291](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L291)
+Defined in: [src/core/container/container.ts:316](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L316)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/container/container.ts:291](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **chain?**: `string`
 
-Defined in: [src/core/container/container.ts:293](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L293)
+Defined in: [src/core/container/container.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L318)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/container/container.ts:293](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **limit?**: `number`
 
-Defined in: [src/core/container/container.ts:295](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L295)
+Defined in: [src/core/container/container.ts:320](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L320)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/container/container.ts:295](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/container/container.ts:294](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L294)
+Defined in: [src/core/container/container.ts:319](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L319)
 
 ***
 
@@ -42,4 +42,4 @@ Defined in: [src/core/container/container.ts:294](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **states?**: readonly [`OperationState`](../type-aliases/OperationState.md)[]
 
-Defined in: [src/core/container/container.ts:292](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L292)
+Defined in: [src/core/container/container.ts:317](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L317)

@@ -21,6 +21,7 @@ src/
 test/                 unit, architecture, documentation, end-to-end and integration tests
 docs/                 this site (VitePress); docs/api/ is the generated API reference
 scripts/pack-check.mjs  loads every entry point from the packed tarball
+scripts/evm-local.mjs   runs the EVM write-path suite on a local anvil node it starts
 ```
 
 ## The core, subsystem by subsystem
@@ -111,7 +112,7 @@ one family's `reader.ts` and `decode.ts`.
 | `test/architecture/` | The dependency rule, packaging, registry typing, and that secrets never echo |
 | `test/docs/` | These pages: links, navigation, the tutorial, the quick start, runnable snippets, the API and capability pages |
 | `test/e2e/` | The public API through the package entry points |
-| `test/integration/` | Read-only checks against live testnets, only with `CRYPTO_AIO_INTEGRATION=1` |
+| `test/integration/` | Read-only checks against live testnets, only with `CRYPTO_AIO_INTEGRATION=1`; and `evm-local.test.ts`, the EVM write path on a local node, only with `CRYPTO_AIO_IT_EVM_LOCAL_URL` |
 
 The commands a contributor runs:
 
@@ -123,4 +124,5 @@ pnpm doc            # the API reference pages, from the doc comments, into docs/
 pnpm docs:dev       # this site, with live reload, at http://localhost:5173/crypto-aio/
 pnpm test:pack      # build, pack, and load every entry point from the tarball
 CRYPTO_AIO_INTEGRATION=1 pnpm test test/integration   # live, read-only
+pnpm test:evm-local # the EVM write path on a local anvil node, which it starts and stops
 ```

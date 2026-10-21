@@ -7,6 +7,147 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** crypto-aio needs Node.js 22.12 or later (`engines.node` is `>=22.12`), the
+  version every family already needed for Solana. `engines` no longer names an npm version,
+  so npm 11 installs without an engine warning.
+- `package.json` declares `"type": "commonjs"`.
+- **Breaking:** a transfer whose transaction executed but shows no transfer to the
+  recipient fails with the new `TX_UNEVIDENCED`, not `TX_REVERTED`: an EVM or Tron token
+  that logged no `Transfer` to the recipient, or TON jettons sent to a wallet the master
+  does not name. Value may have moved, so check the chain before paying again; a
+  `TX_REVERTED` now always means the execution failed. Drivers say which with
+  `failure: 'reverted' | 'unevidenced'` (`TxFailure`) on `observe` and `includedFinal`, and
+  the core keeps it on the Attempt's observation (`failure`, a field stores must keep).
+- **Breaking:** an endpoint reads `healthy` in `status()` and `getNetworkStatus()` only
+  once its height is known, when its family probes heights: before that it is `unknown`,
+  where a confirmed identity alone used to make it `healthy`.
+- **Breaking:** a proof needs `proofQuorum` endpoints even after some drop out of its count
+  (down for three health intervals): the quorum is capped by the endpoints configured, not
+  by those still counted, so the one endpoint left never proves alone; proofs wait for the
+  others instead. The new `transport.degradedProofs: true` restores the old behavior, which
+  favours liveness.
+- `lifecycle.leaseWaitMs` (default: `leaseMs`): how long a transfer waits for its wallet's
+  address lease before `SEQUENCE_BUSY`, so transfers can queue behind a slow signer.
+- Fuzz tests feed every decoder of untrusted bytes (Solana messages and transactions, Tron
+  protobuf, Bitcoin and EVM raw transactions, Avalanche transactions, cb58, exact-integer
+  JSON) random and mutated input; they may refuse it, never throw an unclassified error.
+  A nightly workflow runs them deeper, runs the live read-only integration suites, and
+  runs the unit suites on the newest release of every SDK.
+- The pack check compiles a project that imports every entry point with TypeScript 5.3 (the
+  oldest supported, with `skipLibCheck`), the tested 5.9 and 7, under `nodenext` and
+  `bundler` resolution.
+- `@solana/web3.js` 3 is supported next to 1.99 (peer range `^1.99.0 || ^3.0.0`). The
+  Solana driver now compiles its messages and derives token account addresses itself
+  (checked byte for byte against the SDK), so signed bytes no longer depend on the SDK
+  version; the SDK only backs `native()`. The pack check loads the family with 3.x too.
+- `BuildContext.decimals`: the decimals the core scaled a transfer's amounts with. The
+  Solana driver refuses a token transfer whose mint has other decimals
+  (`ASSET_RESOLUTION`), which a wrong registration would otherwise sign as a mis-scaled
+  `transferChecked`.
+- `ReplacementPolicy.comparePrice` (optional): the EVM family ranks earlier cancels by
+  price, so a repeat cancel climbs from the highest one without an explicit `fee`.
+- `assets` on the root container's options registers tokens (decimals, symbol, aliases)
+  without writing a plugin.
+- `PROVIDER_MISCONFIGURED` for refused credentials carries `details.httpStatus` (401 or 403).
+- Solana: the signature fee is computed (5,000 lamports per signature), and an endpoint's
+  `getFeeForMessage` quote must match the message's fee exactly; any other quote fails the
+  estimate with a retryable `PROVIDER_UNAVAILABLE`, so one endpoint can neither inflate an
+  estimate (refusing a payable transfer) nor deflate it. Whether an explicit fee fits in
+  u64 is decided locally.
+- **Breaking:** Bitcoin: a wallet whose signer does not declare the scheme its address type
+  signs with (a `p2tr` wallet on an ECDSA-only signer, such as a KMS key) is refused with
+  `CONFIG_INVALID` when the wallet resolves (`ready()`, `walletAddress()`, `transfer()`,
+  `prepareTransfer()`), before anything is built or reserved, instead of failing at
+  signing. A Schnorr-only signer on a non-`p2tr` wallet gets the same error, where it got
+  `INVALID_ADDRESS`. Watch-only wallets are unaffected. Drivers declare this with the
+  optional `ChainDriver.signingSchemes(wallet)`.
+- **Breaking:** EVM and Tron: a token whose contract answers `deprecated()` with `true`
+  (Tether's `TetherToken`, USDT on Ethereum and Tron) is refused before signing with
+  `ASSET_RESOLUTION`, rather than sent through a contract that forwards it and logs no
+  `Transfer`. Every token estimate makes one more read.
+- **Breaking:** EVM: the `maxGasLimit` option (`chains.<id>.options`, a handle's `options`,
+  or a network's `params.maxGasLimit`) bounds the gas limit of every transfer, replacement
+  and cancel, by default 2^24 (`DEFAULT_MAX_GAS_LIMIT`, Ethereum's EIP-7825 cap). An
+  estimate (with its headroom) or an override above it fails with `INVALID_INTENT` before
+  signing (`details.required`, `details.maxGasLimit`).
+- EVM: on OP Stack chains since Isthmus, the operator fee (`GasPriceOracle.getOperatorFee`
+  for the gas limit) is its own `operator` charge and `details.operatorFee`, counted in
+  `details.expected` and the funds check.
+- **Breaking:** the Bitcoin scanner reads each block's own bytes (`/block/:hash/raw`) and
+  delivers only transactions its header commits to: the merkle root (refusing the
+  CVE-2012-2459 duplicate), a coinbase first, and the BIP141 witness commitment; the header
+  read at the height must match those bytes. A scanned transaction's `from`, input values and
+  fee come from the previous transactions' bytes, checked against the txids its inputs name.
+  A block that does not match is a retryable `PROVIDER_INCONSISTENT` and decides nothing. A
+  filtered scan uses the indexer's JSON pages only to find spends from watched addresses,
+  checked against the bytes; an unfiltered one reads one previous transaction per distinct
+  parent outside the block, so scan with `filter.addresses`. `details.vout[].type` is named
+  from the script, as Blockstream electrs names it.
+- The transport's `http` reads a binary answer with `responseType: 'bytes'`, within
+  `maxResponseBytes`.
+- A reference PostgreSQL implementation of the four store ports, in
+  `examples/postgres-store` (schema, source, README; not part of the package), passes every
+  store contract suite and an engine crash-and-recover run against PostgreSQL 16 in CI.
+- `pnpm test:evm-local` proves the EVM write path on a local anvil node, with ethers and
+  web3: proven finality, idempotent repeats, concurrent nonces, an ERC-20, replace, cancel,
+  crash recovery, funds checks and a reorg. CI runs it on every change.
+- **Breaking:** an idempotency key and a scanner's `cursorKey` must be well-formed text
+  without U+0000 (`INVALID_INTENT`, `CONFIG_INVALID`): a database may refuse U+0000, and a
+  driver may turn a lone surrogate into U+FFFD, so two keys would become one.
+- The store ports say which clock stamps times (the container's, or a wall clock the
+  processes share), and that a store may refuse an attempt id another Operation holds; the
+  contract suite no longer reuses one. `createFakeEnv` takes a `clock`, so stores built
+  beforehand can share it, and `FaultyOperationStore` passes `purge` through. The memory
+  store lists and purges nothing for a negative `limit`, as for 0.
+- `RecoveryReport.unresent`: a `signed` or ambiguous Operation whose wallet no longer
+  resolves is now checked on chain and counted `unresent`, where it was counted `failed`
+  without its check.
+- **Breaking (types only):** `Blockchain`'s constructor is private (handles come from
+  `aio.blockchain()` or `Blockchain.create()`), and its internal `protected` methods are gone
+  from the type declarations. `CryptoAio`'s constructor has one signature, `(options?)`.
+
+### Deprecated
+
+- `library: 'web3'` (and `Library.WEB3`): web3.js is no longer maintained upstream (4.16.0 is
+  its last release). It keeps working through 1.x, warns once per process with a
+  `DeprecationWarning` (code `CRYPTO_AIO_WEB3`), and is removed in 2.0. Use `ethers`.
+
+### Fixed
+
+- `evmChainPlugin` registers each `assets` ERC-20 under its EIP-55 checksummed contract,
+  whatever case it is given in, so a token's alias, its ref, its transfers and its balances
+  share one asset id (a lower-case contract made two assets, and deposits missed the
+  alias's). A token of another standard, a malformed contract, or a mixed-case contract with
+  a wrong checksum is refused with `CONFIG_INVALID` at registration.
+- `stringifyTagged` encodes a Node.js `Buffer` as bytes, as the memory store keeps it; it was
+  written as `{ type: 'Buffer', data }` and read back as a plain object by a durable store.
+- TON: `transfer bounced` and `jetton transfer bounced` no longer rest on the indexer's
+  word. The provider's raw records of the wallet transaction and of each delivery, checked
+  against their hashes and linked by message hash, must show the bounce; until they do, or
+  while the provider's endpoints disagree, the transfer stays undecided (a warning with code
+  `BOUNCE_UNPROVEN` when they contradict the indexer). A lone lying indexer can delay a
+  verdict, never fail a transfer that landed.
+
+### Added
+
+- `SECURITY.md`: how to report a vulnerability privately, and what is in scope.
+- Operation records carry `format` (`OPERATION_FORMAT`, 1), the record format they were
+  stored in; a record without one (0.1.0) reads as format 1. A process never reads a record
+  of a newer format: the read throws the new `RECORD_FORMAT_UNSUPPORTED`, and a worker
+  releases its claim for a newer process. The `OperationStore` contract suite checks that
+  a store keeps `format`, and tests pin the intent hash and the store keys as 0.1.0 wrote
+  them.
+- API reports (`etc/api/*.api.md`, one per entry point), generated by API Extractor: CI fails
+  when the public API changes without its report (`pnpm api:update`).
+- Release tooling: a tag such as `1.0.0-rc.1` publishes under npm's `next` dist-tag, a
+  release tag must match `package.json` and have a `CHANGELOG.md` section, which becomes the
+  GitHub Release's notes, and a release runs every CI check before it publishes.
+- CI runs on Node.js 22.12.0, 22, 24 and 26, audits the runtime dependencies, and checks the
+  package's exports and types with `publint` and `@arethetypeswrong/cli`
+  (`pnpm lint:package`). CodeQL and Dependabot are configured.
+
 ## [0.1.0] - 2026-10-01
 
 ### Added

@@ -4,4 +4,4 @@
 
 > **KnownLibrary** = *typeof* [`Library`](../variables/Library.md)\[keyof *typeof* [`Library`](../variables/Library.md)\]
 
-Defined in: [src/core/model/ids.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L46)
+Defined in: [src/core/model/ids.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L47)

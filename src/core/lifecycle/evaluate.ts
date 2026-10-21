@@ -44,10 +44,17 @@ export function evaluateOperation(
   if (reverted) {
     return {
       state: 'failed',
-      error: {
-        code: 'TX_REVERTED',
-        message: 'the transaction was included but failed on chain',
-      },
+      error:
+        of(reverted)?.failure === 'unevidenced'
+          ? {
+              code: 'TX_UNEVIDENCED',
+              message:
+                'the transaction executed, but shows no transfer to the recipient: check the chain before paying again',
+            }
+          : {
+              code: 'TX_REVERTED',
+              message: 'the transaction was included but failed on chain',
+            },
       winner: reverted,
     };
   }

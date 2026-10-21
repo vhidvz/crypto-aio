@@ -460,6 +460,7 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
       seen: 'block',
       success: false,
       reason: 'token transfer failed',
+      failure: 'unevidenced',
     });
     t.calls.length = 0;
     expect(
@@ -467,6 +468,8 @@ describe.each(LIBRARIES)('EVM proofs (%s)', (library) => {
     ).toEqual({
       included: true,
       success: false,
+      reason: 'token transfer failed',
+      failure: 'unevidenced',
       blockHeight: 1n,
       blockHash: t.node.block(1n)?.hash,
       txHash: hash,
@@ -1796,5 +1799,44 @@ describe.each(LIBRARIES)('EVM block source (%s)', (library) => {
     expect(verdicts.slice(0, 5)).toEqual([true, true, true, true, false]);
     expect(verdicts.filter((v) => !v).length).toBeGreaterThan(30);
     expect(mayHold(`0x${'00'.repeat(256)}`, h.client.abi.transferTopic)).toBe(false);
+  });
+});
+
+describe('the deprecated web3 library', () => {
+  it('warns once per process, with a DeprecationWarning, when its first driver is made', async () => {
+    let factory: typeof web3DriverFactory | undefined;
+    jest.isolateModules(() => {
+      // A fresh module, so no earlier test's driver has warned already.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fresh = require('../../../src/adapters/evm/web3-client') as {
+        web3DriverFactory: typeof web3DriverFactory;
+      };
+      factory = fresh.web3DriverFactory;
+    });
+    const emit = jest.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    try {
+      const chain = EVM_CHAINS.find((c) => c.id === 'ethereum') as ChainInfo;
+      const network = chain.networks.sepolia as NetworkInfo;
+      for (let i = 0; i < 2; i++) {
+        const t = nodeTransport({ chainId: BigInt(network.identity as string) }, ['a']);
+        await factory?.create({
+          chain,
+          network,
+          library: 'web3',
+          transport: t.transport,
+          clock: t.clock,
+          log: noopLogger,
+          options: {},
+        });
+      }
+      expect(emit).toHaveBeenCalledTimes(1);
+      expect(emit.mock.calls[0]?.[1]).toEqual({
+        type: 'DeprecationWarning',
+        code: 'CRYPTO_AIO_WEB3',
+      });
+      expect(String(emit.mock.calls[0]?.[0])).toContain("Use 'ethers'");
+    } finally {
+      emit.mockRestore();
+    }
   });
 });

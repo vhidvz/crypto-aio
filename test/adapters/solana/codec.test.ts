@@ -5,10 +5,14 @@ import {
   Connection,
   PublicKey,
   SystemProgram,
+  TransactionInstruction,
+  TransactionMessage,
   VersionedTransaction,
 } from '@solana/web3.js';
 import { BROADCAST, READ } from '../../../src/adapters/solana/rpc';
 import {
+  ASSOCIATED_TOKEN_PROGRAM,
+  TOKEN_PROGRAM,
   createAssociatedTokenAccountIdempotent,
   memo,
   setComputeUnitLimit,
@@ -118,6 +122,60 @@ describe('the @solana/web3.js codec', () => {
       ),
     ).toBe('H5ri5hFMzV2WUoaR4WBPELgf9ZxRvHCAnxUro4TGn6C4');
     expect(codec.associatedTokenAddress(KEY_ADDRESS, MINT)).toBe(SOURCE_ATA);
+  });
+
+  it('derives program addresses and compiles messages exactly as the SDK, for any keys', () => {
+    // The codec owns both since @solana/web3.js 3 dropped the synchronous derivation;
+    // 1.99, which tests pin, is the reference for random keys and account layouts.
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31;
+      return seed;
+    };
+    const randomKey = () =>
+      base58.encode(Uint8Array.from({ length: 32 }, () => random() % 256));
+    for (let round = 0; round < 50; round++) {
+      const [owner, mint] = [randomKey(), randomKey()];
+      const [sdkAddress] = PublicKey.findProgramAddressSync(
+        [
+          new PublicKey(owner).toBuffer(),
+          new PublicKey(TOKEN_PROGRAM).toBuffer(),
+          new PublicKey(mint).toBuffer(),
+        ],
+        new PublicKey(ASSOCIATED_TOKEN_PROGRAM),
+      );
+      expect(codec.associatedTokenAddress(owner, mint)).toBe(sdkAddress.toBase58());
+      const pool = [KEY_ADDRESS, randomKey(), randomKey(), randomKey(), randomKey()];
+      const pick = () => pool[random() % pool.length] as string;
+      const instructions = Array.from({ length: 1 + (random() % 4) }, () => ({
+        programId: pick(),
+        accounts: Array.from({ length: random() % 4 }, () => ({
+          address: pick(),
+          signer: random() % 3 === 0,
+          writable: random() % 2 === 0,
+        })),
+        data: Uint8Array.from({ length: random() % 40 }, () => random() % 256),
+      }));
+      const sdkMessage = new TransactionMessage({
+        payerKey: new PublicKey(KEY_ADDRESS),
+        recentBlockhash: BLOCKHASH,
+        instructions: instructions.map(
+          (ix) =>
+            new TransactionInstruction({
+              programId: new PublicKey(ix.programId),
+              keys: ix.accounts.map((a) => ({
+                pubkey: new PublicKey(a.address),
+                isSigner: a.signer,
+                isWritable: a.writable,
+              })),
+              data: Buffer.from(ix.data),
+            }),
+        ),
+      }).compileToLegacyMessage();
+      expect(
+        Buffer.from(codec.compileMessage(KEY_ADDRESS, BLOCKHASH, instructions)),
+      ).toEqual(Buffer.from(sdkMessage.serialize()));
+    }
   });
 
   it('reads and writes compact-u16 lengths and refuses versioned or empty messages', () => {

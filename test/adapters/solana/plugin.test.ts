@@ -99,13 +99,13 @@ describe('the built-in Solana plugin', () => {
         'solana',
         '@solana/web3.js',
         ['solana'],
-        [{ name: '@solana/web3.js', range: '^1.99.0' }],
+        [{ name: '@solana/web3.js', range: '^1.99.0 || ^3.0.0' }],
       ],
     ]);
     expect(plugin.chains?.map((c) => c.id)).toEqual(['solana']);
   });
 
-  it('pins the SDK range package.json declares as an optional peer and pins for tests', () => {
+  it('pins the SDK range package.json declares as an optional peer, tested from its lowest version', () => {
     const pkg = JSON.parse(
       readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8'),
     ) as Record<'peerDependencies' | 'devDependencies', Record<string, string>> & {
@@ -116,7 +116,11 @@ describe('the built-in Solana plugin', () => {
     for (const { name, range } of peers) {
       expect([name, pkg.peerDependencies[name]]).toEqual([name, range]);
       expect([name, pkg.peerDependenciesMeta[name]?.optional]).toEqual([name, true]);
-      expect([name, `^${pkg.devDependencies[name]}`]).toEqual([name, range]);
+      // The tests pin the lowest version of the range; the pack check also loads 3.x.
+      expect([name, range.split(' || ')[0]]).toEqual([
+        name,
+        `^${pkg.devDependencies[name]}`,
+      ]);
     }
   });
 

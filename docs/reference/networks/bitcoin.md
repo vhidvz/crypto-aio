@@ -1,6 +1,6 @@
 ---
 title: Bitcoin networks
-description: "Bitcoin: address types, coin selection, fees, replace and cancel, limits and safeguards."
+description: "Bitcoin: address types, coin selection, fees, replace and cancel, scanning, limits and safeguards."
 ---
 
 # Bitcoin networks
@@ -96,8 +96,12 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   `p2sh-p2wpkh` and `p2pkh`, and Schnorr with the BIP341 key-path tweak for `p2tr`. A `p2tr`
   request's `publicKey` is the tweaked output key and its `params.tweak` the tweak, so a
   `callbackSigner` signs with the private key tweaked as BIP341 describes (`localSigner`
-  does this). A `p2tr` wallet needs a signer with a `secp256k1-schnorr` key: an ECDSA-only
-  signer, such as a KMS key, fails at signing, before anything is broadcast.
+  does this). A `p2tr` wallet needs a signer that declares `secp256k1-schnorr`, and every
+  other wallet type one that declares `secp256k1-ecdsa`. A wallet whose signer lacks its
+  scheme, such as a `p2tr` wallet on an ECDSA-only KMS key, fails with `CONFIG_INVALID`
+  when it resolves (`bc.ready()`, `walletAddress()`, `transfer()`, `prepareTransfer()`),
+  before any key is read and before anything is built or reserved. A watch-only wallet
+  (a `publicKey` and no signer) is not checked, and prepares PSBTs for a signer elsewhere.
 - **Cold signing.** `prepareTransfer` returns the PSBT (base64) as `unsigned.payload` for a
   cold or hardware signer; hand the signed PSBT back to `submitSignatures` (see
   [transactions](../../build/send.md)). `unsigned.expectedRef` is the txid, except on `p2pkh`,
@@ -191,6 +195,45 @@ That entry names bitcoinjs-lib's types, so a project that type-checks libraries
 (`skipLibCheck: false`) needs bitcoinjs-lib installed to import it; `crypto-aio` itself never
 does.
 
+## Scanning
+
+`bc.scanner()` reads each block from its own bytes (Esplora's `/block/:hash/raw`, at most
+4 MB, within `transport.maxResponseBytes`) and decodes the transactions it delivers from
+them, never from the indexer's JSON:
+
+- **The block.** The bytes must hash to the block hash the endpoint gave for the height, the
+  merkle root of their transactions must be the header's (a block with its last
+  transactions repeated is refused), the first must be a coinbase, and when a transaction
+  carries a witness the coinbase must commit to every witness (BIP141). The parent hash and
+  time the endpoint reported for the block must be the header's.
+- **The senders.** A transaction's `from` addresses, input values and fee come from the
+  outputs its inputs spend, which a block does not carry: each is read from the block itself
+  or from the previous transaction's bytes, which must hash to the txid the input names.
+- **Filters.** With `filter.addresses`, outputs to a watched address are found in the bytes,
+  and inputs that spend from one through the indexer's pages of the block (25 transactions
+  each). Each page must hold exactly the block's own transactions, confirmed in that block,
+  and its claim about the output each input spends must hold for every transaction
+  delivered. So a lying indexer can leave out a watched address's spend that pays no watched
+  address, never invent or change one.
+
+So an Esplora endpoint cannot add, drop or alter a transaction, an output or a sender of the
+block it names. A block, page or previous transaction that does not match
+(`PROVIDER_INCONSISTENT`), or that the endpoint does not have, fails with a retryable error
+and decides nothing: the scanner reads it again on its next poll. Which block is at a height
+is still the endpoint's word: the library checks no proof of work, so an endpoint can name a
+block of its own. A scanned deposit therefore stays
+`observed`; credit it as [Receive deposits](../../build/receive.md#crediting-deposits)
+explains, with a second read through an independent provider. Output types
+(`details.vout[].type`) are named from the scripts, as Blockstream's electrs names them,
+whatever server is read.
+
+Cost: one request for the block's bytes, one per previous transaction outside the block
+that a delivered transaction spends (read 8 at a time, and not kept), and with a filter one
+per page of 25 transactions. An unfiltered scan of a full mainnet block (about 4,500
+transactions) reads thousands of previous transactions; a filtered one reads its 180 or so
+pages and the previous transactions of the few it delivers. Scan through your own Esplora,
+with a filter.
+
 ## Bitcoin safeguards
 
 On Bitcoin, a wrong fee or change address burns funds, and an Esplora endpoint is trusted
@@ -214,6 +257,9 @@ for what it reports. The driver's guards:
   for hardware signers: each `p2pkh` and segwit v0 input then carries that transaction in
   the PSBT, so the signer can check the fee itself. A `p2tr` input never carries it; its
   signature commits to every input's amount.
+- **Scanned blocks.** The scanner delivers only transactions whose bytes the block's header
+  commits to, with senders read from the transactions their inputs spend
+  ([Scanning](#scanning)), so an endpoint cannot add a deposit to a real block or alter one.
 - **Endpoints.** With a single Esplora endpoint as the `provider`, its operator alone decides
   finality and whether a transfer was replaced. Use two independent endpoints, ideally
   three. A node's claim that your transaction is invalid ends a transfer only when the

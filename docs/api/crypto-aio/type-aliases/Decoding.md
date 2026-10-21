@@ -4,4 +4,4 @@
 
 > **Decoding** = `"complete"` \| `"partial"` \| `"none"`
 
-Defined in: [src/core/model/transaction.ts:115](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L115)
+Defined in: [src/core/model/transaction.ts:123](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L123)

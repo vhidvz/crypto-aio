@@ -2,7 +2,7 @@
 
 # Interface: Transaction
 
-Defined in: [src/core/model/transaction.ts:117](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L117)
+Defined in: [src/core/model/transaction.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L125)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/model/transaction.ts:117](https://github.com/vhidvz/crypto
 
 > `readonly` `optional` **block?**: [`BlockRef`](BlockRef.md)
 
-Defined in: [src/core/model/transaction.ts:122](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L122)
+Defined in: [src/core/model/transaction.ts:130](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L130)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [src/core/model/transaction.ts:122](https://github.com/vhidvz/crypto
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/model/transaction.ts:119](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L119)
+Defined in: [src/core/model/transaction.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L127)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/core/model/transaction.ts:119](https://github.com/vhidvz/crypto
 
 > `readonly` **decoding**: [`Decoding`](../type-aliases/Decoding.md)
 
-Defined in: [src/core/model/transaction.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L125)
+Defined in: [src/core/model/transaction.ts:133](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L133)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/core/model/transaction.ts:125](https://github.com/vhidvz/crypto
 
 > `readonly` **details**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/model/transaction.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L127)
+Defined in: [src/core/model/transaction.ts:135](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L135)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/core/model/transaction.ts:127](https://github.com/vhidvz/crypto
 
 > `readonly` `optional` **fee?**: readonly [`Amount`](../classes/Amount.md)[]
 
-Defined in: [src/core/model/transaction.ts:123](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L123)
+Defined in: [src/core/model/transaction.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L131)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [src/core/model/transaction.ts:123](https://github.com/vhidvz/crypto
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/model/transaction.ts:118](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L118)
+Defined in: [src/core/model/transaction.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L126)
 
 ***
 
@@ -72,7 +72,7 @@ Defined in: [src/core/model/transaction.ts:118](https://github.com/vhidvz/crypto
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/model/transaction.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L120)
+Defined in: [src/core/model/transaction.ts:128](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L128)
 
 ***
 
@@ -82,7 +82,7 @@ Defined in: [src/core/model/transaction.ts:120](https://github.com/vhidvz/crypto
 
 > `readonly` `optional` **raw?**: [`RawTx`](RawTx.md)
 
-Defined in: [src/core/model/transaction.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L126)
+Defined in: [src/core/model/transaction.ts:134](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L134)
 
 ***
 
@@ -92,7 +92,7 @@ Defined in: [src/core/model/transaction.ts:126](https://github.com/vhidvz/crypto
 
 > `readonly` **status**: [`TxStatus`](TxStatus.md)
 
-Defined in: [src/core/model/transaction.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L121)
+Defined in: [src/core/model/transaction.ts:129](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L129)
 
 ***
 
@@ -102,4 +102,4 @@ Defined in: [src/core/model/transaction.ts:121](https://github.com/vhidvz/crypto
 
 > `readonly` **transfers**: readonly [`Transfer`](../type-aliases/Transfer.md)[]
 
-Defined in: [src/core/model/transaction.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L124)
+Defined in: [src/core/model/transaction.ts:132](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L132)

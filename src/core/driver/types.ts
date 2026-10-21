@@ -13,6 +13,7 @@ import type {
   RawTx,
   SignedTx,
   TransferSource,
+  TxFailure,
   UnsignedTx,
 } from '../model/transaction';
 import type { KeyRef, SignatureBundle } from '../signing/types';
@@ -41,6 +42,14 @@ export interface BuildContext {
   readonly ordering?: OrderingData;
   /** Inputs held by other live Operations of this wallet (`inputs` ordering). */
   readonly excludeInputs?: readonly string[];
+  /**
+   * The decimals the core scaled the intent's amounts with: the asset's registered
+   * metadata, or what the chain gave. Drivers work in base units. One whose transaction
+   * signs the decimals (Solana's `transferChecked`) reads them from the chain and must
+   * refuse a mismatch with this value (`ASSET_RESOLUTION`): the amounts were then scaled
+   * wrong. Absent where no transfer is built (a replacement or a cancel).
+   */
+  readonly decimals?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -76,6 +85,11 @@ export interface DriverTxObservation {
    * (`TxStatus.reason`).
    */
   readonly reason?: string;
+  /**
+   * With `success: false`, what failed (`TxFailure`). Absent is `'reverted'`; a driver sets
+   * `'unevidenced'` when the transaction executed but shows no transfer to the recipient.
+   */
+  readonly failure?: TxFailure;
 }
 
 export interface DriverTransfer {
@@ -212,6 +226,8 @@ export interface ProofSource {
          * proven.
          */
         readonly reason?: string;
+        /** With `success: false`, what failed, as `DriverTxObservation.failure`. */
+        readonly failure?: TxFailure;
       }
   >;
   /** Whether the ordering slot (nonce/seqno/an input) is consumed by ANY transaction at `level`. */
@@ -256,6 +272,13 @@ export interface ReplacementPolicy {
     ctx: BuildContext,
     fee?: FeeSpeed | FeeOverride,
   ): Promise<UnsignedTx>;
+  /**
+   * Orders two transactions of one slot by the price a node compares when one replaces
+   * the other: negative when `a` pays less, positive when it pays more, `0` when neither
+   * does. A repeat cancel bumps from the highest earlier cancel by this order; without it,
+   * the core compares their total charges, which a gas limit can skew.
+   */
+  comparePrice?(a: UnsignedTx, b: UnsignedTx): number;
 }
 
 export interface ScanFilter {
@@ -315,6 +338,7 @@ export interface DisposableNativeClient {
  * | `blocks.transactions` | `monitor` | `safe` | none | retryable `PROVIDER_INCONSISTENT` when the block at `block.height` no longer has `block.hash` |
  * | `history.list` | `read` (indexer transport when configured) | `safe` | none | propagate |
  * | `createNativeClient` | no I/O | – | – | a fresh SDK instance on every call, never the pooled one |
+ * | `signingSchemes` (optional) | no I/O | – | – | `ConfigError('CONFIG_INVALID')` for wallet options it refuses |
  *
  * Further rules:
  * - On a proof path (`proofs.*`), only a definitive negative proof may
@@ -354,6 +378,16 @@ export interface ChainDriver {
     Record<string, Readonly<Record<string, (...args: never[]) => Promise<unknown>>>>
   >;
   limits?(wallet: WalletOptions): DriverLimits;
+  /**
+   * The signature schemes a wallet with these options signs with, when its options narrow
+   * the chain's `schemes` (a Bitcoin `p2tr` wallet signs with `secp256k1-schnorr` only). No
+   * I/O; it throws `CONFIG_INVALID` for options the driver refuses. When the core resolves
+   * a wallet that has a signer, it refuses (`CONFIG_INVALID`) one that does not declare each
+   * of them, before reading any key: the transfer would otherwise be built, reserved and
+   * fail only at signing. Without this method, a signer needs one of the chain's schemes.
+   * A watch-only wallet is not checked.
+   */
+  signingSchemes?(wallet: WalletOptions): readonly string[];
   /**
    * A fresh, caller-owned SDK client for `crypto-aio/native`: a new SDK instance on every
    * call, never the pooled one.

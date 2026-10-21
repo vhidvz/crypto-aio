@@ -51,7 +51,7 @@ import {
   type FakeReply,
   type FakeRequest,
 } from '../../../../src/testing/fake-fetch';
-import { EsploraApi } from './esplora';
+import { EsploraApi, rawBlockOf } from './esplora';
 import {
   ScriptFailure,
   UnmodelledError,
@@ -101,6 +101,26 @@ const LOCKTIME_THRESHOLD = 500_000_000;
 const OP_TRUE = Uint8Array.of(0x51);
 /** Block rewards pay an anyone-can-spend p2wsh (witness script `OP_TRUE`). */
 const MINER_SCRIPT = Uint8Array.of(0x00, 0x20, ...sha256(OP_TRUE));
+/** BIP141: the start of a coinbase output that commits to the block's witnesses. */
+const WITNESS_COMMITMENT = Uint8Array.of(0x6a, 0x24, 0xaa, 0x21, 0xa9, 0xed);
+/** Regtest's proof-of-work limit, as every block of this node claims it (never ground). */
+const REGTEST_BITS = 0x207fffff;
+
+const hash256 = (bytes: Uint8Array): Uint8Array => sha256(sha256(bytes));
+
+/** bitcoind's merkle root of hashes (internal byte order), an odd last node paired with itself. */
+export function merkleRoot(hashes: readonly Uint8Array[]): Uint8Array {
+  let level = [...hashes];
+  while (level.length > 1) {
+    const next: Uint8Array[] = [];
+    for (let i = 0; i < level.length; i += 2) {
+      const left = level[i]!;
+      next.push(hash256(concatBytes(left, level[i + 1] ?? left)));
+    }
+    level = next;
+  }
+  return level[0]!;
+}
 
 /** The Esplora server modelled: Blockstream's electrs (new-index) or mempool/electrs. */
 export type ErrorFormat = 'blockstream' | 'mempool';
@@ -221,6 +241,13 @@ export interface Entry extends Parsed {
 
 export interface Block {
   readonly hash: string;
+  /**
+   * The 80-byte header, whose double SHA-256 is `hash` and whose merkle root commits to
+   * `entries`, so a block's raw bytes are a real block's. None for the genesis block: its
+   * hash is the network's (`genesisHash`), which no header of this node's own genesis
+   * transactions hashes to, so its raw bytes are not modelled.
+   */
+  readonly header?: Uint8Array;
   readonly height: number;
   readonly parentHash: string;
   readonly timestamp: number;
@@ -677,6 +704,13 @@ export class ScriptedEsploraNode {
     return height === undefined ? 0 : this.height - height + 1;
   }
 
+  /** The serialized block at `height` of the active chain (not the genesis block). */
+  rawBlock(height: number): Uint8Array {
+    const block = this.#state.chain[height];
+    if (!block) throw new Error(`no block at height ${height}`);
+    return rawBlockOf(block);
+  }
+
   /** The txids of the active chain's block at `height` (its coinbase first). */
   blockTxids(height: number): readonly string[] {
     return this.#state.chain[height]?.entries.map((entry) => entry.txid) ?? [];
@@ -724,7 +758,14 @@ export class ScriptedEsploraNode {
     return halvings >= 64 ? 0n : (50n * COIN) >> BigInt(halvings);
   }
 
-  #coinbase(height: number, fees: bigint): Entry {
+  /**
+   * A block's coinbase. When a transaction of the block carries a witness, it commits to
+   * every witness as bitcoind requires (BIP141): a 32-byte witness reserved value, and an
+   * output `OP_RETURN aa21a9ed` with the double SHA-256 of the wtxids' merkle root (the
+   * coinbase's taken as zero) and that value. Computed here as bitcoind does: bitcoinjs takes
+   * the wtxid of every transaction shaped like a coinbase (a `funding` one too) as zero.
+   */
+  #coinbase(height: number, fees: bigint, included: readonly Entry[] = []): Entry {
     const tx = new bitcoin.Transaction();
     tx.version = 2;
     tx.addInput(
@@ -734,6 +775,16 @@ export class ScriptedEsploraNode {
       concatBytes(pushNumber(height), pushNumber(this.#salt++)),
     );
     tx.addOutput(MINER_SCRIPT, this.#subsidy(height) + fees);
+    if (included.some((entry) => entry.ins.some((input) => input.witness.length > 0))) {
+      const reserved = new Uint8Array(32);
+      tx.setWitness(0, [reserved]);
+      const wtxids = included.map((entry) => hash256(fromHex(entry.hex)));
+      const root = merkleRoot([new Uint8Array(32), ...wtxids]);
+      tx.addOutput(
+        concatBytes(WITNESS_COMMITMENT, hash256(concatBytes(root, reserved))),
+        0n,
+      );
+    }
     return entryOf(parsedOf(tx), 'coinbase', [], 0n);
   }
 
@@ -1347,10 +1398,26 @@ export class ScriptedEsploraNode {
         included.push(entry);
       }
     }
-    const coinbase = this.#coinbase(height, sum(included.map((entry) => entry.fee)));
+    const coinbase = this.#coinbase(
+      height,
+      sum(included.map((entry) => entry.fee)),
+      included,
+    );
     const entries = Object.freeze([coinbase, ...included]);
+    // A real header over the block's transactions (bitcoinjs computes the txids' merkle
+    // root), so its raw bytes hash to its hash; the nonce only keeps sibling blocks apart.
+    const header = new bitcoin.Block();
+    header.version = 0x20000000;
+    header.prevHash = fromHex(parent.hash).reverse();
+    header.merkleRoot = bitcoin.Block.calculateMerkleRoot(
+      entries.map((entry) => bitcoin.Transaction.fromHex(entry.hex)),
+    );
+    header.timestamp = timestamp;
+    header.bits = REGTEST_BITS;
+    header.nonce = this.#salt++;
     const block: Block = Object.freeze({
-      hash: toHex(sha256(utf8ToBytes(`${parent.hash}:${height}:${this.#salt++}`))),
+      hash: header.getId(),
+      header: header.toBuffer(true),
       height,
       parentHash: parent.hash,
       timestamp,

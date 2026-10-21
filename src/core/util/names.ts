@@ -42,3 +42,15 @@ export function knownName(
 ): string {
   return typeof value === 'string' && known.includes(value) ? `'${value}'` : unshown;
 }
+
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * Whether a caller's text can serve as a store key as it is: well-formed Unicode without
+ * U+0000. A database may refuse U+0000 (PostgreSQL does), and a driver may replace a lone
+ * surrogate with U+FFFD, so two different keys would become one.
+ */
+export function storableText(text: string): boolean {
+  return !text.includes('\u0000') && !LONE_SURROGATE.test(text);
+}

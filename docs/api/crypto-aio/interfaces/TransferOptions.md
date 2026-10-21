@@ -2,7 +2,7 @@
 
 # Interface: TransferOptions
 
-Defined in: [src/core/lifecycle/engine.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/engine.ts#L102)
+Defined in: [src/core/lifecycle/engine.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/engine.ts#L103)
 
 ## Properties
 
@@ -12,7 +12,7 @@ Defined in: [src/core/lifecycle/engine.ts:102](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **idempotencyKey?**: `string`
 
-Defined in: [src/core/lifecycle/engine.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/engine.ts#L103)
+Defined in: [src/core/lifecycle/engine.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/engine.ts#L104)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [src/core/lifecycle/engine.ts:103](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **signal?**: `AbortSignal`
 
-Defined in: [src/core/lifecycle/engine.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/engine.ts#L104)
+Defined in: [src/core/lifecycle/engine.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/engine.ts#L105)

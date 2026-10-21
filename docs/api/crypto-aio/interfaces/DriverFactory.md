@@ -2,7 +2,7 @@
 
 # Interface: DriverFactory
 
-Defined in: [src/core/driver/types.ts:385](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L385)
+Defined in: [src/core/driver/types.ts:419](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L419)
 
 ## Methods
 
@@ -12,7 +12,7 @@ Defined in: [src/core/driver/types.ts:385](https://github.com/vhidvz/crypto-aio/
 
 > **create**(`ctx`): `Promise`\<[`ChainDriver`](ChainDriver.md)\>
 
-Defined in: [src/core/driver/types.ts:386](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L386)
+Defined in: [src/core/driver/types.ts:420](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L420)
 
 #### Parameters
 

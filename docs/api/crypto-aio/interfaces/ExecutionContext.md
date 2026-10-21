@@ -2,7 +2,7 @@
 
 # Interface: ExecutionContext
 
-Defined in: [src/core/store/types.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L54)
+Defined in: [src/core/store/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L55)
 
 Frozen at Operation creation; later handle or config changes never affect it.
 
@@ -14,7 +14,7 @@ Frozen at Operation creation; later handle or config changes never affect it.
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/store/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L55)
+Defined in: [src/core/store/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L56)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/core/store/types.ts:55](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **configHash**: `string`
 
-Defined in: [src/core/store/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L63)
+Defined in: [src/core/store/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L64)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/core/store/types.ts:63](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **indexers**: readonly `string`[]
 
-Defined in: [src/core/store/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L60)
+Defined in: [src/core/store/types.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L61)
 
 ***
 
@@ -44,7 +44,7 @@ Defined in: [src/core/store/types.ts:60](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **library**: `string`
 
-Defined in: [src/core/store/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L57)
+Defined in: [src/core/store/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L58)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [src/core/store/types.ts:57](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/store/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L56)
+Defined in: [src/core/store/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L57)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [src/core/store/types.ts:56](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **providers**: readonly `string`[]
 
-Defined in: [src/core/store/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L59)
+Defined in: [src/core/store/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L60)
 
 Provider names, or `inline:<hash>` for inline configs (never secrets).
 
@@ -76,7 +76,7 @@ Provider names, or `inline:<hash>` for inline configs (never secrets).
 
 > `readonly` `optional` **signer?**: `string`
 
-Defined in: [src/core/store/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L62)
+Defined in: [src/core/store/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L63)
 
 ***
 
@@ -86,4 +86,4 @@ Defined in: [src/core/store/types.ts:62](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **wallet**: `string`
 
-Defined in: [src/core/store/types.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L61)
+Defined in: [src/core/store/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L62)

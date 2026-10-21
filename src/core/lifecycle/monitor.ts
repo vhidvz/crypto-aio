@@ -11,7 +11,7 @@ import {
 } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
-import type { TxStatus } from '../model/transaction';
+import type { TxFailure, TxStatus } from '../model/transaction';
 import {
   isTerminal,
   type AttemptObservation,
@@ -411,6 +411,7 @@ export class Monitor {
         // Why an included transaction failed, as the driver's fixed text; any earlier
         // reason (a refusal, an old failure) is cleared otherwise.
         reason: seen.success === false ? seen.reason : undefined,
+        failure: seen.success === false ? (seen.failure ?? 'reverted') : undefined,
         firstSeenAt: current?.firstSeenAt ?? now,
         lastSeenAt: now,
       };
@@ -434,6 +435,7 @@ export class Monitor {
         blockHeight: undefined,
         confirmations: 0,
         reason: undefined,
+        failure: undefined,
       };
       patch =
         seen.seen === 'mempool'
@@ -508,7 +510,7 @@ export class Monitor {
       blockHash: proof.blockHash,
       txHash: proof.txHash,
       confirmations: depth(head, proof.blockHeight),
-      reason: failureReason(proof),
+      ...failureOf(proof),
     };
   }
 
@@ -569,7 +571,7 @@ export class Monitor {
           blockHeight: proof.blockHeight,
           blockHash: proof.blockHash,
           txHash: proof.txHash,
-          reason: failureReason(proof),
+          ...failureOf(proof),
         };
       }
       return { state: deadSlot ? 'replaced' : 'expired', evidence: 'proven' };
@@ -578,7 +580,12 @@ export class Monitor {
       return { state: 'replaced', evidence: 'observed' };
     }
     if (current?.state === 'refused') {
-      return { state: 'refused', evidence: 'observed', reason: current.reason };
+      return {
+        state: 'refused',
+        evidence: 'observed',
+        reason: current.reason,
+        failure: undefined,
+      };
     }
     const since = current?.lastSeenAt ?? current?.lastBroadcastAt ?? attempt.createdAt;
     const dropped = now - since >= this.deps.lifecycle().droppedGracePeriodMs;
@@ -609,6 +616,7 @@ export class Monitor {
                 evidence: 'proven',
                 replacedBy: winner.ref.id,
                 reason: undefined,
+                failure: undefined,
               },
         );
       }
@@ -794,13 +802,16 @@ function depth(head: bigint, height: bigint): number {
 }
 
 /**
- * A proven failure's fixed reason; a success clears any earlier reason. Drivers give a
+ * A proven failure's fixed reason and what failed; a success clears both. Drivers give a
  * fixed text because a node's own text can carry addresses or amounts; the stored reason
  * is sensitive data, and no event carries it.
  */
-function failureReason(proof: {
+function failureOf(proof: {
   readonly success: boolean;
   readonly reason?: string;
-}): string | undefined {
-  return proof.success ? undefined : proof.reason;
+  readonly failure?: TxFailure;
+}): { readonly reason: string | undefined; readonly failure: TxFailure | undefined } {
+  return proof.success
+    ? { reason: undefined, failure: undefined }
+    : { reason: proof.reason, failure: proof.failure ?? 'reverted' };
 }

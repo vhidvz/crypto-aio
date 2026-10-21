@@ -63,7 +63,13 @@ import {
   type Selection,
   type Spendable,
 } from './coinselect';
-import { READ, forEachBounded, withSignal, type UtxoContext } from './context';
+import {
+  READ,
+  forEachBounded,
+  signingScheme,
+  withSignal,
+  type UtxoContext,
+} from './context';
 import { classifyOwnBroadcast, parseNodeError } from './errors';
 import { assertConfirmed } from './proofs';
 import { MAX_TX_BYTES, readTxHex } from './rawtx';
@@ -282,7 +288,7 @@ async function unsignedFor(
   const built = builtFor(scope, wallet, inputs, all);
   const signingRequests: SigningRequest[] = built.digests.map((digest, index) => ({
     id: `in:${index}`,
-    scheme: wallet.type === 'p2tr' ? 'secp256k1-schnorr' : 'secp256k1-ecdsa',
+    scheme: signingScheme(wallet.type),
     payload: digest,
     payloadKind: 'digest',
     publicKey:

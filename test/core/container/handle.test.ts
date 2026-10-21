@@ -126,6 +126,52 @@ describe('Blockchain handle', () => {
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
   });
 
+  it('registers assets from the root options, by alias and id, refusing an unknown network', async () => {
+    const token = {
+      standard: 'erc20',
+      contract: '0x00000000000000000000000000000000000000aa',
+    };
+    const env = await createFakeEnv({
+      aio: {
+        assets: [
+          {
+            chain: 'fakechain',
+            network: 'local',
+            ref: token,
+            metadata: { symbol: 'FOO', decimals: 6 },
+            aliases: ['FOO'],
+          },
+        ],
+      },
+    });
+    const foo = await env.run(env.bc.resolveAsset('foo'));
+    expect(foo).toMatchObject({ ref: token, metadata: { symbol: 'FOO', decimals: 6 } });
+    expect((await env.run(env.bc.resolveAsset(foo.id))).id).toBe(foo.id);
+    const unknown = () =>
+      new CryptoAio({
+        env: false,
+        assets: [
+          {
+            chain: 'fakechain',
+            network: 'nowhere',
+            ref: token,
+            metadata: { symbol: 'FOO', decimals: 6 },
+          },
+        ],
+        plugins: [fakePlugin()],
+      });
+    expect(unknown).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID' }));
+  });
+
+  it('tells the driver the decimals its amounts were scaled with, on every build', async () => {
+    const env = await createFakeEnv({ fund: 10n ** 9n });
+    const pooled = await env.run(internalsOf(env.bc).pooled());
+    const estimate = jest.spyOn(pooled.driver.builder, 'estimateFee');
+    await env.run(env.bc.estimateFee({ to: env.stranger(), amount: '0.5' }));
+    await env.run(env.bc.transfer({ to: env.stranger(), amount: '0.5' }));
+    expect(estimate.mock.calls.map(([, build]) => build.decimals)).toEqual([8, 8]);
+  });
+
   it("gates token resolution on the resolved selection's capabilities, not the driver's own", async () => {
     const env = await createFakeEnv();
     const internals = internalsOf(env.bc);

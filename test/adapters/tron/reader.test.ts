@@ -489,7 +489,11 @@ describe('Tron reader: verdicts and lenient decoding', () => {
         tx,
         infoOf(tx, { receiptResult: 'SUCCESS', logs: [foreign] }),
       ),
-    ).toEqual({ success: false, reason: 'token transfer not evidenced' });
+    ).toEqual({
+      success: false,
+      reason: 'token transfer not evidenced',
+      failure: 'unevidenced',
+    });
     // Our own TRX transfer, once included, executed (java-tron never includes a failed
     // TransferContract): any other answer is impossible and decides nothing, where a false
     // `failed` would invite a second payment. The chain's view reports what the node says.
@@ -544,7 +548,11 @@ describe('Tron reader: verdicts and lenient decoding', () => {
           logs: [transferLog(USDT, RECIPIENT, 5n)],
         }),
       ),
-    ).toEqual({ success: false, reason: 'token transfer not evidenced' });
+    ).toEqual({
+      success: false,
+      reason: 'token transfer not evidenced',
+      failure: 'unevidenced',
+    });
     // A contract this model does not read is judged by its VM receipt when it has one; it is
     // never one of our own Attempts, so the guard decides nothing on it.
     const unread = { id: EARLY_TRC10.id, rawHex: EARLY_TRC10.rawHex };
@@ -592,7 +600,11 @@ describe('Tron reader: verdicts and lenient decoding', () => {
         tx,
         infoOf(tx, { receiptResult: 'SUCCESS', logs: [nothing, elsewhere, nothing] }),
       ),
-    ).toEqual({ success: false, reason: 'token transfer not evidenced' });
+    ).toEqual({
+      success: false,
+      reason: 'token transfer not evidenced',
+      failure: 'unevidenced',
+    });
   });
 
   it('observes our own TRC-20 transfer that ran out of energy as failed, end to end', async () => {
