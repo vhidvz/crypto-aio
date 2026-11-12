@@ -2,7 +2,9 @@
 
 # Interface: ScopeOptions
 
-Defined in: [src/core/config/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L102)
+Defined in: [src/core/config/types.ts:146](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L146)
+
+What `aio.scope(overrides)` can override, over its parent's options.
 
 ## Extended by
 
@@ -16,7 +18,9 @@ Defined in: [src/core/config/types.ts:102](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **chains?**: `Readonly`\<`Record`\<`string`, [`ChainDefaults`](ChainDefaults.md)\>\>
 
-Defined in: [src/core/config/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L103)
+Defined in: [src/core/config/types.ts:148](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L148)
+
+Per-chain defaults, by chain id.
 
 ***
 
@@ -26,7 +30,7 @@ Defined in: [src/core/config/types.ts:103](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **hooks?**: [`Hooks`](Hooks.md)
 
-Defined in: [src/core/config/types.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L107)
+Defined in: [src/core/config/types.ts:155](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L155)
 
 ***
 
@@ -36,7 +40,7 @@ Defined in: [src/core/config/types.ts:107](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **lifecycle?**: [`LifecycleOptions`](LifecycleOptions.md)
 
-Defined in: [src/core/config/types.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L108)
+Defined in: [src/core/config/types.ts:156](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L156)
 
 ***
 
@@ -46,7 +50,9 @@ Defined in: [src/core/config/types.ts:108](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **providers?**: `Readonly`\<`Record`\<`string`, [`ProviderConfig`](../type-aliases/ProviderConfig.md)\>\>
 
-Defined in: [src/core/config/types.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L104)
+Defined in: [src/core/config/types.ts:150](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L150)
+
+Named providers.
 
 ***
 
@@ -56,7 +62,9 @@ Defined in: [src/core/config/types.ts:104](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **signers?**: `Readonly`\<`Record`\<`string`, [`Signer`](Signer.md)\>\>
 
-Defined in: [src/core/config/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L105)
+Defined in: [src/core/config/types.ts:152](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L152)
+
+Named signers, from `localSigner` or `callbackSigner`.
 
 ***
 
@@ -66,4 +74,6 @@ Defined in: [src/core/config/types.ts:105](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **wallets?**: `Readonly`\<`Record`\<`string`, [`WalletConfig`](WalletConfig.md)\>\>
 
-Defined in: [src/core/config/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L106)
+Defined in: [src/core/config/types.ts:154](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L154)
+
+Named wallets.

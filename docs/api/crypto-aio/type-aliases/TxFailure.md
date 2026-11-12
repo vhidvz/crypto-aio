@@ -4,7 +4,7 @@
 
 > **TxFailure** = `"reverted"` \| `"unevidenced"`
 
-Defined in: [src/core/model/transaction.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L46)
+Defined in: [src/core/model/transaction.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L59)
 
 What failed in an included transaction: `'reverted'` when its execution failed, so
 nothing moved but the fee, and `'unevidenced'` when it executed but the chain shows no

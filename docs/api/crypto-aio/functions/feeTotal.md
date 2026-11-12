@@ -4,7 +4,7 @@
 
 > **feeTotal**(`fee`, `asset`): [`Amount`](../classes/Amount.md) \| `undefined`
 
-Defined in: [src/core/model/fee.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L45)
+Defined in: [src/core/model/fee.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L68)
 
 Sum of all charges in one asset, or `undefined` when nothing is charged in it.
 

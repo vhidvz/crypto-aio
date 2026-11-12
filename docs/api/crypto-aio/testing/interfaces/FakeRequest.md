@@ -2,7 +2,9 @@
 
 # Interface: FakeRequest
 
-Defined in: [src/testing/fake-fetch.ts:1](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L1)
+Defined in: [src/testing/fake-fetch.ts:2](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L2)
+
+A request as a `FakeFetch` handler sees it.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-fetch.ts:1](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **body**: `string` \| `undefined`
 
-Defined in: [src/testing/fake-fetch.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L5)
+Defined in: [src/testing/fake-fetch.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L6)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/testing/fake-fetch.ts:5](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **headers**: `Headers`
 
-Defined in: [src/testing/fake-fetch.ts:4](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L4)
+Defined in: [src/testing/fake-fetch.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L5)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/testing/fake-fetch.ts:4](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **method**: `string`
 
-Defined in: [src/testing/fake-fetch.ts:3](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L3)
+Defined in: [src/testing/fake-fetch.ts:4](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L4)
 
 ***
 
@@ -42,7 +44,7 @@ Defined in: [src/testing/fake-fetch.ts:3](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **url**: `URL`
 
-Defined in: [src/testing/fake-fetch.ts:2](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L2)
+Defined in: [src/testing/fake-fetch.ts:3](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L3)
 
 ## Methods
 
@@ -52,9 +54,11 @@ Defined in: [src/testing/fake-fetch.ts:2](https://github.com/vhidvz/crypto-aio/b
 
 > **json**\<`T`\>(): `T`
 
-Defined in: [src/testing/fake-fetch.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L6)
+Defined in: [src/testing/fake-fetch.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L7)
 
 #### Type Parameters
+
+<a id="t"></a>
 
 ##### T
 

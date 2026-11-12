@@ -4,7 +4,11 @@
 
 > **describeOperationStoreContract**(`api`, `create`): `void`
 
-Defined in: [src/testing/contracts/operations.ts:166](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L166)
+Defined in: [src/testing/contracts/operations.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L177)
+
+The `OperationStore` contract suite: run it against your store, with `create` returning
+a fresh, empty store for each test. A store that passes keeps every guarantee the
+`OperationStore` documentation states.
 
 ## Parameters
 

@@ -2,7 +2,9 @@
 
 # Interface: FeeChargeDraft
 
-Defined in: [src/core/model/fee.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L10)
+Defined in: [src/core/model/fee.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L20)
+
+One charge of a driver's estimate: an asset, an amount in base units, and its purpose.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/model/fee.ts:10](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **amount**: `bigint`
 
-Defined in: [src/core/model/fee.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L12)
+Defined in: [src/core/model/fee.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L22)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/model/fee.ts:12](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **asset**: [`AssetRef`](../type-aliases/AssetRef.md)
 
-Defined in: [src/core/model/fee.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L11)
+Defined in: [src/core/model/fee.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L21)
 
 ***
 
@@ -32,4 +34,4 @@ Defined in: [src/core/model/fee.ts:11](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **label**: `string`
 
-Defined in: [src/core/model/fee.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L13)
+Defined in: [src/core/model/fee.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L23)

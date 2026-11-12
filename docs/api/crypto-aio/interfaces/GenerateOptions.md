@@ -2,7 +2,9 @@
 
 # Interface: GenerateOptions
 
-Defined in: [src/core/signing/local.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L177)
+Defined in: [src/core/signing/local.ts:184](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L184)
+
+`localSigner.generate()`'s options: the curves to create a fresh random key on.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/signing/local.ts:177](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **curves**: readonly [`Curve`](../type-aliases/Curve.md)[]
 
-Defined in: [src/core/signing/local.ts:179](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L179)
+Defined in: [src/core/signing/local.ts:186](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L186)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/signing/local.ts:179](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **exportable?**: `boolean`
 
-Defined in: [src/core/signing/local.ts:180](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L180)
+Defined in: [src/core/signing/local.ts:187](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L187)
 
 ***
 
@@ -32,4 +34,4 @@ Defined in: [src/core/signing/local.ts:180](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **id?**: `string`
 
-Defined in: [src/core/signing/local.ts:178](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L178)
+Defined in: [src/core/signing/local.ts:185](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L185)

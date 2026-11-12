@@ -2,7 +2,7 @@
 
 # Interface: UtxoExt
 
-Defined in: [src/adapters/utxo/types.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L104)
+Defined in: [src/adapters/utxo/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L105)
 
 `bc.ext.utxo`: the UTXO family extension.
 
@@ -14,7 +14,7 @@ Defined in: [src/adapters/utxo/types.ts:104](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **utxo**: `object`
 
-Defined in: [src/adapters/utxo/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L105)
+Defined in: [src/adapters/utxo/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L106)
 
 #### coinSelection()
 

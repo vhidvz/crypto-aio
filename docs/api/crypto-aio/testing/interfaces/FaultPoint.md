@@ -2,7 +2,9 @@
 
 # Interface: FaultPoint
 
-Defined in: [src/testing/faulty-store.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L20)
+Defined in: [src/testing/faulty-store.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L22)
+
+Where a `FaultyOperationStore` crashes: a write method, a condition, before or after.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/faulty-store.ts:20](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **method**: `"create"` \| `"update"` \| `"appendAttempt"` \| `"putObservation"`
 
-Defined in: [src/testing/faulty-store.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L21)
+Defined in: [src/testing/faulty-store.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L23)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/testing/faulty-store.ts:21](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **timing**: `"after"` \| `"before"`
 
-Defined in: [src/testing/faulty-store.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L32)
+Defined in: [src/testing/faulty-store.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L34)
 
 `before`: the write never happens. `after`: the write happens, then the process "dies".
 
@@ -34,7 +36,7 @@ Defined in: [src/testing/faulty-store.ts:32](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **when?**: (`args`) => `boolean`
 
-Defined in: [src/testing/faulty-store.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L30)
+Defined in: [src/testing/faulty-store.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L32)
 
 Receives the method's arguments, which differ by method; defaults to "always".
 - `create`: `[operation]`

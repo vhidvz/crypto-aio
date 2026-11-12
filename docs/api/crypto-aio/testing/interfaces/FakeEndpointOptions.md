@@ -2,7 +2,9 @@
 
 # Interface: FakeEndpointOptions
 
-Defined in: [src/testing/fake-chain.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L52)
+Defined in: [src/testing/fake-chain.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L60)
+
+How one fake endpoint misbehaves; every option can be changed while a test runs.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/testing/fake-chain.ts:52](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **acceptThenFail?**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L58)
+Defined in: [src/testing/fake-chain.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L72)
+
+Accepts the next broadcast, then answers it with HTTP 504 (an ambiguous send).
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/testing/fake-chain.ts:58](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **down?**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L56)
+Defined in: [src/testing/fake-chain.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L68)
+
+Answers every request with HTTP 503.
 
 ***
 
@@ -32,7 +38,7 @@ Defined in: [src/testing/fake-chain.ts:56](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **forkAbove?**: `number`
 
-Defined in: [src/testing/fake-chain.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L67)
+Defined in: [src/testing/fake-chain.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L83)
 
 A single endpoint lying about blocks: above this height its block reads
 (`fake_getBlock`, `fake_getBlockHash`) serve a private fork, with other hashes and none
@@ -47,7 +53,9 @@ there. Heights, nonces, balances and finality stay honest.
 
 > `optional` **forkFinalized?**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L60)
+Defined in: [src/testing/fake-chain.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L76)
+
+Serves another finalized block hash, and no finalized transactions.
 
 ***
 
@@ -57,7 +65,9 @@ Defined in: [src/testing/fake-chain.ts:60](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **html?**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L57)
+Defined in: [src/testing/fake-chain.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L70)
+
+Answers every request with an HTML page and HTTP 200.
 
 ***
 
@@ -67,7 +77,9 @@ Defined in: [src/testing/fake-chain.ts:57](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **identity?**: `string`
 
-Defined in: [src/testing/fake-chain.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L54)
+Defined in: [src/testing/fake-chain.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L64)
+
+The chain id it answers, to test a misconfigured endpoint.
 
 ***
 
@@ -77,7 +89,9 @@ Defined in: [src/testing/fake-chain.ts:54](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **lag?**: `number`
 
-Defined in: [src/testing/fake-chain.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L53)
+Defined in: [src/testing/fake-chain.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L62)
+
+Blocks it stays behind the head.
 
 ***
 
@@ -87,7 +101,9 @@ Defined in: [src/testing/fake-chain.ts:53](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **refuseNext?**: `string`
 
-Defined in: [src/testing/fake-chain.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L59)
+Defined in: [src/testing/fake-chain.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L74)
+
+Refuses the next broadcast with this message.
 
 ***
 
@@ -97,4 +113,6 @@ Defined in: [src/testing/fake-chain.ts:59](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **seesMempool?**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L55)
+Defined in: [src/testing/fake-chain.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L66)
+
+Whether it sees the mempool (default `true`).

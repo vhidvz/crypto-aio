@@ -2,7 +2,9 @@
 
 # Interface: TransferOutputInput
 
-Defined in: [src/core/model/intent.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L8)
+Defined in: [src/core/model/intent.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L9)
+
+One payment of a transfer with several outputs.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/model/intent.ts:8](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **amount**: [`AmountInput`](../type-aliases/AmountInput.md)
 
-Defined in: [src/core/model/intent.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L10)
+Defined in: [src/core/model/intent.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L11)
 
 ***
 
@@ -22,4 +24,4 @@ Defined in: [src/core/model/intent.ts:10](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **to**: `string`
 
-Defined in: [src/core/model/intent.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L9)
+Defined in: [src/core/model/intent.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L10)

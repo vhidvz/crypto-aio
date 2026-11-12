@@ -4,7 +4,7 @@
 
 > **signFake**(`tx`, `privateKey`): `string`
 
-Defined in: [src/testing/fake-chain.ts:116](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L116)
+Defined in: [src/testing/fake-chain.ts:143](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L143)
 
 Signs outside the library (for tests that craft conflicting transactions).
 

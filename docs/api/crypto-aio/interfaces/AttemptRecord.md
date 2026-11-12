@@ -2,7 +2,7 @@
 
 # Interface: AttemptRecord
 
-Defined in: [src/core/store/types.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L70)
+Defined in: [src/core/store/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L93)
 
 One concrete signed transaction. Immutable after insertion.
 
@@ -14,7 +14,9 @@ One concrete signed transaction. Immutable after insertion.
 
 > `readonly` **createdAt**: `number`
 
-Defined in: [src/core/store/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L79)
+Defined in: [src/core/store/types.ts:110](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L110)
+
+When the store appended it, by the store's clock.
 
 ***
 
@@ -24,7 +26,9 @@ Defined in: [src/core/store/types.ts:79](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **fee**: [`FeeEstimateDraft`](FeeEstimateDraft.md)
 
-Defined in: [src/core/store/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L75)
+Defined in: [src/core/store/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L103)
+
+The fee the transaction was built with.
 
 ***
 
@@ -34,7 +38,9 @@ Defined in: [src/core/store/types.ts:75](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/store/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L71)
+Defined in: [src/core/store/types.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L95)
+
+Random and unique across every Operation and namespace.
 
 ***
 
@@ -44,7 +50,9 @@ Defined in: [src/core/store/types.ts:71](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **ordering**: [`OrderingData`](../type-aliases/OrderingData.md)
 
-Defined in: [src/core/store/types.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L74)
+Defined in: [src/core/store/types.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L101)
+
+The slot the transaction occupies; a store keeps it whole (`SAMPLE_ORDERINGS`).
 
 ***
 
@@ -54,7 +62,7 @@ Defined in: [src/core/store/types.ts:74](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **purpose**: [`AttemptPurpose`](../type-aliases/AttemptPurpose.md)
 
-Defined in: [src/core/store/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L77)
+Defined in: [src/core/store/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L106)
 
 ***
 
@@ -64,7 +72,9 @@ Defined in: [src/core/store/types.ts:77](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **raw**: [`RawTx`](RawTx.md)
 
-Defined in: [src/core/store/types.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L73)
+Defined in: [src/core/store/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L99)
+
+The signed bytes, which recovery sends again exactly as stored.
 
 ***
 
@@ -74,7 +84,9 @@ Defined in: [src/core/store/types.ts:73](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **ref**: [`AttemptRef`](AttemptRef.md)
 
-Defined in: [src/core/store/types.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L72)
+Defined in: [src/core/store/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L97)
+
+The transaction's id as the chain will report it.
 
 ***
 
@@ -84,7 +96,9 @@ Defined in: [src/core/store/types.ts:72](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **supersedes?**: `string`
 
-Defined in: [src/core/store/types.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L78)
+Defined in: [src/core/store/types.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L108)
+
+The Attempt this one replaces or cancels.
 
 ***
 
@@ -94,4 +108,6 @@ Defined in: [src/core/store/types.ts:78](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **unsigned**: [`UnsignedTx`](UnsignedTx.md)
 
-Defined in: [src/core/store/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L76)
+Defined in: [src/core/store/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L105)
+
+The unsigned transaction the signatures were made over.

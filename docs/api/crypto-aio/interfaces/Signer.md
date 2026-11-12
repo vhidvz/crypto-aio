@@ -2,7 +2,10 @@
 
 # Interface: Signer
 
-Defined in: [src/core/signing/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L60)
+Defined in: [src/core/signing/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L84)
+
+Holds keys and signs. A port you may implement: it never gains a required member in a
+1.x release.
 
 ## Properties
 
@@ -12,7 +15,10 @@ Defined in: [src/core/signing/types.ts:60](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/signing/types.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L61)
+Defined in: [src/core/signing/types.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L89)
+
+The signer's own label. The core names a signer by its key in `signers`, which is what
+an Operation records (`context.signer`).
 
 ***
 
@@ -22,7 +28,9 @@ Defined in: [src/core/signing/types.ts:61](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **schemes**: readonly `string`[]
 
-Defined in: [src/core/signing/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L62)
+Defined in: [src/core/signing/types.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L91)
+
+The signature schemes it signs with; a wallet needs each scheme it signs with.
 
 ## Methods
 
@@ -32,7 +40,7 @@ Defined in: [src/core/signing/types.ts:62](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **cancelRequest**(`ticket`): `Promise`\<`void`\>
 
-Defined in: [src/core/signing/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L66)
+Defined in: [src/core/signing/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L100)
 
 Best-effort cancellation of a pending request (used by `abandon`).
 
@@ -54,7 +62,7 @@ Best-effort cancellation of a pending request (used by `abandon`).
 
 > `optional` **exportKey**(`scheme`, `keyRef?`): `Promise`\<[`Secret`](../classes/Secret.md)\<`Uint8Array`\<`ArrayBufferLike`\>\>\>
 
-Defined in: [src/core/signing/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L68)
+Defined in: [src/core/signing/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L102)
 
 Only available on signers created as exportable.
 
@@ -80,7 +88,9 @@ Only available on signers created as exportable.
 
 > **getPublicKey**(`scheme`, `keyRef?`): `Promise`\<`Uint8Array`\<`ArrayBufferLike`\>\>
 
-Defined in: [src/core/signing/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L63)
+Defined in: [src/core/signing/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L93)
+
+The public key it signs with under `scheme`, for `keyRef`.
 
 #### Parameters
 
@@ -104,7 +114,10 @@ Defined in: [src/core/signing/types.ts:63](https://github.com/vhidvz/crypto-aio/
 
 > **sign**(`requests`, `ctx`): `Promise`\<[`SigningResult`](../type-aliases/SigningResult.md)\>
 
-Defined in: [src/core/signing/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L64)
+Defined in: [src/core/signing/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L98)
+
+Signs every request, or answers `pending` with a ticket. Check `ctx` against your
+policy here or in `beforeSign`; the core verifies each signature it gets back.
 
 #### Parameters
 

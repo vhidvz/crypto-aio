@@ -2,7 +2,7 @@
 
 # Interface: ExecutionContext
 
-Defined in: [src/core/store/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L55)
+Defined in: [src/core/store/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L63)
 
 Frozen at Operation creation; later handle or config changes never affect it.
 
@@ -14,7 +14,9 @@ Frozen at Operation creation; later handle or config changes never affect it.
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/store/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L56)
+Defined in: [src/core/store/types.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L65)
+
+The chain id, such as `ethereum`.
 
 ***
 
@@ -24,7 +26,11 @@ Defined in: [src/core/store/types.ts:56](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **configHash**: `string`
 
-Defined in: [src/core/store/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L64)
+Defined in: [src/core/store/types.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L83)
+
+A hash of the handle's resolved selection (chain, network, library, provider and
+indexer names, wallet, signer, options, confirmations): workers rebuild one handle per
+hash to check the Operations created through it.
 
 ***
 
@@ -34,7 +40,9 @@ Defined in: [src/core/store/types.ts:64](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **indexers**: readonly `string`[]
 
-Defined in: [src/core/store/types.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L61)
+Defined in: [src/core/store/types.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L73)
+
+Indexer provider names, named as `providers` are.
 
 ***
 
@@ -44,7 +52,9 @@ Defined in: [src/core/store/types.ts:61](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **library**: `string`
 
-Defined in: [src/core/store/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L58)
+Defined in: [src/core/store/types.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L69)
+
+The SDK library the driver used, such as `ethers`.
 
 ***
 
@@ -54,7 +64,9 @@ Defined in: [src/core/store/types.ts:58](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/store/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L57)
+Defined in: [src/core/store/types.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L67)
+
+The network id, such as `mainnet`.
 
 ***
 
@@ -64,7 +76,7 @@ Defined in: [src/core/store/types.ts:57](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **providers**: readonly `string`[]
 
-Defined in: [src/core/store/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L60)
+Defined in: [src/core/store/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L71)
 
 Provider names, or `inline:<hash>` for inline configs (never secrets).
 
@@ -76,7 +88,9 @@ Provider names, or `inline:<hash>` for inline configs (never secrets).
 
 > `readonly` `optional` **signer?**: `string`
 
-Defined in: [src/core/store/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L63)
+Defined in: [src/core/store/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L77)
+
+The signer's id, when the wallet signs through a registered signer.
 
 ***
 
@@ -86,4 +100,6 @@ Defined in: [src/core/store/types.ts:63](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **wallet**: `string`
 
-Defined in: [src/core/store/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L62)
+Defined in: [src/core/store/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L75)
+
+The configured wallet's name.

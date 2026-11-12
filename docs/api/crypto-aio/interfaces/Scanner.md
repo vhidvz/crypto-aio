@@ -2,7 +2,7 @@
 
 # Interface: Scanner
 
-Defined in: [src/core/observe/scanner.ts:167](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L167)
+Defined in: [src/core/observe/scanner.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L177)
 
 Reorg-aware, at-least-once block scanner. Each event's `ack()` commits the
 cursor (compare-and-set on its version, so two scanners sharing a `cursorKey` never both
@@ -27,7 +27,7 @@ window is then refilled from the chain below that block.
 
 > **\[asyncIterator\]**(): `AsyncIterator`\<[`ScanEvent`](../type-aliases/ScanEvent.md)\>
 
-Defined in: [src/core/observe/scanner.ts:175](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L175)
+Defined in: [src/core/observe/scanner.ts:185](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L185)
 
 #### Returns
 

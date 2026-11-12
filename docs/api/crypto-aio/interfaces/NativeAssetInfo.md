@@ -2,7 +2,9 @@
 
 # Interface: NativeAssetInfo
 
-Defined in: [src/core/model/chain.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L15)
+Defined in: [src/core/model/chain.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L21)
+
+A chain's native coin.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/model/chain.ts:15](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **decimals**: `number`
 
-Defined in: [src/core/model/chain.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L17)
+Defined in: [src/core/model/chain.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L23)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/model/chain.ts:17](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **name?**: `string`
 
-Defined in: [src/core/model/chain.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L18)
+Defined in: [src/core/model/chain.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L24)
 
 ***
 
@@ -32,4 +34,4 @@ Defined in: [src/core/model/chain.ts:18](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **symbol**: `string`
 
-Defined in: [src/core/model/chain.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L16)
+Defined in: [src/core/model/chain.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L22)

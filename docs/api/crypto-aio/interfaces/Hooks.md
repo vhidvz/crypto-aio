@@ -2,7 +2,9 @@
 
 # Interface: Hooks
 
-Defined in: [src/core/config/types.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L88)
+Defined in: [src/core/config/types.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L131)
+
+The container's hooks into the transfer lifecycle.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/config/types.ts:88](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **beforeSign?**: (`ctx`) => `void` \| `Promise`\<`void`\>
 
-Defined in: [src/core/config/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L99)
+Defined in: [src/core/config/types.ts:142](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L142)
 
 Throw to veto signing (policy engines, approvals). Runs before every signing request.
 It may run more than once per Operation: once per concurrent caller, and again when a

@@ -2,7 +2,9 @@
 
 # Interface: BuildContext
 
-Defined in: [src/core/driver/types.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L37)
+Defined in: [src/core/driver/types.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L40)
+
+What a build needs besides the intent: the sender, its keys and its wallet options.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/driver/types.ts:37](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **decimals?**: `number`
 
-Defined in: [src/core/driver/types.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L52)
+Defined in: [src/core/driver/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L56)
 
 The decimals the core scaled the intent's amounts with: the asset's registered
 metadata, or what the chain gave. Drivers work in base units. One whose transaction
@@ -28,7 +30,7 @@ wrong. Absent where no transfer is built (a replacement or a cancel).
 
 > `readonly` `optional` **excludeInputs?**: readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L44)
+Defined in: [src/core/driver/types.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L48)
 
 Inputs held by other live Operations of this wallet (`inputs` ordering).
 
@@ -40,7 +42,9 @@ Inputs held by other live Operations of this wallet (`inputs` ordering).
 
 > `readonly` **from**: `string`
 
-Defined in: [src/core/driver/types.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L38)
+Defined in: [src/core/driver/types.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L42)
+
+The sending address, as the driver's `normalize` returned it.
 
 ***
 
@@ -50,7 +54,7 @@ Defined in: [src/core/driver/types.ts:38](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **keys**: readonly [`WalletKey`](WalletKey.md)[]
 
-Defined in: [src/core/driver/types.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L39)
+Defined in: [src/core/driver/types.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L43)
 
 ***
 
@@ -60,7 +64,7 @@ Defined in: [src/core/driver/types.ts:39](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **ordering?**: [`OrderingData`](../type-aliases/OrderingData.md)
 
-Defined in: [src/core/driver/types.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L42)
+Defined in: [src/core/driver/types.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L46)
 
 Allocated by the core for `nonce` and `seqno` ordering.
 
@@ -72,7 +76,7 @@ Allocated by the core for `nonce` and `seqno` ordering.
 
 > `readonly` `optional` **signal?**: `AbortSignal`
 
-Defined in: [src/core/driver/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L53)
+Defined in: [src/core/driver/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L57)
 
 ***
 
@@ -82,4 +86,4 @@ Defined in: [src/core/driver/types.ts:53](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **wallet**: [`WalletOptions`](../type-aliases/WalletOptions.md)
 
-Defined in: [src/core/driver/types.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L40)
+Defined in: [src/core/driver/types.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L44)

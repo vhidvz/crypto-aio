@@ -2,7 +2,9 @@
 
 # Interface: FakeChainOptions
 
-Defined in: [src/testing/fake-chain.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L70)
+Defined in: [src/testing/fake-chain.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L87)
+
+How the fake chain behaves.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-chain.ts:70](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **chainId?**: `string`
 
-Defined in: [src/testing/fake-chain.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L72)
+Defined in: [src/testing/fake-chain.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L89)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/testing/fake-chain.ts:72](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **clock?**: [`Clock`](../../interfaces/Clock.md)
 
-Defined in: [src/testing/fake-chain.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L76)
+Defined in: [src/testing/fake-chain.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L96)
 
 ***
 
@@ -32,7 +34,9 @@ Defined in: [src/testing/fake-chain.ts:76](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **finalityDepth?**: `number`
 
-Defined in: [src/testing/fake-chain.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L73)
+Defined in: [src/testing/fake-chain.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L91)
+
+Blocks after which a block is final (default 3).
 
 ***
 
@@ -42,7 +46,9 @@ Defined in: [src/testing/fake-chain.ts:73](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **minFee?**: `bigint`
 
-Defined in: [src/testing/fake-chain.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L74)
+Defined in: [src/testing/fake-chain.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L93)
+
+The least fee a transaction pays (default 1).
 
 ***
 
@@ -52,7 +58,7 @@ Defined in: [src/testing/fake-chain.ts:74](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **ordering?**: [`FakeOrdering`](../type-aliases/FakeOrdering.md)
 
-Defined in: [src/testing/fake-chain.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L71)
+Defined in: [src/testing/fake-chain.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L88)
 
 ***
 
@@ -62,4 +68,6 @@ Defined in: [src/testing/fake-chain.ts:71](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **replacementBumpPercent?**: `number`
 
-Defined in: [src/testing/fake-chain.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L75)
+Defined in: [src/testing/fake-chain.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L95)
+
+The least fee increase, in percent, a replacement needs (default 10).

@@ -2,7 +2,7 @@
 
 # Interface: TonSeqnoOrdering
 
-Defined in: [src/adapters/ton/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L96)
+Defined in: [src/adapters/ton/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L97)
 
 The seqno ordering a TON build records: the signed seqno and `valid_until`, and
 `validFrom`, the chain time the build ran at (the state's `sync_utime`, and never later
@@ -22,7 +22,7 @@ included" falsely, and a `rebuild` would then pay twice.
 
 > `readonly` **kind**: `"seqno"`
 
-Defined in: [src/adapters/ton/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L97)
+Defined in: [src/adapters/ton/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L98)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/ton/types.ts:97](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **seqno**: `bigint`
 
-Defined in: [src/adapters/ton/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L98)
+Defined in: [src/adapters/ton/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L99)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/adapters/ton/types.ts:98](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **validFrom**: `number`
 
-Defined in: [src/adapters/ton/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L100)
+Defined in: [src/adapters/ton/types.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L101)
 
 ***
 
@@ -52,4 +52,4 @@ Defined in: [src/adapters/ton/types.ts:100](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **validUntil**: `number`
 
-Defined in: [src/adapters/ton/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L99)
+Defined in: [src/adapters/ton/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L100)

@@ -2,9 +2,9 @@
 
 # Interface: SdkBigInt
 
-Defined in: [src/adapters/avalanche/sdk.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L25)
+Defined in: [src/adapters/avalanche/sdk.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L28)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `BigIntPr` this library uses; it mirrors the SDK, outside semver.
 
 ## Methods
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > **value**(): `bigint`
 
-Defined in: [src/adapters/avalanche/sdk.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L26)
+Defined in: [src/adapters/avalanche/sdk.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L29)
 
 #### Returns
 

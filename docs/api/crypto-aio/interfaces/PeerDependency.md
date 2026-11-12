@@ -2,7 +2,9 @@
 
 # Interface: PeerDependency
 
-Defined in: [src/core/driver/types.ts:423](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L423)
+Defined in: [src/core/driver/types.ts:526](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L526)
+
+An SDK package a library needs installed, with the version range it supports.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/driver/types.ts:423](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **name**: `string`
 
-Defined in: [src/core/driver/types.ts:424](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L424)
+Defined in: [src/core/driver/types.ts:527](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L527)
 
 ***
 
@@ -22,4 +24,4 @@ Defined in: [src/core/driver/types.ts:424](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **range**: `string`
 
-Defined in: [src/core/driver/types.ts:425](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L425)
+Defined in: [src/core/driver/types.ts:528](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L528)

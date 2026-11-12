@@ -2,7 +2,7 @@
 
 # Interface: SdkContext
 
-Defined in: [src/adapters/avalanche/sdk.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L124)
+Defined in: [src/adapters/avalanche/sdk.ts:137](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L137)
 
 avalanchejs's `Context`: what its builders need to know about the network.
 
@@ -14,7 +14,7 @@ avalanchejs's `Context`: what its builders need to know about the network.
 
 > `readonly` **avaxAssetID**: `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:130](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L130)
+Defined in: [src/adapters/avalanche/sdk.ts:143](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L143)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:130](https://github.com/vhidvz/crypto
 
 > `readonly` **baseTxFee**: `bigint`
 
-Defined in: [src/adapters/avalanche/sdk.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L131)
+Defined in: [src/adapters/avalanche/sdk.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L144)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:131](https://github.com/vhidvz/crypto
 
 > `readonly` **cBlockchainID**: `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:129](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L129)
+Defined in: [src/adapters/avalanche/sdk.ts:142](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L142)
 
 ***
 
@@ -44,7 +44,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:129](https://github.com/vhidvz/crypto
 
 > `readonly` **createAssetTxFee**: `bigint`
 
-Defined in: [src/adapters/avalanche/sdk.ts:132](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L132)
+Defined in: [src/adapters/avalanche/sdk.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L145)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:132](https://github.com/vhidvz/crypto
 
 > `readonly` **hrp**: `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L126)
+Defined in: [src/adapters/avalanche/sdk.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L139)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:126](https://github.com/vhidvz/crypto
 
 > `readonly` **networkID**: `number`
 
-Defined in: [src/adapters/avalanche/sdk.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L125)
+Defined in: [src/adapters/avalanche/sdk.ts:138](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L138)
 
 ***
 
@@ -74,7 +74,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:125](https://github.com/vhidvz/crypto
 
 > `readonly` **pBlockchainID**: `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:128](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L128)
+Defined in: [src/adapters/avalanche/sdk.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L141)
 
 ***
 
@@ -84,7 +84,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:128](https://github.com/vhidvz/crypto
 
 > `readonly` **platformFeeConfig**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:133](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L133)
+Defined in: [src/adapters/avalanche/sdk.ts:146](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L146)
 
 #### excessConversionConstant
 
@@ -118,4 +118,4 @@ Defined in: [src/adapters/avalanche/sdk.ts:133](https://github.com/vhidvz/crypto
 
 > `readonly` **xBlockchainID**: `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L127)
+Defined in: [src/adapters/avalanche/sdk.ts:140](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L140)

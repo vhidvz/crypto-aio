@@ -4,6 +4,6 @@
 
 > `const` **MAX\_MEMO\_BYTES**: `256` = `256`
 
-Defined in: [src/adapters/tron/network.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L52)
+Defined in: [src/adapters/tron/network.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L56)
 
 Memo bytes (UTF-8) accepted in `raw_data.data`.

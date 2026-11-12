@@ -2,7 +2,9 @@
 
 # Interface: SequenceState
 
-Defined in: [src/core/store/types.ts:330](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L330)
+Defined in: [src/core/store/types.ts:465](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L465)
+
+The nonce state of one sending address.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/store/types.ts:330](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **fence**: `bigint`
 
-Defined in: [src/core/store/types.ts:333](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L333)
+Defined in: [src/core/store/types.ts:471](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L471)
+
+The token of the address lease that last wrote this state.
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/core/store/types.ts:333](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **next**: `bigint`
 
-Defined in: [src/core/store/types.ts:331](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L331)
+Defined in: [src/core/store/types.ts:467](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L467)
+
+The next nonce never handed out.
 
 ***
 
@@ -32,7 +38,9 @@ Defined in: [src/core/store/types.ts:331](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **released**: readonly `bigint`[]
 
-Defined in: [src/core/store/types.ts:332](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L332)
+Defined in: [src/core/store/types.ts:469](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L469)
+
+Nonces handed out and given back, to hand out again before `next`.
 
 ***
 
@@ -42,4 +50,6 @@ Defined in: [src/core/store/types.ts:332](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **version**: `number`
 
-Defined in: [src/core/store/types.ts:334](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L334)
+Defined in: [src/core/store/types.ts:473](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L473)
+
+Starts at 1 and grows by one on each `put`.

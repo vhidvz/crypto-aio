@@ -2,7 +2,7 @@
 
 # Interface: FeeEstimateDraft
 
-Defined in: [src/core/model/fee.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L17)
+Defined in: [src/core/model/fee.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L27)
 
 Driver-level fee estimate (asset refs and base units).
 
@@ -14,7 +14,7 @@ Driver-level fee estimate (asset refs and base units).
 
 > `readonly` **bound**: [`FeeBound`](../type-aliases/FeeBound.md)
 
-Defined in: [src/core/model/fee.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L21)
+Defined in: [src/core/model/fee.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L32)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/core/model/fee.ts:21](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **charges**: readonly [`FeeChargeDraft`](FeeChargeDraft.md)[]
 
-Defined in: [src/core/model/fee.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L20)
+Defined in: [src/core/model/fee.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L31)
 
 ***
 
@@ -34,7 +34,9 @@ Defined in: [src/core/model/fee.ts:20](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **details**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/model/fee.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L23)
+Defined in: [src/core/model/fee.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L36)
+
+The family's fee facts; stored with the Attempt, so plain data only.
 
 ***
 
@@ -44,7 +46,9 @@ Defined in: [src/core/model/fee.ts:23](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **kind**: `string`
 
-Defined in: [src/core/model/fee.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L18)
+Defined in: [src/core/model/fee.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L29)
+
+The fee model, such as `evm-1559`.
 
 ***
 
@@ -54,7 +58,9 @@ Defined in: [src/core/model/fee.ts:18](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` `optional` **payer?**: `string`
 
-Defined in: [src/core/model/fee.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L22)
+Defined in: [src/core/model/fee.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L34)
+
+The paying address, in the driver's canonical form, when the family names it.
 
 ***
 
@@ -64,4 +70,4 @@ Defined in: [src/core/model/fee.ts:22](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **speed**: [`FeeSpeed`](../type-aliases/FeeSpeed.md) \| `"custom"`
 
-Defined in: [src/core/model/fee.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L19)
+Defined in: [src/core/model/fee.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L30)

@@ -2,7 +2,9 @@
 
 # Interface: KeyRef
 
-Defined in: [src/core/signing/types.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L5)
+Defined in: [src/core/signing/types.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L6)
+
+Which key a signer uses, for a signer that holds several.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/signing/types.ts:5](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **id?**: `string`
 
-Defined in: [src/core/signing/types.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L7)
+Defined in: [src/core/signing/types.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L8)
 
 Routes a request to a specific signer through `WalletConfig.signers`.
 
@@ -24,6 +26,6 @@ Routes a request to a specific signer through `WalletConfig.signers`.
 
 > `readonly` `optional` **path?**: `string`
 
-Defined in: [src/core/signing/types.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L9)
+Defined in: [src/core/signing/types.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L10)
 
 HD derivation path for mnemonic-backed signers.

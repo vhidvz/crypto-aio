@@ -2,7 +2,9 @@
 
 # Interface: FakeWireTx
 
-Defined in: [src/testing/fake-chain.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L29)
+Defined in: [src/testing/fake-chain.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L35)
+
+A transaction as the fake chain's RPC answers it; wire protocol, not covered by semver.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-chain.ts:29](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **amount**: `string`
 
-Defined in: [src/testing/fake-chain.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L33)
+Defined in: [src/testing/fake-chain.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L39)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/testing/fake-chain.ts:33](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **blockHash?**: `string`
 
-Defined in: [src/testing/fake-chain.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L38)
+Defined in: [src/testing/fake-chain.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L44)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/testing/fake-chain.ts:38](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **blockHeight?**: `string`
 
-Defined in: [src/testing/fake-chain.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L37)
+Defined in: [src/testing/fake-chain.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L43)
 
 ***
 
@@ -42,7 +44,7 @@ Defined in: [src/testing/fake-chain.ts:37](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **fee**: `string`
 
-Defined in: [src/testing/fake-chain.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L34)
+Defined in: [src/testing/fake-chain.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L40)
 
 ***
 
@@ -52,7 +54,7 @@ Defined in: [src/testing/fake-chain.ts:34](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **from**: `string`
 
-Defined in: [src/testing/fake-chain.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L31)
+Defined in: [src/testing/fake-chain.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L37)
 
 ***
 
@@ -62,7 +64,7 @@ Defined in: [src/testing/fake-chain.ts:31](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **id**: `string`
 
-Defined in: [src/testing/fake-chain.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L30)
+Defined in: [src/testing/fake-chain.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L36)
 
 ***
 
@@ -72,7 +74,7 @@ Defined in: [src/testing/fake-chain.ts:30](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **memo?**: `string`
 
-Defined in: [src/testing/fake-chain.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L36)
+Defined in: [src/testing/fake-chain.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L42)
 
 ***
 
@@ -82,7 +84,7 @@ Defined in: [src/testing/fake-chain.ts:36](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **nonce?**: `string`
 
-Defined in: [src/testing/fake-chain.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L35)
+Defined in: [src/testing/fake-chain.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L41)
 
 ***
 
@@ -92,7 +94,7 @@ Defined in: [src/testing/fake-chain.ts:35](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **pending?**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L40)
+Defined in: [src/testing/fake-chain.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L46)
 
 ***
 
@@ -102,7 +104,7 @@ Defined in: [src/testing/fake-chain.ts:40](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **success?**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L39)
+Defined in: [src/testing/fake-chain.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L45)
 
 ***
 
@@ -112,4 +114,4 @@ Defined in: [src/testing/fake-chain.ts:39](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **to**: `string`
 
-Defined in: [src/testing/fake-chain.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L32)
+Defined in: [src/testing/fake-chain.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L38)

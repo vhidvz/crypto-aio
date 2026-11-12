@@ -4,9 +4,10 @@
 
 > **createLogger**(`namespace?`, `write?`): [`Logger`](../interfaces/Logger.md)
 
-Defined in: [src/core/events/logger.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L36)
+Defined in: [src/core/events/logger.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L51)
 
-Structured logger; fields are always redacted before they reach the writer.
+Structured logger; fields are always redacted before they reach the writer. The default
+writer logs through `debug` under `<namespace>:<level>`.
 
 ## Parameters
 

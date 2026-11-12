@@ -2,9 +2,9 @@
 
 # Interface: SdkManager
 
-Defined in: [src/adapters/avalanche/sdk.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L104)
+Defined in: [src/adapters/avalanche/sdk.ts:116](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L116)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `codec Manager` this library uses; it mirrors the SDK, outside semver.
 
 ## Methods
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > **getDefaultCodec**(): `unknown`
 
-Defined in: [src/adapters/avalanche/sdk.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L105)
+Defined in: [src/adapters/avalanche/sdk.ts:117](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L117)
 
 #### Returns
 
@@ -28,7 +28,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:105](https://github.com/vhidvz/crypto
 
 > **packCodec**(`serializable`): `Uint8Array`
 
-Defined in: [src/adapters/avalanche/sdk.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L108)
+Defined in: [src/adapters/avalanche/sdk.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L120)
 
 #### Parameters
 
@@ -48,9 +48,11 @@ Defined in: [src/adapters/avalanche/sdk.ts:108](https://github.com/vhidvz/crypto
 
 > **unpack**\<`T`\>(`bytes`, `unpacker`): `T`
 
-Defined in: [src/adapters/avalanche/sdk.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L106)
+Defined in: [src/adapters/avalanche/sdk.ts:118](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L118)
 
 #### Type Parameters
+
+<a id="t"></a>
 
 ##### T
 
@@ -78,7 +80,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:106](https://github.com/vhidvz/crypto
 
 > **unpackTransaction**(`bytes`): [`SdkTransaction`](SdkTransaction.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L107)
+Defined in: [src/adapters/avalanche/sdk.ts:119](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L119)
 
 #### Parameters
 

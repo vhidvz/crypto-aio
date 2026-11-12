@@ -2,9 +2,9 @@
 
 # Interface: SdkDimensions
 
-Defined in: [src/adapters/avalanche/sdk.ts:116](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L116)
+Defined in: [src/adapters/avalanche/sdk.ts:129](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L129)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `fee Dimensions` this library uses; it mirrors the SDK, outside semver.
 
 ## Properties
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > `readonly` **0**: `number`
 
-Defined in: [src/adapters/avalanche/sdk.ts:117](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L117)
+Defined in: [src/adapters/avalanche/sdk.ts:130](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L130)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:117](https://github.com/vhidvz/crypto
 
 > `readonly` **1**: `number`
 
-Defined in: [src/adapters/avalanche/sdk.ts:118](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L118)
+Defined in: [src/adapters/avalanche/sdk.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L131)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:118](https://github.com/vhidvz/crypto
 
 > `readonly` **2**: `number`
 
-Defined in: [src/adapters/avalanche/sdk.ts:119](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L119)
+Defined in: [src/adapters/avalanche/sdk.ts:132](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L132)
 
 ***
 
@@ -44,4 +44,4 @@ Defined in: [src/adapters/avalanche/sdk.ts:119](https://github.com/vhidvz/crypto
 
 > `readonly` **3**: `number`
 
-Defined in: [src/adapters/avalanche/sdk.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L120)
+Defined in: [src/adapters/avalanche/sdk.ts:133](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L133)

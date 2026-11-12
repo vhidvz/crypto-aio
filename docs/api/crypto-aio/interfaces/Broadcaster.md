@@ -2,7 +2,9 @@
 
 # Interface: Broadcaster
 
-Defined in: [src/core/driver/types.ts:187](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L187)
+Defined in: [src/core/driver/types.ts:249](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L249)
+
+Sends signed transactions to the network.
 
 ## Methods
 
@@ -12,7 +14,7 @@ Defined in: [src/core/driver/types.ts:187](https://github.com/vhidvz/crypto-aio/
 
 > **broadcast**(`signed`, `options?`): `Promise`\<[`BroadcastResult`](../type-aliases/BroadcastResult.md)\>
 
-Defined in: [src/core/driver/types.ts:192](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L192)
+Defined in: [src/core/driver/types.ts:254](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L254)
 
 Throws (ambiguous) on transport failure; returns a classified result otherwise.
 `signed.ref.id` is empty for bare broadcasts (`Blockchain.broadcast`); never rely on it.

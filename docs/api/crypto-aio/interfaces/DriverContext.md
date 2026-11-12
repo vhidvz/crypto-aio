@@ -2,7 +2,7 @@
 
 # Interface: DriverContext
 
-Defined in: [src/core/driver/types.ts:408](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L408)
+Defined in: [src/core/driver/types.ts:505](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L505)
 
 A factory's `create()` must call `transport.setProbes(...)` exactly once, before any
 other traffic, on every `Transport` it receives here — including `indexer`, when present.
@@ -10,7 +10,7 @@ other traffic, on every `Transport` it receives here — including `indexer`, wh
 of the two transports, leaves that transport's health checks silently unconfigured.
 
 There is no asset resolver here, and `DriverIntent` carries no decimals: drivers work
-in base units only.
+in base units only (`BuildContext.decimals` says how the core scaled them).
 
 ## Properties
 
@@ -20,7 +20,7 @@ in base units only.
 
 > `readonly` **chain**: [`ChainInfo`](ChainInfo.md)
 
-Defined in: [src/core/driver/types.ts:409](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L409)
+Defined in: [src/core/driver/types.ts:506](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L506)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [src/core/driver/types.ts:409](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **clock**: [`Clock`](Clock.md)
 
-Defined in: [src/core/driver/types.ts:414](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L414)
+Defined in: [src/core/driver/types.ts:514](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L514)
 
 ***
 
@@ -40,7 +40,9 @@ Defined in: [src/core/driver/types.ts:414](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **indexer?**: [`Transport`](Transport.md)
 
-Defined in: [src/core/driver/types.ts:413](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L413)
+Defined in: [src/core/driver/types.ts:513](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L513)
+
+The `indexer` endpoints, when the handle has any.
 
 ***
 
@@ -50,7 +52,9 @@ Defined in: [src/core/driver/types.ts:413](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **library**: `string`
 
-Defined in: [src/core/driver/types.ts:411](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L411)
+Defined in: [src/core/driver/types.ts:509](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L509)
+
+The SDK library the handle selected, such as `ethers`.
 
 ***
 
@@ -60,7 +64,7 @@ Defined in: [src/core/driver/types.ts:411](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **log**: [`Logger`](Logger.md)
 
-Defined in: [src/core/driver/types.ts:415](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L415)
+Defined in: [src/core/driver/types.ts:515](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L515)
 
 ***
 
@@ -70,7 +74,7 @@ Defined in: [src/core/driver/types.ts:415](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **network**: [`NetworkInfo`](NetworkInfo.md)
 
-Defined in: [src/core/driver/types.ts:410](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L410)
+Defined in: [src/core/driver/types.ts:507](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L507)
 
 ***
 
@@ -80,7 +84,9 @@ Defined in: [src/core/driver/types.ts:410](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **options**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/driver/types.ts:416](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L416)
+Defined in: [src/core/driver/types.ts:517](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L517)
+
+The driver options: the chain config's `options` with the handle's over them.
 
 ***
 
@@ -90,4 +96,6 @@ Defined in: [src/core/driver/types.ts:416](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **transport**: [`Transport`](Transport.md)
 
-Defined in: [src/core/driver/types.ts:412](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L412)
+Defined in: [src/core/driver/types.ts:511](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L511)
+
+The `provider` endpoints.

@@ -2,7 +2,9 @@
 
 # Interface: DriverTransaction
 
-Defined in: [src/core/driver/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L106)
+Defined in: [src/core/driver/types.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L126)
+
+A transaction as a driver decodes it.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/driver/types.ts:106](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **decoding**: [`Decoding`](../type-aliases/Decoding.md)
 
-Defined in: [src/core/driver/types.ts:111](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L111)
+Defined in: [src/core/driver/types.ts:133](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L133)
+
+Whether `transfers` lists every movement the transaction makes.
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/core/driver/types.ts:111](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **details**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/driver/types.ts:114](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L114)
+Defined in: [src/core/driver/types.ts:138](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L138)
+
+Family-specific fields, passed through to `Transaction.details`.
 
 ***
 
@@ -32,7 +38,9 @@ Defined in: [src/core/driver/types.ts:114](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **fee?**: readonly `object`[]
 
-Defined in: [src/core/driver/types.ts:109](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L109)
+Defined in: [src/core/driver/types.ts:130](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L130)
+
+What the transaction paid, per asset; absent while unknown.
 
 ***
 
@@ -42,7 +50,7 @@ Defined in: [src/core/driver/types.ts:109](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/driver/types.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L107)
+Defined in: [src/core/driver/types.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L127)
 
 ***
 
@@ -52,7 +60,7 @@ Defined in: [src/core/driver/types.ts:107](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **observation**: [`DriverTxObservation`](DriverTxObservation.md)
 
-Defined in: [src/core/driver/types.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L108)
+Defined in: [src/core/driver/types.ts:128](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L128)
 
 ***
 
@@ -62,7 +70,7 @@ Defined in: [src/core/driver/types.ts:108](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **raw?**: [`RawTx`](RawTx.md)
 
-Defined in: [src/core/driver/types.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L112)
+Defined in: [src/core/driver/types.ts:134](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L134)
 
 ***
 
@@ -72,7 +80,9 @@ Defined in: [src/core/driver/types.ts:112](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **timestamp?**: `number`
 
-Defined in: [src/core/driver/types.ts:113](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L113)
+Defined in: [src/core/driver/types.ts:136](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L136)
+
+The block's time in Unix seconds, whatever unit the chain reports it in.
 
 ***
 
@@ -82,4 +92,4 @@ Defined in: [src/core/driver/types.ts:113](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **transfers**: readonly [`DriverTransfer`](DriverTransfer.md)[]
 
-Defined in: [src/core/driver/types.ts:110](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L110)
+Defined in: [src/core/driver/types.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L131)

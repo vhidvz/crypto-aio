@@ -2,7 +2,7 @@
 
 # Interface: AdapterManifest
 
-Defined in: [src/core/driver/types.ts:429](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L429)
+Defined in: [src/core/driver/types.ts:532](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L532)
 
 Static metadata (no SDK import) plus a lazy `load()` that `require()`s the driver module.
 
@@ -14,7 +14,9 @@ Static metadata (no SDK import) plus a lazy `load()` that `require()`s the drive
 
 > `readonly` **capabilities**: readonly [`Capability`](../type-aliases/Capability.md)[]
 
-Defined in: [src/core/driver/types.ts:433](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L433)
+Defined in: [src/core/driver/types.ts:543](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L543)
+
+The capabilities a handle on it has, before the network adds or removes any.
 
 ***
 
@@ -24,7 +26,9 @@ Defined in: [src/core/driver/types.ts:433](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **chains**: readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:432](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L432)
+Defined in: [src/core/driver/types.ts:541](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L541)
+
+The chain ids it serves.
 
 ***
 
@@ -34,7 +38,10 @@ Defined in: [src/core/driver/types.ts:432](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **family**: `string`
 
-Defined in: [src/core/driver/types.ts:430](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L430)
+Defined in: [src/core/driver/types.ts:537](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L537)
+
+The chain family, and the key the manifest registers under. A plugin chain of a
+built-in family registers its own, such as `evm:<name>`.
 
 ***
 
@@ -44,7 +51,9 @@ Defined in: [src/core/driver/types.ts:430](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **indexerCapabilities?**: readonly [`Capability`](../type-aliases/Capability.md)[]
 
-Defined in: [src/core/driver/types.ts:434](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L434)
+Defined in: [src/core/driver/types.ts:545](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L545)
+
+Further capabilities a handle has when it has an `indexer` provider.
 
 ***
 
@@ -54,7 +63,9 @@ Defined in: [src/core/driver/types.ts:434](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **library**: `string`
 
-Defined in: [src/core/driver/types.ts:431](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L431)
+Defined in: [src/core/driver/types.ts:539](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L539)
+
+The SDK library; the first manifest registered for a chain is its default library.
 
 ***
 
@@ -64,7 +75,9 @@ Defined in: [src/core/driver/types.ts:431](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **peerDependencies**: readonly [`PeerDependency`](PeerDependency.md)[]
 
-Defined in: [src/core/driver/types.ts:436](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L436)
+Defined in: [src/core/driver/types.ts:552](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L552)
+
+Checked when `load()` runs: a missing package fails with `DEPENDENCY_MISSING`.
 
 ***
 
@@ -74,7 +87,10 @@ Defined in: [src/core/driver/types.ts:436](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **requiresIndexer?**: `boolean`
 
-Defined in: [src/core/driver/types.ts:435](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L435)
+Defined in: [src/core/driver/types.ts:550](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L550)
+
+Whether a handle needs an `indexer` provider; without one it falls back to the
+`public` preset, or fails with `CONFIG_INVALID` when the network has none.
 
 ## Methods
 
@@ -84,7 +100,9 @@ Defined in: [src/core/driver/types.ts:435](https://github.com/vhidvz/crypto-aio/
 
 > **load**(): `Promise`\<[`DriverFactory`](DriverFactory.md)\>
 
-Defined in: [src/core/driver/types.ts:437](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L437)
+Defined in: [src/core/driver/types.ts:554](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L554)
+
+Loads the driver module (and its SDK) on first use.
 
 #### Returns
 

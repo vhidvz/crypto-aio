@@ -2,7 +2,9 @@
 
 # Interface: SerializedError
 
-Defined in: [src/core/errors/error.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L16)
+Defined in: [src/core/errors/error.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L22)
+
+An error as JSON (`toJSON()`), as an Operation stores it.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/errors/error.ts:16](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **ambiguous**: `boolean`
 
-Defined in: [src/core/errors/error.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L22)
+Defined in: [src/core/errors/error.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L28)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/errors/error.ts:22](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **category**: [`ErrorCategory`](../type-aliases/ErrorCategory.md)
 
-Defined in: [src/core/errors/error.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L19)
+Defined in: [src/core/errors/error.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L25)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/core/errors/error.ts:19](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **code**: `"CONFIG_INVALID"` \| `"DEPENDENCY_MISSING"` \| `"INCOMPATIBLE_SELECTION"` \| `"UNSUPPORTED_CAPABILITY"` \| `"INVALID_ADDRESS"` \| `"INVALID_AMOUNT"` \| `"ASSET_RESOLUTION"` \| `"INVALID_INTENT"` \| `"PROVIDER_UNAVAILABLE"` \| `"RATE_LIMITED"` \| `"PROVIDER_MISCONFIGURED"` \| `"PROVIDER_INCONSISTENT"` \| `"RPC_ERROR"` \| `"INSUFFICIENT_FUNDS"` \| `"NONCE_CONFLICT"` \| `"NONCE_TOO_HIGH"` \| `"FEE_TOO_LOW"` \| `"TX_REFUSED"` \| `"TX_REJECTED"` \| `"TX_REVERTED"` \| `"TX_UNEVIDENCED"` \| `"TX_EXPIRED"` \| `"TX_REPLACED"` \| `"SIGNER_UNAVAILABLE"` \| `"SIGNING_FAILED"` \| `"SIGNATURE_MISMATCH"` \| `"POLICY_REJECTED"` \| `"KEY_NOT_EXPORTABLE"` \| `"IDEMPOTENCY_CONFLICT"` \| `"FENCING"` \| `"VERSION_CONFLICT"` \| `"INVALID_TRANSITION"` \| `"NOT_FOUND"` \| `"SEQUENCE_BUSY"` \| `"STATE_UNRECORDED"` \| `"SCANNER_REORG_TOO_DEEP"` \| `"RECORD_FORMAT_UNSUPPORTED"` \| `"TIMEOUT"`
 
-Defined in: [src/core/errors/error.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L18)
+Defined in: [src/core/errors/error.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L24)
 
 ***
 
@@ -42,7 +44,7 @@ Defined in: [src/core/errors/error.ts:18](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **context**: [`ErrorContext`](../type-aliases/ErrorContext.md)
 
-Defined in: [src/core/errors/error.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L23)
+Defined in: [src/core/errors/error.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L29)
 
 ***
 
@@ -52,7 +54,7 @@ Defined in: [src/core/errors/error.ts:23](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **details?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/errors/error.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L24)
+Defined in: [src/core/errors/error.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L30)
 
 ***
 
@@ -62,7 +64,7 @@ Defined in: [src/core/errors/error.ts:24](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **message**: `string`
 
-Defined in: [src/core/errors/error.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L20)
+Defined in: [src/core/errors/error.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L26)
 
 ***
 
@@ -72,7 +74,7 @@ Defined in: [src/core/errors/error.ts:20](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **name**: `string`
 
-Defined in: [src/core/errors/error.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L17)
+Defined in: [src/core/errors/error.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L23)
 
 ***
 
@@ -82,4 +84,4 @@ Defined in: [src/core/errors/error.ts:17](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **retryable**: `boolean`
 
-Defined in: [src/core/errors/error.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L21)
+Defined in: [src/core/errors/error.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L27)

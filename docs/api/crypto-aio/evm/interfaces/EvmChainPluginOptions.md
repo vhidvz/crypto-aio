@@ -2,7 +2,9 @@
 
 # Interface: EvmChainPluginOptions
 
-Defined in: [src/adapters/evm/plugin.ts:136](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L136)
+Defined in: [src/adapters/evm/plugin.ts:137](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L137)
+
+`evmChainPlugin()`'s options: one EVM chain to register, with its networks and tokens.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/adapters/evm/plugin.ts:136](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **assets?**: readonly [`AssetRegistration`](../../interfaces/AssetRegistration.md)[]
 
-Defined in: [src/adapters/evm/plugin.ts:150](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L150)
+Defined in: [src/adapters/evm/plugin.ts:151](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L151)
 
 Tokens: `erc20` refs, each registered under its EIP-55 checksummed contract, whatever
 case it is given in, so its alias and its transfers name one asset id.
@@ -25,7 +27,7 @@ case it is given in, so its alias and its transfers name one asset id.
 
 > `readonly` **chains**: readonly [`ChainInfo`](../../interfaces/ChainInfo.md)[]
 
-Defined in: [src/adapters/evm/plugin.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L144)
+Defined in: [src/adapters/evm/plugin.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L145)
 
 Chains with `family: 'evm'`, nonce ordering and the `secp256k1-ecdsa` scheme.
 
@@ -37,7 +39,7 @@ Chains with `family: 'evm'`, nonce ordering and the `secp256k1-ecdsa` scheme.
 
 > `readonly` **name**: `string`
 
-Defined in: [src/adapters/evm/plugin.ts:142](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L142)
+Defined in: [src/adapters/evm/plugin.ts:143](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L143)
 
 A unique name matching `/^[a-z][a-z0-9-]*$/`. The plugin registers as `evm:<name>`, so
 it never collides with a family plugin, and its manifests as `evm:<name>/ethers` and
@@ -51,4 +53,4 @@ it never collides with a family plugin, and its manifests as `evm:<name>/ethers`
 
 > `readonly` `optional` **presets?**: readonly [`ProviderPreset`](../../interfaces/ProviderPreset.md)[]
 
-Defined in: [src/adapters/evm/plugin.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L145)
+Defined in: [src/adapters/evm/plugin.ts:146](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/evm/plugin.ts#L146)

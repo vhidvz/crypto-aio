@@ -2,7 +2,9 @@
 
 # Interface: TxStatusEvent
 
-Defined in: [src/core/lifecycle/monitor.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L60)
+Defined in: [src/core/lifecycle/monitor.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L66)
+
+One update `bc.watch()` yields: the status, and the Operation when one tracks the transaction.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/lifecycle/monitor.ts:60](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **operation?**: [`OperationView`](OperationView.md)
 
-Defined in: [src/core/lifecycle/monitor.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L62)
+Defined in: [src/core/lifecycle/monitor.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L68)
 
 ***
 
@@ -22,4 +24,4 @@ Defined in: [src/core/lifecycle/monitor.ts:62](https://github.com/vhidvz/crypto-
 
 > `readonly` **status**: [`TxStatus`](TxStatus.md)
 
-Defined in: [src/core/lifecycle/monitor.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L61)
+Defined in: [src/core/lifecycle/monitor.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L67)

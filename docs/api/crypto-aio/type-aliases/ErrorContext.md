@@ -4,4 +4,6 @@
 
 > **ErrorContext** = `Readonly`\<`Record`\<`string`, [`ErrorContextValue`](ErrorContextValue.md)\>\>
 
-Defined in: [src/core/errors/error.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L6)
+Defined in: [src/core/errors/error.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L8)
+
+Redacted identifiers of where an error happened, such as `operationId` or `endpointId`.

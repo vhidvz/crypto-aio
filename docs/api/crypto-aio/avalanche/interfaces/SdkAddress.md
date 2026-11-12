@@ -2,9 +2,9 @@
 
 # Interface: SdkAddress
 
-Defined in: [src/adapters/avalanche/sdk.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L29)
+Defined in: [src/adapters/avalanche/sdk.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L33)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `Address` this library uses; it mirrors the SDK, outside semver.
 
 ## Methods
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > **toBytes**(): `Uint8Array`
 
-Defined in: [src/adapters/avalanche/sdk.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L30)
+Defined in: [src/adapters/avalanche/sdk.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L34)
 
 #### Returns
 

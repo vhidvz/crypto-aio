@@ -2,7 +2,11 @@
 
 # Interface: Logger
 
-Defined in: [src/core/events/logger.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L7)
+Defined in: [src/core/events/logger.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L14)
+
+Where the library logs (`AioOptions.logger`). A port you may implement: it never gains a
+required member in a 1.x release. `createLogger` builds one that redacts before writing;
+one of your own should redact too, since fields can carry endpoint URLs.
 
 ## Methods
 
@@ -12,7 +16,9 @@ Defined in: [src/core/events/logger.ts:7](https://github.com/vhidvz/crypto-aio/b
 
 > **child**(`namespace`): `Logger`
 
-Defined in: [src/core/events/logger.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L12)
+Defined in: [src/core/events/logger.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L20)
+
+A logger for a sub-namespace, such as `transport`.
 
 #### Parameters
 
@@ -32,7 +38,7 @@ Defined in: [src/core/events/logger.ts:12](https://github.com/vhidvz/crypto-aio/
 
 > **debug**(`message`, `fields?`): `void`
 
-Defined in: [src/core/events/logger.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L8)
+Defined in: [src/core/events/logger.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L15)
 
 #### Parameters
 
@@ -56,7 +62,7 @@ Defined in: [src/core/events/logger.ts:8](https://github.com/vhidvz/crypto-aio/b
 
 > **error**(`message`, `fields?`): `void`
 
-Defined in: [src/core/events/logger.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L11)
+Defined in: [src/core/events/logger.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L18)
 
 #### Parameters
 
@@ -80,7 +86,7 @@ Defined in: [src/core/events/logger.ts:11](https://github.com/vhidvz/crypto-aio/
 
 > **info**(`message`, `fields?`): `void`
 
-Defined in: [src/core/events/logger.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L9)
+Defined in: [src/core/events/logger.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L16)
 
 #### Parameters
 
@@ -104,7 +110,7 @@ Defined in: [src/core/events/logger.ts:9](https://github.com/vhidvz/crypto-aio/b
 
 > **warn**(`message`, `fields?`): `void`
 
-Defined in: [src/core/events/logger.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L10)
+Defined in: [src/core/events/logger.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L17)
 
 #### Parameters
 

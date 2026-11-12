@@ -2,7 +2,9 @@
 
 # Interface: FakeReceipt
 
-Defined in: [src/testing/fake-chain.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L145)
+Defined in: [src/testing/fake-chain.ts:173](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L173)
+
+How a fake transaction was included: whether it succeeded, and its block.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-chain.ts:145](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/testing/fake-chain.ts:148](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L148)
+Defined in: [src/testing/fake-chain.ts:176](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L176)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/testing/fake-chain.ts:148](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/testing/fake-chain.ts:147](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L147)
+Defined in: [src/testing/fake-chain.ts:175](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L175)
 
 ***
 
@@ -32,4 +34,4 @@ Defined in: [src/testing/fake-chain.ts:147](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **success**: `boolean`
 
-Defined in: [src/testing/fake-chain.ts:146](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L146)
+Defined in: [src/testing/fake-chain.ts:174](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L174)

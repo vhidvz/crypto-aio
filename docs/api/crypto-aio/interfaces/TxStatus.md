@@ -2,7 +2,9 @@
 
 # Interface: TxStatus
 
-Defined in: [src/core/model/transaction.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L49)
+Defined in: [src/core/model/transaction.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L64)
+
+A transaction's status. Complete a withdrawal only on `final` with `proven` evidence.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/model/transaction.ts:49](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **blockHash?**: `string`
 
-Defined in: [src/core/model/transaction.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L54)
+Defined in: [src/core/model/transaction.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L70)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/model/transaction.ts:54](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **blockHeight?**: `bigint`
 
-Defined in: [src/core/model/transaction.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L55)
+Defined in: [src/core/model/transaction.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L71)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/core/model/transaction.ts:55](https://github.com/vhidvz/crypto-
 
 > `readonly` **confirmations**: `number`
 
-Defined in: [src/core/model/transaction.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L52)
+Defined in: [src/core/model/transaction.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L67)
 
 ***
 
@@ -42,7 +44,7 @@ Defined in: [src/core/model/transaction.ts:52](https://github.com/vhidvz/crypto-
 
 > `readonly` **evidence**: [`Evidence`](../type-aliases/Evidence.md)
 
-Defined in: [src/core/model/transaction.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L51)
+Defined in: [src/core/model/transaction.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L66)
 
 ***
 
@@ -52,7 +54,7 @@ Defined in: [src/core/model/transaction.ts:51](https://github.com/vhidvz/crypto-
 
 > `readonly` **finality**: [`Finality`](../type-aliases/Finality.md)
 
-Defined in: [src/core/model/transaction.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L56)
+Defined in: [src/core/model/transaction.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L72)
 
 ***
 
@@ -62,7 +64,7 @@ Defined in: [src/core/model/transaction.ts:56](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **reason?**: `string`
 
-Defined in: [src/core/model/transaction.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L64)
+Defined in: [src/core/model/transaction.ts:80](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L80)
 
 Why the transaction did not go through. Present only with `failed`, `refused` or
 `rejected`. It is either a broadcast's refusal or rejection text, or the chain
@@ -78,7 +80,9 @@ or logs.
 
 > `readonly` `optional` **replacedBy?**: `string`
 
-Defined in: [src/core/model/transaction.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L65)
+Defined in: [src/core/model/transaction.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L82)
+
+With `replaced`: the transaction that took its slot.
 
 ***
 
@@ -88,7 +92,7 @@ Defined in: [src/core/model/transaction.ts:65](https://github.com/vhidvz/crypto-
 
 > `readonly` **state**: [`TxState`](../type-aliases/TxState.md)
 
-Defined in: [src/core/model/transaction.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L50)
+Defined in: [src/core/model/transaction.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L65)
 
 ***
 
@@ -98,4 +102,6 @@ Defined in: [src/core/model/transaction.ts:50](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **txHash?**: `string`
 
-Defined in: [src/core/model/transaction.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L53)
+Defined in: [src/core/model/transaction.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L69)
+
+The canonical transaction hash, once seen.

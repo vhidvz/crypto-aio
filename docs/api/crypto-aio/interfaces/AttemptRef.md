@@ -2,7 +2,7 @@
 
 # Interface: AttemptRef
 
-Defined in: [src/core/model/transaction.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L19)
+Defined in: [src/core/model/transaction.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L20)
 
 Identity of a signed payload. `canonical: false` = not the final protocol tx hash (TON).
 
@@ -14,7 +14,9 @@ Identity of a signed payload. `canonical: false` = not the final protocol tx has
 
 > `readonly` **canonical**: `boolean`
 
-Defined in: [src/core/model/transaction.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L22)
+Defined in: [src/core/model/transaction.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L25)
+
+Whether `id` is the transaction hash the chain reports once it is included.
 
 ***
 
@@ -24,7 +26,9 @@ Defined in: [src/core/model/transaction.ts:22](https://github.com/vhidvz/crypto-
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/model/transaction.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L20)
+Defined in: [src/core/model/transaction.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L22)
+
+The id, as the chain spells it.
 
 ***
 
@@ -34,4 +38,4 @@ Defined in: [src/core/model/transaction.ts:20](https://github.com/vhidvz/crypto-
 
 > `readonly` **idKind**: [`AttemptIdKind`](../type-aliases/AttemptIdKind.md)
 
-Defined in: [src/core/model/transaction.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L21)
+Defined in: [src/core/model/transaction.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L23)

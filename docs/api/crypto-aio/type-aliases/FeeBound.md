@@ -4,4 +4,7 @@
 
 > **FeeBound** = `"exact"` \| `"expected"` \| `"upper"`
 
-Defined in: [src/core/model/fee.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L8)
+Defined in: [src/core/model/fee.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L17)
+
+How the charges relate to what the transaction will pay: `exact`, `expected` (a likely
+cost that may move), or `upper` (the most it can pay).

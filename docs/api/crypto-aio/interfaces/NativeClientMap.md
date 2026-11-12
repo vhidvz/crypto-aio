@@ -2,7 +2,9 @@
 
 # Interface: NativeClientMap
 
-Defined in: [src/core/model/ids.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L10)
+Defined in: [src/core/model/ids.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L13)
+
+For `crypto-aio/native`: the SDK client type each library hands out.
 
 ## Properties
 

@@ -2,7 +2,9 @@
 
 # Class: SigningError
 
-Defined in: [src/core/errors/error.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L98)
+Defined in: [src/core/errors/error.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L120)
+
+A failure to sign: no signer, a failed or mismatched signature, a policy veto, a key that cannot be exported.
 
 ## Extends
 
@@ -16,7 +18,7 @@ Defined in: [src/core/errors/error.ts:98](https://github.com/vhidvz/crypto-aio/b
 
 > **new SigningError**(`code`, `message`, `options?`): `SigningError`
 
-Defined in: [src/core/errors/error.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L99)
+Defined in: [src/core/errors/error.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L121)
 
 #### Parameters
 
@@ -48,7 +50,9 @@ Defined in: [src/core/errors/error.ts:99](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **ambiguous**: `boolean`
 
-Defined in: [src/core/errors/error.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L31)
+Defined in: [src/core/errors/error.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L44)
+
+Whether the call may have reached the chain, so its effect is unknown.
 
 #### Inherited from
 
@@ -62,7 +66,7 @@ Defined in: [src/core/errors/error.ts:31](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **category**: [`ErrorCategory`](../type-aliases/ErrorCategory.md)
 
-Defined in: [src/core/errors/error.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L29)
+Defined in: [src/core/errors/error.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L40)
 
 #### Inherited from
 
@@ -90,7 +94,7 @@ Defined in: node\_modules/.pnpm/typescript@5.9.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: `"CONFIG_INVALID"` \| `"DEPENDENCY_MISSING"` \| `"INCOMPATIBLE_SELECTION"` \| `"UNSUPPORTED_CAPABILITY"` \| `"INVALID_ADDRESS"` \| `"INVALID_AMOUNT"` \| `"ASSET_RESOLUTION"` \| `"INVALID_INTENT"` \| `"PROVIDER_UNAVAILABLE"` \| `"RATE_LIMITED"` \| `"PROVIDER_MISCONFIGURED"` \| `"PROVIDER_INCONSISTENT"` \| `"RPC_ERROR"` \| `"INSUFFICIENT_FUNDS"` \| `"NONCE_CONFLICT"` \| `"NONCE_TOO_HIGH"` \| `"FEE_TOO_LOW"` \| `"TX_REFUSED"` \| `"TX_REJECTED"` \| `"TX_REVERTED"` \| `"TX_UNEVIDENCED"` \| `"TX_EXPIRED"` \| `"TX_REPLACED"` \| `"SIGNER_UNAVAILABLE"` \| `"SIGNING_FAILED"` \| `"SIGNATURE_MISMATCH"` \| `"POLICY_REJECTED"` \| `"KEY_NOT_EXPORTABLE"` \| `"IDEMPOTENCY_CONFLICT"` \| `"FENCING"` \| `"VERSION_CONFLICT"` \| `"INVALID_TRANSITION"` \| `"NOT_FOUND"` \| `"SEQUENCE_BUSY"` \| `"STATE_UNRECORDED"` \| `"SCANNER_REORG_TOO_DEEP"` \| `"RECORD_FORMAT_UNSUPPORTED"` \| `"TIMEOUT"`
 
-Defined in: [src/core/errors/error.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L28)
+Defined in: [src/core/errors/error.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L39)
 
 #### Inherited from
 
@@ -104,7 +108,9 @@ Defined in: [src/core/errors/error.ts:28](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **context**: [`ErrorContext`](../type-aliases/ErrorContext.md)
 
-Defined in: [src/core/errors/error.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L32)
+Defined in: [src/core/errors/error.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L46)
+
+Redacted ids of where it happened, such as `operationId`.
 
 #### Inherited from
 
@@ -118,7 +124,9 @@ Defined in: [src/core/errors/error.ts:32](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **details?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/errors/error.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L33)
+Defined in: [src/core/errors/error.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L48)
+
+Code-specific facts, such as `required` and `available` for `INSUFFICIENT_FUNDS`.
 
 #### Inherited from
 
@@ -160,7 +168,9 @@ Defined in: node\_modules/.pnpm/typescript@5.9.3/node\_modules/typescript/lib/li
 
 > `readonly` **retryable**: `boolean`
 
-Defined in: [src/core/errors/error.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L30)
+Defined in: [src/core/errors/error.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L42)
+
+Whether the same call may succeed if made again.
 
 #### Inherited from
 
@@ -212,7 +222,9 @@ not capture any frames.
 
 > **toJSON**(): [`SerializedError`](../interfaces/SerializedError.md)
 
-Defined in: [src/core/errors/error.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L47)
+Defined in: [src/core/errors/error.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L63)
+
+The error as plain data, without its stack or cause.
 
 #### Returns
 

@@ -2,41 +2,10 @@
 
 # Class: MemoryOperationStore
 
-Defined in: [src/core/store/memory.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L177)
+Defined in: [src/core/store/memory.ts:184](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L184)
 
-Durable Operation storage. Required guarantees (verified by the contract suite),
-binding on every implementation (memory, Redis, Postgres, ...):
-- `create` is create-if-absent on `(namespace, idempotencyKey)`: a second `create`
-  for an existing key returns the stored record unchanged, regardless of
-  `intentHash` — this store never performs the idempotency-conflict check itself;
-  the calling engine does.
-- `update`/`appendAttempt` are version-checked (compare-and-set on
-  `expectedVersion`) and optionally fenced by a claim token. Both are restricted to
-  the same runtime patch whitelist (`OPERATION_PATCH_KEYS`), and `clear` may only
-  name `CLEARABLE_FIELDS`; any other key anywhere in the patch rejects the whole
-  call with `INVALID_TRANSITION` before any mutation. An explicit `undefined` value
-  for a writable field is a no-op (the stored value survives); only `clear` removes
-  a field.
-- `appendAttempt` is atomic with its accompanying patch, never rewrites a
-  previously stored `AttemptRecord`, and rejects a duplicate attempt id. Attempt ids
-  are globally unique across every Operation and namespace (observations are keyed
-  by attempt id alone).
-- `claimDue` and `list` are scoped by namespace: they never return a record of another
-  namespace, even one with the same id.
-- `claimDue` returns only non-terminal operations with `nextCheckAt` set and `<=
-  now`, ordered by `(nextCheckAt, createdAt)` with a stable tie-break for equal
-  values, and returns `[]` for `limit <= 0`. A claimed Operation is excluded until
-  its `claim.until <= now`; then another worker may take it over. Claim tokens are
-  strictly increasing per store; fenced writes are rejected after a takeover.
-- `list` returns matches in creation order.
-- `ClearableField` is restricted on purpose: `clear` can never remove store-owned or
-  identity fields (`attempts`, `claim`, `version`, `id`, ...) or `state`. An
-  implementation reads the caller's `clear` list once, so the list it validates is
-  the list it applies.
-- A key set to `undefined`, in an observation or a patch, is never persisted as a value
-  such as `null`. In a patch, the stored field keeps its value. In an
-  observation, which replaces the whole record, the field reads back `undefined` (never
-  `null`).
+An `OperationStore` in this process's memory: for tests and one-process use only. What it
+holds is lost when the process ends, so it cannot make a payment crash-safe.
 
 ## Implements
 
@@ -50,7 +19,7 @@ binding on every implementation (memory, Redis, Postgres, ...):
 
 > **new MemoryOperationStore**(`clock?`): `MemoryOperationStore`
 
-Defined in: [src/core/store/memory.ts:183](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L183)
+Defined in: [src/core/store/memory.ts:190](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L190)
 
 #### Parameters
 
@@ -70,7 +39,11 @@ Defined in: [src/core/store/memory.ts:183](https://github.com/vhidvz/crypto-aio/
 
 > **appendAttempt**(`namespace`, `id`, `attempt`, `patch`, `expectedVersion`, `fence?`): `Promise`\<[`OperationRecord`](../interfaces/OperationRecord.md)\>
 
-Defined in: [src/core/store/memory.ts:271](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L271)
+Defined in: [src/core/store/memory.ts:278](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L278)
+
+Appends `attempt` after the earlier ones and applies `patch`, in one atomic write that
+bumps the version and makes `attempt` the `activeAttemptId`. Checked and fenced as
+`update`; a duplicate attempt id fails with `INVALID_TRANSITION`.
 
 #### Parameters
 
@@ -114,7 +87,7 @@ Defined in: [src/core/store/memory.ts:271](https://github.com/vhidvz/crypto-aio/
 
 > **claimDue**(`namespace`, `workerId`, `now`, `leaseMs`, `limit`): `Promise`\<[`OperationRecord`](../interfaces/OperationRecord.md)[]\>
 
-Defined in: [src/core/store/memory.ts:320](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L320)
+Defined in: [src/core/store/memory.ts:327](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L327)
 
 Claims non-terminal operations whose `nextCheckAt` is set and <= now (unscheduled ones are never due).
 
@@ -156,7 +129,13 @@ Claims non-terminal operations whose `nextCheckAt` is set and <= now (unschedule
 
 > **create**(`operation`): `Promise`\<[`CreateResult`](../interfaces/CreateResult.md)\>
 
-Defined in: [src/core/store/memory.ts:185](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L185)
+Defined in: [src/core/store/memory.ts:192](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L192)
+
+Stores `operation` unless its `(namespace, idempotencyKey)` is taken, in which case it
+returns the stored record (`created: false`). The new record has version 1. Refuses
+with `INVALID_TRANSITION`, storing nothing, an input carrying a store-owned field
+(`version`, `createdAt`, `updatedAt`, `claim`) or an id another Operation of the
+namespace holds.
 
 #### Parameters
 
@@ -180,7 +159,7 @@ Defined in: [src/core/store/memory.ts:185](https://github.com/vhidvz/crypto-aio/
 
 > **findByRef**(`namespace`, `refOrTxHash`): `Promise`\<[`OperationRecord`](../interfaces/OperationRecord.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:234](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L234)
+Defined in: [src/core/store/memory.ts:241](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L241)
 
 Finds by an Attempt ref id or by an observed canonical tx hash. The engine's
 AttemptRef guard, which refuses an Attempt whose ref another Operation of the
@@ -188,6 +167,10 @@ namespace holds, relies on this read being read-your-writes consistent across ev
 process that shares the store: it must see any `appendAttempt` that another store
 instance committed before it was called (no read replica, no eventually consistent
 index).
+
+At most one Operation of a namespace holds a ref: that guard refuses an Attempt whose
+ref another Operation holds. Should several hold it anyway (records written outside
+the core), a store may return any one of them.
 
 #### Parameters
 
@@ -215,7 +198,9 @@ index).
 
 > **get**(`namespace`, `id`): `Promise`\<[`OperationRecord`](../interfaces/OperationRecord.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:221](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L221)
+Defined in: [src/core/store/memory.ts:228](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L228)
+
+The Operation with this id in the namespace, or `null`.
 
 #### Parameters
 
@@ -243,7 +228,9 @@ Defined in: [src/core/store/memory.ts:221](https://github.com/vhidvz/crypto-aio/
 
 > **getByKey**(`namespace`, `idempotencyKey`): `Promise`\<[`OperationRecord`](../interfaces/OperationRecord.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:226](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L226)
+Defined in: [src/core/store/memory.ts:233](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L233)
+
+The Operation holding this idempotency key in the namespace, or `null`.
 
 #### Parameters
 
@@ -271,7 +258,9 @@ Defined in: [src/core/store/memory.ts:226](https://github.com/vhidvz/crypto-aio/
 
 > **getObservation**(`attemptId`): `Promise`\<[`AttemptObservation`](../interfaces/AttemptObservation.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:296](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L296)
+Defined in: [src/core/store/memory.ts:303](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L303)
+
+The latest observation of the Attempt, or `null`.
 
 #### Parameters
 
@@ -295,7 +284,9 @@ Defined in: [src/core/store/memory.ts:296](https://github.com/vhidvz/crypto-aio/
 
 > **list**(`filter`): `Promise`\<[`OperationRecord`](../interfaces/OperationRecord.md)[]\>
 
-Defined in: [src/core/store/memory.ts:369](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L369)
+Defined in: [src/core/store/memory.ts:376](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L376)
+
+The Operations `filter` matches, in creation order, at most `filter.limit` of them.
 
 #### Parameters
 
@@ -319,7 +310,13 @@ Defined in: [src/core/store/memory.ts:369](https://github.com/vhidvz/crypto-aio/
 
 > **purge**(`filter`): `Promise`\<`number`\>
 
-Defined in: [src/core/store/memory.ts:376](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L376)
+Defined in: [src/core/store/memory.ts:385](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L385)
+
+Optional: deletes what `filter` matches, as `list` reads it (the oldest first, at most
+`limit`), with their Attempts' observations and their idempotency keys, and returns
+how many it deleted. The core never calls it. It deletes live Operations too, and a
+purged key creates a new Operation that pays again: purge only terminal Operations
+older than any time a caller could still repeat their key.
 
 #### Parameters
 
@@ -343,12 +340,15 @@ Defined in: [src/core/store/memory.ts:376](https://github.com/vhidvz/crypto-aio/
 
 > **putObservation**(`observation`, `expectedVersion`): `Promise`\<[`AttemptObservation`](../interfaces/AttemptObservation.md)\>
 
-Defined in: [src/core/store/memory.ts:301](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L301)
+Defined in: [src/core/store/memory.ts:308](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L308)
 
 Stores `observation` as the whole new record, version-checked. An optional field left
 out of it or set to `undefined` (a cleared `reason`, `blockHash` or `blockHeight`)
 reads back `undefined` (never `null`) afterwards. A store must replace the record, never
 merge fields into the old one. The monitor relies on this to clear stale values.
+`expectedVersion` `null` creates the first observation (version 1) and fails with
+`VERSION_CONFLICT` if one exists; otherwise it must be the stored version. It never
+changes the Operation's version.
 
 #### Parameters
 
@@ -376,7 +376,9 @@ merge fields into the old one. The monitor relies on this to clear stale values.
 
 > **releaseClaim**(`namespace`, `id`, `fence`): `Promise`\<`void`\>
 
-Defined in: [src/core/store/memory.ts:356](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L356)
+Defined in: [src/core/store/memory.ts:363](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L363)
+
+Removes the claim `fence` holds; a claim taken over since fails with `FENCING`.
 
 #### Parameters
 
@@ -408,11 +410,13 @@ Defined in: [src/core/store/memory.ts:356](https://github.com/vhidvz/crypto-aio/
 
 > **update**(`namespace`, `id`, `patch`, `expectedVersion`, `fence?`): `Promise`\<[`OperationRecord`](../interfaces/OperationRecord.md)\>
 
-Defined in: [src/core/store/memory.ts:258](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L258)
+Defined in: [src/core/store/memory.ts:265](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L265)
 
 Compare-and-set on `expectedVersion`, optionally fenced. Every successful update bumps
 version, even when the patch changes no field (the engine fences stale writers
-with such a no-effect update).
+with such a no-effect update). Fails with `NOT_FOUND`, `VERSION_CONFLICT`, `FENCING`, or
+`INVALID_TRANSITION` for a patch key outside the whitelist or a `clear` that is not
+an array of `CLEARABLE_FIELDS`.
 
 #### Parameters
 

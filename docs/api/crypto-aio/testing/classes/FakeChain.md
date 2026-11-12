@@ -2,7 +2,10 @@
 
 # Class: FakeChain
 
-Defined in: [src/testing/fake-chain.ts:169](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L169)
+Defined in: [src/testing/fake-chain.ts:201](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L201)
+
+An in-memory chain with nonce, seqno or expiry ordering, served over JSON-RPC through
+`fetch` to the fake driver: tests mine, reorg and make endpoints misbehave.
 
 ## Constructors
 
@@ -12,7 +15,7 @@ Defined in: [src/testing/fake-chain.ts:169](https://github.com/vhidvz/crypto-aio
 
 > **new FakeChain**(`options?`): `FakeChain`
 
-Defined in: [src/testing/fake-chain.ts:183](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L183)
+Defined in: [src/testing/fake-chain.ts:215](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L215)
 
 #### Parameters
 
@@ -32,7 +35,7 @@ Defined in: [src/testing/fake-chain.ts:183](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **bumpPercent**: `bigint`
 
-Defined in: [src/testing/fake-chain.ts:174](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L174)
+Defined in: [src/testing/fake-chain.ts:206](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L206)
 
 ***
 
@@ -42,7 +45,7 @@ Defined in: [src/testing/fake-chain.ts:174](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **chainId**: `string`
 
-Defined in: [src/testing/fake-chain.ts:171](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L171)
+Defined in: [src/testing/fake-chain.ts:203](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L203)
 
 ***
 
@@ -52,7 +55,7 @@ Defined in: [src/testing/fake-chain.ts:171](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **fetch**: (`input`, `init?`) => `Promise`\<`Response`\>
 
-Defined in: [src/testing/fake-chain.ts:335](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L335)
+Defined in: [src/testing/fake-chain.ts:367](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L367)
 
 #### Parameters
 
@@ -76,7 +79,7 @@ Defined in: [src/testing/fake-chain.ts:335](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **finalityDepth**: `number`
 
-Defined in: [src/testing/fake-chain.ts:172](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L172)
+Defined in: [src/testing/fake-chain.ts:204](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L204)
 
 ***
 
@@ -86,7 +89,7 @@ Defined in: [src/testing/fake-chain.ts:172](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **minFee**: `bigint`
 
-Defined in: [src/testing/fake-chain.ts:173](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L173)
+Defined in: [src/testing/fake-chain.ts:205](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L205)
 
 ***
 
@@ -96,7 +99,7 @@ Defined in: [src/testing/fake-chain.ts:173](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **ordering**: [`FakeOrdering`](../type-aliases/FakeOrdering.md)
 
-Defined in: [src/testing/fake-chain.ts:170](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L170)
+Defined in: [src/testing/fake-chain.ts:202](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L202)
 
 ## Accessors
 
@@ -108,7 +111,7 @@ Defined in: [src/testing/fake-chain.ts:170](https://github.com/vhidvz/crypto-aio
 
 > **get** **head**(): `bigint`
 
-Defined in: [src/testing/fake-chain.ts:199](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L199)
+Defined in: [src/testing/fake-chain.ts:231](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L231)
 
 ##### Returns
 
@@ -122,7 +125,7 @@ Defined in: [src/testing/fake-chain.ts:199](https://github.com/vhidvz/crypto-aio
 
 > **balance**(`address`, `height?`): `bigint`
 
-Defined in: [src/testing/fake-chain.ts:227](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L227)
+Defined in: [src/testing/fake-chain.ts:259](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L259)
 
 #### Parameters
 
@@ -146,7 +149,7 @@ Defined in: [src/testing/fake-chain.ts:227](https://github.com/vhidvz/crypto-aio
 
 > **block**(`height`): \{ `hash`: `string`; `height`: `bigint`; `parentHash`: `string`; `txIds`: `string`[]; \} \| `undefined`
 
-Defined in: [src/testing/fake-chain.ts:208](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L208)
+Defined in: [src/testing/fake-chain.ts:240](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L240)
 
 #### Parameters
 
@@ -166,7 +169,7 @@ Defined in: [src/testing/fake-chain.ts:208](https://github.com/vhidvz/crypto-aio
 
 > **configureEndpoint**(`name`, `patch`): `void`
 
-Defined in: [src/testing/fake-chain.ts:329](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L329)
+Defined in: [src/testing/fake-chain.ts:361](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L361)
 
 #### Parameters
 
@@ -190,7 +193,7 @@ Defined in: [src/testing/fake-chain.ts:329](https://github.com/vhidvz/crypto-aio
 
 > **dropFromMempool**(`id`): `void`
 
-Defined in: [src/testing/fake-chain.ts:247](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L247)
+Defined in: [src/testing/fake-chain.ts:279](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L279)
 
 #### Parameters
 
@@ -210,7 +213,7 @@ Defined in: [src/testing/fake-chain.ts:247](https://github.com/vhidvz/crypto-aio
 
 > **endpoint**(`name`, `options?`): `string`
 
-Defined in: [src/testing/fake-chain.ts:324](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L324)
+Defined in: [src/testing/fake-chain.ts:356](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L356)
 
 #### Parameters
 
@@ -234,7 +237,7 @@ Defined in: [src/testing/fake-chain.ts:324](https://github.com/vhidvz/crypto-aio
 
 > **finalizedHeight**(): `bigint`
 
-Defined in: [src/testing/fake-chain.ts:203](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L203)
+Defined in: [src/testing/fake-chain.ts:235](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L235)
 
 #### Returns
 
@@ -248,7 +251,7 @@ Defined in: [src/testing/fake-chain.ts:203](https://github.com/vhidvz/crypto-aio
 
 > **fund**(`address`, `amount`): `void`
 
-Defined in: [src/testing/fake-chain.ts:222](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L222)
+Defined in: [src/testing/fake-chain.ts:254](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L254)
 
 #### Parameters
 
@@ -272,7 +275,7 @@ Defined in: [src/testing/fake-chain.ts:222](https://github.com/vhidvz/crypto-aio
 
 > **inMempool**(`id`): `boolean`
 
-Defined in: [src/testing/fake-chain.ts:239](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L239)
+Defined in: [src/testing/fake-chain.ts:271](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L271)
 
 #### Parameters
 
@@ -292,7 +295,7 @@ Defined in: [src/testing/fake-chain.ts:239](https://github.com/vhidvz/crypto-aio
 
 > **mine**(`count?`): `void`
 
-Defined in: [src/testing/fake-chain.ts:256](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L256)
+Defined in: [src/testing/fake-chain.ts:288](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L288)
 
 #### Parameters
 
@@ -312,7 +315,7 @@ Defined in: [src/testing/fake-chain.ts:256](https://github.com/vhidvz/crypto-aio
 
 > **nonce**(`address`, `height?`): `bigint`
 
-Defined in: [src/testing/fake-chain.ts:231](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L231)
+Defined in: [src/testing/fake-chain.ts:263](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L263)
 
 #### Parameters
 
@@ -336,7 +339,7 @@ Defined in: [src/testing/fake-chain.ts:231](https://github.com/vhidvz/crypto-aio
 
 > **receipt**(`id`, `height?`): [`FakeReceipt`](../interfaces/FakeReceipt.md) \| `undefined`
 
-Defined in: [src/testing/fake-chain.ts:235](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L235)
+Defined in: [src/testing/fake-chain.ts:267](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L267)
 
 #### Parameters
 
@@ -360,7 +363,7 @@ Defined in: [src/testing/fake-chain.ts:235](https://github.com/vhidvz/crypto-aio
 
 > **reorg**(`depth`, `options?`): `void`
 
-Defined in: [src/testing/fake-chain.ts:305](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L305)
+Defined in: [src/testing/fake-chain.ts:337](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L337)
 
 Replaces the last `depth` blocks with `depth + 1` new ones; dropped txs do not return.
 `options.force` bypasses the finalized-height guard; it exists only to simulate an
@@ -394,7 +397,7 @@ readonly `string`[]
 
 > **sendCount**(`id`): `number`
 
-Defined in: [src/testing/fake-chain.ts:243](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L243)
+Defined in: [src/testing/fake-chain.ts:275](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L275)
 
 #### Parameters
 
@@ -414,7 +417,7 @@ Defined in: [src/testing/fake-chain.ts:243](https://github.com/vhidvz/crypto-aio
 
 > **submit**(`raw`): `string`
 
-Defined in: [src/testing/fake-chain.ts:252](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L252)
+Defined in: [src/testing/fake-chain.ts:284](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L284)
 
 Admits a raw transaction directly (bypassing endpoints). Throws the node's error message.
 

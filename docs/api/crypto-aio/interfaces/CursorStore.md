@@ -2,7 +2,10 @@
 
 # Interface: CursorStore
 
-Defined in: [src/core/store/types.ts:358](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L358)
+Defined in: [src/core/store/types.ts:513](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L513)
+
+Scanner cursors. A refusal leaves the stored cursor unchanged and never names the key,
+which can name a watched wallet.
 
 ## Methods
 
@@ -12,7 +15,9 @@ Defined in: [src/core/store/types.ts:358](https://github.com/vhidvz/crypto-aio/b
 
 > **get**(`key`): `Promise`\<[`StoredCursor`](StoredCursor.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:359](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L359)
+Defined in: [src/core/store/types.ts:515](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L515)
+
+The stored cursor with its version, or `null` for an unknown key.
 
 #### Parameters
 
@@ -32,9 +37,10 @@ Defined in: [src/core/store/types.ts:359](https://github.com/vhidvz/crypto-aio/b
 
 > **put**(`key`, `cursor`, `expectedVersion`): `Promise`\<`number`\>
 
-Defined in: [src/core/store/types.ts:361](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L361)
+Defined in: [src/core/store/types.ts:520](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L520)
 
-Returns the new version.
+Compare-and-set, as `SequenceStore.put`: `expectedVersion` `null` creates the key
+(version 1) and fails with `VERSION_CONFLICT` if it exists. Returns the new version.
 
 #### Parameters
 

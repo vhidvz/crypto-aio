@@ -2,7 +2,9 @@
 
 # Interface: OperationClaim
 
-Defined in: [src/core/store/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L102)
+Defined in: [src/core/store/types.ts:142](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L142)
+
+A worker's claim on an Operation, held until `until` (the store's clock).
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/store/types.ts:102](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **token**: `string`
 
-Defined in: [src/core/store/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L105)
+Defined in: [src/core/store/types.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L145)
 
 Strictly increasing per store (decimal string of a bigint).
 
@@ -24,7 +26,7 @@ Strictly increasing per store (decimal string of a bigint).
 
 > `readonly` **until**: `number`
 
-Defined in: [src/core/store/types.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L106)
+Defined in: [src/core/store/types.ts:146](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L146)
 
 ***
 
@@ -34,4 +36,4 @@ Defined in: [src/core/store/types.ts:106](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **workerId**: `string`
 
-Defined in: [src/core/store/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L103)
+Defined in: [src/core/store/types.ts:143](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L143)

@@ -4,7 +4,10 @@
 
 > **createMemoryStores**(`clock?`): [`Stores`](../interfaces/Stores.md)
 
-Defined in: [src/core/store/memory.ts:419](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L419)
+Defined in: [src/core/store/memory.ts:432](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L432)
+
+The four stores in memory, the default when `AioOptions.stores` leaves one out. Production
+needs durable stores shared by every process (see the docs' "Write a durable store").
 
 ## Parameters
 

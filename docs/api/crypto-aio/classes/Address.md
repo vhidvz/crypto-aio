@@ -2,7 +2,7 @@
 
 # Class: Address
 
-Defined in: [src/core/model/address.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L21)
+Defined in: [src/core/model/address.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L25)
 
 A chain-bound address. Equality uses `canonical`; `variant` keeps chain-specific meaning.
 
@@ -18,7 +18,7 @@ A chain-bound address. Equality uses `canonical`; `variant` keeps chain-specific
 
 > **new Address**(`chain`, `normalized`, `format?`): `Address`
 
-Defined in: [src/core/model/address.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L28)
+Defined in: [src/core/model/address.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L32)
 
 #### Parameters
 
@@ -46,7 +46,9 @@ Defined in: [src/core/model/address.ts:28](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **canonical**: `string`
 
-Defined in: [src/core/model/address.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L23)
+Defined in: [src/core/model/address.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L27)
+
+The one form that identifies the address: equality and stored records use it.
 
 #### Implementation of
 
@@ -60,7 +62,7 @@ Defined in: [src/core/model/address.ts:23](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/model/address.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L22)
+Defined in: [src/core/model/address.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L26)
 
 ***
 
@@ -70,7 +72,9 @@ Defined in: [src/core/model/address.ts:22](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **display**: `string`
 
-Defined in: [src/core/model/address.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L24)
+Defined in: [src/core/model/address.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L28)
+
+The form to show, such as a checksummed or user-friendly spelling.
 
 #### Implementation of
 
@@ -84,7 +88,7 @@ Defined in: [src/core/model/address.ts:24](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **variant?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/model/address.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L25)
+Defined in: [src/core/model/address.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L29)
 
 Chain-specific meaning of a recipient address. It reaches drivers in
 `DriverOutput.variant` and is part of the intent hash, so it must hold only JSON scalars
@@ -105,7 +109,7 @@ when the address has no such meaning: an empty variant is no variant.
 
 > **equals**(`other`): `boolean`
 
-Defined in: [src/core/model/address.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L41)
+Defined in: [src/core/model/address.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L45)
 
 #### Parameters
 
@@ -125,7 +129,7 @@ Defined in: [src/core/model/address.ts:41](https://github.com/vhidvz/crypto-aio/
 
 > **format**(`options?`): `string`
 
-Defined in: [src/core/model/address.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L37)
+Defined in: [src/core/model/address.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L41)
 
 #### Parameters
 
@@ -145,7 +149,7 @@ Defined in: [src/core/model/address.ts:37](https://github.com/vhidvz/crypto-aio/
 
 > **toJSON**(): `object`
 
-Defined in: [src/core/model/address.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L51)
+Defined in: [src/core/model/address.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L55)
 
 #### Returns
 
@@ -175,7 +179,7 @@ Defined in: [src/core/model/address.ts:51](https://github.com/vhidvz/crypto-aio/
 
 > **toString**(): `string`
 
-Defined in: [src/core/model/address.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L47)
+Defined in: [src/core/model/address.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/address.ts#L51)
 
 Returns a string representation of an object.
 

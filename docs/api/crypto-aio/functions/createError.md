@@ -4,7 +4,9 @@
 
 > **createError**(`code`, `message`, `options?`): [`CryptoAioError`](../classes/CryptoAioError.md)
 
-Defined in: [src/core/errors/error.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L139)
+Defined in: [src/core/errors/error.ts:164](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L164)
+
+An error of `code`'s class.
 
 ## Parameters
 

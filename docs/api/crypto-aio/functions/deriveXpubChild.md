@@ -4,7 +4,7 @@
 
 > **deriveXpubChild**(`xpub`, `relativePath`, `versions?`, `network?`): `Uint8Array`
 
-Defined in: [src/core/signing/hd.ts:179](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/hd.ts#L179)
+Defined in: [src/core/signing/hd.ts:183](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/hd.ts#L183)
 
 Non-hardened child public key (33-byte compressed) from an extended PUBLIC key. With
 `network`, a key whose SLIP-0132 version belongs to the other network class (a mainnet

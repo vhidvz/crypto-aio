@@ -2,7 +2,7 @@
 
 # Interface: SdkTransferOutput
 
-Defined in: [src/adapters/avalanche/sdk.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L40)
+Defined in: [src/adapters/avalanche/sdk.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L45)
 
 A `secp256k1fx.TransferOutput`.
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:13](https://github.com/vhidvz/crypto-
 
 > `readonly` **outputOwners**: [`SdkOutputOwners`](SdkOutputOwners.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L41)
+Defined in: [src/adapters/avalanche/sdk.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L46)
 
 ## Methods
 
@@ -42,7 +42,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:41](https://github.com/vhidvz/crypto-
 
 > **amount**(): `bigint`
 
-Defined in: [src/adapters/avalanche/sdk.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L42)
+Defined in: [src/adapters/avalanche/sdk.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L47)
 
 #### Returns
 

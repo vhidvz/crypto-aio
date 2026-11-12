@@ -2,7 +2,9 @@
 
 # Interface: SequenceHarness
 
-Defined in: [src/testing/contracts/sequences.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/sequences.ts#L5)
+Defined in: [src/testing/contracts/sequences.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/sequences.ts#L6)
+
+What `describeSequenceStoreContract` tests: a fresh sequence store.
 
 ## Properties
 
@@ -12,4 +14,4 @@ Defined in: [src/testing/contracts/sequences.ts:5](https://github.com/vhidvz/cry
 
 > `readonly` **sequences**: [`SequenceStore`](../../interfaces/SequenceStore.md)
 
-Defined in: [src/testing/contracts/sequences.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/sequences.ts#L6)
+Defined in: [src/testing/contracts/sequences.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/sequences.ts#L7)

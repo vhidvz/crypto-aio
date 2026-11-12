@@ -2,7 +2,9 @@
 
 # Interface: AssetInfo
 
-Defined in: [src/core/model/asset.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L14)
+Defined in: [src/core/model/asset.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L23)
+
+A resolved asset: its id, where it lives, and its metadata.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/model/asset.ts:14](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/model/asset.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L16)
+Defined in: [src/core/model/asset.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L25)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/model/asset.ts:16](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/model/asset.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L15)
+Defined in: [src/core/model/asset.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L24)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/core/model/asset.ts:15](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **metadata**: [`AssetMetadata`](AssetMetadata.md)
 
-Defined in: [src/core/model/asset.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L19)
+Defined in: [src/core/model/asset.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L28)
 
 ***
 
@@ -42,7 +44,7 @@ Defined in: [src/core/model/asset.ts:19](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/model/asset.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L17)
+Defined in: [src/core/model/asset.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L26)
 
 ***
 
@@ -52,4 +54,4 @@ Defined in: [src/core/model/asset.ts:17](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **ref**: [`AssetRef`](../type-aliases/AssetRef.md)
 
-Defined in: [src/core/model/asset.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L18)
+Defined in: [src/core/model/asset.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L27)

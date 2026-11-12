@@ -4,7 +4,7 @@
 
 > **callbackSigner**(`options`): [`Signer`](../interfaces/Signer.md)
 
-Defined in: [src/core/signing/callback.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L13)
+Defined in: [src/core/signing/callback.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L18)
 
 Base for remote, KMS, HSM and MPC signers: supply the three callbacks.
 

@@ -2,7 +2,7 @@
 
 # Interface: AvalancheSdk
 
-Defined in: [src/adapters/avalanche/sdk.ts:155](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L155)
+Defined in: [src/adapters/avalanche/sdk.ts:170](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L170)
 
 The members of `@avalabs/avalanchejs` this library calls.
 
@@ -14,11 +14,11 @@ The members of `@avalabs/avalanchejs` this library calls.
 
 > `readonly` **avaxSerial**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:157](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L157)
+Defined in: [src/adapters/avalanche/sdk.ts:172](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L172)
 
 #### SignedTx
 
-> `readonly` **SignedTx**: [`SdkUnpacker`](SdkUnpacker.md)\<[`SdkSignedTx`](SdkSignedTx.md)\> & (`tx`, `credentials`) => [`SdkSignedTx`](SdkSignedTx.md)
+> `readonly` **SignedTx**: [`SdkUnpacker`](SdkUnpacker.md)\<[`SdkSignedTx`](SdkSignedTx.md)\> & (new (`tx`, `credentials`) => [`SdkSignedTx`](SdkSignedTx.md))
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:157](https://github.com/vhidvz/crypto
 
 > `readonly` **avm**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:184](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L184)
+Defined in: [src/adapters/avalanche/sdk.ts:199](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L199)
 
 #### newBaseTx()
 
@@ -78,7 +78,7 @@ readonly `Uint8Array`\<`ArrayBufferLike`\>[]
 
 > `readonly` **Common**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:172](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L172)
+Defined in: [src/adapters/avalanche/sdk.ts:187](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L187)
 
 #### createDimensions()
 
@@ -114,9 +114,9 @@ Defined in: [src/adapters/avalanche/sdk.ts:172](https://github.com/vhidvz/crypto
 
 ### Credential
 
-> `readonly` **Credential**: (`signatures`) => [`SdkCredential`](SdkCredential.md)
+> `readonly` **Credential**: new (`signatures`) => [`SdkCredential`](SdkCredential.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:161](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L161)
+Defined in: [src/adapters/avalanche/sdk.ts:176](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L176)
 
 #### Parameters
 
@@ -136,7 +136,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:161](https://github.com/vhidvz/crypto
 
 > `readonly` **pvm**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:197](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L197)
+Defined in: [src/adapters/avalanche/sdk.ts:212](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L212)
 
 #### calculateFee()
 
@@ -210,9 +210,9 @@ readonly [`SdkUtxo`](SdkUtxo.md)[]
 
 ### Signature
 
-> `readonly` **Signature**: (`bytes`) => [`SdkSignature`](SdkSignature.md)
+> `readonly` **Signature**: new (`bytes`) => [`SdkSignature`](SdkSignature.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:162](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L162)
+Defined in: [src/adapters/avalanche/sdk.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L177)
 
 #### Parameters
 
@@ -232,7 +232,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:162](https://github.com/vhidvz/crypto
 
 > `readonly` **TransferableOutput**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:163](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L163)
+Defined in: [src/adapters/avalanche/sdk.ts:178](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L178)
 
 #### fromNative()
 
@@ -272,7 +272,7 @@ readonly `Uint8Array`\<`ArrayBufferLike`\>[]
 
 > `readonly` **utils**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:180](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L180)
+Defined in: [src/adapters/avalanche/sdk.ts:195](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L195)
 
 #### getBurnedAmountByTx()
 
@@ -314,4 +314,4 @@ Defined in: [src/adapters/avalanche/sdk.ts:180](https://github.com/vhidvz/crypto
 
 > `readonly` **Utxo**: [`SdkUnpacker`](SdkUnpacker.md)\<[`SdkUtxo`](SdkUtxo.md)\>
 
-Defined in: [src/adapters/avalanche/sdk.ts:156](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L156)
+Defined in: [src/adapters/avalanche/sdk.ts:171](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L171)

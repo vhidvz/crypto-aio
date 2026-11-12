@@ -2,7 +2,11 @@
 
 # Interface: Transport
 
-Defined in: [src/core/transport/types.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L131)
+Defined in: [src/core/transport/types.ts:194](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L194)
+
+The endpoints of one provider set, with failover, retries, rate limits, circuit
+breakers, health probes and quorum reads. A driver gets one per provider set
+(`DriverContext.transport` and `indexer`) and makes every network call through it.
 
 ## Properties
 
@@ -12,7 +16,9 @@ Defined in: [src/core/transport/types.ts:131](https://github.com/vhidvz/crypto-a
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/transport/types.ts:132](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L132)
+Defined in: [src/core/transport/types.ts:196](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L196)
+
+An id for events and logs, independent of the endpoints' URLs.
 
 ***
 
@@ -22,7 +28,7 @@ Defined in: [src/core/transport/types.ts:132](https://github.com/vhidvz/crypto-a
 
 > `readonly` **maxLagBlocks**: `number`
 
-Defined in: [src/core/transport/types.ts:166](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L166)
+Defined in: [src/core/transport/types.ts:236](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L236)
 
 The lag tolerance in effect (`TransportOptions.maxLagBlocks`). The driver pool
 resolves it in this order: the chain's `maxLagBlocks` config, else the root
@@ -38,7 +44,7 @@ stale.
 
 > **createFetch**(`classify?`): (`input`, `init?`) => `Promise`\<`Response`\>
 
-Defined in: [src/core/transport/types.ts:138](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L138)
+Defined in: [src/core/transport/types.ts:204](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L204)
 
 fetch-compatible function for SDKs; only `PLACEHOLDER_ORIGIN` URLs are accepted.
 
@@ -60,7 +66,9 @@ fetch-compatible function for SDKs; only `PLACEHOLDER_ORIGIN` URLs are accepted.
 
 > **ensureFreshHealth**(`signal?`): `Promise`\<`void`\>
 
-Defined in: [src/core/transport/types.ts:148](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L148)
+Defined in: [src/core/transport/types.ts:217](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L217)
+
+Probes the endpoints unless a refresh ran within `healthIntervalMs`.
 
 #### Parameters
 
@@ -80,7 +88,7 @@ Defined in: [src/core/transport/types.ts:148](https://github.com/vhidvz/crypto-a
 
 > **hasProbes**(): `boolean`
 
-Defined in: [src/core/transport/types.ts:146](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L146)
+Defined in: [src/core/transport/types.ts:213](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L213)
 
 Whether any health probe (`identity` and/or `height`) has ever been configured via
 `setProbes`. A transport with none configured can never mark an endpoint 'healthy' or
@@ -99,7 +107,7 @@ treat as acceptable only in that case.
 
 > **highestHeight**(): `bigint` \| `undefined`
 
-Defined in: [src/core/transport/types.ts:158](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L158)
+Defined in: [src/core/transport/types.ts:228](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L228)
 
 Highest verified block height: a high-water mark (the stale-view guard of monitors
 and scanners). It drops in two cases only: a height taken before an identity probe
@@ -120,9 +128,13 @@ cannot keep every view stale until restart.
 
 > **http**\<`T`\>(`request`, `options?`): `Promise`\<`T`\>
 
-Defined in: [src/core/transport/types.ts:136](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L136)
+Defined in: [src/core/transport/types.ts:202](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L202)
+
+One REST request.
 
 #### Type Parameters
+
+<a id="t"></a>
 
 ##### T
 
@@ -150,7 +162,9 @@ Defined in: [src/core/transport/types.ts:136](https://github.com/vhidvz/crypto-a
 
 > **refreshHealth**(`signal?`): `Promise`\<`void`\>
 
-Defined in: [src/core/transport/types.ts:147](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L147)
+Defined in: [src/core/transport/types.ts:215](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L215)
+
+Probes every endpoint now.
 
 #### Parameters
 
@@ -170,9 +184,13 @@ Defined in: [src/core/transport/types.ts:147](https://github.com/vhidvz/crypto-a
 
 > **rpc**\<`T`\>(`method`, `params?`, `options?`): `Promise`\<`T`\>
 
-Defined in: [src/core/transport/types.ts:133](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L133)
+Defined in: [src/core/transport/types.ts:198](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L198)
+
+One JSON-RPC call.
 
 #### Type Parameters
+
+<a id="t-1"></a>
 
 ##### T
 
@@ -204,7 +222,7 @@ Defined in: [src/core/transport/types.ts:133](https://github.com/vhidvz/crypto-a
 
 > **rpcRaw**(`payload`, `options?`): `Promise`\<`unknown`\>
 
-Defined in: [src/core/transport/types.ts:135](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L135)
+Defined in: [src/core/transport/types.ts:200](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L200)
 
 Posts an arbitrary JSON-RPC payload (single or batch) and returns the parsed body.
 
@@ -230,7 +248,9 @@ Posts an arbitrary JSON-RPC payload (single or batch) and returns the parsed bod
 
 > **setProbes**(`probes`): `void`
 
-Defined in: [src/core/transport/types.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L141)
+Defined in: [src/core/transport/types.ts:208](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L208)
+
+Sets the health probes; a driver factory calls it once, before any other traffic.
 
 #### Parameters
 
@@ -250,7 +270,9 @@ Defined in: [src/core/transport/types.ts:141](https://github.com/vhidvz/crypto-a
 
 > **status**(): [`EndpointStatus`](EndpointStatus.md)[]
 
-Defined in: [src/core/transport/types.ts:149](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L149)
+Defined in: [src/core/transport/types.ts:219](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L219)
+
+Every endpoint's current state.
 
 #### Returns
 

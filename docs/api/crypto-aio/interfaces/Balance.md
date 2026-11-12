@@ -2,7 +2,9 @@
 
 # Interface: Balance
 
-Defined in: [src/core/blockchain/handle.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L62)
+Defined in: [src/core/blockchain/handle.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L63)
+
+`bc.getBalance()`'s answer: what `address` holds of `asset`, as one endpoint reads it.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/blockchain/handle.ts:62](https://github.com/vhidvz/crypto-
 
 > `readonly` **address**: [`Address`](../classes/Address.md)
 
-Defined in: [src/core/blockchain/handle.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L63)
+Defined in: [src/core/blockchain/handle.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L64)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/blockchain/handle.ts:63](https://github.com/vhidvz/crypto-
 
 > `readonly` **amount**: [`Amount`](../classes/Amount.md)
 
-Defined in: [src/core/blockchain/handle.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L65)
+Defined in: [src/core/blockchain/handle.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L66)
 
 ***
 
@@ -32,4 +34,4 @@ Defined in: [src/core/blockchain/handle.ts:65](https://github.com/vhidvz/crypto-
 
 > `readonly` **asset**: [`AssetInfo`](AssetInfo.md)
 
-Defined in: [src/core/blockchain/handle.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L64)
+Defined in: [src/core/blockchain/handle.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L65)

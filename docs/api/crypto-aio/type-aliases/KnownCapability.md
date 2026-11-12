@@ -4,4 +4,6 @@
 
 > **KnownCapability** = *typeof* [`KNOWN_CAPABILITIES`](../variables/KNOWN_CAPABILITIES.md)\[`number`\]
 
-Defined in: [src/core/model/capability.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/capability.ts#L16)
+Defined in: [src/core/model/capability.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/capability.ts#L21)
+
+One of `KNOWN_CAPABILITIES`.

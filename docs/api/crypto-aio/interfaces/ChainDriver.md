@@ -2,7 +2,7 @@
 
 # Interface: ChainDriver
 
-Defined in: [src/core/driver/types.ts:364](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L364)
+Defined in: [src/core/driver/types.ts:446](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L446)
 
 The driver port: every method's contract, as the core relies on it. Purpose, retry
 class and quorum are the `CallOptions` a driver passes to its `Transport` (defaults:
@@ -46,8 +46,12 @@ Further rules:
 - `fee.details.requestedFee` is reserved. On replacements the core records the requested
   fee spec there, so a driver never sets or reads it.
 - `DriverContext` has no asset resolver and `DriverIntent` carries no decimals. Amounts
-  reach drivers in base units only; a driver that needs a token's decimals (Solana's
-  `transferChecked`) reads them from the chain itself.
+  reach drivers in base units only; `BuildContext.decimals` says which decimals the core
+  scaled them with, and a driver whose transaction signs decimals (Solana's
+  `transferChecked`) refuses a mismatch with the chain's.
+- What a driver gave the core stays readable: deposit locators, `normalize` output and
+  canonical token refs stay the same, and every `UnsignedTx` and `OrderingData` an earlier
+  version stored can still be assembled, replaced, cancelled and proven.
 
 ## Properties
 
@@ -57,7 +61,7 @@ Further rules:
 
 > `readonly` **address**: [`AddressCodec`](AddressCodec.md)
 
-Defined in: [src/core/driver/types.ts:367](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L367)
+Defined in: [src/core/driver/types.ts:458](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L458)
 
 ***
 
@@ -67,7 +71,7 @@ Defined in: [src/core/driver/types.ts:367](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **blocks?**: [`BlockSource`](BlockSource.md)
 
-Defined in: [src/core/driver/types.ts:374](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L374)
+Defined in: [src/core/driver/types.ts:466](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L466)
 
 ***
 
@@ -77,7 +81,7 @@ Defined in: [src/core/driver/types.ts:374](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **broadcaster**: [`Broadcaster`](Broadcaster.md)
 
-Defined in: [src/core/driver/types.ts:370](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L370)
+Defined in: [src/core/driver/types.ts:461](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L461)
 
 ***
 
@@ -87,7 +91,7 @@ Defined in: [src/core/driver/types.ts:370](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **builder**: [`TxBuilder`](TxBuilder.md)
 
-Defined in: [src/core/driver/types.ts:369](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L369)
+Defined in: [src/core/driver/types.ts:460](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L460)
 
 ***
 
@@ -97,7 +101,14 @@ Defined in: [src/core/driver/types.ts:369](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **capabilities**: `ReadonlySet`\<[`Capability`](../type-aliases/Capability.md)\>
 
-Defined in: [src/core/driver/types.ts:366](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L366)
+Defined in: [src/core/driver/types.ts:457](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L457)
+
+The capabilities the driver implements. When the pool creates a driver it refuses
+(`CONFIG_INVALID`) one that lacks a capability its handle grants (the manifest's, the
+indexer's when one is configured, and the network's additions) or whose `ordering` is
+not the chain's. Each optional port backs one: `block-scan` needs `blocks`,
+`address-history` needs `history`, `replace-fee` and `cancel` need `replacement`,
+`expiry` needs `proofs.expired`, `tokens` needs `reader.getTokenMetadata`.
 
 ***
 
@@ -107,9 +118,10 @@ Defined in: [src/core/driver/types.ts:366](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **ext?**: `Readonly`\<`Record`\<`string`, `Readonly`\<`Record`\<`string`, (...`args`) => `Promise`\<`unknown`\>\>\>\>\>
 
-Defined in: [src/core/driver/types.ts:377](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L377)
+Defined in: [src/core/driver/types.ts:472](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L472)
 
-Two-level, capability-gated family API: `ext.<family>.<method>(...) → Promise`.
+Two-level family API: `ext.<family>.<method>(...) → Promise`. `bc.ext` calls a method the
+driver has and refuses any other with `UNSUPPORTED_CAPABILITY`; no capability gates it.
 
 ***
 
@@ -119,7 +131,7 @@ Two-level, capability-gated family API: `ext.<family>.<method>(...) → Promise`
 
 > `readonly` `optional` **history?**: [`AddressHistorySource`](AddressHistorySource.md)
 
-Defined in: [src/core/driver/types.ts:375](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L375)
+Defined in: [src/core/driver/types.ts:467](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L467)
 
 ***
 
@@ -129,7 +141,9 @@ Defined in: [src/core/driver/types.ts:375](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **ordering**: [`OrderingKind`](../type-aliases/OrderingKind.md)
 
-Defined in: [src/core/driver/types.ts:365](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L365)
+Defined in: [src/core/driver/types.ts:448](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L448)
+
+How Attempts claim a slot; it must be the chain's `ChainInfo.ordering`.
 
 ***
 
@@ -139,7 +153,7 @@ Defined in: [src/core/driver/types.ts:365](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **proofs**: [`ProofSource`](ProofSource.md)
 
-Defined in: [src/core/driver/types.ts:371](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L371)
+Defined in: [src/core/driver/types.ts:462](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L462)
 
 ***
 
@@ -149,7 +163,7 @@ Defined in: [src/core/driver/types.ts:371](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **reader**: [`ChainReader`](ChainReader.md)
 
-Defined in: [src/core/driver/types.ts:368](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L368)
+Defined in: [src/core/driver/types.ts:459](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L459)
 
 ***
 
@@ -159,7 +173,7 @@ Defined in: [src/core/driver/types.ts:368](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **replacement?**: [`ReplacementPolicy`](ReplacementPolicy.md)
 
-Defined in: [src/core/driver/types.ts:373](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L373)
+Defined in: [src/core/driver/types.ts:465](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L465)
 
 ***
 
@@ -169,7 +183,9 @@ Defined in: [src/core/driver/types.ts:373](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **sequence?**: [`SequenceSource`](SequenceSource.md)
 
-Defined in: [src/core/driver/types.ts:372](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L372)
+Defined in: [src/core/driver/types.ts:464](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L464)
+
+Required for `nonce` and `seqno` ordering.
 
 ## Methods
 
@@ -179,7 +195,9 @@ Defined in: [src/core/driver/types.ts:372](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **close**(): `Promise`\<`void`\>
 
-Defined in: [src/core/driver/types.ts:396](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L396)
+Defined in: [src/core/driver/types.ts:493](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L493)
+
+Releases what the driver holds; the root container's `close()` calls it once.
 
 #### Returns
 
@@ -193,7 +211,7 @@ Defined in: [src/core/driver/types.ts:396](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **createNativeClient**(): [`DisposableNativeClient`](DisposableNativeClient.md)
 
-Defined in: [src/core/driver/types.ts:395](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L395)
+Defined in: [src/core/driver/types.ts:491](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L491)
 
 A fresh, caller-owned SDK client for `crypto-aio/native`: a new SDK instance on every
 call, never the pooled one.
@@ -210,7 +228,9 @@ call, never the pooled one.
 
 > `optional` **limits**(`wallet`): [`DriverLimits`](DriverLimits.md)
 
-Defined in: [src/core/driver/types.ts:380](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L380)
+Defined in: [src/core/driver/types.ts:476](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L476)
+
+What one transaction of a wallet with these options can hold.
 
 #### Parameters
 
@@ -230,7 +250,7 @@ Defined in: [src/core/driver/types.ts:380](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **signingSchemes**(`wallet`): readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:390](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L390)
+Defined in: [src/core/driver/types.ts:486](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L486)
 
 The signature schemes a wallet with these options signs with, when its options narrow
 the chain's `schemes` (a Bitcoin `p2tr` wallet signs with `secp256k1-schnorr` only). No

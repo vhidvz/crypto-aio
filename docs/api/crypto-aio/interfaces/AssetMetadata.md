@@ -2,7 +2,9 @@
 
 # Interface: AssetMetadata
 
-Defined in: [src/core/model/asset.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L8)
+Defined in: [src/core/model/asset.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L15)
+
+What an amount of the asset is shown and scaled with.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/model/asset.ts:8](https://github.com/vhidvz/crypto-aio/blo
 
 > `readonly` **decimals**: `number`
 
-Defined in: [src/core/model/asset.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L10)
+Defined in: [src/core/model/asset.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L18)
+
+An integer from 0 to 255: base units per whole unit is 10^decimals.
 
 ***
 
@@ -22,7 +26,7 @@ Defined in: [src/core/model/asset.ts:10](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **name?**: `string`
 
-Defined in: [src/core/model/asset.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L11)
+Defined in: [src/core/model/asset.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L19)
 
 ***
 
@@ -32,4 +36,4 @@ Defined in: [src/core/model/asset.ts:11](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` **symbol**: `string`
 
-Defined in: [src/core/model/asset.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L9)
+Defined in: [src/core/model/asset.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L16)

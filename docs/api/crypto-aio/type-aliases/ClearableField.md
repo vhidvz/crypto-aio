@@ -4,6 +4,6 @@
 
 > **ClearableField** = *typeof* [`CLEARABLE_FIELDS`](../variables/CLEARABLE_FIELDS.md)\[`number`\]
 
-Defined in: [src/core/store/types.ts:157](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L157)
+Defined in: [src/core/store/types.ts:219](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L219)
 
 The only fields an `OperationPatch` may `clear`; never store-owned state or `state`.

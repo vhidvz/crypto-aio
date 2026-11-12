@@ -2,13 +2,9 @@
 
 # Interface: ChainRegistry
 
-Defined in: [src/core/model/ids.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L8)
+Defined in: [src/core/model/ids.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L9)
 
-Type-level registries. Users and plugins augment them through the package entry, e.g.
-`declare module 'crypto-aio' { interface ChainRegistry { ethereum: {...} } }`, and plugins
-inside this package augment the entry module (`declare module '../index'`). Never augment
-this file directly: an augmentation here and one through the entry are then merged in file
-order, and a user's chains can be lost.
+Chain ids, each with its `family` and its `network` names.
 
 ## Properties
 

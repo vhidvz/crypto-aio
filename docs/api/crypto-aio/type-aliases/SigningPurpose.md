@@ -4,4 +4,6 @@
 
 > **SigningPurpose** = `"original"` \| `"replacement"` \| `"cancel"` \| `"rebuild"`
 
-Defined in: [src/core/signing/types.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L44)
+Defined in: [src/core/signing/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L59)
+
+Which kind of Attempt a signing request is for, as `AttemptPurpose`.

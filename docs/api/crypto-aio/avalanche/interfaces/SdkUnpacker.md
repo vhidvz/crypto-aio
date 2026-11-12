@@ -2,11 +2,13 @@
 
 # Interface: SdkUnpacker\<T\>
 
-Defined in: [src/adapters/avalanche/sdk.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L112)
+Defined in: [src/adapters/avalanche/sdk.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L124)
 
 A class `Manager.unpack` reads (`Utxo`, `avaxSerial.SignedTx`).
 
 ## Type Parameters
+
+<a id="t"></a>
 
 ### T
 
@@ -20,7 +22,7 @@ A class `Manager.unpack` reads (`Utxo`, `avaxSerial.SignedTx`).
 
 > **fromBytes**(`bytes`, `codec`): \[`T`, `Uint8Array`\<`ArrayBufferLike`\>\]
 
-Defined in: [src/adapters/avalanche/sdk.ts:113](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L113)
+Defined in: [src/adapters/avalanche/sdk.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L125)
 
 #### Parameters
 

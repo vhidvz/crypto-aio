@@ -4,4 +4,6 @@
 
 > `const` **TRON\_INDEXER\_CAPABILITIES**: readonly [`Capability`](../../type-aliases/Capability.md)[]
 
-Defined in: [src/adapters/tron/network.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L19)
+Defined in: [src/adapters/tron/network.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L20)
+
+The capabilities a Tron handle gains when it has an `indexer` (TronGrid's history API).

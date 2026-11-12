@@ -4,7 +4,7 @@
 
 > **TonWalletIdentity** = \{ `subwalletId?`: `number`; `version`: `"v4r2"`; `workchain?`: `0` \| `-1`; \} \| \{ `networkGlobalId?`: `number`; `subwalletNumber?`: `number`; `version`: `"v5r1"`; `workchain?`: `0` \| `-1`; \}
 
-Defined in: [src/adapters/ton/types.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L27)
+Defined in: [src/adapters/ton/types.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L28)
 
 The wallet contract behind a TON address. Every field determines the address,
 so it is wallet config (`wallets.<name>.ton`), never a per-call option.

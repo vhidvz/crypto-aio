@@ -4,6 +4,6 @@
 
 > `const` **BUILTIN\_SCHEMES**: readonly [`SignatureScheme`](../interfaces/SignatureScheme.md)[]
 
-Defined in: [src/core/registry/schemes.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L65)
+Defined in: [src/core/registry/schemes.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L72)
 
 Frozen, like each scheme in it.

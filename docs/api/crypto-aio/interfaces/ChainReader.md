@@ -2,7 +2,9 @@
 
 # Interface: ChainReader
 
-Defined in: [src/core/driver/types.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L139)
+Defined in: [src/core/driver/types.ts:174](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L174)
+
+Reads of chain state; the contract table on `ChainDriver` gives each one's call tags.
 
 ## Methods
 
@@ -12,7 +14,9 @@ Defined in: [src/core/driver/types.ts:139](https://github.com/vhidvz/crypto-aio/
 
 > **getBalance**(`address`, `asset`): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:140](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L140)
+Defined in: [src/core/driver/types.ts:176](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L176)
+
+The balance of `asset` at `address`, in base units.
 
 #### Parameters
 
@@ -36,7 +40,9 @@ Defined in: [src/core/driver/types.ts:140](https://github.com/vhidvz/crypto-aio/
 
 > **getBlock**(`ref`): `Promise`\<[`DriverBlock`](DriverBlock.md) \| `null`\>
 
-Defined in: [src/core/driver/types.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L144)
+Defined in: [src/core/driver/types.ts:185](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L185)
+
+A block by height or hash, or `null` when there is none.
 
 #### Parameters
 
@@ -56,7 +62,9 @@ Defined in: [src/core/driver/types.ts:144](https://github.com/vhidvz/crypto-aio/
 
 > **getBlockHeight**(): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L141)
+Defined in: [src/core/driver/types.ts:178](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L178)
+
+The head's height.
 
 #### Returns
 
@@ -70,9 +78,10 @@ Defined in: [src/core/driver/types.ts:141](https://github.com/vhidvz/crypto-aio/
 
 > **getFinalizedHeight**(): `Promise`\<`bigint`\>
 
-Defined in: [src/core/driver/types.ts:143](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L143)
+Defined in: [src/core/driver/types.ts:183](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L183)
 
-Highest block satisfying the network's finality policy.
+Highest block satisfying the network's finality policy: the chain's own finality
+where it has one, else the head less the confirmations the network requires.
 
 #### Returns
 
@@ -86,7 +95,9 @@ Highest block satisfying the network's finality policy.
 
 > `optional` **getTokenMetadata**(`ref`): `Promise`\<[`AssetMetadata`](AssetMetadata.md)\>
 
-Defined in: [src/core/driver/types.ts:155](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L155)
+Defined in: [src/core/driver/types.ts:198](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L198)
+
+A token's symbol and decimals, read from the chain (the `tokens` capability).
 
 #### Parameters
 
@@ -112,7 +123,9 @@ Defined in: [src/core/driver/types.ts:155](https://github.com/vhidvz/crypto-aio/
 
 > **getTransaction**(`id`): `Promise`\<[`DriverTransaction`](DriverTransaction.md) \| `null`\>
 
-Defined in: [src/core/driver/types.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L145)
+Defined in: [src/core/driver/types.ts:187](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L187)
+
+A transaction by id, decoded, or `null` when the chain does not have it.
 
 #### Parameters
 
@@ -132,9 +145,10 @@ Defined in: [src/core/driver/types.ts:145](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **normalizeTokenRef**(`ref`): `object`
 
-Defined in: [src/core/driver/types.ts:157](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L157)
+Defined in: [src/core/driver/types.ts:203](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L203)
 
-Canonicalizes a token contract (e.g. EIP-55); identity for asset ids.
+Canonicalizes a token contract (e.g. EIP-55); identity for asset ids. Asset ids feed
+the intent hash, so a later version of the driver keeps the same canonical form.
 
 #### Parameters
 
@@ -168,7 +182,7 @@ Canonicalizes a token contract (e.g. EIP-55); identity for asset ids.
 
 > **observe**(`ref`, `ordering`, `from`): `Promise`\<[`DriverTxObservation`](DriverTxObservation.md)\>
 
-Defined in: [src/core/driver/types.ts:150](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L150)
+Defined in: [src/core/driver/types.ts:192](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L192)
 
 Current view of an Attempt (uses `purpose: 'monitor'` reads). `ordering` and `from` are
 `undefined` for a transaction the library does not manage (a status lookup by id).

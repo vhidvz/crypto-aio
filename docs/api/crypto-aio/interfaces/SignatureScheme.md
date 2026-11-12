@@ -2,7 +2,10 @@
 
 # Interface: SignatureScheme
 
-Defined in: [src/core/registry/schemes.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L16)
+Defined in: [src/core/registry/schemes.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L21)
+
+A signature scheme the core verifies signatures with (`Plugin.schemes`); the built-in
+ones are `secp256k1-ecdsa`, `secp256k1-schnorr` and `ed25519`.
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/core/registry/schemes.ts:16](https://github.com/vhidvz/crypto-a
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/registry/schemes.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L17)
+Defined in: [src/core/registry/schemes.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L22)
 
 ***
 
@@ -22,7 +25,9 @@ Defined in: [src/core/registry/schemes.ts:17](https://github.com/vhidvz/crypto-a
 
 > `readonly` **publicKeyLength**: `number`
 
-Defined in: [src/core/registry/schemes.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L18)
+Defined in: [src/core/registry/schemes.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L24)
+
+The length of a public key, in bytes.
 
 ## Methods
 
@@ -32,7 +37,9 @@ Defined in: [src/core/registry/schemes.ts:18](https://github.com/vhidvz/crypto-a
 
 > **verify**(`input`): `boolean`
 
-Defined in: [src/core/registry/schemes.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L19)
+Defined in: [src/core/registry/schemes.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L26)
+
+Whether the signature is valid; never throws.
 
 #### Parameters
 

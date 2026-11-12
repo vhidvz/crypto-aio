@@ -4,7 +4,7 @@
 
 > `const` **DEFAULT\_MAX\_FEE\_LIMIT**: `100000000n` = `100_000_000n`
 
-Defined in: [src/adapters/tron/network.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L48)
+Defined in: [src/adapters/tron/network.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L52)
 
 The largest fee limit a TRC-20 transfer carries unless the handle's `maxFeeLimit` option
 allows more: 100 TRX, in sun. The network's own maximum (`getMaxFeeLimit`, 15,000

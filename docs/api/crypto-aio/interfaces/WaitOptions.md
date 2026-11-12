@@ -2,7 +2,10 @@
 
 # Interface: WaitOptions
 
-Defined in: [src/core/lifecycle/monitor.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L46)
+Defined in: [src/core/lifecycle/monitor.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L50)
+
+How `bc.waitForConfirmation()` waits: for `confirmations` (or `finality`), at most
+`timeoutMs`, reading every `pollIntervalMs`, until `signal` aborts.
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/core/lifecycle/monitor.ts:46](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **confirmations?**: `number`
 
-Defined in: [src/core/lifecycle/monitor.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L48)
+Defined in: [src/core/lifecycle/monitor.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L52)
 
 Default: the handle's `confirmations`. Ignored when `finality: 'final'`.
 
@@ -24,7 +27,7 @@ Default: the handle's `confirmations`. Ignored when `finality: 'final'`.
 
 > `readonly` `optional` **finality?**: `"included"` \| `"final"`
 
-Defined in: [src/core/lifecycle/monitor.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L49)
+Defined in: [src/core/lifecycle/monitor.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L53)
 
 ***
 
@@ -34,7 +37,7 @@ Defined in: [src/core/lifecycle/monitor.ts:49](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **pollIntervalMs?**: `number`
 
-Defined in: [src/core/lifecycle/monitor.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L51)
+Defined in: [src/core/lifecycle/monitor.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L55)
 
 ***
 
@@ -44,7 +47,7 @@ Defined in: [src/core/lifecycle/monitor.ts:51](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **signal?**: `AbortSignal`
 
-Defined in: [src/core/lifecycle/monitor.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L52)
+Defined in: [src/core/lifecycle/monitor.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L56)
 
 ***
 
@@ -54,4 +57,4 @@ Defined in: [src/core/lifecycle/monitor.ts:52](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **timeoutMs?**: `number`
 
-Defined in: [src/core/lifecycle/monitor.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L50)
+Defined in: [src/core/lifecycle/monitor.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L54)

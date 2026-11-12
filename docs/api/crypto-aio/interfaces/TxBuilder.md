@@ -2,7 +2,9 @@
 
 # Interface: TxBuilder
 
-Defined in: [src/core/driver/types.ts:160](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L160)
+Defined in: [src/core/driver/types.ts:207](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L207)
+
+Builds transactions; the contract table on `ChainDriver` gives each one's call tags.
 
 ## Methods
 
@@ -12,7 +14,14 @@ Defined in: [src/core/driver/types.ts:160](https://github.com/vhidvz/crypto-aio/
 
 > **assemble**(`unsigned`, `signatures`): `Promise`\<[`SignedTx`](SignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:172](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L172)
+Defined in: [src/core/driver/types.ts:233](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L233)
+
+The signed transaction from `unsigned` and its signatures. Its `ref` is the id the
+chain will report for it.
+
+`unsigned` may have been stored by an earlier version of the driver: a driver keeps
+assembling, replacing and cancelling every `UnsignedTx` and `OrderingData` it ever
+stored, since recovery resumes them after an upgrade.
 
 #### Parameters
 
@@ -36,7 +45,10 @@ readonly [`SignatureBundle`](SignatureBundle.md)[]
 
 > **build**(`intent`, `fee`, `ctx`): `Promise`\<[`UnsignedTx`](UnsignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:167](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L167)
+Defined in: [src/core/driver/types.ts:220](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L220)
+
+The unsigned transaction. Its `summary` must describe exactly what its payload pays
+(asset, outputs, memo): `beforeSign` policies judge the summary, never the bytes.
 
 #### Parameters
 
@@ -64,7 +76,9 @@ Defined in: [src/core/driver/types.ts:167](https://github.com/vhidvz/crypto-aio/
 
 > **checkFunds**(`intent`, `fee`, `ctx`): `Promise`\<[`FundsCheck`](../type-aliases/FundsCheck.md)\>
 
-Defined in: [src/core/driver/types.ts:162](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L162)
+Defined in: [src/core/driver/types.ts:211](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L211)
+
+Whether the sender can pay the transfer and `fee`.
 
 #### Parameters
 
@@ -92,7 +106,9 @@ Defined in: [src/core/driver/types.ts:162](https://github.com/vhidvz/crypto-aio/
 
 > **estimateFee**(`intent`, `ctx`): `Promise`\<[`FeeEstimateDraft`](FeeEstimateDraft.md)\>
 
-Defined in: [src/core/driver/types.ts:161](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L161)
+Defined in: [src/core/driver/types.ts:209](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L209)
+
+The fee the intent's transaction would pay at the intent's speed or override.
 
 #### Parameters
 
@@ -116,7 +132,7 @@ Defined in: [src/core/driver/types.ts:161](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **signaturesFrom**(`unsigned`, `signed`): readonly [`SignatureBundle`](SignatureBundle.md)[]
 
-Defined in: [src/core/driver/types.ts:184](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L184)
+Defined in: [src/core/driver/types.ts:245](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L245)
 
 The signatures a payload signed elsewhere carries for `unsigned`'s requests,
 e.g. a PSBT a cold signer returned. No I/O. Throws `ValidationError('INVALID_INTENT')`

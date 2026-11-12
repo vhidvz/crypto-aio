@@ -2,7 +2,9 @@
 
 # Interface: FamilyRegistry
 
-Defined in: [src/core/model/ids.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L9)
+Defined in: [src/core/model/ids.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L11)
+
+Families, each with its `library` names and its `ext` API type.
 
 ## Properties
 

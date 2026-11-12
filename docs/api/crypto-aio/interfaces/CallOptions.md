@@ -2,9 +2,37 @@
 
 # Interface: CallOptions
 
-Defined in: [src/core/transport/types.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L44)
+Defined in: [src/core/transport/types.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L72)
+
+How a driver's call is routed, retried and cross-checked.
 
 ## Properties
+
+<a id="endpointlimit"></a>
+
+### endpointLimit?
+
+> `readonly` `optional` **endpointLimit?**: (`refusal`) => `boolean`
+
+Defined in: [src/core/transport/types.ts:115](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L115)
+
+Whether a definitive refusal is the endpoint's own limit rather than an answer about
+the request, such as an indexer that will not scan an address with a long history.
+A read without `quorum` or `fanout` then asks an endpoint it has not asked yet, without
+using up a retry; the refusal stands only when every endpoint has refused. Quorum and
+fanout calls ignore it.
+
+#### Parameters
+
+##### refusal
+
+[`CryptoAioError`](../classes/CryptoAioError.md)
+
+#### Returns
+
+`boolean`
+
+***
 
 <a id="exactintegers"></a>
 
@@ -12,7 +40,7 @@ Defined in: [src/core/transport/types.ts:44](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **exactIntegers?**: `boolean`
 
-Defined in: [src/core/transport/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L77)
+Defined in: [src/core/transport/types.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L107)
 
 Parse JSON answers with exact integers: an integer outside the safe range becomes a
 `bigint` instead of a rounded number (`rpc`, `rpcRaw` and `http`; health probes always
@@ -26,7 +54,7 @@ parse plainly). A quorum key sees the revived values.
 
 > `readonly` `optional` **fanout?**: `number`
 
-Defined in: [src/core/transport/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L79)
+Defined in: [src/core/transport/types.ts:117](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L117)
 
 Send to this many endpoints concurrently (raw-transaction broadcasts).
 
@@ -38,7 +66,9 @@ Send to this many endpoints concurrently (raw-transaction broadcasts).
 
 > `readonly` `optional` **purpose?**: [`RequestPurpose`](../type-aliases/RequestPurpose.md)
 
-Defined in: [src/core/transport/types.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L46)
+Defined in: [src/core/transport/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L76)
+
+Default `read`, or `proof` when `quorum` is set.
 
 ***
 
@@ -48,7 +78,7 @@ Defined in: [src/core/transport/types.ts:46](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **quorum?**: `number` \| `"proof"`
 
-Defined in: [src/core/transport/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L63)
+Defined in: [src/core/transport/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L93)
 
 Independent endpoints that must agree; `'proof'` uses `proofQuorum`, capped by the
 endpoints the quorum counts. A proof quorum (`'proof'` under any purpose, or any quorum
@@ -73,7 +103,7 @@ JSON-RPC code, and for a JSON-RPC code each server defines (-32000 to -32099, an
 
 > `readonly` `optional` **quorumKey?**: (`result`) => `unknown`
 
-Defined in: [src/core/transport/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L71)
+Defined in: [src/core/transport/types.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L101)
 
 The part of each endpoint's result that must agree under `quorum` (default: the whole
 result). Lets a caller compare consensus facts only, e.g. a block's number, hash and
@@ -99,7 +129,9 @@ as a disagreement (a retryable `PROVIDER_INCONSISTENT`).
 
 > `readonly` `optional` **retry?**: [`RetryClass`](../type-aliases/RetryClass.md)
 
-Defined in: [src/core/transport/types.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L45)
+Defined in: [src/core/transport/types.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L74)
+
+Default `safe`.
 
 ***
 
@@ -109,7 +141,9 @@ Defined in: [src/core/transport/types.ts:45](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **signal?**: `AbortSignal`
 
-Defined in: [src/core/transport/types.ts:80](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L80)
+Defined in: [src/core/transport/types.ts:119](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L119)
+
+Aborts the call between and during attempts.
 
 ***
 
@@ -119,4 +153,6 @@ Defined in: [src/core/transport/types.ts:80](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **timeoutMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L81)
+Defined in: [src/core/transport/types.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L121)
+
+Overrides each attempt's timeout.

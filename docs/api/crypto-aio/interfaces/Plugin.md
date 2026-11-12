@@ -2,9 +2,11 @@
 
 # Interface: Plugin
 
-Defined in: [src/core/registry/plugin.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L11)
+Defined in: [src/core/registry/plugin.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L15)
 
-Everything a chain family contributes. Plugin modules must not import SDKs.
+Everything a chain family contributes. Plugin modules must not import SDKs. Registering
+the same plugin again is a no-op; another plugin under a registered name is
+`CONFIG_INVALID`.
 
 ## Properties
 
@@ -14,7 +16,7 @@ Everything a chain family contributes. Plugin modules must not import SDKs.
 
 > `readonly` `optional` **adapters?**: readonly [`AdapterManifest`](AdapterManifest.md)[]
 
-Defined in: [src/core/registry/plugin.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L14)
+Defined in: [src/core/registry/plugin.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L19)
 
 ***
 
@@ -24,7 +26,7 @@ Defined in: [src/core/registry/plugin.ts:14](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **assets?**: readonly [`AssetRegistration`](AssetRegistration.md)[]
 
-Defined in: [src/core/registry/plugin.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L16)
+Defined in: [src/core/registry/plugin.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L21)
 
 ***
 
@@ -34,7 +36,7 @@ Defined in: [src/core/registry/plugin.ts:16](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **chains?**: readonly [`ChainInfo`](ChainInfo.md)[]
 
-Defined in: [src/core/registry/plugin.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L13)
+Defined in: [src/core/registry/plugin.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L18)
 
 ***
 
@@ -44,7 +46,9 @@ Defined in: [src/core/registry/plugin.ts:13](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **name**: `string`
 
-Defined in: [src/core/registry/plugin.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L12)
+Defined in: [src/core/registry/plugin.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L17)
+
+Unique among the plugins of a container.
 
 ***
 
@@ -54,7 +58,7 @@ Defined in: [src/core/registry/plugin.ts:12](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **presets?**: readonly [`ProviderPreset`](ProviderPreset.md)[]
 
-Defined in: [src/core/registry/plugin.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L15)
+Defined in: [src/core/registry/plugin.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L20)
 
 ***
 
@@ -64,4 +68,4 @@ Defined in: [src/core/registry/plugin.ts:15](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **schemes?**: readonly [`SignatureScheme`](SignatureScheme.md)[]
 
-Defined in: [src/core/registry/plugin.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L17)
+Defined in: [src/core/registry/plugin.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/plugin.ts#L22)

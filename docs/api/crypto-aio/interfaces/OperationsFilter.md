@@ -2,7 +2,9 @@
 
 # Interface: OperationsFilter
 
-Defined in: [src/core/container/container.ts:316](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L316)
+Defined in: [src/core/container/container.ts:317](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L317)
+
+Which Operations `aio.operations.list()` returns: every given field must match.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/container/container.ts:316](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **chain?**: `string`
 
-Defined in: [src/core/container/container.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L318)
+Defined in: [src/core/container/container.ts:319](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L319)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/container/container.ts:318](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **limit?**: `number`
 
-Defined in: [src/core/container/container.ts:320](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L320)
+Defined in: [src/core/container/container.ts:321](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L321)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/core/container/container.ts:320](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/container/container.ts:319](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L319)
+Defined in: [src/core/container/container.ts:320](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L320)
 
 ***
 
@@ -42,4 +44,4 @@ Defined in: [src/core/container/container.ts:319](https://github.com/vhidvz/cryp
 
 > `readonly` `optional` **states?**: readonly [`OperationState`](../type-aliases/OperationState.md)[]
 
-Defined in: [src/core/container/container.ts:317](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L317)
+Defined in: [src/core/container/container.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L318)

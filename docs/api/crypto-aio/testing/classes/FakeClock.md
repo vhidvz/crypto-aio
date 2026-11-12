@@ -78,6 +78,8 @@ Moves time forward, waking due sleepers in order and settling async work between
 
 Defined in: [src/testing/fake-clock.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-clock.ts#L24)
 
+Milliseconds since the epoch.
+
 #### Returns
 
 `number`
@@ -95,6 +97,8 @@ Defined in: [src/testing/fake-clock.ts:24](https://github.com/vhidvz/crypto-aio/
 > **sleep**(`ms`, `signal?`): `Promise`\<`void`\>
 
 Defined in: [src/testing/fake-clock.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-clock.ts#L32)
+
+Resolves after `ms`, or rejects with the signal's reason once it aborts.
 
 #### Parameters
 

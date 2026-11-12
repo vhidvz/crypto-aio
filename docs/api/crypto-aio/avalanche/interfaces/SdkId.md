@@ -2,9 +2,9 @@
 
 # Interface: SdkId
 
-Defined in: [src/adapters/avalanche/sdk.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L16)
+Defined in: [src/adapters/avalanche/sdk.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L17)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `Id` this library uses; it mirrors the SDK, outside semver.
 
 ## Methods
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > **toBytes**(): `Uint8Array`
 
-Defined in: [src/adapters/avalanche/sdk.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L18)
+Defined in: [src/adapters/avalanche/sdk.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L19)
 
 #### Returns
 
@@ -28,7 +28,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:18](https://github.com/vhidvz/crypto-
 
 > **toString**(): `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L17)
+Defined in: [src/adapters/avalanche/sdk.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L18)
 
 #### Returns
 

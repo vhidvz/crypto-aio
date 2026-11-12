@@ -2,9 +2,9 @@
 
 # Interface: SdkCredential
 
-Defined in: [src/adapters/avalanche/sdk.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L87)
+Defined in: [src/adapters/avalanche/sdk.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L97)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `Credential` this library uses; it mirrors the SDK, outside semver.
 
 ## Extends
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:13](https://github.com/vhidvz/crypto-
 
 > **getSignatures**(): `string`[]
 
-Defined in: [src/adapters/avalanche/sdk.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L89)
+Defined in: [src/adapters/avalanche/sdk.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L99)
 
 Each signature as hex (65 bytes: r, s, recovery id).
 

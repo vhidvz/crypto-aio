@@ -2,7 +2,9 @@
 
 # Interface: OperationFilter
 
-Defined in: [src/core/store/types.ts:210](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L210)
+Defined in: [src/core/store/types.ts:279](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L279)
+
+Which Operations `list` and `purge` match: every given field must match.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/store/types.ts:210](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **chain?**: `string`
 
-Defined in: [src/core/store/types.ts:212](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L212)
+Defined in: [src/core/store/types.ts:282](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L282)
+
+`context.chain`.
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/core/store/types.ts:212](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **from?**: `string`
 
-Defined in: [src/core/store/types.ts:214](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L214)
+Defined in: [src/core/store/types.ts:286](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L286)
+
+`intent.from`, the sending address.
 
 ***
 
@@ -32,7 +38,9 @@ Defined in: [src/core/store/types.ts:214](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **limit?**: `number`
 
-Defined in: [src/core/store/types.ts:216](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L216)
+Defined in: [src/core/store/types.ts:289](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L289)
+
+At most this many, the oldest first; 0 or less matches none.
 
 ***
 
@@ -42,7 +50,7 @@ Defined in: [src/core/store/types.ts:216](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **namespace**: `string`
 
-Defined in: [src/core/store/types.ts:211](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L211)
+Defined in: [src/core/store/types.ts:280](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L280)
 
 ***
 
@@ -52,7 +60,9 @@ Defined in: [src/core/store/types.ts:211](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/store/types.ts:213](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L213)
+Defined in: [src/core/store/types.ts:284](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L284)
+
+`context.network`.
 
 ***
 
@@ -62,4 +72,4 @@ Defined in: [src/core/store/types.ts:213](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **states?**: readonly [`OperationState`](../type-aliases/OperationState.md)[]
 
-Defined in: [src/core/store/types.ts:215](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L215)
+Defined in: [src/core/store/types.ts:287](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L287)

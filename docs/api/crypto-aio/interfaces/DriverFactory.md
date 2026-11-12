@@ -2,7 +2,9 @@
 
 # Interface: DriverFactory
 
-Defined in: [src/core/driver/types.ts:419](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L419)
+Defined in: [src/core/driver/types.ts:521](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L521)
+
+What a manifest's `load()` returns: makes one driver per pooled selection.
 
 ## Methods
 
@@ -12,7 +14,7 @@ Defined in: [src/core/driver/types.ts:419](https://github.com/vhidvz/crypto-aio/
 
 > **create**(`ctx`): `Promise`\<[`ChainDriver`](ChainDriver.md)\>
 
-Defined in: [src/core/driver/types.ts:420](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L420)
+Defined in: [src/core/driver/types.ts:522](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L522)
 
 #### Parameters
 

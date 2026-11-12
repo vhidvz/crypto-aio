@@ -4,4 +4,6 @@
 
 > `const` **CLEARABLE\_FIELDS**: readonly \[`"outcome"`, `"unsigned"`, `"reservation"`, `"signerTickets"`, `"partialSignatures"`, `"activeAttemptId"`, `"ambiguous"`, `"error"`, `"nextCheckAt"`\]
 
-Defined in: [src/core/store/types.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L144)
+Defined in: [src/core/store/types.ts:206](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L206)
+
+The fields an `OperationPatch` may name in `clear`.

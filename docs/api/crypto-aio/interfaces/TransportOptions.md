@@ -2,7 +2,9 @@
 
 # Interface: TransportOptions
 
-Defined in: [src/core/transport/types.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L16)
+Defined in: [src/core/transport/types.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L34)
+
+The root container's transport settings, shared by every scope and handle.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/transport/types.ts:16](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **baseDelayMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L19)
+Defined in: [src/core/transport/types.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L40)
+
+Exponential backoff between attempts: its first and largest delay (default 200 and 5 000 ms).
 
 ***
 
@@ -22,7 +26,7 @@ Defined in: [src/core/transport/types.ts:19](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **degradedProofs?**: `boolean`
 
-Defined in: [src/core/transport/types.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L32)
+Defined in: [src/core/transport/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L56)
 
 Whether proofs go on, from fewer endpoints, once endpoints drop out of the proof
 quorum's count (their probes or requests failing for three health refreshes in a
@@ -39,7 +43,9 @@ keep going through an outage, but the one endpoint left decides alone.
 
 > `readonly` `optional` **failureThreshold?**: `number`
 
-Defined in: [src/core/transport/types.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L33)
+Defined in: [src/core/transport/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L58)
+
+Failures in a row before an endpoint's circuit breaker opens (default 5).
 
 ***
 
@@ -49,7 +55,9 @@ Defined in: [src/core/transport/types.ts:33](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **fetch?**: (`input`, `init?`) => `Promise`\<`Response`\>
 
-Defined in: [src/core/transport/types.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L17)
+Defined in: [src/core/transport/types.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L36)
+
+The `fetch` to call (default: the global one); `FakeFetch` in tests.
 
 #### Parameters
 
@@ -73,7 +81,9 @@ Defined in: [src/core/transport/types.ts:17](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **healthIntervalMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L35)
+Defined in: [src/core/transport/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L62)
+
+How often endpoints' identity and height are probed (default 15 000 ms).
 
 ***
 
@@ -83,7 +93,9 @@ Defined in: [src/core/transport/types.ts:35](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **maxAttempts?**: `number`
 
-Defined in: [src/core/transport/types.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L18)
+Defined in: [src/core/transport/types.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L38)
+
+Attempts per request, across endpoints (default 3).
 
 ***
 
@@ -93,7 +105,7 @@ Defined in: [src/core/transport/types.ts:18](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **maxDelayMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L20)
+Defined in: [src/core/transport/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L41)
 
 ***
 
@@ -103,7 +115,9 @@ Defined in: [src/core/transport/types.ts:20](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **maxLagBlocks?**: `number`
 
-Defined in: [src/core/transport/types.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L22)
+Defined in: [src/core/transport/types.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L45)
+
+How far behind the best known height an endpoint may be before it is lagging (default 5).
 
 ***
 
@@ -113,7 +127,7 @@ Defined in: [src/core/transport/types.ts:22](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **maxResponseBytes?**: `number`
 
-Defined in: [src/core/transport/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L41)
+Defined in: [src/core/transport/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L68)
 
 The most bytes one answer may carry (default 64 MiB). A longer answer, by its declared
 length or as it arrives, is cancelled and fails as a retryable `PROVIDER_UNAVAILABLE`,
@@ -127,7 +141,9 @@ so one endpoint can never make a call hold unbounded memory.
 
 > `readonly` `optional` **openMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L34)
+Defined in: [src/core/transport/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L60)
+
+How long an open breaker rests its endpoint (default 30 000 ms).
 
 ***
 
@@ -137,7 +153,9 @@ Defined in: [src/core/transport/types.ts:34](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **proofQuorum?**: `number`
 
-Defined in: [src/core/transport/types.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L23)
+Defined in: [src/core/transport/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L47)
+
+Endpoints that must agree on a proof read (default 2), capped by the endpoints configured.
 
 ***
 
@@ -147,4 +165,6 @@ Defined in: [src/core/transport/types.ts:23](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **timeoutMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L21)
+Defined in: [src/core/transport/types.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L43)
+
+One request's timeout (default 15 000 ms).

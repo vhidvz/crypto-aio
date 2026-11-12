@@ -4,7 +4,17 @@
 
 > **HandleConfig**\<`C`\> = `Omit`\<[`HandleOptions`](../interfaces/HandleOptions.md), `"chain"` \| `"network"` \| `"library"`\> & `object`
 
-Defined in: [src/core/config/types.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L144)
+Defined in: [src/core/config/types.ts:208](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L208)
+
+`HandleOptions` typed for chain `C`: its networks and libraries by name.
+
+## Type Parameters
+
+<a id="c"></a>
+
+### C
+
+`C` *extends* [`ChainId`](ChainId.md)
 
 ## Type Declaration
 
@@ -19,9 +29,3 @@ Defined in: [src/core/config/types.ts:144](https://github.com/vhidvz/crypto-aio/
 ### network?
 
 > `readonly` `optional` **network?**: [`NetworkOf`](NetworkOf.md)\<`C`\>
-
-## Type Parameters
-
-### C
-
-`C` *extends* [`ChainId`](ChainId.md)

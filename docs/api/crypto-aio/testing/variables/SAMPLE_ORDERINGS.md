@@ -2,9 +2,9 @@
 
 # Variable: SAMPLE\_ORDERINGS
 
-> `const` **SAMPLE\_ORDERINGS**: readonly readonly \[`string`, [`OrderingData`](../../type-aliases/OrderingData.md)\][]
+> `const` **SAMPLE\_ORDERINGS**: readonly (readonly \[`string`, [`OrderingData`](../../type-aliases/OrderingData.md)\])[]
 
-Defined in: [src/testing/contracts/operations.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L102)
+Defined in: [src/testing/contracts/operations.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L107)
 
 An ordering of each kind the built-in families record, with each family's own
 properties. Proofs read these facts from the stored ordering, never from signed bytes,
