@@ -12,6 +12,7 @@ description: How crypto-aio handles ambiguous broadcasts, refusals and crashes, 
 > the same: **never create a new transfer while the old one might land.** Retry with the same
 > key, or use the Operation's own remedies. Background **workers** finish every Operation
 > without anyone waiting, and **`recover()`** picks up after a crash, without ever signing.
+> One failure is not "safe to pay again": `TX_UNEVIDENCED`, where value may have moved.
 
 **Builds on:** [When networks fail](../learn/engineering/failure.md),
 [Idempotency](../learn/engineering/idempotency.md) and [The life of a transfer](./transfer.md).
@@ -27,18 +28,24 @@ description: How crypto-aio handles ambiguous broadcasts, refusals and crashes, 
 An error about a stored Operation carries `context.operationId`, so you can read the Operation and
 decide from its state rather than from the error alone. A missing id does not prove that nothing
 was stored: a busy address lease (`SEQUENCE_BUSY`) or a custody timeout on a repeated call carries
-none. Only `validation` and `config` errors are always raised before an Operation exists. When in
-doubt, repeat the call with the same key: it resumes whatever exists, and never pays twice.
+none, and neither do the checks only the chain can answer, which run after the Operation was
+created: a gas limit above `maxGasLimit`, a deprecated token, a fee above a family's bound, a
+token's decimals. Such a check marks the Operation `failed` and throws a `validation` error. A
+`validation` or `config` error always comes before anything is signed, so a new key is safe once
+you fix the cause; the old key keeps its `failed` Operation, and a corrected transfer under it
+fails with `IDEMPOTENCY_CONFLICT`. For any other error, when in doubt, repeat the call with the
+same key: it resumes whatever exists, and never pays twice.
 
 ```mermaid
 flowchart TB
   err["transfer() threw"] --> cat{"category validation<br/>or config?"}
-  cat -- yes --> fix["Nothing was stored:<br/>fix the input or configuration"]
+  cat -- yes --> fix["Nothing was signed:<br/>fix the input or configuration;<br/>a new key is safe"]
   cat -- no --> amb{"ambiguous, or<br/>no operationId?"}
   amb -- yes --> same["Repeat with the SAME key<br/>(it resumes the Operation)<br/>or let the workers finish"]
   amb -- no --> state{"Operation state?"}
   state -- stalled --> remedy["Fix the cause, then rebroadcast,<br/>replace or cancel"]
-  state -- "failed or expired" --> reconcile["Reconcile; a new transfer is safe<br/>(check the chain for token verdicts)"]
+  state -- "failed with<br/>TX_UNEVIDENCED" --> person["Value may have moved:<br/>check the chain, route to a person"]
+  state -- "other failed,<br/>or expired" --> reconcile["Reconcile; a new transfer is safe"]
   state -- "anything else" --> same
 ```
 
@@ -116,7 +123,10 @@ const claimed = await aio.monitor.runOnce({ workerId: 'cron-1' });
 
 Any number of processes can run workers on shared stores. A claim is a lease with a token, so a
 worker that paused past its claim has its writes refused (`FENCING`) once another took over
-(stop 5). Workers never sign and need no signer: a resend needs only stored bytes.
+(stop 5). Workers never sign: observing, resending and applying proofs need only stored bytes.
+Two writes need the Operation's wallet to resolve, so its signer must stay registered and
+answer `getPublicKey`: nonce reconciliation and the verdict for an Operation every node
+rejected.
 
 ## Startup recovery
 
@@ -128,10 +138,13 @@ worker that paused past its claim has its writes refused (`FENCING`) once anothe
 | `submitted` and `ambiguous` | Broadcasts the stored bytes again |
 | Other signed states | Checks them on chain |
 | `created`, `prepared`, `awaiting-signature`, `stalled` | Skips them with a `recovery.skipped` event: they need you |
+| `signed` or ambiguous, but the wallet no longer resolves (its configuration or signer was removed) | Checks them on chain without resending, and counts them `unresent`: restore the wallet and recover again |
+| Stored by a newer version, in a newer record format (a rolling upgrade) | Leaves them out, with a logged warning, for a newer process |
 | Nonces allocated but never stored (a crash mid-allocation) | Returns them for reuse |
 
 It returns a report, `{ rebroadcast, checked, skipped, unresent, failed, reconciled }`, and like the
-workers, it never signs. The [persistence lesson](../learn/engineering/persistence.md#in-crypto-aio)
+workers, it never signs. A resend needs the wallet to resolve, so keep a wallet and its signer
+configured while it has Operations in flight. The [persistence lesson](../learn/engineering/persistence.md#in-crypto-aio)
 runs a crash and a recovery end to end; [Run workers and recover](../build/workers.md) shows the
 startup sequence of a service.
 
@@ -149,7 +162,7 @@ startup sequence of a service.
 
 1. A transfer throws an ambiguous `RPC_ERROR`. What is the one thing your code must not do?
 2. Why does a refused transaction become `stalled` rather than `failed`?
-3. Why do workers and `recover()` never need the signer?
+3. Workers and `recover()` never sign. Why can they still need the wallet's signer?
 
 <details>
 <summary>Answers</summary>
@@ -158,7 +171,10 @@ startup sequence of a service.
    or let the workers resolve it.
 2. A refusal is one node's view at one moment, and the bytes may still land; only proof ends an
    Operation.
-3. Everything they do after signing is resending stored bytes, observing, or applying proofs.
+3. Everything they do after signing is resending stored bytes, observing, or applying proofs,
+   but resolving the wallet (for `recover()`'s resend, nonce reconciliation and the
+   all-rejected verdict) asks a signer-backed wallet's signer for its public key. Without it,
+   `recover()` counts the Operation `unresent` instead of resending it.
 
 </details>
 

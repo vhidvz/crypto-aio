@@ -66,10 +66,13 @@ flowchart LR
   `provider.misconfigured`, and fails with `PROVIDER_MISCONFIGURED`.
 - **Height.** Each endpoint's height is probed every `healthIntervalMs` (15 s). One more than
   `maxLagBlocks` behind the best verified height is **lagging**: the monitor and the scanner
-  never decide anything from a view that far behind.
-- **Retries by class.** Each request declares how it may be retried: `safe` (reads), or
-  `ambiguous-on-failure` (broadcasts, whose failure may hide a success). Each also declares its
-  purpose: `read`, `monitor`, `proof` or `broadcast`.
+  never decide anything from a view that far behind. Until its height is known, an endpoint
+  reads `unknown`, not `healthy`, in `getNetworkStatus()`, and `bc.ready()` fails while no
+  endpoint has answered its height probe.
+- **Retries by class.** Each request declares how it may be retried: `safe` (reads),
+  `ambiguous-on-failure` (broadcasts, whose failure may hide a success), or `never-auto` (one
+  attempt, no retry). Each also declares its purpose: `read`, `monitor`, `proof` or
+  `broadcast`.
 - **Limits.** Per-endpoint rate limits, a circuit breaker (after 5 failures, an endpoint rests
   30 s), a 15 s timeout, and a 64 MiB cap on any one answer, so one endpoint cannot exhaust the
   process's memory.
@@ -79,14 +82,19 @@ flowchart LR
 A driver's `proofs` port asks the questions behind every verdict: is this transaction in a final
 block, and did it succeed? Is this nonce used at a final height? What is the hash of the
 finalized block at this height? Those reads run with `quorum: 'proof'`: `proofQuorum` endpoints
-(2 by default) must return the same answer, or the read throws a retryable
-`PROVIDER_INCONSISTENT`, and nothing is decided.
+(2 by default), capped by the endpoints you configured, must return the same answer. Endpoints
+that disagree make the read throw a retryable `PROVIDER_INCONSISTENT`; too few endpoints able to
+answer make it throw a retryable `PROVIDER_UNAVAILABLE`. Either way, nothing is decided.
 
-The quorum counts every endpoint not proven to serve another network, including lagging ones and
-ones whose breaker is briefly open, so one endpoint never proves a fact alone while the others
-are only momentarily away. After about three health intervals without an answer, an endpoint
-stops counting. With two endpoints, losing one leaves the other proving alone, which is why
-production wants three.
+The quorum's size counts every endpoint you configured that is not proven to serve another
+network, including ones that are down, lagging, or resting after their breaker opened. Only
+endpoints within `maxLagBlocks` of the best height are asked. So one endpoint never proves a
+fact alone while the others are away: with two endpoints and one of them down, `final` waits
+until it comes back. Configure three or more endpoints from independent providers, so one outage
+leaves two to agree. With only one endpoint configured, that endpoint proves alone. Setting
+`transport: { degradedProofs: true }` lets an endpoint that has been down for about three health
+intervals stop counting, so the rest prove without it: liveness first, at the cost of the
+corroboration.
 
 A proof may also answer "no" only on a **definitive** negative. "Not found", "pruned", "state
 unavailable", an index still building: each throws a retryable `PROVIDER_UNAVAILABLE`, and decides
@@ -128,7 +136,12 @@ What "proven" means depends on the chain's rules, and each driver implements its
 proofs: an EVM nonce used at a final height and the receipt from that block; a Bitcoin input
 spent at final depth; a Tron or Solana transaction absent from every block of its validity
 window; a TON message trace completed in the masterchain. Token transfers are judged by what the
-token contract logged, not only by the receipt's success.
+token contract logged, not only by the receipt's success: a token transfer that executed but
+shows no transfer to the recipient (no `Transfer` event to it on EVM or Tron, or TON jettons
+sent to a wallet the master does not name) fails with `TX_UNEVIDENCED`, and its observation
+records `failure: 'unevidenced'`. Value may have moved, so it is never a "safe to pay again"
+failure. `TX_REVERTED` (`failure: 'reverted'`) is kept for a transaction whose execution
+failed.
 [Wait for confirmation](../build/confirmations.md) gives every family's verdict rules.
 
 ## Where it lives
@@ -150,8 +163,9 @@ token contract logged, not only by the receipt's success.
 <summary>Answers</summary>
 
 1. Observed data from one endpoint; only proven data, read under the quorum.
-2. It counts toward the quorum's size, so its disagreement can hold a proof up, but it cannot
-   prove anything alone, and the monitor never decides from its lagging view.
+2. It still counts toward the quorum's size, but a lagging endpoint is never asked in a proof,
+   so it can neither disagree nor prove anything. It can hold a proof up only by leaving too few
+   in-range endpoints to answer, and the monitor never decides from its lagging view.
 3. Missing data is not evidence of absence: answering "no" could prove a landed transaction
    failed, and invite a second payment.
 

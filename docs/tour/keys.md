@@ -6,8 +6,8 @@ description: The Signer port, local and custody signers, asynchronous signing, t
 # Keys, signers and policy
 
 > [!TIP]
-> **The short version.** Private keys live only inside **signers**, behind a three-method port:
-> public keys out, signatures out, nothing else. `localSigner` keeps keys in memory;
+> **The short version.** Private keys live only inside **signers**, behind a small port:
+> public keys out, signatures out, and a key out only if you opt in to `exportKey`. `localSigner` keeps keys in memory;
 > `callbackSigner` puts any custody system (HSM, KMS, MPC) behind the same port, including
 > custody that signs later. Before every signing round, your **`beforeSign` hook** sees exactly
 > what is about to be signed and can veto it. Every signature is verified before use, and every
@@ -56,13 +56,22 @@ interface Signer {
 }
 ```
 
-- A **`SigningRequest`** is `{ id, scheme, payload, payloadKind, publicKey, keyRef? }`: the exact
-  bytes to sign (a digest or a message, as the chain requires), and which key must sign them.
+- A **`SigningRequest`** is `{ id, scheme, payload, payloadKind, publicKey, keyRef?, params? }`:
+  the exact bytes to sign (a digest or a message, as the chain requires), and which key must
+  sign them. `params.tweak` is the BIP341 key-path tweak a Bitcoin `p2tr` input needs for
+  `secp256k1-schnorr`: a custody signer must apply it, or the signature fails verification
+  (`SIGNATURE_MISMATCH`).
 - A **`SigningContext`** says why: the Operation id, namespace, chain, network, wallet and its
   `tier`, the purpose (`original`, `replacement`, `cancel`, `rebuild`), a readable `summary` of
   the outputs, the fee, and a hash of the unsigned transaction.
 - The answer is `{ status: 'signed', signatures }`, or `{ status: 'pending', ticket }` for custody
   that answers later.
+
+A signer declares the schemes it signs (`schemes`), and a wallet is refused with
+`CONFIG_INVALID` when it resolves if its signer does not declare every scheme the wallet signs
+with: a `p2tr` wallet needs `secp256k1-schnorr`, the other Bitcoin address types
+`secp256k1-ecdsa`. So a transfer is never built, or its coins reserved, only to fail at
+signing.
 
 The orchestrator then **verifies** every signature against its request's public key before
 anything is assembled. A custody bug, a wrong key or a tampered response fails with

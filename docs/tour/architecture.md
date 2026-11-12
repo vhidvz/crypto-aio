@@ -99,7 +99,7 @@ flowchart LR
   scope["scope()<br/>inherits, overrides"] --> root
   h1["handle: ethereum mainnet"] --> root
   h2["handle: bitcoin mainnet"] --> scope
-  h3["h1.with({ library: 'web3' })<br/>a new handle"] --> root
+  h3["h1.with({ options })<br/>a new handle"] --> root
 ```
 
 - The **container**, `CryptoAio`, owns configuration, stores, signers, hooks, plugins, the
@@ -114,8 +114,8 @@ flowchart LR
   never changes a payment already in flight.
 
 Handles are cheap: they share pooled drivers and transports, keyed by everything that makes them
-different (chain, network, library, provider credentials). So create handles freely, and create
-containers deliberately.
+different (chain, network, library, provider credentials, driver options). So create handles
+freely, and create containers deliberately.
 
 ## Configuration precedence
 
@@ -137,7 +137,7 @@ const tenant = new CryptoAio({
 });
 const eu = tenant.scope({ chains: { bsc: { maxLagBlocks: 20 } } }); // shares pool and stores
 const bsc = eu.blockchain({ chain: 'bsc' }); // testnet, through 'node'
-const viaWeb3 = bsc.with({ library: 'web3' }); // a new handle; `bsc` is unchanged
+const bounded = bsc.with({ options: { maxGasLimit: 100_000n } }); // a new handle; `bsc` is unchanged
 ```
 
 The environment (`CRYPTO_AIO_<CHAIN>_RPC_URL`, `…_NETWORK`, `…_PROVIDER`, …) carries routing

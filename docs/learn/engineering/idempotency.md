@@ -100,8 +100,11 @@ scanning, where blocks are delivered at least once, and you deduplicate on a tra
 ## In crypto-aio
 
 Every transfer accepts an `idempotencyKey`, and the payment it creates, the **Operation**, is
-unique per namespace and key. Set `lifecycle.requireIdempotencyKey: true` in production, so
-that forgetting the key is an error rather than a random key. The library compares requests
+unique per namespace and key. A key is 1 to 200 characters of well-formed text without U+0000
+(no lone half of a UTF-16 surrogate pair), since a database may refuse or alter anything else;
+another key fails with `INVALID_INTENT` before anything is stored. Set
+`lifecycle.requireIdempotencyKey: true` in production, so that forgetting the key is an error
+rather than a random key. The library compares requests
 by their **`intentHash`**, a hash of the normalized intent: chain, network, asset, outputs in
 base units, sender, memo and fee.
 

@@ -46,7 +46,7 @@ systems:
    signature verifies or it doesn't. When a server claims "your transaction is invalid", check
    the bytes you sent before believing it.
 4. **Ask several independent servers, and require agreement.** A **quorum** read asks, say,
-   two or three providers run by different companies, and accepts an answer only when enough of
+   three or more providers run by different companies, and accepts an answer only when enough of
    them agree. One liar can then block a decision, but not make one.
 5. **Decide only on final data.** An answer about a block that can still be reorganized can
    change. Proof is made of finalized blocks.
@@ -87,8 +87,8 @@ inconvenience; a payment wrongly marked "failed" and sent again is a loss.
 
 ## Why a developer cares
 
-- **Use two or three independent providers** in production. With one, its operator alone
-  decides every verdict.
+- **Use three or more independent providers** in production. With one, its operator alone
+  decides every verdict; with two, one outage leaves nothing to agree with, so decisions wait.
 - **Never treat "not found" as "failed".**
 - **Deposits are where lies pay.** Credit only final deposits, and before an automated or large
   credit, read the deposit again through an independent provider.
@@ -148,7 +148,8 @@ deeper into the transport.
    one) or a proven inclusion is a result.
 2. So one company's outage, bug or compromise cannot produce a wrong answer on its own.
 3. One: its operator alone decides. The library then proves with a quorum of 1, so configure
-   two or three providers in production.
+   three or more providers in production: with two, one outage makes proofs wait until it is
+   over.
 4. Wrongly "failed": the natural reaction is to pay again, and then the customer is paid twice.
 
 </details>
