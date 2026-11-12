@@ -109,8 +109,11 @@ it waited.
 
 - Observations carry no namespace: `getObservation` and `putObservation` key them by attempt
   id alone, which is globally unique, so a store cannot partition them by tenant without
-  joining Attempts. Adding a namespace changes the port, so it waits for a major release.
-- `parseTagged` reads any plain object whose only key is `$bigint` or `$bytes` as a bigint or
-  bytes; there is no escape, so stored data never uses such an object.
-- Which record `findByRef` returns when several Operations of a namespace hold the ref is
-  unspecified; the core's AttemptRef guard keeps that from happening.
+  joining Attempts. The namespace can come in a 1.x minor release as an optional trailing
+  argument, which a store may use or ignore, so it waits for a store that needs it.
+- Decided for 1.0: `stringifyTagged` refuses (a `TypeError`) to write a plain object whose
+  only key is `$bigint` or `$bytes`, since `parseTagged` would read it back as a bigint or
+  bytes. The stored format stays as it is, with no escape; the core never stores such an
+  object.
+- Decided for 1.0: when several Operations of a namespace hold a ref (which the core's
+  AttemptRef guard never writes), `findByRef` may return any one of them.

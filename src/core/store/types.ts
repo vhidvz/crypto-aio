@@ -272,6 +272,10 @@ export interface OperationStore {
    * process that shares the store: it must see any `appendAttempt` that another store
    * instance committed before it was called (no read replica, no eventually consistent
    * index).
+   *
+   * At most one Operation of a namespace holds a ref: that guard refuses an Attempt whose
+   * ref another Operation holds. Should several hold it anyway (records written outside
+   * the core), a store may return any one of them.
    */
   findByRef(namespace: string, refOrTxHash: string): Promise<OperationRecord | null>;
   /**

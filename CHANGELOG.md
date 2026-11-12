@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal as the endpoint's own limit, so the read asks the endpoints it has not asked
   instead of failing; the refusal stands only when every endpoint refuses.
 
+### Changed
+
+- `stringifyTagged` refuses, with a `TypeError`, a plain object whose only key is `$bigint`
+  or `$bytes` (with a string value): `parseTagged` would read it back as a bigint or bytes,
+  so a durable store built on them refuses the write instead of storing data that reads
+  back changed. The format they write is unchanged, and the core never stores such an
+  object.
+- `OperationStore.findByRef` is specified for several Operations of a namespace holding
+  one ref, which the core never writes: a store may return any one of them.
+
 ### Fixed
 
 - Bitcoin: an indexer that refuses an address for its own limit (HTTP 400 "Scripthash

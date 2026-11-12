@@ -156,7 +156,10 @@ ordering lists UTXO outpoints, which tie a wallet to its coins. A nonce or seqno
 own is operational, and the `nonce.allocated` and `nonce.gap` events carry it.
 
 - Store plain data only: objects, arrays, strings, numbers, booleans, `bigint` and
-  `Uint8Array`. `stringifyTagged` and `parseTagged` round-trip bigint and bytes through JSON.
+  `Uint8Array`. `stringifyTagged` and `parseTagged` round-trip bigint and bytes through JSON,
+  as `{ "$bigint": "…" }` and `{ "$bytes": "<hex>" }`. `stringifyTagged` refuses, with a
+  `TypeError`, a plain object of that shape in the data itself, which would read back
+  changed; the core never stores one.
 - Keep keys out of store error messages. Sequence keys contain wallet addresses, and error
   messages reach logs. The contract suites check it for sequence and cursor keys, idempotency
   keys and wallet addresses.

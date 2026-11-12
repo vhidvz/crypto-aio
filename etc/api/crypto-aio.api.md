@@ -2015,7 +2015,7 @@ export function parseAssetId(id: string): {
     ref: AssetRef;
 };
 
-// @public (undocumented)
+// @public
 export function parseTagged<T = unknown>(text: string): T;
 
 // @public (undocumented)
