@@ -102,6 +102,15 @@ function millis(value: unknown, field: string): number {
   return Number(ms);
 }
 
+/**
+ * A time java-tron reports in milliseconds as the Unix seconds every family's blocks and
+ * transactions carry (`Block.timestamp`); Tron's own expiration arithmetic keeps
+ * milliseconds.
+ */
+export function unixSeconds(ms: number): number {
+  return Math.floor(ms / 1000);
+}
+
 function hex(value: unknown, field: string, bytes?: number): string {
   if (typeof value !== 'string' || !/^(?:[0-9a-fA-F]{2})*$/.test(value)) {
     throw malformed(field);

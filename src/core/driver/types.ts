@@ -132,7 +132,7 @@ export interface DriverTransaction {
   /** Whether `transfers` lists every movement the transaction makes. */
   readonly decoding: Decoding;
   readonly raw?: RawTx;
-  /** The block's time, as the chain reports it. */
+  /** The block's time in Unix seconds, whatever unit the chain reports it in. */
   readonly timestamp?: number;
   /** Family-specific fields, passed through to `Transaction.details`. */
   readonly details: Readonly<Record<string, unknown>>;
@@ -143,7 +143,7 @@ export interface DriverBlock {
   readonly height: bigint;
   readonly hash: string;
   readonly parentHash: string;
-  /** The block's time, as the chain reports it. */
+  /** The block's time in Unix seconds, whatever unit the chain reports it in. */
   readonly timestamp?: number;
   readonly transactionIds?: readonly string[];
 }

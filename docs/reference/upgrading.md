@@ -21,6 +21,9 @@ code your application may treat as safe to pay again.
 
 ## From 0.2.0
 
+- **Tron block times are Unix seconds.** `Block.timestamp` and a transaction's
+  `block.timestamp` are Unix seconds on every family; Tron reported milliseconds. Multiply
+  by 1,000 where your code relied on them.
 - **Bitcoin indexers fail over on per-address limits.** When an indexer refuses an address
   for its own limits (HTTP 400, "too many" or "too large"), the balance, unspent-output or
   history read asks the handle's next `indexer` endpoint; it fails with `RPC_ERROR` only

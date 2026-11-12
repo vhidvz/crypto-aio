@@ -16,7 +16,8 @@ covers surface by surface, [Errors](https://vhidvz.github.io/crypto-aio/referenc
 the safe action for every code and the error fields you may rely on, and the plugin and
 store pages what a driver and a durable store must do. It closes the gaps a review of every
 page found in the surfaces 1.0 freezes. Code written for 0.2.0 needs no change unless it
-writes a plugin driver that misdeclares its capabilities; [Upgrade to
+reads Tron block times (now Unix seconds, as on every family) or writes a plugin driver
+that misdeclares its capabilities; [Upgrade to
 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html) says what changed. It is
 published under npm's `next` tag: `npm install crypto-aio@next`.
 
@@ -45,6 +46,9 @@ published under npm's `next` tag: `npm install crypto-aio@next`.
   only).
 - `OperationStore.findByRef` is specified for several Operations of a namespace holding
   one ref, which the core never writes: a store may return any one of them.
+- **Breaking (Tron):** block and transaction `timestamp`s are Unix seconds on every family.
+  Tron reported java-tron's milliseconds, so the same field meant another unit there;
+  multiply by 1,000 where you relied on milliseconds. Drivers report seconds too.
 - The documentation states the 1.0 contract and corrects what 0.2.0 left stale: proofs
   as 0.2.0 sizes them (a down endpoint still counts, so production wants three or more
   providers), `TX_UNEVIDENCED` as a failure where value may have moved, what abandoning a

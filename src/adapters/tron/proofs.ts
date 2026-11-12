@@ -77,6 +77,7 @@ import {
   READ,
   historyPage,
   notServable,
+  unixSeconds,
   type RpcBlock,
   type TronBlockHeader,
 } from './http';
@@ -329,7 +330,11 @@ export function createTronProofs(ctx: TronContext): ProofSource {
       const head = await solidHeader(
         seen.number > PEER_SKEW ? seen.number - PEER_SKEW : 0n,
       );
-      return { height: head.number, hash: head.id, timestamp: head.timestamp };
+      return {
+        height: head.number,
+        hash: head.id,
+        timestamp: unixSeconds(head.timestamp),
+      };
     },
 
     async includedFinal(ref, ordering) {
@@ -404,7 +409,7 @@ export function createTronBlocks(ctx: TronContext): BlockSource {
             height: header.number,
             hash: header.id,
             parentHash: header.parentId,
-            timestamp: header.timestamp,
+            timestamp: unixSeconds(header.timestamp),
           }
         : null;
     },

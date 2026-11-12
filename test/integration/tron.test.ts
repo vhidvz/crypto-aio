@@ -101,7 +101,8 @@ suite(`Tron integration on ${network}`, () => {
       if (head?.timestamp === undefined) {
         throw new Error(`the endpoint named head ${height}, then served no block there`);
       }
-      const age = seenAt - head.timestamp;
+      // Block times are Unix seconds; the clock and the builder's window are milliseconds.
+      const age = seenAt - head.timestamp * 1000;
       // The builder refuses a head older than half the window, and anchors the expiration at
       // the earlier of the head's time and the clock: a clock behind the head by the window
       // less one slot builds transactions that expire at birth.
@@ -132,7 +133,7 @@ suite(`Tron integration on ${network}`, () => {
       // config accepts and no jitter: the scan then walks about four blocks.
       const ordering: TronExpiryOrdering = {
         kind: 'expiry',
-        expiresAtMs: reference.timestamp + MIN_EXPIRATION_MS,
+        expiresAtMs: reference.timestamp * 1000 + MIN_EXPIRATION_MS,
         lastValidHeight: reference.height + TAPOS_WINDOW,
         refBlockHash: reference.hash.slice(16, 32),
       };

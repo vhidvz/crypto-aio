@@ -22,7 +22,14 @@ import type { Clock } from '../../core/util/clock';
 import { SELECTORS, decodeString, decodeUint256, encodeBalanceOf } from './abi';
 import { isTronAddress, toBase58Address, toHexAddress } from './address';
 import { chainVerdict, decodeTransaction, verdictOf } from './decode';
-import { MONITOR, READ, notServable, type TronApi, type TronTxJson } from './http';
+import {
+  MONITOR,
+  READ,
+  notServable,
+  unixSeconds,
+  type TronApi,
+  type TronTxJson,
+} from './http';
 import type { TronNetworkConfig } from './network';
 import type { TronCallTags, TronCodec, TronExt, TronResources } from './types';
 
@@ -231,7 +238,7 @@ export function createTronReader(ctx: TronContext): ChainReader {
             height: header.number,
             hash: header.id,
             parentHash: header.parentId,
-            timestamp: header.timestamp,
+            timestamp: unixSeconds(header.timestamp),
           }
         : null;
     },

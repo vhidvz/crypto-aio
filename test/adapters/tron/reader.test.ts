@@ -50,7 +50,8 @@ describe('Tron reader', () => {
       height: 3n,
       hash: h.node.block(3)?.id,
       parentHash: h.node.block(2)?.id,
-      timestamp: h.node.block(3)?.timestamp,
+      // In Unix seconds, as every family reports block times; the node keeps milliseconds.
+      timestamp: (h.node.block(3)?.timestamp ?? 0) / 1000,
     });
     expect(await h.run(h.reader.getBlock(h.node.block(3)?.id ?? ''))).toEqual(block);
     expect(await h.run(h.reader.getBlock(99n))).toBeNull();
@@ -659,7 +660,8 @@ describe('Tron reader: verdicts and lenient decoding', () => {
         },
       ],
       decoding: 'complete',
-      timestamp: 1_535_905_488_000,
+      // The block's time in Unix seconds; java-tron reports milliseconds.
+      timestamp: 1_535_905_488,
     });
     expect(() => verdictOf(tronwebCodec, EARLY_TRX, early(EARLY_TRX.id))).toThrow(
       undecided,

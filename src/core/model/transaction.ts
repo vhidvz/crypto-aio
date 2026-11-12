@@ -82,14 +82,20 @@ export interface TxStatus {
   readonly replacedBy?: string;
 }
 
-/** The block a transaction is in. `timestamp` is the block's time as the chain reports it. */
+/**
+ * The block a transaction is in. `timestamp` is the block's time as the chain records it,
+ * in Unix seconds on every family (Tron's milliseconds are converted).
+ */
 export interface BlockRef {
   readonly height: bigint;
   readonly hash: string;
   readonly timestamp?: number;
 }
 
-/** A block. `timestamp` is its time as the chain reports it. */
+/**
+ * A block. `timestamp` is its time as the chain records it, in Unix seconds on every
+ * family (Tron's milliseconds are converted).
+ */
 export interface Block {
   readonly height: bigint;
   readonly hash: string;
