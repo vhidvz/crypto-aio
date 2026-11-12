@@ -41,7 +41,7 @@ import {
   type PreparedOperation,
   type Submission,
 } from '../lifecycle/views';
-import { Scanner, type ScannerOptions } from '../observe/scanner';
+import { createScanner, type Scanner, type ScannerOptions } from '../observe/scanner';
 import { deriveXpubChild } from '../signing/hd';
 import type { SignatureBundle } from '../signing/types';
 import { resolveWallet, walletOptionsOf, xpubPathOf } from '../signing/wallet';
@@ -394,7 +394,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     const internals = internalsOf(this);
     const container = containerOf(internals.container);
     const { runtime } = container;
-    return new Scanner(
+    return createScanner(
       {
         load: async () => {
           // One pooled entry, so the driver and its transport always belong together.

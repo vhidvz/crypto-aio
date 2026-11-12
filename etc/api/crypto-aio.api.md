@@ -2225,7 +2225,6 @@ export interface ScanFilter {
 export class Scanner implements AsyncIterable<ScanEvent> {
     // (undocumented)
     [Symbol.asyncIterator](): AsyncIterator<ScanEvent>;
-    constructor(deps: ScannerDeps, options: ScannerOptions);
 }
 
 // @public (undocumented)

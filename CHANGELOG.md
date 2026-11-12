@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - During a rolling upgrade, `aio.operations.list()` and `recover()` leave out an
   Operation a newer version stored, with a logged warning, instead of throwing
   `RECORD_FORMAT_UNSUPPORTED` on the first one; a read by id, key or ref still throws.
+- `Scanner`'s constructor is private, so its internal dependencies leave the declarations;
+  scanners come from `bc.scanner()`, as before (the package exports `Scanner` as a type
+  only).
 - `OperationStore.findByRef` is specified for several Operations of a namespace holding
   one ref, which the core never writes: a store may return any one of them.
 

@@ -168,7 +168,7 @@ function sameCursor(a: ScanCursor, b: ScanCursor): boolean {
  * window is then refilled from the chain below that block.
  */
 export class Scanner implements AsyncIterable<ScanEvent> {
-  constructor(
+  private constructor(
     private readonly deps: ScannerDeps,
     private readonly options: ScannerOptions,
   ) {
@@ -479,4 +479,13 @@ export class Scanner implements AsyncIterable<ScanEvent> {
       });
     }
   }
+}
+
+/** A scanner over `deps`; the handle's way past the private constructor (`bc.scanner()`). */
+export function createScanner(deps: ScannerDeps, options: ScannerOptions): Scanner {
+  const Make = Scanner as unknown as new (
+    deps: ScannerDeps,
+    options: ScannerOptions,
+  ) => Scanner;
+  return new Make(deps, options);
 }
