@@ -45,7 +45,9 @@ const now = await bc.getTransactionStatus(operationId); // one read
   the `finalized` tag). An endpoint without that state, such as a non-archive L2 node, makes
   the proof decide nothing (a retryable `PROVIDER_UNAVAILABLE`) until endpoints that serve it
   answer; so does any other JSON-RPC error on a proof read, since only a definitive answer
-  proves "no". With one endpoint the proof quorum is 1, so configure two or more providers.
+  proves "no". With one endpoint the proof quorum is 1, so configure three or more
+  independent providers: an endpoint that is down still counts toward the quorum of two, so
+  with two, proofs wait while either is down.
 - **Tron token verdicts.** As on EVM, an Operation's TRC-20 `transfer` counts as executed
   only if its receipt succeeded and the token contract logged a `Transfer` from the sender
   to the recipient, of any positive amount (a fee-on-transfer token that delivers less still
@@ -62,7 +64,7 @@ const now = await bc.getTransactionStatus(operationId); // one read
   the proof reads every height whose block TaPoS could have matched; if none carries the
   signed reference, no block can hold the transaction, and absence is proven with no scan.
   An index that lags, or an endpoint that cannot serve those blocks, decides nothing. With one
-  provider the proof quorum is 1, so configure two or more
+  provider the proof quorum is 1, so configure three or more
   ([Tron networks](../reference/networks/tron.md)).
 - **Run the monitor.** A node answers "not found" for every transaction outside its index
   window (geth keeps the last 2,350,000 blocks: weeks on fast chains, under a year on
@@ -84,7 +86,7 @@ const now = await bc.getTransactionStatus(operationId); // one read
   quorum attests the block of its blockhash, has finalized the block after its last valid
   height, and serves every block of its window without it. An index that shows nothing
   proves nothing, and an endpoint that lags, or no longer holds those blocks, decides
-  nothing. With one provider the proof quorum is 1, so configure two or more, ideally three
+  nothing. With one provider the proof quorum is 1, so configure three or more
   ([Solana networks](../reference/networks/solana.md)).
 - **TON verdicts.** A TON Attempt's id is its external message's normalized hash, not a
   transaction hash (`canonical: false`); the status's `txHash` carries the transaction hash
@@ -96,7 +98,9 @@ const now = await bc.getTransactionStatus(operationId); // one read
   (`TX_REVERTED`) with a `status.reason`: `transfer bounced` (the value came back, less
   fees), `jetton transfer bounced` (the jettons did not arrive), `the wallet skipped a
   message` (the wallet could not send it when it ran, usually for lack of funds) or `the
-  wallet transaction failed`; in these cases nothing was delivered. A bounce rests on the
+  wallet transaction failed`; in these cases nothing was delivered. These reasons are for
+  people and may be reworded in any release: decide in code on the error code and the
+  observation's `failure` (`'reverted'` or `'unevidenced'`), never on the text. A bounce rests on the
   chain itself, never on the indexer's word: the provider's raw records of your wallet's
   transaction and of the delivery, each checked against its hash and linked by the
   message's own hash, must show the value sent back (or a jetton wallet that ran nothing
@@ -123,11 +127,25 @@ const now = await bc.getTransactionStatus(operationId); // one read
   deleted, then deployed again by anyone with its seqno back at 0. So when those
   transactions show the wallet deleted or deployed again, when an earlier life of the
   wallet cannot be ruled out, or when the walk cannot reach back far enough within its
-  limit (512 of the wallet's transactions), the Attempt stays undecided (a retryable
-  `PROVIDER_UNAVAILABLE`, logged) instead of risking a second payment. The library never
+  limit (512 of the wallet's transactions, counted from the wallet's newest attested state,
+  so a busy wallet can pass it for good), the Attempt stays undecided (a retryable
+  `PROVIDER_UNAVAILABLE`, logged) instead of risking a second payment
+  ([busy wallets](../reference/networks/ton.md)). The library never
   deletes a wallet, so only something else that holds the key (or years of unpaid storage
   on an emptied wallet) can reset it: never share the key. Proof endpoints should be
   archival ([TON networks](../reference/networks/ton.md)).
+
+- **Bitcoin verdicts.** A transfer is `final` at 6 confirmations, its block attested by the
+  proof quorum. A transaction never fails on chain once mined, so a Bitcoin Operation fails
+  only with `TX_REPLACED`: another transaction, outside the library, spent one of its inputs
+  and that spend is final. Its own replacements and cancels spend every input of the
+  original, so at most one of its Attempts lands
+  ([Bitcoin networks](../reference/networks/bitcoin.md)).
+- **Avalanche verdicts.** An accepted X-Chain or P-Chain transaction is final at once (one
+  confirmation), proven from its block under the proof quorum. A transfer fails only with
+  `TX_REPLACED`, once a transaction that spent one of its inputs is final; there is no
+  expiry, so one that never lands keeps its inputs held until then
+  ([Avalanche X-Chain and P-Chain](../reference/networks/avalanche.md)).
 
 ## Next steps
 

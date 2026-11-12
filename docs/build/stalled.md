@@ -99,7 +99,7 @@ idempotency key): the new Operation spends other coins, and both can confirm. Re
 call with the same key, or `rebroadcast`, `replace` or `cancel` it; see
 [Bitcoin networks](../reference/networks/bitcoin.md) for how it resolves.
 
-On expiry- and seqno-based chains (Tron, Solana and TON today; `fakeexpiry` and
+On expiry- and seqno-based chains (Tron, Solana and TON; `fakeexpiry` and
 `fakeseqno` in the testing kit), `bc.rebuild(id)` re-issues an Operation after its expiry is
 **proven** (`expired`, error `TX_EXPIRED`). It adds a `rebuild` Attempt and reopens the
 Operation. Other chains throw `UNSUPPORTED_CAPABILITY`. Replace, cancel and rebuild sign a
@@ -140,11 +140,14 @@ every refused message with HTTP 500, which the library reads as "maybe sent", so
 transfer surfaces as ambiguous; another endpoint's definitive refusal leaves it `stalled`.
 Either way the message may still land within its 60-second lifetime. The workers watch it
 until it is proven `final` or `failed`, or `expired` once its lifetime has passed, and only
-then does `bc.rebuild(id)` sign it again, at the wallet's next seqno. One exception: when more
-than 512 of the wallet's transactions follow the message (incoming deposits count), a message
-that never landed can no longer be proven `expired`. It stays undecided, and the wallet's next
-transfers fail with `SEQUENCE_BUSY` ([TON networks](../reference/networks/ton.md) explains the
-limit).
+then does `bc.rebuild(id)` sign it again, at the wallet's next seqno. One exception: the
+proof reads at most 512 of the wallet's transactions, counted from its newest state, so once
+more than that have run since the message's build (incoming deposits count, also those after
+its lifetime), a message that never landed can no longer be proven `expired`. It stays
+undecided for good, `abandon` refuses it (it was signed), and the wallet's next transfers fail
+with `SEQUENCE_BUSY`. No call ends it: check on an explorer whether the long-expired message
+ran, settle that payment by hand, and send from another wallet. Pay out from wallets that do
+not take deposits ([TON networks](../reference/networks/ton.md) explains the limit).
 
 ## Next steps
 

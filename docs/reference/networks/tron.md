@@ -17,15 +17,16 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   (SLIP-44 coin type 195) through the wallet's `keyRef.path`. A TRX transfer to its own
   sender is refused (`INVALID_INTENT`); a TRC-20 one is valid on chain and allowed. A TRX
   transfer to a contract is refused before signing only on a network whose
-  `getForbidTransferToContract` parameter is 1, as java-tron would refuse it there; it is 0 on
-  mainnet, Shasta and Nile today, where such a transfer is valid. That parameter is one
+  `getForbidTransferToContract` parameter is 1, as java-tron would refuse it there; mainnet,
+  Shasta and Nile set it to 0, where such a transfer is valid. That parameter is one
   endpoint's answer, not the proof quorum's: a wrong one can only refuse a valid transfer.
 - **Fees (`tron`).** Every charge is in TRX, and `bandwidth` and `energy` may be 0 when staked
   or free resources cover them (`activation` and `memo` are chain fees that no resource
   covers): `bandwidth` (the signed transaction's size plus 64 bytes, at the chain's price per
   byte), `energy` (TRC-20 only), `activation` (a TRX transfer to an address that was never
-  activated: 1 TRX today, and its bandwidth is then a flat 0.1 TRX unless staked bandwidth
-  covers it, since free bandwidth never applies) and `memo` (1 TRX today). Prices come from
+  activated: a chain parameter, 1 TRX on mainnet, and its bandwidth is then a flat 0.1 TRX
+  unless staked bandwidth covers it, since free bandwidth never applies) and `memo` (a chain
+  parameter too, 1 TRX on mainnet). Prices come from
   the chain's parameters on every estimate, and the charges are an `upper` bound;
   `fee.details` (`TronFeeDetails`) shows the bandwidth, the energy, their prices and the fee
   limit. `slow`, `normal` and `fast` give the same estimate: Tron has no fee market. Before
@@ -37,11 +38,13 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   `feeLimit` covers all of it, because Tron caps a call's energy by `feeLimit` even when
   staked TRX pays for it; the `energy` charge is the fee limit less what your staked energy
   covers. The node reports the simulated energy, the energy price and the network's maximum
-  fee limit (`getMaxFeeLimit`, 15,000 TRX today), and a call that fails on chain can burn its
+  fee limit (`getMaxFeeLimit`, a chain parameter), and a call that fails on chain can burn its
   whole fee limit. So the fee limit is also bounded by your own
   `chains.tron.options.maxFeeLimit`, which no endpoint can raise: sun as a bigint, from 1 to
   2^53 − 1, and 100 TRX by default (`DEFAULT_MAX_FEE_LIMIT`, enough for a transfer to a new
-  holder, about 130,000 energy, at 420 sun per energy with the margin). The fee limit is the
+  holder, about 130,000 energy, at 420 sun per energy with the margin). A plugin network may
+  set its own default as `params.maxFeeLimit` (same type and range); the handle's option
+  wins over it. The fee limit is the
   estimate plus its margin, at most the network's maximum and at most `maxFeeLimit`. A
   transfer whose simulated energy alone needs more is refused with `INVALID_INTENT` before
   signing; when `maxFeeLimit` is the bound, the message names it and `error.details` carries
@@ -81,8 +84,10 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   contract's `deprecated()` (one constant call from one endpoint, beside the balance read),
   and a token that answers `true` is refused before signing with `ASSET_RESOLUTION`, whose
   message names no address. Send to the upgraded contract by contract, or register it as an
-  asset, until a release moves the `USDT` alias there. A contract without the method (a
-  revert, or anything but an ABI `bool`) is not deprecated, and a failed read stays retryable.
+  asset. The `USDT` alias keeps naming the contract it names now through 1.x: the intent hash
+  behind an idempotency key covers the resolved asset, so an alias moves only in a major
+  release. A contract without the method (a revert, or anything but an ABI `bool`) is not
+  deprecated, and a failed read stays retryable.
 - **Memos** are UTF-8 text of at most 256 bytes (`MAX_MEMO_BYTES`), public forever, and each
   costs the memo fee. A deposit's memo arrives as `transfer.memo`.
 - **Scanning and history.** Blocks carry TRX transfers and TRC-20 `Transfer` events; any
@@ -90,13 +95,14 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   call (a contract paying it out) is in neither scans nor history: internal transfers are not
   decoded. Address history comes from TronGrid's `/v1` API: name the `trongrid` or `public`
   preset as the handle's `indexer` (without one, `history()` throws
-  `UNSUPPORTED_CAPABILITY`). It lists solidified entries only, at most 200 per page,
-  and reads each one back through the handle's `provider`. It pages through TronGrid's
+  `UNSUPPORTED_CAPABILITY`). It lists solidified entries only, at most 200 per page (a
+  larger `limit` is cut to 200, not refused), and reads each one back through the handle's
+  `provider`. It pages through TronGrid's
   `/transactions` first: the account's own transactions, TRX sent to it and, for a contract
   account, other accounts' calls to it. Then `/transactions/trc20`: every TRC-20 transfer
   from or to the account (a spender's `transferFrom` out of it included), less the account's
   own calls, listed already. A wallet's incoming TRC-20 transfer comes once, in the second
-  part (TronGrid, checked on Nile in September 2026), but a call to a contract account that
+  part (as TronGrid serves it on Nile), but a call to a contract account that
   moves its own tokens comes in both parts, so dedupe on `transfer.id`, as for scans.
 - **Presets and endpoints.** `trongrid` requires a key and sends it in the
   `TRON-PRO-API-KEY` header, as a `Secret`. `public` is TronGrid without a key, for trying
@@ -177,7 +183,8 @@ configure({
 const tron = Blockchain.create({ chain: 'tron' });
 await tron.ready(); // loads tronweb; every endpoint must serve mainnet's block 0
 const fee = await tron.estimateFee({ asset: 'USDT', to, amount: '25' });
-// `fee.details` holds the `TronFeeDetails` fields but is typed as a plain record: cast each
+// `fee.details` holds the `TronFeeDetails` fields but is typed as a plain record through
+// 1.x (see below): cast each
 const feeLimit = fee.details.feeLimit as bigint | undefined;
 const sub = await tron.transfer(
   { asset: 'USDT', to, amount: '25', memo: 'order 7' },
@@ -188,3 +195,21 @@ const cap: TronFeeOverride = { feeLimit: 30_000_000n }; // as `fee`: sun, estima
 const { energy } = await tron.ext.tron.getResources(to);
 const client = await native(tron, 'tronweb'); // a TronWeb on the same transport
 ```
+
+## Fee overrides, fee details and `ext.tron`
+
+These shapes, exported as types from `crypto-aio/tron`, are what semver covers for the Tron
+family ([Versioning and stability](../stability.md)). The core types they fill
+(`TransferIntent.fee`, `FeeEstimate.details`) stay plain records, so cast to them.
+
+- **`TronFeeOverride`**: `{ feeLimit }`, in sun as a `bigint`, TRC-20 transfers only, from the
+  estimate up to the network's maximum and `maxFeeLimit`.
+- **`TronFeeDetails`**: `bandwidth` (bytes: the signed transaction's size plus 64) and
+  `bandwidthPrice` (sun per byte); on TRC-20 transfers `energy` (the simulated energy plus
+  the margin), `energyPrice` (sun per energy) and `feeLimit` (sun); and `activation`, whether
+  a TRX transfer pays to activate its recipient.
+- **`ext.tron.getResources(address)`** returns `TronResources`, the account's resources as
+  one full node reports them now: `activated`, whether the account exists on chain, and as
+  `bigint`s `freeBandwidth` and `stakedBandwidth` (bytes left; free bandwidth refills
+  daily) and `energy` (left from
+  staked or delegated TRX).

@@ -5,8 +5,8 @@ description: "Solana: priority fees, SPL tokens, expiry, scanning, history and s
 
 # Solana networks
 
-The Solana family serves the `solana` chain on three clusters with `@solana/web3.js` (v1),
-installed next to crypto-aio: `npm install @solana/web3.js`. A transfer moves SOL or one
+The Solana family serves the `solana` chain on three clusters with `@solana/web3.js` (1.99
+or later, or 3), installed next to crypto-aio: `npm install @solana/web3.js`. A transfer moves SOL or one
 classic SPL token to one recipient, with an optional memo. The driver sends every request
 itself, through the handle's transport, and builds its messages and token account
 addresses itself; the SDK only backs `native()`, so `@solana/web3.js` 1.99 or later, and
@@ -42,8 +42,8 @@ never over a WebSocket.
   `-32005`) shows as `RATE_LIMITED`, and is retried like one.
 - **The `public` preset proves that a transfer never landed only slowly.** Solana publishes
   100 requests per 10 s per IP, and 40 per 10 s for one method, and the `public` preset
-  paces each endpoint at 4 requests per second. But in September 2026 devnet and testnet
-  answered HTTP 429 (`Retry-After: 10`) after about 6 or 7 `getBlock` calls per 10 s.
+  paces each endpoint at 4 requests per second. But devnet and testnet have been seen to
+  answer HTTP 429 (`Retry-After: 10`) after about 6 or 7 `getBlock` calls per 10 s.
   Proving a transaction absent reads every block of its window, over 150 `getBlock` calls,
   and a proof read that meets a 429 fails at once. Each pass keeps what it has verified in
   memory (the window's frame, and how far the read got), and the next pass resumes there,
@@ -58,11 +58,13 @@ never over a WebSocket.
   endpoints, and an endpoint is a URL: a single URL, load-balanced or not, is trusted for
   everything it answers. A backend that lags, was pruned or lacks blocks never decides
   anything, but only a second, independent provider catches one that answers wrongly, and a
-  wrong "not included" would let `rebuild` pay twice. Configure two or more independent
-  providers, ideally three, for example `provider: ['alchemy', 'ankr', 'own-node']`: with
-  exactly two, both must answer, and once one has been down for about three health
-  intervals the other decides alone until the first rejoins; a third keeps proofs
-  cross-checked meanwhile. If you set a `rateLimit` on an endpoint that serves proofs, give
+  wrong "not included" would let `rebuild` pay twice. Configure three or more independent
+  providers, for example
+  `provider: ['alchemy', 'ankr', 'own-node']`. A proof needs two endpoints (`proofQuorum`),
+  and an endpoint that is down still counts toward that: with exactly two, a proof waits
+  (a retryable `PROVIDER_UNAVAILABLE`) for as long as either is down, and a third keeps
+  proofs going meanwhile. `transport: { degradedProofs: true }` lets the one left prove alone
+  instead, at the cost of trusting it. If you set a `rateLimit` on an endpoint that serves proofs, give
   it `burst: 2` or more (the default is the rate rounded up): with a burst of 1, an endpoint
   that recovers from an outage may never rejoin the proof quorum.
 - **Retention.** Endpoints must serve transaction history (`getTransaction`, `getBlock`,
@@ -75,13 +77,15 @@ never over a WebSocket.
 - **Transfers.** SOL (a System Program transfer) or classic SPL tokens (`transferChecked`),
   one output per transfer. Tokens move between associated token accounts: the sender's for
   the mint pays, and the recipient's receives. When the recipient has none, the transfer
-  creates it (`CreateIdempotent`) and the sender pays its rent-exempt deposit (1,488,440
-  lamports today, read from the node). The estimate shows that deposit as a `rent` charge,
+  creates it (`CreateIdempotent`) and the sender pays its rent-exempt deposit (read from the
+  node: 1,488,440 lamports at a rent rate of 2,540 lamports per byte-year). The estimate shows that deposit as a `rent` charge,
   an `upper` bound: if someone creates the account first, no rent is paid. `getBalance` of a
   token sums every classic token account the owner holds for the mint, and
   `bc.ext.solana.getTokenAccounts(owner, mint?)` lists them; tokens outside the sender's
   associated token account count in that balance but cannot be sent (`INSUFFICIENT_FUNDS`).
-  Token-2022 mints throw `UNSUPPORTED_CAPABILITY`.
+  Token-2022 is not supported: its mints throw `UNSUPPORTED_CAPABILITY`, and its accounts are
+  left out of `getTokenAccounts`. A 1.x minor release may add Token-2022, and with it list
+  those accounts there.
 - **Checks before signing.** These are refused before anything is signed: SOL to an account
   the System Program does not own, such as a program, a token account or a stake account
   (`INVALID_INTENT`; to fund one on purpose, use `native()`); SOL that would create an
@@ -89,7 +93,8 @@ never over a WebSocket.
   (send them to a wallet or a PDA instead) or to a token account instead of its owner
   (`INVALID_INTENT`); a frozen token account, the sender's or the recipient's
   (`INVALID_INTENT`); and a transfer that would leave the sender with lamports between 0 and
-  its rent-exempt minimum (650,240 lamports for an empty account today), which fails with
+  its rent-exempt minimum (read from the node: 650,240 lamports for an empty account at a
+  rent rate of 2,540 lamports per byte-year), which fails with
   `INSUFFICIENT_FUNDS` and its `details.required` and `details.available`.
 - **Fees (`solana`).** Every charge is in SOL: `network` (the signature fee, 5,000 lamports
   per signature of the message; a transfer has one), `priority` (the compute-unit price,
@@ -135,7 +140,7 @@ never over a WebSocket.
   library refuses the second one before anything is sent (`NONCE_CONFLICT` with
   `details.heldBy`).
 - **Expiry instead of replacement.** A transaction names a recent blockhash, valid for 150
-  blocks, about a minute at today's block times, and it can still land in the block after
+  blocks, about a minute at Solana's usual block times, and it can still land in the block after
   its last valid block height (`lastValidBlockHeight + 1`). There is no replace and no
   cancel (`UNSUPPORTED_CAPABILITY`). While the transaction is not seen, the workers resend
   the same bytes. It becomes `expired` (`TX_EXPIRED`) only once the proof quorum attests the
@@ -217,10 +222,25 @@ never over a WebSocket.
   `CRYPTO_AIO_IT_SOLANA_RPC_URL` an endpoint (paced at 4 requests per second); the test that
   proves a transaction absent from a whole window runs only with
   `CRYPTO_AIO_IT_SOLANA_WINDOW=1`, and needs a keyed or self-hosted endpoint in that URL.
-- **Not in this release:** durable nonces, Token-2022, building versioned transactions with
+- **Not supported:** durable nonces, Token-2022, building versioned transactions with
   address lookup tables (received ones are decoded), a whole signed transaction in
   `submitSignatures` (submit signature bundles), a Solana network of your own (a local test
   validator has its own genesis hash), and `@solana/kit`.
+
+## Fee overrides, fee details and `ext.solana`
+
+These shapes, exported as types from `crypto-aio/solana`, are what semver covers for the
+Solana family ([Versioning and stability](../stability.md)). The core types they fill
+(`TransferIntent.fee`, `FeeEstimate.details`) stay plain records.
+
+- **`SolanaFeeOverride`**: `{ computeUnitPrice, computeUnitLimit? }`, `bigint`s:
+  micro-lamports per compute unit, and a limit from 1 to 1,400,000.
+- **`SolanaFeeDetails`**: `signatures` (a count), `baseFee` (5,000 lamports per signature),
+  `computeUnitLimit`, `computeUnitPrice` (micro-lamports per unit), `priorityFee` and `rent`
+  (lamports, `0n` without a created account), and `createsRecipientAccount`.
+- **`ext.solana.getTokenAccounts(owner, mint?)`** returns `SolanaTokenAccount[]`, the owner's
+  classic SPL token accounts, for one mint when given, at the `confirmed` commitment from one
+  endpoint: `address` (the token account's own), `mint`, `amount` (base units) and `frozen`.
 
 `native(bc, '@solana/web3.js')` returns a `Connection` wired to the handle's transport, so it
 never sees the real URL or key. It speaks HTTP JSON-RPC only: subscriptions have no bridge.
@@ -247,8 +267,8 @@ decides whether a transfer can be sent again. The driver's guards:
   lamport fails the estimate with a retryable `PROVIDER_UNAVAILABLE`, so one endpoint can
   neither inflate an estimate nor deflate it.
 - **Proof providers.** A proof that a transfer never landed is what lets `rebuild` sign a
-  new one, so a wrong one pays twice. Each proof is a quorum over your endpoints: use two or
-  three independent keyed or self-hosted providers. The `public` preset's rate limits let it
+  new one, so a wrong one pays twice. Each proof is a quorum over your endpoints: use three
+  or more independent keyed or self-hosted providers, so one outage does not stall proofs. The `public` preset's rate limits let it
   prove absence only slowly, over many passes, so a transfer that never landed stays
   unresolved for minutes there.
 - **A refusal is not a failure.** A `stalled` transfer (`TX_REFUSED`, `INSUFFICIENT_FUNDS`)
