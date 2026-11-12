@@ -1,5 +1,8 @@
+/** An address as a chain's codec normalizes it. */
 export interface NormalizedAddress {
+  /** The one form that identifies the address: equality and stored records use it. */
   readonly canonical: string;
+  /** The form to show, such as a checksummed or user-friendly spelling. */
   readonly display: string;
   /**
    * Chain-specific meaning of a recipient address. It reaches drivers in
@@ -12,6 +15,7 @@ export interface NormalizedAddress {
   readonly variant?: Readonly<Record<string, unknown>>;
 }
 
+/** Formats an address for display under a family's options (`Address.format`). */
 export type AddressFormatter = (
   address: NormalizedAddress,
   options?: Readonly<Record<string, unknown>>,

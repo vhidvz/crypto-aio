@@ -1,3 +1,4 @@
+/** A request as a `FakeFetch` handler sees it. */
 export interface FakeRequest {
   readonly url: URL;
   readonly method: string;
@@ -6,6 +7,7 @@ export interface FakeRequest {
   json<T = Record<string, unknown>>(): T;
 }
 
+/** A handler's answer: a `Response`, or its status (default 200) with a JSON or text body. */
 export type FakeReply =
   | Response
   | {
@@ -15,11 +17,13 @@ export type FakeReply =
       readonly headers?: Readonly<Record<string, string>>;
     };
 
+/** Answers the requests of one route. */
 export type FakeHandler = (
   request: FakeRequest,
   signal: AbortSignal | undefined,
 ) => FakeReply | Promise<FakeReply>;
 
+/** A request a `FakeFetch` received, in `calls`. */
 export interface RecordedCall {
   readonly url: string;
   readonly method: string;
@@ -101,10 +105,12 @@ export function hang(signal: AbortSignal | undefined): Promise<never> {
   });
 }
 
+/** A JSON-RPC result answering `request`. */
 export function rpcResult(request: FakeRequest, result: unknown): FakeReply {
   return { json: { jsonrpc: '2.0', id: request.json<{ id: unknown }>().id, result } };
 }
 
+/** A JSON-RPC error answering `request`. */
 export function rpcError(request: FakeRequest, code: number, message: string): FakeReply {
   return {
     json: {

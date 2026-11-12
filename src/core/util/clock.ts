@@ -1,5 +1,11 @@
+/**
+ * The time source of a container (`AioOptions.clock`), its stores and its transports. A
+ * port you may implement: it never gains a required member in a 1.x release.
+ */
 export interface Clock {
+  /** Milliseconds since the epoch. */
   now(): number;
+  /** Resolves after `ms`, or rejects with the signal's reason once it aborts. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 

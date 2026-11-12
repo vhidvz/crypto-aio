@@ -5,19 +5,27 @@ import type { Amount, AmountInput } from './amount';
 import type { AssetId, AssetInfo, AssetRef } from './asset';
 import type { FeeOverride, FeeSpeed } from './fee';
 
+/** One payment of a transfer with several outputs. */
 export interface TransferOutputInput {
   readonly to: string;
   readonly amount: AmountInput;
 }
 
+/**
+ * A transfer to make: `to` and `amount` for one payment, or `outputs` for several (the
+ * `batch-transfer` capability), never both.
+ */
 export interface TransferIntent {
   readonly to?: string;
   readonly amount?: AmountInput;
   readonly outputs?: readonly TransferOutputInput[];
   /** `'native'`, a token ref, an asset id, or an alias registered for this chain/network. */
   readonly asset?: AssetRef | string;
+  /** The sending address (default: the handle's wallet's); it must be the wallet's. */
   readonly from?: string;
+  /** A public memo or comment (the `memo` capability). */
   readonly memo?: string;
+  /** A speed (default `normal`) or the family's explicit fee override. */
   readonly fee?: FeeSpeed | FeeOverride;
 }
 
@@ -54,10 +62,15 @@ export interface DriverIntent {
   readonly fee: FeeSpeed | FeeOverride;
 }
 
+/** The intent as an Operation stores it: what the driver got, with the asset's id. */
 export interface StoredIntent extends DriverIntent {
   readonly assetId: AssetId;
 }
 
+/**
+ * What a transaction pays, for signers and `beforeSign` policies: the asset, each output
+ * with its canonical address and its base-unit amount as a decimal string, and the memo.
+ */
 export interface IntentSummary {
   readonly asset: AssetId;
   readonly outputs: readonly { readonly to: string; readonly amount: string }[];

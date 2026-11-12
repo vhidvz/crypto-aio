@@ -7,8 +7,13 @@ import { ChainCatalog } from './chains';
 import { PresetCatalog, type ProviderPreset } from './providers';
 import { BUILTIN_SCHEMES, SchemeCatalog, type SignatureScheme } from './schemes';
 
-/** Everything a chain family contributes. Plugin modules must not import SDKs. */
+/**
+ * Everything a chain family contributes. Plugin modules must not import SDKs. Registering
+ * the same plugin again is a no-op; another plugin under a registered name is
+ * `CONFIG_INVALID`.
+ */
 export interface Plugin {
+  /** Unique among the plugins of a container. */
   readonly name: string;
   readonly chains?: readonly ChainInfo[];
   readonly adapters?: readonly AdapterManifest[];

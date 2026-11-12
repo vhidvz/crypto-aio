@@ -28,13 +28,17 @@ import type { Clock } from '../util/clock';
  */
 export type WalletOptions = Readonly<Record<string, unknown>>;
 
+/** One public key of the sending wallet, with the scheme it signs with. */
 export interface WalletKey {
   readonly scheme: string;
   readonly publicKey: Uint8Array;
+  /** Where the signer finds the private key, for a signer that holds several. */
   readonly keyRef?: KeyRef;
 }
 
+/** What a build needs besides the intent: the sender, its keys and its wallet options. */
 export interface BuildContext {
+  /** The sending address, as the driver's `normalize` returned it. */
   readonly from: string;
   readonly keys: readonly WalletKey[];
   readonly wallet: WalletOptions;
@@ -53,6 +57,7 @@ export interface BuildContext {
   readonly signal?: AbortSignal;
 }
 
+/** Whether the sender holds what the transfer and its fee need; when not, the shortfall. */
 export type FundsCheck =
   | { readonly ok: true }
   | {
@@ -65,6 +70,10 @@ export type FundsCheck =
 /**
  * `refused`: state-dependent (may become valid, or may already be included) — observed only.
  * `rejected`: permanently invalid by construction (malformed, bad signature, wrong chain).
+ * The core records one endpoint's `rejected` as proven evidence and fails the Operation
+ * with `TX_REJECTED`, after which a caller may pay again, so a driver returns it only once
+ * it has checked that the reason holds for its own bytes; anything less certain is
+ * `refused`.
  */
 export type BroadcastResult =
   | { readonly kind: 'accepted' }
@@ -72,8 +81,10 @@ export type BroadcastResult =
   | { readonly kind: 'refused'; readonly code: CodesOf<'chain'>; readonly reason: string }
   | { readonly kind: 'rejected'; readonly reason: string };
 
+/** What one read shows of a transaction: nothing yet, a mempool entry, or a block. */
 export interface DriverTxObservation {
   readonly seen: 'none' | 'mempool' | 'block';
+  /** The canonical hash the chain reports for the transaction, once seen. */
   readonly txHash?: string;
   readonly blockHeight?: bigint;
   readonly blockHash?: string;
@@ -92,37 +103,54 @@ export interface DriverTxObservation {
   readonly failure?: TxFailure;
 }
 
+/** One movement of value a transaction makes, in base units. */
 export interface DriverTransfer {
-  /** Deterministic within the transaction, e.g. `native`, `log:3`, `vout:1`, `ix:0.2`. */
+  /**
+   * Deterministic within the transaction, e.g. `native`, `log:3`, `vout:1`, `ix:0.2`. A
+   * deposit's id is `${txId}:${locator}`, which callers credit once by, so a driver gives a
+   * transfer the same locator from the scanner, `getTransaction` and `history`, from every
+   * provider, and in every later version of the driver.
+   */
   readonly locator: string;
+  /** The senders, as the driver's `normalize` returns them. */
   readonly from: readonly string[];
   readonly to: string;
   readonly asset: AssetRef;
   readonly amount: bigint;
+  /** Where the transfer was read from, such as the native value or a token event. */
   readonly source: TransferSource;
   readonly memo?: string;
 }
 
+/** A transaction as a driver decodes it. */
 export interface DriverTransaction {
   readonly id: string;
   readonly observation: DriverTxObservation;
+  /** What the transaction paid, per asset; absent while unknown. */
   readonly fee?: readonly { readonly asset: AssetRef; readonly amount: bigint }[];
   readonly transfers: readonly DriverTransfer[];
+  /** Whether `transfers` lists every movement the transaction makes. */
   readonly decoding: Decoding;
   readonly raw?: RawTx;
+  /** The block's time, as the chain reports it. */
   readonly timestamp?: number;
+  /** Family-specific fields, passed through to `Transaction.details`. */
   readonly details: Readonly<Record<string, unknown>>;
 }
 
+/** A block header as a driver reads it, with its transaction ids when the read has them. */
 export interface DriverBlock {
   readonly height: bigint;
   readonly hash: string;
   readonly parentHash: string;
+  /** The block's time, as the chain reports it. */
   readonly timestamp?: number;
   readonly transactionIds?: readonly string[];
 }
 
+/** The chain's address rules: validation, the canonical form, and derivation from a key. */
 export interface AddressCodec {
+  /** Whether `address` is valid on the network; never throws. */
   validate(address: string): boolean;
   /**
    * Throws `ValidationError('INVALID_ADDRESS')`. The returned `variant` is part of the
@@ -130,18 +158,32 @@ export interface AddressCodec {
    * and should contain only semantic fields that change what the transfer does (for example
    * TON's `bounceable`), never encoding-only choices, so two spellings of one recipient
    * with the same meaning hash the same.
+   *
+   * Its output feeds the intent hash behind idempotency keys and the sequence keys of
+   * nonce state, both of which a store keeps across upgrades: a later version of the
+   * driver returns the same `canonical` and `variant` for the same input.
    */
   normalize(address: string): NormalizedAddress;
+  /** The wallet's address for `publicKey`, under the wallet's options (address type, ...). */
   fromPublicKey(publicKey: Uint8Array, wallet?: WalletOptions): NormalizedAddress;
+  /** Formats an address for display, such as a checksummed or user-friendly form. */
   readonly format?: AddressFormatter;
 }
 
+/** Reads of chain state; the contract table on `ChainDriver` gives each one's call tags. */
 export interface ChainReader {
+  /** The balance of `asset` at `address`, in base units. */
   getBalance(address: string, asset: AssetRef): Promise<bigint>;
+  /** The head's height. */
   getBlockHeight(): Promise<bigint>;
-  /** Highest block satisfying the network's finality policy. */
+  /**
+   * Highest block satisfying the network's finality policy: the chain's own finality
+   * where it has one, else the head less the confirmations the network requires.
+   */
   getFinalizedHeight(): Promise<bigint>;
+  /** A block by height or hash, or `null` when there is none. */
   getBlock(ref: bigint | string): Promise<DriverBlock | null>;
+  /** A transaction by id, decoded, or `null` when the chain does not have it. */
   getTransaction(id: string): Promise<DriverTransaction | null>;
   /**
    * Current view of an Attempt (uses `purpose: 'monitor'` reads). `ordering` and `from` are
@@ -152,23 +194,42 @@ export interface ChainReader {
     ordering: OrderingData | undefined,
     from: string | undefined,
   ): Promise<DriverTxObservation>;
+  /** A token's symbol and decimals, read from the chain (the `tokens` capability). */
   getTokenMetadata?(ref: TokenRef): Promise<AssetMetadata>;
-  /** Canonicalizes a token contract (e.g. EIP-55); identity for asset ids. */
+  /**
+   * Canonicalizes a token contract (e.g. EIP-55); identity for asset ids. Asset ids feed
+   * the intent hash, so a later version of the driver keeps the same canonical form.
+   */
   normalizeTokenRef?(ref: TokenRef): TokenRef;
 }
 
+/** Builds transactions; the contract table on `ChainDriver` gives each one's call tags. */
 export interface TxBuilder {
+  /** The fee the intent's transaction would pay at the intent's speed or override. */
   estimateFee(intent: DriverIntent, ctx: BuildContext): Promise<FeeEstimateDraft>;
+  /** Whether the sender can pay the transfer and `fee`. */
   checkFunds(
     intent: DriverIntent,
     fee: FeeEstimateDraft,
     ctx: BuildContext,
   ): Promise<FundsCheck>;
+  /**
+   * The unsigned transaction. Its `summary` must describe exactly what its payload pays
+   * (asset, outputs, memo): `beforeSign` policies judge the summary, never the bytes.
+   */
   build(
     intent: DriverIntent,
     fee: FeeEstimateDraft,
     ctx: BuildContext,
   ): Promise<UnsignedTx>;
+  /**
+   * The signed transaction from `unsigned` and its signatures. Its `ref` is the id the
+   * chain will report for it.
+   *
+   * `unsigned` may have been stored by an earlier version of the driver: a driver keeps
+   * assembling, replacing and cancelling every `UnsignedTx` and `OrderingData` it ever
+   * stored, since recovery resumes them after an upgrade.
+   */
   assemble(
     unsigned: UnsignedTx,
     signatures: readonly SignatureBundle[],
@@ -184,6 +245,7 @@ export interface TxBuilder {
   signaturesFrom?(unsigned: UnsignedTx, signed: RawTx): readonly SignatureBundle[];
 }
 
+/** Sends signed transactions to the network. */
 export interface Broadcaster {
   /**
    * Throws (ambiguous) on transport failure; returns a classified result otherwise.
@@ -195,6 +257,7 @@ export interface Broadcaster {
   ): Promise<BroadcastResult>;
 }
 
+/** The chain state a proof reads: the head, or the finalized part of the chain. */
 export type FinalityLevel = 'latest' | 'finalized';
 
 /**
@@ -204,11 +267,13 @@ export type FinalityLevel = 'latest' | 'finalized';
  * a retryable `ProviderError('PROVIDER_UNAVAILABLE')`, which decides nothing.
  */
 export interface ProofSource {
+  /** The finalized block the proof reads stand on. */
   finalizedHead(): Promise<{
     readonly height: bigint;
     readonly hash: string;
     readonly timestamp?: number;
   }>;
+  /** Whether the Attempt's transaction is in a finalized block, and how it executed. */
   includedFinal(
     ref: AttemptRef,
     ordering: OrderingData,
@@ -246,6 +311,7 @@ export interface ProofSource {
   blockHash(height: bigint, level: FinalityLevel): Promise<string | null>;
 }
 
+/** The chain's view of an address's next nonce or seqno (`nonce` and `seqno` ordering). */
 export interface SequenceSource {
   /** Next nonce/seqno including pending transactions. */
   pending(address: string): Promise<bigint>;
@@ -253,9 +319,13 @@ export interface SequenceSource {
   latest(address: string): Promise<bigint>;
 }
 
+/** Whether and how an Attempt's slot can be taken by another transaction. */
 export interface ReplacementPolicy {
+  /** Whether a pending transfer can be replaced at a higher fee (`replace-fee`). */
   readonly replace: boolean;
+  /** Whether a pending transfer can be cancelled (`cancel`). */
   readonly cancel: boolean;
+  /** `previous`'s transfer again, in its slot, at `fee`; `FEE_TOO_LOW` below the bump. */
   buildReplacement?(
     previous: UnsignedTx,
     fee: FeeSpeed | FeeOverride,
@@ -281,27 +351,35 @@ export interface ReplacementPolicy {
   comparePrice?(a: UnsignedTx, b: UnsignedTx): number;
 }
 
+/** What a scan watches; the rules are on `ChainDriver`. */
 export interface ScanFilter {
   readonly addresses?: readonly string[];
   readonly assets?: readonly AssetRef[];
 }
 
+/** Blocks for the scanner (`block-scan`); heights are dense, as `ChainDriver` says. */
 export interface BlockSource {
+  /** The block at `height`, or `null` while it is not visible. */
   header(height: bigint): Promise<DriverBlock | null>;
+  /** The decoded transactions of `block`, narrowed by `filter`. */
   transactions(
     block: DriverBlock,
     filter?: ScanFilter,
   ): Promise<readonly DriverTransaction[]>;
 }
 
+/** An address's transactions, newest first, a page at a time (`address-history`). */
 export interface AddressHistorySource {
+  /** A page of at most `limit` transactions after `cursor`, and the cursor of the next. */
   list(
     address: string,
     options: { readonly cursor?: string; readonly limit: number },
   ): Promise<{ readonly items: readonly DriverTransaction[]; readonly next?: string }>;
 }
 
+/** What one transaction of a wallet can hold. */
 export interface DriverLimits {
+  /** The most outputs one transfer may pay. */
   readonly maxOutputs: number;
 }
 
@@ -358,25 +436,43 @@ export interface DisposableNativeClient {
  * - `fee.details.requestedFee` is reserved. On replacements the core records the requested
  *   fee spec there, so a driver never sets or reads it.
  * - `DriverContext` has no asset resolver and `DriverIntent` carries no decimals. Amounts
- *   reach drivers in base units only; a driver that needs a token's decimals (Solana's
- *   `transferChecked`) reads them from the chain itself.
+ *   reach drivers in base units only; `BuildContext.decimals` says which decimals the core
+ *   scaled them with, and a driver whose transaction signs decimals (Solana's
+ *   `transferChecked`) refuses a mismatch with the chain's.
+ * - What a driver gave the core stays readable: deposit locators, `normalize` output and
+ *   canonical token refs stay the same, and every `UnsignedTx` and `OrderingData` an earlier
+ *   version stored can still be assembled, replaced, cancelled and proven.
  */
 export interface ChainDriver {
+  /** How Attempts claim a slot; it must be the chain's `ChainInfo.ordering`. */
   readonly ordering: OrderingKind;
+  /**
+   * The capabilities the driver implements. When the pool creates a driver it refuses
+   * (`CONFIG_INVALID`) one that lacks a capability its handle grants (the manifest's, the
+   * indexer's when one is configured, and the network's additions) or whose `ordering` is
+   * not the chain's. Each optional port backs one: `block-scan` needs `blocks`,
+   * `address-history` needs `history`, `replace-fee` and `cancel` need `replacement`,
+   * `expiry` needs `proofs.expired`, `tokens` needs `reader.getTokenMetadata`.
+   */
   readonly capabilities: ReadonlySet<Capability>;
   readonly address: AddressCodec;
   readonly reader: ChainReader;
   readonly builder: TxBuilder;
   readonly broadcaster: Broadcaster;
   readonly proofs: ProofSource;
+  /** Required for `nonce` and `seqno` ordering. */
   readonly sequence?: SequenceSource;
   readonly replacement?: ReplacementPolicy;
   readonly blocks?: BlockSource;
   readonly history?: AddressHistorySource;
-  /** Two-level, capability-gated family API: `ext.<family>.<method>(...) → Promise`. */
+  /**
+   * Two-level family API: `ext.<family>.<method>(...) → Promise`. `bc.ext` calls a method the
+   * driver has and refuses any other with `UNSUPPORTED_CAPABILITY`; no capability gates it.
+   */
   readonly ext?: Readonly<
     Record<string, Readonly<Record<string, (...args: never[]) => Promise<unknown>>>>
   >;
+  /** What one transaction of a wallet with these options can hold. */
   limits?(wallet: WalletOptions): DriverLimits;
   /**
    * The signature schemes a wallet with these options signs with, when its options narrow
@@ -393,6 +489,7 @@ export interface ChainDriver {
    * call, never the pooled one.
    */
   createNativeClient?(): DisposableNativeClient;
+  /** Releases what the driver holds; the root container's `close()` calls it once. */
   close?(): Promise<void>;
 }
 
@@ -403,23 +500,29 @@ export interface ChainDriver {
  * of the two transports, leaves that transport's health checks silently unconfigured.
  *
  * There is no asset resolver here, and `DriverIntent` carries no decimals: drivers work
- * in base units only.
+ * in base units only (`BuildContext.decimals` says how the core scaled them).
  */
 export interface DriverContext {
   readonly chain: ChainInfo;
   readonly network: NetworkInfo;
+  /** The SDK library the handle selected, such as `ethers`. */
   readonly library: string;
+  /** The `provider` endpoints. */
   readonly transport: Transport;
+  /** The `indexer` endpoints, when the handle has any. */
   readonly indexer?: Transport;
   readonly clock: Clock;
   readonly log: Logger;
+  /** The driver options: the chain config's `options` with the handle's over them. */
   readonly options: Readonly<Record<string, unknown>>;
 }
 
+/** What a manifest's `load()` returns: makes one driver per pooled selection. */
 export interface DriverFactory {
   create(ctx: DriverContext): Promise<ChainDriver>;
 }
 
+/** An SDK package a library needs installed, with the version range it supports. */
 export interface PeerDependency {
   readonly name: string;
   readonly range: string;
@@ -427,12 +530,26 @@ export interface PeerDependency {
 
 /** Static metadata (no SDK import) plus a lazy `load()` that `require()`s the driver module. */
 export interface AdapterManifest {
+  /**
+   * The chain family, and the key the manifest registers under. A plugin chain of a
+   * built-in family registers its own, such as `evm:<name>`.
+   */
   readonly family: string;
+  /** The SDK library; the first manifest registered for a chain is its default library. */
   readonly library: string;
+  /** The chain ids it serves. */
   readonly chains: readonly string[];
+  /** The capabilities a handle on it has, before the network adds or removes any. */
   readonly capabilities: readonly Capability[];
+  /** Further capabilities a handle has when it has an `indexer` provider. */
   readonly indexerCapabilities?: readonly Capability[];
+  /**
+   * Whether a handle needs an `indexer` provider; without one it falls back to the
+   * `public` preset, or fails with `CONFIG_INVALID` when the network has none.
+   */
   readonly requiresIndexer?: boolean;
+  /** Checked when `load()` runs: a missing package fails with `DEPENDENCY_MISSING`. */
   readonly peerDependencies: readonly PeerDependency[];
+  /** Loads the driver module (and its SDK) on first use. */
   load(): Promise<DriverFactory>;
 }

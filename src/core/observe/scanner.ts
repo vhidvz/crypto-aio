@@ -9,6 +9,7 @@ import { isStaleView, type StaleViewSource } from '../transport/stale-view';
 import type { Clock } from '../util/clock';
 import { storableText } from '../util/names';
 
+/** What `bc.scanner(options)` scans, from where, and how. */
 export interface ScannerOptions {
   /** Durable name of this consumer's position (namespaced per container, chain and network). */
   readonly cursorKey: string;
@@ -33,6 +34,7 @@ export interface ScannerOptions {
   };
   /** Blocks retained for rollback detection (default: the network's reorgWindow). */
   readonly reorgWindow?: number;
+  /** How long to wait before looking for new blocks again (default: the lifecycle's). */
   readonly pollIntervalMs?: number;
   /**
    * Stops the scan, also while it waits for new blocks. `iterator.return()` only takes effect
@@ -41,6 +43,7 @@ export interface ScannerOptions {
   readonly signal?: AbortSignal;
 }
 
+/** A block by height and hash: where a rollback goes back to, and what it removed. */
 export interface Checkpoint {
   readonly height: bigint;
   readonly hash: string;
@@ -59,6 +62,10 @@ export type ScanEventBody =
       readonly removed: readonly Checkpoint[];
     };
 
+/**
+ * A scan event: `ack()` commits the cursor past it, so a restarted scan does not deliver it
+ * again. Delivery is at least once: an event not yet acknowledged comes again.
+ */
 export type ScanEvent = ScanEventBody & { ack(): Promise<void> };
 
 export interface ScannerDeps {

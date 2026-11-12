@@ -1,3 +1,4 @@
+/** The kind of failure; each category has its error class (`ConfigError`, ...). */
 export type ErrorCategory =
   | 'config'
   | 'unsupported'
@@ -63,8 +64,10 @@ function deepFreezeCodes<T extends Record<string, CodeDefinition>>(codes: T): T 
   return Object.freeze(codes);
 }
 
+/** Every error code. A minor release may add codes: handle unknown ones too. */
 export type ErrorCode = keyof typeof ERROR_CODES;
 
+/** The codes of one category. */
 export type CodesOf<C extends ErrorCategory> = {
   [K in ErrorCode]: (typeof ERROR_CODES)[K]['category'] extends C ? K : never;
 }[ErrorCode];

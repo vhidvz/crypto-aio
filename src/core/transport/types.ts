@@ -1,26 +1,49 @@
 import type { Secret } from '../secret/secret';
 import type { CryptoAioError } from '../errors/error';
 
+/**
+ * Whether a call may be retried: `safe` (a read, retried and failed over freely),
+ * `ambiguous-on-failure` (a broadcast: retried, and a failure after a request may have
+ * reached the network is marked `ambiguous`), or `never-auto` (one attempt only).
+ */
 export type RetryClass = 'safe' | 'ambiguous-on-failure' | 'never-auto';
+/**
+ * What a call is for: `read` (any usable endpoint), `monitor` and `proof` (only endpoints
+ * that are not lagging; `proof` reads under the proof quorum's rules), or `broadcast`.
+ */
 export type RequestPurpose = 'read' | 'monitor' | 'proof' | 'broadcast';
 
+/** One endpoint of a provider. */
 export interface EndpointConfig {
+  /** The label errors and events use instead of the URL. */
   readonly name?: string;
+  /** Wrap a URL that carries a key in `secret()`. */
   readonly url: string | Secret<string>;
   readonly kind?: 'rpc' | 'indexer';
+  /** Header values that carry keys go in `secret()`. */
   readonly headers?: Readonly<Record<string, string | Secret<string>>>;
+  /** Order among healthy endpoints: lower first (default 0). */
   readonly priority?: number;
+  /** A client-side rate limit for this endpoint, shared by its health probes. */
   readonly rateLimit?: { readonly rps: number; readonly burst?: number };
+  /** Overrides `TransportOptions.timeoutMs` for this endpoint. */
   readonly timeoutMs?: number;
 }
 
+/** The root container's transport settings, shared by every scope and handle. */
 export interface TransportOptions {
+  /** The `fetch` to call (default: the global one); `FakeFetch` in tests. */
   readonly fetch?: typeof fetch;
+  /** Attempts per request, across endpoints (default 3). */
   readonly maxAttempts?: number;
+  /** Exponential backoff between attempts: its first and largest delay (default 200 and 5 000 ms). */
   readonly baseDelayMs?: number;
   readonly maxDelayMs?: number;
+  /** One request's timeout (default 15 000 ms). */
   readonly timeoutMs?: number;
+  /** How far behind the best known height an endpoint may be before it is lagging (default 5). */
   readonly maxLagBlocks?: number;
+  /** Endpoints that must agree on a proof read (default 2), capped by the endpoints configured. */
   readonly proofQuorum?: number;
   /**
    * Whether proofs go on, from fewer endpoints, once endpoints drop out of the proof
@@ -31,8 +54,11 @@ export interface TransportOptions {
    * keep going through an outage, but the one endpoint left decides alone.
    */
   readonly degradedProofs?: boolean;
+  /** Failures in a row before an endpoint's circuit breaker opens (default 5). */
   readonly failureThreshold?: number;
+  /** How long an open breaker rests its endpoint (default 30 000 ms). */
   readonly openMs?: number;
+  /** How often endpoints' identity and height are probed (default 15 000 ms). */
   readonly healthIntervalMs?: number;
   /**
    * The most bytes one answer may carry (default 64 MiB). A longer answer, by its declared
@@ -42,8 +68,11 @@ export interface TransportOptions {
   readonly maxResponseBytes?: number;
 }
 
+/** How a driver's call is routed, retried and cross-checked. */
 export interface CallOptions {
+  /** Default `safe`. */
   readonly retry?: RetryClass;
+  /** Default `read`, or `proof` when `quorum` is set. */
   readonly purpose?: RequestPurpose;
   /**
    * Independent endpoints that must agree; `'proof'` uses `proofQuorum`, capped by the
@@ -86,14 +115,19 @@ export interface CallOptions {
   readonly endpointLimit?: (refusal: CryptoAioError) => boolean;
   /** Send to this many endpoints concurrently (raw-transaction broadcasts). */
   readonly fanout?: number;
+  /** Aborts the call between and during attempts. */
   readonly signal?: AbortSignal;
+  /** Overrides each attempt's timeout. */
   readonly timeoutMs?: number;
 }
 
+/** A REST request to an endpoint, relative to its URL. */
 export interface HttpRequest {
   readonly method: 'GET' | 'POST';
+  /** Appended to the endpoint's URL. */
   readonly path: string;
   readonly query?: Readonly<Record<string, string>>;
+  /** Sent as it is when a string, else as JSON. */
   readonly body?: unknown;
   readonly headers?: Readonly<Record<string, string>>;
   /**
@@ -117,44 +151,71 @@ export interface EndpointCall {
   http<T = unknown>(request: HttpRequest): Promise<T>;
 }
 
+/** How a transport checks each endpoint: which network it serves, and its height. */
 export interface HealthProbes {
+  /** Reads what identifies the endpoint's network, such as its genesis hash or chain id. */
   readonly identity?: (call: EndpointCall) => Promise<string>;
+  /** The identity the network must have; an endpoint that answers another is disabled. */
   readonly expectedIdentity?: string;
+  /** Reads the endpoint's head height. */
   readonly height?: (call: EndpointCall) => Promise<bigint>;
 }
 
+/**
+ * An endpoint's health: `healthy`; `lagging` (behind by more than `maxLagBlocks`); `open`
+ * or `half-open` (its circuit breaker rests it, or is trying it again); `disabled` (it
+ * serves another network); `unknown` (not probed yet, or its height not known yet).
+ */
 export type EndpointState =
   'healthy' | 'lagging' | 'open' | 'half-open' | 'disabled' | 'unknown';
 
+/** One endpoint's state, as `Transport.status()` and `getNetworkStatus()` report it. */
 export interface EndpointStatus {
+  /** The endpoint's name. */
   readonly id: string;
   readonly kind: 'rpc' | 'indexer';
   readonly state: EndpointState;
+  /** Failures in a row. */
   readonly failures: number;
+  /** Its height at the last probe. */
   readonly height?: bigint;
+  /** How far it is behind the best known height. */
   readonly lag?: bigint;
   readonly latencyMs?: number;
+  /** Why it is `disabled` (`identity-mismatch`). */
   readonly reason?: string;
 }
 
+/**
+ * The endpoints of one provider set, with failover, retries, rate limits, circuit
+ * breakers, health probes and quorum reads. A driver gets one per provider set
+ * (`DriverContext.transport` and `indexer`) and makes every network call through it.
+ */
 export interface Transport {
+  /** An id for events and logs, independent of the endpoints' URLs. */
   readonly id: string;
+  /** One JSON-RPC call. */
   rpc<T = unknown>(method: string, params?: unknown, options?: CallOptions): Promise<T>;
   /** Posts an arbitrary JSON-RPC payload (single or batch) and returns the parsed body. */
   rpcRaw(payload: unknown, options?: CallOptions): Promise<unknown>;
+  /** One REST request. */
   http<T = unknown>(request: HttpRequest, options?: CallOptions): Promise<T>;
   /** fetch-compatible function for SDKs; only `PLACEHOLDER_ORIGIN` URLs are accepted. */
   createFetch(
     classify?: (url: URL, init: RequestInit | undefined) => CallOptions,
   ): typeof fetch;
+  /** Sets the health probes; a driver factory calls it once, before any other traffic. */
   setProbes(probes: HealthProbes): void;
   /** Whether any health probe (`identity` and/or `height`) has ever been configured via
    * `setProbes`. A transport with none configured can never mark an endpoint 'healthy' or
    * 'lagging' — its endpoints stay 'unknown' forever, which callers like `Blockchain.ready()`
    * treat as acceptable only in that case. */
   hasProbes(): boolean;
+  /** Probes every endpoint now. */
   refreshHealth(signal?: AbortSignal): Promise<void>;
+  /** Probes the endpoints unless a refresh ran within `healthIntervalMs`. */
   ensureFreshHealth(signal?: AbortSignal): Promise<void>;
+  /** Every endpoint's current state. */
   status(): EndpointStatus[];
   /**
    * Highest verified block height: a high-water mark (the stale-view guard of monitors

@@ -1,6 +1,11 @@
 import { ValidationError } from '../errors/error';
 import type { AssetId, AssetInfo } from './asset';
 
+/**
+ * An amount as a caller gives it: a `bigint` in base units, a decimal string in whole
+ * units (`"1.25"`, at most the asset's decimals), or an `Amount` of the same asset. Never a
+ * JavaScript number.
+ */
 export type AmountInput = bigint | string | Amount;
 
 const DECIMAL = /^(0|[1-9][0-9]*)(\.[0-9]+)?$/;

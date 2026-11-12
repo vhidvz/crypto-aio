@@ -1,3 +1,8 @@
+/**
+ * How a chain orders an address's transactions: an account `nonce` (EVM), a wallet
+ * `seqno` (TON), the `inputs` a transaction spends (Bitcoin, Avalanche), or an `expiry`
+ * after which it can never land (Tron, Solana).
+ */
 export type OrderingKind = 'nonce' | 'seqno' | 'inputs' | 'expiry';
 
 /**

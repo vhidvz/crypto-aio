@@ -5,6 +5,7 @@ import { fromHex, toHex, utf8ToBytes } from '../core/util/bytes';
 import { systemClock, type Clock } from '../core/util/clock';
 import { canonicalJson, sha256Hex } from '../core/util/json';
 
+/** How the fake chain orders an address's transactions, as `OrderingKind` does. */
 export type FakeOrdering = 'nonce' | 'seqno' | 'expiry';
 
 /** Unsigned fake transaction; numbers travel as decimal strings. */
@@ -19,6 +20,10 @@ export interface FakeUnsigned {
   readonly memo?: string;
 }
 
+/**
+ * A signed fake transaction as it travels: part of the fake chain's wire protocol, which
+ * semver does not cover.
+ */
 export interface FakeEnvelope {
   readonly tx: FakeUnsigned;
   readonly sig: string;
@@ -26,6 +31,7 @@ export interface FakeEnvelope {
   readonly pub: string;
 }
 
+/** A transaction as the fake chain's RPC answers it; wire protocol, not covered by semver. */
 export interface FakeWireTx {
   readonly id: string;
   readonly from: string;
@@ -40,6 +46,7 @@ export interface FakeWireTx {
   readonly pending?: boolean;
 }
 
+/** A block as the fake chain's RPC answers it; wire protocol, not covered by semver. */
 export interface FakeWireBlock {
   readonly height: string;
   readonly hash: string;
@@ -49,14 +56,23 @@ export interface FakeWireBlock {
   readonly txs?: readonly FakeWireTx[];
 }
 
+/** How one fake endpoint misbehaves; every option can be changed while a test runs. */
 export interface FakeEndpointOptions {
+  /** Blocks it stays behind the head. */
   lag?: number;
+  /** The chain id it answers, to test a misconfigured endpoint. */
   identity?: string;
+  /** Whether it sees the mempool (default `true`). */
   seesMempool?: boolean;
+  /** Answers every request with HTTP 503. */
   down?: boolean;
+  /** Answers every request with an HTML page and HTTP 200. */
   html?: boolean;
+  /** Accepts the next broadcast, then answers it with HTTP 504 (an ambiguous send). */
   acceptThenFail?: boolean;
+  /** Refuses the next broadcast with this message. */
   refuseNext?: string;
+  /** Serves another finalized block hash, and no finalized transactions. */
   forkFinalized?: boolean;
   /**
    * A single endpoint lying about blocks: above this height its block reads
@@ -67,34 +83,44 @@ export interface FakeEndpointOptions {
   forkAbove?: number;
 }
 
+/** How the fake chain behaves. */
 export interface FakeChainOptions {
   readonly ordering?: FakeOrdering;
   readonly chainId?: string;
+  /** Blocks after which a block is final (default 3). */
   readonly finalityDepth?: number;
+  /** The least fee a transaction pays (default 1). */
   readonly minFee?: bigint;
+  /** The least fee increase, in percent, a replacement needs (default 10). */
   readonly replacementBumpPercent?: number;
   readonly clock?: Clock;
 }
 
+/** A recipient whose transfers the fake chain includes as failed (reverted). */
 export const REVERT_ADDRESS = `fk1${'dead'.repeat(10)}`;
 const HOST = 'fake-chain.test';
 
+/** The fake chain's address of a public key. */
 export function fakeAddress(publicKey: Uint8Array): string {
   return `fk1${sha256Hex(publicKey).slice(0, 40)}`;
 }
 
+/** Whether `value` is a well-formed fake chain address. */
 export function isFakeAddress(value: string): boolean {
   return /^fk1[0-9a-f]{40}$/i.test(value);
 }
 
+/** The digest a fake transaction's signature signs. */
 export function fakeDigest(tx: FakeUnsigned): Uint8Array {
   return sha256(utf8ToBytes(canonicalJson(tx)));
 }
 
+/** A signed fake transaction's raw form; wire protocol, not covered by semver. */
 export function encodeEnvelope(envelope: FakeEnvelope): string {
   return Buffer.from(JSON.stringify(envelope), 'utf8').toString('base64');
 }
 
+/** Reads a raw fake transaction, or `undefined`; wire protocol, not covered by semver. */
 export function decodeEnvelope(raw: string): FakeEnvelope | undefined {
   try {
     const value = JSON.parse(
@@ -108,6 +134,7 @@ export function decodeEnvelope(raw: string): FakeEnvelope | undefined {
   }
 }
 
+/** The id of a raw fake transaction. */
 export function fakeTxId(raw: string): string {
   return sha256Hex(raw);
 }
@@ -142,6 +169,7 @@ interface FakeBlock {
   readonly txs: readonly ChainTx[];
 }
 
+/** How a fake transaction was included: whether it succeeded, and its block. */
 export interface FakeReceipt {
   readonly success: boolean;
   readonly height: bigint;
@@ -166,6 +194,10 @@ class RpcFailure extends Error {
   }
 }
 
+/**
+ * An in-memory chain with nonce, seqno or expiry ordering, served over JSON-RPC through
+ * `fetch` to the fake driver: tests mine, reorg and make endpoints misbehave.
+ */
 export class FakeChain {
   readonly ordering: FakeOrdering;
   readonly chainId: string;

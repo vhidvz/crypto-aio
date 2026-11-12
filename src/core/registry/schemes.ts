@@ -5,6 +5,7 @@ import type { SigningParams } from '../signing/types';
 import { equalBytes } from '../util/bytes';
 import { unknownName } from '../util/names';
 
+/** A signature to verify, with what it signs and the key that must have signed it. */
 export interface VerifyInput {
   readonly publicKey: Uint8Array;
   readonly payload: Uint8Array;
@@ -13,9 +14,15 @@ export interface VerifyInput {
   readonly params?: SigningParams;
 }
 
+/**
+ * A signature scheme the core verifies signatures with (`Plugin.schemes`); the built-in
+ * ones are `secp256k1-ecdsa`, `secp256k1-schnorr` and `ed25519`.
+ */
 export interface SignatureScheme {
   readonly id: string;
+  /** The length of a public key, in bytes. */
   readonly publicKeyLength: number;
+  /** Whether the signature is valid; never throws. */
   verify(input: VerifyInput): boolean;
 }
 

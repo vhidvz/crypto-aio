@@ -2,17 +2,23 @@ import { ERROR_CODES, type CodesOf, type ErrorCategory, type ErrorCode } from '.
 
 export type { CodesOf, ErrorCategory, ErrorCode } from './codes';
 
+/** One value of an error's `context`. */
 export type ErrorContextValue = string | number | boolean | undefined;
+/** Redacted identifiers of where an error happened, such as `operationId` or `endpointId`. */
 export type ErrorContext = Readonly<Record<string, ErrorContextValue>>;
 
+/** What an error is made with, besides its code and message. */
 export interface CryptoAioErrorOptions {
   readonly cause?: unknown;
   readonly context?: ErrorContext;
   readonly details?: Readonly<Record<string, unknown>>;
+  /** Overrides the code's default `retryable` flag. */
   readonly retryable?: boolean;
+  /** Whether the call may have reached the chain (default `false`). */
   readonly ambiguous?: boolean;
 }
 
+/** An error as JSON (`toJSON()`), as an Operation stores it. */
 export interface SerializedError {
   readonly name: string;
   readonly code: ErrorCode;
@@ -24,12 +30,21 @@ export interface SerializedError {
   readonly details?: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * Every failure the library reports. Match on `code` and `category`, and on the `details`
+ * and `context` fields the Errors reference lists; message texts are not covered by
+ * semver.
+ */
 export class CryptoAioError extends Error {
   readonly code: ErrorCode;
   readonly category: ErrorCategory;
+  /** Whether the same call may succeed if made again. */
   readonly retryable: boolean;
+  /** Whether the call may have reached the chain, so its effect is unknown. */
   readonly ambiguous: boolean;
+  /** Redacted ids of where it happened, such as `operationId`. */
   readonly context: ErrorContext;
+  /** Code-specific facts, such as `required` and `available` for `INSUFFICIENT_FUNDS`. */
   readonly details?: Readonly<Record<string, unknown>>;
 
   constructor(code: ErrorCode, message: string, options: CryptoAioErrorOptions = {}) {
@@ -44,6 +59,7 @@ export class CryptoAioError extends Error {
     if (options.details) this.details = Object.freeze({ ...options.details });
   }
 
+  /** The error as plain data, without its stack or cause. */
   toJSON(): SerializedError {
     return {
       name: this.name,
@@ -58,11 +74,13 @@ export class CryptoAioError extends Error {
   }
 }
 
+/** A configuration that cannot work: an invalid option, a missing SDK package, an incompatible selection. */
 export class ConfigError extends CryptoAioError {
   constructor(code: CodesOf<'config'>, message: string, options?: CryptoAioErrorOptions) {
     super(code, message, options);
   }
 }
+/** An operation the selected chain, network or library does not support. */
 export class UnsupportedCapabilityError extends CryptoAioError {
   constructor(
     code: CodesOf<'unsupported'>,
@@ -72,6 +90,7 @@ export class UnsupportedCapabilityError extends CryptoAioError {
     super(code, message, options);
   }
 }
+/** An input that is not valid: an address, an amount, an asset or an intent. */
 export class ValidationError extends CryptoAioError {
   constructor(
     code: CodesOf<'validation'>,
@@ -81,6 +100,7 @@ export class ValidationError extends CryptoAioError {
     super(code, message, options);
   }
 }
+/** A failure of the endpoints: unavailable, rate-limited, misconfigured, inconsistent, or a definitive refusal. */
 export class ProviderError extends CryptoAioError {
   constructor(
     code: CodesOf<'provider'>,
@@ -90,11 +110,13 @@ export class ProviderError extends CryptoAioError {
     super(code, message, options);
   }
 }
+/** An answer of the chain about a transaction: funds, nonce, fee, refusal, revert, expiry, replacement. */
 export class ChainError extends CryptoAioError {
   constructor(code: CodesOf<'chain'>, message: string, options?: CryptoAioErrorOptions) {
     super(code, message, options);
   }
 }
+/** A failure to sign: no signer, a failed or mismatched signature, a policy veto, a key that cannot be exported. */
 export class SigningError extends CryptoAioError {
   constructor(
     code: CodesOf<'signing'>,
@@ -104,11 +126,13 @@ export class SigningError extends CryptoAioError {
     super(code, message, options);
   }
 }
+/** A conflict with stored state: idempotency, fencing, versions, transitions, leases, record formats. */
 export class StateError extends CryptoAioError {
   constructor(code: CodesOf<'state'>, message: string, options?: CryptoAioErrorOptions) {
     super(code, message, options);
   }
 }
+/** A call that ran out of time. */
 export class TimeoutError extends CryptoAioError {
   constructor(
     code: CodesOf<'timeout'>,
@@ -136,6 +160,7 @@ const BY_CATEGORY: Record<ErrorCategory, AnyErrorConstructor> = {
   timeout: TimeoutError as AnyErrorConstructor,
 };
 
+/** An error of `code`'s class. */
 export function createError(
   code: ErrorCode,
   message: string,
@@ -145,6 +170,7 @@ export function createError(
   return new Ctor(code, message, options);
 }
 
+/** Whether `value` is a `CryptoAioError`, of `code` when given. */
 export function isCryptoAioError(
   value: unknown,
   code?: ErrorCode,

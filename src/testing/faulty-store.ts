@@ -10,6 +10,7 @@ import type {
   OperationStore,
 } from '../core/store/types';
 
+/** What a `FaultyOperationStore` throws at a fault point: a simulated process death. */
 export class CrashError extends Error {
   constructor() {
     super('injected crash');
@@ -17,6 +18,7 @@ export class CrashError extends Error {
   }
 }
 
+/** Where a `FaultyOperationStore` crashes: a write method, a condition, before or after. */
 export interface FaultPoint {
   readonly method: 'create' | 'update' | 'appendAttempt' | 'putObservation';
   /**

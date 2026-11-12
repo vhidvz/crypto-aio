@@ -24,18 +24,25 @@ import { FakeClock, drive } from './fake-clock';
 import { fakePlugin } from './fake-plugin';
 import { fenceGeneration, type Generation } from './generation';
 
+/** The fake chains: one per ordering (`nonce`, `expiry`, `seqno`). */
 export type FakeChainId = 'fakechain' | 'fakeexpiry' | 'fakeseqno';
 
+/** How `createFakeEnv` sets up its chain, container and stores. */
 export interface FakeEnvOptions {
+  /** Which fake chain to use (default `nonce`: `fakechain`). */
   readonly ordering?: FakeOrdering;
+  /** The fake endpoints, by name, with how each misbehaves (default one endpoint). */
   readonly endpoints?: readonly (
     string | ({ readonly name: string } & FakeEndpointOptions)
   )[];
   /** Funds the wallet with this many base units (default 1_000_000). Use 0n for none. */
   readonly fund?: bigint;
   readonly chain?: Omit<FakeChainOptions, 'ordering' | 'clock'>;
+  /** Further wallets, beside the funded default one. */
   readonly wallets?: Readonly<Record<string, WalletConfig>>;
+  /** The default wallet's signer (default: a fresh local signer). */
   readonly signer?: Signer;
+  /** Stores to use instead of fresh memory stores, such as your own under test. */
   readonly stores?: Partial<Stores>;
   /**
    * The clock of the chain, the container and its memory stores (default: a new one). Pass
@@ -52,10 +59,12 @@ export interface FakeEnvOptions {
   readonly aio?: Omit<AioOptions, 'clock' | 'stores' | 'transport'>;
 }
 
+/** A container on a fake chain, with a funded wallet and fake time, for tests. */
 export interface FakeEnv {
   readonly clock: FakeClock;
   readonly chain: FakeChain;
   readonly aio: CryptoAio;
+  /** A handle on the fake chain with the default wallet. */
   readonly bc: Blockchain<FakeChainId>;
   /**
    * The raw, unfenced `Signer` instance — the same object across every `restart()`
@@ -66,6 +75,7 @@ export interface FakeEnv {
    */
   readonly signer: Signer;
   readonly stores: Stores;
+  /** The default wallet's address. */
   readonly address: string;
   readonly chainId: FakeChainId;
   /** Drives a promise to completion on fake time (100 ms steps by default). */
@@ -94,6 +104,7 @@ interface Shared {
   readonly options: FakeEnvOptions;
 }
 
+/** A fake chain and a container on it, ready for a test: no network, no real time. */
 export async function createFakeEnv(options: FakeEnvOptions = {}): Promise<FakeEnv> {
   const clock = options.clock ?? new FakeClock();
   const ordering = options.ordering ?? 'nonce';

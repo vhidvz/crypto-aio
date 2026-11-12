@@ -8,21 +8,13 @@ import { inspect } from 'node:util';
 
 // @public
 export interface AdapterManifest {
-    // (undocumented)
     readonly capabilities: readonly Capability[];
-    // (undocumented)
     readonly chains: readonly string[];
-    // (undocumented)
     readonly family: string;
-    // (undocumented)
     readonly indexerCapabilities?: readonly Capability[];
-    // (undocumented)
     readonly library: string;
-    // (undocumented)
     load(): Promise<DriverFactory>;
-    // (undocumented)
     readonly peerDependencies: readonly PeerDependency[];
-    // (undocumented)
     readonly requiresIndexer?: boolean;
 }
 
@@ -52,23 +44,19 @@ export class Address implements NormalizedAddress {
     readonly variant?: Readonly<Record<string, unknown>>;
 }
 
-// @public (undocumented)
+// @public
 export interface AddressCodec {
-    // (undocumented)
     readonly format?: AddressFormatter;
-    // (undocumented)
     fromPublicKey(publicKey: Uint8Array, wallet?: WalletOptions): NormalizedAddress;
     normalize(address: string): NormalizedAddress;
-    // (undocumented)
     validate(address: string): boolean;
 }
 
-// @public (undocumented)
+// @public
 export type AddressFormatter = (address: NormalizedAddress, options?: Readonly<Record<string, unknown>>) => string;
 
-// @public (undocumented)
+// @public
 export interface AddressHistorySource {
-    // (undocumented)
     list(address: string, options: {
         readonly cursor?: string;
         readonly limit: number;
@@ -78,7 +66,7 @@ export interface AddressHistorySource {
     }>;
 }
 
-// @public (undocumented)
+// @public
 export type AioEvent<E extends AioEventName = AioEventName> = {
     [K in E]: AioEvents[K] & {
         readonly type: K;
@@ -86,12 +74,11 @@ export type AioEvent<E extends AioEventName = AioEventName> = {
     };
 }[E];
 
-// @public (undocumented)
+// @public
 export type AioEventName = keyof AioEvents;
 
 // @public
 export interface AioEvents {
-    // (undocumented)
     'attempt.state': {
         namespace: string;
         operationId: string;
@@ -99,7 +86,6 @@ export interface AioEvents {
         state: TxState;
         evidence: Evidence;
     };
-    // (undocumented)
     'nonce.allocated': {
         namespace: string;
         chain: string;
@@ -115,13 +101,11 @@ export interface AioEvents {
         expected: string;
         blockingOperationId?: string;
     };
-    // (undocumented)
     'operation.stalled': {
         namespace: string;
         operationId: string;
         code: string;
     };
-    // (undocumented)
     'operation.state': {
         namespace: string;
         operationId: string;
@@ -131,7 +115,6 @@ export interface AioEvents {
         to: OperationState;
         code?: string;
     };
-    // (undocumented)
     'provider.health': {
         transportId: string;
         endpointId: string;
@@ -139,27 +122,23 @@ export interface AioEvents {
         height?: string;
         lag?: string;
     };
-    // (undocumented)
     'provider.inconsistent': {
         transportId: string;
         method: string;
         endpointIds: readonly string[];
     };
-    // (undocumented)
     'provider.misconfigured': {
         transportId: string;
         endpointId: string;
         expected: string;
         actual: string;
     };
-    // (undocumented)
     'recovery.skipped': {
         namespace: string;
         operationId: string;
         state: OperationState;
         reason: string;
     };
-    // (undocumented)
     'rpc.error': {
         transportId: string;
         endpointId: string;
@@ -168,14 +147,12 @@ export interface AioEvents {
         code: string;
         retryable: boolean;
     };
-    // (undocumented)
     'rpc.request': {
         transportId: string;
         endpointId: string;
         method: string;
         attempt: number;
     };
-    // (undocumented)
     'rpc.response': {
         transportId: string;
         endpointId: string;
@@ -183,20 +160,17 @@ export interface AioEvents {
         latencyMs: number;
         bytes: number;
     };
-    // (undocumented)
     'scanner.block': {
         namespace: string;
         cursorKey: string;
         height: string;
     };
-    // (undocumented)
     'scanner.rollback': {
         namespace: string;
         cursorKey: string;
         toHeight: string;
         removed: number;
     };
-    // (undocumented)
     'signer.completed': {
         namespace: string;
         operationId: string;
@@ -204,14 +178,12 @@ export interface AioEvents {
         status: 'signed' | 'pending' | 'error';
         latencyMs: number;
     };
-    // (undocumented)
     'signer.requested': {
         namespace: string;
         operationId: string;
         signerId: string;
         requests: number;
     };
-    // (undocumented)
     'tx.reorged': {
         namespace: string;
         operationId?: string;
@@ -220,20 +192,15 @@ export interface AioEvents {
     };
 }
 
-// @public (undocumented)
+// @public
 export interface AioOptions extends ScopeOptions {
     readonly assets?: readonly AssetRegistration[];
-    // (undocumented)
     readonly clock?: Clock;
     readonly env?: Readonly<Record<string, string | undefined>> | false;
-    // (undocumented)
     readonly logger?: Logger;
     readonly namespace?: string;
-    // (undocumented)
     readonly plugins?: readonly Plugin[];
-    // (undocumented)
     readonly profile?: string;
-    // (undocumented)
     readonly stores?: Partial<Stores>;
     readonly transport?: TransportOptions;
 }
@@ -275,16 +242,16 @@ export class Amount {
     toString(): string;
 }
 
-// @public (undocumented)
+// @public
 export type AmountInput = bigint | string | Amount;
 
-// @public (undocumented)
+// @public
 export type AssetId = string;
 
-// @public (undocumented)
+// @public
 export function assetId(chain: string, network: string, ref: AssetRef): AssetId;
 
-// @public (undocumented)
+// @public
 export interface AssetInfo {
     // (undocumented)
     readonly chain: string;
@@ -298,9 +265,8 @@ export interface AssetInfo {
     readonly ref: AssetRef;
 }
 
-// @public (undocumented)
+// @public
 export interface AssetMetadata {
-    // (undocumented)
     readonly decimals: number;
     // (undocumented)
     readonly name?: string;
@@ -308,13 +274,13 @@ export interface AssetMetadata {
     readonly symbol: string;
 }
 
-// @public (undocumented)
+// @public
 export type AssetRef = 'native' | {
     readonly standard: string;
     readonly contract: string;
 };
 
-// @public (undocumented)
+// @public
 export interface AssetRegistration {
     // (undocumented)
     readonly aliases?: readonly string[];
@@ -328,7 +294,7 @@ export interface AssetRegistration {
     readonly ref: AssetRef;
 }
 
-// @public (undocumented)
+// @public
 export type AttemptIdKind = 'tx-hash' | 'txid' | 'signature' | 'message-hash';
 
 // @public
@@ -341,65 +307,47 @@ export interface AttemptObservation {
     readonly blockHeight?: bigint;
     // (undocumented)
     readonly confirmations: number;
-    // (undocumented)
     readonly evidence: Evidence;
     readonly failure?: TxFailure;
-    // (undocumented)
     readonly firstSeenAt?: number;
-    // (undocumented)
     readonly lastBroadcastAt?: number;
     // (undocumented)
     readonly lastSeenAt?: number;
     // (undocumented)
     readonly operationId: string;
-    // (undocumented)
     readonly reason?: string;
-    // (undocumented)
     readonly replacedBy?: string;
-    // (undocumented)
     readonly state: TxState;
-    // (undocumented)
     readonly txHash?: string;
-    // (undocumented)
     readonly version: number;
 }
 
-// @public (undocumented)
+// @public
 export type AttemptPurpose = 'original' | 'replacement' | 'cancel' | 'rebuild';
 
 // @public
 export interface AttemptRecord {
-    // (undocumented)
     readonly createdAt: number;
-    // (undocumented)
     readonly fee: FeeEstimateDraft;
-    // (undocumented)
     readonly id: string;
-    // (undocumented)
     readonly ordering: OrderingData;
     // (undocumented)
     readonly purpose: AttemptPurpose;
-    // (undocumented)
     readonly raw: RawTx;
-    // (undocumented)
     readonly ref: AttemptRef;
-    // (undocumented)
     readonly supersedes?: string;
-    // (undocumented)
     readonly unsigned: UnsignedTx;
 }
 
 // @public
 export interface AttemptRef {
-    // (undocumented)
     readonly canonical: boolean;
-    // (undocumented)
     readonly id: string;
     // (undocumented)
     readonly idKind: AttemptIdKind;
 }
 
-// @public (undocumented)
+// @public
 export interface AttemptView {
     // (undocumented)
     readonly createdAt: number;
@@ -407,11 +355,8 @@ export interface AttemptView {
     readonly id: string;
     // (undocumented)
     readonly purpose: AttemptPurpose;
-    // (undocumented)
     readonly ref: AttemptRef;
-    // (undocumented)
     readonly status?: TxStatus;
-    // (undocumented)
     readonly supersedes?: string;
 }
 
@@ -469,7 +414,7 @@ export interface Balance {
     readonly asset: AssetInfo;
 }
 
-// @public (undocumented)
+// @public
 export interface Block {
     // (undocumented)
     readonly hash: string;
@@ -554,7 +499,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     with(overrides: Partial<Omit<HandleConfig<C>, 'chain'>>): Blockchain<C>;
 }
 
-// @public (undocumented)
+// @public
 export interface BlockRef {
     // (undocumented)
     readonly hash: string;
@@ -564,15 +509,13 @@ export interface BlockRef {
     readonly timestamp?: number;
 }
 
-// @public (undocumented)
+// @public
 export interface BlockSource {
-    // (undocumented)
     header(height: bigint): Promise<DriverBlock | null>;
-    // (undocumented)
     transactions(block: DriverBlock, filter?: ScanFilter): Promise<readonly DriverTransaction[]>;
 }
 
-// @public (undocumented)
+// @public
 export interface Broadcaster {
     broadcast(signed: SignedTx, options?: {
         readonly fanout?: number;
@@ -594,11 +537,10 @@ export type BroadcastResult = {
     readonly reason: string;
 };
 
-// @public (undocumented)
+// @public
 export interface BuildContext {
     readonly decimals?: number;
     readonly excludeInputs?: readonly string[];
-    // (undocumented)
     readonly from: string;
     // (undocumented)
     readonly keys: readonly WalletKey[];
@@ -629,44 +571,32 @@ export interface CallbackSignerOptions {
     readonly sign: Signer['sign'];
 }
 
-// @public (undocumented)
+// @public
 export interface CallOptions {
     readonly endpointLimit?: (refusal: CryptoAioError) => boolean;
     readonly exactIntegers?: boolean;
     readonly fanout?: number;
-    // (undocumented)
     readonly purpose?: RequestPurpose;
     readonly quorum?: number | 'proof';
     readonly quorumKey?: (result: unknown) => unknown;
-    // (undocumented)
     readonly retry?: RetryClass;
-    // (undocumented)
     readonly signal?: AbortSignal;
-    // (undocumented)
     readonly timeoutMs?: number;
 }
 
-// @public (undocumented)
+// @public
 export type Capability = KnownCapability | (string & {});
 
-// @public (undocumented)
+// @public
 export interface ChainDefaults {
-    // (undocumented)
     readonly confirmations?: number;
-    // (undocumented)
     readonly indexer?: ProviderRef | readonly ProviderRef[];
-    // (undocumented)
     readonly library?: string;
     readonly maxLagBlocks?: number;
-    // (undocumented)
     readonly network?: string;
-    // (undocumented)
     readonly options?: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly provider?: ProviderRef | readonly ProviderRef[];
-    // (undocumented)
     readonly signer?: string;
-    // (undocumented)
     readonly wallet?: string;
 }
 
@@ -680,17 +610,13 @@ export interface ChainDriver {
     readonly broadcaster: Broadcaster;
     // (undocumented)
     readonly builder: TxBuilder;
-    // (undocumented)
     readonly capabilities: ReadonlySet<Capability>;
-    // (undocumented)
     close?(): Promise<void>;
     createNativeClient?(): DisposableNativeClient;
     readonly ext?: Readonly<Record<string, Readonly<Record<string, (...args: never[]) => Promise<unknown>>>>>;
     // (undocumented)
     readonly history?: AddressHistorySource;
-    // (undocumented)
     limits?(wallet: WalletOptions): DriverLimits;
-    // (undocumented)
     readonly ordering: OrderingKind;
     // (undocumented)
     readonly proofs: ProofSource;
@@ -698,24 +624,22 @@ export interface ChainDriver {
     readonly reader: ChainReader;
     // (undocumented)
     readonly replacement?: ReplacementPolicy;
-    // (undocumented)
     readonly sequence?: SequenceSource;
     signingSchemes?(wallet: WalletOptions): readonly string[];
 }
 
-// @public (undocumented)
+// @public
 export class ChainError extends CryptoAioError {
     constructor(code: CodesOf<'chain'>, message: string, options?: CryptoAioErrorOptions);
 }
 
-// @public (undocumented)
+// @public
 export type ChainId = Extract<keyof ChainRegistry, string>;
 
-// @public (undocumented)
+// @public
 export interface ChainInfo {
     // (undocumented)
     readonly defaultNetwork: string;
-    // (undocumented)
     readonly family: string;
     // (undocumented)
     readonly id: string;
@@ -725,25 +649,18 @@ export interface ChainInfo {
     readonly nativeAsset: NativeAssetInfo;
     // (undocumented)
     readonly networks: Readonly<Record<string, NetworkInfo>>;
-    // (undocumented)
     readonly ordering: OrderingKind;
-    // (undocumented)
     readonly schemes: readonly string[];
     readonly xpubNetworkClass?: boolean;
 }
 
-// @public (undocumented)
+// @public
 export interface ChainReader {
-    // (undocumented)
     getBalance(address: string, asset: AssetRef): Promise<bigint>;
-    // (undocumented)
     getBlock(ref: bigint | string): Promise<DriverBlock | null>;
-    // (undocumented)
     getBlockHeight(): Promise<bigint>;
     getFinalizedHeight(): Promise<bigint>;
-    // (undocumented)
     getTokenMetadata?(ref: TokenRef): Promise<AssetMetadata>;
-    // (undocumented)
     getTransaction(id: string): Promise<DriverTransaction | null>;
     normalizeTokenRef?(ref: TokenRef): TokenRef;
     observe(ref: AttemptRef, ordering: OrderingData | undefined, from: string | undefined): Promise<DriverTxObservation>;
@@ -753,7 +670,7 @@ export interface ChainReader {
 export interface ChainRegistry {
 }
 
-// @public (undocumented)
+// @public
 export interface Checkpoint {
     // (undocumented)
     readonly hash: string;
@@ -761,26 +678,24 @@ export interface Checkpoint {
     readonly height: bigint;
 }
 
-// @public (undocumented)
+// @public
 export const CLEARABLE_FIELDS: readonly ["outcome", "unsigned", "reservation", "signerTickets", "partialSignatures", "activeAttemptId", "ambiguous", "error", "nextCheckAt"];
 
 // @public
 export type ClearableField = (typeof CLEARABLE_FIELDS)[number];
 
-// @public (undocumented)
+// @public
 export interface Clock {
-    // (undocumented)
     now(): number;
-    // (undocumented)
     sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
-// @public (undocumented)
+// @public
 export type CodesOf<C extends ErrorCategory> = {
     [K in ErrorCode]: (typeof ERROR_CODES)[K]['category'] extends C ? K : never;
 }[ErrorCode];
 
-// @public (undocumented)
+// @public
 export class ConfigError extends CryptoAioError {
     constructor(code: CodesOf<'config'>, message: string, options?: CryptoAioErrorOptions);
 }
@@ -796,7 +711,7 @@ export interface ConfirmationResult {
     readonly status: TxStatus;
 }
 
-// @public (undocumented)
+// @public
 export function createError(code: ErrorCode, message: string, options?: CryptoAioErrorOptions): CryptoAioError;
 
 // @public
@@ -805,7 +720,7 @@ export function createLogger(namespace?: string, write?: LogWriter): Logger;
 // @public (undocumented)
 export function createMemoryStores(clock?: Clock): Stores;
 
-// @public (undocumented)
+// @public
 export interface CreateResult {
     // (undocumented)
     readonly created: boolean;
@@ -831,28 +746,22 @@ export class CryptoAio {
     use(plugin: Plugin): this;
 }
 
-// @public (undocumented)
+// @public
 export class CryptoAioError extends Error {
     constructor(code: ErrorCode, message: string, options?: CryptoAioErrorOptions);
-    // (undocumented)
     readonly ambiguous: boolean;
     // (undocumented)
     readonly category: ErrorCategory;
     // (undocumented)
     readonly code: ErrorCode;
-    // (undocumented)
     readonly context: ErrorContext;
-    // (undocumented)
     readonly details?: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly retryable: boolean;
-    // (undocumented)
     toJSON(): SerializedError;
 }
 
-// @public (undocumented)
+// @public
 export interface CryptoAioErrorOptions {
-    // (undocumented)
     readonly ambiguous?: boolean;
     // (undocumented)
     readonly cause?: unknown;
@@ -860,13 +769,11 @@ export interface CryptoAioErrorOptions {
     readonly context?: ErrorContext;
     // (undocumented)
     readonly details?: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly retryable?: boolean;
 }
 
-// @public (undocumented)
+// @public
 export interface CursorStore {
-    // (undocumented)
     get(key: string): Promise<StoredCursor | null>;
     put(key: string, cursor: ScanCursor, expectedVersion: number | null): Promise<number>;
 }
@@ -881,10 +788,10 @@ export const DATA_CLASSIFICATION: {
     readonly observation: Readonly<Record<keyof AttemptObservation, DataClass>>;
 };
 
-// @public (undocumented)
+// @public
 export type DataClass = 'secret' | 'sensitive' | 'sensitive-until-broadcast' | 'operational';
 
-// @public (undocumented)
+// @public
 export type Decoding = 'complete' | 'partial' | 'none';
 
 // @public
@@ -903,7 +810,7 @@ export interface DisposableNativeClient {
     close?(): void | Promise<void>;
 }
 
-// @public (undocumented)
+// @public
 export interface DriverBlock {
     // (undocumented)
     readonly hash: string;
@@ -911,7 +818,6 @@ export interface DriverBlock {
     readonly height: bigint;
     // (undocumented)
     readonly parentHash: string;
-    // (undocumented)
     readonly timestamp?: number;
     // (undocumented)
     readonly transactionIds?: readonly string[];
@@ -923,21 +829,17 @@ export interface DriverContext {
     readonly chain: ChainInfo;
     // (undocumented)
     readonly clock: Clock;
-    // (undocumented)
     readonly indexer?: Transport;
-    // (undocumented)
     readonly library: string;
     // (undocumented)
     readonly log: Logger;
     // (undocumented)
     readonly network: NetworkInfo;
-    // (undocumented)
     readonly options: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly transport: Transport;
 }
 
-// @public (undocumented)
+// @public
 export interface DriverFactory {
     // (undocumented)
     create(ctx: DriverContext): Promise<ChainDriver>;
@@ -957,9 +859,8 @@ export interface DriverIntent {
     readonly outputs: readonly DriverOutput[];
 }
 
-// @public (undocumented)
+// @public
 export interface DriverLimits {
-    // (undocumented)
     readonly maxOutputs: number;
 }
 
@@ -973,13 +874,10 @@ export interface DriverOutput {
     readonly variant?: Readonly<Record<string, unknown>>;
 }
 
-// @public (undocumented)
+// @public
 export interface DriverTransaction {
-    // (undocumented)
     readonly decoding: Decoding;
-    // (undocumented)
     readonly details: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly fee?: readonly {
         readonly asset: AssetRef;
         readonly amount: bigint;
@@ -990,30 +888,27 @@ export interface DriverTransaction {
     readonly observation: DriverTxObservation;
     // (undocumented)
     readonly raw?: RawTx;
-    // (undocumented)
     readonly timestamp?: number;
     // (undocumented)
     readonly transfers: readonly DriverTransfer[];
 }
 
-// @public (undocumented)
+// @public
 export interface DriverTransfer {
     // (undocumented)
     readonly amount: bigint;
     // (undocumented)
     readonly asset: AssetRef;
-    // (undocumented)
     readonly from: readonly string[];
     readonly locator: string;
     // (undocumented)
     readonly memo?: string;
-    // (undocumented)
     readonly source: TransferSource;
     // (undocumented)
     readonly to: string;
 }
 
-// @public (undocumented)
+// @public
 export interface DriverTxObservation {
     // (undocumented)
     readonly blockHash?: string;
@@ -1024,7 +919,6 @@ export interface DriverTxObservation {
     // (undocumented)
     readonly seen: 'none' | 'mempool' | 'block';
     readonly success?: boolean;
-    // (undocumented)
     readonly txHash?: string;
 }
 
@@ -1036,45 +930,34 @@ export interface EndpointCall {
     rpc<T = unknown>(method: string, params?: unknown): Promise<T>;
 }
 
-// @public (undocumented)
+// @public
 export interface EndpointConfig {
-    // (undocumented)
     readonly headers?: Readonly<Record<string, string | Secret<string>>>;
     // (undocumented)
     readonly kind?: 'rpc' | 'indexer';
-    // (undocumented)
     readonly name?: string;
-    // (undocumented)
     readonly priority?: number;
-    // (undocumented)
     readonly rateLimit?: {
         readonly rps: number;
         readonly burst?: number;
     };
-    // (undocumented)
     readonly timeoutMs?: number;
-    // (undocumented)
     readonly url: string | Secret<string>;
 }
 
-// @public (undocumented)
+// @public
 export type EndpointState = 'healthy' | 'lagging' | 'open' | 'half-open' | 'disabled' | 'unknown';
 
-// @public (undocumented)
+// @public
 export interface EndpointStatus {
-    // (undocumented)
     readonly failures: number;
-    // (undocumented)
     readonly height?: bigint;
-    // (undocumented)
     readonly id: string;
     // (undocumented)
     readonly kind: 'rpc' | 'indexer';
-    // (undocumented)
     readonly lag?: bigint;
     // (undocumented)
     readonly latencyMs?: number;
-    // (undocumented)
     readonly reason?: string;
     // (undocumented)
     readonly state: EndpointState;
@@ -1236,19 +1119,19 @@ export const ERROR_CODES: {
     };
 };
 
-// @public (undocumented)
+// @public
 export type ErrorCategory = 'config' | 'unsupported' | 'validation' | 'provider' | 'chain' | 'signing' | 'state' | 'timeout';
 
-// @public (undocumented)
+// @public
 export type ErrorCode = keyof typeof ERROR_CODES;
 
-// @public (undocumented)
+// @public
 export type ErrorContext = Readonly<Record<string, ErrorContextValue>>;
 
-// @public (undocumented)
+// @public
 export type ErrorContextValue = string | number | boolean | undefined;
 
-// @public (undocumented)
+// @public
 export type Evidence = 'observed' | 'proven';
 
 // @public
@@ -1284,24 +1167,17 @@ export type EvmFeeOverride = {
 
 // @public
 export interface ExecutionContext {
-    // (undocumented)
     readonly chain: string;
-    // (undocumented)
     readonly configHash: string;
-    // (undocumented)
     readonly indexers: readonly string[];
-    // (undocumented)
     readonly library: string;
-    // (undocumented)
     readonly network: string;
     readonly providers: readonly string[];
-    // (undocumented)
     readonly signer?: string;
-    // (undocumented)
     readonly wallet: string;
 }
 
-// @public (undocumented)
+// @public
 export function explorerUrl(network: NetworkInfo, kind: 'tx' | 'address', value: string): string | undefined;
 
 // @public (undocumented)
@@ -1312,22 +1188,22 @@ export interface ExtendedKeyVersions {
     readonly public: number;
 }
 
-// @public (undocumented)
+// @public
 export type ExtOf<C extends ChainId> = FamilyOf<C> extends keyof FamilyRegistry ? FamilyRegistry[FamilyOf<C>] extends {
     ext: infer E;
 } ? E : unknown : unknown;
 
-// @public (undocumented)
+// @public
 export type FamilyOf<C extends ChainId> = ChainEntry<C>['family'];
 
-// @public (undocumented)
+// @public
 export interface FamilyRegistry {
 }
 
-// @public (undocumented)
+// @public
 export type FeeBound = 'exact' | 'expected' | 'upper';
 
-// @public (undocumented)
+// @public
 export interface FeeCharge {
     // (undocumented)
     readonly amount: Amount;
@@ -1335,7 +1211,7 @@ export interface FeeCharge {
     readonly label: string;
 }
 
-// @public (undocumented)
+// @public
 export interface FeeChargeDraft {
     // (undocumented)
     readonly amount: bigint;
@@ -1345,19 +1221,14 @@ export interface FeeChargeDraft {
     readonly label: string;
 }
 
-// @public (undocumented)
+// @public
 export interface FeeEstimate {
     // (undocumented)
     readonly bound: FeeBound;
-    // (undocumented)
     readonly charges: readonly FeeCharge[];
-    // (undocumented)
     readonly details: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly kind: string;
-    // (undocumented)
     readonly payer?: Address;
-    // (undocumented)
     readonly speed: FeeSpeed | 'custom';
 }
 
@@ -1367,11 +1238,8 @@ export interface FeeEstimateDraft {
     readonly bound: FeeBound;
     // (undocumented)
     readonly charges: readonly FeeChargeDraft[];
-    // (undocumented)
     readonly details: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly kind: string;
-    // (undocumented)
     readonly payer?: string;
     // (undocumented)
     readonly speed: FeeSpeed | 'custom';
@@ -1380,25 +1248,25 @@ export interface FeeEstimateDraft {
 // @public
 export type FeeOverride = Readonly<Record<string, unknown>>;
 
-// @public (undocumented)
+// @public
 export type FeeSpeed = 'slow' | 'normal' | 'fast';
 
 // @public
 export function feeTotal(fee: FeeEstimate, asset: AssetId): Amount | undefined;
 
-// @public (undocumented)
+// @public
 export interface Fence {
     // (undocumented)
     readonly claimToken: string;
 }
 
-// @public (undocumented)
+// @public
 export type Finality = 'none' | 'probabilistic' | 'final';
 
-// @public (undocumented)
+// @public
 export type FinalityLevel = 'latest' | 'finalized';
 
-// @public (undocumented)
+// @public
 export type FinalityPolicy = {
     readonly kind: 'confirmations';
     readonly confirmations: number;
@@ -1415,7 +1283,7 @@ export type FinalityPolicy = {
     readonly kind: 'masterchain';
 };
 
-// @public (undocumented)
+// @public
 export type FundsCheck = {
     readonly ok: true;
 } | {
@@ -1442,14 +1310,14 @@ export interface GenerateOptions {
     readonly id?: string;
 }
 
-// @public (undocumented)
+// @public
 export type HandleConfig<C extends ChainId> = Omit<HandleOptions, 'chain' | 'network' | 'library'> & {
     readonly chain: C;
     readonly network?: NetworkOf<C>;
     readonly library?: LibraryOf<C>;
 };
 
-// @public (undocumented)
+// @public
 export interface HandleOptions {
     // (undocumented)
     readonly chain: string;
@@ -1471,30 +1339,25 @@ export interface HandleOptions {
     readonly wallet?: string;
 }
 
-// @public (undocumented)
+// @public
 export interface HealthProbes {
-    // (undocumented)
     readonly expectedIdentity?: string;
-    // (undocumented)
     readonly height?: (call: EndpointCall) => Promise<bigint>;
-    // (undocumented)
     readonly identity?: (call: EndpointCall) => Promise<string>;
 }
 
-// @public (undocumented)
+// @public
 export interface Hooks {
     readonly beforeSign?: (ctx: SigningContext) => void | Promise<void>;
 }
 
-// @public (undocumented)
+// @public
 export interface HttpRequest {
-    // (undocumented)
     readonly body?: unknown;
     // (undocumented)
     readonly headers?: Readonly<Record<string, string>>;
     // (undocumented)
     readonly method: 'GET' | 'POST';
-    // (undocumented)
     readonly path: string;
     // (undocumented)
     readonly query?: Readonly<Record<string, string>>;
@@ -1502,7 +1365,7 @@ export interface HttpRequest {
     readonly route?: string;
 }
 
-// @public (undocumented)
+// @public
 export interface IntentSummary {
     // (undocumented)
     readonly asset: AssetId;
@@ -1515,31 +1378,31 @@ export interface IntentSummary {
     }[];
 }
 
-// @public (undocumented)
+// @public
 export function isCryptoAioError(value: unknown, code?: ErrorCode): value is CryptoAioError;
 
 // @public (undocumented)
 export function isSecret(value: unknown): value is Secret<unknown>;
 
-// @public (undocumented)
+// @public
 export function isTerminal(state: OperationState): boolean;
 
-// @public (undocumented)
+// @public
 export interface KeyRef {
     readonly id?: string;
     readonly path?: string;
 }
 
-// @public (undocumented)
+// @public
 export const KNOWN_CAPABILITIES: readonly ["tokens", "memo", "batch-transfer", "replace-fee", "cancel", "block-scan", "address-history", "finality-tag", "hd-public-derivation", "contract-read", "fee-market-1559", "expiry"];
 
-// @public (undocumented)
+// @public
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
-// @public (undocumented)
+// @public
 export type KnownLibrary = (typeof Library)[keyof typeof Library];
 
-// @public (undocumented)
+// @public
 export interface Lease {
     // (undocumented)
     readonly expiresAt: number;
@@ -1550,7 +1413,7 @@ export interface Lease {
     readonly token: bigint;
 }
 
-// @public (undocumented)
+// @public
 export const Library: Readonly<{
     readonly ETHERS: "ethers";
     readonly WEB3: "web3";
@@ -1561,30 +1424,22 @@ export const Library: Readonly<{
     readonly AVALANCHEJS: "@avalabs/avalanchejs";
 }>;
 
-// @public (undocumented)
+// @public
 export type LibraryOf<C extends ChainId> = FamilyOf<C> extends keyof FamilyRegistry ? FamilyRegistry[FamilyOf<C>] extends {
     library: infer L;
 } ? L : string : string;
 
-// @public (undocumented)
+// @public
 export interface LifecycleOptions {
-    // (undocumented)
     readonly broadcastFanout?: number;
-    // (undocumented)
     readonly claimLeaseMs?: number;
-    // (undocumented)
     readonly droppedGracePeriodMs?: number;
-    // (undocumented)
     readonly leaseMs?: number;
     readonly leaseWaitMs?: number;
-    // (undocumented)
     readonly pollIntervalMs?: number;
-    // (undocumented)
     readonly rebroadcastIntervalMs?: number;
-    // (undocumented)
     readonly requireIdempotencyKey?: boolean;
     readonly signTimeoutMs?: number;
-    // (undocumented)
     readonly waitTimeoutMs?: number;
 }
 
@@ -1611,22 +1466,18 @@ export interface LocalSignerOptions {
     readonly secp256k1?: Secret<string | Uint8Array>;
 }
 
-// @public (undocumented)
+// @public
 export interface LockManager {
-    // (undocumented)
     acquire(key: string, owner: string, ttlMs: number): Promise<Lease | null>;
-    // (undocumented)
     release(lease: Lease): Promise<void>;
-    // (undocumented)
     renew(lease: Lease, ttlMs: number): Promise<Lease | null>;
 }
 
-// @public (undocumented)
+// @public
 export type LogFields = Readonly<Record<string, unknown>>;
 
-// @public (undocumented)
+// @public
 export interface Logger {
-    // (undocumented)
     child(namespace: string): Logger;
     // (undocumented)
     debug(message: string, fields?: LogFields): void;
@@ -1638,10 +1489,10 @@ export interface Logger {
     warn(message: string, fields?: LogFields): void;
 }
 
-// @public (undocumented)
+// @public
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-// @public (undocumented)
+// @public
 export type LogWriter = (level: LogLevel, namespace: string, message: string, fields?: Record<string, unknown>) => void;
 
 // @public (undocumented)
@@ -1721,7 +1572,7 @@ export interface MonitorApi {
 // @public
 export function mutuallyExclusive(a: OrderingData, b: OrderingData): boolean;
 
-// @public (undocumented)
+// @public
 export interface NativeAssetInfo {
     // (undocumented)
     readonly decimals: number;
@@ -1731,37 +1582,30 @@ export interface NativeAssetInfo {
     readonly symbol: string;
 }
 
-// @public (undocumented)
+// @public
 export interface NativeClientMap {
 }
 
-// @public (undocumented)
+// @public
 export interface NetworkInfo {
-    // (undocumented)
     readonly capabilities?: {
         readonly add?: readonly Capability[];
         readonly remove?: readonly Capability[];
     };
-    // (undocumented)
     readonly defaultConfirmations: number;
-    // (undocumented)
     readonly explorer?: {
         readonly tx: string;
         readonly address: string;
     };
-    // (undocumented)
     readonly feeModel: string;
     // (undocumented)
     readonly finality: FinalityPolicy;
     // (undocumented)
     readonly id: string;
     readonly identity?: string;
-    // (undocumented)
     readonly maxLagBlocks?: number;
-    // (undocumented)
     readonly params?: Readonly<Record<string, unknown>>;
     readonly reorgWindow: number;
-    // (undocumented)
     readonly replacement?: {
         readonly minBumpPercent: number;
     };
@@ -1769,7 +1613,7 @@ export interface NetworkInfo {
     readonly testnet: boolean;
 }
 
-// @public (undocumented)
+// @public
 export type NetworkOf<C extends ChainId> = ChainEntry<C>['network'];
 
 // @public (undocumented)
@@ -1788,20 +1632,18 @@ export interface NetworkStatus {
     readonly network: string;
 }
 
-// @public (undocumented)
+// @public
 export type NewOperation = Omit<OperationRecord, 'version' | 'createdAt' | 'updatedAt' | 'claim'>;
 
-// @public (undocumented)
+// @public
 export const NON_TERMINAL_STATES: readonly OperationState[];
 
-// @public (undocumented)
+// @public
 export const noopLogger: Logger;
 
-// @public (undocumented)
+// @public
 export interface NormalizedAddress {
-    // (undocumented)
     readonly canonical: string;
-    // (undocumented)
     readonly display: string;
     readonly variant?: Readonly<Record<string, unknown>>;
 }
@@ -1812,7 +1654,7 @@ export const OPERATION_FORMAT = 1;
 // @public
 export const OPERATION_PATCH_KEYS: readonly ["state", "outcome", "unsigned", "reservation", "signerTickets", "partialSignatures", "activeAttemptId", "ambiguous", "error", "nextCheckAt"];
 
-// @public (undocumented)
+// @public
 export interface OperationClaim {
     readonly token: string;
     // (undocumented)
@@ -1821,23 +1663,19 @@ export interface OperationClaim {
     readonly workerId: string;
 }
 
-// @public (undocumented)
+// @public
 export interface OperationFilter {
-    // (undocumented)
     readonly chain?: string;
-    // (undocumented)
     readonly from?: string;
-    // (undocumented)
     readonly limit?: number;
     // (undocumented)
     readonly namespace: string;
-    // (undocumented)
     readonly network?: string;
     // (undocumented)
     readonly states?: readonly OperationState[];
 }
 
-// @public (undocumented)
+// @public
 export interface OperationPatch {
     // (undocumented)
     readonly activeAttemptId?: string;
@@ -1862,52 +1700,36 @@ export interface OperationPatch {
     readonly unsigned?: UnsignedTx;
 }
 
-// @public (undocumented)
+// @public
 export interface OperationRecord {
-    // (undocumented)
     readonly activeAttemptId?: string;
-    // (undocumented)
     readonly ambiguous?: boolean;
-    // (undocumented)
     readonly attempts: readonly AttemptRecord[];
-    // (undocumented)
     readonly claim?: OperationClaim;
     // (undocumented)
     readonly context: ExecutionContext;
-    // (undocumented)
     readonly createdAt: number;
-    // (undocumented)
     readonly error?: SerializedError;
     readonly format: number;
-    // (undocumented)
     readonly id: string;
-    // (undocumented)
     readonly idempotencyKey: string;
     // (undocumented)
     readonly intent: StoredIntent;
-    // (undocumented)
     readonly intentHash: string;
     // (undocumented)
     readonly kind: 'transfer';
     // (undocumented)
     readonly namespace: string;
-    // (undocumented)
     readonly nextCheckAt?: number;
-    // (undocumented)
     readonly outcome?: 'executed' | 'cancelled';
-    // (undocumented)
     readonly partialSignatures?: readonly SignatureBundle[];
-    // (undocumented)
     readonly reservation?: OrderingData;
-    // (undocumented)
     readonly signerTickets?: readonly SignerTicket[];
     // (undocumented)
     readonly state: OperationState;
-    // (undocumented)
     readonly unsigned?: UnsignedTx;
     // (undocumented)
     readonly updatedAt: number;
-    // (undocumented)
     readonly version: number;
 }
 
@@ -1933,29 +1755,21 @@ export interface OperationsFilter {
     readonly states?: readonly OperationState[];
 }
 
-// @public (undocumented)
+// @public
 export type OperationState = 'created' | 'prepared' | 'awaiting-signature' | 'signed' | 'submitted' | 'stalled' | 'included' | 'final' | 'failed' | 'expired' | 'abandoned';
 
 // @public
 export interface OperationStore {
-    // (undocumented)
     appendAttempt(namespace: string, id: string, attempt: AttemptRecord, patch: OperationPatch, expectedVersion: number, fence?: Fence): Promise<OperationRecord>;
     claimDue(namespace: string, workerId: string, now: number, leaseMs: number, limit: number): Promise<OperationRecord[]>;
-    // (undocumented)
     create(operation: NewOperation): Promise<CreateResult>;
     findByRef(namespace: string, refOrTxHash: string): Promise<OperationRecord | null>;
-    // (undocumented)
     get(namespace: string, id: string): Promise<OperationRecord | null>;
-    // (undocumented)
     getByKey(namespace: string, idempotencyKey: string): Promise<OperationRecord | null>;
-    // (undocumented)
     getObservation(attemptId: string): Promise<AttemptObservation | null>;
-    // (undocumented)
     list(filter: OperationFilter): Promise<OperationRecord[]>;
-    // (undocumented)
     purge?(filter: OperationFilter): Promise<number>;
     putObservation(observation: Omit<AttemptObservation, 'version'>, expectedVersion: number | null): Promise<AttemptObservation>;
-    // (undocumented)
     releaseClaim(namespace: string, id: string, fence: Fence): Promise<void>;
     update(namespace: string, id: string, patch: OperationPatch, expectedVersion: number, fence?: Fence): Promise<OperationRecord>;
 }
@@ -2005,10 +1819,10 @@ export type OrderingData = {
     readonly expiresAtMs?: number;
 };
 
-// @public (undocumented)
+// @public
 export type OrderingKind = 'nonce' | 'seqno' | 'inputs' | 'expiry';
 
-// @public (undocumented)
+// @public
 export function parseAssetId(id: string): {
     chain: string;
     network: string;
@@ -2018,7 +1832,7 @@ export function parseAssetId(id: string): {
 // @public
 export function parseTagged<T = unknown>(text: string): T;
 
-// @public (undocumented)
+// @public
 export interface PeerDependency {
     // (undocumented)
     readonly name: string;
@@ -2037,7 +1851,6 @@ export interface Plugin {
     readonly assets?: readonly AssetRegistration[];
     // (undocumented)
     readonly chains?: readonly ChainInfo[];
-    // (undocumented)
     readonly name: string;
     // (undocumented)
     readonly presets?: readonly ProviderPreset[];
@@ -2045,7 +1858,7 @@ export interface Plugin {
     readonly schemes?: readonly SignatureScheme[];
 }
 
-// @public (undocumented)
+// @public
 export interface PreparedOperation {
     // (undocumented)
     readonly operation: OperationView;
@@ -2057,7 +1870,7 @@ export interface PreparedOperation {
     };
 }
 
-// @public (undocumented)
+// @public
 export interface PresetInput {
     // (undocumented)
     readonly apiKey?: string | Secret<string>;
@@ -2073,13 +1886,11 @@ export interface PresetInput {
 export interface ProofSource {
     blockHash(height: bigint, level: FinalityLevel): Promise<string | null>;
     expired(ordering: OrderingData): Promise<boolean>;
-    // (undocumented)
     finalizedHead(): Promise<{
         readonly height: bigint;
         readonly hash: string;
         readonly timestamp?: number;
     }>;
-    // (undocumented)
     includedFinal(ref: AttemptRef, ordering: OrderingData, from: string): Promise<{
         readonly included: false;
     } | {
@@ -2094,7 +1905,7 @@ export interface ProofSource {
     slotConsumed(ordering: OrderingData, from: string, level: FinalityLevel): Promise<boolean>;
 }
 
-// @public (undocumented)
+// @public
 export type ProviderConfig = {
     readonly preset: string;
     readonly apiKey?: string | Secret<string>;
@@ -2103,27 +1914,23 @@ export type ProviderConfig = {
     readonly endpoints: readonly EndpointConfig[];
 };
 
-// @public (undocumented)
+// @public
 export class ProviderError extends CryptoAioError {
     constructor(code: CodesOf<'provider'>, message: string, options?: CryptoAioErrorOptions);
 }
 
 // @public
 export interface ProviderPreset {
-    // (undocumented)
     endpoints(input: PresetInput): readonly EndpointConfig[];
     // (undocumented)
     readonly kind: 'rpc' | 'indexer';
-    // (undocumented)
     readonly name: string;
     readonly production?: boolean;
-    // (undocumented)
     readonly requiresApiKey?: boolean;
-    // (undocumented)
     supports(chain: string, network: string): boolean;
 }
 
-// @public (undocumented)
+// @public
 export type ProviderRef = string | ProviderConfig;
 
 // @public
@@ -2153,19 +1960,16 @@ export const REDACTED = "[REDACTED]";
 // @public (undocumented)
 export function redactUrl(url: string | Secret<string>): string;
 
-// @public (undocumented)
+// @public
 export interface ReplacementPolicy {
     buildCancel?(previous: UnsignedTx, ctx: BuildContext, fee?: FeeSpeed | FeeOverride): Promise<UnsignedTx>;
-    // (undocumented)
     buildReplacement?(previous: UnsignedTx, fee: FeeSpeed | FeeOverride, ctx: BuildContext): Promise<UnsignedTx>;
-    // (undocumented)
     readonly cancel: boolean;
     comparePrice?(a: UnsignedTx, b: UnsignedTx): number;
-    // (undocumented)
     readonly replace: boolean;
 }
 
-// @public (undocumented)
+// @public
 export type RequestPurpose = 'read' | 'monitor' | 'proof' | 'broadcast';
 
 // @public
@@ -2178,13 +1982,13 @@ export interface ResolvedTransfer extends TransferBase {
     readonly unresolved?: undefined;
 }
 
-// @public (undocumented)
+// @public
 export type RetryClass = 'safe' | 'ambiguous-on-failure' | 'never-auto';
 
 // @public (undocumented)
 export function reveal<T>(value: T | Secret<T>): T;
 
-// @public (undocumented)
+// @public
 export interface ScanCursor {
     // (undocumented)
     readonly hash: string;
@@ -2197,7 +2001,7 @@ export interface ScanCursor {
     }[];
 }
 
-// @public (undocumented)
+// @public
 export type ScanEvent = ScanEventBody & {
     ack(): Promise<void>;
 };
@@ -2213,7 +2017,7 @@ export type ScanEventBody = {
     readonly removed: readonly Checkpoint[];
 };
 
-// @public (undocumented)
+// @public
 export interface ScanFilter {
     // (undocumented)
     readonly addresses?: readonly string[];
@@ -2227,7 +2031,7 @@ export class Scanner implements AsyncIterable<ScanEvent> {
     [Symbol.asyncIterator](): AsyncIterator<ScanEvent>;
 }
 
-// @public (undocumented)
+// @public
 export interface ScannerOptions {
     readonly cursorKey: string;
     readonly filter?: {
@@ -2236,25 +2040,20 @@ export interface ScannerOptions {
     };
     readonly from?: 'latest' | bigint;
     readonly mode?: 'final' | 'head';
-    // (undocumented)
     readonly pollIntervalMs?: number;
     readonly reorgWindow?: number;
     readonly signal?: AbortSignal;
 }
 
-// @public (undocumented)
+// @public
 export interface ScopeOptions {
-    // (undocumented)
     readonly chains?: Readonly<Record<string, ChainDefaults>>;
     // (undocumented)
     readonly hooks?: Hooks;
     // (undocumented)
     readonly lifecycle?: LifecycleOptions;
-    // (undocumented)
     readonly providers?: Readonly<Record<string, ProviderConfig>>;
-    // (undocumented)
     readonly signers?: Readonly<Record<string, Signer>>;
-    // (undocumented)
     readonly wallets?: Readonly<Record<string, WalletConfig>>;
 }
 
@@ -2276,32 +2075,27 @@ export class Secret<T = string> {
 // @public (undocumented)
 export function secret<T>(value: T | Secret<T>): Secret<T>;
 
-// @public (undocumented)
+// @public
 export interface SequenceSource {
     latest(address: string): Promise<bigint>;
     pending(address: string): Promise<bigint>;
 }
 
-// @public (undocumented)
+// @public
 export interface SequenceState {
-    // (undocumented)
     readonly fence: bigint;
-    // (undocumented)
     readonly next: bigint;
-    // (undocumented)
     readonly released: readonly bigint[];
-    // (undocumented)
     readonly version: number;
 }
 
-// @public (undocumented)
+// @public
 export interface SequenceStore {
-    // (undocumented)
     get(key: string): Promise<SequenceState | null>;
     put(key: string, state: Omit<SequenceState, 'version'>, expectedVersion: number | null): Promise<void>;
 }
 
-// @public (undocumented)
+// @public
 export interface SerializedError {
     // (undocumented)
     readonly ambiguous: boolean;
@@ -2331,17 +2125,15 @@ export interface SignatureBundle {
     readonly requestId: string;
 }
 
-// @public (undocumented)
+// @public
 export interface SignatureScheme {
     // (undocumented)
     readonly id: string;
-    // (undocumented)
     readonly publicKeyLength: number;
-    // (undocumented)
     verify(input: VerifyInput): boolean;
 }
 
-// @public (undocumented)
+// @public
 export interface SignedTx {
     // (undocumented)
     readonly raw: RawTx;
@@ -2349,17 +2141,13 @@ export interface SignedTx {
     readonly ref: AttemptRef;
 }
 
-// @public (undocumented)
+// @public
 export interface Signer {
     cancelRequest?(ticket: string): Promise<void>;
     exportKey?(scheme: string, keyRef?: KeyRef): Promise<Secret<Uint8Array>>;
-    // (undocumented)
     getPublicKey(scheme: string, keyRef?: KeyRef): Promise<Uint8Array>;
-    // (undocumented)
     readonly id: string;
-    // (undocumented)
     readonly schemes: readonly string[];
-    // (undocumented)
     sign(requests: readonly SigningRequest[], ctx: SigningContext): Promise<SigningResult>;
 }
 
@@ -2375,7 +2163,6 @@ export interface SignerTicket {
 export interface SigningContext {
     // (undocumented)
     readonly chain: string;
-    // (undocumented)
     readonly fee: FeeEstimateDraft;
     // (undocumented)
     readonly namespace: string;
@@ -2385,48 +2172,39 @@ export interface SigningContext {
     readonly operationId: string;
     // (undocumented)
     readonly purpose: SigningPurpose;
-    // (undocumented)
     readonly summary: IntentSummary;
-    // (undocumented)
     readonly tier?: string;
-    // (undocumented)
     readonly unsignedHash: string;
-    // (undocumented)
     readonly wallet: string;
 }
 
-// @public (undocumented)
+// @public
 export class SigningError extends CryptoAioError {
     constructor(code: CodesOf<'signing'>, message: string, options?: CryptoAioErrorOptions);
 }
 
-// @public (undocumented)
+// @public
 export interface SigningParams {
     readonly tweak?: Uint8Array;
 }
 
-// @public (undocumented)
+// @public
 export type SigningPurpose = 'original' | 'replacement' | 'cancel' | 'rebuild';
 
-// @public (undocumented)
+// @public
 export interface SigningRequest {
-    // (undocumented)
     readonly id: string;
     // (undocumented)
     readonly keyRef?: KeyRef;
-    // (undocumented)
     readonly params?: SigningParams;
-    // (undocumented)
     readonly payload: Uint8Array;
     // (undocumented)
     readonly payloadKind: 'digest' | 'message';
-    // (undocumented)
     readonly publicKey: Uint8Array;
-    // (undocumented)
     readonly scheme: string;
 }
 
-// @public (undocumented)
+// @public
 export type SigningResult = {
     readonly status: 'signed';
     readonly signatures: readonly SignatureBundle[];
@@ -2483,12 +2261,12 @@ export interface SolanaTokenAccount {
     readonly mint: string;
 }
 
-// @public (undocumented)
+// @public
 export class StateError extends CryptoAioError {
     constructor(code: CodesOf<'state'>, message: string, options?: CryptoAioErrorOptions);
 }
 
-// @public (undocumented)
+// @public
 export interface StoredCursor {
     // (undocumented)
     readonly cursor: ScanCursor;
@@ -2496,13 +2274,13 @@ export interface StoredCursor {
     readonly version: number;
 }
 
-// @public (undocumented)
+// @public
 export interface StoredIntent extends DriverIntent {
     // (undocumented)
     readonly assetId: AssetId;
 }
 
-// @public (undocumented)
+// @public
 export interface Stores {
     // (undocumented)
     readonly cursors: CursorStore;
@@ -2526,15 +2304,15 @@ export interface Submission extends OperationView {
     wait(options?: WaitOptions): Promise<ConfirmationResult>;
 }
 
-// @public (undocumented)
+// @public
 export const TERMINAL_STATES: readonly OperationState[];
 
-// @public (undocumented)
+// @public
 export class TimeoutError extends CryptoAioError {
     constructor(code: CodesOf<'timeout'>, message: string, options?: CryptoAioErrorOptions);
 }
 
-// @public (undocumented)
+// @public
 export type TokenRef = Exclude<AssetRef, 'native'>;
 
 // @public
@@ -2592,7 +2370,7 @@ export type TonWalletIdentity = {
 // @public (undocumented)
 export type TonWalletVersion = 'v4r2' | 'v5r1';
 
-// @public (undocumented)
+// @public
 export interface Transaction {
     // (undocumented)
     readonly block?: BlockRef;
@@ -2600,9 +2378,7 @@ export interface Transaction {
     readonly chain: string;
     // (undocumented)
     readonly decoding: Decoding;
-    // (undocumented)
     readonly details: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly fee?: readonly Amount[];
     // (undocumented)
     readonly id: string;
@@ -2619,16 +2395,13 @@ export interface Transaction {
 // @public
 export type Transfer = ResolvedTransfer | UnresolvedTransfer;
 
-// @public (undocumented)
+// @public
 export interface TransferIntent {
     // (undocumented)
     readonly amount?: AmountInput;
     readonly asset?: AssetRef | string;
-    // (undocumented)
     readonly fee?: FeeSpeed | FeeOverride;
-    // (undocumented)
     readonly from?: string;
-    // (undocumented)
     readonly memo?: string;
     // (undocumented)
     readonly outputs?: readonly TransferOutputInput[];
@@ -2644,7 +2417,7 @@ export interface TransferOptions {
     readonly signal?: AbortSignal;
 }
 
-// @public (undocumented)
+// @public
 export interface TransferOutputInput {
     // (undocumented)
     readonly amount: AmountInput;
@@ -2652,55 +2425,39 @@ export interface TransferOutputInput {
     readonly to: string;
 }
 
-// @public (undocumented)
+// @public
 export type TransferSource = 'native' | 'token-event' | 'internal';
 
-// @public (undocumented)
+// @public
 export interface Transport {
     createFetch(classify?: (url: URL, init: RequestInit | undefined) => CallOptions): typeof fetch;
-    // (undocumented)
     ensureFreshHealth(signal?: AbortSignal): Promise<void>;
     hasProbes(): boolean;
     highestHeight(): bigint | undefined;
-    // (undocumented)
     http<T = unknown>(request: HttpRequest, options?: CallOptions): Promise<T>;
-    // (undocumented)
     readonly id: string;
     readonly maxLagBlocks: number;
-    // (undocumented)
     refreshHealth(signal?: AbortSignal): Promise<void>;
-    // (undocumented)
     rpc<T = unknown>(method: string, params?: unknown, options?: CallOptions): Promise<T>;
     rpcRaw(payload: unknown, options?: CallOptions): Promise<unknown>;
-    // (undocumented)
     setProbes(probes: HealthProbes): void;
-    // (undocumented)
     status(): EndpointStatus[];
 }
 
-// @public (undocumented)
+// @public
 export interface TransportOptions {
-    // (undocumented)
     readonly baseDelayMs?: number;
     readonly degradedProofs?: boolean;
-    // (undocumented)
     readonly failureThreshold?: number;
-    // (undocumented)
     readonly fetch?: typeof fetch;
-    // (undocumented)
     readonly healthIntervalMs?: number;
-    // (undocumented)
     readonly maxAttempts?: number;
     // (undocumented)
     readonly maxDelayMs?: number;
-    // (undocumented)
     readonly maxLagBlocks?: number;
     readonly maxResponseBytes?: number;
-    // (undocumented)
     readonly openMs?: number;
-    // (undocumented)
     readonly proofQuorum?: number;
-    // (undocumented)
     readonly timeoutMs?: number;
 }
 
@@ -2744,15 +2501,11 @@ export interface TronResources {
     readonly stakedBandwidth: bigint;
 }
 
-// @public (undocumented)
+// @public
 export interface TxBuilder {
-    // (undocumented)
     assemble(unsigned: UnsignedTx, signatures: readonly SignatureBundle[]): Promise<SignedTx>;
-    // (undocumented)
     build(intent: DriverIntent, fee: FeeEstimateDraft, ctx: BuildContext): Promise<UnsignedTx>;
-    // (undocumented)
     checkFunds(intent: DriverIntent, fee: FeeEstimateDraft, ctx: BuildContext): Promise<FundsCheck>;
-    // (undocumented)
     estimateFee(intent: DriverIntent, ctx: BuildContext): Promise<FeeEstimateDraft>;
     signaturesFrom?(unsigned: UnsignedTx, signed: RawTx): readonly SignatureBundle[];
 }
@@ -2760,10 +2513,10 @@ export interface TxBuilder {
 // @public
 export type TxFailure = 'reverted' | 'unevidenced';
 
-// @public (undocumented)
+// @public
 export type TxState = 'unknown' | 'pending' | 'mempool' | 'included' | 'final' | 'failed' | 'dropped' | 'replaced' | 'expired' | 'refused' | 'rejected';
 
-// @public (undocumented)
+// @public
 export interface TxStatus {
     // (undocumented)
     readonly blockHash?: string;
@@ -2776,11 +2529,9 @@ export interface TxStatus {
     // (undocumented)
     readonly finality: Finality;
     readonly reason?: string;
-    // (undocumented)
     readonly replacedBy?: string;
     // (undocumented)
     readonly state: TxState;
-    // (undocumented)
     readonly txHash?: string;
 }
 
@@ -2806,7 +2557,7 @@ export interface UnresolvedTransfer extends TransferBase {
     };
 }
 
-// @public (undocumented)
+// @public
 export interface UnsignedTx {
     readonly expectedRef?: AttemptRef;
     // (undocumented)
@@ -2821,7 +2572,7 @@ export interface UnsignedTx {
     readonly summary: IntentSummary;
 }
 
-// @public (undocumented)
+// @public
 export class UnsupportedCapabilityError extends CryptoAioError {
     constructor(code: CodesOf<'unsupported'>, message: string, options?: CryptoAioErrorOptions);
 }
@@ -2911,12 +2662,12 @@ export interface UtxoWalletOptions {
     readonly changeAddress?: string;
 }
 
-// @public (undocumented)
+// @public
 export class ValidationError extends CryptoAioError {
     constructor(code: CodesOf<'validation'>, message: string, options?: CryptoAioErrorOptions);
 }
 
-// @public (undocumented)
+// @public
 export interface VerifyInput {
     // (undocumented)
     readonly params?: SigningParams;
@@ -2943,29 +2694,20 @@ export interface WaitOptions {
     readonly timeoutMs?: number;
 }
 
-// @public (undocumented)
+// @public
 export interface WalletConfig {
-    // (undocumented)
     readonly address?: string;
-    // (undocumented)
     readonly chains?: readonly string[];
-    // (undocumented)
     readonly keyRef?: KeyRef;
-    // (undocumented)
     readonly options?: Readonly<Record<string, unknown>>;
     readonly publicKey?: string;
-    // (undocumented)
     readonly signer?: string;
     readonly signers?: Readonly<Record<string, string>>;
     readonly tier?: string;
-    // (undocumented)
     readonly ton?: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly utxo?: Readonly<Record<string, unknown>>;
-    // (undocumented)
     readonly xpub?: string;
     readonly xpubPath?: string;
-    // (undocumented)
     readonly xpubVersions?: ExtendedKeyVersions;
 }
 
@@ -2978,9 +2720,8 @@ export interface WalletHdOptions {
     readonly xpubVersions?: ExtendedKeyVersions;
 }
 
-// @public (undocumented)
+// @public
 export interface WalletKey {
-    // (undocumented)
     readonly keyRef?: KeyRef;
     // (undocumented)
     readonly publicKey: Uint8Array;
