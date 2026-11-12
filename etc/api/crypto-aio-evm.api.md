@@ -21,7 +21,7 @@ export const EVM_PEER_DEPENDENCIES: Readonly<Record<'ethers' | 'web3', PeerDepen
 // @public
 export function evmChainPlugin(options: EvmChainPluginOptions): Plugin;
 
-// @public (undocumented)
+// @public
 export interface EvmChainPluginOptions {
     readonly assets?: readonly AssetRegistration[];
     readonly chains: readonly ChainInfo[];

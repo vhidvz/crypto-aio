@@ -101,6 +101,11 @@ export interface OperationTarget extends ReadTarget {
   readonly assets: AssetService;
 }
 
+/**
+ * Options of `bc.transfer()` and its kin: the `idempotencyKey` that makes a repeat return
+ * the same Operation (1 to 200 characters of well-formed text without U+0000; one is
+ * generated when absent), and a `signal` that stops waiting, never a payment already sent.
+ */
 export interface TransferOptions {
   readonly idempotencyKey?: string;
   readonly signal?: AbortSignal;

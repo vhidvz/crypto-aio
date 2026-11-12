@@ -16,11 +16,14 @@ export const TRON_CAPABILITIES: readonly Capability[] = Object.freeze([
   'hd-public-derivation',
   'expiry',
 ]);
+/** The capabilities a Tron handle gains when it has an `indexer` (TronGrid's history API). */
 export const TRON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
   'address-history',
 ]);
 
+/** The expiration window a Tron transaction gets unless `expirationMs` sets another. */
 export const DEFAULT_EXPIRATION_MS = 60_000;
+/** The shortest expiration window this driver builds. */
 export const MIN_EXPIRATION_MS = 10_000;
 /**
  * The longest expiration window this driver builds. The negative inclusion proof does
@@ -35,6 +38,7 @@ export const MAX_EXPIRATION_MS = 300_000;
  * transaction, and an Attempt's `lastValidHeight` is its reference height plus this window.
  */
 export const TAPOS_WINDOW = 65_536n;
+/** How much the energy a TRC-20 transfer's fee limit allows exceeds the estimate, in percent. */
 export const DEFAULT_ENERGY_MARGIN_PERCENT = 20;
 /**
  * The largest fee limit a TRC-20 transfer carries unless the handle's `maxFeeLimit` option

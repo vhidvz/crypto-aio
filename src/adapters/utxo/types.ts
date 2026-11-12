@@ -80,6 +80,7 @@ export interface UtxoUnspent {
   readonly blockHeight?: bigint;
 }
 
+/** What `ext.utxo.coinSelection()` previews: a transfer of `outputs` from `from`. */
 export interface UtxoSelectionRequest {
   readonly from: string;
   readonly outputs: readonly { readonly to: string; readonly amount: bigint }[];

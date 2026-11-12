@@ -17,6 +17,10 @@ import { coinSelectionPreview } from './preview';
 import { MAX_OUTPUTS } from './spend';
 import type { UtxoExt } from './types';
 
+/**
+ * What `native(bc, 'bitcoinjs-lib')` hands out. It mirrors the SDK, so it is outside
+ * semver: a new bitcoinjs-lib line may change it in a minor release.
+ */
 export interface UtxoNativeClient {
   /** The bitcoinjs-lib module, with this library's `@noble/curves` ECC backend installed. */
   readonly bitcoin: typeof bitcoin;

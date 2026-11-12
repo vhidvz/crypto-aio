@@ -40,7 +40,7 @@ export type UtxoFeeOverride = {
     readonly satPerVByte: bigint | string;
 };
 
-// @public (undocumented)
+// @public
 export interface UtxoNativeClient {
     readonly bitcoin: typeof bitcoin;
     esplora<T = unknown>(path: string, responseType?: 'json' | 'text'): Promise<T>;
@@ -67,7 +67,7 @@ export interface UtxoSelectionPreview {
     readonly vsize: number;
 }
 
-// @public (undocumented)
+// @public
 export interface UtxoSelectionRequest {
     readonly exclude?: readonly string[];
     // (undocumented)

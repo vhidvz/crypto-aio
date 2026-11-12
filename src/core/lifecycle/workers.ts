@@ -45,6 +45,7 @@ export interface RecoveryReport {
   readonly reconciled: number;
 }
 
+/** Options of `aio.monitor.start()` and `runOnce()`. */
 export interface WorkerOptions {
   /** Default: a random id per `start` call. */
   readonly workerId?: string;

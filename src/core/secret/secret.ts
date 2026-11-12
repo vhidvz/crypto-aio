@@ -1,5 +1,6 @@
 import { inspect } from 'node:util';
 
+/** What a `Secret` and every redacted value render as. */
 export const REDACTED = '[REDACTED]';
 
 const values = new WeakMap<object, unknown>();
@@ -32,14 +33,17 @@ export class Secret<T = string> {
   }
 }
 
+/** Wraps `value` as a `Secret`; a `Secret` is returned as it is. */
 export function secret<T>(value: T | Secret<T>): Secret<T> {
   return value instanceof Secret ? value : new Secret(value);
 }
 
+/** Whether `value` is a `Secret`. */
 export function isSecret(value: unknown): value is Secret<unknown> {
   return value instanceof Secret;
 }
 
+/** The value inside a `Secret`, or `value` itself when it is not one. */
 export function reveal<T>(value: T | Secret<T>): T {
   return value instanceof Secret ? (value.reveal() as T) : value;
 }

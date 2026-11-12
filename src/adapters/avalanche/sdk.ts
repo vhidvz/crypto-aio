@@ -13,23 +13,28 @@ export interface SdkSerializable {
   readonly _type: string;
 }
 
+/** The part of avalanchejs's `Id` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkId {
   toString(): string;
   toBytes(): Uint8Array;
 }
 
+/** The part of avalanchejs's `Int` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkInt {
   value(): number;
 }
 
+/** The part of avalanchejs's `BigIntPr` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkBigInt {
   value(): bigint;
 }
 
+/** The part of avalanchejs's `Address` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkAddress {
   toBytes(): Uint8Array;
 }
 
+/** The part of avalanchejs's `OutputOwners` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkOutputOwners {
   readonly locktime: SdkBigInt;
   readonly threshold: SdkInt;
@@ -42,17 +47,20 @@ export interface SdkTransferOutput extends SdkSerializable {
   amount(): bigint;
 }
 
+/** The part of avalanchejs's `TransferableOutput` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkTransferableOutput extends SdkSerializable {
   readonly assetId: SdkId;
   readonly output: SdkSerializable;
   amount(): bigint;
 }
 
+/** The part of avalanchejs's `UTXOID` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkUtxoId {
   readonly txID: SdkId;
   readonly outputIdx: SdkInt;
 }
 
+/** The part of avalanchejs's `TransferableInput` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkTransferableInput extends SdkSerializable {
   readonly utxoID: SdkUtxoId;
   readonly assetId: SdkId;
@@ -60,6 +68,7 @@ export interface SdkTransferableInput extends SdkSerializable {
   sigIndicies(): number[];
 }
 
+/** The part of avalanchejs's `Utxo` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkUtxo extends SdkSerializable {
   readonly utxoId: SdkUtxoId;
   readonly assetId: SdkId;
@@ -84,11 +93,13 @@ export interface SdkTransaction extends SdkSerializable {
   getSigIndices(): number[][];
 }
 
+/** The part of avalanchejs's `Credential` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkCredential extends SdkSerializable {
   /** Each signature as hex (65 bytes: r, s, recovery id). */
   getSignatures(): string[];
 }
 
+/** The part of avalanchejs's `SignedTx` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkSignedTx {
   readonly unsignedTx: SdkTransaction;
   getCredentials(): SdkCredential[];
@@ -101,6 +112,7 @@ export interface SdkUnsignedTx {
   toBytes(): Uint8Array;
 }
 
+/** The part of avalanchejs's `codec Manager` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkManager {
   getDefaultCodec(): unknown;
   unpack<T>(bytes: Uint8Array, unpacker: SdkUnpacker<T>): T;
@@ -113,6 +125,7 @@ export interface SdkUnpacker<T> {
   fromBytes(bytes: Uint8Array, codec: unknown): [T, Uint8Array];
 }
 
+/** The part of avalanchejs's `fee Dimensions` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkDimensions {
   readonly 0: number;
   readonly 1: number;
@@ -140,6 +153,7 @@ export interface SdkContext {
   };
 }
 
+/** The part of avalanchejs's `FeeState` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkFeeState {
   readonly capacity: bigint;
   readonly excess: bigint;
@@ -147,6 +161,7 @@ export interface SdkFeeState {
   readonly timestamp: string;
 }
 
+/** The part of avalanchejs's `Signature` this library uses; it mirrors the SDK, outside semver. */
 export interface SdkSignature extends SdkSerializable {
   toString(): string;
 }

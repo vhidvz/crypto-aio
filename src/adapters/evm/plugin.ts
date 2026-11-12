@@ -133,6 +133,7 @@ function erc20Registration(asset: AssetRegistration, name: string): AssetRegistr
   return contract === ref.contract ? asset : { ...asset, ref: { ...ref, contract } };
 }
 
+/** `evmChainPlugin()`'s options: one EVM chain to register, with its networks and tokens. */
 export interface EvmChainPluginOptions {
   /**
    * A unique name matching `/^[a-z][a-z0-9-]*$/`. The plugin registers as `evm:<name>`, so

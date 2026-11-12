@@ -20,6 +20,7 @@ export const TON_CAPABILITIES: readonly Capability[] = Object.freeze([
   'memo',
   'expiry',
 ]);
+/** The capabilities a TON handle gains when it has an `indexer` (toncenter's v3 API). */
 export const TON_INDEXER_CAPABILITIES: readonly Capability[] = Object.freeze([
   'address-history',
 ]);

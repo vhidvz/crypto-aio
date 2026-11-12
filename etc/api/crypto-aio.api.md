@@ -404,7 +404,7 @@ export interface AvalancheUnspent {
 // @public
 export type AvalancheVm = 'avm' | 'pvm';
 
-// @public (undocumented)
+// @public
 export interface Balance {
     // (undocumented)
     readonly address: Address;
@@ -557,7 +557,7 @@ export const BUILTIN_SCHEMES: readonly SignatureScheme[];
 // @public
 export function callbackSigner(options: CallbackSignerOptions): Signer;
 
-// @public (undocumented)
+// @public
 export interface CallbackSignerOptions {
     // (undocumented)
     readonly cancelRequest?: (ticket: string) => Promise<void>;
@@ -703,7 +703,7 @@ export class ConfigError extends CryptoAioError {
 // @public
 export function configure(options: AioOptions): CryptoAio;
 
-// @public (undocumented)
+// @public
 export interface ConfirmationResult {
     // (undocumented)
     readonly operation?: OperationView;
@@ -717,7 +717,7 @@ export function createError(code: ErrorCode, message: string, options?: CryptoAi
 // @public
 export function createLogger(namespace?: string, write?: LogWriter): Logger;
 
-// @public (undocumented)
+// @public
 export function createMemoryStores(clock?: Clock): Stores;
 
 // @public
@@ -778,7 +778,7 @@ export interface CursorStore {
     put(key: string, cursor: ScanCursor, expectedVersion: number | null): Promise<number>;
 }
 
-// @public (undocumented)
+// @public
 export type Curve = 'secp256k1' | 'ed25519';
 
 // @public
@@ -1180,7 +1180,7 @@ export interface ExecutionContext {
 // @public
 export function explorerUrl(network: NetworkInfo, kind: 'tx' | 'address', value: string): string | undefined;
 
-// @public (undocumented)
+// @public
 export interface ExtendedKeyVersions {
     // (undocumented)
     readonly private: number;
@@ -1293,14 +1293,14 @@ export type FundsCheck = {
     readonly available: bigint;
 };
 
-// @public (undocumented)
+// @public
 export interface GeneratedSigner {
     readonly publicKeys: Readonly<Partial<Record<Curve, Uint8Array>>>;
     // (undocumented)
     readonly signer: Signer;
 }
 
-// @public (undocumented)
+// @public
 export interface GenerateOptions {
     // (undocumented)
     readonly curves: readonly Curve[];
@@ -1381,7 +1381,7 @@ export interface IntentSummary {
 // @public
 export function isCryptoAioError(value: unknown, code?: ErrorCode): value is CryptoAioError;
 
-// @public (undocumented)
+// @public
 export function isSecret(value: unknown): value is Secret<unknown>;
 
 // @public
@@ -1443,7 +1443,7 @@ export interface LifecycleOptions {
     readonly waitTimeoutMs?: number;
 }
 
-// @public (undocumented)
+// @public
 export function localSigner(options: LocalSignerOptions): Signer;
 
 // @public (undocumented)
@@ -1454,7 +1454,7 @@ export namespace localSigner {
     fromMnemonic: (phrase: Secret<string>, options?: MnemonicSignerOptions) => Signer;
 }
 
-// @public (undocumented)
+// @public
 export interface LocalSignerOptions {
     // (undocumented)
     readonly ed25519?: Secret<string | Uint8Array>;
@@ -1495,7 +1495,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 // @public
 export type LogWriter = (level: LogLevel, namespace: string, message: string, fields?: Record<string, unknown>) => void;
 
-// @public (undocumented)
+// @public
 export class MemoryCursorStore implements CursorStore {
     // (undocumented)
     get(key: string): Promise<StoredCursor | null>;
@@ -1503,7 +1503,7 @@ export class MemoryCursorStore implements CursorStore {
     put(key: string, cursor: ScanCursor, expectedVersion: number | null): Promise<number>;
 }
 
-// @public (undocumented)
+// @public
 export class MemoryLockManager implements LockManager {
     constructor(clock?: Clock);
     // (undocumented)
@@ -1514,7 +1514,7 @@ export class MemoryLockManager implements LockManager {
     renew(lease: Lease, ttlMs: number): Promise<Lease | null>;
 }
 
-// @public (undocumented)
+// @public
 export class MemoryOperationStore implements OperationStore {
     constructor(clock?: Clock);
     // (undocumented)
@@ -1543,7 +1543,7 @@ export class MemoryOperationStore implements OperationStore {
     update(namespace: string, id: string, patch: OperationPatch, expectedVersion: number, fence?: Fence): Promise<OperationRecord>;
 }
 
-// @public (undocumented)
+// @public
 export class MemorySequenceStore implements SequenceStore {
     // (undocumented)
     get(key: string): Promise<SequenceState | null>;
@@ -1551,7 +1551,7 @@ export class MemorySequenceStore implements SequenceStore {
     put(key: string, state: Omit<SequenceState, 'version'>, expectedVersion: number | null): Promise<void>;
 }
 
-// @public (undocumented)
+// @public
 export interface MnemonicSignerOptions {
     // (undocumented)
     readonly curves?: readonly Curve[];
@@ -1563,7 +1563,7 @@ export interface MnemonicSignerOptions {
     readonly passphrase?: Secret<string>;
 }
 
-// @public (undocumented)
+// @public
 export interface MonitorApi {
     runOnce(options?: WorkerOptions): Promise<number>;
     start(options?: WorkerOptions): Promise<void>;
@@ -1616,7 +1616,7 @@ export interface NetworkInfo {
 // @public
 export type NetworkOf<C extends ChainId> = ChainEntry<C>['network'];
 
-// @public (undocumented)
+// @public
 export interface NetworkStatus {
     // (undocumented)
     readonly chain: string;
@@ -1733,7 +1733,7 @@ export interface OperationRecord {
     readonly version: number;
 }
 
-// @public (undocumented)
+// @public
 export interface OperationsApi {
     // (undocumented)
     get(id: string): Promise<OperationView | null>;
@@ -1743,7 +1743,7 @@ export interface OperationsApi {
     }): Promise<RecoveryReport>;
 }
 
-// @public (undocumented)
+// @public
 export interface OperationsFilter {
     // (undocumented)
     readonly chain?: string;
@@ -1951,13 +1951,13 @@ export interface RecoveryReport {
     readonly unresent: number;
 }
 
-// @public (undocumented)
+// @public
 export function redactDeep(value: unknown, depth?: number): unknown;
 
-// @public (undocumented)
+// @public
 export const REDACTED = "[REDACTED]";
 
-// @public (undocumented)
+// @public
 export function redactUrl(url: string | Secret<string>): string;
 
 // @public
@@ -1985,7 +1985,7 @@ export interface ResolvedTransfer extends TransferBase {
 // @public
 export type RetryClass = 'safe' | 'ambiguous-on-failure' | 'never-auto';
 
-// @public (undocumented)
+// @public
 export function reveal<T>(value: T | Secret<T>): T;
 
 // @public
@@ -2072,7 +2072,7 @@ export class Secret<T = string> {
     toString(): string;
 }
 
-// @public (undocumented)
+// @public
 export function secret<T>(value: T | Secret<T>): Secret<T>;
 
 // @public
@@ -2367,7 +2367,7 @@ export type TonWalletIdentity = {
     readonly networkGlobalId?: number;
 };
 
-// @public (undocumented)
+// @public
 export type TonWalletVersion = 'v4r2' | 'v5r1';
 
 // @public
@@ -2409,7 +2409,7 @@ export interface TransferIntent {
     readonly to?: string;
 }
 
-// @public (undocumented)
+// @public
 export interface TransferOptions {
     // (undocumented)
     readonly idempotencyKey?: string;
@@ -2535,7 +2535,7 @@ export interface TxStatus {
     readonly txHash?: string;
 }
 
-// @public (undocumented)
+// @public
 export interface TxStatusEvent {
     // (undocumented)
     readonly operation?: OperationView;
@@ -2625,7 +2625,7 @@ export interface UtxoSelectionPreview {
     readonly vsize: number;
 }
 
-// @public (undocumented)
+// @public
 export interface UtxoSelectionRequest {
     readonly exclude?: readonly string[];
     // (undocumented)
@@ -2681,7 +2681,7 @@ export interface VerifyInput {
     readonly signature: Uint8Array;
 }
 
-// @public (undocumented)
+// @public
 export interface WaitOptions {
     readonly confirmations?: number;
     // (undocumented)
@@ -2732,7 +2732,7 @@ export interface WalletKey {
 // @public
 export type WalletOptions = Readonly<Record<string, unknown>>;
 
-// @public (undocumented)
+// @public
 export interface WorkerOptions {
     readonly batch?: number;
     // (undocumented)

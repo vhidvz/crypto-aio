@@ -59,12 +59,17 @@ import {
   type MappingContext,
 } from './mapping';
 
+/** `bc.getBalance()`'s answer: what `address` holds of `asset`, as one endpoint reads it. */
 export interface Balance {
   readonly address: Address;
   readonly asset: AssetInfo;
   readonly amount: Amount;
 }
 
+/**
+ * `bc.getNetworkStatus()`'s answer: the chain's head and finalized heights as the handle's
+ * endpoints report them, and each provider and indexer endpoint's health.
+ */
 export interface NetworkStatus {
   readonly chain: string;
   readonly network: string;

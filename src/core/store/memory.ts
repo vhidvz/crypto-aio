@@ -22,6 +22,7 @@ import type {
   StoredCursor,
 } from './types';
 
+/** A `LockManager` in this process's memory: for tests and one-process use only. */
 export class MemoryLockManager implements LockManager {
   readonly #held = new Map<string, Lease>();
   readonly #tokens = new Map<string, bigint>();
@@ -60,6 +61,7 @@ export class MemoryLockManager implements LockManager {
 
 // Sequence and cursor error messages omit the key: it embeds a wallet address, and
 // error messages reach logs.
+/** A `SequenceStore` in this process's memory: for tests and one-process use only. */
 export class MemorySequenceStore implements SequenceStore {
   readonly #states = new Map<string, SequenceState>();
 
@@ -84,6 +86,7 @@ export class MemorySequenceStore implements SequenceStore {
   }
 }
 
+/** A `CursorStore` in this process's memory: for tests and one-process use only. */
 export class MemoryCursorStore implements CursorStore {
   readonly #cursors = new Map<string, StoredCursor>();
 
@@ -174,6 +177,10 @@ function matches(record: OperationRecord, filter: OperationFilter): boolean {
   );
 }
 
+/**
+ * An `OperationStore` in this process's memory: for tests and one-process use only. What it
+ * holds is lost when the process ends, so it cannot make a payment crash-safe.
+ */
 export class MemoryOperationStore implements OperationStore {
   readonly #records = new Map<string, OperationRecord>();
   readonly #keys = new Map<string, string>();
@@ -418,6 +425,10 @@ export class MemoryOperationStore implements OperationStore {
   }
 }
 
+/**
+ * The four stores in memory, the default when `AioOptions.stores` leaves one out. Production
+ * needs durable stores shared by every process (see the docs' "Write a durable store").
+ */
 export function createMemoryStores(clock: Clock = systemClock): Stores {
   return {
     operations: new MemoryOperationStore(clock),

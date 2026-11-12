@@ -16,6 +16,10 @@ import { addressCodec, addressHistory, chainReader, listUnspent } from './reader
 import { avalanche, type AvalancheSdk, type SdkContext } from './sdk';
 import type { AvalancheExt } from './types';
 
+/**
+ * What `native(bc, '@avalabs/avalanchejs')` hands out. It mirrors the SDK, so it is outside
+ * semver: a new avalanchejs line may change it in a minor release.
+ */
 export interface AvalancheNativeClient {
   /**
    * The `@avalabs/avalanchejs` module. Its type names the members this library uses; cast
