@@ -93,9 +93,9 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 
 CREATE INDEX IF NOT EXISTS attempts_ref ON attempts (namespace, ref_id);
--- Not UNIQUE: the port says Attempt ids are globally unique, and the core makes them so,
--- but the contract suite gives Attempts of different Operations the same id (see
--- README.md). Observations, keyed by Attempt id alone, rely on the core's random ids.
+-- Not UNIQUE, though it could be: the port says Attempt ids are globally unique, the core
+-- makes them so, and a store may refuse an id another Operation holds (see README.md).
+-- Observations, keyed by Attempt id alone, rely on the core's random ids.
 CREATE INDEX IF NOT EXISTS attempts_id ON attempts (id);
 
 -- Each Attempt's latest observation, keyed by Attempt id alone, as the port keys it.

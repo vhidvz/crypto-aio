@@ -66,7 +66,11 @@ console.log(first.state, again.operationId === first.operationId); // submitted 
 
 Tokens are named by alias on the handle's own chain and network, or by contract.
 
+<!-- typecheck -->
 ```ts
+import type { Blockchain } from 'crypto-aio';
+declare const eth: Blockchain<'ethereum'>; // yours
+
 const sub = await eth.transfer(
   { asset: 'USDC', to: '0x…', amount: '25' }, // 25 USDC: the asset's own decimals
   { idempotencyKey: 'payout-7' },
@@ -85,7 +89,11 @@ The chain needs the `tokens` capability; [Send a transfer](./send.md) lists each
 On chains with `batch-transfer` (Bitcoin, the Avalanche X-Chain and P-Chain), one transaction pays
 several outputs:
 
+<!-- typecheck -->
 ```ts
+import type { Blockchain } from 'crypto-aio';
+declare const btc: Blockchain<'bitcoin'>; // yours
+
 const sub = await btc.transfer(
   {
     outputs: [
@@ -102,7 +110,11 @@ const sub = await btc.transfer(
 
 On chains with `memo` (Tron, Solana, TON, the Avalanche X-Chain). A memo is public forever.
 
+<!-- typecheck -->
 ```ts
+import type { Blockchain } from 'crypto-aio';
+declare const bc: Blockchain, to: string; // yours
+
 if (bc.supports('memo')) {
   await bc.transfer({ to, amount: '10', memo: 'invoice 381' }, { idempotencyKey: 'inv-381' });
 }
@@ -147,14 +159,25 @@ if (isCryptoAioError(result)) console.log(result.code, result.retryable); // TIM
 ## Retry safely after an error
 
 The pattern for any payment call: decide from the error's category and the Operation's stored
-state, and when in doubt, retry with the **same** key, never a new one. Only `validation` and
-`config` errors are always raised before anything is stored; any other error may leave a
-payment in flight, even one without an `operationId` (a busy address lease, a custody timeout).
+state, and when in doubt, retry with the **same** key, never a new one. A `validation` or
+`config` error means nothing was signed: either nothing was stored, or a check that runs
+once the Operation exists (a fee above your ceiling, a deprecated token) failed it for good,
+so the same key with corrected input throws `IDEMPOTENCY_CONFLICT`. Pay the corrected
+withdrawal under a new key. Any other error may leave a payment in flight, even one without
+an `operationId` (a busy address lease, a custody timeout).
 
+<!-- typecheck -->
 ```ts
-import { isCryptoAioError } from 'crypto-aio';
+import { isCryptoAioError, type Blockchain, type OperationView } from 'crypto-aio';
 
-async function pay(bc, withdrawal) {
+interface Withdrawal { readonly id: string; readonly to: string; readonly amount: string }
+// Your own handlers:
+declare function markRejected(w: Withdrawal, code: string): Promise<void>;
+declare function alertOperator(op: OperationView): Promise<void>;
+declare function reconcileFailure(w: Withdrawal, op: OperationView): Promise<void>;
+declare function scheduleRetry(id: string): Promise<void>;
+
+async function pay(bc: Blockchain, withdrawal: Withdrawal) {
   try {
     return await bc.transfer(
       { to: withdrawal.to, amount: withdrawal.amount },
@@ -162,7 +185,7 @@ async function pay(bc, withdrawal) {
     );
   } catch (error) {
     if (!isCryptoAioError(error)) throw error;
-    // Refused before anything was stored: the input or the configuration is wrong.
+    // Nothing was signed: the input or the configuration is wrong. Fix it, then pay under a new key.
     if (error.category === 'validation' || error.category === 'config') {
       return markRejected(withdrawal, error.code);
     }
@@ -184,7 +207,11 @@ including when a `failed` token transfer still needs a look at the chain.
 
 On EVM chains a replacement reuses the nonce and must raise both prices by at least 10%:
 
+<!-- typecheck -->
 ```ts
+import type { Blockchain } from 'crypto-aio';
+declare const eth: Blockchain<'ethereum'>, operationId: string; // yours
+
 const sub = await eth.replace(operationId, {
   fee: { maxFeePerGas: 60_000_000_000n, maxPriorityFeePerGas: 3_000_000_000n }, // wei per gas
 });
@@ -254,7 +281,13 @@ events ([Receive deposits](./receive.md)).
 
 Before an automatic credit, read the deposit again through an independent provider:
 
+<!-- typecheck -->
 ```ts
+import type { Amount, Blockchain, Transaction } from 'crypto-aio';
+// Yours: the handle, the scanned transaction and transfer, and your credit table.
+declare const bc: Blockchain, tx: Transaction, transfer: Transaction['transfers'][number];
+declare function creditOnce(id: string, amount: Amount | undefined): Promise<void>;
+
 const second = bc.with({ provider: 'independent' }); // a provider run by someone else
 const check = await second.getTransaction(tx.id);
 const agrees =
@@ -270,11 +303,16 @@ if (agrees) await creditOnce(transfer.id, transfer.amount);
 
 On chains with `address-history`, page through with the cursor:
 
+<!-- typecheck -->
 ```ts
+import type { Blockchain, Transaction } from 'crypto-aio';
+declare const btc: Blockchain<'bitcoin'>, address: string; // yours
+declare function record(tx: Transaction): Promise<void>; // yours: dedupe on transfer ids
+
 let cursor: string | undefined;
 do {
   const page = await btc.history(address, { cursor, limit: 50 });
-  for (const tx of page.items) await process(tx); // dedupe on transfer ids
+  for (const tx of page.items) await record(tx);
   cursor = page.next;
 } while (cursor);
 ```
@@ -317,8 +355,18 @@ back ([Cold and asynchronous signing](./cold-signing.md)).
 
 A custody service that approves later answers `pending`; you finish with `submitSignatures`:
 
+<!-- typecheck -->
 ```ts
-import { callbackSigner } from 'crypto-aio';
+import {
+  callbackSigner, type Blockchain, type SignatureBundle, type SigningRequest,
+} from 'crypto-aio';
+// Yours: your custody service's client, the handle, and what its webhook delivered.
+declare const vault: {
+  publicKey(scheme: string, keyId: string | undefined): Promise<Uint8Array>;
+  submit(requests: readonly SigningRequest[], operationId: string): Promise<string>;
+  cancel(ticket: string): Promise<void>;
+};
+declare const bc: Blockchain, operationId: string, signatures: SignatureBundle[];
 
 const custody = callbackSigner({
   id: 'custody',
@@ -359,7 +407,12 @@ console.log(refused); // POLICY_REJECTED
 
 Each tenant gets its own container and namespace; tenants may share one database.
 
+<!-- typecheck -->
 ```ts
+import { CryptoAio, type AioOptions, type Stores } from 'crypto-aio';
+declare const sharedStores: Stores; // yours: one database for every tenant
+declare function configFor(id: string): Omit<AioOptions, 'namespace' | 'stores'>; // yours
+
 const containers = new Map<string, CryptoAio>();
 function tenant(id: string): CryptoAio {
   let aio = containers.get(id);
@@ -375,7 +428,17 @@ function tenant(id: string): CryptoAio {
 
 Events carry operational data only, so any metrics system may receive them:
 
+<!-- typecheck -->
 ```ts
+import type { CryptoAio } from 'crypto-aio';
+// Yours: the container and your metrics and paging clients.
+declare const aio: CryptoAio;
+declare const metrics: {
+  increment(name: string, tags: Record<string, string>): void;
+  histogram(name: string, value: number, tags: Record<string, string>): void;
+};
+declare const pager: { alert(message: string): void };
+
 aio.on('operation.state', (e) => metrics.increment('payments.state', { chain: e.chain, to: e.to }));
 aio.on('rpc.response', (e) => metrics.histogram('rpc.latency_ms', e.latencyMs, { endpoint: e.endpointId }));
 aio.on('operation.stalled', (e) => pager.alert(`payment ${e.operationId} stalled: ${e.code}`));
@@ -385,9 +448,12 @@ aio.on('operation.stalled', (e) => pager.alert(`payment ${e.operationId} stalled
 
 For anything outside the API, get the SDK's own client, wired to the handle's transport:
 
+<!-- typecheck -->
 ```ts
+import type { Blockchain } from 'crypto-aio';
 import { native } from 'crypto-aio/native';
 import 'crypto-aio/evm'; // types native(bc, 'ethers')
+declare const eth: Blockchain<'ethereum'>; // yours
 
 const provider = await native(eth, 'ethers'); // an ethers JsonRpcApiProvider
 console.log(await provider.getBlockNumber());
@@ -400,6 +466,7 @@ secrets](./keys.md#the-native-escape-hatch-crypto-aionative)).
 
 Any EVM chain is data for the built-in driver:
 
+<!-- typecheck -->
 ```ts
 import { CryptoAio, type ChainInfo } from 'crypto-aio';
 import { evmChainPlugin } from 'crypto-aio/evm';

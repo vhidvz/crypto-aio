@@ -16,9 +16,17 @@ payment code, not only the library.
 drives the fake clock until the promise settles; `env.chain` lets you mine blocks, reorganize
 the chain, and make an endpoint misbehave.
 
+<!-- typecheck -->
 ```ts
+import type { Blockchain, Submission } from 'crypto-aio';
 import { createFakeEnv } from 'crypto-aio/testing';
-import { payOut } from '../src/payouts'; // your code: bc.transfer(…, { idempotencyKey: w.id })
+// Your code: bc.transfer(…, { idempotencyKey: w.id }). And your framework's `it` and `expect`.
+declare function payOut(
+  bc: Blockchain,
+  w: { readonly id: string; readonly to: string; readonly amount: string },
+): Promise<Submission>;
+declare const it: (name: string, fn: () => Promise<void>) => void;
+declare const expect: (value: unknown) => { toBe(expected: unknown): void };
 
 it('pays a withdrawal once, even when the broadcast reply is lost', async () => {
   const env = await createFakeEnv({ transport: { maxAttempts: 1 } });
@@ -35,7 +43,7 @@ it('pays a withdrawal once, even when the broadcast reply is lost', async () => 
 
 | Tool | What it gives you |
 | --- | --- |
-| `createFakeEnv(options)` | A chain, a container and a funded handle. Options: `ordering` (`'nonce'`, `'expiry'` or `'seqno'`), `fund`, `endpoints`, `wallets`, `stores`, `transport`, `lifecycle`, `hooks` and extra container options under `aio` |
+| `createFakeEnv(options)` | A chain, a container and a funded handle. Options: `ordering` (`'nonce'`, `'expiry'` or `'seqno'`), `fund`, `endpoints`, `wallets`, `signer` (the default wallet's), `clock` (a `FakeClock` you share), `chain` (the fake chain's own options), `stores`, `transport`, `lifecycle`, `hooks` and extra container options under `aio` |
 | `env.run(promise, stepMs?)` | Drives fake time until the promise settles |
 | `env.stranger()` | A fresh address to pay |
 | `env.restart({ killPrevious })` | A new process on the same stores and chain; with `killPrevious`, the old one can make no more progress |
@@ -131,4 +139,4 @@ const bc = aio.blockchain({ chain: 'devnet' as ChainId });
 Turn automine off (`evm_setAutomine`) to keep a transfer pending for `replace` or `cancel`, mine
 with `evm_mine`, and drop a block with `anvil_reorg`. This repository's own EVM write-path
 suite, `test/integration/evm-local.test.ts`, works this way; `pnpm test:evm-local` starts anvil,
-runs it with ethers and web3, and stops the node.
+runs it with ethers and with the deprecated web3, and stops the node.

@@ -24,8 +24,8 @@ flowchart LR
 
 - **`providers`** name the servers that speak to the chain for you. A `preset` (`alchemy`,
   `infura`, `ankr`, `trongrid`, `toncenter`, `mempool`, …) needs only an API key; your own node
-  is `{ endpoints: [{ url }] }`. Give each network two or three independent providers in
-  production, so that proofs are cross-checked ([why](../tour/evidence.md)).
+  is `{ endpoints: [{ url }] }`. Give each network three or more independent providers in
+  production, so that proofs are cross-checked and survive one outage ([why](../tour/evidence.md)).
 - **`signers`** hold private keys: `localSigner` in memory, or `callbackSigner` in front of
   your HSM, KMS or MPC custody ([Keys, signers and secrets](./keys.md)).
 - **`wallets`** say which key sends, by naming a signer, or only a public key for a
@@ -40,13 +40,15 @@ Pick your family below. Each section is self-contained.
 
 ## EVM chains
 
-Install the SDK with `npm install ethers` (the default library), or `npm install web3` and
-set `library: 'web3'`. In production, you configure the default container once at startup
+Install the SDK with `npm install ethers`, the default library. (`library: 'web3'` still
+works, but web3.js is no longer maintained: it is deprecated, warns once per process, and is
+removed in 2.0.) In production, you configure the default container once at startup
 with `configure`, or you create one `new CryptoAio({ namespace })` per tenant. Only in-memory
 stores ship, so production also needs your own durable `OperationStore`, `LockManager`,
 `SequenceStore` and `CursorStore`, passed as `stores` and validated with the contract suites
 in `crypto-aio/testing` ([how](../explore/stores.md)).
 
+<!-- typecheck -->
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
 
@@ -71,8 +73,10 @@ const eth = Blockchain.create({ chain: 'ethereum' });
 await eth.ready(); // loads the adapter and checks the provider serves the right network
 ```
 
-Two providers let proofs cross-check: by default, two healthy endpoints must agree before
-the library proves finality or a failure. With one endpoint, the proof quorum is 1.
+Two providers let proofs cross-check: by default, two endpoints must agree before the
+library proves finality or a failure, and an endpoint that is down still counts, so with
+these two an outage of one holds every `final` verdict until it returns. Use three or more
+in production. With one endpoint configured, it proves alone.
 
 The chains are `ethereum` (`mainnet`, `sepolia`, `hoodi`), `bsc` (`mainnet`, `testnet`),
 `polygon` (`mainnet`, `amoy`), `avalanche` (`mainnet`, `fuji`), `arbitrum`, `optimism` and
@@ -84,7 +88,10 @@ the network, with a logged warning.
 
 A first read needs no key and no signer:
 
+<!-- typecheck -->
 ```ts
+import { Blockchain } from 'crypto-aio';
+
 const fuji = Blockchain.create({ chain: 'avalanche', network: 'fuji', provider: 'public' });
 await fuji.getBlockHeight();
 ```
@@ -99,6 +106,7 @@ transactions and broadcasts with an API key, and as the `indexer` it serves addr
 **Mainnet needs a key** (keyless TronGrid answers most mainnet requests with HTTP 429) and,
 for cross-checked proofs, a second, independent provider such as your own node.
 
+<!-- typecheck -->
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
 
@@ -140,6 +148,7 @@ proofs) and as the `indexer` (the wallet's unspent outputs, balances and history
 rate-limited public services, and `public` uses both. Run your own Esplora for production
 and configure it as `{ endpoints: [{ url }] }`.
 
+<!-- typecheck -->
 ```ts
 import { CryptoAio, localSigner, secret, type UtxoFeeOverride } from 'crypto-aio';
 
@@ -168,11 +177,11 @@ const sub = await btc.transfer(
 await sub.wait({ finality: 'final' }); // 6 confirmations
 ```
 
-Amounts are BTC as decimal strings or satoshis as `bigint`. Two independent providers let
-proofs cross-check: with one Esplora endpoint, its operator alone decides finality. See
-[Bitcoin networks](../reference/networks/bitcoin.md) for the address types, the fee options,
-replace and cancel, and the limits, such as the public services' 500-output limit per
-address.
+Amounts are BTC as decimal strings or satoshis as `bigint`. Independent providers let
+proofs cross-check (three or more, so that one outage leaves two): with one Esplora endpoint,
+its operator alone decides finality. See [Bitcoin networks](../reference/networks/bitcoin.md)
+for the address types, the fee options, replace and cancel, and the limits, such as the
+public services' per-address limits, past which the next `indexer` is asked.
 
 ## Solana
 
@@ -183,6 +192,7 @@ rate limits let it prove that a transfer never landed only slowly, over many pas
 such a transfer becomes `expired`, and can be rebuilt, minutes later than on a keyed
 provider.
 
+<!-- typecheck -->
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
 
@@ -224,8 +234,8 @@ the recipient's wallet, never its token account: the transfer pays into the wall
 associated token account and creates it when it is missing, at the sender's cost (a `rent`
 charge in the estimate). Solana has no replace or cancel: a transaction that never lands is
 proven `expired` once its blockhash's window has passed, and `bc.rebuild(id)` then signs a
-new transaction on a fresh blockhash. With one provider the proof quorum is 1, so in
-production use two or three independent providers.
+new transaction on a fresh blockhash. With one provider configured, it proves alone, so in
+production use three or more independent providers.
 [Solana networks](../reference/networks/solana.md) covers the fees, the checks before signing,
 expiry, refusals, scanning and history.
 
@@ -238,6 +248,7 @@ became, message traces, history). The indexer is required. The `toncenter` prese
 both with an API key; `public` is keyless, limited to one request per second across both
 APIs, and only for trying things out.
 
+<!-- typecheck -->
 ```ts
 import { Blockchain, configure, localSigner, secret } from 'crypto-aio';
 
@@ -265,8 +276,8 @@ transfer. The key is the wallet's 32-byte ed25519 seed, not its mnemonic
 ([Keys, signers and secrets](./keys.md#local-signers)). The coin is Gram (ticker `GRAM`,
 formerly Toncoin), and `TON` is an alias for it; `asset: 'USDT'` sends Tether's jetton on
 mainnet. The address form decides bounce, a transfer has one output, and a wallet sends one
-transfer at a time. With toncenter alone, the proof quorum is 1: in production, use two or
-three independent providers. [TON networks](../reference/networks/ton.md) covers all of this.
+transfer at a time. With toncenter alone, it proves alone: in production, use three or more
+independent providers. [TON networks](../reference/networks/ton.md) covers all of this.
 
 ## Avalanche X-Chain and P-Chain
 
@@ -277,6 +288,7 @@ URL (such as `https://node.example/ext/bc/X`), and an `indexer`, the Avalanche D
 `glacier` with an API key, or `public` (keyless, for trying things out, and also a public node
 as the `provider`).
 
+<!-- typecheck -->
 ```ts
 import { CryptoAio, localSigner, secret } from 'crypto-aio';
 

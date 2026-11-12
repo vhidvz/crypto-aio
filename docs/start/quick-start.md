@@ -44,6 +44,7 @@ chain next to the package, and only that one:
 A handle whose SDK is missing fails with `DEPENDENCY_MISSING` and names the exact install
 command. The package has these entry points:
 
+<!-- typecheck -->
 ```ts
 import { Blockchain, CryptoAio, configure, secret } from 'crypto-aio'; // the library
 import { evmChainPlugin } from 'crypto-aio/evm'; // EVM extras and SDK client types
@@ -172,8 +173,9 @@ sequenceDiagram
   so it never pays twice. The same key with another intent, such as a new `env.stranger()`
   address, throws `IDEMPOTENCY_CONFLICT`.
 - `wait({ finality: 'final' })` resolved only on **proven** evidence. That means finalized
-  chain data, read with a proof quorum: by default, two healthy endpoints must agree when two
-  exist. The fake env has one endpoint.
+  chain data, read with a proof quorum: by default, two endpoints must agree when two or more
+  are configured, and an endpoint that is down still counts, so the proof waits for it rather
+  than rest on one. The fake env has one endpoint, which proves alone.
 
 <details>
 <summary>Explain it to me: Operation, Attempt, idempotency key, proven</summary>
@@ -208,6 +210,7 @@ Small changes that show the library's guarantees. Run the program after each one
 
 A first read from a real network needs no key and no signer. Install ethers, then:
 
+<!-- typecheck -->
 ```ts
 import { Blockchain } from 'crypto-aio';
 

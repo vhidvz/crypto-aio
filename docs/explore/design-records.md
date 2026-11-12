@@ -96,6 +96,10 @@ it waited.
   core type would break every family type declared as an interface). `engine.ts` and TON's
   `proofs.ts`, `reader.ts` and `api.ts` are long, as are the TON and UTXO end-to-end tests.
 - The only-native guard is text-based.
+- Drivers have no conformance suite, as stores have theirs: a `describeChainDriverContract`
+  could test a driver's rules (a proof's definitive negative against a retryable
+  unavailable, broadcast classification, dense block heights, stable transfer locators).
+  It adds to `crypto-aio/testing` only, so it can come in a 1.x release.
 - No test watches `require.cache` across families; the packaging check proves today that every
   entry point loads with no SDK.
 - The EVM write path runs against a real node (`pnpm test:evm-local`, anvil). The other
@@ -118,7 +122,8 @@ it waited.
 - Observations carry no namespace: `getObservation` and `putObservation` key them by attempt
   id alone, which is globally unique, so a store cannot partition them by tenant without
   joining Attempts. The namespace can come in a 1.x minor release as an optional trailing
-  argument, which a store may use or ignore, so it waits for a store that needs it.
+  argument, which a store may use or ignore, so it waits for a store that needs it. A store
+  that starts partitioning by it must still find the observations it stored without one.
 - Decided for 1.0: `stringifyTagged` refuses (a `TypeError`) to write a plain object whose
   only key is `$bigint` or `$bytes`, since `parseTagged` would read it back as a bigint or
   bytes. The stored format stays as it is, with no escape; the core never stores such an
