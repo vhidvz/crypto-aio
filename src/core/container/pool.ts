@@ -1,6 +1,6 @@
 import type { ResolvedSelection } from '../config/types';
 import type { ChainDriver } from '../driver/types';
-import { StateError } from '../errors/error';
+import { ConfigError, StateError } from '../errors/error';
 import type { EventBus } from '../events/bus';
 import type { Logger } from '../events/logger';
 import type { Catalogs } from '../registry/plugin';
@@ -102,6 +102,24 @@ export class DriverPool {
       log: this.deps.log.child(selection.chain.id),
       options: selection.options,
     });
+    // The handle promises what its selection lists (`supports()`), so the driver must
+    // implement each capability the manifest and the network grant, and order Attempts
+    // as the chain says. A plugin whose declarations disagree is refused here, before any
+    // call, instead of failing later at a port the driver lacks.
+    const missing = [...selection.capabilities].filter(
+      (c) => !driver.capabilities.has(c),
+    );
+    if (missing.length > 0 || driver.ordering !== selection.chain.ordering) {
+      await driver.close?.();
+      const target = `${selection.chain.id}:${selection.network.id}`;
+      throw new ConfigError(
+        'CONFIG_INVALID',
+        missing.length > 0
+          ? `the ${selection.library} driver for ${target} does not implement ${missing.sort().join(', ')}, which its manifest and network declare`
+          : `the ${selection.library} driver for ${target} orders by '${driver.ordering}', but the chain says '${selection.chain.ordering}'`,
+        { details: { missing: missing.sort(), ordering: driver.ordering } },
+      );
+    }
     return { driver, transport, ...(indexer ? { indexer } : {}) };
   }
 }

@@ -51,7 +51,6 @@ describe('the Operation record format', () => {
     const reads: Array<() => Promise<unknown>> = [
       () => guarded.get('ns', record.id),
       () => guarded.getByKey('ns', 'new'),
-      () => guarded.list({ namespace: 'ns' }),
       () => guarded.update('ns', record.id, {}, 1),
       () =>
         guarded.create(
@@ -67,6 +66,27 @@ describe('the Operation record format', () => {
     }
     // The store itself still holds it unchanged, for a newer version to read.
     expect((await raw.get('ns', record.id))?.format).toBe(OPERATION_FORMAT + 1);
+  });
+
+  it('leaves a newer record out of a list, with a warning, and lists the rest', async () => {
+    const warnings: unknown[] = [];
+    const log: Logger = {
+      ...noopLogger,
+      warn: (message, fields) => warnings.push({ message, fields }),
+    };
+    const { raw, guarded } = setup(log);
+    const newer = await raw.create(
+      sampleOperation({ format: OPERATION_FORMAT + 1, idempotencyKey: 'new' }),
+    );
+    const older = await raw.create(withoutFormat({ idempotencyKey: 'old' }));
+    const listed = await guarded.list({ namespace: 'ns' });
+    expect(listed.map((r) => [r.id, r.format])).toEqual([[older.record.id, 1]]);
+    expect(warnings).toEqual([
+      {
+        message: 'skipped an operation stored in a newer record format',
+        fields: { operationId: newer.record.id, format: OPERATION_FORMAT + 1 },
+      },
+    ]);
   });
 
   it.each([0, -1, 1.5, '1', null])('treats format %p as unreadable', async (format) => {

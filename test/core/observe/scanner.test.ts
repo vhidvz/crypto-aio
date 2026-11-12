@@ -644,6 +644,7 @@ describe('address history', () => {
           const driver = await fakeDriverFactory.create(ctx);
           return {
             ...driver,
+            capabilities: new Set([...driver.capabilities, 'address-history' as const]),
             history: {
               list: async (address, options) => {
                 calls.push({ address, ...options });
@@ -724,6 +725,11 @@ describe('transfers of an unresolvable asset', () => {
           };
           return {
             ...driver,
+            capabilities: new Set([
+              ...driver.capabilities,
+              'address-history' as const,
+              'tokens' as const,
+            ]),
             reader: { ...driver.reader, getTransaction, getTokenMetadata: metadata },
             blocks: {
               header: (height) => blocks.header(height),

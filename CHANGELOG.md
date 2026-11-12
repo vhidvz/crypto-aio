@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a durable store built on them refuses the write instead of storing data that reads
   back changed. The format they write is unchanged, and the core never stores such an
   object.
+- A plugin driver that does not implement a capability its manifest and network declare
+  (`ChainDriver.capabilities`), or that orders Attempts otherwise than its chain
+  (`ordering`), is refused with `CONFIG_INVALID` when its handle first loads it, instead
+  of failing later at a port it lacks.
+- During a rolling upgrade, `aio.operations.list()` and `recover()` leave out an
+  Operation a newer version stored, with a logged warning, instead of throwing
+  `RECORD_FORMAT_UNSUPPORTED` on the first one; a read by id, key or ref still throws.
 - `OperationStore.findByRef` is specified for several Operations of a namespace holding
   one ref, which the core never writes: a store may return any one of them.
 

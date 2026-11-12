@@ -44,11 +44,16 @@ function checkedOrNull(record: OperationRecord | null): OperationRecord | null {
 /**
  * The Operation store as the engine, the workers and `aio.operations` read it: every
  * record it returns is in a format this version reads. A record a newer version wrote, as
- * in a rolling upgrade, is never read as an older format: a read of it throws
- * `RECORD_FORMAT_UNSUPPORTED`, and a worker pass releases its claim and leaves it to a
- * process that reads it.
+ * in a rolling upgrade, is never read as an older format: a read of it by id, key or ref
+ * throws `RECORD_FORMAT_UNSUPPORTED`; a list leaves it out and a worker pass releases its
+ * claim, each with a warning, and leaves it to a process that reads it.
  */
 export function formatGuard(store: OperationStore, log: Logger): OperationStore {
+  const skipped = (record: OperationRecord) =>
+    log.warn('skipped an operation stored in a newer record format', {
+      operationId: record.id,
+      format: (record as { format?: unknown }).format,
+    });
   const guarded: OperationStore = {
     create: async (operation) => {
       const result = await store.create(operation);
@@ -76,10 +81,7 @@ export function formatGuard(store: OperationStore, log: Logger): OperationStore 
           kept.push(checked(record));
           continue;
         }
-        log.warn('skipped an operation stored in a newer record format', {
-          operationId: record.id,
-          format: (record as { format?: unknown }).format,
-        });
+        skipped(record);
         if (record.claim) {
           await store
             .releaseClaim(namespace, record.id, { claimToken: record.claim.token })
@@ -89,7 +91,16 @@ export function formatGuard(store: OperationStore, log: Logger): OperationStore 
       return kept;
     },
     releaseClaim: (namespace, id, fence) => store.releaseClaim(namespace, id, fence),
-    list: async (filter) => (await store.list(filter)).map(checked),
+    // A list leaves out what this process cannot read, so a recovery or a report in a
+    // mixed fleet goes on with the rest instead of failing on the first newer record.
+    list: async (filter) =>
+      (await store.list(filter))
+        .filter((record) => {
+          if (supported(record)) return true;
+          skipped(record);
+          return false;
+        })
+        .map(checked),
   };
   if (store.purge) {
     const purge = store.purge.bind(store);

@@ -134,9 +134,11 @@ stores (`seq:<namespace>:<chain>:<network>:<address>` for nonce state and its le
 idempotency keys never change in a 1.x release.
 
 During a rolling upgrade, processes of two versions can share a store. A process never
-reads a record of a format newer than it knows: a read of one throws
-`RECORD_FORMAT_UNSUPPORTED`, and its workers release the claim on one at once and leave it
-to a newer process. Upgrade every process before you rely on what the new version stores.
+reads a record of a format newer than it knows: a read of one by id, key or ref throws
+`RECORD_FORMAT_UNSUPPORTED`; `aio.operations.list()` and `recover()` leave it out, and its
+workers release the claim on one at once, each with a logged warning, and leave it to a
+newer process. Upgrade every process before you rely on what the new version stores, and
+never run a 0.1.0 process beside a newer one: 0.1.0 has no format check.
 
 ## Data classification (for store implementers)
 
