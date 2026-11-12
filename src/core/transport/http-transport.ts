@@ -61,9 +61,9 @@ type TrialOutcome<T> =
 
 const MAX_RETRY_AFTER_MS = 60_000;
 /** Consecutive failed health refreshes (identity or height probe, or failing requests)
- * after which an endpoint stops counting toward a proof quorum's size (a sustained
- * outage, not a hiccup). Liveness traded against safety: with two endpoints, the other
- * one then proves alone, so proof reads want three or more. */
+ * after which an endpoint counts as down (a sustained outage, not a hiccup). A proof
+ * quorum's size still counts it unless `degradedProofs` is on: only then do the others
+ * prove without it, which with two endpoints leaves one proving alone. */
 const HEALTH_MISS_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
 /**

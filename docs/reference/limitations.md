@@ -19,11 +19,15 @@ in [Versioning and stability](./stability.md).
   deposits as [Receive deposits](../build/receive.md) explains: confirm each one you credit
   with a second read.
 - **A proof is only as independent as your endpoints.** A proof needs `proofQuorum`
-  endpoints, capped by the endpoints you configured: with one endpoint configured, that
-  endpoint proves alone. Give each network endpoints from independent providers, three or
-  more, so one outage does not stall proofs.
-- **EVM proofs compare raw answers.** Two honest endpoints that format an answer differently
-  read as a disagreement, so the verdict waits; it never decides wrongly.
+  endpoints, capped by the endpoints you configured: with one endpoint configured (or the
+  `public` fallback), that endpoint proves alone, and with `transport.degradedProofs` on, the
+  one endpoint left in an outage does too. Give each network endpoints from independent
+  providers, three or more, so one outage does not stall proofs.
+- **EVM proofs compare fields as each endpoint formats them.** A proof compares the
+  consensus fields of each answer (a block's number, hash, parent and time; a receipt's
+  status and logs), but not normalized quantities or hashes inside them: two honest
+  endpoints that format one differently read as a disagreement, so the verdict waits; it
+  never decides wrongly.
 
 ## Things that can stall
 
@@ -46,6 +50,18 @@ in [Versioning and stability](./stability.md).
 - **The same key used outside crypto-aio.** While an endpoint lags, nonce reconciliation can
   reclaim a nonce that a transaction sent from outside the library already used. The
   transfer that reuses it fails with `TX_REPLACED`; nothing is paid twice.
+- **A busy TON wallet can outgrow its proof.** A TON verdict walks the wallet's own
+  transactions back from its current state, 512 at most (`TX_CHAIN_WALK_EXHAUSTED` in the
+  log). If a proof is delayed, by an endpoint outage or a rate limit, while the wallet takes
+  in more than 512 transactions (deposits count), the message stays undecided for good: the
+  Operation never ends, the wallet's later transfers wait with `SEQUENCE_BUSY`, and
+  `abandon` is refused, since it was signed. No API settles it yet. Pay out from TON wallets
+  that take no deposits, and keep their proof endpoints up.
+- **An indexer's per-address limits.** A public Esplora service refuses a busy Bitcoin
+  address (more than 500 unspent outputs, or a history too long to scan). The read then asks
+  the handle's next `indexer` endpoint, and fails with `RPC_ERROR` only when every one
+  refuses; a wallet past every indexer's limits cannot estimate or send. Run your own
+  Esplora with limits that fit your wallets ([Bitcoin networks](./networks/bitcoin.md)).
 
 ## Not there yet
 
@@ -58,5 +74,17 @@ in [Versioning and stability](./stability.md).
   configure two independent indexer services, as the [TON page](./networks/ton.md)
   recommends.
 - **Hardware-wallet key origins on Bitcoin.** PSBTs carry no `bip32Derivation`.
-- **TON batches** have no outcome per leg, and `UQ…` addresses of active contracts are not
-  sent bounceable on request.
+- **One output per TON transfer**, and `UQ…` addresses of active contracts are not sent
+  bounceable on request.
+- **Tron's contract-transfer flag rests on one endpoint.** `getForbidTransferToContract` is
+  read from one endpoint, not under the proof quorum; it can only refuse a transfer.
+- **TON builds need a synced clock.** A build refuses an endpoint whose chain time is more
+  than 5 minutes from your server's clock ([TON networks](./networks/ton.md)).
+
+## How it is tested
+
+Every family's write path (sign, broadcast, prove, replace, cancel, recover) runs in CI
+against scripted nodes that answer as the real ones do, honest and hostile. Only EVM's also
+runs against a real node (Foundry's anvil, `pnpm test:evm-local`); the read paths of every
+family run nightly against public testnets. Before you move real money on another family,
+rehearse your flows on its testnet or a local node.

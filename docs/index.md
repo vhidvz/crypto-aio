@@ -62,7 +62,8 @@ named [capability](reference/capabilities.md), never a silent difference.
 <p class="home-card-title">Pay exactly once</p>
 
 Every transfer carries your own idempotency key. Repeat the call after a timeout, a crash or a
-lost reply, and you get the same transfer back, never a second payment.
+lost reply, and you get the same transfer back, never a second payment (across restarts too,
+with durable stores).
 [How](tour/recovery.md)
 
 </div>
@@ -70,8 +71,8 @@ lost reply, and you get the same transfer back, never a second payment.
 <div class="home-card">
 <p class="home-card-title">Crash-safe by design</p>
 
-A signed transaction is stored before it is sent. After a restart, the library sends those
-exact bytes again; it never signs a second, different payment.
+With durable stores, a signed transaction is stored before it is sent. After a restart, the
+library sends those exact bytes again; it never signs a second, different payment.
 [How](tour/transfer.md)
 
 </div>
@@ -80,7 +81,8 @@ exact bytes again; it never signs a second, different payment.
 <p class="home-card-title">Proof, not hearsay</p>
 
 A transfer is final only on finalized chain data that several independent endpoints agree on,
-never on one node's word. [How](tour/evidence.md)
+never on one node's word, once you configure two or more (three keep proofs going through an
+outage). [How](tour/evidence.md)
 
 </div>
 
@@ -115,7 +117,7 @@ errors and events never carry a secret. [How](tour/keys.md)
   <li>Solana</li><li>TON</li><li>Avalanche X-Chain</li><li>Avalanche P-Chain</li>
 </ul>
 
-Each family works through the SDK you already know (ethers or web3, bitcoinjs-lib, tronweb,
+Each family works through the SDK you already know (ethers, bitcoinjs-lib, tronweb,
 `@solana/web3.js`, `@ton/ton`, `@avalabs/avalanchejs`), installed only if you use it. Any other
 EVM chain is a few lines of data. See [Networks](reference/networks/index.md) for what each
 network supports.
@@ -132,6 +134,7 @@ configure({
   },
   signers: { hot: localSigner({ id: 'hot', secp256k1: secret(process.env.HOT_KEY ?? '') }) },
   wallets: { treasury: { signer: 'hot' } },
+  // Two providers cross-check every proof; production wants three, so one outage never stalls it.
   chains: { ethereum: { network: 'sepolia', provider: ['alchemy', 'infura'], wallet: 'treasury' } },
   lifecycle: { requireIdempotencyKey: true },
 });
@@ -140,6 +143,7 @@ const eth = Blockchain.create({ chain: 'ethereum' });
 const sub = await eth.transfer(
   { to: '0x3535353535353535353535353535353535353535', amount: '0.01' },
   { idempotencyKey: 'withdrawal-42' }, // your own id: repeating the call never pays twice
+  // (across restarts too, once `stores` are durable)
 );
 const { status } = await sub.wait({ finality: 'final' });
 console.log(status.state, status.evidence); // 'final' 'proven'

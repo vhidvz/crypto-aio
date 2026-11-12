@@ -457,8 +457,10 @@ The secret that controls funds; the shareable key computed from it.
 
 ### Proof quorum, proven
 
-The number of endpoints that must agree on a proof read (`proofQuorum`, 2); evidence from
-finalized data under that quorum. [Stop 6](../tour/evidence.md).
+The number of endpoints that must agree on a proof read (`proofQuorum`, 2, capped by the
+endpoints configured); evidence from finalized data under that quorum. An endpoint that is
+down still counts, so a proof waits for it, unless `transport.degradedProofs` is on.
+[Stop 6](../tour/evidence.md).
 
 ### Provider
 
@@ -497,6 +499,12 @@ self-transfer; re-issue after proven expiry. [Fix a stuck transfer](../build/sta
 
 An EVM transaction's result: success or failure, and the events it logged.
 [Lesson 6](../learn/foundations/blocks.md).
+
+### Record format
+
+The `format` every stored Operation carries (`OPERATION_FORMAT`). A process never reads a
+record of a newer format than it knows, as in a rolling upgrade.
+[Write a durable store](../explore/stores.md#upgrades-and-the-record-format).
 
 ### Recovery
 
@@ -602,6 +610,12 @@ crypto-aio's own HTTP layer under every driver: timeouts, retries, rate limits, 
 quorum reads, redaction. [Stop 6](../tour/evidence.md).
 
 ## U
+
+### Unevidenced
+
+A transaction that executed but shows no transfer to the recipient, such as a token that
+logged none. The Operation fails with `TX_UNEVIDENCED` (observation `failure: 'unevidenced'`):
+value may have moved, so check the chain before paying again. [Errors](./errors.md).
 
 ### UTXO
 

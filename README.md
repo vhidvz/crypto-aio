@@ -37,11 +37,13 @@ node that says "final" about a block that is later replaced. crypto-aio is the l
 those cases, written once, with the same API on every chain:
 
 - **Pay exactly once.** Every transfer carries your own idempotency key. Repeat the call after a
-  timeout, a crash or a lost reply, and you get the same payment back, never a second one.
-- **Crash-safe.** A signed transaction is stored before it is sent. After a restart, the library
-  sends those exact bytes again; recovery never signs.
+  timeout, a crash or a lost reply, and you get the same payment back, never a second one
+  (across restarts too, with durable stores).
+- **Crash-safe.** With durable stores, a signed transaction is stored before it is sent. After
+  a restart, the library sends those exact bytes again; recovery never signs.
 - **Final means proven.** A transfer is final only on finalized chain data that a quorum of
-  independent endpoints agree on, never on one node's word.
+  independent endpoints agree on, never on one node's word, once you configure two or more
+  (three keep proofs going through an outage).
 - **Deposits that survive reorgs.** Durable scanners deliver every block at least once, and roll
   back when the chain reorganizes.
 - **Keys stay with signers.** In memory, or behind your HSM, KMS or MPC custody, with a policy
@@ -118,6 +120,7 @@ configure({
   },
   signers: { hot: localSigner({ id: 'hot', secp256k1: secret(process.env.HOT_KEY ?? '') }) },
   wallets: { treasury: { signer: 'hot' } },
+  // Two providers cross-check every proof; production wants three, so one outage never stalls it.
   chains: { ethereum: { network: 'sepolia', provider: ['alchemy', 'infura'], wallet: 'treasury' } },
   lifecycle: { requireIdempotencyKey: true },
 });
@@ -129,6 +132,7 @@ console.log((await eth.getBalance(me.canonical)).amount.format()); // e.g. '0.5 
 const sub = await eth.transfer(
   { to: '0x3535353535353535353535353535353535353535', amount: '0.01' },
   { idempotencyKey: 'withdrawal-42' }, // your own id: repeating the call never pays twice
+  // (across restarts too, once `stores` are durable)
 );
 const { status } = await sub.wait({ finality: 'final' });
 console.log(status.state, status.evidence); // 'final' 'proven'
@@ -151,12 +155,14 @@ family.
 
 ## Status
 
-crypto-aio is at **0.2.0**, on its way to 1.0, from which [semantic
-versioning](https://vhidvz.github.io/crypto-aio/reference/stability.html) covers the whole API,
-the driver port and what a process stores; the 0.0.x releases on npm are an older, unrelated
-API. [Known limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists
-what it does not do yet, and [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)
-what changes from 0.1.0. Only in-memory stores ship: production needs durable stores of your
+crypto-aio 1.0 is in release candidate: **1.0.0-rc.1**, on npm's `next` tag
+(`npm install crypto-aio@next`). From 1.0.0, [semantic
+versioning](https://vhidvz.github.io/crypto-aio/reference/stability.html) covers what that
+page lists: the API, the driver port and what a process stores, but not `crypto-aio/native`
+or message texts. The 0.0.x releases on npm are an older, unrelated API. [Known
+limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists what it
+does not do yet, and [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)
+what changes from 0.2.0 and 0.1.0. Only in-memory stores ship: production needs durable stores of your
 own, proven with the contract suites in `crypto-aio/testing`; [examples/postgres-store](examples/postgres-store)
 is a reference implementation on PostgreSQL. Release notes are in the [changelog](CHANGELOG.md).
 

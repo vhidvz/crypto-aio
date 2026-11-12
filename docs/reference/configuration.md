@@ -20,7 +20,7 @@ built-in defaults**.
 | Call | Options of one call, such as `waitForConfirmation(id, { confirmations: 12 })` |
 | Handle | `aio.blockchain({ … })`, `Blockchain.create({ … })`, `bc.with({ … })` |
 | Scope | `aio.scope({ … })`, child before parent |
-| Root container | `new CryptoAio({ … })`, or `configure({ … })` for the default container |
+| Root container | `new CryptoAio({ … })`, or `configure({ … })` for the default container (each call merges its options into those of earlier calls, carries the stores over, and makes a new default container without closing the old one) |
 | Environment | `CRYPTO_AIO_…` variables ([below](#environment-variables)): routing only |
 | Built-in | The chain's default network, its first library, the network's default confirmations |
 
@@ -44,7 +44,7 @@ How layers merge: `chains.<id>` merges field by field, and its `options` merge d
 | `plugins` | `Plugin[]` | | Root only: extra chain families or networks |
 | `assets` | `AssetRegistration[]` | | Root only: tokens to register, `{ chain, network, ref, metadata: { symbol, decimals }, aliases? }`. Registered decimals scale amounts instead of the chain's, so take them only from a source you trust |
 | `logger` | `Logger` | `debug`-based | `createLogger(namespace, writer)` redacts before writing |
-| `env` | `Record<string, string> \| false` | `process.env` | The environment source; `false` ignores it |
+| `env` | `Record<string, string \| undefined> \| false` | `process.env` | The environment source; `false` ignores it |
 | `profile` | `string` | `CRYPTO_AIO_ENV` | The environment profile to read |
 | `clock` | `Clock` | the system clock | For tests (`FakeClock`) |
 
@@ -59,7 +59,7 @@ The same fields, apart from `maxLagBlocks`, can be set on a handle (`aio.blockch
 | Field | Type | Notes |
 | --- | --- | --- |
 | `network` | `string` | Defaults to the chain's default network (usually `mainnet`) |
-| `library` | `string` | The SDK, such as `'ethers'` or `'web3'`; defaults to the chain's first |
+| `library` | `string` | The SDK, such as `'ethers'` (`'web3'` is deprecated); defaults to the chain's first |
 | `provider` | name, `ProviderConfig`, or an array of them | Several providers: failover and cross-checked proofs |
 | `indexer` | the same | Bitcoin, Tron (history), TON and the Avalanche X and P chains read one |
 | `wallet` | `string` | The wallet that sends |
@@ -73,7 +73,8 @@ network, with a logged warning. `public` is never for production.
 
 ## Providers
 
-A provider is a preset with an API key, or your own endpoints:
+A provider is a preset with an API key (and the preset's own `options`, where it takes any),
+or your own endpoints:
 
 ```ts
 providers: {
@@ -112,7 +113,7 @@ The presets of each family are listed in [Networks](./networks/index.md#provider
 | `tier` | `string` | Metadata for your `beforeSign` hook; no built-in meaning |
 | `chains` | `string[]` | The chains this wallet may be used on |
 | `utxo` | object | Bitcoin: `addressType`, `changeAddress`, `allowExternalChangeAddress` ([Bitcoin networks](./networks/bitcoin.md)) |
-| `ton` | object | TON: `version` (`v4r2`, `v5r1`), `workchain`, `subwalletId`, `subwalletNumber` ([TON networks](./networks/ton.md)) |
+| `ton` | object | TON: `version` (`v4r2`, `v5r1`), `workchain`, `subwalletId` (v4r2), `subwalletNumber` and `networkGlobalId` (v5r1; defaults to the network's, and another is `CONFIG_INVALID`) ([TON networks](./networks/ton.md)) |
 | `options` | object | Family wallet options |
 
 ## Lifecycle: `lifecycle`
@@ -162,11 +163,13 @@ The other EVM networks (Ethereum, Polygon, the Avalanche C-Chain, the testnets) 
 
 Sizing endpoints for proofs:
 
-- **Give proof reads three or more endpoints.** With two, neither is ever excluded as lagging,
-  and once one fails its probes or requests for about three health intervals the other proves
-  alone. Proofs also decide nothing at startup, while an honest endpoint's breaker is open (at
-  least `openMs`), and for about three health intervals after an endpoint dies: the safe
-  direction, since a transfer waits rather than settles on one word.
+- **Give proof reads three or more endpoints, from independent providers.** A proof needs
+  `proofQuorum` of them (2), capped by the endpoints you configured, and an endpoint that is
+  down still counts. With two and one down, `final` waits for it (a retryable
+  `PROVIDER_UNAVAILABLE`) for as long as it is down, unless `degradedProofs` is on; with
+  three, one outage leaves two. Proofs also decide nothing at startup, and while an honest
+  endpoint's breaker is open (at least `openMs`): the safe direction, since a transfer waits
+  rather than settles on one word. With one endpoint configured, it proves alone.
 - **Health probes share each endpoint's `rateLimit`.** A probe takes its token ahead of queued
   requests, so on a low tier keep `rps × healthIntervalMs` well above the calls one refresh makes,
   and give proof endpoints a `burst` of 2 or more: with a burst of 1, the probe a proof read runs
@@ -177,21 +180,24 @@ Sizing endpoints for proofs:
 
 Set in `chains.<id>.options` or a handle's `options`. Each family refuses keys it does not know.
 
-| Family | Option | Default | Bounds |
-| --- | --- | --- | --- |
-| EVM | `maxFeePerGas` | 1,000 gwei (`DEFAULT_MAX_FEE_PER_GAS`) | The highest price per gas any transaction signs |
-| EVM | `maxGasLimit` | 16,777,216 gas, 2^24 (`DEFAULT_MAX_GAS_LIMIT`) | The highest gas limit any transaction signs |
-| Bitcoin | `maxFeeRate` | 1,000 sat/vB | The highest fee rate signed |
-| Bitcoin | `maxFee` | 0.1 BTC | The highest fee signed |
-| Bitcoin | `maxEstimatedFeeRate` | 200 sat/vB | The highest estimate trusted from an endpoint |
-| Bitcoin | `minInputConfirmations`, `coinSelection`, `rbf`, `nonWitnessUtxo` | `1`, `'accumulative'`, `true`, `true` | Coin selection and signing ([Bitcoin networks](./networks/bitcoin.md)) |
-| Tron | `maxFeeLimit` | 100 TRX (`DEFAULT_MAX_FEE_LIMIT`) | The highest TRC-20 fee limit signed |
-| Tron | `expirationMs` | 60 s | From 10 s to 5 minutes |
-| Tron | `energyMarginPercent` | 20 | Margin over simulated energy, 0 to 1,000 |
-| Solana | `maxComputeUnitPrice` | 10,000,000 micro-lamports (`DEFAULT_MAX_COMPUTE_UNIT_PRICE`) | The highest priority price signed |
-| TON | `maxNetworkFee` | 1 GRAM (basechain), 100 GRAM (masterchain) | The highest network fee an estimate accepts |
-| Avalanche X and P | `maxFee` | 0.1 AVAX | The highest fee signed |
-| Avalanche P | `maxGasPrice` | 10,000 | The highest gas price signed |
+Amounts are `bigint` in the unit shown; a `number` where a `bigint` is expected is
+`CONFIG_INVALID`.
+
+| Family | Option | Type and unit | Default | Bounds |
+| --- | --- | --- | --- | --- |
+| EVM | `maxFeePerGas` | `bigint` wei per gas | `1_000_000_000_000n`, 1,000 gwei (`DEFAULT_MAX_FEE_PER_GAS`) | The highest price per gas any transaction signs |
+| EVM | `maxGasLimit` | `bigint` gas | `16_777_216n`, 2^24 (`DEFAULT_MAX_GAS_LIMIT`) | The highest gas limit any transaction signs |
+| Bitcoin | `maxFeeRate` | `bigint` sat/kvB (1,000 sat/kvB is 1 sat/vB) | `1_000_000n`, 1,000 sat/vB | The highest fee rate signed |
+| Bitcoin | `maxFee` | `bigint` sat | `10_000_000n`, 0.1 BTC | The highest fee signed |
+| Bitcoin | `maxEstimatedFeeRate` | `bigint` sat/kvB | `200_000n`, 200 sat/vB | The highest estimate trusted from an endpoint |
+| Bitcoin | `minInputConfirmations`, `coinSelection`, `rbf`, `nonWitnessUtxo` | `number`, `'accumulative' \| 'all'`, `boolean`, `boolean` | `1`, `'accumulative'`, `true`, `true` | Coin selection and signing ([Bitcoin networks](./networks/bitcoin.md)) |
+| Tron | `maxFeeLimit` | `bigint` sun | `100_000_000n`, 100 TRX (`DEFAULT_MAX_FEE_LIMIT`) | The highest TRC-20 fee limit signed |
+| Tron | `expirationMs` | `number` ms | `60_000` | From 10 s to 5 minutes |
+| Tron | `energyMarginPercent` | `number` | `20` | Margin over simulated energy, 0 to 1,000 |
+| Solana | `maxComputeUnitPrice` | `bigint` micro-lamports per compute unit | `10_000_000n` (`DEFAULT_MAX_COMPUTE_UNIT_PRICE`) | The highest priority price signed |
+| TON | `maxNetworkFee` | `{ basechain?, masterchain? }`, each a `bigint` of nanograms | `1_000_000_000n` (1 TON), `100_000_000_000n` (100 TON) | The highest network fee an estimate accepts, per workchain |
+| Avalanche X and P | `maxFee` | `bigint` nAVAX | `100_000_000n`, 0.1 AVAX | The highest fee signed |
+| Avalanche P | `maxGasPrice` | `bigint` nAVAX per gas | `10_000n` | The highest gas price signed |
 
 The defaults stop an absurd fee, not an expensive one: set each bound to your fee policy.
 

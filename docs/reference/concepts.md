@@ -55,7 +55,8 @@ never imports a blockchain SDK. Only drivers do, and they are loaded on first us
 A **chain** is a blockchain id from the registry. A **network** is one of its deployments.
 A **library** is the SDK the driver uses. A handle is bound to one of each. The built-in
 chains are the EVM chains, such as `ethereum` with `mainnet` and `ethers`, plus `bitcoin`,
-`tron`, `solana` and `ton`; the fake chains come from `crypto-aio/testing`.
+`tron`, `solana`, `ton`, `avalanche-x` and `avalanche-p`; the fake chains come from
+`crypto-aio/testing`.
 
 ```ts
 [bc.chain, bc.network, bc.library]; // ['fakechain', 'local', 'fake-sdk']
@@ -249,7 +250,7 @@ they work in one process and lose everything on restart.
 | `stalled` | A node refused it (for example insufficient funds); needs your action |
 | `included` | In a block, not final yet |
 | `final` | **Terminal.** Proven final; `outcome` is `executed` or `cancelled` |
-| `failed` | **Terminal.** Failed before signing, or proven reverted, replaced or rejected |
+| `failed` | **Terminal.** Failed before signing, or proven reverted, replaced, rejected or unevidenced (`TX_UNEVIDENCED`: it executed but shows no transfer to the recipient, so value may have moved) |
 | `expired` | **Terminal.** Expiry proven (expiry- and seqno-based chains) |
 | `abandoned` | **Terminal.** Abandoned by you before anything was signed |
 
