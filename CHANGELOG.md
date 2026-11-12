@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OperationStore.findByRef` is specified for several Operations of a namespace holding
   one ref, which the core never writes: a store may return any one of them.
 
+### Removed
+
+- The repository's Dependabot configuration: the nightly run tests the newest release of
+  every chain SDK, and GitHub's security updates work without it. The runtime
+  dependencies `@noble/*` and `@scure/*` stay on their 1.x lines, since their 2.x lines
+  are ES modules only, which Jest's CommonJS loader cannot `require`; the pack check now
+  loads every entry point under Jest.
+
 ### Fixed
 
 - Bitcoin: an indexer that refuses an address for its own limit (HTTP 400 "Scripthash

@@ -105,6 +105,14 @@ it waited.
   Determinism in tests could improve with a container option for the transport id and the
   random source, and one shared end-to-end environment.
 
+**Dependencies**
+
+- Decided for 1.0: `@noble/*` and `@scure/*` stay on their 1.x lines. Their 2.x lines are ES
+  modules only: Node.js's `require` loads them, but Jest's CommonJS loader cannot, so moving
+  would break every user whose Jest tests import crypto-aio. The pack check loads every
+  entry point under Jest to keep it so. An advisory against a 1.x line moves them as a
+  safety fix, with a changelog note on configuring Jest to transform them.
+
 **Store ports** (found by the PostgreSQL reference store)
 
 - Observations carry no namespace: `getObservation` and `putObservation` key them by attempt
