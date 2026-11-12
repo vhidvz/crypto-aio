@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CallOptions.endpointLimit`: a transport read without a quorum can mark a definitive
+  refusal as the endpoint's own limit, so the read asks the endpoints it has not asked
+  instead of failing; the refusal stands only when every endpoint refuses.
+
+### Fixed
+
+- Bitcoin: an indexer that refuses an address for its own limit (HTTP 400 "Scripthash
+  history too large to scan" or "Too many unspent transaction outputs") no longer fails the
+  balance, unspent-output or history read when another `indexer` endpoint is configured:
+  the read asks it. blockstream.info started refusing busy addresses this way, which failed
+  the nightly signet suite.
+
 ## [0.2.0] - 2026-10-21
 
 crypto-aio 0.2.0 settles everything 1.0 will promise: the API is locked by reports in CI,

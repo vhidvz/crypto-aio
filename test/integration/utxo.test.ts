@@ -7,6 +7,7 @@
  */
 import { CryptoAio } from '../../src';
 import { native } from '../../src/native';
+import { isAddressLimit } from '../../src/adapters/utxo/esplora';
 // Types `native(bc, 'bitcoinjs-lib')` as the UTXO native client.
 import '../../src/adapters/utxo';
 
@@ -79,9 +80,14 @@ suite(`UTXO integration on bitcoin:${network} (${provider})`, () => {
       expect(tx?.decoding).toBe('complete');
       const payee = tx?.transfers.find((t) => t.unresolved === undefined)?.to.canonical;
       if (payee) {
-        expect((await bc.getBalance(payee)).amount.asset.id).toBe(
-          `bitcoin:${network}/native`,
-        );
+        // A pool's payout address can be past what a public indexer scans: Blockstream
+        // answers HTTP 400 "Scripthash history too large to scan". With one indexer that
+        // refusal stands (another indexer would be asked); anything else fails the test.
+        const balance = await bc.getBalance(payee).catch((error: unknown) => {
+          if (isAddressLimit(error)) return undefined;
+          throw error;
+        });
+        if (balance) expect(balance.amount.asset.id).toBe(`bitcoin:${network}/native`);
         // A pool's payout address often holds more unspent outputs than the public services
         // list (`/address/:address/utxo` answers HTTP 400 past 500), so the estimate spends
         // from an address nobody funds: a p2wpkh program cut from the coinbase txid. With

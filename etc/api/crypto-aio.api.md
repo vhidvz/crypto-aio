@@ -631,6 +631,7 @@ export interface CallbackSignerOptions {
 
 // @public (undocumented)
 export interface CallOptions {
+    readonly endpointLimit?: (refusal: CryptoAioError) => boolean;
     readonly exactIntegers?: boolean;
     readonly fanout?: number;
     // (undocumented)

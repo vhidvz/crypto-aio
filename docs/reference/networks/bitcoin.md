@@ -36,10 +36,14 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   or it is disabled. A custom signet shares the default signet's genesis block, so it passes
   this check: point a `signet` handle only at the signet you mean. mempool.space and
   blockstream.info publish no rate limit, so the presets set none; a 429 is retried with
-  backoff (`RATE_LIMITED`). Both refuse to list more than 500 unspent outputs of one
-  address: `/address/:address/utxo` answers HTTP 400, a non-retryable `RPC_ERROR`, so a
-  wallet with more cannot estimate or send through them. For production, and for any large
-  wallet, run your own Esplora (electrs) and configure it as `{ endpoints: [{ url }] }`, as
+  backoff (`RATE_LIMITED`). Both have limits per address: they refuse to list more than 500
+  unspent outputs of one address, and blockstream.info refuses to read an address with a
+  long history (`Scripthash history too large to scan`), even its balance. Such a refusal
+  (HTTP 400, "too many" or "too large") is the indexer's own limit, so the read asks the
+  handle's next `indexer` endpoint; only when every one refuses does it fail, with a
+  non-retryable `RPC_ERROR` (`details.status` 400). A wallet past every indexer's limit
+  cannot estimate or send. For production, and for any large wallet, run your own Esplora
+  (electrs) with limits that fit it, and configure it as `{ endpoints: [{ url }] }`, as
   both the `provider` and the `indexer`; give an endpoint a `rateLimit` (`{ rps, burst? }`)
   when its operator sets one.
 - **Wallets.** `wallet.utxo.addressType` is `p2wpkh` (the default), `p2sh-p2wpkh`, `p2pkh` or

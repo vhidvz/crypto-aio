@@ -14,7 +14,7 @@ import {
   ValidationError,
   isCryptoAioError,
 } from '../../core/errors/error';
-import type { HttpRequest, Transport } from '../../core/transport/types';
+import type { CallOptions, HttpRequest, Transport } from '../../core/transport/types';
 import { previousTxOf, txidOfHex, type PreviousTx } from './codec';
 import { commitsToTransactions, readBlock, type RawBlock } from './rawblock';
 import { readTxHex } from './rawtx';
@@ -51,6 +51,25 @@ const isHex = (value: string): boolean =>
 export function malformed(what: string): ProviderError {
   return new ProviderError('PROVIDER_UNAVAILABLE', `malformed Esplora answer: ${what}`);
 }
+
+/**
+ * An indexer's refusal to serve an address beyond its own limits, which another indexer
+ * may serve: electrs answers HTTP 400 with "Too many unspent transaction outputs", "Too many
+ * history entries" or "Scripthash history too large to scan" for a busy address.
+ */
+export function isAddressLimit(error: unknown): boolean {
+  if (!isCryptoAioError(error, 'RPC_ERROR') || error.details?.status !== 400)
+    return false;
+  const body = error.details.body;
+  return typeof body === 'string' && /\btoo (?:many|large)\b/i.test(body);
+}
+
+/** The tags of a read of an address route: another indexer is asked past one's limit. */
+const addressRead = (tags: UtxoCallTags): AddressTags => ({
+  ...tags,
+  endpointLimit: isAddressLimit,
+});
+type AddressTags = UtxoCallTags & Pick<CallOptions, 'endpointLimit'>;
 
 /** A definitive 404 (not an ambiguous or retried failure): the resource is not there. */
 export function isNotFound(error: unknown): boolean {
@@ -351,7 +370,7 @@ export class EsploraClient {
     transport: Transport,
     path: string,
     route: string,
-    tags: UtxoCallTags,
+    tags: AddressTags,
     responseType: 'json' | 'text' | 'bytes' = 'json',
     exactIntegers = false,
   ): Promise<T> {
@@ -627,7 +646,7 @@ export class EsploraClient {
       this.indexer,
       `/address/${segment(address, 'address')}/utxo`,
       '/address/:address/utxo',
-      tags,
+      addressRead(tags),
     );
     return list(utxos, 'utxo list', parseUtxo);
   }
@@ -638,7 +657,7 @@ export class EsploraClient {
         this.indexer,
         `/address/${segment(address, 'address')}`,
         '/address/:address',
-        tags,
+        addressRead(tags),
         'json',
         true,
       ),
@@ -663,6 +682,10 @@ export class EsploraClient {
     const route = lastSeen
       ? '/address/:address/txs/chain/:last_seen_txid'
       : '/address/:address/txs/chain';
-    return list(await this.#get(this.indexer, path, route, tags), 'address txs', parseTx);
+    return list(
+      await this.#get(this.indexer, path, route, addressRead(tags)),
+      'address txs',
+      parseTx,
+    );
   }
 }

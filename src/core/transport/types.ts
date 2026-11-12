@@ -1,4 +1,5 @@
 import type { Secret } from '../secret/secret';
+import type { CryptoAioError } from '../errors/error';
 
 export type RetryClass = 'safe' | 'ambiguous-on-failure' | 'never-auto';
 export type RequestPurpose = 'read' | 'monitor' | 'proof' | 'broadcast';
@@ -75,6 +76,14 @@ export interface CallOptions {
    * parse plainly). A quorum key sees the revived values.
    */
   readonly exactIntegers?: boolean;
+  /**
+   * Whether a definitive refusal is the endpoint's own limit rather than an answer about
+   * the request, such as an indexer that will not scan an address with a long history.
+   * A read without `quorum` or `fanout` then asks an endpoint it has not asked yet, without
+   * using up a retry; the refusal stands only when every endpoint has refused. Quorum and
+   * fanout calls ignore it.
+   */
+  readonly endpointLimit?: (refusal: CryptoAioError) => boolean;
   /** Send to this many endpoints concurrently (raw-transaction broadcasts). */
   readonly fanout?: number;
   readonly signal?: AbortSignal;
