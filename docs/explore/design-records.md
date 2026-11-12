@@ -79,8 +79,13 @@ it waited.
   scripted test node's genesis timestamp is not Nile's.
 - Solana caches a mint that every endpoint calls absent for the container's life, and could skip
   a slot read while the finalized slot is still below the blockhash's.
-- TON's read path could retry asset failures (keep the junk-jetton tests); a bounce could be
-  authenticated from the chain itself.
+- TON's read path could retry asset failures (keep the junk-jetton tests).
+- TON's absence proof walks the wallet's chain back from its newest attested state, so a
+  wallet that has run more than 512 transactions since a message's build leaves the message
+  undecided for good ([Busy wallets](../reference/networks/ton.md)). Starting the walk at a
+  state attested just after the message's `validUntil` would bound it by the message's own
+  lifetime; it needs a proof read of the account at an earlier masterchain block, which a
+  1.x release can add.
 
 **Transport**
 

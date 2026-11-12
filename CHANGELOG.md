@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-11-12
+
+The release candidate for 1.0.0. It keeps the API 0.2.0 settled and writes down the
+contract 1.0 keeps: [Versioning and
+stability](https://vhidvz.github.io/crypto-aio/reference/stability.html) lists what semver
+covers surface by surface, [Errors](https://vhidvz.github.io/crypto-aio/reference/errors.html)
+the safe action for every code and the error fields you may rely on, and the plugin and
+store pages what a driver and a durable store must do. It closes the gaps a review of every
+page found in the surfaces 1.0 freezes. Code written for 0.2.0 needs no change unless it
+writes a plugin driver that misdeclares its capabilities; [Upgrade to
+1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html) says what changed. It is
+published under npm's `next` tag: `npm install crypto-aio@next`.
+
 ### Added
 
 - `CallOptions.endpointLimit`: a transport read without a quorum can mark a definitive
@@ -32,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only).
 - `OperationStore.findByRef` is specified for several Operations of a namespace holding
   one ref, which the core never writes: a store may return any one of them.
+- The documentation states the 1.0 contract and corrects what 0.2.0 left stale: proofs
+  as 0.2.0 sizes them (a down endpoint still counts, so production wants three or more
+  providers), `TX_UNEVIDENCED` as a failure where value may have moved, what abandoning a
+  signed transfer leaves possible on each family, Avalanche change in deposit crediting,
+  TON's 512-transaction proof window, each family's covered fee and `ext` shapes, the
+  rules a driver and a durable store must keep, and a production checklist covering
+  stores, providers, keys, workers, monitoring and upgrades. 26 more snippets are
+  type-checked by the docs tests.
 
 ### Removed
 
@@ -202,8 +223,9 @@ says what to do for each.
 
 ### Added
 
-- initial release 🎉​🎊​.
+- initial release 🎉🎊.
 
-[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/vhidvz/crypto-aio/compare/0.2.0...1.0.0-rc.1
 [0.2.0]: https://github.com/vhidvz/crypto-aio/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/vhidvz/crypto-aio/releases/tag/0.1.0
