@@ -2,7 +2,7 @@
 
 # Interface: OperationView
 
-Defined in: [src/core/lifecycle/views.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L23)
+Defined in: [src/core/lifecycle/views.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L27)
 
 Public view of an Operation: ids and states only (no payloads, raw transactions or intents).
 
@@ -18,7 +18,7 @@ Public view of an Operation: ids and states only (no payloads, raw transactions 
 
 > `readonly` `optional` **activeAttempt?**: [`AttemptRef`](AttemptRef.md)
 
-Defined in: [src/core/lifecycle/views.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L32)
+Defined in: [src/core/lifecycle/views.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L36)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [src/core/lifecycle/views.ts:32](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **ambiguous**: `boolean`
 
-Defined in: [src/core/lifecycle/views.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L30)
+Defined in: [src/core/lifecycle/views.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L34)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [src/core/lifecycle/views.ts:30](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **attempts**: readonly [`AttemptView`](AttemptView.md)[]
 
-Defined in: [src/core/lifecycle/views.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L31)
+Defined in: [src/core/lifecycle/views.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L35)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [src/core/lifecycle/views.ts:31](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/lifecycle/views.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L26)
+Defined in: [src/core/lifecycle/views.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L30)
 
 ***
 
@@ -58,7 +58,7 @@ Defined in: [src/core/lifecycle/views.ts:26](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **createdAt**: `number`
 
-Defined in: [src/core/lifecycle/views.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L34)
+Defined in: [src/core/lifecycle/views.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L38)
 
 ***
 
@@ -68,7 +68,7 @@ Defined in: [src/core/lifecycle/views.ts:34](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **error?**: [`SerializedError`](SerializedError.md)
 
-Defined in: [src/core/lifecycle/views.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L33)
+Defined in: [src/core/lifecycle/views.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L37)
 
 ***
 
@@ -78,7 +78,7 @@ Defined in: [src/core/lifecycle/views.ts:33](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/lifecycle/views.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L24)
+Defined in: [src/core/lifecycle/views.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L28)
 
 ***
 
@@ -88,7 +88,7 @@ Defined in: [src/core/lifecycle/views.ts:24](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **idempotencyKey**: `string`
 
-Defined in: [src/core/lifecycle/views.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L25)
+Defined in: [src/core/lifecycle/views.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L29)
 
 ***
 
@@ -98,7 +98,7 @@ Defined in: [src/core/lifecycle/views.ts:25](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/lifecycle/views.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L27)
+Defined in: [src/core/lifecycle/views.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L31)
 
 ***
 
@@ -108,7 +108,7 @@ Defined in: [src/core/lifecycle/views.ts:27](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **outcome?**: `"executed"` \| `"cancelled"`
 
-Defined in: [src/core/lifecycle/views.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L29)
+Defined in: [src/core/lifecycle/views.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L33)
 
 ***
 
@@ -118,7 +118,7 @@ Defined in: [src/core/lifecycle/views.ts:29](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **state**: [`OperationState`](../type-aliases/OperationState.md)
 
-Defined in: [src/core/lifecycle/views.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L28)
+Defined in: [src/core/lifecycle/views.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L32)
 
 ***
 
@@ -128,4 +128,4 @@ Defined in: [src/core/lifecycle/views.ts:28](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **updatedAt**: `number`
 
-Defined in: [src/core/lifecycle/views.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L35)
+Defined in: [src/core/lifecycle/views.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/views.ts#L39)

@@ -10,17 +10,20 @@ A family driver is written once, and every chain and network it serves is data: 
 confirmations, `reorgWindow`, replacement rules, explorer templates), plus provider presets
 that map `(chain, network, apiKey)` to endpoints. So an EVM chain needs no new adapter.
 
-`evmChainPlugin` from `crypto-aio/evm` serves your EVM chains with the built-in driver, for
-both libraries. It checks the data when called, or throws `CONFIG_INVALID`: family `evm`,
+`evmChainPlugin` from `crypto-aio/evm` serves your EVM chains with the built-in driver, with
+ethers or the deprecated web3. It checks the data when called, or throws `CONFIG_INVALID`: family `evm`,
 nonce ordering, the `secp256k1-ecdsa` scheme, and per network the decimal chain id as
 `identity`, an `evm-1559` or `evm-legacy` fee model, and `finalized`-tag or confirmation
 finality. A network removes the capabilities it lacks: `finality-tag` without the tag,
 `fee-market-1559` on `evm-legacy`, and `replace-fee` and `cancel` without a mempool.
 Optional network `params` describe the chain further: `minPriorityFeePerGas` (a bigint tip
-floor), `l1DataFee: 'op-stack'` (transactions also pay an OP Stack L1 data fee), and
+floor), `l1DataFee: 'op-stack'` (transactions also pay an OP Stack L1 data fee),
 `systemLogs: 'bor'` (a bor client's system logs on every receipt, as on Polygon PoS, which
-a plain transfer then ignores).
+a plain transfer then ignores), and the network's own fee bounds, `maxFeePerGas` (wei per
+gas) and `maxGasLimit` (gas), which apply unless a handle's or the chain's `options` set
+them.
 
+<!-- typecheck -->
 ```ts
 import { CryptoAio, type ChainInfo } from 'crypto-aio';
 import { evmChainPlugin } from 'crypto-aio/evm';
@@ -51,5 +54,5 @@ second registration fails with `CONFIG_INVALID`, "already registered"), so nobod
 network to an existing chain id from outside. A plugin can add a new chain id, and it can add
 presets, or adapters for another library, to chains that are already registered.
 
-The TON family has no helper like `evmChainPlugin`: its two networks are built in, and this
-release offers no way to change their settings.
+Only the EVM family has a helper like `evmChainPlugin`. The other families serve their
+built-in networks, whose settings no plugin can change, since a chain id registers once.

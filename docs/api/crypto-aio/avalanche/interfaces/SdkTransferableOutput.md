@@ -2,9 +2,9 @@
 
 # Interface: SdkTransferableOutput
 
-Defined in: [src/adapters/avalanche/sdk.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L45)
+Defined in: [src/adapters/avalanche/sdk.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L51)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `TransferableOutput` this library uses; it mirrors the SDK, outside semver.
 
 ## Extends
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:13](https://github.com/vhidvz/crypto-
 
 > `readonly` **assetId**: [`SdkId`](SdkId.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L46)
+Defined in: [src/adapters/avalanche/sdk.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L52)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:46](https://github.com/vhidvz/crypto-
 
 > `readonly` **output**: [`SdkSerializable`](SdkSerializable.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L47)
+Defined in: [src/adapters/avalanche/sdk.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L53)
 
 ## Methods
 
@@ -52,7 +52,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:47](https://github.com/vhidvz/crypto-
 
 > **amount**(): `bigint`
 
-Defined in: [src/adapters/avalanche/sdk.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L48)
+Defined in: [src/adapters/avalanche/sdk.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L54)
 
 #### Returns
 

@@ -14,47 +14,47 @@ export interface ContractTestApi {
     it(name: string, fn: () => Promise<void>): void;
 }
 
-// @public (undocumented)
+// @public
 export class CrashError extends Error {
     constructor();
 }
 
-// @public (undocumented)
+// @public
 export function createFakeEnv(options?: FakeEnvOptions): Promise<FakeEnv>;
 
-// @public (undocumented)
+// @public
 export interface CursorHarness {
     // (undocumented)
     readonly cursors: CursorStore;
 }
 
-// @public (undocumented)
+// @public
 export function decodeEnvelope(raw: string): FakeEnvelope | undefined;
 
-// @public (undocumented)
+// @public
 export function describeCursorStoreContract(api: ContractTestApi, create: () => CursorHarness | Promise<CursorHarness>): void;
 
-// @public (undocumented)
+// @public
 export function describeLockManagerContract(api: ContractTestApi, create: () => LockHarness | Promise<LockHarness>, options?: {
     readonly ttlMs?: number;
 }): void;
 
-// @public (undocumented)
+// @public
 export function describeOperationStoreContract(api: ContractTestApi, create: () => OperationHarness | Promise<OperationHarness>): void;
 
-// @public (undocumented)
+// @public
 export function describeSequenceStoreContract(api: ContractTestApi, create: () => SequenceHarness | Promise<SequenceHarness>): void;
 
 // @public
 export function drive<T>(clock: FakeClock, promise: Promise<T>, stepMs?: number, maxSteps?: number): Promise<T>;
 
-// @public (undocumented)
+// @public
 export function encodeEnvelope(envelope: FakeEnvelope): string;
 
-// @public (undocumented)
+// @public
 export function fakeAddress(publicKey: Uint8Array): string;
 
-// @public (undocumented)
+// @public
 export class FakeChain {
     constructor(options?: FakeChainOptions);
     // (undocumented)
@@ -107,22 +107,19 @@ export class FakeChain {
     submit(raw: string): string;
 }
 
-// @public (undocumented)
+// @public
 export type FakeChainId = 'fakechain' | 'fakeexpiry' | 'fakeseqno';
 
-// @public (undocumented)
+// @public
 export interface FakeChainOptions {
     // (undocumented)
     readonly chainId?: string;
     // (undocumented)
     readonly clock?: Clock;
-    // (undocumented)
     readonly finalityDepth?: number;
-    // (undocumented)
     readonly minFee?: bigint;
     // (undocumented)
     readonly ordering?: FakeOrdering;
-    // (undocumented)
     readonly replacementBumpPercent?: number;
 }
 
@@ -138,37 +135,27 @@ export class FakeClock implements Clock {
     sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
-// @public (undocumented)
+// @public
 export function fakeDigest(tx: FakeUnsigned): Uint8Array;
 
-// @public (undocumented)
+// @public
 export interface FakeEndpointOptions {
-    // (undocumented)
     acceptThenFail?: boolean;
-    // (undocumented)
     down?: boolean;
     forkAbove?: number;
-    // (undocumented)
     forkFinalized?: boolean;
-    // (undocumented)
     html?: boolean;
-    // (undocumented)
     identity?: string;
-    // (undocumented)
     lag?: number;
-    // (undocumented)
     refuseNext?: string;
-    // (undocumented)
     seesMempool?: boolean;
 }
 
-// @public (undocumented)
+// @public
 export interface FakeEnv {
-    // (undocumented)
     readonly address: string;
     // (undocumented)
     readonly aio: CryptoAio;
-    // (undocumented)
     readonly bc: Blockchain<FakeChainId>;
     // (undocumented)
     readonly chain: FakeChain;
@@ -186,7 +173,7 @@ export interface FakeEnv {
     stranger(): string;
 }
 
-// @public (undocumented)
+// @public
 export interface FakeEnvelope {
     // (undocumented)
     readonly pub: string;
@@ -198,13 +185,12 @@ export interface FakeEnvelope {
     readonly tx: FakeUnsigned;
 }
 
-// @public (undocumented)
+// @public
 export interface FakeEnvOptions {
     readonly aio?: Omit<AioOptions, 'clock' | 'stores' | 'transport'>;
     // (undocumented)
     readonly chain?: Omit<FakeChainOptions, 'ordering' | 'clock'>;
     readonly clock?: FakeClock;
-    // (undocumented)
     readonly endpoints?: readonly (string | ({
         readonly name: string;
     } & FakeEndpointOptions))[];
@@ -213,19 +199,15 @@ export interface FakeEnvOptions {
     readonly hooks?: Hooks;
     // (undocumented)
     readonly lifecycle?: LifecycleOptions;
-    // (undocumented)
     readonly ordering?: FakeOrdering;
-    // (undocumented)
     readonly signer?: Signer;
-    // (undocumented)
     readonly stores?: Partial<Stores>;
     // (undocumented)
     readonly transport?: Omit<TransportOptions, 'fetch'>;
-    // (undocumented)
     readonly wallets?: Readonly<Record<string, WalletConfig>>;
 }
 
-// @public (undocumented)
+// @public
 export interface FakeExt {
     // (undocumented)
     readonly fake: {
@@ -246,13 +228,13 @@ export class FakeFetch {
     route(prefix: string, handler: FakeHandler): this;
 }
 
-// @public (undocumented)
+// @public
 export type FakeHandler = (request: FakeRequest, signal: AbortSignal | undefined) => FakeReply | Promise<FakeReply>;
 
-// @public (undocumented)
+// @public
 export const fakeManifest: AdapterManifest;
 
-// @public (undocumented)
+// @public
 export interface FakeNativeClient {
     readonly closes: number;
     // (undocumented)
@@ -263,13 +245,13 @@ export interface FakeNativeClient {
     readonly settings: Record<string, unknown>;
 }
 
-// @public (undocumented)
+// @public
 export type FakeOrdering = 'nonce' | 'seqno' | 'expiry';
 
-// @public (undocumented)
+// @public
 export function fakePlugin(): Plugin;
 
-// @public (undocumented)
+// @public
 export interface FakeReceipt {
     // (undocumented)
     readonly hash: string;
@@ -279,7 +261,7 @@ export interface FakeReceipt {
     readonly success: boolean;
 }
 
-// @public (undocumented)
+// @public
 export type FakeReply = Response | {
     readonly status?: number;
     readonly json?: unknown;
@@ -287,7 +269,7 @@ export type FakeReply = Response | {
     readonly headers?: Readonly<Record<string, string>>;
 };
 
-// @public (undocumented)
+// @public
 export interface FakeRequest {
     // (undocumented)
     readonly body: string | undefined;
@@ -301,7 +283,7 @@ export interface FakeRequest {
     readonly url: URL;
 }
 
-// @public (undocumented)
+// @public
 export function fakeTxId(raw: string): string;
 
 // @public
@@ -324,7 +306,7 @@ export interface FakeUnsigned {
     readonly to: string;
 }
 
-// @public (undocumented)
+// @public
 export interface FakeWireBlock {
     // (undocumented)
     readonly hash: string;
@@ -340,7 +322,7 @@ export interface FakeWireBlock {
     readonly txs?: readonly FakeWireTx[];
 }
 
-// @public (undocumented)
+// @public
 export interface FakeWireTx {
     // (undocumented)
     readonly amount: string;
@@ -366,7 +348,7 @@ export interface FakeWireTx {
     readonly to: string;
 }
 
-// @public (undocumented)
+// @public
 export interface FaultPoint {
     // (undocumented)
     readonly method: 'create' | 'update' | 'appendAttempt' | 'putObservation';
@@ -407,24 +389,24 @@ export class FaultyOperationStore implements OperationStore {
 // @public
 export function hang(signal: AbortSignal | undefined): Promise<never>;
 
-// @public (undocumented)
+// @public
 export function isFakeAddress(value: string): boolean;
 
-// @public (undocumented)
+// @public
 export interface LockHarness {
     advance(ms: number): Promise<void>;
     // (undocumented)
     readonly locks: LockManager;
 }
 
-// @public (undocumented)
+// @public
 export interface OperationHarness {
     advance(ms: number): Promise<void>;
     // (undocumented)
     readonly operations: OperationStore;
 }
 
-// @public (undocumented)
+// @public
 export interface RecordedCall {
     // (undocumented)
     readonly body?: string;
@@ -436,28 +418,28 @@ export interface RecordedCall {
     readonly url: string;
 }
 
-// @public (undocumented)
+// @public
 export function rejectsWithCode(promise: Promise<unknown>, code: string): Promise<void>;
 
-// @public (undocumented)
+// @public
 export const REVERT_ADDRESS: string;
 
-// @public (undocumented)
+// @public
 export function rpcError(request: FakeRequest, code: number, message: string): FakeReply;
 
-// @public (undocumented)
+// @public
 export function rpcResult(request: FakeRequest, result: unknown): FakeReply;
 
 // @public
 export const SAMPLE_ORDERINGS: readonly (readonly [string, OrderingData])[];
 
-// @public (undocumented)
+// @public
 export function sampleAttempt(id: string, overrides?: Partial<AttemptRecord>): AttemptRecord;
 
-// @public (undocumented)
+// @public
 export function sampleOperation(overrides?: Partial<NewOperation>): NewOperation;
 
-// @public (undocumented)
+// @public
 export interface SequenceHarness {
     // (undocumented)
     readonly sequences: SequenceStore;

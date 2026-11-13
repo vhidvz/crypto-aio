@@ -200,7 +200,8 @@ describe('Tron proofs', () => {
     expect(head).toEqual({
       height: head.height,
       hash: h.node.block(Number(head.height))?.id,
-      timestamp: h.node.block(Number(head.height))?.timestamp,
+      // In Unix seconds, as every family reports block times; the node keeps milliseconds.
+      timestamp: (h.node.block(Number(head.height))?.timestamp ?? 0) / 1000,
     });
     h.node.lag('b', 0);
     expect(await h.run(h.proofs.finalizedHead())).toMatchObject({

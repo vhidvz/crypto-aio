@@ -2,7 +2,9 @@
 
 # Interface: ChainDefaults
 
-Defined in: [src/core/config/types.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L45)
+Defined in: [src/core/config/types.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L70)
+
+Per-chain defaults (`chains.<id>`); a handle can set the same fields but `maxLagBlocks`.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/config/types.ts:45](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **confirmations?**: `number`
 
-Defined in: [src/core/config/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L53)
+Defined in: [src/core/config/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L86)
+
+The default target of `waitForConfirmation`.
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/core/config/types.ts:53](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **indexer?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L49)
+Defined in: [src/core/config/types.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L78)
+
+The indexer providers, for the families that read one.
 
 ***
 
@@ -32,7 +38,9 @@ Defined in: [src/core/config/types.ts:49](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **library?**: `string`
 
-Defined in: [src/core/config/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L47)
+Defined in: [src/core/config/types.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L74)
+
+The SDK library, such as `ethers`; defaults to the chain's first.
 
 ***
 
@@ -42,7 +50,7 @@ Defined in: [src/core/config/types.ts:47](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **maxLagBlocks?**: `number`
 
-Defined in: [src/core/config/types.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L60)
+Defined in: [src/core/config/types.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L93)
 
 This chain's lag tolerance, in blocks. It wins over the root
 `transport.maxLagBlocks`, which wins over the plugin network's own, which wins over
@@ -57,7 +65,9 @@ lagging, and a monitor or scanner view further behind is stale.
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/config/types.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L46)
+Defined in: [src/core/config/types.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L72)
+
+Defaults to the chain's default network.
 
 ***
 
@@ -67,7 +77,9 @@ Defined in: [src/core/config/types.ts:46](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **options?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/config/types.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L52)
+Defined in: [src/core/config/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L84)
+
+The family's own options; a family refuses keys it does not know (`CONFIG_INVALID`).
 
 ***
 
@@ -77,7 +89,9 @@ Defined in: [src/core/config/types.ts:52](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **provider?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L48)
+Defined in: [src/core/config/types.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L76)
+
+Several providers fail over and cross-check proofs.
 
 ***
 
@@ -87,7 +101,9 @@ Defined in: [src/core/config/types.ts:48](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **signer?**: `string`
 
-Defined in: [src/core/config/types.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L51)
+Defined in: [src/core/config/types.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L82)
+
+Overrides the wallet's signer.
 
 ***
 
@@ -97,4 +113,6 @@ Defined in: [src/core/config/types.ts:51](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **wallet?**: `string`
 
-Defined in: [src/core/config/types.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L50)
+Defined in: [src/core/config/types.ts:80](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L80)
+
+The wallet that sends.

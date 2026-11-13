@@ -2,7 +2,9 @@
 
 # Interface: GeneratedSigner
 
-Defined in: [src/core/signing/local.ts:183](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L183)
+Defined in: [src/core/signing/local.ts:191](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L191)
+
+A signer over freshly generated keys, with their public keys.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/signing/local.ts:183](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **publicKeys**: `Readonly`\<`Partial`\<`Record`\<[`Curve`](../type-aliases/Curve.md), `Uint8Array`\>\>\>
 
-Defined in: [src/core/signing/local.ts:186](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L186)
+Defined in: [src/core/signing/local.ts:194](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L194)
 
 secp256k1: 33-byte compressed; ed25519: 32 bytes.
 
@@ -24,4 +26,4 @@ secp256k1: 33-byte compressed; ed25519: 32 bytes.
 
 > `readonly` **signer**: [`Signer`](Signer.md)
 
-Defined in: [src/core/signing/local.ts:184](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L184)
+Defined in: [src/core/signing/local.ts:192](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L192)

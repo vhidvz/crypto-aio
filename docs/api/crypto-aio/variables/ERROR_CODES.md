@@ -4,7 +4,7 @@
 
 > `const` **ERROR\_CODES**: `object`
 
-Defined in: [src/core/errors/codes.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/codes.ts#L17)
+Defined in: [src/core/errors/codes.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/codes.ts#L18)
 
 Frozen, with every entry: the table is shared by every error and every caller.
 

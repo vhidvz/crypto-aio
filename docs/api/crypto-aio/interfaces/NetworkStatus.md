@@ -2,7 +2,10 @@
 
 # Interface: NetworkStatus
 
-Defined in: [src/core/blockchain/handle.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L68)
+Defined in: [src/core/blockchain/handle.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L73)
+
+`bc.getNetworkStatus()`'s answer: the chain's head and finalized heights as the handle's
+endpoints report them, and each provider and indexer endpoint's health.
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/core/blockchain/handle.ts:68](https://github.com/vhidvz/crypto-
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/blockchain/handle.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L69)
+Defined in: [src/core/blockchain/handle.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L74)
 
 ***
 
@@ -22,7 +25,7 @@ Defined in: [src/core/blockchain/handle.ts:69](https://github.com/vhidvz/crypto-
 
 > `readonly` **endpoints**: readonly [`EndpointStatus`](EndpointStatus.md)[]
 
-Defined in: [src/core/blockchain/handle.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L73)
+Defined in: [src/core/blockchain/handle.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L78)
 
 ***
 
@@ -32,7 +35,7 @@ Defined in: [src/core/blockchain/handle.ts:73](https://github.com/vhidvz/crypto-
 
 > `readonly` **finalizedHeight**: `bigint`
 
-Defined in: [src/core/blockchain/handle.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L72)
+Defined in: [src/core/blockchain/handle.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L77)
 
 ***
 
@@ -42,7 +45,7 @@ Defined in: [src/core/blockchain/handle.ts:72](https://github.com/vhidvz/crypto-
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/core/blockchain/handle.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L71)
+Defined in: [src/core/blockchain/handle.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L76)
 
 ***
 
@@ -52,7 +55,7 @@ Defined in: [src/core/blockchain/handle.ts:71](https://github.com/vhidvz/crypto-
 
 > `readonly` **indexers**: readonly [`EndpointStatus`](EndpointStatus.md)[]
 
-Defined in: [src/core/blockchain/handle.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L74)
+Defined in: [src/core/blockchain/handle.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L79)
 
 ***
 
@@ -62,4 +65,4 @@ Defined in: [src/core/blockchain/handle.ts:74](https://github.com/vhidvz/crypto-
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/blockchain/handle.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L70)
+Defined in: [src/core/blockchain/handle.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/blockchain/handle.ts#L75)

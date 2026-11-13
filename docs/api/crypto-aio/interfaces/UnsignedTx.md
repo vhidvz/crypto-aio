@@ -2,7 +2,11 @@
 
 # Interface: UnsignedTx
 
-Defined in: [src/core/model/transaction.ts:138](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L138)
+Defined in: [src/core/model/transaction.ts:176](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L176)
+
+A transaction built and not yet signed: its payload, the signatures it needs, the slot it
+takes, its fee and what it pays. A driver's `summary` describes exactly what the payload
+pays: `beforeSign` policies judge the summary, never the bytes.
 
 ## Properties
 
@@ -12,7 +16,7 @@ Defined in: [src/core/model/transaction.ts:138](https://github.com/vhidvz/crypto
 
 > `readonly` `optional` **expectedRef?**: [`AttemptRef`](AttemptRef.md)
 
-Defined in: [src/core/model/transaction.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L141)
+Defined in: [src/core/model/transaction.ts:179](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L179)
 
 Only when identity is fixed before signing (Tron; UTXO with witness-only inputs).
 
@@ -24,7 +28,7 @@ Only when identity is fixed before signing (Tron; UTXO with witness-only inputs)
 
 > `readonly` **fee**: [`FeeEstimateDraft`](FeeEstimateDraft.md)
 
-Defined in: [src/core/model/transaction.ts:144](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L144)
+Defined in: [src/core/model/transaction.ts:182](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L182)
 
 ***
 
@@ -34,7 +38,7 @@ Defined in: [src/core/model/transaction.ts:144](https://github.com/vhidvz/crypto
 
 > `readonly` **ordering**: [`OrderingData`](../type-aliases/OrderingData.md)
 
-Defined in: [src/core/model/transaction.ts:143](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L143)
+Defined in: [src/core/model/transaction.ts:181](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L181)
 
 ***
 
@@ -44,7 +48,7 @@ Defined in: [src/core/model/transaction.ts:143](https://github.com/vhidvz/crypto
 
 > `readonly` **payload**: [`RawTx`](RawTx.md)
 
-Defined in: [src/core/model/transaction.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L139)
+Defined in: [src/core/model/transaction.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L177)
 
 ***
 
@@ -54,7 +58,7 @@ Defined in: [src/core/model/transaction.ts:139](https://github.com/vhidvz/crypto
 
 > `readonly` **signingRequests**: readonly [`SigningRequest`](SigningRequest.md)[]
 
-Defined in: [src/core/model/transaction.ts:142](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L142)
+Defined in: [src/core/model/transaction.ts:180](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L180)
 
 ***
 
@@ -64,4 +68,4 @@ Defined in: [src/core/model/transaction.ts:142](https://github.com/vhidvz/crypto
 
 > `readonly` **summary**: [`IntentSummary`](IntentSummary.md)
 
-Defined in: [src/core/model/transaction.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L145)
+Defined in: [src/core/model/transaction.ts:183](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L183)

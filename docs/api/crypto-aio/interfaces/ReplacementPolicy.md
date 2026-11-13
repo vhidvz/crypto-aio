@@ -2,7 +2,9 @@
 
 # Interface: ReplacementPolicy
 
-Defined in: [src/core/driver/types.ts:256](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L256)
+Defined in: [src/core/driver/types.ts:323](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L323)
+
+Whether and how an Attempt's slot can be taken by another transaction.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/driver/types.ts:256](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **cancel**: `boolean`
 
-Defined in: [src/core/driver/types.ts:258](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L258)
+Defined in: [src/core/driver/types.ts:327](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L327)
+
+Whether a pending transfer can be cancelled (`cancel`).
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/core/driver/types.ts:258](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **replace**: `boolean`
 
-Defined in: [src/core/driver/types.ts:257](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L257)
+Defined in: [src/core/driver/types.ts:325](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L325)
+
+Whether a pending transfer can be replaced at a higher fee (`replace-fee`).
 
 ## Methods
 
@@ -32,7 +38,7 @@ Defined in: [src/core/driver/types.ts:257](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **buildCancel**(`previous`, `ctx`, `fee?`): `Promise`\<[`UnsignedTx`](UnsignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:270](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L270)
+Defined in: [src/core/driver/types.ts:340](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L340)
 
 A transaction for `previous`'s slot that does not execute the transfer (e.g. a
 self-transfer). Without `fee` it pays the network's minimum bump over `previous`; with
@@ -65,7 +71,9 @@ one, that fee, refused (FEE_TOO_LOW) below the bump. `previous` may itself be a 
 
 > `optional` **buildReplacement**(`previous`, `fee`, `ctx`): `Promise`\<[`UnsignedTx`](UnsignedTx.md)\>
 
-Defined in: [src/core/driver/types.ts:259](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L259)
+Defined in: [src/core/driver/types.ts:329](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L329)
+
+`previous`'s transfer again, in its slot, at `fee`; `FEE_TOO_LOW` below the bump.
 
 #### Parameters
 
@@ -93,7 +101,7 @@ Defined in: [src/core/driver/types.ts:259](https://github.com/vhidvz/crypto-aio/
 
 > `optional` **comparePrice**(`a`, `b`): `number`
 
-Defined in: [src/core/driver/types.ts:281](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L281)
+Defined in: [src/core/driver/types.ts:351](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L351)
 
 Orders two transactions of one slot by the price a node compares when one replaces
 the other: negative when `a` pays less, positive when it pays more, `0` when neither

@@ -2,7 +2,10 @@
 
 # Interface: Clock
 
-Defined in: [src/core/util/clock.ts:1](https://github.com/vhidvz/crypto-aio/blob/main/src/core/util/clock.ts#L1)
+Defined in: [src/core/util/clock.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/util/clock.ts#L5)
+
+The time source of a container (`AioOptions.clock`), its stores and its transports. A
+port you may implement: it never gains a required member in a 1.x release.
 
 ## Methods
 
@@ -12,7 +15,9 @@ Defined in: [src/core/util/clock.ts:1](https://github.com/vhidvz/crypto-aio/blob
 
 > **now**(): `number`
 
-Defined in: [src/core/util/clock.ts:2](https://github.com/vhidvz/crypto-aio/blob/main/src/core/util/clock.ts#L2)
+Defined in: [src/core/util/clock.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/core/util/clock.ts#L7)
+
+Milliseconds since the epoch.
 
 #### Returns
 
@@ -26,7 +31,9 @@ Defined in: [src/core/util/clock.ts:2](https://github.com/vhidvz/crypto-aio/blob
 
 > **sleep**(`ms`, `signal?`): `Promise`\<`void`\>
 
-Defined in: [src/core/util/clock.ts:3](https://github.com/vhidvz/crypto-aio/blob/main/src/core/util/clock.ts#L3)
+Defined in: [src/core/util/clock.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/util/clock.ts#L9)
+
+Resolves after `ms`, or rejects with the signal's reason once it aborts.
 
 #### Parameters
 

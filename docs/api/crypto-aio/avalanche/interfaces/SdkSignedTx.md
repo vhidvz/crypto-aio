@@ -2,9 +2,9 @@
 
 # Interface: SdkSignedTx
 
-Defined in: [src/adapters/avalanche/sdk.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L92)
+Defined in: [src/adapters/avalanche/sdk.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L103)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `SignedTx` this library uses; it mirrors the SDK, outside semver.
 
 ## Properties
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > `readonly` **unsignedTx**: [`SdkTransaction`](SdkTransaction.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L93)
+Defined in: [src/adapters/avalanche/sdk.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L104)
 
 ## Methods
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:93](https://github.com/vhidvz/crypto-
 
 > **getCredentials**(): [`SdkCredential`](SdkCredential.md)[]
 
-Defined in: [src/adapters/avalanche/sdk.ts:94](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L94)
+Defined in: [src/adapters/avalanche/sdk.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L105)
 
 #### Returns
 
@@ -38,7 +38,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:94](https://github.com/vhidvz/crypto-
 
 > **toBytes**(): `Uint8Array`
 
-Defined in: [src/adapters/avalanche/sdk.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L95)
+Defined in: [src/adapters/avalanche/sdk.ts:106](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L106)
 
 #### Returns
 

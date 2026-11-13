@@ -4,7 +4,9 @@
 
 > **assetId**(`chain`, `network`, `ref`): `string`
 
-Defined in: [src/core/model/asset.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L24)
+Defined in: [src/core/model/asset.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L34)
+
+The id of `ref` on `chain`'s `network`; `ref`'s contract is used as given.
 
 ## Parameters
 

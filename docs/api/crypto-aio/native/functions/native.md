@@ -19,9 +19,13 @@ The root container's `close()` releases every client handed out here; after it,
 
 ## Type Parameters
 
+<a id="l"></a>
+
 ### L
 
 `L` *extends* keyof [`NativeClientMap`](../../interfaces/NativeClientMap.md)
+
+<a id="c"></a>
 
 ### C
 

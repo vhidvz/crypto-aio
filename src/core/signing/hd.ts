@@ -11,6 +11,10 @@ export interface PathSegment {
   readonly hardened: boolean;
 }
 
+/**
+ * The 4-byte version prefixes of an extended key format (`wallet.xpubVersions`), for a
+ * format other than the built-in `xpub` and `tpub`.
+ */
 export interface ExtendedKeyVersions {
   readonly private: number;
   readonly public: number;

@@ -2,7 +2,11 @@
 
 # Interface: LocalSignerOptions
 
-Defined in: [src/core/signing/local.ts:170](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L170)
+Defined in: [src/core/signing/local.ts:176](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L176)
+
+`localSigner()`'s options: a raw private key per curve (hex or bytes, as a `secret`), the
+signer's `id` (default `'local'`), and whether `exportKey` may hand a key out (default
+`false`, `KEY_NOT_EXPORTABLE`).
 
 ## Properties
 
@@ -12,7 +16,7 @@ Defined in: [src/core/signing/local.ts:170](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **ed25519?**: [`Secret`](../classes/Secret.md)\<`string` \| `Uint8Array`\<`ArrayBufferLike`\>\>
 
-Defined in: [src/core/signing/local.ts:173](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L173)
+Defined in: [src/core/signing/local.ts:179](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L179)
 
 ***
 
@@ -22,7 +26,7 @@ Defined in: [src/core/signing/local.ts:173](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **exportable?**: `boolean`
 
-Defined in: [src/core/signing/local.ts:174](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L174)
+Defined in: [src/core/signing/local.ts:180](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L180)
 
 ***
 
@@ -32,7 +36,7 @@ Defined in: [src/core/signing/local.ts:174](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **id?**: `string`
 
-Defined in: [src/core/signing/local.ts:171](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L171)
+Defined in: [src/core/signing/local.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L177)
 
 ***
 
@@ -42,4 +46,4 @@ Defined in: [src/core/signing/local.ts:171](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **secp256k1?**: [`Secret`](../classes/Secret.md)\<`string` \| `Uint8Array`\<`ArrayBufferLike`\>\>
 
-Defined in: [src/core/signing/local.ts:172](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L172)
+Defined in: [src/core/signing/local.ts:178](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L178)

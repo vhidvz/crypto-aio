@@ -2,7 +2,7 @@
 
 # Interface: DriverIntent
 
-Defined in: [src/core/model/intent.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L49)
+Defined in: [src/core/model/intent.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L57)
 
 What drivers receive: canonical strings and base units only.
 
@@ -18,7 +18,7 @@ What drivers receive: canonical strings and base units only.
 
 > `readonly` **asset**: [`AssetRef`](../type-aliases/AssetRef.md)
 
-Defined in: [src/core/model/intent.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L50)
+Defined in: [src/core/model/intent.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L58)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [src/core/model/intent.ts:50](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **fee**: [`FeeSpeed`](../type-aliases/FeeSpeed.md) \| `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/model/intent.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L54)
+Defined in: [src/core/model/intent.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L62)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [src/core/model/intent.ts:54](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **from**: `string`
 
-Defined in: [src/core/model/intent.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L52)
+Defined in: [src/core/model/intent.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L60)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [src/core/model/intent.ts:52](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **memo?**: `string`
 
-Defined in: [src/core/model/intent.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L53)
+Defined in: [src/core/model/intent.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L61)
 
 ***
 
@@ -58,4 +58,4 @@ Defined in: [src/core/model/intent.ts:53](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **outputs**: readonly [`DriverOutput`](DriverOutput.md)[]
 
-Defined in: [src/core/model/intent.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L51)
+Defined in: [src/core/model/intent.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L59)

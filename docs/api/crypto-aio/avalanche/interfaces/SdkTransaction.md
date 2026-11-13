@@ -2,7 +2,7 @@
 
 # Interface: SdkTransaction
 
-Defined in: [src/adapters/avalanche/sdk.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L81)
+Defined in: [src/adapters/avalanche/sdk.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L90)
 
 An unsigned transaction of any type (`avm.*`, `pvm.*`).
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:13](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **baseTx?**: [`SdkBaseTx`](SdkBaseTx.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L83)
+Defined in: [src/adapters/avalanche/sdk.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L92)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:83](https://github.com/vhidvz/crypto-
 
 > `readonly` **vm**: `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L82)
+Defined in: [src/adapters/avalanche/sdk.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L91)
 
 ## Methods
 
@@ -52,7 +52,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:82](https://github.com/vhidvz/crypto-
 
 > **getSigIndices**(): `number`[][]
 
-Defined in: [src/adapters/avalanche/sdk.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L84)
+Defined in: [src/adapters/avalanche/sdk.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L93)
 
 #### Returns
 

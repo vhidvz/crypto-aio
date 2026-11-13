@@ -6,6 +6,7 @@ export interface ContractTestApi {
   it(name: string, fn: () => Promise<void>): void;
 }
 
+/** Asserts that `promise` rejects with a `CryptoAioError` of `code`. */
 export async function rejectsWithCode(
   promise: Promise<unknown>,
   code: string,

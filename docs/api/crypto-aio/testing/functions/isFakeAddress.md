@@ -4,7 +4,9 @@
 
 > **isFakeAddress**(`value`): `boolean`
 
-Defined in: [src/testing/fake-chain.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L86)
+Defined in: [src/testing/fake-chain.ts:109](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L109)
+
+Whether `value` is a well-formed fake chain address.
 
 ## Parameters
 

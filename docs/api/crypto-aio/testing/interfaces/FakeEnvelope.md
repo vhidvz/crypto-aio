@@ -2,7 +2,10 @@
 
 # Interface: FakeEnvelope
 
-Defined in: [src/testing/fake-chain.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L22)
+Defined in: [src/testing/fake-chain.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L27)
+
+A signed fake transaction as it travels: part of the fake chain's wire protocol, which
+semver does not cover.
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/testing/fake-chain.ts:22](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **pub**: `string`
 
-Defined in: [src/testing/fake-chain.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L26)
+Defined in: [src/testing/fake-chain.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L31)
 
 ***
 
@@ -22,7 +25,7 @@ Defined in: [src/testing/fake-chain.ts:26](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **recovery**: `number`
 
-Defined in: [src/testing/fake-chain.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L25)
+Defined in: [src/testing/fake-chain.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L30)
 
 ***
 
@@ -32,7 +35,7 @@ Defined in: [src/testing/fake-chain.ts:25](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **sig**: `string`
 
-Defined in: [src/testing/fake-chain.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L24)
+Defined in: [src/testing/fake-chain.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L29)
 
 ***
 
@@ -42,4 +45,4 @@ Defined in: [src/testing/fake-chain.ts:24](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **tx**: [`FakeUnsigned`](FakeUnsigned.md)
 
-Defined in: [src/testing/fake-chain.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L23)
+Defined in: [src/testing/fake-chain.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L28)

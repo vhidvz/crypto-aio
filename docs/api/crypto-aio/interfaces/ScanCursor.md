@@ -2,7 +2,9 @@
 
 # Interface: ScanCursor
 
-Defined in: [src/core/store/types.ts:347](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L347)
+Defined in: [src/core/store/types.ts:497](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L497)
+
+Where a scanner is: its last block and the recent ones it uses to detect reorgs.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/store/types.ts:347](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/core/store/types.ts:349](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L349)
+Defined in: [src/core/store/types.ts:499](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L499)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/store/types.ts:349](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/core/store/types.ts:348](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L348)
+Defined in: [src/core/store/types.ts:498](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L498)
 
 ***
 
@@ -32,4 +34,4 @@ Defined in: [src/core/store/types.ts:348](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **recent**: readonly `object`[]
 
-Defined in: [src/core/store/types.ts:350](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L350)
+Defined in: [src/core/store/types.ts:500](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L500)

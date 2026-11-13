@@ -4,7 +4,10 @@
 
 > **describeSequenceStoreContract**(`api`, `create`): `void`
 
-Defined in: [src/testing/contracts/sequences.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/sequences.ts#L9)
+Defined in: [src/testing/contracts/sequences.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/sequences.ts#L14)
+
+The `SequenceStore` contract suite: run it against your store, with `create` returning a
+fresh, empty store for each test.
 
 ## Parameters
 

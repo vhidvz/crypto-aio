@@ -2,7 +2,10 @@
 
 # Interface: IntentSummary
 
-Defined in: [src/core/model/intent.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L61)
+Defined in: [src/core/model/intent.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L74)
+
+What a transaction pays, for signers and `beforeSign` policies: the asset, each output
+with its canonical address and its base-unit amount as a decimal string, and the memo.
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/core/model/intent.ts:61](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **asset**: `string`
 
-Defined in: [src/core/model/intent.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L62)
+Defined in: [src/core/model/intent.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L75)
 
 ***
 
@@ -22,7 +25,7 @@ Defined in: [src/core/model/intent.ts:62](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **memo?**: `string`
 
-Defined in: [src/core/model/intent.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L64)
+Defined in: [src/core/model/intent.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L77)
 
 ***
 
@@ -32,4 +35,4 @@ Defined in: [src/core/model/intent.ts:64](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **outputs**: readonly `object`[]
 
-Defined in: [src/core/model/intent.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L63)
+Defined in: [src/core/model/intent.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/intent.ts#L76)

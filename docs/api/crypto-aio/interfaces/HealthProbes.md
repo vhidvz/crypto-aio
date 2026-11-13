@@ -2,7 +2,9 @@
 
 # Interface: HealthProbes
 
-Defined in: [src/core/transport/types.ts:111](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L111)
+Defined in: [src/core/transport/types.ts:155](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L155)
+
+How a transport checks each endpoint: which network it serves, and its height.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/transport/types.ts:111](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **expectedIdentity?**: `string`
 
-Defined in: [src/core/transport/types.ts:113](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L113)
+Defined in: [src/core/transport/types.ts:159](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L159)
+
+The identity the network must have; an endpoint that answers another is disabled.
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/core/transport/types.ts:113](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **height?**: (`call`) => `Promise`\<`bigint`\>
 
-Defined in: [src/core/transport/types.ts:114](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L114)
+Defined in: [src/core/transport/types.ts:161](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L161)
+
+Reads the endpoint's head height.
 
 #### Parameters
 
@@ -42,7 +48,9 @@ Defined in: [src/core/transport/types.ts:114](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **identity?**: (`call`) => `Promise`\<`string`\>
 
-Defined in: [src/core/transport/types.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L112)
+Defined in: [src/core/transport/types.ts:157](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L157)
+
+Reads what identifies the endpoint's network, such as its genesis hash or chain id.
 
 #### Parameters
 

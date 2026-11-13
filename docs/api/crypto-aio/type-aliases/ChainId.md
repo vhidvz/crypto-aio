@@ -4,4 +4,6 @@
 
 > **ChainId** = `Extract`\<keyof [`ChainRegistry`](../interfaces/ChainRegistry.md), `string`\>
 
-Defined in: [src/core/model/ids.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L12)
+Defined in: [src/core/model/ids.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L16)
+
+A registered chain id.

@@ -2,7 +2,10 @@
 
 # Interface: MnemonicSignerOptions
 
-Defined in: [src/core/signing/local.ts:238](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L238)
+Defined in: [src/core/signing/local.ts:255](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L255)
+
+`localSigner.fromMnemonic()`'s options: the BIP39 `passphrase`, the curves to derive
+(default both), the signer's `id` and whether keys are exportable.
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/core/signing/local.ts:238](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **curves?**: readonly [`Curve`](../type-aliases/Curve.md)[]
 
-Defined in: [src/core/signing/local.ts:242](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L242)
+Defined in: [src/core/signing/local.ts:259](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L259)
 
 ***
 
@@ -22,7 +25,7 @@ Defined in: [src/core/signing/local.ts:242](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **exportable?**: `boolean`
 
-Defined in: [src/core/signing/local.ts:241](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L241)
+Defined in: [src/core/signing/local.ts:258](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L258)
 
 ***
 
@@ -32,7 +35,7 @@ Defined in: [src/core/signing/local.ts:241](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **id?**: `string`
 
-Defined in: [src/core/signing/local.ts:239](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L239)
+Defined in: [src/core/signing/local.ts:256](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L256)
 
 ***
 
@@ -42,4 +45,4 @@ Defined in: [src/core/signing/local.ts:239](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **passphrase?**: [`Secret`](../classes/Secret.md)\<`string`\>
 
-Defined in: [src/core/signing/local.ts:240](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L240)
+Defined in: [src/core/signing/local.ts:257](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/local.ts#L257)

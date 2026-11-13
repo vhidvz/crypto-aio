@@ -2,7 +2,9 @@
 
 # Interface: FeeEstimate
 
-Defined in: [src/core/model/fee.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L31)
+Defined in: [src/core/model/fee.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L46)
+
+What a transfer will pay in fees, from `bc.estimateFee` or a built transaction.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/model/fee.ts:31](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **bound**: [`FeeBound`](../type-aliases/FeeBound.md)
 
-Defined in: [src/core/model/fee.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L35)
+Defined in: [src/core/model/fee.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L53)
 
 ***
 
@@ -22,7 +24,9 @@ Defined in: [src/core/model/fee.ts:35](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **charges**: readonly [`FeeCharge`](FeeCharge.md)[]
 
-Defined in: [src/core/model/fee.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L34)
+Defined in: [src/core/model/fee.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L52)
+
+A charge per asset and purpose.
 
 ***
 
@@ -32,7 +36,10 @@ Defined in: [src/core/model/fee.ts:34](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **details**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/model/fee.ts:37](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L37)
+Defined in: [src/core/model/fee.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L60)
+
+Family-specific facts (`EvmFeeDetails`, `TronFeeDetails`, ...). A plain record through
+1.x; each family exports the type of the fields it sets.
 
 ***
 
@@ -42,7 +49,9 @@ Defined in: [src/core/model/fee.ts:37](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **kind**: `string`
 
-Defined in: [src/core/model/fee.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L32)
+Defined in: [src/core/model/fee.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L48)
+
+The fee model, such as `evm-1559` or `utxo`.
 
 ***
 
@@ -52,7 +61,9 @@ Defined in: [src/core/model/fee.ts:32](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` `optional` **payer?**: [`Address`](../classes/Address.md)
 
-Defined in: [src/core/model/fee.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L36)
+Defined in: [src/core/model/fee.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L55)
+
+The address that pays the fee, when the family names it (TON: the sending wallet).
 
 ***
 
@@ -62,4 +73,6 @@ Defined in: [src/core/model/fee.ts:36](https://github.com/vhidvz/crypto-aio/blob
 
 > `readonly` **speed**: [`FeeSpeed`](../type-aliases/FeeSpeed.md) \| `"custom"`
 
-Defined in: [src/core/model/fee.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L33)
+Defined in: [src/core/model/fee.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/fee.ts#L50)
+
+The speed it was priced at, or `custom` for an explicit override.

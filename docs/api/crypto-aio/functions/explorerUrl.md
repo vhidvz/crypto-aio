@@ -4,7 +4,9 @@
 
 > **explorerUrl**(`network`, `kind`, `value`): `string` \| `undefined`
 
-Defined in: [src/core/model/chain.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L58)
+Defined in: [src/core/model/chain.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/chain.ts#L77)
+
+The explorer URL of a transaction or an address, when the network has a template.
 
 ## Parameters
 

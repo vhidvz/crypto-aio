@@ -36,15 +36,24 @@ decimals here (a `bigint` amount is in nAVAX), not the C-Chain's 18.
   outputs are listed by `ext.avalanche.listUnspent`, not spent). Outputs held by another live
   Operation are left out. Every input is signed with the same secp256k1 signature, over the
   SHA-256 of the unsigned transaction; the id is known only after signing.
-- **Fees.** The X-Chain fee is read under the proof quorum and every speed pays it. The
-  P-Chain fee is the transaction's gas times a gas price: the endpoint's current price times
-  1.1 (`slow`), 1.5 (`normal`) or 2 (`fast`), or `{ gasPrice }` (nAVAX per gas). Two options
-  bound them: `options.maxFee` (default 0.1 AVAX) and, on the P-Chain, `options.maxGasPrice`
-  (default 10,000). A P-Chain transaction that burns less than the price at the time it is
-  verified is refused (`FEE_TOO_LOW`) and stays `stalled` until the price falls and it is
-  sent again.
+- **Fees.** The X-Chain fee is fixed (0.001 AVAX), read under the proof quorum, and every
+  speed pays it; an X-Chain override fails with `INVALID_INTENT`. The P-Chain fee is the
+  transaction's gas times a gas price: the endpoint's current price times 1.1 (`slow`), 1.5
+  (`normal`) or 2 (`fast`), rounded up, or an override `{ gasPrice }`, in nAVAX per unit of
+  gas as a `bigint` or a decimal integer string (`AvalancheFeeOverride`), at least the
+  chain's minimum gas price. Two options bound them, which no endpoint can raise:
+  `options.maxFee`, nAVAX as a `bigint` (default 0.1 AVAX), and on the P-Chain
+  `options.maxGasPrice`, nAVAX per unit of gas (default 10,000). An endpoint whose reported
+  price is above `maxGasPrice` decides nothing (a retryable `PROVIDER_UNAVAILABLE`); a speed
+  whose margin, or an override that, lifts the price above it fails with a non-retryable
+  `INVALID_INTENT` before signing: raise the option, or pick a slower speed. A P-Chain
+  transaction that burns less than the price at the time it is verified is refused
+  (`FEE_TOO_LOW`) and stays `stalled` with its inputs held: with no replace and no expiry,
+  retry it with `bc.rebroadcast(id)` once the price has fallen.
 - **No replace or cancel.** AvalancheGo keeps the first of two conflicting transactions,
   and an accepted one is final.
+- **Limits.** A transfer pays at most 127 outputs (128 with its change) and spends at most
+  128 inputs.
 - **Broadcasts.** A node's refusal never ends a transfer as `TX_REJECTED`: the driver checks
   every transaction before it is signed, so each refusal is `refused` (`FEE_TOO_LOW` or
   `TX_REFUSED`, with a fixed reason, never the node's text), and the transfer stalls with
@@ -60,8 +69,32 @@ decimals here (a `bigint` amount is in nAVAX), not the C-Chain's 18.
   accepted before the chain's linearization (April 2023) has no block and reads as not seen.
 - **Keys.** The derivation path is BIP44's `m/44'/9000'/0'/0/i`. Avalanche wallets export an
   `xpub` on every network, so `deriveAddress` accepts one on Fuji too.
-- **Not yet.** Avalanche native tokens (ANTs), cross-chain import and export, staking.
+- **Not supported.** Avalanche native tokens (ANTs), cross-chain import and export, staking.
+  `ext.avalanche.listUnspent` already lists ANT outputs, with their `assetId`.
 - **Live checks (this repository).** `CRYPTO_AIO_INTEGRATION=1` runs the read-only checks in
   `test/integration/avalanche.test.ts` against Fuji (`CRYPTO_AIO_IT_AVALANCHE_NETWORK=mainnet`
   for mainnet); `CRYPTO_AIO_IT_AVALANCHE_{X,P}_RPC_URL` and `…_INDEXER_URL` point them at
   other endpoints.
+
+## Fee overrides, fee details and `ext.avalanche`
+
+These shapes, exported as types from `crypto-aio/avalanche`, are what semver covers for the
+Avalanche family ([Versioning and stability](../stability.md)). The core types they fill
+(`TransferIntent.fee`, `FeeEstimate.details`) stay plain records. The entry point's
+SDK-shaped types (`AvalancheNativeClient`, `AvalancheSdk` and the `Sdk*` interfaces) mirror
+`@avalabs/avalanchejs` and follow it, as `crypto-aio/native` does: they are not covered.
+
+- **`AvalancheFeeOverride`**: `{ gasPrice }`, P-Chain only, as above.
+- **`AvalancheFeeDetails`**: `model` (`'static'` on the X-Chain, `'dynamic'` on the
+  P-Chain), `txFee` (X-Chain) or `gasPrice` and `gas` (P-Chain), `inputs` and `outputs`
+  (counts, change included) and `change` (nAVAX, `0n` without change).
+- **`ext.avalanche.listUnspent(address)`** returns `AvalancheUnspent[]`, the outputs the
+  address owns on the chain, largest first, from the node: `utxoId` (`txId:outputIndex`),
+  `txId`, `outputIndex`, `assetId` (cb58), `amount`, `locktime` (Unix seconds, `0n` for
+  none), `threshold`, and `spendable`, whether a transfer from the address may spend it
+  (AVAX, unlocked, threshold 1, owned by it alone).
+
+`native(bc, '@avalabs/avalanchejs')` returns an `AvalancheNativeClient`: the SDK
+(`avalanche`), its `context`, and an `rpc(method, params?)` over the handle's transport,
+which never sees the real URL or key. A transaction you send through it is not an
+Operation, and the library does not track it.

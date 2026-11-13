@@ -2,9 +2,9 @@
 
 # Interface: SdkOutputOwners
 
-Defined in: [src/adapters/avalanche/sdk.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L33)
+Defined in: [src/adapters/avalanche/sdk.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L38)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `OutputOwners` this library uses; it mirrors the SDK, outside semver.
 
 ## Properties
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > `readonly` **addrs**: readonly [`SdkAddress`](SdkAddress.md)[]
 
-Defined in: [src/adapters/avalanche/sdk.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L36)
+Defined in: [src/adapters/avalanche/sdk.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L41)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:36](https://github.com/vhidvz/crypto-
 
 > `readonly` **locktime**: [`SdkBigInt`](SdkBigInt.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L34)
+Defined in: [src/adapters/avalanche/sdk.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L39)
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: [src/adapters/avalanche/sdk.ts:34](https://github.com/vhidvz/crypto-
 
 > `readonly` **threshold**: [`SdkInt`](SdkInt.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L35)
+Defined in: [src/adapters/avalanche/sdk.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L40)

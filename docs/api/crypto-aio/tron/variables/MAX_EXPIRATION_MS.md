@@ -4,7 +4,7 @@
 
 > `const` **MAX\_EXPIRATION\_MS**: `300000` = `300_000`
 
-Defined in: [src/adapters/tron/network.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L29)
+Defined in: [src/adapters/tron/network.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/tron/network.ts#L32)
 
 The longest expiration window this driver builds. The negative inclusion proof does
 not depend on it: it scans from the reference block to the signed expiration.

@@ -2,9 +2,9 @@
 
 # Interface: SdkUtxo
 
-Defined in: [src/adapters/avalanche/sdk.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L63)
+Defined in: [src/adapters/avalanche/sdk.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L72)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `Utxo` this library uses; it mirrors the SDK, outside semver.
 
 ## Extends
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:13](https://github.com/vhidvz/crypto-
 
 > `readonly` **assetId**: [`SdkId`](SdkId.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L65)
+Defined in: [src/adapters/avalanche/sdk.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L74)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:65](https://github.com/vhidvz/crypto-
 
 > `readonly` **output**: [`SdkSerializable`](SdkSerializable.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L66)
+Defined in: [src/adapters/avalanche/sdk.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L75)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:66](https://github.com/vhidvz/crypto-
 
 > `readonly` **utxoId**: [`SdkUtxoId`](SdkUtxoId.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L64)
+Defined in: [src/adapters/avalanche/sdk.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L73)
 
 ## Methods
 
@@ -62,7 +62,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:64](https://github.com/vhidvz/crypto-
 
 > **toBytes**(`codec`): `Uint8Array`
 
-Defined in: [src/adapters/avalanche/sdk.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L68)
+Defined in: [src/adapters/avalanche/sdk.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L77)
 
 Its bytes without the codec version, in `codec`.
 

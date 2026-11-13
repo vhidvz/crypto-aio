@@ -2,7 +2,11 @@
 
 # Interface: CallbackSignerOptions
 
-Defined in: [src/core/signing/callback.ts:4](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L4)
+Defined in: [src/core/signing/callback.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L9)
+
+`callbackSigner()`'s options: the signer's `id`, the schemes its key signs with (every
+scheme a wallet needs must be listed), and the callbacks that reach your custody system.
+`cancelRequest`, when given, is called with a pending request's ticket on `abandon`.
 
 ## Properties
 
@@ -12,7 +16,7 @@ Defined in: [src/core/signing/callback.ts:4](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **cancelRequest?**: (`ticket`) => `Promise`\<`void`\>
 
-Defined in: [src/core/signing/callback.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L9)
+Defined in: [src/core/signing/callback.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L14)
 
 #### Parameters
 
@@ -32,7 +36,9 @@ Defined in: [src/core/signing/callback.ts:9](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **getPublicKey**: (`scheme`, `keyRef?`) => `Promise`\<`Uint8Array`\<`ArrayBufferLike`\>\>
 
-Defined in: [src/core/signing/callback.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L7)
+Defined in: [src/core/signing/callback.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L12)
+
+The public key it signs with under `scheme`, for `keyRef`.
 
 #### Parameters
 
@@ -56,7 +62,7 @@ Defined in: [src/core/signing/callback.ts:7](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/signing/callback.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L5)
+Defined in: [src/core/signing/callback.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L10)
 
 ***
 
@@ -66,7 +72,7 @@ Defined in: [src/core/signing/callback.ts:5](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **schemes**: readonly `string`[]
 
-Defined in: [src/core/signing/callback.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L6)
+Defined in: [src/core/signing/callback.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L11)
 
 ***
 
@@ -76,7 +82,10 @@ Defined in: [src/core/signing/callback.ts:6](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **sign**: (`requests`, `ctx`) => `Promise`\<[`SigningResult`](../type-aliases/SigningResult.md)\>
 
-Defined in: [src/core/signing/callback.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L8)
+Defined in: [src/core/signing/callback.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/callback.ts#L13)
+
+Signs every request, or answers `pending` with a ticket. Check `ctx` against your
+policy here or in `beforeSign`; the core verifies each signature it gets back.
 
 #### Parameters
 

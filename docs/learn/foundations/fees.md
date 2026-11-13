@@ -74,8 +74,9 @@ transaction that does not land expires, and is then re-issued.
 A fee estimate is a prediction made before the transaction runs. On Bitcoin, once the
 transaction is built, its fee is exact. On EVM chains the estimate is an **upper bound**: the
 sender commits to a maximum, and usually pays less. Some layer-2 chains (OP Stack chains such
-as Optimism and Base) add a second fee for posting data to Ethereum, which moves with Ethereum's
-own prices. And the estimate itself comes from a node: a buggy or malicious node can suggest an
+as Optimism and Base) add a fee for posting data to Ethereum, which moves with Ethereum's own
+prices, and an operator fee their operator sets; crypto-aio reports them as separate `l1-data`
+and `operator` charges. And the estimate itself comes from a node: a buggy or malicious node can suggest an
 absurd fee, so careful systems cap what they are willing to sign.
 
 </details>

@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import type { CursorStore } from '../../core/store/types';
 import { rejectsWithCode, rejectsWithCodeKeepingOut, type ContractTestApi } from './api';
 
+/** What `describeCursorStoreContract` tests: a fresh cursor store. */
 export interface CursorHarness {
   readonly cursors: CursorStore;
 }
 
+/**
+ * The `CursorStore` contract suite: run it against your store, with `create` returning a
+ * fresh, empty store for each test.
+ */
 export function describeCursorStoreContract(
   api: ContractTestApi,
   create: () => CursorHarness | Promise<CursorHarness>,

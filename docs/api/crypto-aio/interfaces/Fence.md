@@ -2,7 +2,9 @@
 
 # Interface: Fence
 
-Defined in: [src/core/store/types.ts:206](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L206)
+Defined in: [src/core/store/types.ts:274](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L274)
+
+The claim token a write must still hold; a write after a takeover fails with `FENCING`.
 
 ## Properties
 
@@ -12,4 +14,4 @@ Defined in: [src/core/store/types.ts:206](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **claimToken**: `string`
 
-Defined in: [src/core/store/types.ts:207](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L207)
+Defined in: [src/core/store/types.ts:275](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L275)

@@ -4,7 +4,10 @@
 
 > **sampleOperation**(`overrides?`): [`NewOperation`](../../type-aliases/NewOperation.md)
 
-Defined in: [src/testing/contracts/operations.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L24)
+Defined in: [src/testing/contracts/operations.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/operations.ts#L28)
+
+A new Operation for store tests, in namespace `ns` with a fresh id and idempotency key on
+every call, and `overrides` over it.
 
 ## Parameters
 

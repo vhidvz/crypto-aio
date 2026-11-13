@@ -8,8 +8,9 @@ description: "The EVM chains: networks, fees, tokens, presets and the fee ceilin
 One EVM driver serves every chain below, with either library: `ethers` (v6, the default) or
 `web3` (v4). ChainSafe sunset web3.js in 2025, and 4.16.0 is its last release, with no
 further fixes, so `library: 'web3'` is **deprecated**: crypto-aio keeps it working and
-tested through 1.x, warns once per process (a `DeprecationWarning`, code `CRYPTO_AIO_WEB3`),
-and removes it in 2.0. Use `ethers`.
+tested through 1.x (unless a security issue in web3 forces its removal sooner, as a safety
+fix the changelog announces), warns once per process (a `DeprecationWarning`, code
+`CRYPTO_AIO_WEB3`), and removes it in 2.0. Use `ethers`.
 The [Build guides](../../build/index.md) cover EVM [fees](../../build/send.md#fees),
 [replacements](../../build/stalled.md), [token verdicts and proofs](../../build/confirmations.md) and
 [scans](../../build/receive.md); [Keys, signers and secrets](../../build/keys.md) covers the
@@ -37,9 +38,11 @@ ethers and web3 clients.
   verdict reads the event of the contract you sent to. So every token estimate first reads
   the contract's `deprecated()` (one `eth_call` from one endpoint), and a token that answers
   `true` is refused before signing with `ASSET_RESOLUTION`, whose message names no address.
-  Send to the upgraded contract by contract, or register it as an asset, until a release
-  moves the `USDT` alias there. A contract without the method (a revert, an empty answer, or
-  anything but an ABI `bool`) is not deprecated, and a failed read stays retryable.
+  Send to the upgraded contract by contract, or register it as an asset. The `USDT` alias
+  keeps naming the contract it names now through 1.x: the intent hash behind an idempotency
+  key covers the resolved asset, so moving an alias would change it, and an alias moves only
+  in a major release. A contract without the method (a revert, an empty answer, or anything
+  but an ABI `bool`) is not deprecated, and a failed read stays retryable.
 - **OP Stack fees.** On OP Mainnet, Base, their testnets and a custom network with
   `params.l1DataFee: 'op-stack'`, every estimate, replacement and cancel also reads the
   `GasPriceOracle` predeploy, two calls side by side. `l1-data` is its `getL1Fee` for the
@@ -76,9 +79,32 @@ ethers and web3 clients.
   less gas than it needs runs out and still pays. An explicit `gasLimit` above it is
   refused before any request. Arbitrum's estimates count the L1 data fee in L2 gas, so
   they grow with L1 prices: leave that bound generous.
+- **Addresses.** EIP-55 checksummed. `bc.deriveAddress(wallet, index)` derives addresses
+  from a wallet's `xpub` (`xpubPath`, default `0/{index}`) on every network.
 - **Types.** The declarations of `crypto-aio/evm` name both ethers' and web3's types, so with
   only one of them installed keep `skipLibCheck: true` (the `tsc --init` default), or install
   the other too.
-- **Not in this release:** address history (it needs an indexer; `history()` throws
+- **Not supported:** address history (it needs an indexer; `history()` throws
   `UNSUPPORTED_CAPABILITY`), contract calls other than ERC-20 `transfer`, and `ext.evm`
   beyond `getNonce`.
+
+## Fee overrides, fee details and `ext.evm`
+
+These shapes, exported as types from `crypto-aio/evm`, are what semver covers for the EVM
+family ([Versioning and stability](../stability.md)). The core types they fill
+(`TransferIntent.fee`, `FeeEstimate.details`) stay plain records.
+
+- **`EvmFeeOverride`**, an explicit `fee` for a transfer, `replace` or `cancel`, in wei and
+  gas as `bigint`s: `{ maxFeePerGas, maxPriorityFeePerGas, gasLimit? }` on an `evm-1559`
+  chain, `{ gasPrice, gasLimit? }` on an `evm-legacy` one; any other key, a non-`bigint`, a
+  tip above the fee cap, or a `gasLimit` below 21,000 fails with `INVALID_INTENT`. An
+  override is signed as given within `maxFeePerGas` and `maxGasLimit`: the chain's own tip
+  floor (Polygon's 25 gwei) applies to estimates, not to overrides, so an override below it
+  is signed and then stalls.
+- **`EvmFeeDetails`**, the `details` of an EVM `FeeEstimate`: `gasLimit`, `expected` (what
+  the transaction is expected to pay, in wei), `maxFeePerGas` and `maxPriorityFeePerGas`
+  (`evm-1559`) or `gasPrice` (`evm-legacy`), `baseFeePerGas` (`evm-1559`: the base fee the
+  estimate expects for the next block), and on OP Stack chains `l1Fee` and `operatorFee`.
+  The `network` charge is the upper bound of `expected`.
+- **`ext.evm.getNonce(address, block?)`** returns the address's transaction count as a
+  `bigint`, at `'latest'` (the default) or `'pending'`, from one endpoint.

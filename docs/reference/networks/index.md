@@ -15,13 +15,13 @@ design; this page and its children are the reference.
 
 | Family | Chains (networks) | Ordering | Status |
 | --- | --- | --- | --- |
-| fake | `fakechain`, `fakeexpiry`, `fakeseqno` (`local`) | nonce, expiry, seqno | **Works today**, from `crypto-aio/testing` (register `fakePlugin()`) |
-| EVM (ethers, web3) | Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | nonce | **Works today**, built in ([details](./evm.md)) |
-| UTXO (bitcoinjs-lib + Esplora) | Bitcoin mainnet, testnet, testnet4, signet, regtest | inputs | **Works today**, built in ([details](./bitcoin.md)) |
-| Tron (tronweb) | mainnet, shasta, nile | expiry | **Works today**, built in ([details](./tron.md)) |
-| Solana (@solana/web3.js) | mainnet, devnet, testnet | expiry | **Works today**, built in ([details](./solana.md)) |
-| TON (@ton/ton) | mainnet, testnet | seqno + expiry | **Works today**, built in; needs an indexer ([details](./ton.md)) |
-| Avalanche (@avalabs/avalanchejs) | `avalanche-x`, `avalanche-p` (mainnet, fuji) | inputs | **Works today**, built in; needs an indexer ([details](./avalanche.md)) |
+| fake | `fakechain`, `fakeexpiry`, `fakeseqno` (`local`) | nonce, expiry, seqno | **Works**, from `crypto-aio/testing` (register `fakePlugin()`) |
+| EVM (ethers, web3) | Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | nonce | **Works**, built in ([details](./evm.md)) |
+| UTXO (bitcoinjs-lib + Esplora) | Bitcoin mainnet, testnet, testnet4, signet, regtest | inputs | **Works**, built in ([details](./bitcoin.md)) |
+| Tron (tronweb) | mainnet, shasta, nile | expiry | **Works**, built in ([details](./tron.md)) |
+| Solana (@solana/web3.js) | mainnet, devnet, testnet | expiry | **Works**, built in ([details](./solana.md)) |
+| TON (@ton/ton) | mainnet, testnet | seqno + expiry | **Works**, built in; needs an indexer ([details](./ton.md)) |
+| Avalanche (@avalabs/avalanchejs) | `avalanche-x`, `avalanche-p` (mainnet, fuji) | inputs | **Works**, built in; needs an indexer ([details](./avalanche.md)) |
 
 Built-in families register in the package's composition root. Install only the SDK you use
 (`npm install crypto-aio ethers`, or `bitcoinjs-lib` for Bitcoin, `tronweb` for Tron,
@@ -35,7 +35,7 @@ how to configure each family is in [Connect to a real network](../../build/conne
 | Library | Status |
 | --- | --- |
 | `ethers` 6 | Supported, the EVM default |
-| `web3` 4 | Deprecated: sunset upstream (4.16.0 is its last release). It works through 1.x, warns once per process (`CRYPTO_AIO_WEB3`), and is removed in 2.0; use ethers |
+| `web3` 4 | Deprecated: sunset upstream (4.16.0 is its last release). It works through 1.x (unless a security issue in web3 forces its removal sooner, as a safety fix the changelog announces), warns once per process (`CRYPTO_AIO_WEB3`), and is removed in 2.0; use ethers |
 | `bitcoinjs-lib` 7 | Supported, over an Esplora indexer |
 | `tronweb` 6 | Supported |
 | `@solana/web3.js` 1 or 3 | Supported; the driver builds messages itself, so the two lines differ only in `native()`'s `Connection` |
@@ -44,20 +44,20 @@ how to configure each family is in [Connect to a real network](../../build/conne
 | `@tonconnect/sdk` | Replaced by `@ton/ton`: TonConnect links dApps to user wallets; it is not a node SDK |
 | `@bnb-chain/javascript-sdk` | Unsupported: it targets the BNB Beacon Chain, shut down in 2024 (BNB Smart Chain is supported as EVM) |
 
-## What works, and what does not yet
+## What works, and what does not
 
 | Area | Status |
 | --- | --- |
-| Core: container, handles, configuration, Operations, idempotency, crash recovery, background workers, scanner, transport, signers | Works today |
-| Store interfaces, in-memory stores and the store contract suites | Works today |
-| Durable stores (Postgres, Redis, …) | Not shipped: bring your own ([Write a durable store](../../explore/stores.md)) |
-| Fake chain family (`fakechain`, `fakeexpiry`, `fakeseqno`) from `crypto-aio/testing` | Works today |
-| EVM: Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base (ethers, web3) | Works today; no address history yet (it needs an indexer) |
-| UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Works today; no tokens, no OP_RETURN memo |
-| Tron (tronweb) | Works today; address history needs an indexer provider (`trongrid` or `public`) |
-| Solana (@solana/web3.js) | Works today: SOL, classic SPL tokens, memos, scanning and history without an indexer |
-| TON (@ton/ton): Gram and jettons, v4r2 and v5r1 wallets | Works today; needs an indexer (toncenter API v3); one output per transfer; no block scan (TON is sharded) |
-| Avalanche X-Chain and P-Chain (@avalabs/avalanchejs) | Works today: AVAX, batches, X-Chain memos; needs an indexer (the Avalanche Data API); no replace or cancel; no Avalanche native tokens |
+| Core: container, handles, configuration, Operations, idempotency, crash recovery, background workers, scanner, transport, signers | Works |
+| Store interfaces, in-memory stores and the store contract suites | Works |
+| Durable stores (Postgres, Redis, …) | Not shipped: bring your own ([Write a durable store](../../explore/stores.md)); `examples/postgres-store` in the repository is a reference implementation on PostgreSQL |
+| Fake chain family (`fakechain`, `fakeexpiry`, `fakeseqno`) from `crypto-aio/testing` | Works |
+| EVM: Ethereum, BSC, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base (ethers, web3) | Works; no address history yet (it needs an indexer) |
+| UTXO / Bitcoin (bitcoinjs-lib with an Esplora indexer) | Works; no tokens, no OP_RETURN memo |
+| Tron (tronweb) | Works; address history needs an indexer provider (`trongrid` or `public`) |
+| Solana (@solana/web3.js) | Works: SOL, classic SPL tokens, memos, scanning and history without an indexer |
+| TON (@ton/ton): Gram and jettons, v4r2 and v5r1 wallets | Works; needs an indexer (toncenter API v3); one output per transfer; no block scan (TON is sharded) |
+| Avalanche X-Chain and P-Chain (@avalabs/avalanchejs) | Works: AVAX, batches, X-Chain memos; needs an indexer (the Avalanche Data API); no replace or cancel; no Avalanche native tokens |
 
 ## Provider presets
 

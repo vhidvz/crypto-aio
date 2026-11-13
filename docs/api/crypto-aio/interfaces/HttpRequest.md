@@ -2,7 +2,9 @@
 
 # Interface: HttpRequest
 
-Defined in: [src/core/transport/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L84)
+Defined in: [src/core/transport/types.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L125)
+
+A REST request to an endpoint, relative to its URL.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/transport/types.ts:84](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **body?**: `unknown`
 
-Defined in: [src/core/transport/types.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L88)
+Defined in: [src/core/transport/types.ts:131](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L131)
+
+Sent as it is when a string, else as JSON.
 
 ***
 
@@ -22,7 +26,7 @@ Defined in: [src/core/transport/types.ts:88](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **headers?**: `Readonly`\<`Record`\<`string`, `string`\>\>
 
-Defined in: [src/core/transport/types.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L89)
+Defined in: [src/core/transport/types.ts:132](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L132)
 
 ***
 
@@ -32,7 +36,7 @@ Defined in: [src/core/transport/types.ts:89](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **method**: `"GET"` \| `"POST"`
 
-Defined in: [src/core/transport/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L85)
+Defined in: [src/core/transport/types.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L126)
 
 ***
 
@@ -42,7 +46,9 @@ Defined in: [src/core/transport/types.ts:85](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **path**: `string`
 
-Defined in: [src/core/transport/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L86)
+Defined in: [src/core/transport/types.ts:128](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L128)
+
+Appended to the endpoint's URL.
 
 ***
 
@@ -52,7 +58,7 @@ Defined in: [src/core/transport/types.ts:86](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **query?**: `Readonly`\<`Record`\<`string`, `string`\>\>
 
-Defined in: [src/core/transport/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L87)
+Defined in: [src/core/transport/types.ts:129](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L129)
 
 ***
 
@@ -62,7 +68,7 @@ Defined in: [src/core/transport/types.ts:87](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **responseType?**: `"json"` \| `"text"` \| `"bytes"`
 
-Defined in: [src/core/transport/types.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L96)
+Defined in: [src/core/transport/types.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L139)
 
 How a 2xx answer is returned (default `'json'`): parsed JSON, the body as text, or its
 bytes unchanged as a `Uint8Array` (`'bytes'`, for a binary answer such as a serialized
@@ -77,7 +83,7 @@ block, which text decoding would corrupt). Every type is read under
 
 > `readonly` `optional` **route?**: `string`
 
-Defined in: [src/core/transport/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L102)
+Defined in: [src/core/transport/types.ts:145](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L145)
 
 Low-cardinality template label used for event and log method fields instead of the
 raw path, e.g. `'/address/:address/utxo'`. Must contain no identifiers (addresses,

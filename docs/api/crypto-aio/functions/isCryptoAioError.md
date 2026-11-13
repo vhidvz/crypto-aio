@@ -4,7 +4,9 @@
 
 > **isCryptoAioError**(`value`, `code?`): `value is CryptoAioError`
 
-Defined in: [src/core/errors/error.ts:148](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L148)
+Defined in: [src/core/errors/error.ts:174](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L174)
+
+Whether `value` is a `CryptoAioError`, of `code` when given.
 
 ## Parameters
 

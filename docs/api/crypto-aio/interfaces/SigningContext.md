@@ -2,7 +2,7 @@
 
 # Interface: SigningContext
 
-Defined in: [src/core/signing/types.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L47)
+Defined in: [src/core/signing/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L62)
 
 Context handed to signers and policy hooks. Never contains secrets or SDK objects.
 
@@ -14,7 +14,7 @@ Context handed to signers and policy hooks. Never contains secrets or SDK object
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/signing/types.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L50)
+Defined in: [src/core/signing/types.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L65)
 
 ***
 
@@ -24,7 +24,9 @@ Defined in: [src/core/signing/types.ts:50](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **fee**: [`FeeEstimateDraft`](FeeEstimateDraft.md)
 
-Defined in: [src/core/signing/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L56)
+Defined in: [src/core/signing/types.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L75)
+
+The fee the transaction pays.
 
 ***
 
@@ -34,7 +36,7 @@ Defined in: [src/core/signing/types.ts:56](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **namespace**: `string`
 
-Defined in: [src/core/signing/types.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L49)
+Defined in: [src/core/signing/types.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L64)
 
 ***
 
@@ -44,7 +46,7 @@ Defined in: [src/core/signing/types.ts:49](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/signing/types.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L51)
+Defined in: [src/core/signing/types.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L66)
 
 ***
 
@@ -54,7 +56,7 @@ Defined in: [src/core/signing/types.ts:51](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **operationId**: `string`
 
-Defined in: [src/core/signing/types.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L48)
+Defined in: [src/core/signing/types.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L63)
 
 ***
 
@@ -64,7 +66,7 @@ Defined in: [src/core/signing/types.ts:48](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **purpose**: [`SigningPurpose`](../type-aliases/SigningPurpose.md)
 
-Defined in: [src/core/signing/types.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L54)
+Defined in: [src/core/signing/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L71)
 
 ***
 
@@ -74,7 +76,9 @@ Defined in: [src/core/signing/types.ts:54](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **summary**: [`IntentSummary`](IntentSummary.md)
 
-Defined in: [src/core/signing/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L55)
+Defined in: [src/core/signing/types.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L73)
+
+What the transaction pays, as the driver describes its payload.
 
 ***
 
@@ -84,7 +88,9 @@ Defined in: [src/core/signing/types.ts:55](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **tier?**: `string`
 
-Defined in: [src/core/signing/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L53)
+Defined in: [src/core/signing/types.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L70)
+
+The wallet's `tier`, when set.
 
 ***
 
@@ -94,7 +100,9 @@ Defined in: [src/core/signing/types.ts:53](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **unsignedHash**: `string`
 
-Defined in: [src/core/signing/types.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L57)
+Defined in: [src/core/signing/types.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L77)
+
+A hash of the unsigned payload, the same for every request of one transaction.
 
 ***
 
@@ -104,4 +112,6 @@ Defined in: [src/core/signing/types.ts:57](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **wallet**: `string`
 
-Defined in: [src/core/signing/types.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L52)
+Defined in: [src/core/signing/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L68)
+
+The wallet's name.

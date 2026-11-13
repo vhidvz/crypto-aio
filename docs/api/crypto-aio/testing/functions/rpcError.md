@@ -4,7 +4,9 @@
 
 > **rpcError**(`request`, `code`, `message`): [`FakeReply`](../type-aliases/FakeReply.md)
 
-Defined in: [src/testing/fake-fetch.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L108)
+Defined in: [src/testing/fake-fetch.ts:114](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L114)
+
+A JSON-RPC error answering `request`.
 
 ## Parameters
 

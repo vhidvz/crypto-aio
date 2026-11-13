@@ -193,6 +193,47 @@ describe('Blockchain handle', () => {
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
   });
 
+  it('refuses a plugin driver that lacks a capability its manifest declares, or orders otherwise than its chain', async () => {
+    const lying = (
+      edit: (driver: Awaited<ReturnType<typeof fakeDriverFactory.create>>) => object,
+    ): AdapterManifest => ({
+      family: 'fake',
+      library: 'lying-sdk',
+      chains: ['fakechain'],
+      capabilities: [...fakeManifest.capabilities, 'address-history'],
+      peerDependencies: [],
+      load: async () => ({
+        create: async (ctx) => {
+          const driver = await fakeDriverFactory.create(ctx);
+          return { ...driver, ...edit(driver) } as typeof driver;
+        },
+      }),
+    });
+    const cases: [AdapterManifest, RegExp][] = [
+      // The manifest grants address-history; the driver never declares it.
+      [lying(() => ({})), /does not implement address-history/],
+      [
+        lying((driver) => ({
+          capabilities: new Set([...driver.capabilities, 'address-history']),
+          ordering: 'inputs',
+        })),
+        /orders by 'inputs', but the chain says 'nonce'/,
+      ],
+    ];
+    for (const [manifest, message] of cases) {
+      const env = await createFakeEnv();
+      env.aio.use({ name: 'lying', adapters: [manifest] });
+      const bc = env.aio.blockchain({
+        chain: 'fakechain',
+        network: 'local',
+        library: 'lying-sdk' as 'fake-sdk',
+      });
+      const error: unknown = await env.run(bc.getBlockHeight()).catch((e: unknown) => e);
+      expect(error).toMatchObject({ code: 'CONFIG_INVALID' });
+      expect((error as Error).message).toMatch(message);
+    }
+  });
+
   it('validates and normalizes addresses', async () => {
     const env = await createFakeEnv();
     expect(await env.run(env.bc.validateAddress('nope'))).toBe(false);

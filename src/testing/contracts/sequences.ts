@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import type { SequenceStore } from '../../core/store/types';
 import { rejectsWithCode, rejectsWithCodeKeepingOut, type ContractTestApi } from './api';
 
+/** What `describeSequenceStoreContract` tests: a fresh sequence store. */
 export interface SequenceHarness {
   readonly sequences: SequenceStore;
 }
 
+/**
+ * The `SequenceStore` contract suite: run it against your store, with `create` returning a
+ * fresh, empty store for each test.
+ */
 export function describeSequenceStoreContract(
   api: ContractTestApi,
   create: () => SequenceHarness | Promise<SequenceHarness>,

@@ -2,7 +2,9 @@
 
 # Interface: Checkpoint
 
-Defined in: [src/core/observe/scanner.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L43)
+Defined in: [src/core/observe/scanner.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L47)
+
+A block by height and hash: where a rollback goes back to, and what it removed.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/observe/scanner.ts:43](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/core/observe/scanner.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L45)
+Defined in: [src/core/observe/scanner.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L49)
 
 ***
 
@@ -22,4 +24,4 @@ Defined in: [src/core/observe/scanner.ts:45](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/core/observe/scanner.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L44)
+Defined in: [src/core/observe/scanner.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L48)

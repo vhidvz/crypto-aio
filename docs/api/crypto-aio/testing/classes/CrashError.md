@@ -2,7 +2,9 @@
 
 # Class: CrashError
 
-Defined in: [src/testing/faulty-store.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L13)
+Defined in: [src/testing/faulty-store.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L14)
+
+What a `FaultyOperationStore` throws at a fault point: a simulated process death.
 
 ## Extends
 
@@ -16,7 +18,7 @@ Defined in: [src/testing/faulty-store.ts:13](https://github.com/vhidvz/crypto-ai
 
 > **new CrashError**(): `CrashError`
 
-Defined in: [src/testing/faulty-store.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L14)
+Defined in: [src/testing/faulty-store.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/faulty-store.ts#L15)
 
 #### Returns
 

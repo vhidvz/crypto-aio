@@ -2,7 +2,7 @@
 
 # Interface: SignerTicket
 
-Defined in: [src/core/signing/types.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L39)
+Defined in: [src/core/signing/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L53)
 
 A pending signer's ticket, kept with the signer that issued it (only it can cancel it).
 
@@ -14,7 +14,7 @@ A pending signer's ticket, kept with the signer that issued it (only it can canc
 
 > `readonly` **signerId**: `string`
 
-Defined in: [src/core/signing/types.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L40)
+Defined in: [src/core/signing/types.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L54)
 
 ***
 
@@ -24,4 +24,4 @@ Defined in: [src/core/signing/types.ts:40](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **ticket**: `string`
 
-Defined in: [src/core/signing/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L41)
+Defined in: [src/core/signing/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L55)

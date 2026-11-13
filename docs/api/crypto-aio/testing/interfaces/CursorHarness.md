@@ -2,7 +2,9 @@
 
 # Interface: CursorHarness
 
-Defined in: [src/testing/contracts/cursors.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/cursors.ts#L5)
+Defined in: [src/testing/contracts/cursors.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/cursors.ts#L6)
+
+What `describeCursorStoreContract` tests: a fresh cursor store.
 
 ## Properties
 
@@ -12,4 +14,4 @@ Defined in: [src/testing/contracts/cursors.ts:5](https://github.com/vhidvz/crypt
 
 > `readonly` **cursors**: [`CursorStore`](../../interfaces/CursorStore.md)
 
-Defined in: [src/testing/contracts/cursors.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/cursors.ts#L6)
+Defined in: [src/testing/contracts/cursors.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/cursors.ts#L7)

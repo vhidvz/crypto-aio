@@ -4,4 +4,6 @@
 
 > `const` **REVERT\_ADDRESS**: `string`
 
-Defined in: [src/testing/fake-chain.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L79)
+Defined in: [src/testing/fake-chain.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L100)
+
+A recipient whose transfers the fake chain includes as failed (reverted).

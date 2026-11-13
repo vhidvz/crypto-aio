@@ -61,9 +61,9 @@ type TrialOutcome<T> =
 
 const MAX_RETRY_AFTER_MS = 60_000;
 /** Consecutive failed health refreshes (identity or height probe, or failing requests)
- * after which an endpoint stops counting toward a proof quorum's size (a sustained
- * outage, not a hiccup). Liveness traded against safety: with two endpoints, the other
- * one then proves alone, so proof reads want three or more. */
+ * after which an endpoint counts as down (a sustained outage, not a hiccup). A proof
+ * quorum's size still counts it unless `degradedProofs` is on: only then do the others
+ * prove without it, which with two endpoints leaves one proving alone. */
 const HEALTH_MISS_LIMIT = 3;
 const TIMEOUT = new Error('transport timeout');
 /**
@@ -669,12 +669,24 @@ export class HttpTransport implements Transport {
     const tried = new Set<string>();
     let last: CryptoAioError | undefined;
     let mayHaveSent = false;
-    for (let attempt = 0; attempt < attempts; attempt++) {
+    // Endpoints that refused this call for their own limit (`endpointLimit`): never asked
+    // again by it.
+    const limited = new Set<string>();
+    // `attempt` counts the failures that use up a retry; `request` counts every request,
+    // including those an endpoint refused for its own limit.
+    let attempt = 0;
+    for (let request = 0; attempt < attempts; request++) {
       let endpoint: Endpoint;
       try {
         // The raw call-level override (possibly undefined) is passed through
         // so #pick can fall back to the endpoint's own timeoutMs, matching #attempt.
-        endpoint = await this.#pick(purpose, tried, options.signal, options.timeoutMs);
+        endpoint = await this.#pick(
+          purpose,
+          tried,
+          options.signal,
+          options.timeoutMs,
+          limited,
+        );
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (last) break;
@@ -682,16 +694,29 @@ export class HttpTransport implements Transport {
       }
       tried.add(endpoint.id);
       try {
-        return await this.#attempt(endpoint, label, attempt, options, work);
+        return await this.#attempt(endpoint, label, request, options, work);
       } catch (error) {
         const { failure, definitive } = this.#endpointFailure(error, options);
         if (this.#maybeDelivered.has(failure)) mayHaveSent = true;
-        if (definitive)
+        if (definitive) {
+          // A refusal for the endpoint's own limit says nothing about the request: the
+          // call asks the other endpoints, without using up a retry or backing off, and
+          // never this one again. Each endpoint refuses this way at most once, so the loop
+          // ends; the refusal stands once no other endpoint is left.
+          if (options.endpointLimit?.(failure) === true) {
+            limited.add(endpoint.id);
+            if (this.#candidates(purpose).some((e) => !limited.has(e.id))) {
+              last = failure;
+              continue;
+            }
+          }
           throw this.#externalize(this.#finalize(failure, retry, mayHaveSent));
+        }
         last = failure;
+        attempt++;
         // A rate-limit wait is #pick's job; only back off for other failures.
-        if (attempt + 1 < attempts && failure.code !== 'RATE_LIMITED') {
-          await this.#clock.sleep(this.#delay(attempt), options.signal);
+        if (attempt < attempts && failure.code !== 'RATE_LIMITED') {
+          await this.#clock.sleep(this.#delay(attempt - 1), options.signal);
         }
       }
     }
@@ -1193,15 +1218,17 @@ export class HttpTransport implements Transport {
   /** Picks the best available endpoint, waiting only when every structurally-usable
    * endpoint is still rate-limited, and only until the earliest one frees up.
    * That wait is bounded by the call's timeoutMs — a wait longer than that
-   * fails at once with a retryable rate-limit error instead of stalling the whole call. */
+   * fails at once with a retryable rate-limit error instead of stalling the whole call.
+   * Endpoints in `skip` are never picked. */
   async #pick(
     purpose: RequestPurpose,
     tried: ReadonlySet<string>,
     signal: AbortSignal | undefined,
     callTimeoutMs: number | undefined,
+    skip: ReadonlySet<string>,
   ): Promise<Endpoint> {
     for (;;) {
-      const eligible = this.#eligible(purpose);
+      const eligible = this.#eligible(purpose).filter((e) => !skip.has(e.id));
       if (eligible.length > 0) {
         const untried = eligible.filter((e) => !tried.has(e.id));
         const pool = untried.length > 0 ? untried : eligible;
@@ -1210,7 +1237,7 @@ export class HttpTransport implements Transport {
           (pool[0] as Endpoint)
         );
       }
-      const waiting = this.#candidates(purpose);
+      const waiting = this.#candidates(purpose).filter((e) => !skip.has(e.id));
       if (waiting.length === 0) throw this.#noHealthyEndpoint();
       const earliest = waiting.reduce((min, e) =>
         e.notBefore < min.notBefore ? e : min,

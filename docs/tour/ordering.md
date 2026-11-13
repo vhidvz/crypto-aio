@@ -82,11 +82,13 @@ console.log(a.chain.nonce(a.address)); // 4n
 Reusing a slot is safe only if no valid signed transaction can exist for it. So the rule is
 strict:
 
-- **Before signing**, a slot returns to the pool when the Operation fails (funds, policy veto),
-  is abandoned, or when every Attempt holding it was rejected as never valid.
-- **After signing**, the slot belongs to its Operation permanently. The only ways forward are
-  the Operation's own: resend the same bytes, replace or cancel in the same slot, or prove the
-  Attempt dead.
+- **Before signing**, a slot returns to the pool when the Operation fails (funds, policy veto)
+  or is abandoned.
+- **After signing**, the slot belongs to its Operation. The only ways forward are the
+  Operation's own: resend the same bytes, replace or cancel in the same slot, or prove the
+  Attempt dead. One verdict returns it: when every Attempt holding it was rejected as never
+  valid (`TX_REJECTED`), no valid signed transaction exists for the slot, so the Operation
+  fails and the slot goes back.
 
 A slot is never freed because a transaction "disappeared" from a mempool. Absence is not proof,
 and handing a signed nonce to a different payment is how two payments end up competing for it.
@@ -94,10 +96,11 @@ and handing a signed nonce to a different payment is how two payments end up com
 ## Gaps, conflicts and busy wallets
 
 - **Nonce gaps.** A `stalled` Operation can hold a nonce that later transactions queue behind. The
-  monitor notices when the chain's pending nonce sits below the lowest outstanding reservation
-  and emits `nonce.gap` with the blocking Operation's id. Resolving it is your decision:
-  rebroadcast after a top-up, replace, or cancel. The library never invents a filler
-  transaction.
+  monitor checks each `submitted` Operation whose active Attempt was first seen or sent more than
+  `droppedGracePeriodMs` ago: when the chain's pending nonce is still below that Operation's own, it emits `nonce.gap` with the nonce the
+  chain expects, and with `blockingOperationId` when a live Operation holds that nonce.
+  Resolving it is your decision: rebroadcast after a top-up, replace, or cancel. The library
+  never invents a filler transaction.
 - **Leaked nonces.** A crash between allocating a nonce and storing it leaves a hole. `recover()`
   returns such nonces for reuse, and so does the next transfer from that wallet, so a quiet
   wallet never stays blocked.

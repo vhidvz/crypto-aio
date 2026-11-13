@@ -4,4 +4,6 @@
 
 > **LogLevel** = `"debug"` \| `"info"` \| `"warn"` \| `"error"`
 
-Defined in: [src/core/events/logger.ts:4](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L4)
+Defined in: [src/core/events/logger.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L5)
+
+A log entry's severity.

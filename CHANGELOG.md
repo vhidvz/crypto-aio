@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-11-12
+
+The release candidate for 1.0.0. It keeps the API 0.2.0 settled and writes down the
+contract 1.0 keeps: [Versioning and
+stability](https://vhidvz.github.io/crypto-aio/reference/stability.html) lists what semver
+covers surface by surface, [Errors](https://vhidvz.github.io/crypto-aio/reference/errors.html)
+the safe action for every code and the error fields you may rely on, and the plugin and
+store pages what a driver and a durable store must do. It closes the gaps a review of every
+page found in the surfaces 1.0 freezes. Code written for 0.2.0 needs no change unless it
+reads Tron block times (now Unix seconds, as on every family) or writes a plugin driver
+that misdeclares its capabilities; [Upgrade to
+1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html) says what changed. It is
+published under npm's `next` tag: `npm install crypto-aio@next`.
+
+### Added
+
+- `CallOptions.endpointLimit`: a transport read without a quorum can mark a definitive
+  refusal as the endpoint's own limit, so the read asks the endpoints it has not asked
+  instead of failing; the refusal stands only when every endpoint refuses.
+
+### Changed
+
+- `stringifyTagged` refuses, with a `TypeError`, a plain object whose only key is `$bigint`
+  or `$bytes` (with a string value): `parseTagged` would read it back as a bigint or bytes,
+  so a durable store built on them refuses the write instead of storing data that reads
+  back changed. The format they write is unchanged, and the core never stores such an
+  object.
+- A plugin driver that does not implement a capability its manifest and network declare
+  (`ChainDriver.capabilities`), or that orders Attempts otherwise than its chain
+  (`ordering`), is refused with `CONFIG_INVALID` when its handle first loads it, instead
+  of failing later at a port it lacks.
+- During a rolling upgrade, `aio.operations.list()` and `recover()` leave out an
+  Operation a newer version stored, with a logged warning, instead of throwing
+  `RECORD_FORMAT_UNSUPPORTED` on the first one; a read by id, key or ref still throws.
+- `Scanner`'s constructor is private, so its internal dependencies leave the declarations;
+  scanners come from `bc.scanner()`, as before (the package exports `Scanner` as a type
+  only).
+- `OperationStore.findByRef` is specified for several Operations of a namespace holding
+  one ref, which the core never writes: a store may return any one of them.
+- **Breaking (Tron):** block and transaction `timestamp`s are Unix seconds on every family.
+  Tron reported java-tron's milliseconds, so the same field meant another unit there;
+  multiply by 1,000 where you relied on milliseconds. Drivers report seconds too.
+- The documentation states the 1.0 contract and corrects what 0.2.0 left stale: proofs
+  as 0.2.0 sizes them (a down endpoint still counts, so production wants three or more
+  providers), `TX_UNEVIDENCED` as a failure where value may have moved, what abandoning a
+  signed transfer leaves possible on each family, Avalanche change in deposit crediting,
+  TON's 512-transaction proof window, each family's covered fee and `ext` shapes, the
+  rules a driver and a durable store must keep, and a production checklist covering
+  stores, providers, keys, workers, monitoring and upgrades. 26 more snippets are
+  type-checked by the docs tests.
+
+### Removed
+
+- The repository's Dependabot configuration: the nightly run tests the newest release of
+  every chain SDK, and GitHub's security updates work without it. The runtime
+  dependencies `@noble/*` and `@scure/*` stay on their 1.x lines, since their 2.x lines
+  are ES modules only, which Jest's CommonJS loader cannot `require`; the pack check now
+  loads every entry point under Jest.
+
+### Fixed
+
+- Bitcoin: an indexer that refuses an address for its own limit (HTTP 400 "Scripthash
+  history too large to scan" or "Too many unspent transaction outputs") no longer fails the
+  balance, unspent-output or history read when another `indexer` endpoint is configured:
+  the read asks it. blockstream.info started refusing busy addresses this way, which failed
+  the nightly signet suite.
+
 ## [0.2.0] - 2026-10-21
 
 crypto-aio 0.2.0 settles everything 1.0 will promise: the API is locked by reports in CI,
@@ -160,8 +227,9 @@ says what to do for each.
 
 ### Added
 
-- initial release 🎉​🎊​.
+- initial release 🎉🎊.
 
-[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/vhidvz/crypto-aio/compare/0.2.0...1.0.0-rc.1
 [0.2.0]: https://github.com/vhidvz/crypto-aio/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/vhidvz/crypto-aio/releases/tag/0.1.0

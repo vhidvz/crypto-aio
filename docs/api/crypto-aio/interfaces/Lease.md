@@ -2,7 +2,9 @@
 
 # Interface: Lease
 
-Defined in: [src/core/store/types.ts:316](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L316)
+Defined in: [src/core/store/types.ts:434](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L434)
+
+A held lock on `key` until `expiresAt` (the store's clock).
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/store/types.ts:316](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **expiresAt**: `number`
 
-Defined in: [src/core/store/types.ts:321](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L321)
+Defined in: [src/core/store/types.ts:439](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L439)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/store/types.ts:321](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **key**: `string`
 
-Defined in: [src/core/store/types.ts:317](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L317)
+Defined in: [src/core/store/types.ts:435](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L435)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/core/store/types.ts:317](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **owner**: `string`
 
-Defined in: [src/core/store/types.ts:318](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L318)
+Defined in: [src/core/store/types.ts:436](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L436)
 
 ***
 
@@ -42,6 +44,6 @@ Defined in: [src/core/store/types.ts:318](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **token**: `bigint`
 
-Defined in: [src/core/store/types.ts:320](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L320)
+Defined in: [src/core/store/types.ts:438](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L438)
 
 Strictly increasing per key across all acquisitions.

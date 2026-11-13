@@ -10,12 +10,16 @@ import type {
 } from '../store/types';
 import type { ConfirmationResult, WaitOptions } from './monitor';
 
+/** Public view of an Attempt: one signed transaction of an Operation. */
 export interface AttemptView {
   readonly id: string;
+  /** The transaction's id as the chain reports it. */
   readonly ref: AttemptRef;
   readonly purpose: AttemptPurpose;
+  /** The Attempt this one replaces or cancels. */
   readonly supersedes?: string;
   readonly createdAt: number;
+  /** What the chain shows of it, once observed. */
   readonly status?: TxStatus;
 }
 
@@ -35,6 +39,7 @@ export interface OperationView {
   readonly updatedAt: number;
 }
 
+/** What `prepareTransfer` returns: the Operation, and what to sign elsewhere. */
 export interface PreparedOperation {
   readonly operation: OperationView;
   /** Present while the Operation awaits signatures (offline, cold or asynchronous signers). */

@@ -104,4 +104,24 @@ describe('tagged JSON', () => {
     expect([...parsed.raw]).toEqual([0, 1, 255]);
     expect(stringifyTagged(Buffer.from([2]))).toBe('{"$bytes":"02"}');
   });
+
+  it('refuses an object that would read back as a bigint or bytes, and writes the rest', () => {
+    for (const value of [
+      { $bigint: '1' },
+      { $bytes: 'ff' },
+      { nested: [{ $bigint: '12' }] },
+      { variant: { $bytes: '' } },
+    ]) {
+      expect(() => stringifyTagged(value)).toThrow(TypeError);
+    }
+    // Only a lone tag with a string value is read back changed, so the rest is written.
+    for (const value of [
+      { $bigint: 1 },
+      { $bigint: '1', other: true },
+      { $bytes: null },
+      { $other: 'x' },
+    ]) {
+      expect(parseTagged(stringifyTagged(value))).toEqual(value);
+    }
+  });
 });

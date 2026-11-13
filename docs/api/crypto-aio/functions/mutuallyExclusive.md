@@ -4,7 +4,7 @@
 
 > **mutuallyExclusive**(`a`, `b`): `boolean`
 
-Defined in: [src/core/model/ordering.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ordering.ts#L22)
+Defined in: [src/core/model/ordering.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ordering.ts#L27)
 
 True when at most one of two transactions with these orderings can ever be included.
 

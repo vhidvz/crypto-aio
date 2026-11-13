@@ -4,4 +4,6 @@
 
 > **AssetRef** = `"native"` \| \{ `contract`: `string`; `standard`: `string`; \}
 
-Defined in: [src/core/model/asset.ts:3](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L3)
+Defined in: [src/core/model/asset.ts:4](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L4)
+
+An asset of one network: its native coin, or a token by standard and contract.

@@ -2,7 +2,9 @@
 
 # Class: MemoryCursorStore
 
-Defined in: [src/core/store/memory.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L87)
+Defined in: [src/core/store/memory.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L90)
+
+A `CursorStore` in this process's memory: for tests and one-process use only.
 
 ## Implements
 
@@ -28,7 +30,9 @@ Defined in: [src/core/store/memory.ts:87](https://github.com/vhidvz/crypto-aio/b
 
 > **get**(`key`): `Promise`\<[`StoredCursor`](../interfaces/StoredCursor.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L90)
+Defined in: [src/core/store/memory.ts:93](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L93)
+
+The stored cursor with its version, or `null` for an unknown key.
 
 #### Parameters
 
@@ -52,9 +56,10 @@ Defined in: [src/core/store/memory.ts:90](https://github.com/vhidvz/crypto-aio/b
 
 > **put**(`key`, `cursor`, `expectedVersion`): `Promise`\<`number`\>
 
-Defined in: [src/core/store/memory.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L95)
+Defined in: [src/core/store/memory.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L98)
 
-Returns the new version.
+Compare-and-set, as `SequenceStore.put`: `expectedVersion` `null` creates the key
+(version 1) and fails with `VERSION_CONFLICT` if it exists. Returns the new version.
 
 #### Parameters
 

@@ -2,7 +2,9 @@
 
 # Interface: SignedTx
 
-Defined in: [src/core/model/transaction.ts:148](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L148)
+Defined in: [src/core/model/transaction.ts:187](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L187)
+
+A signed transaction: its bytes, and its id as the chain will report it.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/model/transaction.ts:148](https://github.com/vhidvz/crypto
 
 > `readonly` **raw**: [`RawTx`](RawTx.md)
 
-Defined in: [src/core/model/transaction.ts:149](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L149)
+Defined in: [src/core/model/transaction.ts:188](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L188)
 
 ***
 
@@ -22,4 +24,4 @@ Defined in: [src/core/model/transaction.ts:149](https://github.com/vhidvz/crypto
 
 > `readonly` **ref**: [`AttemptRef`](AttemptRef.md)
 
-Defined in: [src/core/model/transaction.ts:150](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L150)
+Defined in: [src/core/model/transaction.ts:189](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L189)

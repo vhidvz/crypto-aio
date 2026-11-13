@@ -4,10 +4,10 @@
 
 ```ts
 
-// @public (undocumented)
+// @public
 export const DEFAULT_ENERGY_MARGIN_PERCENT = 20;
 
-// @public (undocumented)
+// @public
 export const DEFAULT_EXPIRATION_MS = 60000;
 
 // @public
@@ -19,13 +19,13 @@ export const MAX_EXPIRATION_MS = 300000;
 // @public
 export const MAX_MEMO_BYTES = 256;
 
-// @public (undocumented)
+// @public
 export const MIN_EXPIRATION_MS = 10000;
 
 // @public
 export const TRON_CAPABILITIES: readonly Capability[];
 
-// @public (undocumented)
+// @public
 export const TRON_INDEXER_CAPABILITIES: readonly Capability[];
 
 // @public

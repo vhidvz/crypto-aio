@@ -2,7 +2,9 @@
 
 # Class: MemorySequenceStore
 
-Defined in: [src/core/store/memory.ts:63](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L63)
+Defined in: [src/core/store/memory.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L65)
+
+A `SequenceStore` in this process's memory: for tests and one-process use only.
 
 ## Implements
 
@@ -28,7 +30,9 @@ Defined in: [src/core/store/memory.ts:63](https://github.com/vhidvz/crypto-aio/b
 
 > **get**(`key`): `Promise`\<[`SequenceState`](../interfaces/SequenceState.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L66)
+Defined in: [src/core/store/memory.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L68)
+
+The stored state, or `null` for an unknown key.
 
 #### Parameters
 
@@ -52,9 +56,11 @@ Defined in: [src/core/store/memory.ts:66](https://github.com/vhidvz/crypto-aio/b
 
 > **put**(`key`, `state`, `expectedVersion`): `Promise`\<`void`\>
 
-Defined in: [src/core/store/memory.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L71)
+Defined in: [src/core/store/memory.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L73)
 
-Rejects on version mismatch (`VERSION_CONFLICT`) or when `fence` < stored fence (`FENCING`).
+Compare-and-set: `expectedVersion` `null` creates the key (version 1) and fails with
+`VERSION_CONFLICT` if it exists; otherwise it must be the stored version. Rejects on
+version mismatch (`VERSION_CONFLICT`) or when `fence` < stored fence (`FENCING`).
 
 #### Parameters
 

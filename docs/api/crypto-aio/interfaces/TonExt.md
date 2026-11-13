@@ -2,7 +2,7 @@
 
 # Interface: TonExt
 
-Defined in: [src/adapters/ton/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L41)
+Defined in: [src/adapters/ton/types.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L42)
 
 `bc.ext.ton`: the TON family extension.
 
@@ -14,7 +14,7 @@ Defined in: [src/adapters/ton/types.ts:41](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **ton**: `object`
 
-Defined in: [src/adapters/ton/types.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L42)
+Defined in: [src/adapters/ton/types.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L43)
 
 #### getSeqno()
 

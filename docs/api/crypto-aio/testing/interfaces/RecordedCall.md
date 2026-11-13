@@ -2,7 +2,9 @@
 
 # Interface: RecordedCall
 
-Defined in: [src/testing/fake-fetch.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L23)
+Defined in: [src/testing/fake-fetch.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L27)
+
+A request a `FakeFetch` received, in `calls`.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-fetch.ts:23](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **body?**: `string`
 
-Defined in: [src/testing/fake-fetch.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L27)
+Defined in: [src/testing/fake-fetch.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L31)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/testing/fake-fetch.ts:27](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **headers**: `Readonly`\<`Record`\<`string`, `string`\>\>
 
-Defined in: [src/testing/fake-fetch.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L26)
+Defined in: [src/testing/fake-fetch.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L30)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/testing/fake-fetch.ts:26](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **method**: `string`
 
-Defined in: [src/testing/fake-fetch.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L25)
+Defined in: [src/testing/fake-fetch.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L29)
 
 ***
 
@@ -42,4 +44,4 @@ Defined in: [src/testing/fake-fetch.ts:25](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **url**: `string`
 
-Defined in: [src/testing/fake-fetch.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L24)
+Defined in: [src/testing/fake-fetch.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L28)

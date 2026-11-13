@@ -2,7 +2,9 @@
 
 # Class: MemoryLockManager
 
-Defined in: [src/core/store/memory.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L25)
+Defined in: [src/core/store/memory.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L26)
+
+A `LockManager` in this process's memory: for tests and one-process use only.
 
 ## Implements
 
@@ -16,7 +18,7 @@ Defined in: [src/core/store/memory.ts:25](https://github.com/vhidvz/crypto-aio/b
 
 > **new MemoryLockManager**(`clock?`): `MemoryLockManager`
 
-Defined in: [src/core/store/memory.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L29)
+Defined in: [src/core/store/memory.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L30)
 
 #### Parameters
 
@@ -36,7 +38,10 @@ Defined in: [src/core/store/memory.ts:29](https://github.com/vhidvz/crypto-aio/b
 
 > **acquire**(`key`, `owner`, `ttlMs`): `Promise`\<[`Lease`](../interfaces/Lease.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L31)
+Defined in: [src/core/store/memory.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L32)
+
+A lease on `key` for `ttlMs`, or `null` while another lease on it is unexpired. Leases
+are not reentrant: the same owner gets `null` too.
 
 #### Parameters
 
@@ -68,7 +73,9 @@ Defined in: [src/core/store/memory.ts:31](https://github.com/vhidvz/crypto-aio/b
 
 > **release**(`lease`): `Promise`\<`void`\>
 
-Defined in: [src/core/store/memory.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L53)
+Defined in: [src/core/store/memory.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L54)
+
+Frees the key if `lease` still holds it; a stale lease's release changes nothing.
 
 #### Parameters
 
@@ -92,7 +99,10 @@ Defined in: [src/core/store/memory.ts:53](https://github.com/vhidvz/crypto-aio/b
 
 > **renew**(`lease`, `ttlMs`): `Promise`\<[`Lease`](../interfaces/Lease.md) \| `null`\>
 
-Defined in: [src/core/store/memory.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L42)
+Defined in: [src/core/store/memory.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/memory.ts#L43)
+
+Extends a lease still held for `ttlMs` more, keeping its token, or `null` once it
+expired or another holder took the key.
 
 #### Parameters
 

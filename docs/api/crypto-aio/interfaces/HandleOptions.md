@@ -2,7 +2,12 @@
 
 # Interface: HandleOptions
 
-Defined in: [src/core/config/types.ts:132](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L132)
+Defined in: [src/core/config/types.ts:195](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L195)
+
+What a handle is for (`aio.blockchain(options)`, `bc.with(overrides)`): a chain and, over
+its `chains.<id>` defaults, the same fields as `ChainDefaults` but `maxLagBlocks`.
+`options` stays a plain record through 1.x; each family's options are listed on its
+network page.
 
 ## Properties
 
@@ -12,7 +17,7 @@ Defined in: [src/core/config/types.ts:132](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/config/types.ts:133](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L133)
+Defined in: [src/core/config/types.ts:196](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L196)
 
 ***
 
@@ -22,7 +27,7 @@ Defined in: [src/core/config/types.ts:133](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **confirmations?**: `number`
 
-Defined in: [src/core/config/types.ts:141](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L141)
+Defined in: [src/core/config/types.ts:204](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L204)
 
 ***
 
@@ -32,7 +37,7 @@ Defined in: [src/core/config/types.ts:141](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **indexer?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:137](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L137)
+Defined in: [src/core/config/types.ts:200](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L200)
 
 ***
 
@@ -42,7 +47,7 @@ Defined in: [src/core/config/types.ts:137](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **library?**: `string`
 
-Defined in: [src/core/config/types.ts:135](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L135)
+Defined in: [src/core/config/types.ts:198](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L198)
 
 ***
 
@@ -52,7 +57,7 @@ Defined in: [src/core/config/types.ts:135](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **network?**: `string`
 
-Defined in: [src/core/config/types.ts:134](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L134)
+Defined in: [src/core/config/types.ts:197](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L197)
 
 ***
 
@@ -62,7 +67,7 @@ Defined in: [src/core/config/types.ts:134](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **options?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/config/types.ts:140](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L140)
+Defined in: [src/core/config/types.ts:203](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L203)
 
 ***
 
@@ -72,7 +77,7 @@ Defined in: [src/core/config/types.ts:140](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **provider?**: [`ProviderRef`](../type-aliases/ProviderRef.md) \| readonly [`ProviderRef`](../type-aliases/ProviderRef.md)[]
 
-Defined in: [src/core/config/types.ts:136](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L136)
+Defined in: [src/core/config/types.ts:199](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L199)
 
 ***
 
@@ -82,7 +87,7 @@ Defined in: [src/core/config/types.ts:136](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **signer?**: `string`
 
-Defined in: [src/core/config/types.ts:139](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L139)
+Defined in: [src/core/config/types.ts:202](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L202)
 
 ***
 
@@ -92,4 +97,4 @@ Defined in: [src/core/config/types.ts:139](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **wallet?**: `string`
 
-Defined in: [src/core/config/types.ts:138](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L138)
+Defined in: [src/core/config/types.ts:201](https://github.com/vhidvz/crypto-aio/blob/main/src/core/config/types.ts#L201)

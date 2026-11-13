@@ -23,9 +23,11 @@ gas or bytes, instant finality or an hour of confirmations. A common API can han
 differences in two bad ways: hide them (and be wrong on some chains), or expose every one (and
 not be common). crypto-aio does neither:
 
-- Behavior that every chain has (balance, fee estimate, transfer, confirmation, scanning) has
-  **one shape**, and each family implements it faithfully.
-- Behavior that only some chains have is a named **capability** you can test for.
+- Behavior that every chain has (balance, fee estimate, transfer, confirmation) has **one
+  shape**, and each family implements it faithfully.
+- Behavior that only some chains have is a named **capability** you can test for: block
+  scanning (`block-scan`, which TON lacks: its deposits come from address history), address
+  history, tokens, replace, cancel and more.
 - Behavior unique to one family is in a **typed extension**, `bc.ext.<family>`.
 - Anything else is in the SDK itself, through **`native()`**, outside the stable API.
 

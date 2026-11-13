@@ -41,7 +41,7 @@ import {
   type PreparedOperation,
   type Submission,
 } from '../lifecycle/views';
-import { Scanner, type ScannerOptions } from '../observe/scanner';
+import { createScanner, type Scanner, type ScannerOptions } from '../observe/scanner';
 import { deriveXpubChild } from '../signing/hd';
 import type { SignatureBundle } from '../signing/types';
 import { resolveWallet, walletOptionsOf, xpubPathOf } from '../signing/wallet';
@@ -59,12 +59,17 @@ import {
   type MappingContext,
 } from './mapping';
 
+/** `bc.getBalance()`'s answer: what `address` holds of `asset`, as one endpoint reads it. */
 export interface Balance {
   readonly address: Address;
   readonly asset: AssetInfo;
   readonly amount: Amount;
 }
 
+/**
+ * `bc.getNetworkStatus()`'s answer: the chain's head and finalized heights as the handle's
+ * endpoints report them, and each provider and indexer endpoint's health.
+ */
 export interface NetworkStatus {
   readonly chain: string;
   readonly network: string;
@@ -394,7 +399,7 @@ export class Blockchain<C extends ChainId = ChainId> {
     const internals = internalsOf(this);
     const container = containerOf(internals.container);
     const { runtime } = container;
-    return new Scanner(
+    return createScanner(
       {
         load: async () => {
           // One pooled entry, so the driver and its transport always belong together.

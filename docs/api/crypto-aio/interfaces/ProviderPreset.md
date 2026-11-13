@@ -2,7 +2,7 @@
 
 # Interface: ProviderPreset
 
-Defined in: [src/core/registry/providers.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L14)
+Defined in: [src/core/registry/providers.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L15)
 
 Provider preset contributed by a family plugin. Endpoint URLs holding keys must be `Secret`s.
 
@@ -14,7 +14,7 @@ Provider preset contributed by a family plugin. Endpoint URLs holding keys must 
 
 > `readonly` **kind**: `"rpc"` \| `"indexer"`
 
-Defined in: [src/core/registry/providers.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L16)
+Defined in: [src/core/registry/providers.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L18)
 
 ***
 
@@ -24,7 +24,9 @@ Defined in: [src/core/registry/providers.ts:16](https://github.com/vhidvz/crypto
 
 > `readonly` **name**: `string`
 
-Defined in: [src/core/registry/providers.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L15)
+Defined in: [src/core/registry/providers.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L17)
+
+The name a `ProviderConfig` uses (`{ preset: name }`).
 
 ***
 
@@ -34,7 +36,7 @@ Defined in: [src/core/registry/providers.ts:15](https://github.com/vhidvz/crypto
 
 > `readonly` `optional` **production?**: `boolean`
 
-Defined in: [src/core/registry/providers.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L19)
+Defined in: [src/core/registry/providers.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L22)
 
 `false` for free public endpoints (logged as not for production).
 
@@ -46,7 +48,9 @@ Defined in: [src/core/registry/providers.ts:19](https://github.com/vhidvz/crypto
 
 > `readonly` `optional` **requiresApiKey?**: `boolean`
 
-Defined in: [src/core/registry/providers.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L17)
+Defined in: [src/core/registry/providers.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L20)
+
+Whether a provider without an `apiKey` is refused.
 
 ## Methods
 
@@ -56,7 +60,9 @@ Defined in: [src/core/registry/providers.ts:17](https://github.com/vhidvz/crypto
 
 > **endpoints**(`input`): readonly [`EndpointConfig`](EndpointConfig.md)[]
 
-Defined in: [src/core/registry/providers.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L21)
+Defined in: [src/core/registry/providers.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L26)
+
+The endpoints for `input`.
 
 #### Parameters
 
@@ -76,7 +82,9 @@ readonly [`EndpointConfig`](EndpointConfig.md)[]
 
 > **supports**(`chain`, `network`): `boolean`
 
-Defined in: [src/core/registry/providers.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L20)
+Defined in: [src/core/registry/providers.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/providers.ts#L24)
+
+Whether it serves `chain`'s `network`.
 
 #### Parameters
 

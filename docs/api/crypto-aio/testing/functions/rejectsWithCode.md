@@ -4,7 +4,9 @@
 
 > **rejectsWithCode**(`promise`, `code`): `Promise`\<`void`\>
 
-Defined in: [src/testing/contracts/api.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/api.ts#L9)
+Defined in: [src/testing/contracts/api.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/contracts/api.ts#L10)
+
+Asserts that `promise` rejects with a `CryptoAioError` of `code`.
 
 ## Parameters
 

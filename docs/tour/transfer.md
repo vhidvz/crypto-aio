@@ -115,13 +115,18 @@ stateDiagram-v2
   signed --> submitted
   submitted --> included
   included --> final: proven
+  included --> submitted: reorg
+  signed --> stalled: refused
   submitted --> stalled: refused
   stalled --> submitted: rebroadcast, replace, cancel
+  stalled --> included: the refused bytes land
   created --> abandoned
   prepared --> abandoned
   awaiting --> abandoned
   created --> failed: before signing
   prepared --> failed: before signing
+  awaiting --> failed: vetoed
+  signed --> failed: proven
   submitted --> failed: proven
   stalled --> failed: proven
   included --> failed: proven
@@ -131,7 +136,8 @@ stateDiagram-v2
 
 `final`, `failed`, `expired` and `abandoned` are terminal (`isTerminal(state)`). Once an
 Operation is signed, it reaches a terminal state only on **proven** evidence, which stop 6
-explains. `abandoned` is possible only before anything is signed.
+explains. `abandoned` is possible only before anything is signed. A `stalled` Operation is not
+stuck until you act: its refused bytes may still land, and the workers keep observing it.
 
 ## Watching it happen
 

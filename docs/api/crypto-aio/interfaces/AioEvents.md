@@ -2,9 +2,10 @@
 
 # Interface: AioEvents
 
-Defined in: [src/core/events/types.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L5)
+Defined in: [src/core/events/types.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L8)
 
-Every payload is operational-class data only (no addresses, amounts, raw txs or URLs).
+Every event and its payload. Every payload is operational-class data only (no addresses,
+amounts, raw txs or URLs). A minor release may add events and optional payload fields.
 
 ## Properties
 
@@ -14,7 +15,9 @@ Every payload is operational-class data only (no addresses, amounts, raw txs or 
 
 > **attempt.state**: `object`
 
-Defined in: [src/core/events/types.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L55)
+Defined in: [src/core/events/types.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L71)
+
+An Attempt's observed state or evidence changed.
 
 #### attemptId
 
@@ -44,7 +47,9 @@ Defined in: [src/core/events/types.ts:55](https://github.com/vhidvz/crypto-aio/b
 
 > **nonce.allocated**: `object`
 
-Defined in: [src/core/events/types.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L68)
+Defined in: [src/core/events/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L86)
+
+A nonce or seqno was reserved for an Operation.
 
 #### chain
 
@@ -76,7 +81,7 @@ The nonce or seqno: an operational identifier, never UTXO inputs.
 
 > **nonce.gap**: `object`
 
-Defined in: [src/core/events/types.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L82)
+Defined in: [src/core/events/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L100)
 
 A submitted Operation has waited past the grace period while the chain's pending nonce
 (`expected`) is below its own. At-least-once: a monitor reports each (Operation,
@@ -117,7 +122,9 @@ The chain's pending nonce: an operational identifier.
 
 > **operation.stalled**: `object`
 
-Defined in: [src/core/events/types.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L54)
+Defined in: [src/core/events/types.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L69)
+
+An Operation stalled and waits for its caller's remedy; `code` says why.
 
 #### code
 
@@ -139,7 +146,9 @@ Defined in: [src/core/events/types.ts:54](https://github.com/vhidvz/crypto-aio/b
 
 > **operation.state**: `object`
 
-Defined in: [src/core/events/types.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L45)
+Defined in: [src/core/events/types.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L59)
+
+An Operation moved from one state to another (`from` is `null` when it was created).
 
 #### chain
 
@@ -177,7 +186,11 @@ Defined in: [src/core/events/types.ts:45](https://github.com/vhidvz/crypto-aio/b
 
 > **provider.health**: `object`
 
-Defined in: [src/core/events/types.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L27)
+Defined in: [src/core/events/types.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L38)
+
+After every completed health refresh, once per endpoint, with its state: a periodic
+gauge, not a change event. Never emitted for an endpoint whose state is `unknown` or
+`half-open`.
 
 #### endpointId
 
@@ -207,7 +220,9 @@ Defined in: [src/core/events/types.ts:27](https://github.com/vhidvz/crypto-aio/b
 
 > **provider.inconsistent**: `object`
 
-Defined in: [src/core/events/types.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L40)
+Defined in: [src/core/events/types.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L53)
+
+Endpoints of a quorum read disagreed; the read decided nothing.
 
 #### endpointIds
 
@@ -229,7 +244,9 @@ Defined in: [src/core/events/types.ts:40](https://github.com/vhidvz/crypto-aio/b
 
 > **provider.misconfigured**: `object`
 
-Defined in: [src/core/events/types.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L34)
+Defined in: [src/core/events/types.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L46)
+
+An endpoint answered another network's identity than expected; it is disabled.
 
 #### actual
 
@@ -255,7 +272,9 @@ Defined in: [src/core/events/types.ts:34](https://github.com/vhidvz/crypto-aio/b
 
 > **recovery.skipped**: `object`
 
-Defined in: [src/core/events/types.ts:111](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L111)
+Defined in: [src/core/events/types.ts:134](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L134)
+
+`recover()` left an Operation that needs its caller; `reason` is a code.
 
 #### namespace
 
@@ -281,7 +300,9 @@ Defined in: [src/core/events/types.ts:111](https://github.com/vhidvz/crypto-aio/
 
 > **rpc.error**: `object`
 
-Defined in: [src/core/events/types.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L19)
+Defined in: [src/core/events/types.ts:25](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L25)
+
+A request to an endpoint failed.
 
 #### code
 
@@ -315,7 +336,9 @@ Defined in: [src/core/events/types.ts:19](https://github.com/vhidvz/crypto-aio/b
 
 > **rpc.request**: `object`
 
-Defined in: [src/core/events/types.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L6)
+Defined in: [src/core/events/types.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L10)
+
+A request is about to go to an endpoint; `method` is an RPC method or a route template.
 
 #### attempt
 
@@ -341,7 +364,9 @@ Defined in: [src/core/events/types.ts:6](https://github.com/vhidvz/crypto-aio/bl
 
 > **rpc.response**: `object`
 
-Defined in: [src/core/events/types.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L12)
+Defined in: [src/core/events/types.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L17)
+
+An endpoint answered.
 
 #### bytes
 
@@ -371,7 +396,9 @@ Defined in: [src/core/events/types.ts:12](https://github.com/vhidvz/crypto-aio/b
 
 > **scanner.block**: `object`
 
-Defined in: [src/core/events/types.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L104)
+Defined in: [src/core/events/types.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L125)
+
+A scanner delivered a block.
 
 #### cursorKey
 
@@ -393,7 +420,9 @@ Defined in: [src/core/events/types.ts:104](https://github.com/vhidvz/crypto-aio/
 
 > **scanner.rollback**: `object`
 
-Defined in: [src/core/events/types.ts:105](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L105)
+Defined in: [src/core/events/types.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L127)
+
+A scanner rolled back to `toHeight` after a reorg, removing `removed` blocks.
 
 #### cursorKey
 
@@ -419,7 +448,9 @@ Defined in: [src/core/events/types.ts:105](https://github.com/vhidvz/crypto-aio/
 
 > **signer.completed**: `object`
 
-Defined in: [src/core/events/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L97)
+Defined in: [src/core/events/types.ts:117](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L117)
+
+A signer answered: signed, pending (with a ticket), or with an error.
 
 #### latencyMs
 
@@ -449,7 +480,9 @@ Defined in: [src/core/events/types.ts:97](https://github.com/vhidvz/crypto-aio/b
 
 > **signer.requested**: `object`
 
-Defined in: [src/core/events/types.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L91)
+Defined in: [src/core/events/types.ts:110](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L110)
+
+A signer was asked for `requests` signatures.
 
 #### namespace
 
@@ -475,7 +508,9 @@ Defined in: [src/core/events/types.ts:91](https://github.com/vhidvz/crypto-aio/b
 
 > **tx.reorged**: `object`
 
-Defined in: [src/core/events/types.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L62)
+Defined in: [src/core/events/types.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/types.ts#L79)
+
+A block that held a transfer's transaction left the chain.
 
 #### attemptId?
 

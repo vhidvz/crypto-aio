@@ -2,7 +2,9 @@
 
 # Interface: EndpointConfig
 
-Defined in: [src/core/transport/types.ts:6](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L6)
+Defined in: [src/core/transport/types.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L17)
+
+One endpoint of a provider.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/transport/types.ts:6](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **headers?**: `Readonly`\<`Record`\<`string`, `string` \| [`Secret`](../classes/Secret.md)\<`string`\>\>\>
 
-Defined in: [src/core/transport/types.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L10)
+Defined in: [src/core/transport/types.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L24)
+
+Header values that carry keys go in `secret()`.
 
 ***
 
@@ -22,7 +26,7 @@ Defined in: [src/core/transport/types.ts:10](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **kind?**: `"rpc"` \| `"indexer"`
 
-Defined in: [src/core/transport/types.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L9)
+Defined in: [src/core/transport/types.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L22)
 
 ***
 
@@ -32,7 +36,9 @@ Defined in: [src/core/transport/types.ts:9](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **name?**: `string`
 
-Defined in: [src/core/transport/types.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L7)
+Defined in: [src/core/transport/types.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L19)
+
+The label errors and events use instead of the URL.
 
 ***
 
@@ -42,7 +48,9 @@ Defined in: [src/core/transport/types.ts:7](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **priority?**: `number`
 
-Defined in: [src/core/transport/types.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L11)
+Defined in: [src/core/transport/types.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L26)
+
+Order among healthy endpoints: lower first (default 0).
 
 ***
 
@@ -52,7 +60,9 @@ Defined in: [src/core/transport/types.ts:11](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **rateLimit?**: `object`
 
-Defined in: [src/core/transport/types.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L12)
+Defined in: [src/core/transport/types.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L28)
+
+A client-side rate limit for this endpoint, shared by its health probes.
 
 #### burst?
 
@@ -70,7 +80,9 @@ Defined in: [src/core/transport/types.ts:12](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **timeoutMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L13)
+Defined in: [src/core/transport/types.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L30)
+
+Overrides `TransportOptions.timeoutMs` for this endpoint.
 
 ***
 
@@ -80,4 +92,6 @@ Defined in: [src/core/transport/types.ts:13](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **url**: `string` \| [`Secret`](../classes/Secret.md)\<`string`\>
 
-Defined in: [src/core/transport/types.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L8)
+Defined in: [src/core/transport/types.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L21)
+
+Wrap a URL that carries a key in `secret()`.

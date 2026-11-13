@@ -2,7 +2,9 @@
 
 # Interface: VerifyInput
 
-Defined in: [src/core/registry/schemes.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L8)
+Defined in: [src/core/registry/schemes.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L9)
+
+A signature to verify, with what it signs and the key that must have signed it.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/registry/schemes.ts:8](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **params?**: [`SigningParams`](SigningParams.md)
 
-Defined in: [src/core/registry/schemes.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L13)
+Defined in: [src/core/registry/schemes.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L14)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/registry/schemes.ts:13](https://github.com/vhidvz/crypto-a
 
 > `readonly` **payload**: `Uint8Array`
 
-Defined in: [src/core/registry/schemes.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L10)
+Defined in: [src/core/registry/schemes.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L11)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/core/registry/schemes.ts:10](https://github.com/vhidvz/crypto-a
 
 > `readonly` **publicKey**: `Uint8Array`
 
-Defined in: [src/core/registry/schemes.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L9)
+Defined in: [src/core/registry/schemes.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L10)
 
 ***
 
@@ -42,7 +44,7 @@ Defined in: [src/core/registry/schemes.ts:9](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **recovery?**: `number`
 
-Defined in: [src/core/registry/schemes.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L12)
+Defined in: [src/core/registry/schemes.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L13)
 
 ***
 
@@ -52,4 +54,4 @@ Defined in: [src/core/registry/schemes.ts:12](https://github.com/vhidvz/crypto-a
 
 > `readonly` **signature**: `Uint8Array`
 
-Defined in: [src/core/registry/schemes.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L11)
+Defined in: [src/core/registry/schemes.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/schemes.ts#L12)

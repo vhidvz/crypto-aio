@@ -2,7 +2,7 @@
 
 # Interface: ResolvedTransfer
 
-Defined in: [src/core/model/transaction.ts:94](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L94)
+Defined in: [src/core/model/transaction.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L120)
 
 A transfer whose asset resolved on this chain and network.
 
@@ -18,7 +18,7 @@ A transfer whose asset resolved on this chain and network.
 
 > `readonly` **amount**: [`Amount`](../classes/Amount.md)
 
-Defined in: [src/core/model/transaction.ts:96](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L96)
+Defined in: [src/core/model/transaction.ts:122](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L122)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [src/core/model/transaction.ts:96](https://github.com/vhidvz/crypto-
 
 > `readonly` **asset**: [`AssetInfo`](AssetInfo.md)
 
-Defined in: [src/core/model/transaction.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L95)
+Defined in: [src/core/model/transaction.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L121)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [src/core/model/transaction.ts:95](https://github.com/vhidvz/crypto-
 
 > `readonly` **from**: readonly [`Address`](../classes/Address.md)[]
 
-Defined in: [src/core/model/transaction.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L87)
+Defined in: [src/core/model/transaction.ts:113](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L113)
 
 #### Inherited from
 
@@ -52,7 +52,7 @@ Defined in: [src/core/model/transaction.ts:87](https://github.com/vhidvz/crypto-
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/model/transaction.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L86)
+Defined in: [src/core/model/transaction.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L112)
 
 Deterministic: `${txId}:${locator}`.
 
@@ -68,7 +68,7 @@ Deterministic: `${txId}:${locator}`.
 
 > `readonly` `optional` **memo?**: `string`
 
-Defined in: [src/core/model/transaction.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L90)
+Defined in: [src/core/model/transaction.ts:116](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L116)
 
 #### Inherited from
 
@@ -82,7 +82,7 @@ Defined in: [src/core/model/transaction.ts:90](https://github.com/vhidvz/crypto-
 
 > `readonly` **source**: [`TransferSource`](../type-aliases/TransferSource.md)
 
-Defined in: [src/core/model/transaction.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L89)
+Defined in: [src/core/model/transaction.ts:115](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L115)
 
 #### Inherited from
 
@@ -96,7 +96,7 @@ Defined in: [src/core/model/transaction.ts:89](https://github.com/vhidvz/crypto-
 
 > `readonly` **to**: [`Address`](../classes/Address.md)
 
-Defined in: [src/core/model/transaction.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L88)
+Defined in: [src/core/model/transaction.ts:114](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L114)
 
 #### Inherited from
 
@@ -110,4 +110,4 @@ Defined in: [src/core/model/transaction.ts:88](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **unresolved?**: `undefined`
 
-Defined in: [src/core/model/transaction.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L97)
+Defined in: [src/core/model/transaction.ts:123](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L123)

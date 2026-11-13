@@ -52,6 +52,7 @@ const chain = (
   networks: { local: network(extra) },
 });
 
+/** The fake family's adapter manifest (library `fake-sdk`). */
 export const fakeManifest: AdapterManifest = {
   family: 'fake',
   library: 'fake-sdk',
@@ -73,6 +74,7 @@ export const fakeManifest: AdapterManifest = {
   },
 };
 
+/** The fake family's plugin: its three chains and its manifest. */
 export function fakePlugin(): Plugin {
   return {
     name: 'fake',

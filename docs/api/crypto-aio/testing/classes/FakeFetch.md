@@ -2,7 +2,7 @@
 
 # Class: FakeFetch
 
-Defined in: [src/testing/fake-fetch.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L31)
+Defined in: [src/testing/fake-fetch.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L35)
 
 Scripted fetch: routes by longest URL prefix; unknown hosts fail like a DNS error.
 
@@ -26,7 +26,7 @@ Scripted fetch: routes by longest URL prefix; unknown hosts fail like a DNS erro
 
 > `readonly` **calls**: [`RecordedCall`](../interfaces/RecordedCall.md)[] = `[]`
 
-Defined in: [src/testing/fake-fetch.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L32)
+Defined in: [src/testing/fake-fetch.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L36)
 
 ***
 
@@ -36,7 +36,7 @@ Defined in: [src/testing/fake-fetch.ts:32](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **fetch**: (`input`, `init?`) => `Promise`\<`Response`\>
 
-Defined in: [src/testing/fake-fetch.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L45)
+Defined in: [src/testing/fake-fetch.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L49)
 
 #### Parameters
 
@@ -60,7 +60,7 @@ Defined in: [src/testing/fake-fetch.ts:45](https://github.com/vhidvz/crypto-aio/
 
 > **callsTo**(`prefix`): [`RecordedCall`](../interfaces/RecordedCall.md)[]
 
-Defined in: [src/testing/fake-fetch.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L41)
+Defined in: [src/testing/fake-fetch.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L45)
 
 #### Parameters
 
@@ -80,7 +80,7 @@ Defined in: [src/testing/fake-fetch.ts:41](https://github.com/vhidvz/crypto-aio/
 
 > **route**(`prefix`, `handler`): `this`
 
-Defined in: [src/testing/fake-fetch.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L35)
+Defined in: [src/testing/fake-fetch.ts:39](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L39)
 
 #### Parameters
 

@@ -13,15 +13,24 @@ export interface RawTx {
   readonly data: string;
 }
 
+/** What an Attempt's id is: a transaction hash or txid, a signature (Solana), or a message hash (TON). */
 export type AttemptIdKind = 'tx-hash' | 'txid' | 'signature' | 'message-hash';
 
 /** Identity of a signed payload. `canonical: false` = not the final protocol tx hash (TON). */
 export interface AttemptRef {
+  /** The id, as the chain spells it. */
   readonly id: string;
   readonly idKind: AttemptIdKind;
+  /** Whether `id` is the transaction hash the chain reports once it is included. */
   readonly canonical: boolean;
 }
 
+/**
+ * What the chain shows of a transaction: `unknown`, `pending` (sent or signed, not seen yet), `mempool`,
+ * `included`, `final`, `failed`, `dropped` (no longer seen), `replaced` (another
+ * transaction took its slot), `expired`, `refused` (a node refused it for now) or
+ * `rejected` (never valid). `dropped` and `refused` are never terminal.
+ */
 export type TxState =
   | 'unknown'
   | 'pending'
@@ -35,6 +44,10 @@ export type TxState =
   | 'refused'
   | 'rejected';
 
+/**
+ * How a status was established: `observed` (one endpoint's current view, which can change)
+ * or `proven` (finalized chain data read under the proof quorum).
+ */
 export type Evidence = 'observed' | 'proven';
 
 /**
@@ -44,12 +57,15 @@ export type Evidence = 'observed' | 'proven';
  * does not name): value may have moved, so check the chain before paying again.
  */
 export type TxFailure = 'reverted' | 'unevidenced';
+/** How settled a transaction is: not in a block, in a block that can still leave, or final. */
 export type Finality = 'none' | 'probabilistic' | 'final';
 
+/** A transaction's status. Complete a withdrawal only on `final` with `proven` evidence. */
 export interface TxStatus {
   readonly state: TxState;
   readonly evidence: Evidence;
   readonly confirmations: number;
+  /** The canonical transaction hash, once seen. */
   readonly txHash?: string;
   readonly blockHash?: string;
   readonly blockHeight?: bigint;
@@ -62,15 +78,24 @@ export interface TxStatus {
    * or logs.
    */
   readonly reason?: string;
+  /** With `replaced`: the transaction that took its slot. */
   readonly replacedBy?: string;
 }
 
+/**
+ * The block a transaction is in. `timestamp` is the block's time as the chain records it,
+ * in Unix seconds on every family (Tron's milliseconds are converted).
+ */
 export interface BlockRef {
   readonly height: bigint;
   readonly hash: string;
   readonly timestamp?: number;
 }
 
+/**
+ * A block. `timestamp` is its time as the chain records it, in Unix seconds on every
+ * family (Tron's milliseconds are converted).
+ */
 export interface Block {
   readonly height: bigint;
   readonly hash: string;
@@ -79,6 +104,7 @@ export interface Block {
   readonly transactionIds?: readonly string[];
 }
 
+/** Where a transfer was read from: the native value, a token's event, or an internal call. */
 export type TransferSource = 'native' | 'token-event' | 'internal';
 
 interface TransferBase {
@@ -120,21 +146,33 @@ export interface UnresolvedTransfer extends TransferBase {
 /** Check `unresolved` (or `amount`) before using a transfer's `asset` and `amount`. */
 export type Transfer = ResolvedTransfer | UnresolvedTransfer;
 
+/**
+ * Whether `transfers` lists every movement of value (`complete`), some of them
+ * (`partial`: an unresolved asset or a call the family does not decode), or none.
+ */
 export type Decoding = 'complete' | 'partial' | 'none';
 
+/** A transaction as a handle reads it. */
 export interface Transaction {
   readonly id: string;
   readonly chain: string;
   readonly network: string;
   readonly status: TxStatus;
   readonly block?: BlockRef;
+  /** What it paid, per asset; absent while unknown. */
   readonly fee?: readonly Amount[];
   readonly transfers: readonly Transfer[];
   readonly decoding: Decoding;
   readonly raw?: RawTx;
+  /** Family-specific fields; not covered by semver beyond what each network page documents. */
   readonly details: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * A transaction built and not yet signed: its payload, the signatures it needs, the slot it
+ * takes, its fee and what it pays. A driver's `summary` describes exactly what the payload
+ * pays: `beforeSign` policies judge the summary, never the bytes.
+ */
 export interface UnsignedTx {
   readonly payload: RawTx;
   /** Only when identity is fixed before signing (Tron; UTXO with witness-only inputs). */
@@ -145,6 +183,7 @@ export interface UnsignedTx {
   readonly summary: IntentSummary;
 }
 
+/** A signed transaction: its bytes, and its id as the chain will report it. */
 export interface SignedTx {
   readonly raw: RawTx;
   readonly ref: AttemptRef;

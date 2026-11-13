@@ -2,7 +2,9 @@
 
 # Interface: FakeWireBlock
 
-Defined in: [src/testing/fake-chain.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L43)
+Defined in: [src/testing/fake-chain.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L50)
+
+A block as the fake chain's RPC answers it; wire protocol, not covered by semver.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-chain.ts:43](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/testing/fake-chain.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L45)
+Defined in: [src/testing/fake-chain.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L52)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/testing/fake-chain.ts:45](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **height**: `string`
 
-Defined in: [src/testing/fake-chain.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L44)
+Defined in: [src/testing/fake-chain.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L51)
 
 ***
 
@@ -32,7 +34,7 @@ Defined in: [src/testing/fake-chain.ts:44](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **parentHash**: `string`
 
-Defined in: [src/testing/fake-chain.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L46)
+Defined in: [src/testing/fake-chain.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L53)
 
 ***
 
@@ -42,7 +44,7 @@ Defined in: [src/testing/fake-chain.ts:46](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **timestamp**: `number`
 
-Defined in: [src/testing/fake-chain.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L47)
+Defined in: [src/testing/fake-chain.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L54)
 
 ***
 
@@ -52,7 +54,7 @@ Defined in: [src/testing/fake-chain.ts:47](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **txIds**: readonly `string`[]
 
-Defined in: [src/testing/fake-chain.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L48)
+Defined in: [src/testing/fake-chain.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L55)
 
 ***
 
@@ -62,4 +64,4 @@ Defined in: [src/testing/fake-chain.ts:48](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **txs?**: readonly [`FakeWireTx`](FakeWireTx.md)[]
 
-Defined in: [src/testing/fake-chain.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L49)
+Defined in: [src/testing/fake-chain.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L56)

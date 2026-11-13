@@ -4,4 +4,6 @@
 
 > **ErrorCode** = keyof *typeof* [`ERROR_CODES`](../variables/ERROR_CODES.md)
 
-Defined in: [src/core/errors/codes.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/codes.ts#L66)
+Defined in: [src/core/errors/codes.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/codes.ts#L68)
+
+Every error code. A minor release may add codes: handle unknown ones too.

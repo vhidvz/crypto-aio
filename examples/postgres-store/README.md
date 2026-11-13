@@ -80,10 +80,11 @@ fields the store filters, orders or checks on are plain columns: `state`, `next_
 own table, so that `appendAttempt` inserts a row instead of rewriting the Operation's list,
 and `findByRef` finds a ref through an index.
 
-Attempt ids are unique per Operation here, not across the store. The port says they are
-unique across every Operation and namespace, and the core makes them so (96 random bits), but
-the contract suite appends Attempts with the same id to several Operations of one store
-("keeps every ordering whole"), so a store-wide unique index on `attempts.id` fails it.
+Attempt ids are unique per Operation here, and only indexed across the store. The port says
+they are unique across every Operation and namespace, and the core makes them so (96 random
+bits); the contract suite gives each Operation's Attempts their own ids, and a store may
+refuse an id another Operation holds. This example keeps the narrower constraint, so a
+store-wide unique index on `attempts.id` is a choice you can add.
 
 In `src/operations.ts`, the map from fields to columns is typed over `keyof OperationRecord`.
 A field the port gains in a later version fails this example's type check until it has a

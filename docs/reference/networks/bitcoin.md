@@ -30,16 +30,20 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
 | `nonWitnessUtxo` | `true` | Each segwit v0 input carries its previous transaction in the PSBT |
 | `minInputConfirmations` | `1` | The confirmations an output needs before it is spent (`0`: also unconfirmed outputs of your own sent transactions) |
 | `coinSelection` | `'accumulative'` | `'accumulative'` or `'all'` |
-| `rbf` | `true` | Every input signals BIP125 replaceability |
+| `rbf` | `true` | Every input signals BIP125 replaceability; with `false`, `replace` and `cancel` still build, and their transaction lands only through nodes that relay full-RBF replacements |
 
 - **Endpoints.** Each endpoint must answer the network's genesis hash at `/block-height/0`,
   or it is disabled. A custom signet shares the default signet's genesis block, so it passes
   this check: point a `signet` handle only at the signet you mean. mempool.space and
   blockstream.info publish no rate limit, so the presets set none; a 429 is retried with
-  backoff (`RATE_LIMITED`). Both refuse to list more than 500 unspent outputs of one
-  address: `/address/:address/utxo` answers HTTP 400, a non-retryable `RPC_ERROR`, so a
-  wallet with more cannot estimate or send through them. For production, and for any large
-  wallet, run your own Esplora (electrs) and configure it as `{ endpoints: [{ url }] }`, as
+  backoff (`RATE_LIMITED`). Both have limits per address: they refuse to list more than 500
+  unspent outputs of one address, and blockstream.info refuses to read an address with a
+  long history (`Scripthash history too large to scan`), even its balance. Such a refusal
+  (HTTP 400, "too many" or "too large") is the indexer's own limit, so the read asks the
+  handle's next `indexer` endpoint; only when every one refuses does it fail, with a
+  non-retryable `RPC_ERROR` (`details.status` 400). A wallet past every indexer's limit
+  cannot estimate or send. For production, and for any large wallet, run your own Esplora
+  (electrs) with limits that fit it, and configure it as `{ endpoints: [{ url }] }`, as
   both the `provider` and the `indexer`; give an endpoint a `rateLimit` (`{ rps, burst? }`)
   when its operator sets one.
 - **Wallets.** `wallet.utxo.addressType` is `p2wpkh` (the default), `p2sh-p2wpkh`, `p2pkh` or
@@ -74,8 +78,8 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   faulty endpoint: it decides nothing, and the call fails with a retryable
   `PROVIDER_UNAVAILABLE`. During a fee spike, `fast` and `normal` can exceed it; raise the
   option, use a slower speed, or pass an explicit `{ satPerVByte }`. testnet3's estimates
-  can be far above it (264 sat/vB for up to 6 blocks in September 2026), even for `slow`:
-  pass `{ satPerVByte }` there, or raise `maxEstimatedFeeRate` on that handle.
+  can be far above it (hundreds of sat/vB, even for `slow`): pass `{ satPerVByte }` there,
+  or raise `maxEstimatedFeeRate` on that handle.
 - **Coins.** `accumulative` (the default) spends the largest outputs first; `all` spends
   every eligible output (a sweep). Only outputs with `minInputConfirmations` confirmations
   are spent, and each new input's transaction must be in a block the proof endpoints
@@ -91,7 +95,8 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
   are never selected, and change below the dust threshold goes to the fee.
   `bc.ext.utxo.listUnspent(address)` lists an address's unspent outputs, and
   `bc.ext.utxo.coinSelection({ from, outputs, fee?, exclude? })`, with amounts in
-  satoshis, previews a selection without signing.
+  satoshis, previews a selection without signing (see [below](#fee-overrides-fee-details-and-extutxo)
+  for what each leaves out).
 - **Signing.** One request per input: ECDSA (BIP143, or legacy for `p2pkh`) for `p2wpkh`,
   `p2sh-p2wpkh` and `p2pkh`, and Schnorr with the BIP341 key-path tweak for `p2tr`. A `p2tr`
   request's `publicKey` is the tweaked output key and its `params.tweak` the tweak, so a
@@ -164,9 +169,10 @@ The driver's options go in `chains.bitcoin.options`, and an unknown one fails wi
 - **Finality** is 6 confirmations on every network, attested by the proof quorum;
   `waitForConfirmation` waits for 1 confirmation by default. Proofs read the `provider`
   endpoints. With one endpoint, a proof quorum of 1, that one operator decides finality and
-  whether a transfer was replaced: it is fully trusted. Configure at least two independent
-  endpoints, ideally three: with two, an outage of one eventually leaves the other deciding
-  alone. The `public` preset uses mempool.space and blockstream.info, except on testnet4,
+  whether a transfer was replaced: it is fully trusted. Configure three or more independent
+  endpoints: an endpoint that is down still counts toward the proof quorum of two, so with
+  two, proofs wait for as long as either is down (unless `transport.degradedProofs` lets the
+  one left decide alone). The `public` preset uses mempool.space and blockstream.info, except on testnet4,
   where it has mempool.space only.
 - **Reorgs.** A full-mode Esplora (electrs), such as the public services, keeps serving a
   transaction that a reorg took out of its block as unconfirmed, even when no mempool holds
@@ -261,10 +267,36 @@ for what it reports. The driver's guards:
   commits to, with senders read from the transactions their inputs spend
   ([Scanning](#scanning)), so an endpoint cannot add a deposit to a real block or alter one.
 - **Endpoints.** With a single Esplora endpoint as the `provider`, its operator alone decides
-  finality and whether a transfer was replaced. Use two independent endpoints, ideally
-  three. A node's claim that your transaction is invalid ends a transfer only when the
+  finality and whether a transfer was replaced. Use three or more independent endpoints, so
+  one outage does not stall proofs. A node's claim that your transaction is invalid ends a transfer only when the
   driver confirms it for the bytes it sent, so a lying endpoint cannot free your coins for a
   second payment. It can still refuse to relay them, which several endpoints and
   `lifecycle.broadcastFanout` of 2 or more route around.
 
 The sections above give the defaults and how a refused transfer resolves.
+
+## Fee overrides, fee details and `ext.utxo`
+
+These shapes, exported as types from `crypto-aio/utxo`, are what semver covers for the
+Bitcoin family ([Versioning and stability](../stability.md)), with the options table and the
+wallet's `utxo` settings (`UtxoWalletOptions`) above. The core types they fill
+(`TransferIntent.fee`, `FeeEstimate.details`, `WalletConfig.utxo`) stay plain records.
+
+- **`UtxoFeeOverride`**: `{ satPerVByte }`, a `bigint` or a decimal string with at most three
+  fractional digits (`'2.5'`), at least 1 sat/vB.
+- **`UtxoFeeDetails`**: `satPerKvB` (the rate, sat per 1,000 vbytes), `vsize` (counting
+  worst-case signatures), `inputs` and `outputs` (counts, change included), `change` (sat,
+  `0n` without a change output) and `changeIndex` (`-1` without one).
+- **`ext.utxo.listUnspent(address)`** returns `UtxoUnspent[]`, the address's outputs as the
+  indexer lists them, confirmed first (oldest first), then unconfirmed: `outpoint`
+  (`txid:vout`), `txid`, `vout`, `value` (sat), `confirmed` and, once confirmed,
+  `blockHeight`. It does not say which outputs a live Operation holds.
+- **`ext.utxo.coinSelection(request)`** takes `UtxoSelectionRequest`
+  (`{ from, outputs: [{ to, amount }], fee?, exclude? }`, amounts in sat) and returns
+  `UtxoSelectionPreview`: `inputs` (`{ outpoint, value }[]`), `fee` (sat), `satPerKvB`,
+  `vsize`, `change` and `sufficient`. It is a dry run of the handle's coin selection with
+  three differences from a build: it leaves out only the outpoints you pass in `exclude`, not
+  those a live Operation holds; it sizes change for the sending address, not for
+  `wallet.utxo.changeAddress`; and with `minInputConfirmations: 0` it counts every
+  unconfirmed output, while a build spends only those of your own transactions. When
+  `sufficient` is `false`, `inputs` lists every candidate output.

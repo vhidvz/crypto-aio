@@ -11,7 +11,14 @@ them, rebroadcast dropped ones, report nonce gaps (`nonce.gap`), and apply prove
 Any number of processes can run workers on shared stores. Each claim carries a token, and a
 worker whose claim expired and was taken over has its writes refused (`FENCING`).
 
+<!-- typecheck -->
 ```ts
+import { CryptoAio, type AioOptions } from 'crypto-aio';
+
+declare const stores: AioOptions['stores'], signers: AioOptions['signers'];
+declare const wallets: AioOptions['wallets'], chains: AioOptions['chains'];
+declare const providers: AioOptions['providers'];
+
 const aio = new CryptoAio({ namespace: 'payments', stores, signers, wallets, chains, providers });
 const report = await aio.operations.recover(); // at startup, before serving
 // report: { rebroadcast, checked, skipped, unresent, failed, reconciled }
@@ -26,12 +33,15 @@ await aio.close(); // closes native clients and pooled drivers
   signed ones on chain, and returns leaked nonces for reuse. `created`, `prepared`,
   `awaiting-signature` and `stalled` Operations need you, so it skips them with a
   `recovery.skipped` event.
-- Workers and `recover()` **never sign and need no signer**. They read through the
-  Operation's chain, network and library with the current configuration. A resend or a nonce
-  reconciliation needs only the Operation's wallet, and a watch-only wallet is enough. You can
-  rotate or remove a signer while Operations are in flight. If the wallet itself is gone from
-  the configuration, `recover()` still checks the Operation and counts it `unresent`:
-  restore the wallet and recover again to resend it.
+- Workers and `recover()` **never sign**. They read through the Operation's chain, network
+  and library with the current configuration. A resend, a nonce reconciliation and the
+  all-rejected verdict resolve the Operation's wallet: a watch-only wallet (an `address`,
+  `publicKey` or `xpub`) is enough, but a wallet that names a signer needs that signer
+  registered, since its address comes from the signer's public key (`getPublicKey`, never a
+  signature). To rotate a signer while Operations are in flight, keep the old wallet
+  resolvable, as a watch-only wallet if you like, until they finish. If the wallet does not
+  resolve, `recover()` still checks the Operation and counts it `unresent`: restore the
+  wallet and recover again to resend it.
 - A nonce that leaked in a crash (allocated, never stored) is also reclaimed by the next
   `transfer` or `prepareTransfer` from that wallet, so a quiet wallet never stays blocked.
 - `aio.monitor.runOnce({ workerId, batch })` runs one pass and returns how many Operations it
@@ -41,8 +51,10 @@ await aio.close(); // closes native clients and pooled drivers
   `monitor.start()` loop, and a running `runOnce()` or `recover()` at its next check, so
   the closed container claims no more Operations; starting one afterwards throws
   `INVALID_TRANSITION` too.
-- Tune timing with `lifecycle`: `pollIntervalMs`, `droppedGracePeriodMs`,
-  `rebroadcastIntervalMs`, `leaseMs`, `claimLeaseMs`, `waitTimeoutMs` and `signTimeoutMs`.
+- Tune timing with `lifecycle`: `pollIntervalMs` (5 s), `droppedGracePeriodMs` (120 s),
+  `rebroadcastIntervalMs` (60 s), `leaseMs` (30 s), `leaseWaitMs` (`leaseMs`: how long a
+  transfer waits for its wallet's address lease before `SEQUENCE_BUSY`), `claimLeaseMs`
+  (60 s), `waitTimeoutMs` (600 s) and `signTimeoutMs` (120 s).
 
 ## Next steps
 

@@ -35,7 +35,8 @@ for await (const event of scanner) {
     for (const tx of event.transactions)
       for (const transfer of tx.transfers) {
         if (!mine.has(transfer.to.canonical)) continue; // the filter is a superset
-        // Bitcoin: change, and a cancel's refund, go back to the sending address.
+        // Bitcoin and Avalanche: change (and a Bitcoin cancel's refund) goes back to
+        // the sending address.
         if (transfer.from.some((a) => a.canonical === transfer.to.canonical)) continue;
         if (transfer.unresolved) await flagForReview(transfer.id, transfer.unresolved);
         else await creditOnce(transfer.id, transfer.asset, transfer.amount);
@@ -50,11 +51,12 @@ for await (const event of scanner) {
 - **Credit only your own deposits.** `filter.addresses` returns every transaction with a
   transfer from **or** to one of those addresses, and it may carry other transfers too.
   Credit only transfers whose `to` is a deposit address, or your own sweeps look like deposits.
-- **On Bitcoin, skip transfers back to the sender.** A transaction that spends from an
-  address pays its change, and a cancel its refund, back to that address by default, so a
-  sweep from a deposit address shows a transfer `to` it. Credit a Bitcoin transfer only when
-  its `to` is not among its `from` addresses, as the loop above does. Never set a deposit
-  address you scan as `wallet.utxo.changeAddress`: its change would look like a deposit.
+- **On Bitcoin and Avalanche, skip transfers back to the sender.** A transaction that spends
+  from an address pays its change back to that address (on Bitcoin by default, and a cancel
+  its refund too), and every output is a transfer, so a sweep from a deposit address shows a
+  transfer `to` it. Credit a Bitcoin or Avalanche transfer only when its `to` is not among
+  its `from` addresses, as the loop above does. Never set a deposit address you scan as
+  `wallet.utxo.changeAddress`: its change would look like a deposit.
   Do not skip every transfer with one of your addresses in `from`, though: a withdrawal from
   your hot wallet to another customer's deposit address is a real deposit.
 - **At least once.** A block may be delivered again after a crash, so dedupe on
@@ -68,8 +70,8 @@ for await (const event of scanner) {
 - **`SCANNER_REORG_TOO_DEEP`.** The chain diverged deeper than the window. The scanner stops
   instead of guessing. Stop crediting, investigate, then reset explicitly: scan under a new
   `cursorKey`, or `put` a checkpoint `{ height, hash, recent }` through your `CursorStore`.
-  `recent` may be empty; the scanner refills it. The store key is currently
-  `<namespace>:<chain>:<network>:<cursorKey>`.
+  `recent` may be empty; the scanner refills it. The store key is
+  `<namespace>:<chain>:<network>:<cursorKey>`, and it stays so through 1.x.
 - `filter.assets` is a hint to the driver, not a guarantee. Check `transfer.asset` yourself.
 - **Unresolved assets.** A transfer whose asset cannot be resolved, such as a spam token
   with unusable metadata, does not stop the scanner. It arrives as an `UnresolvedTransfer`:
@@ -78,6 +80,11 @@ for await (const event of scanner) {
   `ASSET_RESOLUTION`, or `PROVIDER_UNAVAILABLE` for a TON jetton whose metadata the indexer
   does not have). Its transaction has `decoding: 'partial'`. `getTransaction` and `history`
   return the same marker. A retryable failure still fails the read.
+- **`partial` can shrink.** A transaction is `decoding: 'partial'` when it may move value the
+  family does not decode yet (EVM internal transfers, Solana Token-2022, Avalanche native
+  tokens). A minor release may decode more of them, so the same transaction can come to
+  carry more transfers: dedupe on `transfer.id`, never on a count of transfers per
+  transaction.
 - Stop an idle scanner with `signal`. `iterator.return()` acts only after a pending `next()`.
 - **EVM.** Blocks carry native transfers and ERC-20 `Transfer` logs. A transaction that ran
   contract code is `decoding: 'partial'`: internal transfers need traces, which are out of
@@ -134,7 +141,9 @@ own tokens comes in both parts of the listing, [Tron networks](../reference/netw
 so dedupe on `transfer.id`, as for scans.
 On Bitcoin it reads the Esplora indexer and lists confirmed transactions only, newest first.
 Credit from it as from the scanner: skip a transfer whose `to` is among its `from`
-addresses, which is the sender's change or a cancel's refund.
+addresses, which is the sender's change or a cancel's refund. The same holds on the Avalanche
+X-Chain and P-Chain, whose history comes from the Data API, each entry read back from the
+node.
 
 Solana needs no indexer: its RPC serves history (`getSignaturesForAddress`), newest first,
 at most 1,000 per page, and each item is read back with two requests (the transaction, then
@@ -172,9 +181,10 @@ has no proven deposit read yet, so credit a deposit this way:
 | Tron | `scanner()`, and `history()` from TronGrid, each entry read back from the `provider` | one endpoint's block, or one indexer's listing read back from one endpoint |
 | Solana | `scanner()`, and `history()` from `getSignaturesForAddress`, each item read back | one endpoint's block or signature list |
 | TON | `history()` only, from the indexer, with the provider's get-methods for jettons | one indexer endpoint and one provider endpoint |
+| Avalanche X-Chain and P-Chain | `scanner()`, and `history()` from the Data API, each entry read back from the `provider` | one node endpoint's block, or one Data API listing read back from one node endpoint |
 
-Each family's own rules still apply: on Bitcoin skip a transfer whose `to` is among its
-`from` addresses (change and cancel refunds); on Solana credit SPL deposits by the owner
+Each family's own rules still apply: on Bitcoin and Avalanche skip a transfer whose `to` is
+among its `from` addresses (change, and Bitcoin cancel refunds); on Solana credit SPL deposits by the owner
 wallet (`transfer.to`); on TON credit a jetton deposit only from its arrival in the owner's
 jetton wallet ([TON networks](../reference/networks/ton.md)). A scanner in `final` mode emits
 a block only once the network's finality policy holds, and it decides a rollback only when

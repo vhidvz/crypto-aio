@@ -15,7 +15,7 @@ networks or chain families, or implement the stores a production deployment need
 | [Add networks to a family](./custom-networks.md) | Serve your own EVM chain with the built-in driver |
 | [Write a chain family plugin](./plugins.md) | Add a blockchain family of your own: the plugin data and the driver contract |
 | [Write a durable store](./stores.md) | Implement the four store ports on your database, and prove them with the contract suites |
-| [Design records](./design-records.md) | Read the specification and plans behind the design |
+| [Design records](./design-records.md) | Read where the design's reasoning lives, the decisions taken for 1.0, and the open work inside the library |
 
 ## Contributing
 

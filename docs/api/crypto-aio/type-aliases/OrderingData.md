@@ -4,7 +4,7 @@
 
 > **OrderingData** = \{ `kind`: `"nonce"`; `nonce`: `bigint`; \} \| \{ `kind`: `"seqno"`; `seqno`: `bigint`; `validUntil`: `number`; \} \| \{ `inputs`: readonly `string`[]; `kind`: `"inputs"`; \} \| \{ `expiresAtMs?`: `number`; `kind`: `"expiry"`; `lastValidHeight?`: `bigint`; \}
 
-Defined in: [src/core/model/ordering.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ordering.ts#L11)
+Defined in: [src/core/model/ordering.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ordering.ts#L16)
 
 What reserves an Attempt's slot. A family's build may record more about a `seqno` or
 `expiry` slot in the same object (TON's `validFrom`, Tron's `refBlockHash`, Solana's

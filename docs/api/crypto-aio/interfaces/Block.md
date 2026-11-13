@@ -2,7 +2,10 @@
 
 # Interface: Block
 
-Defined in: [src/core/model/transaction.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L74)
+Defined in: [src/core/model/transaction.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L99)
+
+A block. `timestamp` is its time as the chain records it, in Unix seconds on every
+family (Tron's milliseconds are converted).
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/core/model/transaction.ts:74](https://github.com/vhidvz/crypto-
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/core/model/transaction.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L76)
+Defined in: [src/core/model/transaction.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L101)
 
 ***
 
@@ -22,7 +25,7 @@ Defined in: [src/core/model/transaction.ts:76](https://github.com/vhidvz/crypto-
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/core/model/transaction.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L75)
+Defined in: [src/core/model/transaction.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L100)
 
 ***
 
@@ -32,7 +35,7 @@ Defined in: [src/core/model/transaction.ts:75](https://github.com/vhidvz/crypto-
 
 > `readonly` **parentHash**: `string`
 
-Defined in: [src/core/model/transaction.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L77)
+Defined in: [src/core/model/transaction.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L102)
 
 ***
 
@@ -42,7 +45,7 @@ Defined in: [src/core/model/transaction.ts:77](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **timestamp?**: `number`
 
-Defined in: [src/core/model/transaction.ts:78](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L78)
+Defined in: [src/core/model/transaction.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L103)
 
 ***
 
@@ -52,4 +55,4 @@ Defined in: [src/core/model/transaction.ts:78](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **transactionIds?**: readonly `string`[]
 
-Defined in: [src/core/model/transaction.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L79)
+Defined in: [src/core/model/transaction.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L104)

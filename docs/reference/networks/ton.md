@@ -60,21 +60,22 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   the trial request that would let it rejoin the proof quorum, for as long as proof reads
   keep it busy. On endpoints you configure for proofs, set `burst: 2` or more where your
   plan allows it.
-- **Two or three independent providers.** `toncenter` and `public` are one service:
+- **Three or more independent providers.** `toncenter` and `public` are one service:
   configured together they count as two endpoints, yet they are one source, so toncenter
   alone then decides finality, bounces, a jetton's decimals and whether a transfer is
   proven absent, which `rebuild` acts on. Proofs read the provider and the indexer under the
-  proof quorum, so configure two or more independent toncenter-compatible pairs, ideally
-  three, for example toncenter and your own: with three, a quorum of two survives one
-  outage. With two, once one has failed its health checks for about three refreshes, the
-  other decides alone until the first recovers.
+  proof quorum, so configure independent toncenter-compatible pairs, three or more, for
+  example toncenter, your own and another: with three, a quorum of two survives one outage.
+  An endpoint that is down still counts toward the quorum, so with two, a proof waits (a
+  retryable `PROVIDER_UNAVAILABLE`) for as long as either is down, unless
+  `transport: { degradedProofs: true }` lets the one left decide alone.
 - **Archival endpoints for proofs.** Proofs walk a wallet's transactions back through a
   message's lifetime and run jetton get-methods at a transfer's own block, and history runs
   those get-methods at each jetton deposit's block. A node that has pruned a block answers
   "not ready", or "no state" (exit code -13) for the jetton wallet asked; neither decides
   anything: the proof, or the history read that holds the deposit, waits until an endpoint
   that has the block answers. Run archival nodes behind the endpoints you configure.
-  toncenter answered for old blocks on both networks when this was written.
+  toncenter has served old blocks on both networks.
 - **Wallets.** `wallets.<name>.ton` names the wallet contract, and every field decides the
   address: `{ version: 'v4r2', workchain?, subwalletId? }` (default `698983191` plus the
   workchain) or `{ version: 'v5r1', workchain?, subwalletNumber?, networkGlobalId? }`
@@ -90,10 +91,10 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
 - **One output per transfer.** A TON wallet delivers each output of a batch in its own
   transaction, so a batch can partly land: one output can bounce while the others are
   credited, and a single verdict for the whole transfer would either invite a resend that
-  pays the landed outputs twice or hide a failed one. So in this release a TON transfer
-  carries exactly one output: `batch-transfer` is not a TON capability, `bc.limits()`
-  answers `{ maxOutputs: 1 }`, and more than one output fails with `UNSUPPORTED_CAPABILITY`
-  before anything is built. Batch payouts are not supported yet.
+  pays the landed outputs twice or hide a failed one. So a TON transfer carries exactly one
+  output: `batch-transfer` is not a TON capability, `bc.limits()` answers
+  `{ maxOutputs: 1 }`, and more than one output fails with `UNSUPPORTED_CAPABILITY` before
+  anything is built. Batch payouts are not supported.
 - **Addresses and bounce.** Canonical addresses are raw (`0:<hex>`, lower case); `display`
   keeps the form you wrote, and `address.format({ raw: true })` gives the raw one. The form
   decides bounce: `UQ…` and `0Q…` never bounce, while `EQ…`, `kQ…` and raw addresses do. To
@@ -114,7 +115,8 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   fails with `SEQUENCE_BUSY` (retryable, with `context.blockingOperationId`) until the first
   is `included` or has ended. For more throughput, send from several wallets: another
   subwallet id or number gives the same key another address. A message lives 60 seconds of
-  chain time from its build (`validForSeconds`, fixed in this release). A build refuses an
+  chain time from its build (`validForSeconds`; only a network a plugin registers can set
+  another, see [Network parameters](#network-parameters)). A build refuses an
   endpoint whose chain time is more than 5 minutes from your server's clock (a retryable
   `PROVIDER_INCONSISTENT`), so keep the clock in sync: builds refused for chain-time skew
   mean fix the clock, not the endpoint. An endpoint and a clock both more than 5 minutes
@@ -151,11 +153,19 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   It protects only the library's own sends: after a reset under a shared key, anyone who
   saw the message can send it again while it is valid, and no client can prevent that.
 - **Busy wallets.** The proof that a message never landed, and the check before a resend,
-  walk at most 512 of the wallet's transactions, back to 5 minutes before the message's
-  build. A wallet that runs more than that in the meantime (incoming deposits count) leaves
-  a message that never landed undecided, logged as `TX_CHAIN_WALK_EXHAUSTED`: it is never
-  proven `expired`, so `rebuild` cannot follow, and the wallet's next transfer waits behind
-  it (`SEQUENCE_BUSY`). Send from wallets that do not also take a stream of deposits.
+  walk at most 512 of the wallet's transactions, from the wallet's newest state the proof
+  quorum attests back to 5 minutes before the message's build. Every transaction in that
+  span counts, incoming deposits included, also those after the message's lifetime ended.
+  So a message that never landed is decided only while the wallet has run fewer than 512
+  transactions since its build: a wallet that takes a stream of deposits, or a proof held up
+  by an outage or a rate limit while transactions keep arriving, can pass the bound. The
+  message then stays undecided for good, logged as `TX_CHAIN_WALK_EXHAUSTED`: it is never
+  proven `expired`, so `rebuild` cannot follow, `abandon` is refused (it was signed), and
+  every later transfer from the wallet waits behind it with `SEQUENCE_BUSY`. No call ends
+  such an Operation. The message itself expired long before, so it can no longer land:
+  check on an explorer whether it ran, settle the payment by hand, and send from another
+  wallet (another subwallet id or number gives the same key a new address). To avoid it,
+  pay out from wallets that do not take deposits, and fix a proof outage quickly.
 - **Replaced.** TON never reports an observed `replaced` for your own message: masterchain
   state is final, so a transfer that landed but is not indexed yet stays `submitted` or
   `included` until the indexer catches up. A proven `replaced` (`TX_REPLACED`) means that a
@@ -170,7 +180,9 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   transfer adds an `attached` charge, the Gram sent along to your jetton wallet (0.05 GRAM
   by default, the unspent part refunded), and its bound is `upper`. The only override is
   `{ attached }` in nanograms, as a bigint (`TonFeeOverride`), on jetton transfers; it must
-  exceed the 1-nanogram forward amount. An estimate whose `network` charge exceeds 1 GRAM
+  exceed the 1-nanogram forward amount, and no option bounds it from above, so check it in
+  your `beforeSign` hook if callers set it. An empty override (`{}`) is accepted on any
+  transfer and changes nothing: TON has no fee market. An estimate whose `network` charge exceeds 1 GRAM
   (a basechain wallet) or 100 GRAM (a masterchain wallet) is not trusted: it is a retryable
   `PROVIDER_INCONSISTENT`, so one endpoint cannot fail a transfer for good with an inflated
   fee. TON signs no fee, so the chain charges its own prices either way. Set the ceiling in
@@ -209,7 +221,7 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   `included`), never `final` either; a record that contradicts the indexer is logged as
   `BOUNCE_UNPROVEN`. Each check of a bounced transfer costs two or three more provider
   requests. With a single provider service, that service alone decides a bounce, as it
-  decides a transfer's absence: configure two or three independent ones, as above.
+  decides a transfer's absence: configure three or more independent ones, as above.
 - **Jettons.** `asset: { standard: 'jetton', contract: <master> }`, or the alias `USDT` on
   mainnet (Tether's master `EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs`, 6 decimals);
   testnet has no catalog tokens. A transfer goes through your jetton wallet, the one the
@@ -276,9 +288,9 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   example `bc.with({ provider: 'own-v2', indexer: 'own-v3' }).getTransaction(tx.id)`, and
   credit it only when both reads are final and agree on the transaction hash, the
   recipient, the asset, the amount and the memo.
-- **Extras and types.** `bc.ext.ton.getSeqno(address)` reads a wallet's seqno (0 while it
-  is undeployed), and `bc.ext.ton.jettonWallet(owner, master)` the jetton wallet the master
-  names for an owner. `crypto-aio/ton` exports `TON_CAPABILITIES`,
+- **Extras and types.** `bc.ext.ton.getSeqno(address)` reads a wallet's seqno as a `bigint`
+  (0 while it is undeployed), and `bc.ext.ton.jettonWallet(owner, master)` the address of
+  the jetton wallet the master names for an owner, raw (`0:<hex>`). `crypto-aio/ton` exports `TON_CAPABILITIES`,
   `TON_INDEXER_CAPABILITIES` and `TON_PEER_DEPENDENCIES`, and importing it types
   `native(bc, '@ton/ton')` as a `TonClient` ([Keys, signers and secrets](../../build/keys.md));
   the root entry exports the `Ton*` types, and both entries export `TonSeqnoOrdering`, an
@@ -300,3 +312,32 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
   keyed or self-hosted endpoints. The suite gives each such endpoint the keyless preset's
   rate limit, `rateLimit: { rps: 0.5 }`; set one on any keyless toncenter endpoint you
   configure yourself, since without it toncenter answers a burst with HTTP 429.
+
+## Network parameters
+
+A TON network a plugin registers may set these in its `params`; the built-in `mainnet` and
+`testnet` use the defaults, and any other key fails with `CONFIG_INVALID`:
+
+| Parameter | Default | What it sets |
+| --- | --- | --- |
+| `validForSeconds` | `60` | A message's lifetime in chain time, an integer from 10 to 86,400 |
+| `jettonAttached` | `50_000_000n` (0.05 GRAM) | The Gram a jetton transfer attaches to your jetton wallet, nanograms, from 1 to 2^120 − 1 |
+| `jettonForwardAmount` | `1n` | The nanograms forwarded to the recipient with the notification, from 0 to below `jettonAttached` |
+| `finalitySkewBlocks` | `10` | How many masterchain blocks below the head proofs attest, an integer from 1 to 1,000 |
+| `maxNetworkFee` | 1 GRAM basechain, 100 GRAM masterchain | The network's default fee ceiling; the handle's `maxNetworkFee` option wins over it |
+
+## Fee overrides, fee details and `ext.ton`
+
+These shapes, exported as types from `crypto-aio` (and `TonSeqnoOrdering` from
+`crypto-aio/ton` too), are what semver covers for the TON family
+([Versioning and stability](../stability.md)). The core types they fill
+(`TransferIntent.fee`, `FeeEstimate.details`, `WalletConfig.ton`) stay plain records.
+
+- **`TonFeeOverride`**: `{ attached? }`, nanograms as a `bigint`, jetton transfers only.
+- **`TonFeeDetails`**: `importFee`, `gasFee`, `storageFee` and `forwardFee` (nanograms; the
+  `network` charge is their sum), `forwardFeeSource` (`'emulated'` or `'computed'`), `deploy`
+  (whether the transfer deploys the wallet), and on jetton transfers `attached` and
+  `forwardAmount`.
+- **`TonWalletIdentity`**, a wallet's `ton` settings: `{ version: 'v4r2', workchain?,
+  subwalletId? }` or `{ version: 'v5r1', workchain?, subwalletNumber?, networkGlobalId? }`.
+- **`ext.ton`**: `getSeqno(address)` and `jettonWallet(owner, master)`, as above.

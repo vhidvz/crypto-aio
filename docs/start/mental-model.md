@@ -46,9 +46,12 @@ recovery resend those bytes; nothing is ever signed twice for one payment. Repla
 cancels are new Attempts in the same ordering slot. [Stop 3](../tour/transfer.md).
 
 **4. Every status says what it rests on.** `evidence: 'observed'` is one endpoint's view;
-`'proven'` is finalized data agreed by a quorum of endpoints (`proofQuorum`, 2 by default).
-After signing, an Operation becomes `final`, `failed` or `expired` only on proof. Absence is
-never proof. Deposits are always `observed`: you credit them by policy.
+`'proven'` is finalized data agreed by a quorum of endpoints (`proofQuorum`, 2 by default,
+or every endpoint when fewer are configured). After signing, an Operation becomes `final`,
+`failed` or `expired` only on proof. The one exception is a node's `rejected` answer for
+bytes that were never seen live: the driver checks the reason against the transaction
+itself, and the Operation fails with `TX_REJECTED` on that one answer. Absence is never
+proof. Deposits are always `observed`: you credit them by policy.
 [Stop 6](../tour/evidence.md).
 
 **5. Errors say whether anything may be in flight.** Every error is a `CryptoAioError` with a

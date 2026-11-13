@@ -15,6 +15,7 @@ import type {
   SigningResult,
 } from './types';
 
+/** The curves a local signer holds keys on: secp256k1 (ECDSA and Schnorr) and ed25519. */
 export type Curve = 'secp256k1' | 'ed25519';
 export type KeySource = (curve: Curve, keyRef: KeyRef | undefined) => Uint8Array;
 
@@ -167,6 +168,11 @@ function parseKey(input: Secret<string | Uint8Array>, curve: Curve): Uint8Array 
   return bytes;
 }
 
+/**
+ * `localSigner()`'s options: a raw private key per curve (hex or bytes, as a `secret`), the
+ * signer's `id` (default `'local'`), and whether `exportKey` may hand a key out (default
+ * `false`, `KEY_NOT_EXPORTABLE`).
+ */
 export interface LocalSignerOptions {
   readonly id?: string;
   readonly secp256k1?: Secret<string | Uint8Array>;
@@ -174,12 +180,14 @@ export interface LocalSignerOptions {
   readonly exportable?: boolean;
 }
 
+/** `localSigner.generate()`'s options: the curves to create a fresh random key on. */
 export interface GenerateOptions {
   readonly id?: string;
   readonly curves: readonly Curve[];
   readonly exportable?: boolean;
 }
 
+/** A signer over freshly generated keys, with their public keys. */
 export interface GeneratedSigner {
   readonly signer: Signer;
   /** secp256k1: 33-byte compressed; ed25519: 32 bytes. */
@@ -210,6 +218,11 @@ function fromKeys(
   );
 }
 
+/**
+ * A signer over raw private keys held in this process. `localSigner.generate()` creates
+ * fresh keys, and `localSigner.fromMnemonic()` derives them from a BIP39 phrase per wallet
+ * `keyRef.path`. For production keys, prefer a custody signer (`callbackSigner`).
+ */
 export function localSigner(options: LocalSignerOptions): Signer {
   const keys: Partial<Record<Curve, Uint8Array>> = {};
   if (options.secp256k1) keys.secp256k1 = parseKey(options.secp256k1, 'secp256k1');
@@ -235,6 +248,10 @@ localSigner.generate = function generate(options: GenerateOptions): GeneratedSig
   };
 };
 
+/**
+ * `localSigner.fromMnemonic()`'s options: the BIP39 `passphrase`, the curves to derive
+ * (default both), the signer's `id` and whether keys are exportable.
+ */
 export interface MnemonicSignerOptions {
   readonly id?: string;
   readonly passphrase?: Secret<string>;

@@ -2,7 +2,9 @@
 
 # Interface: EndpointStatus
 
-Defined in: [src/core/transport/types.ts:120](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L120)
+Defined in: [src/core/transport/types.ts:173](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L173)
+
+One endpoint's state, as `Transport.status()` and `getNetworkStatus()` report it.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/transport/types.ts:120](https://github.com/vhidvz/crypto-a
 
 > `readonly` **failures**: `number`
 
-Defined in: [src/core/transport/types.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L124)
+Defined in: [src/core/transport/types.ts:179](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L179)
+
+Failures in a row.
 
 ***
 
@@ -22,7 +26,9 @@ Defined in: [src/core/transport/types.ts:124](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **height?**: `bigint`
 
-Defined in: [src/core/transport/types.ts:125](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L125)
+Defined in: [src/core/transport/types.ts:181](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L181)
+
+Its height at the last probe.
 
 ***
 
@@ -32,7 +38,9 @@ Defined in: [src/core/transport/types.ts:125](https://github.com/vhidvz/crypto-a
 
 > `readonly` **id**: `string`
 
-Defined in: [src/core/transport/types.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L121)
+Defined in: [src/core/transport/types.ts:175](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L175)
+
+The endpoint's name.
 
 ***
 
@@ -42,7 +50,7 @@ Defined in: [src/core/transport/types.ts:121](https://github.com/vhidvz/crypto-a
 
 > `readonly` **kind**: `"rpc"` \| `"indexer"`
 
-Defined in: [src/core/transport/types.ts:122](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L122)
+Defined in: [src/core/transport/types.ts:176](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L176)
 
 ***
 
@@ -52,7 +60,9 @@ Defined in: [src/core/transport/types.ts:122](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **lag?**: `bigint`
 
-Defined in: [src/core/transport/types.ts:126](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L126)
+Defined in: [src/core/transport/types.ts:183](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L183)
+
+How far it is behind the best known height.
 
 ***
 
@@ -62,7 +72,7 @@ Defined in: [src/core/transport/types.ts:126](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **latencyMs?**: `number`
 
-Defined in: [src/core/transport/types.ts:127](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L127)
+Defined in: [src/core/transport/types.ts:184](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L184)
 
 ***
 
@@ -72,7 +82,9 @@ Defined in: [src/core/transport/types.ts:127](https://github.com/vhidvz/crypto-a
 
 > `readonly` `optional` **reason?**: `string`
 
-Defined in: [src/core/transport/types.ts:128](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L128)
+Defined in: [src/core/transport/types.ts:186](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L186)
+
+Why it is `disabled` (`identity-mismatch`).
 
 ***
 
@@ -82,4 +94,4 @@ Defined in: [src/core/transport/types.ts:128](https://github.com/vhidvz/crypto-a
 
 > `readonly` **state**: [`EndpointState`](../type-aliases/EndpointState.md)
 
-Defined in: [src/core/transport/types.ts:123](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L123)
+Defined in: [src/core/transport/types.ts:177](https://github.com/vhidvz/crypto-aio/blob/main/src/core/transport/types.ts#L177)

@@ -5,8 +5,10 @@
 // 1. The tarball holds `dist/`, `package.json`, `README.md`, `LICENSE` and `CHANGELOG.md`,
 //    and nothing else: no source, tests, docs or env files (a `.env` with keys was once
 //    committed to the repository).
-// 2. Installed without any SDK, every entry point loads, with `require` and with `import`,
-//    and each chain family's handle fails with `DEPENDENCY_MISSING` naming its SDK.
+// 2. Installed without any SDK, every entry point loads, with `require`, with `import` and
+//    under Jest, whose CommonJS loader cannot `require` an ES module (so an ESM-only
+//    dependency would break every user who tests with it), and each chain family's handle
+//    fails with `DEPENDENCY_MISSING` naming its SDK.
 // 3. With every SDK at its tested version (the `devDependencies`), each family's adapter
 //    loads: `ready()` gets as far as the (unreachable) endpoint.
 // 4. The type declarations compile in a TypeScript project that imports every entry point,
@@ -112,6 +114,30 @@ try {
   console.log(
     `${entries.length} entry points load as CommonJS and as ESM with no SDK installed`,
   );
+  writeFileSync(
+    join(app, 'entries.test.js'),
+    `test('every entry point loads', () => {
+  for (const e of ${JSON.stringify(entries)}) expect(require(e)).toBeDefined();
+});
+`,
+  );
+  run(
+    'npm',
+    [
+      'install',
+      '--no-audit',
+      '--no-fund',
+      '--no-save',
+      `jest@${pkg.devDependencies.jest}`,
+    ],
+    app,
+  );
+  run(
+    process.execPath,
+    [join(app, 'node_modules', 'jest', 'bin', 'jest.js'), '--ci'],
+    app,
+  );
+  console.log(`${entries.length} entry points load under Jest`);
   node(
     app,
     `${HANDLES}\ncheck('missing').catch((e) => { console.error(e.message); process.exit(1); });`,

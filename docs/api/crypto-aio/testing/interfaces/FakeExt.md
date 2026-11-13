@@ -2,7 +2,9 @@
 
 # Interface: FakeExt
 
-Defined in: [src/testing/fake-driver.ts:47](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L47)
+Defined in: [src/testing/fake-driver.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L48)
+
+The fake family's `bc.ext` API.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-driver.ts:47](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **fake**: `object`
 
-Defined in: [src/testing/fake-driver.ts:48](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L48)
+Defined in: [src/testing/fake-driver.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L49)
 
 #### head()
 

@@ -25,8 +25,8 @@ const OWN = walletAddress(TEST_PUBKEY, 'p2wpkh', REGTEST);
 const PAYEE = walletAddress(OTHER_PUBKEY, 'p2wpkh', REGTEST);
 const ref = (id: string) => ({ id, idKind: 'txid' as const, canonical: true });
 
-async function withSpend() {
-  const h = await utxoHarness();
+async function withSpend(endpoints?: readonly string[]) {
+  const h = await utxoHarness(endpoints ? { endpoints } : {});
   const outpoint = h.node.fund(OWN.address, 100_000n);
   const [txid] = outpoint.split(':') as [string];
   const spent = h.node.submit(
@@ -115,6 +115,49 @@ describe('the reader', () => {
       h.run(h.reader.getBalance(OWN.address, { standard: 'brc20', contract: 'x' })),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
     expect(await h.run(h.reader.getFinalizedHeight())).toBe(0n);
+  });
+
+  it('reads a busy address from another indexer when one refuses it for its own limit', async () => {
+    // electrs answers HTTP 400 for an address beyond its limits (Blockstream's "Scripthash
+    // history too large to scan"); another indexer may serve it.
+    const refusals = [
+      'Scripthash history too large to scan',
+      'Too many history entries',
+      'Too many unspent transaction outputs (>500). Contact support to raise limits.',
+    ];
+    for (const text of refusals) {
+      const two = await withSpend(['a', 'b']);
+      two.node.mine();
+      two.node.intercept('a', (request) =>
+        request.url.pathname.includes('/address/') ? { status: 400, text } : undefined,
+      );
+      expect(await two.run(two.reader.getBalance(PAYEE.address, 'native'))).toBe(90_000n);
+      expect(await two.run(listUnspent(two.ctx, PAYEE.address))).toHaveLength(1);
+      expect(
+        (await two.run(addressHistory(two.ctx).list(PAYEE.address, { limit: 5 }))).items,
+      ).toHaveLength(1);
+      // With every indexer refusing, the refusal stands: definitive, never retried.
+      two.node.intercept('b', (request) =>
+        request.url.pathname.includes('/address/') ? { status: 400, text } : undefined,
+      );
+      await expect(
+        two.run(two.reader.getBalance(PAYEE.address, 'native')),
+      ).rejects.toMatchObject({
+        code: 'RPC_ERROR',
+        retryable: false,
+        details: { status: 400 },
+      });
+    }
+    // Any other refusal of the address still stands at the first indexer.
+    const other = await withSpend(['a', 'b']);
+    other.node.intercept('a', (request) =>
+      request.url.pathname.includes('/address/')
+        ? { status: 400, text: 'Invalid Bitcoin address' }
+        : undefined,
+    );
+    await expect(
+      other.run(other.reader.getBalance(PAYEE.address, 'native')),
+    ).rejects.toMatchObject({ code: 'RPC_ERROR', details: { status: 400 } });
   });
 
   it('observes mempool, block and absence (an unknown id is a 404, never "unconfirmed")', async () => {

@@ -2,7 +2,11 @@
 
 # Interface: SequenceStore
 
-Defined in: [src/core/store/types.ts:337](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L337)
+Defined in: [src/core/store/types.ts:481](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L481)
+
+Nonce state per sending address. Values keep their types exactly (nonces past 2^64),
+returned states are copies, and a refusal leaves the stored state unchanged and never
+names the key, which embeds a wallet address.
 
 ## Methods
 
@@ -12,7 +16,9 @@ Defined in: [src/core/store/types.ts:337](https://github.com/vhidvz/crypto-aio/b
 
 > **get**(`key`): `Promise`\<[`SequenceState`](SequenceState.md) \| `null`\>
 
-Defined in: [src/core/store/types.ts:338](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L338)
+Defined in: [src/core/store/types.ts:483](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L483)
+
+The stored state, or `null` for an unknown key.
 
 #### Parameters
 
@@ -32,9 +38,11 @@ Defined in: [src/core/store/types.ts:338](https://github.com/vhidvz/crypto-aio/b
 
 > **put**(`key`, `state`, `expectedVersion`): `Promise`\<`void`\>
 
-Defined in: [src/core/store/types.ts:340](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L340)
+Defined in: [src/core/store/types.ts:489](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L489)
 
-Rejects on version mismatch (`VERSION_CONFLICT`) or when `fence` < stored fence (`FENCING`).
+Compare-and-set: `expectedVersion` `null` creates the key (version 1) and fails with
+`VERSION_CONFLICT` if it exists; otherwise it must be the stored version. Rejects on
+version mismatch (`VERSION_CONFLICT`) or when `fence` < stored fence (`FENCING`).
 
 #### Parameters
 

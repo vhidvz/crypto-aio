@@ -2,7 +2,9 @@
 
 # Interface: DriverTransfer
 
-Defined in: [src/core/driver/types.ts:95](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L95)
+Defined in: [src/core/driver/types.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L107)
+
+One movement of value a transaction makes, in base units.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/driver/types.ts:95](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **amount**: `bigint`
 
-Defined in: [src/core/driver/types.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L101)
+Defined in: [src/core/driver/types.ts:119](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L119)
 
 ***
 
@@ -22,7 +24,7 @@ Defined in: [src/core/driver/types.ts:101](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **asset**: [`AssetRef`](../type-aliases/AssetRef.md)
 
-Defined in: [src/core/driver/types.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L100)
+Defined in: [src/core/driver/types.ts:118](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L118)
 
 ***
 
@@ -32,7 +34,9 @@ Defined in: [src/core/driver/types.ts:100](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **from**: readonly `string`[]
 
-Defined in: [src/core/driver/types.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L98)
+Defined in: [src/core/driver/types.ts:116](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L116)
+
+The senders, as the driver's `normalize` returns them.
 
 ***
 
@@ -42,9 +46,12 @@ Defined in: [src/core/driver/types.ts:98](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **locator**: `string`
 
-Defined in: [src/core/driver/types.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L97)
+Defined in: [src/core/driver/types.ts:114](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L114)
 
-Deterministic within the transaction, e.g. `native`, `log:3`, `vout:1`, `ix:0.2`.
+Deterministic within the transaction, e.g. `native`, `log:3`, `vout:1`, `ix:0.2`. A
+deposit's id is `${txId}:${locator}`, which callers credit once by, so a driver gives a
+transfer the same locator from the scanner, `getTransaction` and `history`, from every
+provider, and in every later version of the driver.
 
 ***
 
@@ -54,7 +61,7 @@ Deterministic within the transaction, e.g. `native`, `log:3`, `vout:1`, `ix:0.2`
 
 > `readonly` `optional` **memo?**: `string`
 
-Defined in: [src/core/driver/types.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L103)
+Defined in: [src/core/driver/types.ts:122](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L122)
 
 ***
 
@@ -64,7 +71,9 @@ Defined in: [src/core/driver/types.ts:103](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **source**: [`TransferSource`](../type-aliases/TransferSource.md)
 
-Defined in: [src/core/driver/types.ts:102](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L102)
+Defined in: [src/core/driver/types.ts:121](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L121)
+
+Where the transfer was read from, such as the native value or a token event.
 
 ***
 
@@ -74,4 +83,4 @@ Defined in: [src/core/driver/types.ts:102](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **to**: `string`
 
-Defined in: [src/core/driver/types.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L99)
+Defined in: [src/core/driver/types.ts:117](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L117)

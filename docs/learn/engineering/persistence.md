@@ -96,7 +96,9 @@ concurrency control**, or compare-and-set, and lesson 13 builds on it.
 crypto-aio stores every payment as an **Operation** with a state, and every signed transaction
 as an **Attempt**, in its `OperationStore`, and it stores each signed Attempt **before** it
 broadcasts it. At startup, `aio.operations.recover()` reads the stored states and resends what
-needs resending. Recovery never signs, so it does not even need the signer.
+needs resending. Recovery never signs: a resend only asks the wallet's signer for its public
+key, to resolve the wallet. If the wallet no longer resolves, recovery still checks the
+Operation on chain and counts it `unresent`.
 
 The testing kit can crash the process at any write. Here the process dies right after the
 signed Attempt is stored, before the broadcast:

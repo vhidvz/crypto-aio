@@ -2,7 +2,7 @@
 
 # Interface: SdkBaseTx
 
-Defined in: [src/adapters/avalanche/sdk.ts:72](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L72)
+Defined in: [src/adapters/avalanche/sdk.ts:81](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L81)
 
 The `avax.BaseTx` every X-Chain and most P-Chain transactions carry.
 
@@ -14,7 +14,7 @@ The `avax.BaseTx` every X-Chain and most P-Chain transactions carry.
 
 > `readonly` **BlockchainId**: [`SdkId`](SdkId.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L74)
+Defined in: [src/adapters/avalanche/sdk.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L83)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:74](https://github.com/vhidvz/crypto-
 
 > `readonly` **inputs**: readonly [`SdkTransferableInput`](SdkTransferableInput.md)[]
 
-Defined in: [src/adapters/avalanche/sdk.ts:76](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L76)
+Defined in: [src/adapters/avalanche/sdk.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L85)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:76](https://github.com/vhidvz/crypto-
 
 > `readonly` **memo**: `object`
 
-Defined in: [src/adapters/avalanche/sdk.ts:77](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L77)
+Defined in: [src/adapters/avalanche/sdk.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L86)
 
 #### bytes
 
@@ -48,7 +48,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:77](https://github.com/vhidvz/crypto-
 
 > `readonly` **NetworkId**: [`SdkInt`](SdkInt.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:73](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L73)
+Defined in: [src/adapters/avalanche/sdk.ts:82](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L82)
 
 ***
 
@@ -58,4 +58,4 @@ Defined in: [src/adapters/avalanche/sdk.ts:73](https://github.com/vhidvz/crypto-
 
 > `readonly` **outputs**: readonly [`SdkTransferableOutput`](SdkTransferableOutput.md)[]
 
-Defined in: [src/adapters/avalanche/sdk.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L75)
+Defined in: [src/adapters/avalanche/sdk.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L84)

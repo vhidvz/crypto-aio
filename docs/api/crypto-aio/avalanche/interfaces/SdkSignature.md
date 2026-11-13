@@ -2,9 +2,9 @@
 
 # Interface: SdkSignature
 
-Defined in: [src/adapters/avalanche/sdk.ts:150](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L150)
+Defined in: [src/adapters/avalanche/sdk.ts:165](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L165)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `Signature` this library uses; it mirrors the SDK, outside semver.
 
 ## Extends
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:13](https://github.com/vhidvz/crypto-
 
 > **toString**(): `string`
 
-Defined in: [src/adapters/avalanche/sdk.ts:151](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L151)
+Defined in: [src/adapters/avalanche/sdk.ts:166](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L166)
 
 Returns a string representation of an object.
 

@@ -10,6 +10,8 @@ Advances `clock` in steps until `promise` settles, then returns its value or ret
 
 ## Type Parameters
 
+<a id="t"></a>
+
 ### T
 
 `T`

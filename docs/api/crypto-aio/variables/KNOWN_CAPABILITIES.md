@@ -4,4 +4,7 @@
 
 > `const` **KNOWN\_CAPABILITIES**: readonly \[`"tokens"`, `"memo"`, `"batch-transfer"`, `"replace-fee"`, `"cancel"`, `"block-scan"`, `"address-history"`, `"finality-tag"`, `"hd-public-derivation"`, `"contract-read"`, `"fee-market-1559"`, `"expiry"`\]
 
-Defined in: [src/core/model/capability.ts:1](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/capability.ts#L1)
+Defined in: [src/core/model/capability.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/capability.ts#L5)
+
+The capabilities the library names; `bc.supports(capability)` tells which a handle has.
+`contract-read` is reserved: no built-in family has it. A minor release may add names.

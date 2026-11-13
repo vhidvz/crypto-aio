@@ -35,7 +35,8 @@ stores the signed Attempt, and broadcasts. It returns a `Submission`: the Operat
 signs twice.
 
 - `outputs: [{ to, amount }, …]` sends several outputs; it needs the `batch-transfer`
-  capability. An EVM or Tron transfer has exactly one output.
+  capability, which Bitcoin and the Avalanche X-Chain and P-Chain have. An EVM, Tron, Solana
+  or TON transfer has exactly one output.
 - `asset` defaults to `'native'`. It also accepts a token ref, an asset id, or an alias
   registered for the handle's chain and network, such as `'USDC'` on `ethereum` mainnet.
   Tokens need the `tokens` capability: the EVM chains (ERC-20), Tron (TRC-20), Solana (SPL)
@@ -46,7 +47,7 @@ signs twice.
   ([Tron networks](../reference/networks/tron.md)).
 - `options.signal` aborts the call. An abort after a possible broadcast is reported as
   ambiguous.
-- On TON a transfer has exactly one output: batches are not supported yet, because a TON
+- On TON a transfer has exactly one output: batches are not supported, because a TON
   batch lands output by output, and a partly delivered one has no safe single verdict.
   Tokens are jettons, and `memo` is a text comment of at most 1,024 UTF-8 bytes
   ([TON networks](../reference/networks/ton.md)).
@@ -65,7 +66,9 @@ different intents. Retry in the same form, or you get `IDEMPOTENCY_CONFLICT`.
 
 On Bitcoin, the override is `{ satPerVByte }`, as a `bigint` or a decimal string with up to
 three decimals, in satoshis per virtual byte (`UtxoFeeOverride`), such as
-`{ satPerVByte: '2.5' }`.
+`{ satPerVByte: '2.5' }`. On the Avalanche P-Chain it is `{ gasPrice }`, in nAVAX per unit
+of gas, as a `bigint` or a decimal integer string (`AvalancheFeeOverride`); the X-Chain's
+fee is fixed and takes the speeds only. Each family's network page names its shapes.
 
 ```ts
 const estimate = await bc.estimateFee({ to, amount: '0.25', fee: 'fast' });
@@ -128,12 +131,21 @@ wallet cannot pay; its `details.required` is then a lower bound, with only the l
 wallet run can cost.
 [TON networks](../reference/networks/ton.md) covers the charges and the fee ceiling.
 
+On the Avalanche X-Chain every speed pays the fixed fee (0.001 AVAX), read under the proof
+quorum. On the P-Chain the fee is the transaction's gas times a gas price: the endpoint's
+current price times 1.1, 1.5 or 2 for `slow`, `normal` and `fast`, or your `{ gasPrice }`.
+[Avalanche X-Chain and P-Chain](../reference/networks/avalanche.md) covers the bounds.
+
 **No endpoint can raise a fee above your bound.** Every family's prices come from a node,
 so every family bounds them by a handle option that no endpoint can change: EVM
 `maxFeePerGas`, Bitcoin `maxFeeRate`, `maxFee` and `maxEstimatedFeeRate`, Tron
-`maxFeeLimit`, Solana `maxComputeUnitPrice`, and TON `maxNetworkFee` (on the estimate; TON
-signs no fee). A node's suggestion above the bound is clamped to it or not trusted, an
-explicit fee above it is refused before signing, and the build checks it again. Set each
+`maxFeeLimit`, Solana `maxComputeUnitPrice`, TON `maxNetworkFee` (on the estimate; TON
+signs no fee), and Avalanche `maxFee` and, on the P-Chain, `maxGasPrice`. A node's
+suggestion above the bound is clamped to it (EVM, Tron, Solana) or not trusted, a
+retryable error (Bitcoin, TON, Avalanche); an explicit fee above it is refused before
+signing, and the build checks it again. On the Avalanche P-Chain a speed's margin can
+also lift a price the node reported within the bound above it: that is refused with
+`INVALID_INTENT` too, so pick a slower speed or raise `maxGasPrice`. Set each
 bound to your fee policy; the defaults stop an absurd fee, not an expensive one.
 
 ## Next steps

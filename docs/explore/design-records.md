@@ -79,8 +79,13 @@ it waited.
   scripted test node's genesis timestamp is not Nile's.
 - Solana caches a mint that every endpoint calls absent for the container's life, and could skip
   a slot read while the finalized slot is still below the blockhash's.
-- TON's read path could retry asset failures (keep the junk-jetton tests); a bounce could be
-  authenticated from the chain itself.
+- TON's read path could retry asset failures (keep the junk-jetton tests).
+- TON's absence proof walks the wallet's chain back from its newest attested state, so a
+  wallet that has run more than 512 transactions since a message's build leaves the message
+  undecided for good ([Busy wallets](../reference/networks/ton.md)). Starting the walk at a
+  state attested just after the message's `validUntil` would bound it by the message's own
+  lifetime; it needs a proof read of the account at an earlier masterchain block, which a
+  1.x release can add.
 
 **Transport**
 
@@ -96,6 +101,10 @@ it waited.
   core type would break every family type declared as an interface). `engine.ts` and TON's
   `proofs.ts`, `reader.ts` and `api.ts` are long, as are the TON and UTXO end-to-end tests.
 - The only-native guard is text-based.
+- Drivers have no conformance suite, as stores have theirs: a `describeChainDriverContract`
+  could test a driver's rules (a proof's definitive negative against a retryable
+  unavailable, broadcast classification, dense block heights, stable transfer locators).
+  It adds to `crypto-aio/testing` only, so it can come in a 1.x release.
 - No test watches `require.cache` across families; the packaging check proves today that every
   entry point loads with no SDK.
 - The EVM write path runs against a real node (`pnpm test:evm-local`, anvil). The other
@@ -105,12 +114,24 @@ it waited.
   Determinism in tests could improve with a container option for the transport id and the
   random source, and one shared end-to-end environment.
 
+**Dependencies**
+
+- Decided for 1.0: `@noble/*` and `@scure/*` stay on their 1.x lines. Their 2.x lines are ES
+  modules only: Node.js's `require` loads them, but Jest's CommonJS loader cannot, so moving
+  would break every user whose Jest tests import crypto-aio. The pack check loads every
+  entry point under Jest to keep it so. An advisory against a 1.x line moves them as a
+  safety fix, with a changelog note on configuring Jest to transform them.
+
 **Store ports** (found by the PostgreSQL reference store)
 
 - Observations carry no namespace: `getObservation` and `putObservation` key them by attempt
   id alone, which is globally unique, so a store cannot partition them by tenant without
-  joining Attempts. Adding a namespace changes the port, so it waits for a major release.
-- `parseTagged` reads any plain object whose only key is `$bigint` or `$bytes` as a bigint or
-  bytes; there is no escape, so stored data never uses such an object.
-- Which record `findByRef` returns when several Operations of a namespace hold the ref is
-  unspecified; the core's AttemptRef guard keeps that from happening.
+  joining Attempts. The namespace can come in a 1.x minor release as an optional trailing
+  argument, which a store may use or ignore, so it waits for a store that needs it. A store
+  that starts partitioning by it must still find the observations it stored without one.
+- Decided for 1.0: `stringifyTagged` refuses (a `TypeError`) to write a plain object whose
+  only key is `$bigint` or `$bytes`, since `parseTagged` would read it back as a bigint or
+  bytes. The stored format stays as it is, with no escape; the core never stores such an
+  object.
+- Decided for 1.0: when several Operations of a namespace hold a ref (which the core's
+  AttemptRef guard never writes), `findByRef` may return any one of them.

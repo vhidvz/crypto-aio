@@ -2,9 +2,12 @@
 
 # Interface: SignatureBundle
 
-Defined in: [src/core/signing/types.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L28)
+Defined in: [src/core/signing/types.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L41)
 
-`secp256k1-ecdsa`: 64-byte compact r‖s (low-s) plus `recovery`; others: raw signature.
+A signature for one request. `secp256k1-ecdsa`: 64-byte compact r‖s (low-s) plus
+`recovery`; `secp256k1-schnorr`: a 64-byte BIP340 signature (by the tweaked key when the
+request has a tweak); `ed25519`: a 64-byte RFC 8032 signature; another scheme: its raw
+signature.
 
 ## Properties
 
@@ -14,7 +17,7 @@ Defined in: [src/core/signing/types.ts:28](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **bytes**: `Uint8Array`
 
-Defined in: [src/core/signing/types.ts:30](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L30)
+Defined in: [src/core/signing/types.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L43)
 
 ***
 
@@ -24,7 +27,7 @@ Defined in: [src/core/signing/types.ts:30](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` `optional` **recovery?**: `number`
 
-Defined in: [src/core/signing/types.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L31)
+Defined in: [src/core/signing/types.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L44)
 
 ***
 
@@ -34,4 +37,4 @@ Defined in: [src/core/signing/types.ts:31](https://github.com/vhidvz/crypto-aio/
 
 > `readonly` **requestId**: `string`
 
-Defined in: [src/core/signing/types.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L29)
+Defined in: [src/core/signing/types.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/core/signing/types.ts#L42)

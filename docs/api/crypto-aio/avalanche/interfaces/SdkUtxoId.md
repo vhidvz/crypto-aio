@@ -2,9 +2,9 @@
 
 # Interface: SdkUtxoId
 
-Defined in: [src/adapters/avalanche/sdk.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L51)
+Defined in: [src/adapters/avalanche/sdk.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L58)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `UTXOID` this library uses; it mirrors the SDK, outside semver.
 
 ## Properties
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > `readonly` **outputIdx**: [`SdkInt`](SdkInt.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L53)
+Defined in: [src/adapters/avalanche/sdk.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L60)
 
 ***
 
@@ -24,4 +24,4 @@ Defined in: [src/adapters/avalanche/sdk.ts:53](https://github.com/vhidvz/crypto-
 
 > `readonly` **txID**: [`SdkId`](SdkId.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L52)
+Defined in: [src/adapters/avalanche/sdk.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L59)

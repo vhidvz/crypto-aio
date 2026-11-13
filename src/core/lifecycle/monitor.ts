@@ -43,6 +43,10 @@ import {
 import { statusOf, type OperationView } from './views';
 import { Workers, type RecoveryReport, type WorkerOptions } from './workers';
 
+/**
+ * How `bc.waitForConfirmation()` waits: for `confirmations` (or `finality`), at most
+ * `timeoutMs`, reading every `pollIntervalMs`, until `signal` aborts.
+ */
 export interface WaitOptions {
   /** Default: the handle's `confirmations`. Ignored when `finality: 'final'`. */
   readonly confirmations?: number;
@@ -52,11 +56,13 @@ export interface WaitOptions {
   readonly signal?: AbortSignal;
 }
 
+/** What `bc.waitForConfirmation()` resolves to: the status, and the Operation when one tracks the transaction. */
 export interface ConfirmationResult {
   readonly status: TxStatus;
   readonly operation?: OperationView;
 }
 
+/** One update `bc.watch()` yields: the status, and the Operation when one tracks the transaction. */
 export interface TxStatusEvent {
   readonly status: TxStatus;
   readonly operation?: OperationView;

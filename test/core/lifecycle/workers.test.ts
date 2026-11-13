@@ -12,6 +12,8 @@ import {
 } from '../../../src/core/lifecycle/engine';
 import { Monitor } from '../../../src/core/lifecycle/monitor';
 import { sequenceKey } from '../../../src/core/ordering/sequence';
+import { OPERATION_FORMAT } from '../../../src/core/store/format';
+import { sampleOperation } from '../../../src/testing/contracts/operations';
 import { secret } from '../../../src/core/secret/secret';
 import { callbackSigner } from '../../../src/core/signing/callback';
 import { localSigner } from '../../../src/core/signing/local';
@@ -106,6 +108,31 @@ describe('background workers', () => {
     const signed = await restarted.stores.operations.getByKey('default', 'signed');
     expect(signed?.state).toBe('submitted');
     expect(env.chain.inMempool(signed?.attempts[0]?.ref.id ?? '')).toBe(true);
+  });
+
+  it('recovers the rest when a newer process stored a record this one cannot read', async () => {
+    const faulty = new FaultyOperationStore(new MemoryOperationStore());
+    const env = await createFakeEnv({ stores: { operations: faulty } });
+    faulty.crashOn({ method: 'appendAttempt', timing: 'after' });
+    await expect(
+      env.run(
+        env.bc.transfer({ to: env.stranger(), amount: 3n }, { idempotencyKey: 'signed' }),
+      ),
+    ).rejects.toBeInstanceOf(CrashError);
+    const restarted = await env.restart({ killPrevious: true });
+    // A newer version stored this one (a rolling upgrade): it is left to that version.
+    await restarted.stores.operations.create(
+      sampleOperation({
+        namespace: 'default',
+        format: OPERATION_FORMAT + 1,
+        idempotencyKey: 'newer',
+      }),
+    );
+    const report = await restarted.run(restarted.aio.operations.recover());
+    expect(report).toMatchObject({ rebroadcast: 1, failed: 0 });
+    expect(
+      (await restarted.run(restarted.aio.operations.list())).map((v) => v.idempotencyKey),
+    ).toEqual(['signed']);
   });
 
   it('reports a nonce gap together with the blocking operation', async () => {

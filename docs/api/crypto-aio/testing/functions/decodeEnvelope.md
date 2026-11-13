@@ -4,7 +4,9 @@
 
 > **decodeEnvelope**(`raw`): [`FakeEnvelope`](../interfaces/FakeEnvelope.md) \| `undefined`
 
-Defined in: [src/testing/fake-chain.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L98)
+Defined in: [src/testing/fake-chain.ts:124](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-chain.ts#L124)
+
+Reads a raw fake transaction, or `undefined`; wire protocol, not covered by semver.
 
 ## Parameters
 

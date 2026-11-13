@@ -7,7 +7,7 @@
 // @public
 export const TON_CAPABILITIES: readonly Capability[];
 
-// @public (undocumented)
+// @public
 export const TON_INDEXER_CAPABILITIES: readonly Capability[];
 
 // @public
@@ -65,7 +65,7 @@ export type TonWalletIdentity = {
     readonly networkGlobalId?: number;
 };
 
-// @public (undocumented)
+// @public
 export type TonWalletVersion = 'v4r2' | 'v5r1';
 
 // (No @packageDocumentation comment for this package)

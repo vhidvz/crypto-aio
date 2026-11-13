@@ -4,7 +4,9 @@
 
 > **rpcResult**(`request`, `result`): [`FakeReply`](../type-aliases/FakeReply.md)
 
-Defined in: [src/testing/fake-fetch.ts:104](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L104)
+Defined in: [src/testing/fake-fetch.ts:109](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-fetch.ts#L109)
+
+A JSON-RPC result answering `request`.
 
 ## Parameters
 

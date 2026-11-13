@@ -4,4 +4,6 @@
 
 > **FundsCheck** = \{ `ok`: `true`; \} \| \{ `asset`: [`AssetRef`](AssetRef.md); `available`: `bigint`; `ok`: `false`; `required`: `bigint`; \}
 
-Defined in: [src/core/driver/types.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L56)
+Defined in: [src/core/driver/types.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/driver/types.ts#L61)
+
+Whether the sender holds what the transfer and its fee need; when not, the shortfall.

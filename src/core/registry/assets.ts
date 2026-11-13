@@ -10,6 +10,11 @@ import {
 import type { ChainInfo } from '../model/chain';
 import { unknownName } from '../util/names';
 
+/**
+ * A token to register (`AioOptions.assets`, `Plugin.assets`): its metadata, which scales
+ * its amounts instead of what the chain says, and aliases such as `USDC` (1 to 32 of
+ * `A-Z`, `0-9`, `.`, `_` and `-`).
+ */
 export interface AssetRegistration {
   readonly chain: string;
   readonly network: string;

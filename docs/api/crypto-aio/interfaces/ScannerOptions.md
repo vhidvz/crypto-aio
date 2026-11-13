@@ -2,7 +2,9 @@
 
 # Interface: ScannerOptions
 
-Defined in: [src/core/observe/scanner.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L11)
+Defined in: [src/core/observe/scanner.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L13)
+
+What `bc.scanner(options)` scans, from where, and how.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/observe/scanner.ts:11](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **cursorKey**: `string`
 
-Defined in: [src/core/observe/scanner.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L13)
+Defined in: [src/core/observe/scanner.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L15)
 
 Durable name of this consumer's position (namespaced per container, chain and network).
 
@@ -24,7 +26,7 @@ Durable name of this consumer's position (namespaced per container, chain and ne
 
 > `readonly` `optional` **filter?**: `object`
 
-Defined in: [src/core/observe/scanner.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L29)
+Defined in: [src/core/observe/scanner.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L31)
 
 Passed to the driver's block source; each entry is resolved on this chain and network.
 
@@ -44,7 +46,7 @@ Passed to the driver's block source; each entry is resolved on this chain and ne
 
 > `readonly` `optional` **from?**: `bigint` \| `"latest"`
 
-Defined in: [src/core/observe/scanner.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L20)
+Defined in: [src/core/observe/scanner.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L22)
 
 Where a NEW cursor starts; ignored when a stored cursor exists. Default `'latest'`. The
 new cursor also retains the `reorgWindow` blocks below the start, so a rollback within
@@ -59,7 +61,7 @@ can start below `from`.
 
 > `readonly` `optional` **mode?**: `"final"` \| `"head"`
 
-Defined in: [src/core/observe/scanner.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L27)
+Defined in: [src/core/observe/scanner.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L29)
 
 `'final'` emits finalized blocks only; a rollback can then still come from a provider
 inconsistency. `'head'` follows the tip and may roll back within the window.
@@ -74,7 +76,9 @@ final mode keeps the unfinalized blocks it already delivered.
 
 > `readonly` `optional` **pollIntervalMs?**: `number`
 
-Defined in: [src/core/observe/scanner.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L35)
+Defined in: [src/core/observe/scanner.ts:38](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L38)
+
+How long to wait before looking for new blocks again (default: the lifecycle's).
 
 ***
 
@@ -84,7 +88,7 @@ Defined in: [src/core/observe/scanner.ts:35](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **reorgWindow?**: `number`
 
-Defined in: [src/core/observe/scanner.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L34)
+Defined in: [src/core/observe/scanner.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L36)
 
 Blocks retained for rollback detection (default: the network's reorgWindow).
 
@@ -96,7 +100,7 @@ Blocks retained for rollback detection (default: the network's reorgWindow).
 
 > `readonly` `optional` **signal?**: `AbortSignal`
 
-Defined in: [src/core/observe/scanner.ts:40](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L40)
+Defined in: [src/core/observe/scanner.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/observe/scanner.ts#L43)
 
 Stops the scan, also while it waits for new blocks. `iterator.return()` only takes effect
 once a pending `next()` settles, so an idle scanner is stopped with this signal.

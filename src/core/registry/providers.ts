@@ -3,6 +3,7 @@ import type { Secret } from '../secret/secret';
 import type { EndpointConfig } from '../transport/types';
 import { unknownName } from '../util/names';
 
+/** What a preset builds its endpoints from: the network, and the provider's key and options. */
 export interface PresetInput {
   readonly chain: string;
   readonly network: string;
@@ -12,12 +13,16 @@ export interface PresetInput {
 
 /** Provider preset contributed by a family plugin. Endpoint URLs holding keys must be `Secret`s. */
 export interface ProviderPreset {
+  /** The name a `ProviderConfig` uses (`{ preset: name }`). */
   readonly name: string;
   readonly kind: 'rpc' | 'indexer';
+  /** Whether a provider without an `apiKey` is refused. */
   readonly requiresApiKey?: boolean;
   /** `false` for free public endpoints (logged as not for production). */
   readonly production?: boolean;
+  /** Whether it serves `chain`'s `network`. */
   supports(chain: string, network: string): boolean;
+  /** The endpoints for `input`. */
   endpoints(input: PresetInput): readonly EndpointConfig[];
 }
 

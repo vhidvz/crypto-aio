@@ -4,4 +4,6 @@
 
 > **TokenRef** = `Exclude`\<[`AssetRef`](AssetRef.md), `"native"`\>
 
-Defined in: [src/core/model/asset.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L5)
+Defined in: [src/core/model/asset.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/asset.ts#L7)
+
+A token: an `AssetRef` that is not `native`.

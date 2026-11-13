@@ -4,4 +4,6 @@
 
 > `const` **fakeManifest**: [`AdapterManifest`](../../interfaces/AdapterManifest.md)
 
-Defined in: [src/testing/fake-plugin.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-plugin.ts#L55)
+Defined in: [src/testing/fake-plugin.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-plugin.ts#L56)
+
+The fake family's adapter manifest (library `fake-sdk`).

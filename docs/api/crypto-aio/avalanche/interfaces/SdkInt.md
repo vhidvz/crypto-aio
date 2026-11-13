@@ -2,9 +2,9 @@
 
 # Interface: SdkInt
 
-Defined in: [src/adapters/avalanche/sdk.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L21)
+Defined in: [src/adapters/avalanche/sdk.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L23)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `Int` this library uses; it mirrors the SDK, outside semver.
 
 ## Methods
 
@@ -14,7 +14,7 @@ The part of `@avalabs/avalanchejs` this library uses, as the native client types
 
 > **value**(): `number`
 
-Defined in: [src/adapters/avalanche/sdk.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L22)
+Defined in: [src/adapters/avalanche/sdk.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L24)
 
 #### Returns
 

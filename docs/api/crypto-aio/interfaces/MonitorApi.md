@@ -2,7 +2,9 @@
 
 # Interface: MonitorApi
 
-Defined in: [src/core/container/container.ts:331](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L331)
+Defined in: [src/core/container/container.ts:334](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L334)
+
+`aio.monitor`: the worker passes that check and finish every live Operation.
 
 ## Methods
 
@@ -12,7 +14,7 @@ Defined in: [src/core/container/container.ts:331](https://github.com/vhidvz/cryp
 
 > **runOnce**(`options?`): `Promise`\<`number`\>
 
-Defined in: [src/core/container/container.ts:335](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L335)
+Defined in: [src/core/container/container.ts:338](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L338)
 
 One worker pass; resolves to the number of Operations it claimed.
 
@@ -34,7 +36,7 @@ One worker pass; resolves to the number of Operations it claimed.
 
 > **start**(`options?`): `Promise`\<`void`\>
 
-Defined in: [src/core/container/container.ts:333](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L333)
+Defined in: [src/core/container/container.ts:336](https://github.com/vhidvz/crypto-aio/blob/main/src/core/container/container.ts#L336)
 
 Runs worker passes until `signal` aborts; any number of workers may run.
 

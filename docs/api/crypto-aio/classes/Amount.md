@@ -2,7 +2,7 @@
 
 # Class: Amount
 
-Defined in: [src/core/model/amount.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L13)
+Defined in: [src/core/model/amount.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L18)
 
 An exact, non-negative quantity of one asset in base units. Never floating point.
 
@@ -14,7 +14,7 @@ An exact, non-negative quantity of one asset in base units. Never floating point
 
 > `readonly` **asset**: [`AssetInfo`](../interfaces/AssetInfo.md)
 
-Defined in: [src/core/model/amount.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L16)
+Defined in: [src/core/model/amount.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L21)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [src/core/model/amount.ts:16](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` **base**: `bigint`
 
-Defined in: [src/core/model/amount.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L15)
+Defined in: [src/core/model/amount.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L20)
 
 ## Accessors
 
@@ -36,7 +36,7 @@ Defined in: [src/core/model/amount.ts:15](https://github.com/vhidvz/crypto-aio/b
 
 > **get** **decimals**(): `number`
 
-Defined in: [src/core/model/amount.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L66)
+Defined in: [src/core/model/amount.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L71)
 
 ##### Returns
 
@@ -50,7 +50,7 @@ Defined in: [src/core/model/amount.ts:66](https://github.com/vhidvz/crypto-aio/b
 
 > **compare**(`other`): `-1` \| `0` \| `1`
 
-Defined in: [src/core/model/amount.ts:98](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L98)
+Defined in: [src/core/model/amount.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L103)
 
 #### Parameters
 
@@ -70,7 +70,7 @@ Defined in: [src/core/model/amount.ts:98](https://github.com/vhidvz/crypto-aio/b
 
 > **equals**(`other`): `boolean`
 
-Defined in: [src/core/model/amount.ts:103](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L103)
+Defined in: [src/core/model/amount.ts:108](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L108)
 
 #### Parameters
 
@@ -90,7 +90,7 @@ Defined in: [src/core/model/amount.ts:103](https://github.com/vhidvz/crypto-aio/
 
 > **format**(): `string`
 
-Defined in: [src/core/model/amount.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L83)
+Defined in: [src/core/model/amount.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L88)
 
 #### Returns
 
@@ -104,7 +104,7 @@ Defined in: [src/core/model/amount.ts:83](https://github.com/vhidvz/crypto-aio/b
 
 > **isZero**(): `boolean`
 
-Defined in: [src/core/model/amount.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L70)
+Defined in: [src/core/model/amount.ts:75](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L75)
 
 #### Returns
 
@@ -118,7 +118,7 @@ Defined in: [src/core/model/amount.ts:70](https://github.com/vhidvz/crypto-aio/b
 
 > **minus**(`other`): `Amount`
 
-Defined in: [src/core/model/amount.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L92)
+Defined in: [src/core/model/amount.ts:97](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L97)
 
 #### Parameters
 
@@ -138,7 +138,7 @@ Defined in: [src/core/model/amount.ts:92](https://github.com/vhidvz/crypto-aio/b
 
 > **plus**(`other`): `Amount`
 
-Defined in: [src/core/model/amount.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L87)
+Defined in: [src/core/model/amount.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L92)
 
 #### Parameters
 
@@ -158,7 +158,7 @@ Defined in: [src/core/model/amount.ts:87](https://github.com/vhidvz/crypto-aio/b
 
 > **toDecimalString**(): `string`
 
-Defined in: [src/core/model/amount.ts:74](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L74)
+Defined in: [src/core/model/amount.ts:79](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L79)
 
 #### Returns
 
@@ -172,7 +172,7 @@ Defined in: [src/core/model/amount.ts:74](https://github.com/vhidvz/crypto-aio/b
 
 > **toJSON**(): `object`
 
-Defined in: [src/core/model/amount.ts:107](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L107)
+Defined in: [src/core/model/amount.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L112)
 
 #### Returns
 
@@ -194,7 +194,7 @@ Defined in: [src/core/model/amount.ts:107](https://github.com/vhidvz/crypto-aio/
 
 > **toString**(): `string`
 
-Defined in: [src/core/model/amount.ts:111](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L111)
+Defined in: [src/core/model/amount.ts:116](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L116)
 
 #### Returns
 
@@ -208,7 +208,7 @@ Defined in: [src/core/model/amount.ts:111](https://github.com/vhidvz/crypto-aio/
 
 > `static` **from**(`input`, `asset`): `Amount`
 
-Defined in: [src/core/model/amount.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L45)
+Defined in: [src/core/model/amount.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L50)
 
 #### Parameters
 
@@ -232,7 +232,7 @@ Defined in: [src/core/model/amount.ts:45](https://github.com/vhidvz/crypto-aio/b
 
 > `static` **fromBase**(`base`, `asset`): `Amount`
 
-Defined in: [src/core/model/amount.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L21)
+Defined in: [src/core/model/amount.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L26)
 
 #### Parameters
 
@@ -256,7 +256,7 @@ Defined in: [src/core/model/amount.ts:21](https://github.com/vhidvz/crypto-aio/b
 
 > `static` **parse**(`value`, `asset`): `Amount`
 
-Defined in: [src/core/model/amount.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L27)
+Defined in: [src/core/model/amount.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/amount.ts#L32)
 
 #### Parameters
 

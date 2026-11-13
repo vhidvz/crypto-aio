@@ -2,7 +2,9 @@
 
 # Interface: UtxoSelectionRequest
 
-Defined in: [src/adapters/utxo/types.ts:83](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L83)
+Defined in: [src/adapters/utxo/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L84)
+
+What `ext.utxo.coinSelection()` previews: a transfer of `outputs` from `from`.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/adapters/utxo/types.ts:83](https://github.com/vhidvz/crypto-aio
 
 > `readonly` `optional` **exclude?**: readonly `string`[]
 
-Defined in: [src/adapters/utxo/types.ts:88](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L88)
+Defined in: [src/adapters/utxo/types.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L89)
 
 Outpoints to leave out (e.g. those held by live Operations).
 
@@ -24,7 +26,7 @@ Outpoints to leave out (e.g. those held by live Operations).
 
 > `readonly` `optional` **fee?**: [`FeeSpeed`](../type-aliases/FeeSpeed.md) \| [`UtxoFeeOverride`](../type-aliases/UtxoFeeOverride.md)
 
-Defined in: [src/adapters/utxo/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L86)
+Defined in: [src/adapters/utxo/types.ts:87](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L87)
 
 ***
 
@@ -34,7 +36,7 @@ Defined in: [src/adapters/utxo/types.ts:86](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **from**: `string`
 
-Defined in: [src/adapters/utxo/types.ts:84](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L84)
+Defined in: [src/adapters/utxo/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L85)
 
 ***
 
@@ -44,4 +46,4 @@ Defined in: [src/adapters/utxo/types.ts:84](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **outputs**: readonly `object`[]
 
-Defined in: [src/adapters/utxo/types.ts:85](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L85)
+Defined in: [src/adapters/utxo/types.ts:86](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/utxo/types.ts#L86)

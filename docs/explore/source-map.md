@@ -19,9 +19,13 @@ src/
   adapters/           one directory per chain family; only these import SDKs, lazily
   testing/            crypto-aio/testing: the fake family, fake time, fakes and contract suites
 test/                 unit, architecture, documentation, end-to-end and integration tests
+examples/             the reference PostgreSQL store (not published)
 docs/                 this site (VitePress); docs/api/ is the generated API reference
-scripts/pack-check.mjs  loads every entry point from the packed tarball
-scripts/evm-local.mjs   runs the EVM write-path suite on a local anvil node it starts
+etc/api/              the API Extractor reports: the public API of each entry point
+scripts/api-report.mjs     checks the public API against etc/api/ (or updates it)
+scripts/pack-check.mjs     loads every entry point from the packed tarball, under Jest too
+scripts/evm-local.mjs      runs the EVM write-path suite on a local anvil node it starts
+scripts/release-notes.mjs  a version's changelog section, for the GitHub Release
 ```
 
 ## The core, subsystem by subsystem
@@ -65,8 +69,8 @@ flowchart TB
 | `core/errors/`, `core/events/` | Error classes and codes; the event bus and the redacting logger | `codes.ts`, `types.ts` |
 | `core/assets/`, `core/util/` | Asset resolution; bytes, clocks, tagged JSON | |
 
-The core's largest parts are the lifecycle (about 4,400 lines) and the transport (about 2,500):
-that is where the safety properties live.
+The core's largest parts are the lifecycle and the transport, thousands of lines each: that is
+where the safety properties live.
 
 ## A family adapter
 
@@ -78,7 +82,7 @@ others:
 | `plugin.ts` | The SDK-free plugin: chains, assets, presets and the adapter manifest |
 | `chains.ts`, `network.ts` | Chain and network data; the family's capabilities and handle options |
 | `presets.ts` | Provider presets: `(chain, network, apiKey)` to endpoints |
-| `driver.ts` | The `DriverFactory`: builds the driver from its parts; the only importer of the SDK |
+| `driver.ts` | The `DriverFactory`: builds the driver from its parts. Only the modules `manifest.load()` reaches import the SDK |
 | `reader.ts`, `builder.ts`, `fees.ts`, `proofs.ts`, `decode.ts` | The ports: reads, building, fees, proofs, decoding blocks and transfers |
 | `errors.ts` | Classifying the node's errors and refusals |
 | `types.ts` | The SDK-free public types: `…Ext`, `…FeeOverride`, `…FeeDetails` |
@@ -112,6 +116,11 @@ one family's `reader.ts` and `decode.ts`.
 | `test/architecture/` | The dependency rule, packaging, registry typing, and that secrets never echo |
 | `test/docs/` | These pages: links, navigation, the tutorial, the quick start, runnable snippets, the API and capability pages |
 | `test/e2e/` | The public API through the package entry points |
+| `test/compat/` | What earlier releases stored: intent hashes and store keys pinned as 0.1.0 wrote them |
+| `test/fuzz/` | The decoders of untrusted bytes, fed random and mutated input (`CRYPTO_AIO_FUZZ_ROUNDS`) |
+| `test/testing/` | `crypto-aio/testing` itself: the fake environment, chain and driver |
+| `test/examples/` | The reference PostgreSQL store, against a real server with `CRYPTO_AIO_PG_URL` |
+| `test/smoke.test.ts` | The test harness itself: unit tests never reach the network |
 | `test/integration/` | Read-only checks against live testnets, only with `CRYPTO_AIO_INTEGRATION=1`; and `evm-local.test.ts`, the EVM write path on a local node, only with `CRYPTO_AIO_IT_EVM_LOCAL_URL` |
 
 The commands a contributor runs:
@@ -123,6 +132,8 @@ pnpm test:coverage  # the tests with the coverage thresholds CI enforces
 pnpm doc            # the API reference pages, from the doc comments, into docs/api/
 pnpm docs:dev       # this site, with live reload, at http://localhost:5173/crypto-aio/
 pnpm test:pack      # build, pack, and load every entry point from the tarball
+pnpm lint:package   # package.json's exports and types under every resolution (publint, attw)
+pnpm api:check      # the public API against etc/api/; pnpm api:update rewrites the reports
 CRYPTO_AIO_INTEGRATION=1 pnpm test test/integration   # live, read-only
 pnpm test:evm-local # the EVM write path on a local anvil node, which it starts and stops
 ```

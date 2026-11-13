@@ -2,7 +2,7 @@
 
 # Interface: SdkUnsignedTx
 
-Defined in: [src/adapters/avalanche/sdk.ts:99](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L99)
+Defined in: [src/adapters/avalanche/sdk.ts:110](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L110)
 
 A builder's result.
 
@@ -14,7 +14,7 @@ A builder's result.
 
 > **getTx**(): [`SdkTransaction`](SdkTransaction.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:100](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L100)
+Defined in: [src/adapters/avalanche/sdk.ts:111](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L111)
 
 #### Returns
 
@@ -28,7 +28,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:100](https://github.com/vhidvz/crypto
 
 > **toBytes**(): `Uint8Array`
 
-Defined in: [src/adapters/avalanche/sdk.ts:101](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L101)
+Defined in: [src/adapters/avalanche/sdk.ts:112](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L112)
 
 #### Returns
 

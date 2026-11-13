@@ -12,11 +12,18 @@ and pass them to the container as `stores`. [Persistence and crash
 recovery](../learn/engineering/persistence.md) and [Concurrency: locks, leases and
 fencing](../learn/engineering/concurrency.md) explain the ideas these ports rest on.
 
+<!-- typecheck -->
 ```ts
+import {
+  CryptoAio, type CursorStore, type LockManager, type OperationStore, type SequenceStore,
+} from 'crypto-aio';
+// Your implementations, on your database:
+declare const operations: OperationStore, locks: LockManager;
+declare const sequences: SequenceStore, cursors: CursorStore;
+
 const aio = new CryptoAio({
   namespace: 'payments', // prefixes every store key: one namespace per tenant
-  stores: { operations, locks, sequences, cursors }, // your implementations
-  // …
+  stores: { operations, locks, sequences, cursors }, // all four: one left out is a memory store
 });
 ```
 
@@ -32,8 +39,9 @@ const aio = new CryptoAio({
 Every write that can race carries the version it expects (`expectedVersion`), and the
 Operation writes of a worker carry its claim's `Fence`. A write against an older version or
 fence must fail with `VERSION_CONFLICT` or `FENCING`, so that a process that paused, lost its
-lease and woke up later can never overwrite newer work. The type definitions, with the exact
-contract of each method in their JSDoc, are in `src/core/store/types.ts`.
+lease and woke up later can never overwrite newer work. The type definitions are in
+`src/core/store/types.ts`, each method's rules in its JSDoc; [What the suites
+check](#what-the-suites-check) lists them.
 
 ## The contract suites
 
@@ -41,11 +49,20 @@ Every store must pass the contract suites. They take your framework's `describe`
 so they run under Jest, Vitest or `node:test`. Each `create()` must return a fresh, empty
 store, such as a new schema or key prefix per test:
 
+<!-- typecheck -->
 ```ts
+import type { CursorStore, LockManager, OperationStore, SequenceStore } from 'crypto-aio';
 import {
   describeCursorStoreContract, describeLockManagerContract,
-  describeOperationStoreContract, describeSequenceStoreContract,
+  describeOperationStoreContract, describeSequenceStoreContract, type ContractTestApi,
 } from 'crypto-aio/testing';
+// Yours: your test framework's functions, a fresh store per call, and a real sleep.
+declare const describe: ContractTestApi['describe'], it: ContractTestApi['it'];
+declare function pgOperations(): Promise<OperationStore>;
+declare function redisLocks(): Promise<LockManager>;
+declare function redisSequences(): Promise<SequenceStore>;
+declare function pgCursors(): Promise<CursorStore>;
+declare function sleep(ms: number): Promise<void>;
 
 const api = { describe, it };
 describeOperationStoreContract(api, async () => ({ operations: await pgOperations(), advance: sleep }));
@@ -59,6 +76,37 @@ suites include stale-worker cases. A worker pauses, its lease expires, another t
 and the stale write must fail with `FENCING` or `VERSION_CONFLICT`. crypto-aio ships only the
 store ports, the in-memory stores and these suites. Durable stores, such as Redis or
 Postgres, are yours to write, and the suites define what they must do.
+
+### What the suites check
+
+- **Every port.** A store never puts a key, an idempotency key or a wallet address in an
+  error message. A value it returns is a copy: changing it never changes what is stored.
+  Bigints and bytes read back exactly.
+- **`LockManager`.** `acquire` grants one holder per key and returns `null` to everyone
+  else, the holder included: leases are not reentrant. Of concurrent acquirers, exactly one
+  wins. Every acquisition's token is larger than any before it on that key, after an expiry
+  or a release too. `renew` before expiry keeps the token; after expiry, or once another
+  holder took the key, it returns `null`. A `release` with a lease that expired and was
+  taken over changes nothing.
+- **`SequenceStore` and `CursorStore`.** `get` of an unknown key returns `null`. `put` with
+  `expectedVersion: null` creates the key at version 1, and each write raises the version
+  by one. A `put` with a stale version, or with `null` on a key that exists, fails with
+  `VERSION_CONFLICT` and leaves the stored value unchanged. A sequence write whose `fence`
+  is below the stored one fails with `FENCING`.
+- **`OperationStore`.** `create` creates only when `(namespace, idempotencyKey)` is absent;
+  otherwise it returns the stored record unchanged, even for another `intentHash`, and of
+  concurrent creates exactly one wins. It refuses input that carries a field the store owns
+  (`version`, `claim`, …), storing nothing. `update` and `appendAttempt` are compare-and-set
+  on `expectedVersion`, fenced by a worker's claim, and each success raises the version,
+  even one that changes nothing; a patch field outside the writable ones is refused, a
+  patch value of `undefined` changes nothing, and `clear` removes a field. `appendAttempt`
+  stores the Attempt and the state change together, refuses an Attempt id the Operation
+  already holds, and never rewrites earlier Attempts. Observations are versioned and
+  replaced whole, and `putObservation` never changes the Operation's version. `claimDue`
+  claims each due Operation for one worker only, in `(nextCheckAt, createdAt)` order, up to
+  `limit`, within its namespace. `list` returns records in creation order, and `purge`
+  removes at most `limit` of what the filter matches, the oldest first. A record of any
+  `format` reads back unchanged.
 
 For a starting point, the repository has a reference implementation of all four ports on
 PostgreSQL, with the `pg` driver:
@@ -128,15 +176,21 @@ any format reads back unchanged.
 
 A release that changes how an Operation, its intent, its unsigned transaction, its
 ordering data or its Attempts are stored raises `OPERATION_FORMAT` and still reads every
-earlier format, so you never migrate records yourself. The keys the core gives the other
-stores (`seq:<namespace>:<chain>:<network>:<address>` for nonce state and its lease,
-`<namespace>:<chain>:<network>:<cursorKey>` for a scanner) and the intent hash behind
-idempotency keys never change in a 1.x release.
+earlier format, so you never migrate records yourself. Nothing else the core stores carries a
+format, so its shape is fixed for 1.x: an Attempt's observation, a sequence's `next`,
+`released` and `fence`, and a scanner cursor's `height`, `hash` and `recent`. The keys the
+core gives the other stores never change in a 1.x release:
+`seq:<namespace>:<chain>:<network>:<address>` for nonce state and its lease,
+`ref:<namespace>:<refId>` for the lease that keeps two Operations from recording one
+transaction, and `<namespace>:<chain>:<network>:<cursorKey>` for a scanner. Neither does the
+intent hash behind idempotency keys.
 
 During a rolling upgrade, processes of two versions can share a store. A process never
-reads a record of a format newer than it knows: a read of one throws
-`RECORD_FORMAT_UNSUPPORTED`, and its workers release the claim on one at once and leave it
-to a newer process. Upgrade every process before you rely on what the new version stores.
+reads a record of a format newer than it knows: a read of one by id, key or ref throws
+`RECORD_FORMAT_UNSUPPORTED`; `aio.operations.list()` and `recover()` leave it out, and its
+workers release the claim on one at once, each with a logged warning, and leave it to a
+newer process. Upgrade every process before you rely on what the new version stores, and
+never run a 0.1.0 process beside a newer one: 0.1.0 has no format check.
 
 ## Data classification (for store implementers)
 
@@ -156,13 +210,19 @@ ordering lists UTXO outpoints, which tie a wallet to its coins. A nonce or seqno
 own is operational, and the `nonce.allocated` and `nonce.gap` events carry it.
 
 - Store plain data only: objects, arrays, strings, numbers, booleans, `bigint` and
-  `Uint8Array`. `stringifyTagged` and `parseTagged` round-trip bigint and bytes through JSON.
+  `Uint8Array`. `stringifyTagged` and `parseTagged` round-trip bigint and bytes through JSON,
+  as `{ "$bigint": "…" }` and `{ "$bytes": "<hex>" }`. `stringifyTagged` refuses, with a
+  `TypeError`, a plain object of that shape in the data itself, which would read back
+  changed; the core never stores one.
 - Keep keys out of store error messages. Sequence keys contain wallet addresses, and error
   messages reach logs. The contract suites check it for sequence and cursor keys, idempotency
   keys and wallet addresses.
-- The core never deletes records. `OperationStore.purge?(filter)` is optional, and retention
-  is your decision. When you implement it, it removes what the filter matches, as `list`
-  reads it (at most `limit` records, the oldest first), with their observations and
-  idempotency keys.
+- The core never deletes records, and never calls `OperationStore.purge?(filter)`: it is
+  optional, for your own retention. When you implement it, it removes what the filter
+  matches, as `list` reads it (at most `limit` records, the oldest first), with their
+  observations and idempotency keys, live Operations included. So purge only terminal
+  Operations (`states: TERMINAL_STATES`), and only once no caller can still retry their
+  keys: a key used again after its Operation was purged creates a new Operation and pays
+  again, and a purged live Operation loses its signed bytes.
 - Prove your stores with the contract suites from `crypto-aio/testing`. See
   [The contract suites](#the-contract-suites) above.

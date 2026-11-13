@@ -2,9 +2,9 @@
 
 # Interface: SdkTransferableInput
 
-Defined in: [src/adapters/avalanche/sdk.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L56)
+Defined in: [src/adapters/avalanche/sdk.ts:64](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L64)
 
-The part of `@avalabs/avalanchejs` this library uses, as the native client types it.
+The part of avalanchejs's `TransferableInput` this library uses; it mirrors the SDK, outside semver.
 
 ## Extends
 
@@ -32,7 +32,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:13](https://github.com/vhidvz/crypto-
 
 > `readonly` **assetId**: [`SdkId`](SdkId.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L58)
+Defined in: [src/adapters/avalanche/sdk.ts:66](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L66)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:58](https://github.com/vhidvz/crypto-
 
 > `readonly` **utxoID**: [`SdkUtxoId`](SdkUtxoId.md)
 
-Defined in: [src/adapters/avalanche/sdk.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L57)
+Defined in: [src/adapters/avalanche/sdk.ts:65](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L65)
 
 ## Methods
 
@@ -52,7 +52,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:57](https://github.com/vhidvz/crypto-
 
 > **amount**(): `bigint`
 
-Defined in: [src/adapters/avalanche/sdk.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L59)
+Defined in: [src/adapters/avalanche/sdk.ts:67](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L67)
 
 #### Returns
 
@@ -66,7 +66,7 @@ Defined in: [src/adapters/avalanche/sdk.ts:59](https://github.com/vhidvz/crypto-
 
 > **sigIndicies**(): `number`[]
 
-Defined in: [src/adapters/avalanche/sdk.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L60)
+Defined in: [src/adapters/avalanche/sdk.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/sdk.ts#L68)
 
 #### Returns
 

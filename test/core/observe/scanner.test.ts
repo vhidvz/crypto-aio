@@ -11,7 +11,7 @@ import { EventBus } from '../../../src/core/events/bus';
 import { noopLogger } from '../../../src/core/events/logger';
 import type { AioEvent } from '../../../src/core/events/types';
 import {
-  Scanner,
+  createScanner,
   type ScanEvent,
   type ScannerDeps,
 } from '../../../src/core/observe/scanner';
@@ -593,7 +593,7 @@ describe('scanner stale-view guard', () => {
     const recent = [0n, 1n, 2n].map((height) => ({ height, hash: `h${height}` }));
     await cursors.put('test:stub:net:k', { height: 2n, hash: 'h2', recent }, null);
     hashes.set(2n, 'h2-reorged');
-    const iterator = new Scanner(deps, { cursorKey: 'k' })[Symbol.asyncIterator]();
+    const iterator = createScanner(deps, { cursorKey: 'k' })[Symbol.asyncIterator]();
     return { clock, view, iterator };
   }
 
@@ -644,6 +644,7 @@ describe('address history', () => {
           const driver = await fakeDriverFactory.create(ctx);
           return {
             ...driver,
+            capabilities: new Set([...driver.capabilities, 'address-history' as const]),
             history: {
               list: async (address, options) => {
                 calls.push({ address, ...options });
@@ -724,6 +725,11 @@ describe('transfers of an unresolvable asset', () => {
           };
           return {
             ...driver,
+            capabilities: new Set([
+              ...driver.capabilities,
+              'address-history' as const,
+              'tokens' as const,
+            ]),
             reader: { ...driver.reader, getTransaction, getTokenMetadata: metadata },
             blocks: {
               header: (height) => blocks.header(height),

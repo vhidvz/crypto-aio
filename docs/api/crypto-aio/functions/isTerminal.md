@@ -4,7 +4,9 @@
 
 > **isTerminal**(`state`): `boolean`
 
-Defined in: [src/core/store/types.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L50)
+Defined in: [src/core/store/types.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/core/store/types.ts#L58)
+
+Whether `state` is one of `TERMINAL_STATES`.
 
 ## Parameters
 

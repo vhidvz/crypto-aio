@@ -36,7 +36,7 @@ export type AvalancheFeeOverride = {
     readonly gasPrice: bigint | string;
 };
 
-// @public (undocumented)
+// @public
 export interface AvalancheNativeClient {
     readonly avalanche: AvalancheSdk;
     readonly context: SdkContext;
@@ -114,7 +114,7 @@ export interface AvalancheUnspent {
 // @public
 export type AvalancheVm = 'avm' | 'pvm';
 
-// @public (undocumented)
+// @public
 export interface SdkAddress {
     // (undocumented)
     toBytes(): Uint8Array;
@@ -136,7 +136,7 @@ export interface SdkBaseTx {
     readonly outputs: readonly SdkTransferableOutput[];
 }
 
-// @public (undocumented)
+// @public
 export interface SdkBigInt {
     // (undocumented)
     value(): bigint;
@@ -171,12 +171,12 @@ export interface SdkContext {
     readonly xBlockchainID: string;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkCredential extends SdkSerializable {
     getSignatures(): string[];
 }
 
-// @public (undocumented)
+// @public
 export interface SdkDimensions {
     // (undocumented)
     readonly 0: number;
@@ -188,7 +188,7 @@ export interface SdkDimensions {
     readonly 3: number;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkFeeState {
     // (undocumented)
     readonly capacity: bigint;
@@ -200,7 +200,7 @@ export interface SdkFeeState {
     readonly timestamp: string;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkId {
     // (undocumented)
     toBytes(): Uint8Array;
@@ -208,13 +208,13 @@ export interface SdkId {
     toString(): string;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkInt {
     // (undocumented)
     value(): number;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkManager {
     // (undocumented)
     getDefaultCodec(): unknown;
@@ -226,7 +226,7 @@ export interface SdkManager {
     unpackTransaction(bytes: Uint8Array): SdkTransaction;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkOutputOwners {
     // (undocumented)
     readonly addrs: readonly SdkAddress[];
@@ -242,13 +242,13 @@ export interface SdkSerializable {
     readonly _type: string;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkSignature extends SdkSerializable {
     // (undocumented)
     toString(): string;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkSignedTx {
     // (undocumented)
     getCredentials(): SdkCredential[];
@@ -268,7 +268,7 @@ export interface SdkTransaction extends SdkSerializable {
     readonly vm: string;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkTransferableInput extends SdkSerializable {
     // (undocumented)
     amount(): bigint;
@@ -280,7 +280,7 @@ export interface SdkTransferableInput extends SdkSerializable {
     readonly utxoID: SdkUtxoId;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkTransferableOutput extends SdkSerializable {
     // (undocumented)
     amount(): bigint;
@@ -312,7 +312,7 @@ export interface SdkUnsignedTx {
     toBytes(): Uint8Array;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkUtxo extends SdkSerializable {
     // (undocumented)
     readonly assetId: SdkId;
@@ -323,7 +323,7 @@ export interface SdkUtxo extends SdkSerializable {
     readonly utxoId: SdkUtxoId;
 }
 
-// @public (undocumented)
+// @public
 export interface SdkUtxoId {
     // (undocumented)
     readonly outputIdx: SdkInt;

@@ -2,7 +2,11 @@
 
 # Interface: AssetRegistration
 
-Defined in: [src/core/registry/assets.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L13)
+Defined in: [src/core/registry/assets.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L18)
+
+A token to register (`AioOptions.assets`, `Plugin.assets`): its metadata, which scales
+its amounts instead of what the chain says, and aliases such as `USDC` (1 to 32 of
+`A-Z`, `0-9`, `.`, `_` and `-`).
 
 ## Properties
 
@@ -12,7 +16,7 @@ Defined in: [src/core/registry/assets.ts:13](https://github.com/vhidvz/crypto-ai
 
 > `readonly` `optional` **aliases?**: readonly `string`[]
 
-Defined in: [src/core/registry/assets.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L18)
+Defined in: [src/core/registry/assets.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L23)
 
 ***
 
@@ -22,7 +26,7 @@ Defined in: [src/core/registry/assets.ts:18](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **chain**: `string`
 
-Defined in: [src/core/registry/assets.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L14)
+Defined in: [src/core/registry/assets.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L19)
 
 ***
 
@@ -32,7 +36,7 @@ Defined in: [src/core/registry/assets.ts:14](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **metadata**: [`AssetMetadata`](AssetMetadata.md)
 
-Defined in: [src/core/registry/assets.ts:17](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L17)
+Defined in: [src/core/registry/assets.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L22)
 
 ***
 
@@ -42,7 +46,7 @@ Defined in: [src/core/registry/assets.ts:17](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **network**: `string`
 
-Defined in: [src/core/registry/assets.ts:15](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L15)
+Defined in: [src/core/registry/assets.ts:20](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L20)
 
 ***
 
@@ -52,4 +56,4 @@ Defined in: [src/core/registry/assets.ts:15](https://github.com/vhidvz/crypto-ai
 
 > `readonly` **ref**: [`AssetRef`](../type-aliases/AssetRef.md)
 
-Defined in: [src/core/registry/assets.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L16)
+Defined in: [src/core/registry/assets.ts:21](https://github.com/vhidvz/crypto-aio/blob/main/src/core/registry/assets.ts#L21)

@@ -2,12 +2,18 @@ import assert from 'node:assert/strict';
 import type { LockManager } from '../../core/store/types';
 import type { ContractTestApi } from './api';
 
+/** What `describeLockManagerContract` tests: a fresh lock manager and its clock. */
 export interface LockHarness {
   readonly locks: LockManager;
   /** Moves the store's notion of time forward (a fake clock, or a real sleep). */
   advance(ms: number): Promise<void>;
 }
 
+/**
+ * The `LockManager` contract suite: run it against your lock manager, with `create`
+ * returning a fresh one for each test, and `ttlMs` the lease length to test with (default
+ * 1 000 ms).
+ */
 export function describeLockManagerContract(
   api: ContractTestApi,
   create: () => LockHarness | Promise<LockHarness>,

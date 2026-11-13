@@ -4,9 +4,13 @@
 
 > **FamilyOf**\<`C`\> = `ChainEntry`\<`C`\>\[`"family"`\]
 
-Defined in: [src/core/model/ids.ts:22](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L22)
+Defined in: [src/core/model/ids.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/ids.ts#L28)
+
+The family of chain `C`.
 
 ## Type Parameters
+
+<a id="c"></a>
 
 ### C
 

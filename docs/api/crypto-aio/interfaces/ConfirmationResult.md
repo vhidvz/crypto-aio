@@ -2,7 +2,9 @@
 
 # Interface: ConfirmationResult
 
-Defined in: [src/core/lifecycle/monitor.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L55)
+Defined in: [src/core/lifecycle/monitor.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L60)
+
+What `bc.waitForConfirmation()` resolves to: the status, and the Operation when one tracks the transaction.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/core/lifecycle/monitor.ts:55](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **operation?**: [`OperationView`](OperationView.md)
 
-Defined in: [src/core/lifecycle/monitor.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L57)
+Defined in: [src/core/lifecycle/monitor.ts:62](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L62)
 
 ***
 
@@ -22,4 +24,4 @@ Defined in: [src/core/lifecycle/monitor.ts:57](https://github.com/vhidvz/crypto-
 
 > `readonly` **status**: [`TxStatus`](TxStatus.md)
 
-Defined in: [src/core/lifecycle/monitor.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L56)
+Defined in: [src/core/lifecycle/monitor.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/monitor.ts#L61)

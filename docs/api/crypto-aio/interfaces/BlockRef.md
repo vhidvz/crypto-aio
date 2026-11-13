@@ -2,7 +2,10 @@
 
 # Interface: BlockRef
 
-Defined in: [src/core/model/transaction.ts:68](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L68)
+Defined in: [src/core/model/transaction.ts:89](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L89)
+
+The block a transaction is in. `timestamp` is the block's time as the chain records it,
+in Unix seconds on every family (Tron's milliseconds are converted).
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/core/model/transaction.ts:68](https://github.com/vhidvz/crypto-
 
 > `readonly` **hash**: `string`
 
-Defined in: [src/core/model/transaction.ts:70](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L70)
+Defined in: [src/core/model/transaction.ts:91](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L91)
 
 ***
 
@@ -22,7 +25,7 @@ Defined in: [src/core/model/transaction.ts:70](https://github.com/vhidvz/crypto-
 
 > `readonly` **height**: `bigint`
 
-Defined in: [src/core/model/transaction.ts:69](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L69)
+Defined in: [src/core/model/transaction.ts:90](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L90)
 
 ***
 
@@ -32,4 +35,4 @@ Defined in: [src/core/model/transaction.ts:69](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **timestamp?**: `number`
 
-Defined in: [src/core/model/transaction.ts:71](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L71)
+Defined in: [src/core/model/transaction.ts:92](https://github.com/vhidvz/crypto-aio/blob/main/src/core/model/transaction.ts#L92)

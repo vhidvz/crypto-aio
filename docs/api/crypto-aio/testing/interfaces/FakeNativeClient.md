@@ -2,7 +2,9 @@
 
 # Interface: FakeNativeClient
 
-Defined in: [src/testing/fake-driver.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L54)
+Defined in: [src/testing/fake-driver.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L56)
+
+The fake family's native client, for tests of `crypto-aio/native`.
 
 ## Properties
 
@@ -12,7 +14,7 @@ Defined in: [src/testing/fake-driver.ts:54](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **closes**: `number`
 
-Defined in: [src/testing/fake-driver.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L58)
+Defined in: [src/testing/fake-driver.ts:60](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L60)
 
 How many times the driver's `close` for this client ran.
 
@@ -24,7 +26,7 @@ How many times the driver's `close` for this client ran.
 
 > `readonly` **id**: `number`
 
-Defined in: [src/testing/fake-driver.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L55)
+Defined in: [src/testing/fake-driver.ts:57](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L57)
 
 ***
 
@@ -34,7 +36,7 @@ Defined in: [src/testing/fake-driver.ts:55](https://github.com/vhidvz/crypto-aio
 
 > `readonly` **settings**: `Record`\<`string`, `unknown`\>
 
-Defined in: [src/testing/fake-driver.ts:56](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L56)
+Defined in: [src/testing/fake-driver.ts:58](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L58)
 
 ## Methods
 
@@ -44,9 +46,11 @@ Defined in: [src/testing/fake-driver.ts:56](https://github.com/vhidvz/crypto-aio
 
 > **rpc**\<`T`\>(`method`, `params?`): `Promise`\<`T`\>
 
-Defined in: [src/testing/fake-driver.ts:59](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L59)
+Defined in: [src/testing/fake-driver.ts:61](https://github.com/vhidvz/crypto-aio/blob/main/src/testing/fake-driver.ts#L61)
 
 #### Type Parameters
+
+<a id="t"></a>
 
 ##### T
 

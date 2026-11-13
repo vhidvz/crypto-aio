@@ -15,6 +15,7 @@ declare module '../../index' {
   }
 }
 
+/** The wallet contracts the TON driver sends from (`wallet.ton.version`). */
 export type TonWalletVersion = 'v4r2' | 'v5r1';
 
 /**

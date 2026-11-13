@@ -26,7 +26,13 @@ import type { TxFailure } from '../../core/model/transaction';
 import { fromHex } from '../../core/util/bytes';
 import { TRANSFER_TOPIC, decodeTransferCall, decodeTransferLog } from './abi';
 import { toBase58Address } from './address';
-import { malformed, notServable, type TronTxInfo, type TronTxJson } from './http';
+import {
+  malformed,
+  notServable,
+  unixSeconds,
+  type TronTxInfo,
+  type TronTxJson,
+} from './http';
 import type { TronCodec, TronContract, TronRawData } from './types';
 
 export interface TxVerdict {
@@ -297,8 +303,9 @@ export function decodeTransaction(
     ...(info ? { fee: [{ asset: 'native' as const, amount: info.fee }] } : {}),
     transfers,
     decoding,
-    // The block's time: the client-set `raw_data.timestamp` is display only.
-    ...(info ? { timestamp: info.blockTimestamp } : {}),
+    // The block's time, in Unix seconds as every family reports it: the client-set
+    // `raw_data.timestamp` is display only.
+    ...(info ? { timestamp: unixSeconds(info.blockTimestamp) } : {}),
     details: {
       contract: raw?.contract.type ?? 'unknown',
       ...(owner ? { owner } : {}),

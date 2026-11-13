@@ -5,10 +5,11 @@ description: Every entry point, the container, every handle method, signers, the
 
 # API at a glance
 
-Every public name of crypto-aio, grouped by what you use it for, with a link to the page that
-explains it. Types are in the generated TypeDoc reference ([below](#the-full-type-reference));
-`test/docs/api-reference.test.ts` checks that this page names every export and every handle
-method, so it cannot fall behind the code.
+Every value crypto-aio exports, grouped by what you use it for, with a link to the page that
+explains it, and the [types you use most](#types-you-use-most). Every type is in the
+generated TypeDoc reference ([below](#the-full-type-reference)), and the API reports in
+`etc/api/` list the whole public surface. `test/docs/api-reference.test.ts` checks that this
+page names every exported value and every handle method, so it cannot fall behind the code.
 
 ## Entry points
 
@@ -20,12 +21,13 @@ method, so it cannot fall behind the code.
 | `crypto-aio/tron` | Tron constants and the tronweb client type |
 | `crypto-aio/solana` | Solana constants and the `@solana/web3.js` client type |
 | `crypto-aio/ton` | TON constants and the `@ton/ton` client type |
-| `crypto-aio/avalanche` | Avalanche constants and the `@avalabs/avalanchejs` client type |
+| `crypto-aio/avalanche` | Avalanche constants and the `@avalabs/avalanchejs` client types |
 | `crypto-aio/testing` | The fake chain, fake time, scripted nodes, crash injection and store contract suites |
 | `crypto-aio/native` | `native()`, the escape hatch to a handle's SDK client (outside semver) |
 
 The package is CommonJS with type declarations; `require('crypto-aio')` works as well as
-`import`.
+`import`, and so does Jest. The SDK client types (`AvalancheNativeClient` and the `Sdk…`
+interfaces, `UtxoNativeClient`) follow their SDK and are outside semver, as `native()` is.
 
 ## The container: `CryptoAio`
 
@@ -44,7 +46,9 @@ The package is CommonJS with type declarations; `require('crypto-aio')` works as
 | `aio.namespace` | The namespace that prefixes every store key | [Configuration](./configuration.md) |
 
 `configure(options)` sets up the default container, and `defaultContainer()` returns it;
-`Blockchain.create({ chain, … })` makes a handle on it.
+`Blockchain.create({ chain, … })` makes a handle on it. Each `configure()` call merges its
+options into those of earlier calls, carries the stores over, and makes a new default
+container without closing the old one: call it once, at startup.
 
 ## The handle: `Blockchain`
 
@@ -94,10 +98,12 @@ A handle is immutable and bound to one chain, network, library, provider set and
 | `submitSignatures(operationId, signatures or signed payload)` | `Submission` | [Cold and asynchronous signing](../build/cold-signing.md) |
 | `broadcast(raw)` | The node's answer, for bytes signed elsewhere, **without** an Operation: no idempotency or monitoring | Prefer `prepareTransfer` |
 
-A `TransferIntent` is `{ to, amount, asset?, fee?, memo? }`, or `{ outputs: [{ to, amount }, …],
-asset?, fee?, memo? }` for several outputs (`batch-transfer`). An amount is a decimal `string`
-or base units as a `bigint`; a `number` is refused. `fee` is `'slow'`, `'normal'` (the default),
-`'fast'`, or the family's override object.
+A `TransferIntent` is `{ to, amount, asset?, fee?, memo?, from? }`, or
+`{ outputs: [{ to, amount }, …], asset?, fee?, memo?, from? }` for several outputs
+(`batch-transfer`). An amount (`AmountInput`) is a decimal `string`, base units as a `bigint`,
+or an `Amount`; a `number` is refused. `fee` is `'slow'`, `'normal'` (the default), `'fast'`,
+or the family's override object. `from`, when given, must be the selected wallet's address;
+`estimateFee` also takes it in place of a wallet.
 
 ### Following and fixing an Operation
 
@@ -154,7 +160,7 @@ monitor has observed; any other id is read as an unmanaged transaction.
 
 | Name | Is | See |
 | --- | --- | --- |
-| `CryptoAioError` | The base class: `code`, `category`, `retryable`, `ambiguous`, `context`, `toJSON()` | [Errors](./errors.md) |
+| `CryptoAioError` | The base class: `code`, `category`, `retryable`, `ambiguous`, `context`, `details`, `toJSON()` | [Errors](./errors.md) |
 | `ConfigError`, `UnsupportedCapabilityError`, `ValidationError`, `ProviderError`, `ChainError`, `SigningError`, `StateError`, `TimeoutError` | One class per category | [Errors](./errors.md#error-classes-and-codes) |
 | `isCryptoAioError(value)` | A type guard | |
 | `ERROR_CODES` | Every code, with its category and default `retryable` flag | |
@@ -169,7 +175,7 @@ monitor has observed; any other id is read as an unmanaged transaction.
 | `DATA_CLASSIFICATION` | Every persisted field's class: `sensitive`, `sensitive-until-broadcast`, `operational` | [Write a durable store](../explore/stores.md#data-classification-for-store-implementers) |
 | `CLEARABLE_FIELDS`, `OPERATION_PATCH_KEYS` | The fields an Operation patch may set or clear | |
 | `OPERATION_FORMAT` | The record format this version stores Operations in; it reads every earlier one | [Write a durable store](../explore/stores.md#upgrades-and-the-record-format) |
-| `stringifyTagged(value)`, `parseTagged(text)` | JSON that round-trips `bigint` and `Uint8Array` | |
+| `stringifyTagged(value)`, `parseTagged(text)` | JSON that round-trips `bigint` and `Uint8Array`; `stringifyTagged` refuses a plain object that would read back as one | [Write a durable store](../explore/stores.md) |
 
 ## Events
 
@@ -179,7 +185,7 @@ data only: ids, states, codes, heights, timings and sizes.
 | Event | Fires when |
 | --- | --- |
 | `rpc.request`, `rpc.response`, `rpc.error` | The transport sends a request, gets an answer, or fails |
-| `provider.health` | An endpoint's state changes: `healthy`, `lagging`, `open`, `disabled` |
+| `provider.health` | After every completed health refresh, once per endpoint, with its state: `healthy`, `lagging`, `open` or `disabled` (never for `unknown` or `half-open`). A gauge, not a change event: compare with the last one to see a change |
 | `provider.misconfigured` | An endpoint serves another network |
 | `provider.inconsistent` | Endpoints disagree on a quorum read |
 | `operation.state` | An Operation moves from one state to another |
@@ -208,6 +214,22 @@ origin an SDK sees instead of a real URL. Family entry points add their own:
 `DEFAULT_MAX_FEE_LIMIT` and `DEFAULT_ENERGY_MARGIN_PERCENT` (`crypto-aio/tron`);
 `DEFAULT_MAX_COMPUTE_UNIT_PRICE` (`crypto-aio/solana`); and each family's `…_CAPABILITIES` and
 `…_PEER_DEPENDENCIES`.
+
+## Types you use most
+
+The types a caller names most often, beyond the values above:
+
+| Type | Is |
+| --- | --- |
+| `AioOptions`, `ChainDefaults`, `ProviderConfig`, `EndpointConfig`, `WalletConfig`, `LifecycleOptions`, `TransportOptions`, `HandleOptions` | The [configuration](./configuration.md) shapes |
+| `TransferIntent`, `AmountInput`, `FeeSpeed`, `FeeOverride`, `FeeEstimate`, `Submission`, `PreparedOperation` | Sending ([Send a transfer](../build/send.md)) |
+| `OperationView`, `OperationState`, `TxStatus`, `TxState`, `TxFailure`, `WaitOptions` | Following a transfer ([Wait for confirmation](../build/confirmations.md)) |
+| `RecoveryReport` | What `recover()` did: `{ rebroadcast, checked, skipped, unresent, failed, reconciled }` |
+| `Transaction`, `Transfer`, `Balance`, `Block`, `ScanEvent`, `ScannerOptions` | Reading and receiving ([Receive deposits](../build/receive.md)) |
+| `Signer`, `SigningRequest`, `SigningContext`, `Logger`, `LogWriter`, `Clock` | The ports you implement for custody, logging and time |
+| `ChainRegistry`, `FamilyRegistry`, `NativeClientMap` | Registries a plugin augments, so its chains, families and native clients are typed ([Write a chain family plugin](../explore/plugins.md)) |
+| `EvmChainPluginOptions` (`crypto-aio/evm`) | What `evmChainPlugin` takes ([Add a custom network](../explore/custom-networks.md)) |
+| `EvmFeeOverride`, `TronFeeDetails`, `UtxoWalletOptions`, `TonWalletIdentity`, … | The shapes each family accepts or returns in its plain-record fields ([Versioning and stability](./stability.md)) |
 
 ## The testing kit: `crypto-aio/testing`
 

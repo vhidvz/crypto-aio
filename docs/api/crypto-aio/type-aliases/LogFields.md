@@ -4,4 +4,6 @@
 
 > **LogFields** = `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/events/logger.ts:5](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L5)
+Defined in: [src/core/events/logger.ts:7](https://github.com/vhidvz/crypto-aio/blob/main/src/core/events/logger.ts#L7)
+
+A log entry's structured fields.

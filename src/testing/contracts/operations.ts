@@ -21,6 +21,10 @@ function isRejected<T>(result: PromiseSettledResult<T>): result is PromiseReject
 
 let counter = 0;
 
+/**
+ * A new Operation for store tests, in namespace `ns` with a fresh id and idempotency key on
+ * every call, and `overrides` over it.
+ */
 export function sampleOperation(overrides: Partial<NewOperation> = {}): NewOperation {
   counter += 1;
   return {
@@ -52,6 +56,7 @@ export function sampleOperation(overrides: Partial<NewOperation> = {}): NewOpera
   };
 }
 
+/** An Attempt with id `id` (ref `ref-<id>`, nonce 7) for store tests, with `overrides` over it. */
 export function sampleAttempt(
   id: string,
   overrides: Partial<AttemptRecord> = {},
@@ -157,12 +162,18 @@ function assertWholeOrdering(
   }
 }
 
+/** What `describeOperationStoreContract` tests: a fresh store and its clock. */
 export interface OperationHarness {
   readonly operations: OperationStore;
   /** Moves the store's notion of time forward (a fake clock, or a real sleep). */
   advance(ms: number): Promise<void>;
 }
 
+/**
+ * The `OperationStore` contract suite: run it against your store, with `create` returning
+ * a fresh, empty store for each test. A store that passes keeps every guarantee the
+ * `OperationStore` documentation states.
+ */
 export function describeOperationStoreContract(
   api: ContractTestApi,
   create: () => OperationHarness | Promise<OperationHarness>,

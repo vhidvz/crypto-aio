@@ -2,7 +2,10 @@
 
 # Interface: AvalancheNativeClient
 
-Defined in: [src/adapters/avalanche/driver.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L19)
+Defined in: [src/adapters/avalanche/driver.ts:23](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L23)
+
+What `native(bc, '@avalabs/avalanchejs')` hands out. It mirrors the SDK, so it is outside
+semver: a new avalanchejs line may change it in a minor release.
 
 ## Properties
 
@@ -12,7 +15,7 @@ Defined in: [src/adapters/avalanche/driver.ts:19](https://github.com/vhidvz/cryp
 
 > `readonly` **avalanche**: [`AvalancheSdk`](AvalancheSdk.md)
 
-Defined in: [src/adapters/avalanche/driver.ts:24](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L24)
+Defined in: [src/adapters/avalanche/driver.ts:28](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L28)
 
 The `@avalabs/avalanchejs` module. Its type names the members this library uses; cast
 it to reach the rest of the SDK.
@@ -25,7 +28,7 @@ it to reach the rest of the SDK.
 
 > `readonly` **context**: [`SdkContext`](SdkContext.md)
 
-Defined in: [src/adapters/avalanche/driver.ts:29](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L29)
+Defined in: [src/adapters/avalanche/driver.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L33)
 
 avalanchejs's `Context` for this network and chain (network id, HRP, AVAX asset id,
 this chain's id). Its fee fields are zero: read the fees from the chain.
@@ -38,11 +41,13 @@ this chain's id). Its fee fields are zero: read the fees from the chain.
 
 > **rpc**\<`T`\>(`method`, `params?`): `Promise`\<`T`\>
 
-Defined in: [src/adapters/avalanche/driver.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L31)
+Defined in: [src/adapters/avalanche/driver.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/avalanche/driver.ts#L35)
 
 A JSON-RPC call (e.g. `avm.getTxFee`) to the handle's node endpoints, through the transport.
 
 #### Type Parameters
+
+<a id="t"></a>
 
 ##### T
 

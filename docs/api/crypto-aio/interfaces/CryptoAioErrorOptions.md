@@ -2,7 +2,9 @@
 
 # Interface: CryptoAioErrorOptions
 
-Defined in: [src/core/errors/error.ts:8](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L8)
+Defined in: [src/core/errors/error.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L11)
+
+What an error is made with, besides its code and message.
 
 ## Properties
 
@@ -12,7 +14,9 @@ Defined in: [src/core/errors/error.ts:8](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **ambiguous?**: `boolean`
 
-Defined in: [src/core/errors/error.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L13)
+Defined in: [src/core/errors/error.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L18)
+
+Whether the call may have reached the chain (default `false`).
 
 ***
 
@@ -22,7 +26,7 @@ Defined in: [src/core/errors/error.ts:13](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **cause?**: `unknown`
 
-Defined in: [src/core/errors/error.ts:9](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L9)
+Defined in: [src/core/errors/error.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L12)
 
 ***
 
@@ -32,7 +36,7 @@ Defined in: [src/core/errors/error.ts:9](https://github.com/vhidvz/crypto-aio/bl
 
 > `readonly` `optional` **context?**: `Readonly`\<`Record`\<`string`, [`ErrorContextValue`](../type-aliases/ErrorContextValue.md)\>\>
 
-Defined in: [src/core/errors/error.ts:10](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L10)
+Defined in: [src/core/errors/error.ts:13](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L13)
 
 ***
 
@@ -42,7 +46,7 @@ Defined in: [src/core/errors/error.ts:10](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **details?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [src/core/errors/error.ts:11](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L11)
+Defined in: [src/core/errors/error.ts:14](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L14)
 
 ***
 
@@ -52,4 +56,6 @@ Defined in: [src/core/errors/error.ts:11](https://github.com/vhidvz/crypto-aio/b
 
 > `readonly` `optional` **retryable?**: `boolean`
 
-Defined in: [src/core/errors/error.ts:12](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L12)
+Defined in: [src/core/errors/error.ts:16](https://github.com/vhidvz/crypto-aio/blob/main/src/core/errors/error.ts#L16)
+
+Overrides the code's default `retryable` flag.

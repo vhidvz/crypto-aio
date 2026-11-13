@@ -4,4 +4,6 @@
 
 > **TonWalletVersion** = `"v4r2"` \| `"v5r1"`
 
-Defined in: [src/adapters/ton/types.ts:18](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L18)
+Defined in: [src/adapters/ton/types.ts:19](https://github.com/vhidvz/crypto-aio/blob/main/src/adapters/ton/types.ts#L19)
+
+The wallet contracts the TON driver sends from (`wallet.ton.version`).

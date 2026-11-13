@@ -1,6 +1,11 @@
 import { ConfigError } from '../errors/error';
 import type { Signer } from './types';
 
+/**
+ * `callbackSigner()`'s options: the signer's `id`, the schemes its key signs with (every
+ * scheme a wallet needs must be listed), and the callbacks that reach your custody system.
+ * `cancelRequest`, when given, is called with a pending request's ticket on `abandon`.
+ */
 export interface CallbackSignerOptions {
   readonly id: string;
   readonly schemes: readonly string[];

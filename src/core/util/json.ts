@@ -133,12 +133,27 @@ export function sha256Hex(input: string | Uint8Array): string {
   return bytesToHex(sha256(typeof input === 'string' ? utf8ToBytes(input) : input));
 }
 
+/** A plain object `parseTagged` reads as a bigint or bytes: its only key is a tag. */
+function isTag(v: unknown): v is { readonly $bigint?: string; readonly $bytes?: string } {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    Object.keys(o).length === 1 &&
+    (typeof o.$bigint === 'string' || typeof o.$bytes === 'string')
+  );
+}
+
 /**
  * JSON that round-trips bigint and Uint8Array (for external store implementations). Bytes
  * are read from the holder, not from the replacer's value: `toJSON` runs first, and a
  * Node.js `Buffer` (a Uint8Array, which the memory store keeps as bytes) would otherwise
  * arrive as `{ type: 'Buffer', data }` and read back as a plain object. The check is by tag,
  * as `clone` does, so bytes from another realm are bytes too.
+ *
+ * A plain object whose only key is `$bigint` or `$bytes` with a string value cannot be
+ * written: `parseTagged` would read it back as a bigint or bytes. It throws a `TypeError`,
+ * as `JSON.stringify` does for a value it cannot encode, so a store refuses the write
+ * instead of storing data that would read back changed. The core never stores one.
  */
 export function stringifyTagged(value: unknown): string {
   return JSON.stringify(value, function (this: unknown, key: string, v: unknown) {
@@ -148,18 +163,21 @@ export function stringifyTagged(value: unknown): string {
       return { $bytes: toHex(new Uint8Array(raw as Uint8Array)) };
     }
     if (typeof v === 'bigint') return { $bigint: v.toString() };
+    if (isTag(v)) {
+      throw new TypeError(
+        'stringifyTagged: an object whose only key is $bigint or $bytes would read back as a bigint or bytes',
+      );
+    }
     return v;
   });
 }
 
+/** Reads what `stringifyTagged` wrote, reviving its bigint and bytes. */
 export function parseTagged<T = unknown>(text: string): T {
   return JSON.parse(text, (_key, v: unknown) => {
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      const o = v as Record<string, unknown>;
-      if (Object.keys(o).length === 1) {
-        if (typeof o.$bigint === 'string') return BigInt(o.$bigint);
-        if (typeof o.$bytes === 'string') return fromHex(o.$bytes);
-      }
+    if (isTag(v)) {
+      if (typeof v.$bigint === 'string') return BigInt(v.$bigint);
+      return fromHex(v.$bytes as string);
     }
     return v;
   }) as T;

@@ -6,6 +6,10 @@ const SENSITIVE_HEADER = /(authorization|api[-_]?key|token|secret|cookie)/i;
 const KEYLIKE_SEGMENT = /^[A-Za-z0-9_-]{16,}$/;
 const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s'"<>)]+/gi;
 
+/**
+ * A URL safe to log: a `Secret` URL keeps only its scheme and host; otherwise credentials,
+ * query values and path segments that look like keys are replaced with `REDACTED`.
+ */
 export function redactUrl(url: string | Secret<string>): string {
   const isSecretUrl = isSecret(url);
   const raw = isSecretUrl ? (url as Secret<string>).reveal() : (url as string);
@@ -48,6 +52,11 @@ export function redactHeaders(
   return out;
 }
 
+/**
+ * A copy of `value` safe to log: `Secret`s, values under sensitive keys (key, secret,
+ * token, password, mnemonic, ...) and URLs in text are redacted, bytes become their length,
+ * bigints decimal strings, and nesting stops at `depth`.
+ */
 export function redactDeep(value: unknown, depth = 8): unknown {
   return walk(value, depth, new WeakSet());
 }

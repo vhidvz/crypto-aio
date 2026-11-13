@@ -68,9 +68,12 @@ const key = await backup.exportKey?.('ed25519'); // Secret<Uint8Array>
 ## Callback signers: HSM, KMS, MPC and remote custody
 
 `callbackSigner` wraps any custody system in three callbacks. The core sends signing
-requests (`{ id, scheme, payload, payloadKind, publicKey, keyRef? }`) and a `SigningContext`
-(`operationId`, `namespace`, `chain`, `network`, `wallet`, `tier`, `purpose`, `summary`,
-`fee` and `unsignedHash`). It never sends secrets or SDK objects.
+requests (`{ id, scheme, payload, payloadKind, publicKey, keyRef?, params? }`) and a
+`SigningContext` (`operationId`, `namespace`, `chain`, `network`, `wallet`, `tier`,
+`purpose`, `summary`, `fee` and `unsignedHash`). It never sends secrets or SDK objects.
+`params.tweak` is the 32-byte BIP341 key-path tweak of a Bitcoin `p2tr` input: sign with the
+key tweaked by it (negated first if its point has an odd Y). The request's `publicKey` is
+then the tweaked x-only key the signature must verify against.
 
 ```ts
 import { callbackSigner } from 'crypto-aio';
@@ -89,7 +92,9 @@ const custody = callbackSigner({
 
 - **Signed now:** return `{ status: 'signed', signatures: [{ requestId, bytes, recovery? }] }`.
   For `secp256k1-ecdsa`, `bytes` is the 64-byte compact r‖s with low s, plus `recovery`
-  0 or 1. The core checks the result shape and verifies every signature against the
+  0 or 1. For `secp256k1-schnorr`, it is the 64-byte BIP340 signature of the 32-byte
+  digest; for `ed25519`, the 64-byte signature of the payload as given (a message, not a
+  hash of it). The core checks the result shape and verifies every signature against the
   request's public key before it assembles anything. A bad result gives `SIGNING_FAILED` or
   `SIGNATURE_MISMATCH`.
 - **Signed later:** return `{ status: 'pending', ticket }`. The Operation waits in
@@ -99,9 +104,23 @@ const custody = callbackSigner({
 - **Time limit:** `lifecycle.signTimeoutMs` (default 120 s) bounds the hook and the signer.
   On timeout nothing is written: the Operation stays `prepared`, and a repeat asks again.
   Custody that needs longer should answer `pending`.
-- **Late completion:** if custody signs after you abandoned the Operation, the nonce may
-  already be reused. At most one of the two transactions can land. The monitor reports the
-  other one as `replaced`.
+- **Late completion:** after `abandon`, the core refuses the Operation's signatures for good,
+  and it never broadcasts it. But a signature custody produces later can still complete the
+  transaction for whoever holds its unsigned bytes: Solana custody receives the whole
+  message, and a signed PSBT is a whole transaction. Whether that transaction could then land
+  depends on the chain:
+  - **EVM and TON:** the wallet's next transfer reuses the nonce or seqno, so at most one of
+    the two can land; if the late one does, the next transfer fails with `TX_REPLACED`.
+  - **Tron and Solana:** nothing reuses a slot. The late transaction can land beside your
+    next transfer until it expires: Tron's `expirationMs` (60 s by default) after its build,
+    Solana's blockhash about a minute after it.
+  - **Bitcoin and Avalanche:** `abandon` frees the inputs. A later transfer that spends any
+    of them conflicts with the late transaction; one that spends other inputs does not, and
+    both can land.
+
+  So never broadcast or pass on a signature or a signed transaction of an abandoned
+  Operation. `abandon` asks custody to cancel through `cancelRequest`; confirm with your
+  custody system that it did before you pay the same thing another way.
 - **Errors** from your callbacks become `SIGNING_FAILED` with a sanitized cause. URLs and
   credentials in a custody error message never reach logs.
 - A wallet can route requests to several signers by `keyRef.id`:

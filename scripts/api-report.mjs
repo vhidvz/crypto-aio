@@ -5,6 +5,10 @@
 // report, so CI catches every change to the public API. `--update` rewrites the reports;
 // commit them with the change, and the diff of `etc/api/` shows reviewers exactly what the
 // change does to the API: a removed or changed line there is a breaking change.
+//
+// Every exported name must have a TSDoc comment: the API reference is generated from them,
+// and they are where a port states the contract an implementation keeps. A report that
+// marks a top-level export `(undocumented)` fails the check.
 import { Extractor, ExtractorConfig } from '@microsoft/api-extractor';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,6 +26,21 @@ const entries = Object.entries(pkg.exports)
     name: key === '.' ? 'crypto-aio' : `crypto-aio-${key.slice(2)}`,
     types: join(root, target.types),
   }));
+
+// API Extractor reports the static members of `localSigner` (`generate`, `fromMnemonic`)
+// as a namespace merged into the function, which no comment can document.
+const MERGED = new Set(['export namespace localSigner {']);
+
+/** The top-level exports a report marks `(undocumented)`. */
+function undocumented(report) {
+  const lines = readFileSync(report, 'utf8').split('\n');
+  return lines.filter(
+    (line, i) =>
+      line.startsWith('export ') &&
+      lines[i - 1] === '// @public (undocumented)' &&
+      !MERGED.has(line),
+  );
+}
 
 let failed = false;
 for (const { name, types } of entries) {
@@ -68,6 +87,10 @@ for (const { name, types } of entries) {
     );
   } else if (result.apiReportChanged) {
     console.log(`${name}: report updated`);
+  }
+  for (const bare of undocumented(join(reports, `${name}.api.md`))) {
+    failed = true;
+    console.error(`${name}: export without a TSDoc comment: ${bare}`);
   }
 }
 if (failed) process.exit(1);

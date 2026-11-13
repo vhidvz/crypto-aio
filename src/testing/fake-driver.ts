@@ -44,6 +44,7 @@ import {
   type FakeWireTx,
 } from './fake-chain';
 
+/** The fake family's `bc.ext` API. */
 export interface FakeExt {
   readonly fake: {
     nonceOf(address: string): Promise<bigint>;
@@ -51,6 +52,7 @@ export interface FakeExt {
   };
 }
 
+/** The fake family's native client, for tests of `crypto-aio/native`. */
 export interface FakeNativeClient {
   readonly id: number;
   readonly settings: Record<string, unknown>;

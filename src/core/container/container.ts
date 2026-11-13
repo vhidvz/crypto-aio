@@ -313,6 +313,7 @@ async function operationTarget(
   };
 }
 
+/** Which Operations `aio.operations.list()` returns: every given field must match. */
 export interface OperationsFilter {
   readonly states?: readonly OperationState[];
   readonly chain?: string;
@@ -320,6 +321,7 @@ export interface OperationsFilter {
   readonly limit?: number;
 }
 
+/** `aio.operations`: read this namespace's Operations and recover them at startup. */
 export interface OperationsApi {
   get(id: string): Promise<OperationView | null>;
   /** In creation order. */
@@ -328,6 +330,7 @@ export interface OperationsApi {
   recover(options?: { readonly signal?: AbortSignal }): Promise<RecoveryReport>;
 }
 
+/** `aio.monitor`: the worker passes that check and finish every live Operation. */
 export interface MonitorApi {
   /** Runs worker passes until `signal` aborts; any number of workers may run. */
   start(options?: WorkerOptions): Promise<void>;
