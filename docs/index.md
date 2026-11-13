@@ -53,7 +53,8 @@ every chain it supports.
 <p class="home-card-title">One shape for every chain</p>
 
 `getBalance`, `estimateFee`, `transfer`, `waitForConfirmation`, `scanner` and `history` work the
-same way on Ethereum, Bitcoin, Tron, Solana, TON and the rest. What a chain cannot do is a
+same way on Ethereum, Bitcoin, Tron, Solana, TON and the rest, wherever the chain can serve
+them. What a chain cannot do, such as address history on EVM or a block scan on TON, is a
 named [capability](reference/capabilities.md), never a silent difference.
 
 </div>

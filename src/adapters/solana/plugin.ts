@@ -20,7 +20,7 @@ export const SOLANA_PEER_DEPENDENCIES: Readonly<
 > = Object.freeze({
   '@solana/web3.js': Object.freeze({
     name: '@solana/web3.js',
-    range: '^1.99.0 || ^3.0.0',
+    range: '^1.99.0 || ^3.2.1',
   }),
 });
 

@@ -84,8 +84,8 @@ A handle is immutable and bound to one chain, network, library, provider set and
 | `getBalance(address, asset?)` | `Balance`: `{ address, asset, amount }` | |
 | `getBalances(address, assets)` | `Balance[]` | |
 | `getBlockHeight()` | The latest height, as `bigint` | |
-| `getBlock(heightOrHash)` | `Block` or `null` | |
-| `getTransaction(id)` | `Transaction` (status, transfers, fee, decoding) or `null` | [Receive deposits](../build/receive.md) |
+| `getBlock(heightOrHash)` | `Block` or `null`; its `timestamp` is Unix seconds on every family | |
+| `getTransaction(id)` | `Transaction` (status, transfers, fee, decoding, and `block` with its Unix-seconds `timestamp`) or `null` | [Receive deposits](../build/receive.md) |
 | `getNetworkStatus()` | `{ chain, network, height, finalizedHeight, endpoints, indexers }` | [Trust](../learn/engineering/trust.md) |
 
 ### Sending
@@ -206,8 +206,11 @@ your writer sees them; `noopLogger` discards everything. The default logger writ
 For chain family plugins and drivers ([Write a chain family plugin](../explore/plugins.md)),
 the package exports the types `Plugin`, `AdapterManifest`, `DriverFactory`, `DriverContext`,
 `ChainDriver` and its ports, `ChainInfo`, `NetworkInfo`, `ProviderPreset`, `AssetRegistration`,
-`SignatureScheme`, `Transport` and the store ports, and the value `PLACEHOLDER_ORIGIN`, the
-origin an SDK sees instead of a real URL. Family entry points add their own:
+`SignatureScheme`, `Transport` with its `CallOptions` and the store ports, and the value
+`PLACEHOLDER_ORIGIN`, the origin an SDK sees instead of a real URL. A driver's reads pass
+`CallOptions`: `quorum: 'proof'` for a proof read, and `endpointLimit` to mark a refusal as
+one endpoint's own limit (an indexer that will not scan a busy address), so a read without a
+quorum asks the endpoints it has not asked before the refusal stands. Family entry points add their own:
 `evmChainPlugin`, `DEFAULT_MAX_FEE_PER_GAS`, `DEFAULT_MAX_GAS_LIMIT` and `EVM_CAPABILITIES`
 (`crypto-aio/evm`);
 `MAX_MEMO_BYTES`, `DEFAULT_EXPIRATION_MS`, `MIN_EXPIRATION_MS`, `MAX_EXPIRATION_MS`,
@@ -243,7 +246,7 @@ The types a caller names most often, beyond the values above:
 | `FaultyOperationStore`, `CrashError` | A store that "crashes the process" at a chosen write | [Persistence and crash recovery](../learn/engineering/persistence.md) |
 | `describeOperationStoreContract`, `describeLockManagerContract`, `describeSequenceStoreContract`, `describeCursorStoreContract` | The store contract suites, for Jest, Vitest or `node:test` | [Write a durable store](../explore/stores.md) |
 | `rejectsWithCode`, `SAMPLE_ORDERINGS`, `sampleOperation`, `sampleAttempt` | Helpers for the contract suites | |
-| `fakeAddress`, `isFakeAddress`, `fakeTxId`, `fakeDigest`, `signFake`, `encodeEnvelope`, `decodeEnvelope`, `REVERT_ADDRESS` | The fake chain's own formats, for tests that build its data by hand | |
+| `fakeAddress`, `isFakeAddress`, `fakeTxId`, `fakeDigest`, `signFake`, `encodeEnvelope`, `decodeEnvelope`, `REVERT_ADDRESS` | The fake chain's own formats, for tests that build its data by hand; `encodeEnvelope` and `decodeEnvelope` are its wire protocol, outside semver ([Versioning](./stability.md)) | |
 
 ## The full type reference
 

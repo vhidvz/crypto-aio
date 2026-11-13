@@ -1,6 +1,10 @@
 import { createFakeEnv } from '../../../src/testing/env';
 import { noopLogger, type Logger } from '../../../src/core/events/logger';
-import { OPERATION_FORMAT, formatGuard } from '../../../src/core/store/format';
+import {
+  OPERATION_FORMAT,
+  formatGuard,
+  listReadable,
+} from '../../../src/core/store/format';
 import { MemoryOperationStore } from '../../../src/core/store/memory';
 import type { NewOperation, OperationStore } from '../../../src/core/store/types';
 import { sampleOperation } from '../../../src/testing/contracts/operations';
@@ -51,6 +55,8 @@ describe('the Operation record format', () => {
     const reads: Array<() => Promise<unknown>> = [
       () => guarded.get('ns', record.id),
       () => guarded.getByKey('ns', 'new'),
+      // The engine reads held slots from lists, so a list never leaves a record out.
+      () => guarded.list({ namespace: 'ns' }),
       () => guarded.update('ns', record.id, {}, 1),
       () =>
         guarded.create(
@@ -68,7 +74,7 @@ describe('the Operation record format', () => {
     expect((await raw.get('ns', record.id))?.format).toBe(OPERATION_FORMAT + 1);
   });
 
-  it('leaves a newer record out of a list, with a warning, and lists the rest', async () => {
+  it('leaves a newer record out of a readable list, with a warning, and lists the rest', async () => {
     const warnings: unknown[] = [];
     const log: Logger = {
       ...noopLogger,
@@ -79,7 +85,7 @@ describe('the Operation record format', () => {
       sampleOperation({ format: OPERATION_FORMAT + 1, idempotencyKey: 'new' }),
     );
     const older = await raw.create(withoutFormat({ idempotencyKey: 'old' }));
-    const listed = await guarded.list({ namespace: 'ns' });
+    const listed = await listReadable(guarded, { namespace: 'ns' });
     expect(listed.map((r) => [r.id, r.format])).toEqual([[older.record.id, 1]]);
     expect(warnings).toEqual([
       {

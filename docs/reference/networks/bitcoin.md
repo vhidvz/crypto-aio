@@ -5,7 +5,8 @@ description: "Bitcoin: address types, coin selection, fees, replace and cancel, 
 
 # Bitcoin networks
 
-The UTXO driver serves `bitcoin` with bitcoinjs-lib 7 (ECC over `@noble/curves`, no WASM). It
+The UTXO driver serves `bitcoin` with bitcoinjs-lib 7.0.5 or later (ECC over `@noble/curves`,
+no WASM). It
 reads everything from Esplora servers: the `provider` serves blocks, transactions, fee
 estimates, broadcasts and proofs, and the `indexer`, which is required, serves the wallet's
 unspent outputs, balances and history. A handle without a `provider` or an `indexer` falls
@@ -216,11 +217,11 @@ them, never from the indexer's JSON:
   outputs its inputs spend, which a block does not carry: each is read from the block itself
   or from the previous transaction's bytes, which must hash to the txid the input names.
 - **Filters.** With `filter.addresses`, outputs to a watched address are found in the bytes,
-  and inputs that spend from one through the indexer's pages of the block (25 transactions
-  each). Each page must hold exactly the block's own transactions, confirmed in that block,
-  and its claim about the output each input spends must hold for every transaction
-  delivered. So a lying indexer can leave out a watched address's spend that pays no watched
-  address, never invent or change one.
+  and inputs that spend from one through the `provider`'s pages of the block (Esplora's
+  `/block/:hash/txs/:start`, 25 transactions each). Each page must hold exactly the block's
+  own transactions, confirmed in that block, and its claim about the output each input
+  spends must hold for every transaction delivered. So a lying endpoint can leave out a
+  watched address's spend that pays no watched address, never invent or change one.
 
 So an Esplora endpoint cannot add, drop or alter a transaction, an output or a sender of the
 block it names. A block, page or previous transaction that does not match

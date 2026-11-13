@@ -126,7 +126,9 @@ and drills for each failure.
       and an `indexer` whose per-address limits fit your wallets; `lifecycle.broadcastFanout`
       of 2 or more; `nonWitnessUtxo` left on for hardware signers; and
       `allowExternalChangeAddress` only for a verified address.
-- [ ] Tron: memos are public forever and cost a fee; never put personal data in one. Use the
+- [ ] Tron: Node.js 22.23.4 or later on 22, 24.22.1 or later on 24, or 26.12.1 or later, as
+      tronweb 6.5.2 asks. Memos are public forever and cost a fee; never put personal data
+      in one. Use the
       `trongrid` preset with a key on mainnet (keyless TronGrid fails there), next to
       independent providers. `maxFeeLimit` (100 TRX by default) set to the most a token
       transfer may burn.

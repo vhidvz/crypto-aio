@@ -34,13 +34,13 @@ how to configure each family is in [Connect to a real network](../../build/conne
 
 | Library | Status |
 | --- | --- |
-| `ethers` 6 | Supported, the EVM default |
-| `web3` 4 | Deprecated: sunset upstream (4.16.0 is its last release). It works through 1.x (unless a security issue in web3 forces its removal sooner, as a safety fix the changelog announces), warns once per process (`CRYPTO_AIO_WEB3`), and is removed in 2.0; use ethers |
-| `bitcoinjs-lib` 7 | Supported, over an Esplora indexer |
-| `tronweb` 6 | Supported |
-| `@solana/web3.js` 1 or 3 | Supported; the driver builds messages itself, so the two lines differ only in `native()`'s `Connection` |
-| `@ton/ton` 16, with `@ton/core` and `@ton/crypto` | Supported, with toncenter API v3 as the indexer |
-| `@avalabs/avalanchejs` 5 | Supported, with the Avalanche Data API as the indexer; the C-Chain is served as EVM |
+| `ethers` 6.17 or later | Supported, the EVM default |
+| `web3` 4.16 | Deprecated: sunset upstream (4.16.0 is its last release). It works through 1.x (unless a security issue in web3 forces its removal sooner, as a safety fix the changelog announces), warns once per process (`CRYPTO_AIO_WEB3`), and is removed in 2.0; use ethers |
+| `bitcoinjs-lib` 7.0.5 or later | Supported, over an Esplora indexer |
+| `tronweb` 6.5.2 or later | Supported; tronweb asks for Node.js 22.23.4 or later on 22, 24.22.1 or later on 24, or 26.12.1 or later |
+| `@solana/web3.js` 1.x from 1.99, or 3.x from 3.2.1 (not 2.x) | Supported; the driver builds messages itself, so the two lines differ only in `native()`'s `Connection` |
+| `@ton/ton` 16.3, with `@ton/core` 0.63 and `@ton/crypto` 3.3 | Supported, with toncenter API v3 as the indexer |
+| `@avalabs/avalanchejs` 5.2 or later | Supported, with the Avalanche Data API as the indexer; the C-Chain is served as EVM |
 | `@tonconnect/sdk` | Replaced by `@ton/ton`: TonConnect links dApps to user wallets; it is not a node SDK |
 | `@bnb-chain/javascript-sdk` | Unsupported: it targets the BNB Beacon Chain, shut down in 2024 (BNB Smart Chain is supported as EVM) |
 
@@ -69,7 +69,7 @@ a logged warning, where it serves the network.
 | --- | --- |
 | EVM | `alchemy`, `infura`, `ankr` (with an `apiKey`), `public` |
 | Bitcoin | `mempool` (mempool.space), `blockstream` (blockstream.info), `public` (both); each serves as `provider` and `indexer` |
-| Tron | `trongrid` (with an `apiKey`; also the `indexer` for history), `public` |
+| Tron | `trongrid` (with an `apiKey`), `public`; both also serve as the `indexer` for history |
 | Solana | `alchemy`, `infura`, `ankr` (with an `apiKey`), `public` |
 | TON | `toncenter` (with an `apiKey`; API v2 as `provider`, v3 as `indexer`), `public` |
 | Avalanche X and P | `public` (a public node and the keyless Data API), `glacier` (the Data API, with an `apiKey`, as `indexer`) |

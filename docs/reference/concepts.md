@@ -73,8 +73,11 @@ off and retried elsewhere, so one endpoint cannot exhaust the process's memory.
 An endpoint more than `maxLagBlocks` behind the best known height is lagging, and the
 monitor and scanner never decide anything from a view that far behind. The tolerance comes
 from `chains.<id>.maxLagBlocks`, then the root `transport.maxLagBlocks`, then the network's
-own value, then the built-in default of 5. The BSC, Arbitrum, OP and Base mainnets set about
-60 s of blocks (134, 240, 30 and 30); set your own for fast testnets with several endpoints.
+own value, then the built-in default of 5. Most networks set their own, about a minute of
+blocks: the BSC, Arbitrum, OP and Base mainnets (134, 240, 30 and 30), Tron (20), Solana and
+TON (150), Bitcoin (2 on mainnet and signet, 6 on testnet and testnet4) and Avalanche (2 on
+the X-Chain, 6 on the P-Chain); [Configuration](./configuration.md#transport-transport) lists them.
+Set your own for fast testnets with several endpoints.
 A health check that an endpoint answers with HTTP 429 learns nothing: the endpoint keeps
 its last good height and identity, and is checked again after its `Retry-After`. The
 highest height a verified endpoint reported is the mark every view must stay within
@@ -132,7 +135,8 @@ checked. Account-model chains (EVM, Tron) and the Avalanche X-Chain and P-Chain 
 
 An **asset** is identified by an `AssetId` string bound to one chain and network, such as
 `fakechain:local/native`. Token ids look like `ethereum:mainnet/erc20:0xdAC17F…`. The
-`metadata` (`symbol`, `decimals`) is for display only. An alias resolves only within the
+`metadata` holds a `symbol` for display and the `decimals` every decimal-string amount is
+scaled with, so a registered token's decimals must be the chain's. An alias resolves only within the
 handle's chain and network. An **`Amount`** is an exact, non-negative quantity of one asset, in base units, as a bigint.
 When you pass an amount (`AmountInput`):
 

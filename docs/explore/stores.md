@@ -79,9 +79,11 @@ Postgres, are yours to write, and the suites define what they must do.
 
 ### What the suites check
 
-- **Every port.** A store never puts a key, an idempotency key or a wallet address in an
-  error message. A value it returns is a copy: changing it never changes what is stored.
-  Bigints and bytes read back exactly.
+- **`OperationStore`, `SequenceStore` and `CursorStore`.** A store never puts a key, an
+  idempotency key or a wallet address in an error message, and bigints and bytes read back
+  exactly. The `OperationStore` and `SequenceStore` suites also check that a value returned
+  is a copy: changing it never changes what is stored (the `LockManager` and `CursorStore`
+  suites test neither copies nor error texts).
 - **`LockManager`.** `acquire` grants one holder per key and returns `null` to everyone
   else, the holder included: leases are not reentrant. Of concurrent acquirers, exactly one
   wins. Every acquisition's token is larger than any before it on that key, after an expiry
@@ -116,7 +118,9 @@ transactions and row locks, `FOR UPDATE SKIP LOCKED` claims, tokens from sequenc
 JSON, the `format` column, and which columns to encrypt. It is an example to copy, not part
 of the package.
 
-One expectation reaches beyond the suites, which test one store instance: `findByRef` is
+Should several Operations of a namespace hold one ref (which the core never writes),
+`findByRef` may return any one of them. One expectation reaches beyond the suites, which test
+one store instance: `findByRef` is
 read-your-writes consistent across every process that shares the store. It sees any
 `appendAttempt` another instance committed before the call, so no read replica or
 eventually consistent index may serve it. The guard that stops two Operations from
@@ -186,10 +190,12 @@ transaction, and `<namespace>:<chain>:<network>:<cursorKey>` for a scanner. Neit
 intent hash behind idempotency keys.
 
 During a rolling upgrade, processes of two versions can share a store. A process never
-reads a record of a format newer than it knows: a read of one by id, key or ref throws
-`RECORD_FORMAT_UNSUPPORTED`; `aio.operations.list()` and `recover()` leave it out, and its
-workers release the claim on one at once, each with a logged warning, and leave it to a
-newer process. Upgrade every process before you rely on what the new version stores, and
+reads a record of a format newer than it knows. `aio.operations.list()` and `recover()`
+leave it out, and its workers release the claim on one at once, each with a logged warning,
+and leave it to a newer process. Every other read of one throws `RECORD_FORMAT_UNSUPPORTED`:
+by id, key or ref, and the engine's own lists of a wallet's live Operations, from which it
+reads the inputs, nonces and seqnos they hold. So a transfer, or a nonce reconciliation,
+from a wallet with a newer record refuses rather than risk a slot that record holds. Upgrade every process before you rely on what the new version stores, and
 never run a 0.1.0 process beside a newer one: 0.1.0 has no format check.
 
 ## Data classification (for store implementers)

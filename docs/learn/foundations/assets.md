@@ -99,8 +99,9 @@ suffix in the last line) holds any integer exactly. Money is counted in base uni
 ## In crypto-aio
 
 An **asset** in crypto-aio has an id bound to one chain and network, such as
-`ethereum:mainnet/erc20:0xdAC17F…` or `fakechain:local/native`, and its metadata (`symbol`,
-`decimals`) is for display only. An **`Amount`** is an exact, non-negative quantity of one
+`ethereum:mainnet/erc20:0xdAC17F…` or `fakechain:local/native`, and metadata: a `symbol` for
+display, and the `decimals` every decimal-string amount is scaled with, so a registered
+token's decimals must be the chain's. An **`Amount`** is an exact, non-negative quantity of one
 asset, held in base units as a `bigint`. When you pass an amount to the library, its type
 says which form you mean:
 

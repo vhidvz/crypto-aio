@@ -6,8 +6,8 @@ description: "TON: wallets, jettons, message traces, seqnos, resends and proofs.
 # TON networks
 
 The TON family serves the `ton` chain on `mainnet` (the default) and `testnet` through
-`@ton/ton` 16, which needs `@ton/core` 0.63 and `@ton/crypto` 3 next to it (`npm install
-@ton/ton @ton/core @ton/crypto`). The coin is Gram (ticker `GRAM`, formerly Toncoin), with 9
+`@ton/ton` 16.3 or later, which needs `@ton/core` 0.63 and `@ton/crypto` 3.3 or later next to
+it (`npm install @ton/ton @ton/core @ton/crypto`). The coin is Gram (ticker `GRAM`, formerly Toncoin), with 9
 decimals: a `bigint` amount is in nanograms, and `asset: 'GRAM'` and its alias `'TON'` both
 name it. A transfer moves Gram or one jetton to one recipient, with an optional text memo.
 The [Build guides](../../build/index.md) cover what else differs on TON:
@@ -291,10 +291,11 @@ The [Build guides](../../build/index.md) cover what else differs on TON:
 - **Extras and types.** `bc.ext.ton.getSeqno(address)` reads a wallet's seqno as a `bigint`
   (0 while it is undeployed), and `bc.ext.ton.jettonWallet(owner, master)` the address of
   the jetton wallet the master names for an owner, raw (`0:<hex>`). `crypto-aio/ton` exports `TON_CAPABILITIES`,
-  `TON_INDEXER_CAPABILITIES` and `TON_PEER_DEPENDENCIES`, and importing it types
-  `native(bc, '@ton/ton')` as a `TonClient` ([Keys, signers and secrets](../../build/keys.md));
-  the root entry exports the `Ton*` types, and both entries export `TonSeqnoOrdering`, an
-  Attempt's TON ordering, for store authors (below).
+  `TON_INDEXER_CAPABILITIES` and `TON_PEER_DEPENDENCIES`, and the types `TonExt`,
+  `TonFeeDetails`, `TonFeeOverride`, `TonSeqnoOrdering` (an Attempt's TON ordering, for
+  store authors, below), `TonWalletIdentity` and `TonWalletVersion`, which `crypto-aio`
+  exports too; importing it types `native(bc, '@ton/ton')` as a `TonClient`
+  ([Keys, signers and secrets](../../build/keys.md)).
 - **Stores.** A custom `OperationStore` must keep each Attempt's `ordering` whole and
   unchanged, every property included. On TON it is a `TonSeqnoOrdering`,
   `{ kind: 'seqno', seqno, validUntil, validFrom }`: the seqno as a `bigint`; `validUntil`,
@@ -328,8 +329,8 @@ A TON network a plugin registers may set these in its `params`; the built-in `ma
 
 ## Fee overrides, fee details and `ext.ton`
 
-These shapes, exported as types from `crypto-aio` (and `TonSeqnoOrdering` from
-`crypto-aio/ton` too), are what semver covers for the TON family
+These shapes, exported as types from `crypto-aio/ton` (and from `crypto-aio`), are what
+semver covers for the TON family
 ([Versioning and stability](../stability.md)). The core types they fill
 (`TransferIntent.fee`, `FeeEstimate.details`, `WalletConfig.ton`) stay plain records.
 

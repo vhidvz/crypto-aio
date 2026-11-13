@@ -15,7 +15,7 @@ import { UTXO_PRESETS } from './presets';
 /** Keyed by library name, as in every family; each manifest lists only its own. */
 export const UTXO_PEER_DEPENDENCIES: Readonly<Record<'bitcoinjs-lib', PeerDependency>> =
   Object.freeze({
-    'bitcoinjs-lib': Object.freeze({ name: 'bitcoinjs-lib', range: '^7.0.2' }),
+    'bitcoinjs-lib': Object.freeze({ name: 'bitcoinjs-lib', range: '^7.0.5' }),
   });
 
 /**

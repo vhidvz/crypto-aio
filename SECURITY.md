@@ -7,8 +7,8 @@ crypto-aio moves money, so a security report gets priority over every other kind
 | Version | Supported |
 | --- | --- |
 | 1.x | Yes: fixes ship in a patch release of the latest 1.x minor |
-| 1.0.0-rc.N | The latest release candidate, until 1.0.0 is released |
-| 0.2.x | Security fixes only, until six months after 1.0.0 is released |
+| 1.0.0-rc.N | No: upgrade to 1.0.0 ([what changes](https://vhidvz.github.io/crypto-aio/reference/upgrading.html): newer chain SDKs) |
+| 0.2.x | Security fixes only, for six months after 1.0.0's release |
 | 0.1.x | No: upgrade ([Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)) |
 | 0.0.x | No: an older, unrelated API |
 

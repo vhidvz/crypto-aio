@@ -138,15 +138,23 @@ current price times 1.1, 1.5 or 2 for `slow`, `normal` and `fast`, or your `{ ga
 
 **No endpoint can raise a fee above your bound.** Every family's prices come from a node,
 so every family bounds them by a handle option that no endpoint can change: EVM
-`maxFeePerGas`, Bitcoin `maxFeeRate`, `maxFee` and `maxEstimatedFeeRate`, Tron
-`maxFeeLimit`, Solana `maxComputeUnitPrice`, TON `maxNetworkFee` (on the estimate; TON
-signs no fee), and Avalanche `maxFee` and, on the P-Chain, `maxGasPrice`. A node's
-suggestion above the bound is clamped to it (EVM, Tron, Solana) or not trusted, a
-retryable error (Bitcoin, TON, Avalanche); an explicit fee above it is refused before
-signing, and the build checks it again. On the Avalanche P-Chain a speed's margin can
-also lift a price the node reported within the bound above it: that is refused with
-`INVALID_INTENT` too, so pick a slower speed or raise `maxGasPrice`. Set each
-bound to your fee policy; the defaults stop an absurd fee, not an expensive one.
+`maxFeePerGas` and `maxGasLimit`, Bitcoin `maxFeeRate`, `maxFee` and `maxEstimatedFeeRate`,
+Tron `maxFeeLimit`, Solana `maxComputeUnitPrice`, TON `maxNetworkFee` (on the estimate's
+`network` charge; TON signs no fee), and Avalanche `maxFee` and, on the P-Chain,
+`maxGasPrice`. Past a bound, each family does one of three things:
+
+- **Clamps** a node's price to it: EVM's fee cap and Solana's compute-unit price. Tron
+  clamps only the margin it adds to the simulated energy.
+- **Refuses**, with a non-retryable `INVALID_INTENT` before signing: an EVM gas limit above
+  `maxGasLimit` (never cut, since a call short of gas still pays), a Tron simulated energy
+  cost above `maxFeeLimit`, an Avalanche fee above `maxFee`, and on the P-Chain a speed's
+  margin that lifts the price above `maxGasPrice` (pick a slower speed or raise it).
+- **Distrusts**, with a retryable error: a Bitcoin or TON estimate above its bound.
+
+An explicit fee above a bound is refused before signing, and the build checks it again,
+with one exception: TON's `{ attached }` override on a jetton transfer, which no option
+bounds from above, so check it in your `beforeSign` hook if callers set it. Set each bound
+to your fee policy; the defaults stop an absurd fee, not an expensive one.
 
 ## Next steps
 

@@ -1,13 +1,16 @@
 ---
 title: Upgrade to 1.0
-description: What changes from crypto-aio 0.2.0 and from 0.1.0 to 1.0, and what to change in your code, your stores and your configuration.
+description: What changes from crypto-aio 1.0.0-rc.1, 0.2.0 and 0.1.0 to 1.0, and what to change in your code, your stores and your configuration.
 ---
 
 # Upgrade to 1.0
 
 crypto-aio 1.0 keeps the API that 0.2.0 settled, and from 1.0.0 on,
-[semver](./stability.md) applies. From 0.2.0, most applications change nothing: read
-[From 0.2.0](#from-020). From 0.1.0, read both sections. Every change is also in the
+[semver](./stability.md) applies. From 1.0.0-rc.1, only the chain SDKs move: install
+`bitcoinjs-lib` 7.0.5 or later, `tronweb` 6.5.2 or later (on Node.js 22.23.4 or later on
+22, 24.22.1 or later on 24, or 26.12.1 or later) and, on the 3.x line, `@solana/web3.js`
+3.2.1 or later. From 0.2.0, read
+[From 0.2.0](#from-020); from 0.1.0, read both sections. Every change is also in the
 [changelog](https://github.com/vhidvz/crypto-aio/blob/main/CHANGELOG.md).
 
 Operations that 0.1.0 and 0.2.0 stored are read as they are: no data migration is needed,
@@ -21,9 +24,14 @@ code your application may treat as safe to pay again.
 
 ## From 0.2.0
 
+- **Newer chain SDKs.** The peer ranges start at the newest releases: `bitcoinjs-lib`
+  7.0.5, `tronweb` 6.5.2 (which asks for Node.js 22.23.4 or later on 22, 24.22.1 or later
+  on 24, or 26.12.1 or later) and, on the 3.x line, `@solana/web3.js` 3.2.1. Upgrade the
+  ones you install.
 - **Tron block times are Unix seconds.** `Block.timestamp` and a transaction's
   `block.timestamp` are Unix seconds on every family; Tron reported milliseconds. Multiply
-  by 1,000 where your code relied on them.
+  by 1,000 where your code relied on them. A plugin driver reports its blocks' and
+  transactions' `timestamp` in Unix seconds too, whatever unit its chain uses.
 - **Bitcoin indexers fail over on per-address limits.** When an indexer refuses an address
   for its own limits (HTTP 400, "too many" or "too large"), the balance, unspent-output or
   history read asks the handle's next `indexer` endpoint; it fails with `RPC_ERROR` only
@@ -37,10 +45,12 @@ code your application may treat as safe to pay again.
   changed. The core never stores one, and the stored format is unchanged.
 - **Rolling upgrades.** `aio.operations.list()` and `recover()` leave out an Operation a
   newer version stored, with a logged warning, instead of throwing
-  `RECORD_FORMAT_UNSUPPORTED`; a read by id, key or ref still throws.
+  `RECORD_FORMAT_UNSUPPORTED`; a read by id, key or ref still throws, and so does a transfer
+  or nonce reconciliation from a wallet with such a record, which cannot see its slots.
 - **`Scanner`.** Its constructor is private; scanners come from `bc.scanner()`, as before.
 - **Store authors:** `findByRef` may return any one of several Operations that hold a ref
-  (which the core never writes). Run the contract suites again; nothing else changed.
+  (which the core never writes), and a store built on `stringifyTagged` refuses tag-shaped
+  data (above). The contract suites are unchanged since 0.2.0.
 
 ## From 0.1.0 (changed in 0.2.0)
 

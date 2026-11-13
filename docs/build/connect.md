@@ -101,7 +101,8 @@ From there, `transfer`, `waitForConfirmation` and `scanner` work as on the fake 
 
 ## Tron
 
-Install the SDK with `npm install tronweb`. The `trongrid` preset serves blocks,
+Install the SDK with `npm install tronweb` (tronweb 6.5.2 asks for Node.js 22.23.4 or later
+on 22, 24.22.1 or later on 24, or 26.12.1 or later). The `trongrid` preset serves blocks,
 transactions and broadcasts with an API key, and as the `indexer` it serves address history.
 **Mainnet needs a key** (keyless TronGrid answers most mainnet requests with HTTP 429) and,
 for cross-checked proofs, a second, independent provider such as your own node.
@@ -157,7 +158,9 @@ const aio = new CryptoAio({
   wallets: { treasury: { signer: 'hot', utxo: { addressType: 'p2wpkh' } } },
   chains: {
     bitcoin: {
-      network: 'mainnet', provider: ['mempool', 'blockstream'], indexer: 'mempool', wallet: 'treasury',
+      network: 'mainnet', provider: ['mempool', 'blockstream'],
+      indexer: ['mempool', 'blockstream'], // a second indexer serves what one refuses
+      wallet: 'treasury',
     },
   },
   lifecycle: { broadcastFanout: 2 }, // send each transaction to both providers

@@ -206,7 +206,8 @@ const client = await native(env.bc, 'fake-sdk'); // native(eth, 'ethers'), nativ
   match the handle's (`INCOMPATIBLE_SELECTION` otherwise). A driver without a native client
   throws `UNSUPPORTED_CAPABILITY`.
 - On EVM, `native(bc, 'ethers')` returns an ethers `JsonRpcApiProvider` and
-  `native(bc, 'web3')` a `Web3` instance, both wired to the handle's transport, so they never
+  `native(bc, 'web3')` a `Web3` instance (`library: 'web3'` is deprecated, and removed in
+  2.0), both wired to the handle's transport, so they never
   see the real URL. Import `crypto-aio/evm` once to type them. Its declarations name both
   SDKs' types, so with only one SDK installed, keep `skipLibCheck: true` (the `tsc --init`
   default) or install the other SDK too.

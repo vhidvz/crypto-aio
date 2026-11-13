@@ -147,9 +147,10 @@ deeper into the transport.
 1. Nothing. It may be lagging, pruned, or lying. Only a proven absence (on chains that allow
    one) or a proven inclusion is a result.
 2. So one company's outage, bug or compromise cannot produce a wrong answer on its own.
-3. One: its operator alone decides. The library then proves with a quorum of 1, so configure
-   three or more providers in production: with two, one outage makes proofs wait until it is
-   over.
+3. One: its operator alone decides, whatever number of endpoints it serves you. The quorum
+   counts endpoints, not providers, so two endpoints of one provider still need both to agree,
+   but both answer for the same operator. Configure three or more independent providers in
+   production: with two, one outage makes proofs wait until it is over.
 4. Wrongly "failed": the natural reaction is to pay again, and then the customer is paid twice.
 
 </details>

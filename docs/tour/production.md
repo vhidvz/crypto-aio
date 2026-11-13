@@ -77,8 +77,10 @@ const aio = new CryptoAio({
   lifecycle: { requireIdempotencyKey: true },
 });
 
-// 1. Fail fast: the SDK loads, and at least one endpoint is usable (an endpoint that serves
-//    another network is disabled and emits provider.misconfigured: alert on it).
+// 1. Fail fast: the SDK loads, the driver implements what its plugin declares, the wallet
+//    resolves (a custody signer's getPublicKey and schemes included), and at least one
+//    endpoint is usable (an endpoint that serves another network is disabled and emits
+//    provider.misconfigured: alert on it).
 await aio.blockchain({ chain: 'ethereum' }).ready();
 // 2. Finish what the previous process left in flight.
 const report = await aio.operations.recover();
@@ -135,7 +137,8 @@ What happens, in production, when things break:
 During a rolling upgrade, processes of two versions share the stores. A process never reads an
 Operation that a newer version stored in a newer record format: a read of it by id, key or ref throws
 `RECORD_FORMAT_UNSUPPORTED`, while `aio.operations.list()`, `recover()` and the workers leave it
-out, with a logged warning, for a newer process. Upgrade every process before you rely on what
+out, with a logged warning, for a newer process. A transfer or nonce reconciliation from a
+wallet with such a record refuses too, since it cannot see the slots that record holds. Upgrade every process before you rely on what
 the new version stores, and never run a 0.1.0 process beside a newer one: 0.1.0 has no format
 check. [Write a durable store](../explore/stores.md#upgrades-and-the-record-format) has the
 details.

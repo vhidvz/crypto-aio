@@ -68,7 +68,8 @@ A driver implements the core's **ports**, small interfaces each with one job:
 | `ext` | The family's typed extras |
 
 A driver never signs, holds no keys, and keeps no per-tenant state, so the pool can share one
-driver among every handle with the same chain, network, library and providers. All its I/O goes
+driver among every handle with the same chain, network, library, providers and indexers, driver
+options and lag tolerance. All its I/O goes
 through the transport it is given.
 
 ## Capabilities
@@ -127,7 +128,8 @@ does not, and why a plugin you write can make its own chain id a valid `ChainId`
 
 Creating a handle loads nothing. The first call that needs the driver runs the manifest's
 `load()`, which requires the SDK. If the SDK is not installed, that call fails with
-`DEPENDENCY_MISSING` and the exact `npm install` command. `await bc.ready()` forces the load,
+`DEPENDENCY_MISSING` and the exact `npm install` command (quoted where the range has spaces,
+such as `'@solana/web3.js@^1.99.0 || ^3.2.1'`). `await bc.ready()` forces the load,
 and the provider's identity check, at startup, so a misconfiguration fails fast instead of on
 the first payment.
 

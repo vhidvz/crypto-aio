@@ -2,7 +2,7 @@
 
 # Interface: RecoveryReport
 
-Defined in: [src/core/lifecycle/workers.ts:26](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L26)
+Defined in: [src/core/lifecycle/workers.ts:27](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L27)
 
 What `recover()` did. The counts are per Operation, except `reconciled`, and they
 overlap: an Operation whose resend was attempted and whose check then failed counts in
@@ -16,7 +16,7 @@ both `rebroadcast` and `failed`.
 
 > `readonly` **checked**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:33](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L33)
+Defined in: [src/core/lifecycle/workers.ts:34](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L34)
 
 Operations checked on chain after any resend.
 
@@ -28,7 +28,7 @@ Operations checked on chain after any resend.
 
 > `readonly` **failed**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:43](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L43)
+Defined in: [src/core/lifecycle/workers.ts:44](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L44)
 
 Operations whose target could not be rebuilt, or whose resend or check threw.
 
@@ -40,7 +40,7 @@ Operations whose target could not be rebuilt, or whose resend or check threw.
 
 > `readonly` **rebroadcast**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:31](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L31)
+Defined in: [src/core/lifecycle/workers.ts:32](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L32)
 
 `signed` or ambiguously `submitted` Operations whose stored bytes were sent again:
 attempted resends, including ones the node refused or whose outcome is unknown.
@@ -53,7 +53,7 @@ attempted resends, including ones the node refused or whose outcome is unknown.
 
 > `readonly` **reconciled**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:45](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L45)
+Defined in: [src/core/lifecycle/workers.ts:46](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L46)
 
 Leaked nonce values that reconciliation returned for reuse (across all wallets).
 
@@ -65,7 +65,7 @@ Leaked nonce values that reconciliation returned for reuse (across all wallets).
 
 > `readonly` **skipped**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:35](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L35)
+Defined in: [src/core/lifecycle/workers.ts:36](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L36)
 
 Operations that need a caller (see `recovery.skipped`); never resent or checked.
 
@@ -77,7 +77,7 @@ Operations that need a caller (see `recovery.skipped`); never resent or checked.
 
 > `readonly` **unresent**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:41](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L41)
+Defined in: [src/core/lifecycle/workers.ts:42](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L42)
 
 `signed` or ambiguously `submitted` Operations whose wallet no longer resolves (its
 configuration or signer was removed): checked on chain, but their stored bytes were not

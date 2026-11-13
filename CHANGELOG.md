@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-13
+
+The first stable release. From 1.0.0 on, [semantic versioning](https://semver.org/) covers
+what [Versioning and stability](https://vhidvz.github.io/crypto-aio/reference/stability.html)
+lists: the container and handle API, the configuration shape, the model, signers, error
+codes and the documented error fields, events, the store ports and their contract suites,
+the driver port, the family entry points, `crypto-aio/testing`, the registries you augment,
+and everything a process stores. A minor release adds and a patch release fixes; a
+breaking change waits for 2.0, except a fix for a security vulnerability or a verdict that
+could pay twice, which the changelog calls out.
+
+1.0.0 is 1.0.0-rc.1 on the newest chain SDKs: code that runs on 1.0.0-rc.1 needs only
+newer `bitcoinjs-lib`, `tronweb` or `@solana/web3.js` 3.x installs. From 0.2.0 or 0.1.0,
+read [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html) and
+the 1.0.0-rc.1 and 0.2.0 sections below.
+
+### Changed
+
+- **Breaking:** the chain SDKs' peer ranges start at their newest releases, which the
+  tests now pin:
+  - `bitcoinjs-lib` `^7.0.5` (from `^7.0.2`): 7.0.3 to 7.0.5 clear a PSBT's cached fee,
+    fee rate and extracted transaction when an input changes or PSBTs combine, read
+    every input's previous output through one checked path, validate a block's target
+    bits in `checkProofOfWork`, and stop copying the rest of a block for each of its
+    transactions;
+  - `tronweb` `^6.5.2` (from `^6.5.1`): its transaction builders read integers strictly,
+    a signed result's contract type is checked, ABI encoding refuses a wrong argument
+    count, and its axios is newer. tronweb 6.5.2 asks for Node.js 22.23.4 or later on 22,
+    24.22.1 or later on 24, or 26.12.1 or later, the October 2026 security releases, so run one of those for Tron;
+  - `@solana/web3.js` `^1.99.0 || ^3.2.1` (from `^3.0.0` for the 3.x line).
+
+  `ethers` 6.17, `web3` 4.16, `@ton/ton` 16.3 with `@ton/core` 0.63 and `@ton/crypto`
+  3.3, and `@avalabs/avalanchejs` 5.2 were already the newest. `@noble/*` and `@scure/*`
+  stay on their 1.x lines, whose newest releases they are on.
+- The README, the docs and `SECURITY.md` describe 1.0.0 as released: 1.x gets fixes in a
+  patch release of its latest minor, and 0.2.x security fixes for six months.
+
+### Fixed
+
+- During a rolling upgrade, an older process left a newer-format Operation out of every
+  list, the engine's own included, so it could not see the inputs, nonces or seqnos that
+  Operation holds (1.0.0-rc.1). Only `aio.operations.list()` and `recover()` leave it out
+  now; a transfer or nonce reconciliation from a wallet with such a record refuses with
+  `RECORD_FORMAT_UNSUPPORTED`, as before 1.0.0-rc.1.
+- The `DEPENDENCY_MISSING` message quotes an install spec with spaces, so
+  `npm i '@solana/web3.js@^1.99.0 || ^3.2.1'` pastes into a shell as one argument.
+
+### Security
+
+- The documentation site's DOMPurify, which mermaid loads in the browser, is past a
+  critical advisory, and the development tools' follow-redirects and markdown-it past
+  high ones. The npm package's own dependencies had no known advisory.
+
 ## [1.0.0-rc.1] - 2026-11-12
 
 The release candidate for 1.0.0. It keeps the API 0.2.0 settled and writes down the
@@ -229,7 +282,8 @@ says what to do for each.
 
 - initial release 🎉🎊.
 
-[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/vhidvz/crypto-aio/compare/1.0.0-rc.1...1.0.0
 [1.0.0-rc.1]: https://github.com/vhidvz/crypto-aio/compare/0.2.0...1.0.0-rc.1
 [0.2.0]: https://github.com/vhidvz/crypto-aio/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/vhidvz/crypto-aio/releases/tag/0.1.0

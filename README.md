@@ -59,20 +59,20 @@ principles, starting with [what a ledger is](https://vhidvz.github.io/crypto-aio
 
 | Family | Chains | Through |
 | --- | --- | --- |
-| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (or the deprecated `web3` 4) |
-| Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7 and an Esplora indexer |
-| Tron | mainnet, Shasta, Nile | `tronweb` 6 |
-| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 or 3 |
-| TON | mainnet, testnet | `@ton/ton` 16 and toncenter |
-| Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5 and the Avalanche Data API |
+| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6.17+ (or the deprecated `web3` 4.16) |
+| Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7.0.5+ and an Esplora indexer |
+| Tron | mainnet, Shasta, Nile | `tronweb` 6.5.2+, on Node.js 22.23.4 or later on 22, 24.22.1 or later on 24, or 26.12.1 or later |
+| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1.x from 1.99, or 3.x from 3.2.1 |
+| TON | mainnet, testnet | `@ton/ton` 16.3+ and toncenter |
+| Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5.2+ and the Avalanche Data API |
 
 What each network supports, family by family, is in
 [Networks](https://vhidvz.github.io/crypto-aio/reference/networks/).
 
 ## Install
 
-crypto-aio needs Node.js 22.12 or later. Install the package, and only the
-SDK of each family you use:
+crypto-aio needs Node.js 22.12 or later (Tron's `tronweb` 6.5.2 asks for Node.js 22.23.4 or later on 22, 24.22.1 or later on 24, or 26.12.1 or later).
+Install the package, and only the SDK of each family you use:
 
 ```sh
 npm install crypto-aio ethers           # EVM chains
@@ -155,14 +155,13 @@ family.
 
 ## Status
 
-crypto-aio 1.0 is in release candidate: **1.0.0-rc.1**, on npm's `next` tag
-(`npm install crypto-aio@next`). From 1.0.0, [semantic
+crypto-aio is at **1.0.0**, its first stable release: [semantic
 versioning](https://vhidvz.github.io/crypto-aio/reference/stability.html) covers what that
-page lists: the API, the driver port and what a process stores, but not `crypto-aio/native`
+page lists, the API, the driver port and what a process stores, but not `crypto-aio/native`
 or message texts. The 0.0.x releases on npm are an older, unrelated API. [Known
 limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists what it
 does not do yet, and [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)
-what changes from 0.2.0 and 0.1.0. Only in-memory stores ship: production needs durable stores of your
+what changes from 1.0.0-rc.1, 0.2.0 and 0.1.0. Only in-memory stores ship: production needs durable stores of your
 own, proven with the contract suites in `crypto-aio/testing`; [examples/postgres-store](examples/postgres-store)
 is a reference implementation on PostgreSQL. Release notes are in the [changelog](CHANGELOG.md).
 

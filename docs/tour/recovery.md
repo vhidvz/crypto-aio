@@ -30,15 +30,21 @@ decide from its state rather than from the error alone. A missing id does not pr
 was stored: a busy address lease (`SEQUENCE_BUSY`) or a custody timeout on a repeated call carries
 none, and neither do the checks only the chain can answer, which run after the Operation was
 created: a gas limit above `maxGasLimit`, a deprecated token, a fee above a family's bound, a
-token's decimals. Such a check marks the Operation `failed` and throws a `validation` error. A
-`validation` or `config` error always comes before anything is signed, so a new key is safe once
-you fix the cause; the old key keeps its `failed` Operation, and a corrected transfer under it
-fails with `IDEMPOTENCY_CONFLICT`. For any other error, when in doubt, repeat the call with the
-same key: it resumes whatever exists, and never pays twice.
+token's decimals. Such a check marks the Operation `failed` and throws a `validation` error.
+On the **first** call under a key, a `validation` or `config` error always comes before anything
+is signed, so a new key is safe once you fix the cause; the old key keeps its `failed` Operation,
+and a corrected transfer under it fails with `IDEMPOTENCY_CONFLICT`. On a **repeat** of a key
+that may already hold an Operation, it says nothing about that Operation: the handle resolves
+the driver, the wallet and the asset before it finds the stored Operation, so a signer removed
+from the configuration, an SDK uninstalled or a misdeclared plugin driver fails the repeat with
+`CONFIG_INVALID` or `DEPENDENCY_MISSING` even when the first call signed and sent. Fix the
+configuration and repeat with the same key, or look the Operation up
+(`aio.operations.list()`), never switch to a new key then. For any other error, when in
+doubt, repeat the call with the same key: it resumes whatever exists, and never pays twice.
 
 ```mermaid
 flowchart TB
-  err["transfer() threw"] --> cat{"category validation<br/>or config?"}
+  err["transfer() threw"] --> cat{"validation or config,<br/>on the key's first call?"}
   cat -- yes --> fix["Nothing was signed:<br/>fix the input or configuration;<br/>a new key is safe"]
   cat -- no --> amb{"ambiguous, or<br/>no operationId?"}
   amb -- yes --> same["Repeat with the SAME key<br/>(it resumes the Operation)<br/>or let the workers finish"]

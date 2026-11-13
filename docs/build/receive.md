@@ -102,9 +102,9 @@ for await (const event of scanner) {
   against its header, and each transaction delivered has its senders read from the
   transactions its inputs spend ([Bitcoin networks](../reference/networks/bitcoin.md#scanning)).
   So an unfiltered scan reads one previous transaction per transaction its inputs spend,
-  thousands for a full mainnet block, and a filtered one reads the block's index pages (25
-  transactions each, over 100 for a full mainnet block) and the previous transactions of
-  what it delivers. Scan through your own Esplora, with a filter, rather than a public one.
+  thousands for a full mainnet block, and a filtered one reads the block's pages from the
+  `provider` (25 transactions each, about 180 for a full mainnet block) and the previous
+  transactions of what it delivers. Scan through your own Esplora, with a filter, rather than a public one.
 - **Tron.** Blocks carry TRX transfers and TRC-20 `Transfer` events from any contract, so
   check `transfer.asset`: a copycat token has its own contract. A contract call is
   `decoding: 'partial'`, since TRX can move inside it without an event, and a TRC-10

@@ -19,7 +19,7 @@ the guide or lesson that explains its subject.
 | [Glossary](./glossary.md) | Every term in a sentence, from "account model" to "xpub" |
 | [Versioning and stability](./stability.md) | What semver covers, and the Node.js, TypeScript and SDK support policy |
 | [Known limitations](./limitations.md) | What crypto-aio does not do yet, and what to do about each |
-| [Upgrade to 1.0](./upgrading.md) | What changes from 0.2.0 and from 0.1.0, and what to change |
+| [Upgrade to 1.0](./upgrading.md) | What changes from 1.0.0-rc.1, 0.2.0 and 0.1.0, and what to change |
 
 > [!TIP]
 > Press <kbd>Ctrl</kbd> + <kbd>K</kbd> (or <kbd>⌘</kbd> + <kbd>K</kbd>) anywhere to search every

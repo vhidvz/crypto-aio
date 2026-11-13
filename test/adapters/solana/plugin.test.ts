@@ -99,7 +99,7 @@ describe('the built-in Solana plugin', () => {
         'solana',
         '@solana/web3.js',
         ['solana'],
-        [{ name: '@solana/web3.js', range: '^1.99.0 || ^3.0.0' }],
+        [{ name: '@solana/web3.js', range: '^1.99.0 || ^3.2.1' }],
       ],
     ]);
     expect(plugin.chains?.map((c) => c.id)).toEqual(['solana']);

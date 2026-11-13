@@ -128,7 +128,8 @@ contract suites, which include "a paused worker wakes up after its lease was tak
 
 | Path | What is there |
 | --- | --- |
-| `src/core/ordering/sequence.ts` | The sequence coordinator: allocation and release under the lease |
+| `src/core/ordering/sequence.ts` | The sequence coordinator: nonce allocation and release under the lease |
+| `src/core/lifecycle/engine.ts` (`nextSeqno`) | Seqno allocation, from the wallet's live Operations (`reservations.seqnoHolder`) |
 | `src/core/ordering/reservations.ts` | Coin reservations for UTXO chains |
 | `src/core/model/ordering.ts` | `OrderingKind`, `OrderingData`, `mutuallyExclusive` |
 | `src/core/store/memory.ts` | The in-memory stores, a reference for fencing and versions |

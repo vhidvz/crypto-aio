@@ -16,7 +16,7 @@ import { TRON_TOKENS } from './tokens';
 
 /** The SDK version this adapter is validated against, keyed by library. */
 export const TRON_PEER_DEPENDENCIES: Readonly<Record<'tronweb', PeerDependency>> =
-  Object.freeze({ tronweb: Object.freeze({ name: 'tronweb', range: '^6.5.1' }) });
+  Object.freeze({ tronweb: Object.freeze({ name: 'tronweb', range: '^6.5.2' }) });
 
 /**
  * The `tronweb` manifest. Built once, at module level, like the presets, so every

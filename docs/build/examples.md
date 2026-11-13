@@ -136,8 +136,10 @@ const fee = feeTotal(estimate, native.id);
 console.log(fee?.format(), estimate.bound); // 0.00000003 FAKE exact
 ```
 
-`bound` says how far to trust it: `exact`, `expected` or `upper`. Every family also refuses, before
-signing, any fee above its configured ceiling ([Configuration](../reference/configuration.md#family-options)).
+`bound` says how far to trust it: `exact`, `expected` or `upper`. Every family also bounds its
+fees by options no endpoint can change, and refuses an explicit fee above them before signing,
+TON's jetton `{ attached }` aside ([Send a transfer](./send.md),
+[Configuration](../reference/configuration.md#family-options)).
 
 ## Wait for finality, with a deadline
 

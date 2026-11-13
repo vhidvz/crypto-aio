@@ -44,9 +44,12 @@ function checkedOrNull(record: OperationRecord | null): OperationRecord | null {
 /**
  * The Operation store as the engine, the workers and `aio.operations` read it: every
  * record it returns is in a format this version reads. A record a newer version wrote, as
- * in a rolling upgrade, is never read as an older format: a read of it by id, key or ref
- * throws `RECORD_FORMAT_UNSUPPORTED`; a list leaves it out and a worker pass releases its
- * claim, each with a warning, and leaves it to a process that reads it.
+ * in a rolling upgrade, is never read as an older format: a read of it, by id, key, ref or
+ * in a list, throws `RECORD_FORMAT_UNSUPPORTED`, and a worker pass releases its claim, with
+ * a warning, and leaves it to a process that reads it. A list throws rather than leave the
+ * record out because the engine reads which slots live Operations hold (inputs, nonces,
+ * seqnos) from lists: one it could not see could be spent twice. Only `aio.operations.list()`
+ * and `recover()`, which hold no slot, go on without it (`listReadable`).
  */
 export function formatGuard(store: OperationStore, log: Logger): OperationStore {
   const skipped = (record: OperationRecord) =>
@@ -91,20 +94,37 @@ export function formatGuard(store: OperationStore, log: Logger): OperationStore 
       return kept;
     },
     releaseClaim: (namespace, id, fence) => store.releaseClaim(namespace, id, fence),
-    // A list leaves out what this process cannot read, so a recovery or a report in a
-    // mixed fleet goes on with the rest instead of failing on the first newer record.
-    list: async (filter) =>
-      (await store.list(filter))
-        .filter((record) => {
-          if (supported(record)) return true;
-          skipped(record);
-          return false;
-        })
-        .map(checked),
+    list: async (filter) => (await store.list(filter)).map(checked),
   };
-  if (store.purge) {
-    const purge = store.purge.bind(store);
-    return { ...guarded, purge: (filter) => purge(filter) };
-  }
-  return guarded;
+  const result: OperationStore = store.purge
+    ? { ...guarded, purge: (filter) => (store.purge as Purge).call(store, filter) }
+    : guarded;
+  // What a report or a recovery reads: the records this process can read, with a warning
+  // for each one a newer version stored, so a mixed fleet goes on with the rest.
+  readable.set(result, async (filter) =>
+    (await store.list(filter))
+      .filter((record) => {
+        if (supported(record)) return true;
+        skipped(record);
+        return false;
+      })
+      .map(checked),
+  );
+  return result;
+}
+
+type Purge = NonNullable<OperationStore['purge']>;
+type ListFn = OperationStore['list'];
+const readable = new WeakMap<OperationStore, ListFn>();
+
+/**
+ * `store.list(filter)` for a reader that holds no slot (`aio.operations.list()`,
+ * `recover()`): on a store `formatGuard` returned, it leaves out each record of a newer
+ * format, with a warning, instead of throwing; on any other store it is `store.list`.
+ */
+export function listReadable(
+  store: OperationStore,
+  filter: Parameters<ListFn>[0],
+): ReturnType<ListFn> {
+  return (readable.get(store) ?? store.list.bind(store))(filter);
 }
