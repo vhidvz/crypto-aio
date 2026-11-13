@@ -12,9 +12,8 @@ adds, and a patch release fixes. Every release is listed, with what changed, in 
 the public API is visible in the API reports the repository keeps (`etc/api/`), which CI
 compares on every change.
 
-The 0.x releases came before this promise: their minor releases could break, and the
-changelog says how. A `1.0.0-rc.N` release (npm's `next` tag) is a candidate for 1.0.0: it
-can still change before 1.0.0, and the changelog says how.
+The 0.x releases and the 1.0.0 release candidates came before this promise: they could
+break, and the changelog says how.
 
 ## What is covered
 
@@ -82,7 +81,7 @@ Use `ethers`.
 | Module systems | CommonJS (also under Jest's CommonJS loader, so no runtime dependency is an ES module only), and ES modules through Node.js's CommonJS interop; `node16`/`nodenext` and `bundler` type resolution |
 
 Security fixes go to the latest minor release of the latest major version, and to 0.2.x for
-six months after 1.0.0 is released
+six months after 1.0.0's release
 ([security policy](https://github.com/vhidvz/crypto-aio/blob/main/SECURITY.md)).
 
 ## What crypto-aio does not do yet

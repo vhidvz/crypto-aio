@@ -155,10 +155,9 @@ family.
 
 ## Status
 
-crypto-aio 1.0 is in release candidate: **1.0.0-rc.1**, on npm's `next` tag
-(`npm install crypto-aio@next`). From 1.0.0, [semantic
+crypto-aio is at **1.0.0**, its first stable release: [semantic
 versioning](https://vhidvz.github.io/crypto-aio/reference/stability.html) covers what that
-page lists: the API, the driver port and what a process stores, but not `crypto-aio/native`
+page lists, the API, the driver port and what a process stores, but not `crypto-aio/native`
 or message texts. The 0.0.x releases on npm are an older, unrelated API. [Known
 limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists what it
 does not do yet, and [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)

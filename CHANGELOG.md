@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-13
+
+The first stable release. From 1.0.0 on, [semantic versioning](https://semver.org/) covers
+what [Versioning and stability](https://vhidvz.github.io/crypto-aio/reference/stability.html)
+lists: the container and handle API, the configuration shape, the model, error codes and
+the documented error fields, events, the store ports and their contract suites, the
+driver port, and everything a process stores. A minor release adds and a patch release
+fixes; a breaking change waits for 2.0.
+
+1.0.0 is 1.0.0-rc.1, with the release-candidate wording gone: nothing changes for code
+that runs on 1.0.0-rc.1. From 0.2.0 or 0.1.0, read [Upgrade to
+1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html) and the 1.0.0-rc.1 and
+0.2.0 sections below.
+
+### Changed
+
+- The README, the docs and `SECURITY.md` describe 1.0.0 as released: 1.x gets fixes in a
+  patch release of its latest minor, and 0.2.x security fixes for six months.
+
+### Security
+
+- The documentation site's DOMPurify, which mermaid loads in the browser, is past a
+  critical advisory, and the development tools' follow-redirects and markdown-it past
+  high ones. The npm package's own dependencies had no known advisory.
+
 ## [1.0.0-rc.1] - 2026-11-12
 
 The release candidate for 1.0.0. It keeps the API 0.2.0 settled and writes down the
@@ -229,7 +254,8 @@ says what to do for each.
 
 - initial release 🎉🎊.
 
-[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/vhidvz/crypto-aio/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/vhidvz/crypto-aio/compare/1.0.0-rc.1...1.0.0
 [1.0.0-rc.1]: https://github.com/vhidvz/crypto-aio/compare/0.2.0...1.0.0-rc.1
 [0.2.0]: https://github.com/vhidvz/crypto-aio/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/vhidvz/crypto-aio/releases/tag/0.1.0

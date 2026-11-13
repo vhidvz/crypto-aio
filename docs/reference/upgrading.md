@@ -6,8 +6,9 @@ description: What changes from crypto-aio 0.2.0 and from 0.1.0 to 1.0, and what 
 # Upgrade to 1.0
 
 crypto-aio 1.0 keeps the API that 0.2.0 settled, and from 1.0.0 on,
-[semver](./stability.md) applies. From 0.2.0, most applications change nothing: read
-[From 0.2.0](#from-020). From 0.1.0, read both sections. Every change is also in the
+[semver](./stability.md) applies. From 1.0.0-rc.1, nothing changes. From 0.2.0, most
+applications change nothing: read [From 0.2.0](#from-020). From 0.1.0, read both
+sections. Every change is also in the
 [changelog](https://github.com/vhidvz/crypto-aio/blob/main/CHANGELOG.md).
 
 Operations that 0.1.0 and 0.2.0 stored are read as they are: no data migration is needed,
