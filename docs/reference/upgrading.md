@@ -7,8 +7,9 @@ description: What changes from crypto-aio 1.0.0-rc.1, 0.2.0 and 0.1.0 to 1.0, an
 
 crypto-aio 1.0 keeps the API that 0.2.0 settled, and from 1.0.0 on,
 [semver](./stability.md) applies. From 1.0.0-rc.1, only the chain SDKs move: install
-`bitcoinjs-lib` 7.0.5 or later, `tronweb` 6.5.2 or later (on Node.js 22.23.4, 24.22.1 or
-26.12.1 or later) and, on the 3.x line, `@solana/web3.js` 3.2.1 or later. From 0.2.0, read
+`bitcoinjs-lib` 7.0.5 or later, `tronweb` 6.5.2 or later (on Node.js 22.23.4 or later on
+22, 24.22.1 or later on 24, or 26.12.1 or later) and, on the 3.x line, `@solana/web3.js`
+3.2.1 or later. From 0.2.0, read
 [From 0.2.0](#from-020); from 0.1.0, read both sections. Every change is also in the
 [changelog](https://github.com/vhidvz/crypto-aio/blob/main/CHANGELOG.md).
 
@@ -24,7 +25,7 @@ code your application may treat as safe to pay again.
 ## From 0.2.0
 
 - **Newer chain SDKs.** The peer ranges start at the newest releases: `bitcoinjs-lib`
-  7.0.5, `tronweb` 6.5.2 (which asks for Node.js 22.23.4, 24.22.1 or 26.12.1 or later) and,
+  7.0.5, `tronweb` 6.5.2 (which asks for Node.js 22.23.4 or later on 22, 24.22.1 or later on 24, or 26.12.1 or later) and,
   on the 3.x line, `@solana/web3.js` 3.2.1. Upgrade the ones you install.
 - **Tron block times are Unix seconds.** `Block.timestamp` and a transaction's
   `block.timestamp` are Unix seconds on every family; Tron reported milliseconds. Multiply

@@ -6,7 +6,7 @@ description: "The Avalanche X-Chain and P-Chain: fees, spending, finality and li
 # Avalanche X-Chain and P-Chain networks
 
 The Avalanche family serves the primary network's two UTXO chains through
-`@avalabs/avalanchejs` 5 (`npm install @avalabs/avalanchejs`): `avalanche-x`, the X-Chain
+`@avalabs/avalanchejs` 5.2 or later (`npm install @avalabs/avalanchejs`): `avalanche-x`, the X-Chain
 (AVM), and `avalanche-p`, the P-Chain (PlatformVM), each on `mainnet` (the default) and
 `fuji`. The C-Chain is an EVM chain: it stays `avalanche`, in the EVM family. AVAX has 9
 decimals here (a `bigint` amount is in nAVAX), not the C-Chain's 18.

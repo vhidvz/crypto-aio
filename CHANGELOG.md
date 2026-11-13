@@ -34,8 +34,8 @@ the 1.0.0-rc.1 and 0.2.0 sections below.
     transactions;
   - `tronweb` `^6.5.2` (from `^6.5.1`): its transaction builders read integers strictly,
     a signed result's contract type is checked, ABI encoding refuses a wrong argument
-    count, and its axios is newer. tronweb 6.5.2 asks for Node.js 22.23.4, 24.22.1 or
-    26.12.1 or later, the October 2026 security releases, so run one of those for Tron;
+    count, and its axios is newer. tronweb 6.5.2 asks for Node.js 22.23.4 or later on 22,
+    24.22.1 or later on 24, or 26.12.1 or later, the October 2026 security releases, so run one of those for Tron;
   - `@solana/web3.js` `^1.99.0 || ^3.2.1` (from `^3.0.0` for the 3.x line).
 
   `ethers` 6.17, `web3` 4.16, `@ton/ton` 16.3 with `@ton/core` 0.63 and `@ton/crypto`

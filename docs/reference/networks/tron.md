@@ -6,8 +6,8 @@ description: "Tron: bandwidth and energy, fee limits, expiry, memos, TronGrid an
 # Tron networks
 
 The Tron family serves the `tron` chain on `mainnet`, `shasta` and `nile` with tronweb 6.5.2
-or later (`npm install tronweb`). tronweb 6.5.2 itself asks for Node.js 22.23.4, 24.22.1 or
-26.12.1 or later, the October 2026 security releases, so run one of those for Tron. A transfer moves TRX or one TRC-20 token to one recipient, with an
+or later (`npm install tronweb`). tronweb 6.5.2 itself asks for Node.js 22.23.4 or later on 22, 24.22.1 or later
+on 24, or 26.12.1 or later, the October 2026 security releases, so run one of those for Tron. A transfer moves TRX or one TRC-20 token to one recipient, with an
 optional memo. The [Build guides](../../build/index.md) cover what else differs on Tron:
 [refused transfers](../errors.md#what-to-do-about-each-error),
 [token verdicts and proofs](../../build/confirmations.md) and
@@ -126,9 +126,10 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   backend decides nothing, but a wrong one is trusted, for verdicts, for a token's decimals,
   and for "not included", which would let `rebuild` pay twice. For proven verdicts on
   mainnet, configure independent providers, for example `provider: ['tron', 'own-node']`.
-  With exactly two, both must answer while both are up, but once one has been down for about
-  three health intervals (45 s by default) it leaves the proof count and the other decides
-  alone. So use three for production proofs: two tolerate an outage, not a liar during one.
+  With exactly two, both must answer: while one is down, proofs wait for it (a retryable
+  `PROVIDER_UNAVAILABLE`), unless `transport.degradedProofs` is on, which lets the other
+  decide alone once the first has been down for about three health intervals (45 s by
+  default). So use three for production proofs: one outage then leaves two to agree.
   If you set a `rateLimit` on an endpoint that serves proofs, give it `burst: 2` or more
   (the default is the rate rounded up): with a burst of 1, an endpoint that recovers from an
   outage may never rejoin the proof quorum.
@@ -146,8 +147,12 @@ optional memo. The [Build guides](../../build/index.md) cover what else differs 
   transfer above 2^53 − 1 sun (about 9 billion TRX) is refused with `INVALID_AMOUNT` before
   signing; split it.
 - **Stores.** A custom `OperationStore` must keep each Attempt's `ordering` whole and
-  unchanged, `refBlockHash` included: the expiry proof relies on it
-  ([why](../../explore/stores.md)).
+  unchanged: on Tron it is a `TronExpiryOrdering`, `{ kind: 'expiry', expiresAtMs,
+  lastValidHeight, refBlockHash }`, with `expiresAtMs` the transaction's
+  `raw_data.expiration` in milliseconds (block times are Unix seconds, this is not),
+  `lastValidHeight` a `bigint` (the reference block's height plus 65,536) and
+  `refBlockHash` 16 lower-case hex digits. The expiry proof relies on every field
+  ([why](../../explore/stores.md)); `crypto-aio/tron` and `crypto-aio` export the type.
 - **Types.** `crypto-aio/tron` names tronweb's types, so a project with
   `skipLibCheck: false` needs tronweb installed to import it.
 - **Integration tests.** The opt-in suite (`CRYPTO_AIO_INTEGRATION=1`) reads Nile through

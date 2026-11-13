@@ -5,8 +5,8 @@ description: "The EVM chains: networks, fees, tokens, presets and the fee ceilin
 
 # EVM networks
 
-One EVM driver serves every chain below, with either library: `ethers` (v6, the default) or
-`web3` (v4). ChainSafe sunset web3.js in 2025, and 4.16.0 is its last release, with no
+One EVM driver serves every chain below, with either library: `ethers` (6.17 or later, the
+default) or `web3` (4.16). ChainSafe sunset web3.js in 2025, and 4.16.0 is its last release, with no
 further fixes, so `library: 'web3'` is **deprecated**: crypto-aio keeps it working and
 tested through 1.x (unless a security issue in web3 forces its removal sooner, as a safety
 fix the changelog announces), warns once per process (a `DeprecationWarning`, code
