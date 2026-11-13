@@ -13,7 +13,11 @@ function dependencyError(manifest: AdapterManifest, error: unknown): unknown {
   // Only a missing peer dependency is the user's to install. Any other missing module
   // (the adapter's own file, a broken build) keeps its own error.
   if (deps.length === 0) return error;
-  const install = deps.map((d) => `${d.name}@${d.range}`).join(' ');
+  // A range with spaces (`^1.99.0 || ^3.2.1`) is quoted, so the command pastes into a shell
+  // as one spec instead of running `||` as an operator.
+  const install = deps
+    .map((d) => (/\s/.test(d.range) ? `'${d.name}@${d.range}'` : `${d.name}@${d.range}`))
+    .join(' ');
   return new ConfigError(
     'DEPENDENCY_MISSING',
     `library '${manifest.library}' (${manifest.family}) needs ${deps.map((d) => d.name).join(', ')}; install it: npm i ${install}`,

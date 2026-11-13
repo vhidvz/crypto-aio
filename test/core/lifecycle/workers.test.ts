@@ -120,12 +120,15 @@ describe('background workers', () => {
       ),
     ).rejects.toBeInstanceOf(CrashError);
     const restarted = await env.restart({ killPrevious: true });
-    // A newer version stored this one (a rolling upgrade): it is left to that version.
+    // A newer version stored this one (a rolling upgrade), from the same wallet: it is left
+    // to that version.
+    const signed = await restarted.stores.operations.getByKey('default', 'signed');
     await restarted.stores.operations.create(
       sampleOperation({
         namespace: 'default',
         format: OPERATION_FORMAT + 1,
         idempotencyKey: 'newer',
+        ...(signed ? { context: signed.context, intent: signed.intent } : {}),
       }),
     );
     const report = await restarted.run(restarted.aio.operations.recover());

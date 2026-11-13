@@ -38,7 +38,7 @@ import {
 } from '../registry/plugin';
 import { SigningOrchestrator } from '../signing/orchestrator';
 import { resolveWallet, type ResolvedWallet } from '../signing/wallet';
-import { formatGuard } from '../store/format';
+import { formatGuard, listReadable } from '../store/format';
 import { createMemoryStores } from '../store/memory';
 import type { OperationRecord, OperationState, Stores } from '../store/types';
 import { randomId } from '../util/bytes';
@@ -526,7 +526,7 @@ export class CryptoAio {
       list: async (filter = {}) =>
         Promise.all(
           (
-            await store.list({
+            await listReadable(store, {
               namespace,
               ...(filter.states ? { states: filter.states } : {}),
               ...(filter.chain ? { chain: filter.chain } : {}),

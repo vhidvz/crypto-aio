@@ -44,6 +44,16 @@ the 1.0.0-rc.1 and 0.2.0 sections below.
 - The README, the docs and `SECURITY.md` describe 1.0.0 as released: 1.x gets fixes in a
   patch release of its latest minor, and 0.2.x security fixes for six months.
 
+### Fixed
+
+- During a rolling upgrade, an older process left a newer-format Operation out of every
+  list, the engine's own included, so it could not see the inputs, nonces or seqnos that
+  Operation holds (1.0.0-rc.1). Only `aio.operations.list()` and `recover()` leave it out
+  now; a transfer or nonce reconciliation from a wallet with such a record refuses with
+  `RECORD_FORMAT_UNSUPPORTED`, as before 1.0.0-rc.1.
+- The `DEPENDENCY_MISSING` message quotes an install spec with spaces, so
+  `npm i '@solana/web3.js@^1.99.0 || ^3.2.1'` pastes into a shell as one argument.
+
 ### Security
 
 - The documentation site's DOMPurify, which mermaid loads in the browser, is past a

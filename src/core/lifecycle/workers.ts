@@ -11,6 +11,7 @@ import { randomId } from '../util/bytes';
 import type { ReadTarget } from './engine';
 import { PRE_SIGNING_STATES, errorCode } from './engine-rules';
 import type { MonitorDeps, ReadResolver, TargetResolver } from './monitor';
+import { listReadable } from '../store/format';
 
 /*
  * The monitor's background worker loop and startup recovery (`Monitor` delegates to
@@ -207,7 +208,8 @@ export class Workers {
   ): Promise<RecoveryReport> {
     const { signal } = options;
     const { namespace } = this.deps;
-    const live = await this.deps.stores.operations.list({
+    // A record a newer version stored is left out (a warning each): it is that version's.
+    const live = await listReadable(this.deps.stores.operations, {
       namespace,
       states: NON_TERMINAL_STATES,
     });

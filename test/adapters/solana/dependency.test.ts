@@ -18,7 +18,7 @@ describe('a missing Solana SDK', () => {
     await expect(bc.ready()).rejects.toMatchObject({
       name: 'ConfigError',
       code: 'DEPENDENCY_MISSING',
-      message: expect.stringContaining('npm i @solana/web3.js@^1.99.0'),
+      message: expect.stringContaining("npm i '@solana/web3.js@^1.99.0 || ^3.2.1'"),
       details: { packages: ['@solana/web3.js'] },
     });
     await aio.close();
