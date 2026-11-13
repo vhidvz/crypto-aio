@@ -110,7 +110,7 @@ describe('the built-in Tron plugin', () => {
     const plugin = tronPlugin();
     expect(
       plugin.adapters?.map((m) => [m.family, m.library, m.chains, m.peerDependencies]),
-    ).toEqual([['tron', 'tronweb', ['tron'], [{ name: 'tronweb', range: '^6.5.1' }]]]);
+    ).toEqual([['tron', 'tronweb', ['tron'], [{ name: 'tronweb', range: '^6.5.2' }]]]);
     expect(Object.isFrozen(plugin.chains?.[0]?.networks.mainnet)).toBe(true);
   });
 

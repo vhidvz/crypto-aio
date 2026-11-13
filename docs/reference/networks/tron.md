@@ -5,8 +5,9 @@ description: "Tron: bandwidth and energy, fee limits, expiry, memos, TronGrid an
 
 # Tron networks
 
-The Tron family serves the `tron` chain on `mainnet`, `shasta` and `nile` with tronweb 6
-(`npm install tronweb`). A transfer moves TRX or one TRC-20 token to one recipient, with an
+The Tron family serves the `tron` chain on `mainnet`, `shasta` and `nile` with tronweb 6.5.2
+or later (`npm install tronweb`). tronweb 6.5.2 itself asks for Node.js 22.23.4, 24.22.1 or
+26.12.1 or later, the October 2026 security releases, so run one of those for Tron. A transfer moves TRX or one TRC-20 token to one recipient, with an
 optional memo. The [Build guides](../../build/index.md) cover what else differs on Tron:
 [refused transfers](../errors.md#what-to-do-about-each-error),
 [token verdicts and proofs](../../build/confirmations.md) and

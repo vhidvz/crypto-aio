@@ -72,8 +72,8 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
       bitcoinjs-lib:
-        specifier: 7.0.2
-        version: 7.0.2(typescript@5.9.3)
+        specifier: 7.0.5
+        version: 7.0.5(typescript@5.9.3)
       eslint:
         specifier: ^9.39.5
         version: 9.39.5
@@ -114,8 +114,8 @@ importers:
         specifier: ^6.1.3
         version: 6.1.3
       tronweb:
-        specifier: 6.5.1
-        version: 6.5.1(bufferutil@4.1.0)(debug@4.4.3)(utf-8-validate@6.0.6)
+        specifier: 6.5.2
+        version: 6.5.2(bufferutil@4.1.0)(debug@4.4.3)(utf-8-validate@6.0.6)
       ts-jest:
         specifier: 29.4.15
         version: 29.4.15(@babel/core@7.29.7)(@jest/transform@30.5.2)(@jest/types@30.5.1)(babel-jest@30.5.2(@babel/core@7.29.7))(jest-util@30.5.1)(jest@30.5.2(@types/node@22.20.4))(typescript@5.9.3)
@@ -1897,8 +1897,8 @@ packages:
   birpc@2.9.0:
     resolution: {integrity: sha512-KrayHS5pBi69Xi9JmvoqrIgYGDkD6mcSe/i6YKi3w5kekCLzrX4+nawcXqrj2tIp50Kw/mT/s3p+GVK0A0sKxw==}
 
-  bitcoinjs-lib@7.0.2:
-    resolution: {integrity: sha512-ugLk9SR+2gvhpNA7kqQL1eVDKyBNo/rbr+df72nrZj4OOdZvQRHDVtyogPGXAU2MLQimLL7EbUdz95QGh6Th5Q==}
+  bitcoinjs-lib@7.0.5:
+    resolution: {integrity: sha512-xH24P1ile3QtyChzX1ITitcgpfZgDzG986gy1glbGXFsvcSnRX0P6p4m3nuTQfJ+j97va8py0leEK7xG8oxMqQ==}
     engines: {node: '>=18.0.0'}
 
   bn.js@5.2.5:
@@ -3739,8 +3739,9 @@ packages:
   trim-lines@3.0.1:
     resolution: {integrity: sha512-kRj8B+YHZCc9kQYdWfJB2/oUl9rA99qbowYYBtr4ui4mZyAQ2JpvVBd/6U2YloATfqBhBTSMhTpgBHtU0Mf3Rg==}
 
-  tronweb@6.5.1:
-    resolution: {integrity: sha512-mqa3WIBq7sYtkkIywa2Jop3UwJX6EgIrBkFpm3sSjppStTOTtYeMJyeIHJVvFFCaYN4vjU1FDjQPSvHFTcuzEw==}
+  tronweb@6.5.2:
+    resolution: {integrity: sha512-vUpR5WrOcFbWKWSN4FJpz0DofoaRybEuPhrzUX285k++dDIlYDvQ0DCzNrhjo+uogsTq2yQr/XPSS8IZX5r47w==}
+    engines: {node: ^22.23.4 || ^24.22.1 || >=26.12.1}
 
   ts-api-utils@2.5.0:
     resolution: {integrity: sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==}
@@ -3844,10 +3845,6 @@ packages:
 
   uint8array-tools@0.0.10:
     resolution: {integrity: sha512-sSbrZqlr04w4p8KKpHw0ME/R4JzQaadum+BWhMlk2M7LrDyXWTfJOco3d1jNMdQNxgk5DDm88R3IWYH0nR+tzQ==}
-    engines: {node: '>=14.0.0'}
-
-  uint8array-tools@0.0.9:
-    resolution: {integrity: sha512-9vqDWmoSXOoi+K14zNaf6LBV51Q8MayF0/IiQs3GlygIKUYtog603e6virExkjjFosfJUBI4LhbQK1iq8IG11A==}
     engines: {node: '>=14.0.0'}
 
   undici-types@6.19.8:
@@ -6106,13 +6103,13 @@ snapshots:
 
   birpc@2.9.0: {}
 
-  bitcoinjs-lib@7.0.2(typescript@5.9.3):
+  bitcoinjs-lib@7.0.5(typescript@5.9.3):
     dependencies:
       '@noble/hashes': 1.8.0
       bech32: 2.0.0
       bip174: 3.0.1
       bs58check: 4.0.0
-      uint8array-tools: 0.0.9
+      uint8array-tools: 0.0.10
       valibot: 1.5.0(typescript@5.9.3)
       varuint-bitcoin: 2.0.1
     transitivePeerDependencies:
@@ -8164,7 +8161,7 @@ snapshots:
 
   trim-lines@3.0.1: {}
 
-  tronweb@6.5.1(bufferutil@4.1.0)(debug@4.4.3)(utf-8-validate@6.0.6):
+  tronweb@6.5.2(bufferutil@4.1.0)(debug@4.4.3)(utf-8-validate@6.0.6):
     dependencies:
       axios: 1.20.0(debug@4.4.3)
       bignumber.js: 9.1.2
@@ -8257,8 +8254,6 @@ snapshots:
     optional: true
 
   uint8array-tools@0.0.10: {}
-
-  uint8array-tools@0.0.9: {}
 
   undici-types@6.19.8: {}
 

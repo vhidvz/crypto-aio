@@ -19,7 +19,7 @@ describe('a missing bitcoinjs-lib', () => {
       name: 'ConfigError',
       code: 'DEPENDENCY_MISSING',
       message:
-        "library 'bitcoinjs-lib' (utxo) needs bitcoinjs-lib; install it: npm i bitcoinjs-lib@^7.0.2",
+        "library 'bitcoinjs-lib' (utxo) needs bitcoinjs-lib; install it: npm i bitcoinjs-lib@^7.0.5",
       details: { packages: ['bitcoinjs-lib'] },
       cause: expect.objectContaining({ code: 'MODULE_NOT_FOUND' }),
     });

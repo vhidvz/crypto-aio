@@ -15,7 +15,7 @@
 //    with the SDKs' own types beside them: on the oldest supported TypeScript (5.3, with
 //    `skipLibCheck`, since some SDKs' declarations need 5.7), the tested one and 7, under
 //    `nodenext` and `bundler` resolution.
-// 5. Every other major line a peer range admits (`^1.99.0 || ^3.0.0`): the family loads
+// 5. Every other major line a peer range admits (`^1.99.0 || ^3.2.1`): the family loads
 //    with its newest release too, and `native()` hands out its client.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

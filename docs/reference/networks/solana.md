@@ -6,11 +6,11 @@ description: "Solana: priority fees, SPL tokens, expiry, scanning, history and s
 # Solana networks
 
 The Solana family serves the `solana` chain on three clusters with `@solana/web3.js` (1.99
-or later, or 3), installed next to crypto-aio: `npm install @solana/web3.js`. A transfer moves SOL or one
+or later, or 3.2.1 or later), installed next to crypto-aio: `npm install @solana/web3.js`. A transfer moves SOL or one
 classic SPL token to one recipient, with an optional memo. The driver sends every request
 itself, through the handle's transport, and builds its messages and token account
 addresses itself; the SDK only backs `native()`, so `@solana/web3.js` 1.99 or later, and
-3.x, work alike.
+3.2.1 or later, work alike.
 [Configuring a real network (Solana)](../../build/connect.md#solana)
 shows a configuration.
 

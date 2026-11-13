@@ -137,7 +137,7 @@ describe('the built-in UTXO plugin', () => {
     const plugin = utxoPlugin();
     expect(
       plugin.adapters?.map((m) => [m.family, m.library, m.peerDependencies]),
-    ).toEqual([['utxo', 'bitcoinjs-lib', [{ name: 'bitcoinjs-lib', range: '^7.0.2' }]]]);
+    ).toEqual([['utxo', 'bitcoinjs-lib', [{ name: 'bitcoinjs-lib', range: '^7.0.5' }]]]);
     expect(plugin.adapters?.[0]).toMatchObject({
       chains: ['bitcoin'],
       requiresIndexer: true,

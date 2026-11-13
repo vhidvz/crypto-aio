@@ -20,7 +20,7 @@ describe('a missing tronweb', () => {
     await expect(bc.ready()).rejects.toMatchObject({
       name: 'ConfigError',
       code: 'DEPENDENCY_MISSING',
-      message: expect.stringContaining('npm i tronweb@^6.5.1'),
+      message: expect.stringContaining('npm i tronweb@^6.5.2'),
       details: { packages: ['tronweb'] },
     });
     await aio.close();

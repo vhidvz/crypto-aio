@@ -59,12 +59,12 @@ principles, starting with [what a ledger is](https://vhidvz.github.io/crypto-aio
 
 | Family | Chains | Through |
 | --- | --- | --- |
-| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6 (or the deprecated `web3` 4) |
-| Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7 and an Esplora indexer |
-| Tron | mainnet, Shasta, Nile | `tronweb` 6 |
-| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1 or 3 |
-| TON | mainnet, testnet | `@ton/ton` 16 and toncenter |
-| Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5 and the Avalanche Data API |
+| EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6.17+ (or the deprecated `web3` 4.16) |
+| Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7.0.5+ and an Esplora indexer |
+| Tron | mainnet, Shasta, Nile | `tronweb` 6.5.2+ |
+| Solana | mainnet, devnet, testnet | `@solana/web3.js` 1.99+ or 3.2.1+ |
+| TON | mainnet, testnet | `@ton/ton` 16.3+ and toncenter |
+| Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5.2+ and the Avalanche Data API |
 
 What each network supports, family by family, is in
 [Networks](https://vhidvz.github.io/crypto-aio/reference/networks/).

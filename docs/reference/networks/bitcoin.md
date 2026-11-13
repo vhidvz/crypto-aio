@@ -5,7 +5,8 @@ description: "Bitcoin: address types, coin selection, fees, replace and cancel, 
 
 # Bitcoin networks
 
-The UTXO driver serves `bitcoin` with bitcoinjs-lib 7 (ECC over `@noble/curves`, no WASM). It
+The UTXO driver serves `bitcoin` with bitcoinjs-lib 7.0.5 or later (ECC over `@noble/curves`,
+no WASM). It
 reads everything from Esplora servers: the `provider` serves blocks, transactions, fee
 estimates, broadcasts and proofs, and the `indexer`, which is required, serves the wallet's
 unspent outputs, balances and history. A handle without a `provider` or an `indexer` falls
