@@ -16,7 +16,8 @@ network, no account with a provider, no keys and no cryptocurrency.
 
 ## What you need
 
-- **Node.js 22.12 or later.** Check with `node --version`.
+- **Node.js 22.12 or later** (for Tron, Node.js 22.23.4, 24.22.1 or 26.12.1 or later, which `tronweb` asks for). Check with
+  `node --version`.
 - A project folder with a `package.json` (`npm init -y` makes one).
 - A way to run TypeScript. This page uses [`tsx`](https://www.npmjs.com/package/tsx), which
   runs a `.ts` file directly. Plain JavaScript works too: crypto-aio is built as CommonJS, so
@@ -36,7 +37,7 @@ chain next to the package, and only that one:
 | --- | --- | --- |
 | EVM: Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base | `npm install ethers` | ethers is the default; `web3` (`library: 'web3'`) is deprecated |
 | Bitcoin | `npm install bitcoinjs-lib` | |
-| Tron | `npm install tronweb` | |
+| Tron | `npm install tronweb` | `tronweb` asks for Node.js 22.23.4, 24.22.1 or 26.12.1 or later |
 | Solana | `npm install @solana/web3.js` | |
 | TON | `npm install @ton/ton @ton/core @ton/crypto` | |
 | Avalanche X-Chain and P-Chain | `npm install @avalabs/avalanchejs` | |

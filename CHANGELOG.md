@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The first stable release. From 1.0.0 on, [semantic versioning](https://semver.org/) covers
 what [Versioning and stability](https://vhidvz.github.io/crypto-aio/reference/stability.html)
-lists: the container and handle API, the configuration shape, the model, error codes and
-the documented error fields, events, the store ports and their contract suites, the
-driver port, and everything a process stores. A minor release adds and a patch release
-fixes; a breaking change waits for 2.0.
+lists: the container and handle API, the configuration shape, the model, signers, error
+codes and the documented error fields, events, the store ports and their contract suites,
+the driver port, the family entry points, `crypto-aio/testing`, the registries you augment,
+and everything a process stores. A minor release adds and a patch release fixes; a
+breaking change waits for 2.0, except a fix for a security vulnerability or a verdict that
+could pay twice, which the changelog calls out.
 
 1.0.0 is 1.0.0-rc.1 on the newest chain SDKs: code that runs on 1.0.0-rc.1 needs only
 newer `bitcoinjs-lib`, `tronweb` or `@solana/web3.js` 3.x installs. From 0.2.0 or 0.1.0,

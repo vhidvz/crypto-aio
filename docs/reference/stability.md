@@ -75,9 +75,9 @@ Use `ethers`.
 
 | Dependency | Supported |
 | --- | --- |
-| Node.js | 22.12 or later: every Node.js LTS line that has not reached its end of life. CI runs 22.12.0, 22, 24 and 26. A line that reaches its end of life may be dropped in a minor release, announced in the changelog beforehand |
+| Node.js | 22.12 or later: every Node.js LTS line that has not reached its end of life. CI runs 22.12.0, 22, 24 and 26. A line that reaches its end of life may be dropped in a minor release, announced in the changelog beforehand. A family's SDK may ask for more: `tronweb` 6.5.2 asks for Node.js 22.23.4, 24.22.1 or 26.12.1 or later, so Tron needs one of those |
 | TypeScript | 5.3 or later for the declarations, and 7. The minimum may rise in a minor release, only to a version released at least two years before |
-| Chain SDKs | The peer range each family declares in `package.json`, such as `@solana/web3.js` `^1.99.0 \|\| ^3.2.1`. Tests pin the oldest version of each range; a nightly run tests the newest. A new SDK major line may be added in a minor release; dropping one is a major release |
+| Chain SDKs | The peer range each family declares in `package.json`, such as `@solana/web3.js` `^1.99.0 \|\| ^3.2.1`. The tests pin the oldest version of each range's first line, and a nightly run tests that line's newest release; the pack check loads every further line (such as `@solana/web3.js` 3) at its newest release. A new SDK major line may be added in a minor release; dropping one is a major release. A range's floor rises within its line only in a minor release, and only for a fix the SDK release makes, as the changelog says |
 | Module systems | CommonJS (also under Jest's CommonJS loader, so no runtime dependency is an ES module only), and ES modules through Node.js's CommonJS interop; `node16`/`nodenext` and `bundler` type resolution |
 
 Security fixes go to the latest minor release of the latest major version, and to 0.2.x for

@@ -95,7 +95,10 @@ If you have written payment code against an SDK such as ethers, this is where ea
 | Catch an error and guess whether it was sent | `error.ambiguous`; the Operation's stored state |
 
 And the same calls then work on Bitcoin, Tron, Solana, TON and the Avalanche X-Chain and
-P-Chain.
+P-Chain, where the chain can do the same: Tron, Solana and TON have no `replace` or
+`cancel`, TON has no block scanner, and Bitcoin and the Avalanche X-Chain and P-Chain move
+their native coin only. A call a chain cannot serve fails with `UNSUPPORTED_CAPABILITY`
+([Capabilities](../reference/capabilities.md)).
 
 ## What it deliberately does not do
 

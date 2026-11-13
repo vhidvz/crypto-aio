@@ -332,8 +332,8 @@ expect(restarted.chain.balance(to)).toBe(7n); // paid once
 **Observe:** the process dies right after the signed Attempt is stored. The new process
 (`restart({ killPrevious: true })`) resends the stored bytes in `operations.recover()`: signed
 once, paid once. **Concept:** write-ahead signing; recovery never signs. What recovery skips,
-and why it needs no signer at all, is in
-[Background workers and startup recovery](../build/workers.md).
+and why a resend still resolves the wallet (and the signer it names, though it never asks it
+to sign), is in [Background workers and startup recovery](../build/workers.md).
 
 > **Check yourself:** (1) Why did the restarted process not sign again? (2) Using that guide
 > section: what does `recover()` do with a `prepared` Operation?

@@ -61,7 +61,7 @@ principles, starting with [what a ledger is](https://vhidvz.github.io/crypto-aio
 | --- | --- | --- |
 | EVM | Ethereum, BNB Smart Chain, Polygon, Avalanche C-Chain, Arbitrum, Optimism, Base, and any EVM chain you add | `ethers` 6.17+ (or the deprecated `web3` 4.16) |
 | Bitcoin | mainnet, testnet, testnet4, signet, regtest | `bitcoinjs-lib` 7.0.5+ and an Esplora indexer |
-| Tron | mainnet, Shasta, Nile | `tronweb` 6.5.2+ |
+| Tron | mainnet, Shasta, Nile | `tronweb` 6.5.2+, on Node.js 22.23.4, 24.22.1 or 26.12.1 or later |
 | Solana | mainnet, devnet, testnet | `@solana/web3.js` 1.99+ or 3.2.1+ |
 | TON | mainnet, testnet | `@ton/ton` 16.3+ and toncenter |
 | Avalanche X-Chain and P-Chain | mainnet, Fuji | `@avalabs/avalanchejs` 5.2+ and the Avalanche Data API |
@@ -71,8 +71,8 @@ What each network supports, family by family, is in
 
 ## Install
 
-crypto-aio needs Node.js 22.12 or later. Install the package, and only the
-SDK of each family you use:
+crypto-aio needs Node.js 22.12 or later (Tron's `tronweb` 6.5.2 asks for Node.js 22.23.4, 24.22.1 or 26.12.1 or later).
+Install the package, and only the SDK of each family you use:
 
 ```sh
 npm install crypto-aio ethers           # EVM chains
@@ -161,7 +161,7 @@ page lists, the API, the driver port and what a process stores, but not `crypto-
 or message texts. The 0.0.x releases on npm are an older, unrelated API. [Known
 limitations](https://vhidvz.github.io/crypto-aio/reference/limitations.html) lists what it
 does not do yet, and [Upgrade to 1.0](https://vhidvz.github.io/crypto-aio/reference/upgrading.html)
-what changes from 0.2.0 and 0.1.0. Only in-memory stores ship: production needs durable stores of your
+what changes from 1.0.0-rc.1, 0.2.0 and 0.1.0. Only in-memory stores ship: production needs durable stores of your
 own, proven with the contract suites in `crypto-aio/testing`; [examples/postgres-store](examples/postgres-store)
 is a reference implementation on PostgreSQL. Release notes are in the [changelog](CHANGELOG.md).
 

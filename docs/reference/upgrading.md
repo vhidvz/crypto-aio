@@ -1,6 +1,6 @@
 ---
 title: Upgrade to 1.0
-description: What changes from crypto-aio 0.2.0 and from 0.1.0 to 1.0, and what to change in your code, your stores and your configuration.
+description: What changes from crypto-aio 1.0.0-rc.1, 0.2.0 and 0.1.0 to 1.0, and what to change in your code, your stores and your configuration.
 ---
 
 # Upgrade to 1.0
@@ -28,7 +28,8 @@ code your application may treat as safe to pay again.
   on the 3.x line, `@solana/web3.js` 3.2.1. Upgrade the ones you install.
 - **Tron block times are Unix seconds.** `Block.timestamp` and a transaction's
   `block.timestamp` are Unix seconds on every family; Tron reported milliseconds. Multiply
-  by 1,000 where your code relied on them.
+  by 1,000 where your code relied on them. A plugin driver reports its blocks' and
+  transactions' `timestamp` in Unix seconds too, whatever unit its chain uses.
 - **Bitcoin indexers fail over on per-address limits.** When an indexer refuses an address
   for its own limits (HTTP 400, "too many" or "too large"), the balance, unspent-output or
   history read asks the handle's next `indexer` endpoint; it fails with `RPC_ERROR` only
@@ -45,7 +46,8 @@ code your application may treat as safe to pay again.
   `RECORD_FORMAT_UNSUPPORTED`; a read by id, key or ref still throws.
 - **`Scanner`.** Its constructor is private; scanners come from `bc.scanner()`, as before.
 - **Store authors:** `findByRef` may return any one of several Operations that hold a ref
-  (which the core never writes). Run the contract suites again; nothing else changed.
+  (which the core never writes), and a store built on `stringifyTagged` refuses tag-shaped
+  data (above). The contract suites are unchanged since 0.2.0.
 
 ## From 0.1.0 (changed in 0.2.0)
 

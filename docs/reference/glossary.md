@@ -249,7 +249,7 @@ Chain, Polygon, the Avalanche C-Chain, Arbitrum, Optimism, Base. [EVM networks](
 
 ### Expiry
 
-A deadline after which a transaction can never land (Tron, Solana); proven expiry lets
+A deadline after which a transaction can never land (Tron, Solana, TON); proven expiry lets
 `rebuild` re-issue it. [Lesson 7](../learn/foundations/ordering.md).
 
 ### Extended public key (xpub)

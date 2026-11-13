@@ -142,7 +142,7 @@ Root container only: every scope and handle of a container shares its transports
 | `baseDelayMs`, `maxDelayMs` | `200`, `5_000` | Exponential backoff between attempts |
 | `proofQuorum` | `2` | Endpoints that must agree on a proof read, capped by the endpoints configured |
 | `degradedProofs` | `false` | `true` lets proofs go on from the endpoints still counted, down to one, while others are down ([proof quorum](./concepts.md#provider-and-transport)) |
-| `maxLagBlocks` | `5` (some networks set more) | How far behind the best height an endpoint may be before it is lagging |
+| `maxLagBlocks` | `5` (most networks set their own) | How far behind the best height an endpoint may be before it is lagging |
 | `failureThreshold`, `openMs` | `5`, `30_000` | The circuit breaker: failures before an endpoint rests, and for how long |
 | `healthIntervalMs` | `15_000` | How often endpoints' identity and height are probed |
 | `maxResponseBytes` | 64 MiB | The largest answer accepted from one request |
@@ -154,7 +154,7 @@ network's own value, then 5. Networks that set their own value, roughly a minute
 | Network | `maxLagBlocks` |
 | --- | --- |
 | BSC, Arbitrum, OP and Base mainnets | 134, 240, 30 and 30 |
-| Bitcoin mainnet and signet; its testnets | 2; 6 |
+| Bitcoin mainnet and signet; testnet and testnet4 (regtest uses 5) | 2; 6 |
 | Tron | 20 |
 | Solana, TON | 150 |
 | Avalanche X-Chain; P-Chain | 2; 6 |
