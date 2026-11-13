@@ -118,9 +118,10 @@ An `AdapterManifest` is what the core knows about a driver before it loads the S
 A handle's capabilities are the manifest's, plus its `indexerCapabilities` when an indexer is
 configured, adjusted per network by `NetworkInfo.capabilities` (`add`, `remove`).
 `bc.supports()` and every gate below read that set, so the driver must implement each
-capability it holds: when a handle first loads the driver, the core refuses, with
-`CONFIG_INVALID` (`details.missing`), a driver whose `ChainDriver.capabilities` lacks one,
-and one whose `ordering` is not its chain's `ChainInfo.ordering`.
+capability it holds: when a handle first loads the driver, the core closes and refuses, with
+`CONFIG_INVALID`, a driver whose `ChainDriver.capabilities` lacks one (`details.missing`
+names them) or whose `ordering` is not its chain's `ChainInfo.ordering` (`details.ordering`
+is the driver's, with `missing` empty).
 
 | Capability | What the core does with it | What the driver implements |
 | --- | --- | --- |
@@ -224,6 +225,12 @@ relies on these rules most:
 - **Exact integers.** Pass `exactIntegers: true` on a read whose JSON answer carries amounts
   as numbers: integers beyond 2^53 − 1 then arrive as `bigint`, and a quorum compares them
   exactly.
+- **Endpoint limits.** Pass `endpointLimit` on a read without a quorum when one endpoint may
+  refuse a request for its own limit (an indexer that will not scan a busy address): a
+  definitive refusal it returns `true` for makes the read ask the endpoints it has not
+  asked, and stands only when every one refuses.
+- **Times.** A `DriverBlock`'s and a `DriverTransaction`'s `timestamp` are Unix seconds,
+  whatever unit the chain uses (Tron's milliseconds are converted).
 - **Output variants.** `DriverIntent.outputs[i].variant` is the recipient address's
   `variant` (for example TON's bounce flag) when it has one; it is part of the intent hash.
   Your codec's `normalize` must return a variant of JSON scalars only (strings, finite

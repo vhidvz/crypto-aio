@@ -14,8 +14,11 @@ that map `(chain, network, apiKey)` to endpoints. So an EVM chain needs no new a
 ethers or the deprecated web3. It checks the data when called, or throws `CONFIG_INVALID`: family `evm`,
 nonce ordering, the `secp256k1-ecdsa` scheme, and per network the decimal chain id as
 `identity`, an `evm-1559` or `evm-legacy` fee model, and `finalized`-tag or confirmation
-finality. A network removes the capabilities it lacks: `finality-tag` without the tag,
-`fee-market-1559` on `evm-legacy`, and `replace-fee` and `cancel` without a mempool.
+finality. A network removes the capabilities it lacks: `replace-fee` and `cancel` without a
+mempool, `finality-tag` without the tag, and `fee-market-1559` on `evm-legacy`. The last two
+are checked: `evmChainPlugin` refuses, with `CONFIG_INVALID`, a network that keeps
+`finality-tag` without tag finality (or drops it with one), or `fee-market-1559` on any fee
+model but `evm-1559` (or drops it on `evm-1559`).
 Optional network `params` describe the chain further: `minPriorityFeePerGas` (a bigint tip
 floor), `l1DataFee: 'op-stack'` (transactions also pay an OP Stack L1 data fee),
 `systemLogs: 'bor'` (a bor client's system logs on every receipt, as on Polygon PoS, which

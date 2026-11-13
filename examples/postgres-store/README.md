@@ -195,7 +195,9 @@ Nested values are stored as the exact text `stringifyTagged` writes: a bigint be
 an ordering's bigints beyond 2^53 and an unsigned transaction's signing payloads come back
 exact and with their types. The columns are `text`, not `jsonb`: `jsonb` reorders keys and
 refuses the escape `\u0000`, which any string can carry, and nothing here queries inside
-them.
+them. `stringifyTagged` throws a `TypeError` for a plain object whose only key is `$bigint` or
+`$bytes`, which would read back changed; it escapes as it is, not as a `PostgresStoreError`,
+before any statement runs. The core never stores such an object.
 
 Scalars keep their JavaScript types: times are `double precision`, which holds every finite
 JavaScript number exactly (a `bigint` column would refuse a fraction), and nonce values are

@@ -22,7 +22,10 @@ test/                 unit, architecture, documentation, end-to-end and integrat
 examples/             the reference PostgreSQL store (not published)
 docs/                 this site (VitePress); docs/api/ is the generated API reference
 etc/api/              the API Extractor reports: the public API of each entry point
-scripts/api-report.mjs     checks the public API against etc/api/ (or updates it)
+coverage/             the last coverage report, and coverage-badge.svg (pnpm test:coverage rewrites both)
+.github/workflows/    CI, CodeQL, the nightly run, the docs site and the npm release
+scripts/api-report.mjs     checks the public API against etc/api/ (or updates it), and that
+                           every top-level export has a TSDoc comment
 scripts/pack-check.mjs     loads every entry point from the packed tarball, under Jest too
 scripts/evm-local.mjs      runs the EVM write-path suite on a local anvil node it starts
 scripts/release-notes.mjs  a version's changelog section, for the GitHub Release
@@ -59,7 +62,7 @@ flowchart TB
 | `core/registry/` | Catalogs filled by plugins: chains, assets, adapters, presets, schemes | `plugin.ts` |
 | `core/driver/` | The ports every family implements, with a per-method contract | `types.ts` |
 | `core/lifecycle/` | Transfers end to end: the engine, verdicts, waiting, workers, recovery | `engine.ts`, then `monitor.ts` |
-| `core/ordering/` | Nonce and seqno allocation under the address lease; UTXO reservations | `sequence.ts` |
+| `core/ordering/` | Nonce allocation under the address lease (seqnos are the engine's, `nextSeqno`); UTXO reservations | `sequence.ts` |
 | `core/observe/` | The scanner: cursors, delivery, acks, reorg rollback | `scanner.ts` |
 | `core/signing/` | Local and callback signers, HD derivation, the orchestrator that runs hooks and verifies | `orchestrator.ts` |
 | `core/store/` | The four store ports, the in-memory stores, data classification | `types.ts` |
@@ -128,12 +131,12 @@ The commands a contributor runs:
 ```sh
 pnpm install
 pnpm check          # lint, typecheck and the unit tests
-pnpm test:coverage  # the tests with the coverage thresholds CI enforces
+pnpm test:coverage  # the tests with the coverage thresholds CI enforces; rewrites coverage/
 pnpm doc            # the API reference pages, from the doc comments, into docs/api/
 pnpm docs:dev       # this site, with live reload, at http://localhost:5173/crypto-aio/
 pnpm test:pack      # build, pack, and load every entry point from the tarball
 pnpm lint:package   # package.json's exports and types under every resolution (publint, attw)
-pnpm api:check      # the public API against etc/api/; pnpm api:update rewrites the reports
+pnpm api:check      # the public API against etc/api/, and TSDoc on every export; pnpm api:update rewrites the reports
 CRYPTO_AIO_INTEGRATION=1 pnpm test test/integration   # live, read-only
 pnpm test:evm-local # the EVM write path on a local anvil node, which it starts and stops
 ```

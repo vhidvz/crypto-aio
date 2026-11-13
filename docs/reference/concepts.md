@@ -135,7 +135,8 @@ checked. Account-model chains (EVM, Tron) and the Avalanche X-Chain and P-Chain 
 
 An **asset** is identified by an `AssetId` string bound to one chain and network, such as
 `fakechain:local/native`. Token ids look like `ethereum:mainnet/erc20:0xdAC17F…`. The
-`metadata` (`symbol`, `decimals`) is for display only. An alias resolves only within the
+`metadata` holds a `symbol` for display and the `decimals` every decimal-string amount is
+scaled with, so a registered token's decimals must be the chain's. An alias resolves only within the
 handle's chain and network. An **`Amount`** is an exact, non-negative quantity of one asset, in base units, as a bigint.
 When you pass an amount (`AmountInput`):
 

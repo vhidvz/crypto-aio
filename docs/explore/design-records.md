@@ -51,8 +51,8 @@ it waited.
   optional broadcast field, so every family whose ordering can repeat guards its resends.
   TON guards in its broadcaster today. An optional field is a minor change, so it can come
   in a 1.x release.
-- `recover()` skips its checks when the write target cannot be resolved; rebroadcast still
-  requires the wallet's ownership check. The first inclusion is recorded from one endpoint's
+- Rebroadcast requires the wallet's ownership check, so `recover()` only checks, and counts
+  `unresent`, an Operation whose wallet no longer resolves. The first inclusion is recorded from one endpoint's
   observation (the verdict stays under the proof quorum). Wallet resolution for the all-rejected
   verdict is bounded by neither the caller's signal nor a per-pass cache.
 - Reconciliation scans from the chain's pending count, and a refusal can hide behind `dropped`

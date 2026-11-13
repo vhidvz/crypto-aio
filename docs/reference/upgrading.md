@@ -25,8 +25,9 @@ code your application may treat as safe to pay again.
 ## From 0.2.0
 
 - **Newer chain SDKs.** The peer ranges start at the newest releases: `bitcoinjs-lib`
-  7.0.5, `tronweb` 6.5.2 (which asks for Node.js 22.23.4 or later on 22, 24.22.1 or later on 24, or 26.12.1 or later) and,
-  on the 3.x line, `@solana/web3.js` 3.2.1. Upgrade the ones you install.
+  7.0.5, `tronweb` 6.5.2 (which asks for Node.js 22.23.4 or later on 22, 24.22.1 or later
+  on 24, or 26.12.1 or later) and, on the 3.x line, `@solana/web3.js` 3.2.1. Upgrade the
+  ones you install.
 - **Tron block times are Unix seconds.** `Block.timestamp` and a transaction's
   `block.timestamp` are Unix seconds on every family; Tron reported milliseconds. Multiply
   by 1,000 where your code relied on them. A plugin driver reports its blocks' and
@@ -44,7 +45,8 @@ code your application may treat as safe to pay again.
   changed. The core never stores one, and the stored format is unchanged.
 - **Rolling upgrades.** `aio.operations.list()` and `recover()` leave out an Operation a
   newer version stored, with a logged warning, instead of throwing
-  `RECORD_FORMAT_UNSUPPORTED`; a read by id, key or ref still throws.
+  `RECORD_FORMAT_UNSUPPORTED`; a read by id, key or ref still throws, and so does a transfer
+  or nonce reconciliation from a wallet with such a record, which cannot see its slots.
 - **`Scanner`.** Its constructor is private; scanners come from `bc.scanner()`, as before.
 - **Store authors:** `findByRef` may return any one of several Operations that hold a ref
   (which the core never writes), and a store built on `stringifyTagged` refuses tag-shaped

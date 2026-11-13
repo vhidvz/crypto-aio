@@ -2,7 +2,7 @@
 
 # Interface: WorkerOptions
 
-Defined in: [src/core/lifecycle/workers.ts:49](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L49)
+Defined in: [src/core/lifecycle/workers.ts:50](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L50)
 
 Options of `aio.monitor.start()` and `runOnce()`.
 
@@ -14,7 +14,7 @@ Options of `aio.monitor.start()` and `runOnce()`.
 
 > `readonly` `optional` **batch?**: `number`
 
-Defined in: [src/core/lifecycle/workers.ts:54](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L54)
+Defined in: [src/core/lifecycle/workers.ts:55](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L55)
 
 How many due Operations one pass claims. Default: 50.
 
@@ -26,7 +26,7 @@ How many due Operations one pass claims. Default: 50.
 
 > `readonly` `optional` **signal?**: `AbortSignal`
 
-Defined in: [src/core/lifecycle/workers.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L52)
+Defined in: [src/core/lifecycle/workers.ts:53](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L53)
 
 ***
 
@@ -36,6 +36,6 @@ Defined in: [src/core/lifecycle/workers.ts:52](https://github.com/vhidvz/crypto-
 
 > `readonly` `optional` **workerId?**: `string`
 
-Defined in: [src/core/lifecycle/workers.ts:51](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L51)
+Defined in: [src/core/lifecycle/workers.ts:52](https://github.com/vhidvz/crypto-aio/blob/main/src/core/lifecycle/workers.ts#L52)
 
 Default: a random id per `start` call.
